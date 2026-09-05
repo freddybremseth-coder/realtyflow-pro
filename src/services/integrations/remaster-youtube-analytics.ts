@@ -1,8 +1,20 @@
+import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
 
 const ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
+const ANALYTICS_METRICS = [
+  "views",
+  "estimatedMinutesWatched",
+  "averageViewDuration",
+  "averageViewPercentage",
+  "likes",
+  "comments",
+  "shares",
+  "subscribersGained",
+  "subscribersLost",
+].join(",");
 
 export type RemasterAnalyticsState = "READY" | "NOT_READY" | "ERROR";
 
@@ -57,7 +69,9 @@ export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterA
       startDate,
       endDate,
       videos: [],
-      error: channels.length === 0 ? "No active Re-Master YouTube channel is connected." : "Multiple active Re-Master YouTube channels are connected.",
+      error: channels.length === 0
+        ? "No active Re-Master YouTube channel is connected."
+        : "Multiple active Re-Master YouTube channels are connected.",
     };
   }
 
@@ -81,44 +95,40 @@ export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterA
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
     });
-    const access = await auth.getAccessToken();
-    const accessToken = typeof access === "string" ? access : access?.token;
-    if (!accessToken) throw new Error("Unable to obtain Google access token");
 
-    const params = new URLSearchParams({
+    const analytics = google.youtubeAnalytics({
+      version: "v2",
+      auth,
+    });
+    const response = await analytics.reports.query({
       ids: "channel==MINE",
       startDate,
       endDate,
-      metrics: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,comments,shares,subscribersGained,subscribersLost",
+      metrics: ANALYTICS_METRICS,
       dimensions: "video",
       sort: "-views",
-      maxResults: "200",
+      maxResults: 200,
     });
 
-    const response = await fetch(`https://youtubeanalytics.googleapis.com/v2/reports?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(typeof body?.error?.message === "string" ? body.error.message : `YouTube Analytics request failed (${response.status})`);
-    }
-
-    const headers = Array.isArray(body?.columnHeaders) ? body.columnHeaders.map((header: any) => String(header?.name || "")) : [];
-    const index = new Map(headers.map((name: string, i: number) => [name, i]));
-    const rows = Array.isArray(body?.rows) ? body.rows : [];
-    const videos = rows.map((row: unknown[]) => ({
-      videoId: String(row[index.get("video") ?? -1] || ""),
-      views: finite(row[index.get("views") ?? -1]),
-      estimatedMinutesWatched: finite(row[index.get("estimatedMinutesWatched") ?? -1]),
-      averageViewDuration: finite(row[index.get("averageViewDuration") ?? -1]),
-      averageViewPercentage: finite(row[index.get("averageViewPercentage") ?? -1]),
-      likes: finite(row[index.get("likes") ?? -1]),
-      comments: finite(row[index.get("comments") ?? -1]),
-      shares: finite(row[index.get("shares") ?? -1]),
-      subscribersGained: finite(row[index.get("subscribersGained") ?? -1]),
-      subscribersLost: finite(row[index.get("subscribersLost") ?? -1]),
-    })).filter((row: RemasterAnalyticsVideoRow) => Boolean(row.videoId));
+    const headers = Array.isArray(response.data.columnHeaders)
+      ? response.data.columnHeaders.map((header) => String(header.name || ""))
+      : [];
+    const index = new Map(headers.map((name, i) => [name, i]));
+    const rows = Array.isArray(response.data.rows) ? response.data.rows : [];
+    const videos = rows
+      .map((row) => ({
+        videoId: String(row[index.get("video") ?? -1] || ""),
+        views: finite(row[index.get("views") ?? -1]),
+        estimatedMinutesWatched: finite(row[index.get("estimatedMinutesWatched") ?? -1]),
+        averageViewDuration: finite(row[index.get("averageViewDuration") ?? -1]),
+        averageViewPercentage: finite(row[index.get("averageViewPercentage") ?? -1]),
+        likes: finite(row[index.get("likes") ?? -1]),
+        comments: finite(row[index.get("comments") ?? -1]),
+        shares: finite(row[index.get("shares") ?? -1]),
+        subscribersGained: finite(row[index.get("subscribersGained") ?? -1]),
+        subscribersLost: finite(row[index.get("subscribersLost") ?? -1]),
+      }))
+      .filter((row): row is RemasterAnalyticsVideoRow => Boolean(row.videoId));
 
     return {
       state: "READY",
