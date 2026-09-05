@@ -66,8 +66,9 @@ jobs:
       - name: Test 30-minute production claim guard
         run: node scripts/test-remaster-mix-production-guard.mjs
 
-      - name: Test mix planner and crossfade contracts
+      - name: Test mix planner, crossfade and long-form overlay contracts
         run: >-
           npx tsx --test
           src/services/pipelines/remaster-mix-planner.test.ts
           src/services/pipelines/remaster-mix-audio.test.ts
+          src/services/pipelines/remaster-mix-video.test.ts
