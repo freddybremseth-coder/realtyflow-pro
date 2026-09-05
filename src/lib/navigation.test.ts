@@ -27,7 +27,7 @@ test("owner navigation promotes Nexus Today, Personal Intelligence, Nexus Inbox 
   );
   assert.deepEqual(
     sections.find((section) => section.id === "workspace")?.items.map((item) => item.href),
-    ["/", "/nexus-os/today", "/personal-intelligence/start", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
+    ["/", "/nexus-os/today", "/personal-intelligence", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
   );
   assert.deepEqual(
     sections.find((section) => section.id === "os")?.items.slice(0, 5).map((item) => item.href),
@@ -56,7 +56,7 @@ test("role navigation excludes inaccessible owner and finance tools", () => {
   const hrefs = sales.flatMap((section) => section.items.map((item) => item.href));
   assert.equal(hrefs.includes("/access-control"), false);
   assert.equal(hrefs.includes("/monthly-close"), false);
-  assert.equal(hrefs.includes("/personal-intelligence/start"), false);
+  assert.equal(hrefs.includes("/personal-intelligence"), false);
   assert.equal(hrefs.includes("/today"), true);
   assert.equal(hrefs.includes("/executive-briefing"), true);
 });
@@ -70,6 +70,7 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/os", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/today", sections), "workspace");
   assert.equal(activeNavigationSection("/personal-intelligence/start", sections), "workspace");
+  assert.equal(activeNavigationSection("/personal-intelligence/learn", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/inbox", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/director", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/brand-brain", sections), "os");
@@ -92,7 +93,7 @@ test("menu search finds OS, Personal Intelligence and growth surfaces by label",
   const personalIntelligence = filterNavigationSections(sections, "Personal Intelligence");
   assert.equal(personalIntelligence.length, 1);
   assert.equal(personalIntelligence[0]?.id, "workspace");
-  assert.deepEqual(personalIntelligence[0]?.items.map((item) => item.href), ["/personal-intelligence/start"]);
+  assert.deepEqual(personalIntelligence[0]?.items.map((item) => item.href), ["/personal-intelligence"]);
 
   const realtyflow = filterNavigationSections(sections, "RealtyFlow OS");
   assert.equal(realtyflow.length, 1);
