@@ -89,15 +89,14 @@ export function buildTargetDurationArgs(inputPath: string, outputPath: string, t
 
 /**
  * Downloads selected tracks, produces one natural chained-crossfade mix, then
- * normalizes that mix to the requested long-form duration. If the selected
- * source material is shorter than the target, FFmpeg loops the completed mix;
- * if it is longer, -t trims it. This makes target_minutes an enforced runtime
- * contract instead of display-only metadata.
+ * normalizes that mix to the requested long-form duration. Production is
+ * currently guarded to 30-minute jobs, so the backwards-compatible default is
+ * 1800 seconds until 60/90/120/180-minute production is explicitly enabled.
  */
 export async function buildRemasterMixAudio(
   tracks: RemasterMixAudioTrack[],
   crossfadeSeconds: number,
-  targetSeconds: number,
+  targetSeconds = 30 * 60,
 ): Promise<RemasterMixAudioResult> {
   if (tracks.length < 2 || tracks.length > 60) {
     throw new Error("A long-form mix requires between 2 and 60 tracks.");
