@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickRemasterPromotionSource, remasterPromotionMasterIdea, remasterPromotionMediaUrl, type RemasterPromotionSource } from "./remaster-promotion-source";
+import { pickRemasterPromotionSource, remasterPromotionMasterIdea, remasterPromotionMediaUrl, remasterPromotionTitleFamily, type RemasterPromotionSource } from "./remaster-promotion-source";
 
 function source(overrides: Partial<RemasterPromotionSource> = {}): RemasterPromotionSource {
   return {
@@ -40,6 +40,29 @@ describe("Re-Master promotion source", () => {
       source({ id: "eligible", source_id: "song-3", last_planned_at: "2026-07-01T00:00:00Z" }),
     ], "facebook", now, 14);
     expect(picked?.id).toBe("eligible");
+  });
+
+  it("blocks sibling uploads in the same recently planned title family", () => {
+    const now = Date.parse("2026-09-05T12:00:00Z");
+    const picked = pickRemasterPromotionSource([
+      source({ id: "neuro-old", source_id: "song-1", title: "Neuro Pulse", last_planned_at: "2026-09-01T00:00:00Z" }),
+      source({ id: "neuro-sibling", source_id: "song-2", title: "Neuro Pulse", source_url: "https://www.youtube.com/watch?v=def456", payload: { youtube_url: "https://www.youtube.com/watch?v=def456" }, last_planned_at: null }),
+      source({ id: "other", source_id: "song-3", title: "Road Signal", last_planned_at: null }),
+    ], "facebook", now, 14);
+    expect(picked?.id).toBe("other");
+  });
+
+  it("normalizes malformed and clean Dale title variants into the same family", () => {
+    expect(remasterPromotionTitleFamily("Â¡Dale a tu Cuerpo!")).toBe(remasterPromotionTitleFamily("¡Dale a tu Cuerpo!"));
+  });
+
+  it("allows a sibling family again when the family cooldown has expired", () => {
+    const now = Date.parse("2026-09-05T12:00:00Z");
+    const picked = pickRemasterPromotionSource([
+      source({ id: "neuro-old", source_id: "song-1", title: "Neuro Pulse", last_planned_at: "2026-07-01T00:00:00Z" }),
+      source({ id: "neuro-sibling", source_id: "song-2", title: "Neuro Pulse", source_url: "https://www.youtube.com/watch?v=def456", payload: { youtube_url: "https://www.youtube.com/watch?v=def456" }, last_planned_at: null }),
+    ], "facebook", now, 14);
+    expect(picked?.id).toBe("neuro-sibling");
   });
 
   it("requires a verified YouTube destination", () => {
