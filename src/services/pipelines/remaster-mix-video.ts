@@ -6,7 +6,7 @@ import * as os from "os";
 import * as path from "path";
 import { pipeline } from "stream/promises";
 import { Readable } from "stream";
-import { ensureFFmpeg, ensureFont } from "@/services/integrations/ffmpeg-renderer";
+import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 
 const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
@@ -87,25 +87,86 @@ async function downloadVisuals(urls: string[], workingDirectory: string) {
   return imagePaths;
 }
 
-function escapeDrawtext(value: string) {
-  return String(value || "")
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
-    .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
+function assTime(seconds: number) {
+  const centiseconds = Math.max(1, Math.ceil(Math.max(0, seconds) * 100));
+  const hours = Math.floor(centiseconds / 360000);
+  const minutes = Math.floor((centiseconds % 360000) / 6000);
+  const secs = Math.floor((centiseconds % 6000) / 100);
+  const cs = centiseconds % 100;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
-function fontOption(fontPath: string) {
-  return fontPath ? `fontfile='${escapeDrawtext(fontPath)}':` : "";
+function escapeAssText(value: string) {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/[{}]/g, "")
+    .replace(/\r?\n/g, "\\N")
+    .trim();
+}
+
+/**
+ * Build an Advanced SubStation Alpha overlay instead of relying on FFmpeg's
+ * drawtext filter. The ffmpeg-static build used by the production worker ships
+ * libass but does not expose drawtext, so ASS gives us deterministic text boxes
+ * without adding a second FFmpeg binary or a native image dependency.
+ */
+export function buildRemasterMixAssOverlay(input: {
+  durationSeconds: number;
+  sponsorSlide: boolean;
+  ctaText?: string | null;
+  zenEcoHomesEnabled: boolean;
+}) {
+  if (!input.zenEcoHomesEnabled) return "";
+
+  const end = assTime(input.durationSeconds);
+  const events = [
+    `Dialogue: 0,0:00:00.00,${end},Watermark,,0,0,0,,ZenEcoHomes.com`,
+  ];
+
+  if (input.sponsorSlide) {
+    events.push(
+      `Dialogue: 1,0:00:00.00,${end},Sponsor,,0,0,0,,{\\pos(960,464)}Presented by ZenEcoHomes.com`,
+    );
+    if (input.ctaText?.trim()) {
+      events.push(
+        `Dialogue: 1,0:00:00.00,${end},CTA,,0,0,0,,{\\pos(960,594)}${escapeAssText(input.ctaText)}`,
+      );
+    }
+  }
+
+  return [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    `PlayResX: ${WIDTH}`,
+    `PlayResY: ${HEIGHT}`,
+    "WrapStyle: 2",
+    "ScaledBorderAndShadow: yes",
+    "YCbCr Matrix: TV.709",
+    "",
+    "[V4+ Styles]",
+    "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
+    "Style: Watermark,DejaVu Sans,27,&H00FFFFFF,&H000000FF,&H70000000,&H70000000,-1,0,0,0,100,100,0,0,3,0,0,9,34,34,30,1",
+    "Style: Sponsor,DejaVu Sans,58,&H00FFFFFF,&H000000FF,&H61000000,&H61000000,-1,0,0,0,100,100,0,0,3,0,0,5,30,30,20,1",
+    "Style: CTA,DejaVu Sans,30,&H00FFFFFF,&H000000FF,&H70000000,&H70000000,0,0,0,0,100,100,0,0,3,0,0,5,40,40,20,1",
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ...events,
+    "",
+  ].join("\n");
+}
+
+function escapeAssFilterPath(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'");
 }
 
 function buildOverlayFilter(input: {
   imageIndex: number;
   frames: number;
-  fontPath: string;
-  sponsorEveryImages: number;
-  ctaText?: string | null;
-  zenEcoHomesEnabled: boolean;
+  assPath?: string | null;
 }) {
   const motionPatterns = [
     `zoompan=z='min(zoom+0.00022,1.065)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${input.frames}:s=${WIDTH}x${HEIGHT}:fps=${LONGFORM_FPS}`,
@@ -119,23 +180,8 @@ function buildOverlayFilter(input: {
     motionPatterns[input.imageIndex % motionPatterns.length],
   ];
 
-  if (input.zenEcoHomesEnabled) {
-    const font = fontOption(input.fontPath);
-    filters.push(
-      `drawtext=${font}text='ZenEcoHomes.com':x=w-tw-34:y=30:fontsize=27:fontcolor=white@0.90:box=1:boxcolor=black@0.28:boxborderw=9`,
-    );
-
-    const sponsorSlide = input.imageIndex === 0 || input.imageIndex % input.sponsorEveryImages === 0;
-    if (sponsorSlide) {
-      filters.push(
-        `drawtext=${font}text='Presented by ZenEcoHomes.com':x=(w-tw)/2:y=h*0.43:fontsize=58:fontcolor=white:box=1:boxcolor=black@0.38:boxborderw=22`,
-      );
-      if (input.ctaText) {
-        filters.push(
-          `drawtext=${font}text='${escapeDrawtext(input.ctaText)}':x=(w-tw)/2:y=h*0.55:fontsize=30:fontcolor=white@0.95:box=1:boxcolor=black@0.30:boxborderw=14`,
-        );
-      }
-    }
+  if (input.assPath) {
+    filters.push(`ass=filename='${escapeAssFilterPath(input.assPath)}'`);
   }
 
   filters.push("format=yuv420p");
@@ -150,7 +196,6 @@ export async function renderRemasterLongFormMix(input: RemasterMixVideoInput): P
   if (input.imageUrls.length < 12) throw new Error("At least 12 visual URLs are required for a long-form mix.");
 
   const binary = await ensureFFmpeg();
-  const fontPath = await ensureFont();
   const workingDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-mix-video-"));
 
   try {
@@ -173,13 +218,27 @@ export async function renderRemasterLongFormMix(input: RemasterMixVideoInput): P
     for (let index = 0; index < imagePaths.length; index += 1) {
       const segmentPath = path.join(workingDirectory, `segment-${String(index).padStart(3, "0")}.ts`);
       const frames = Math.max(1, Math.round(segmentDuration * LONGFORM_FPS));
+      const sponsorSlide = index === 0 || index % sponsorEveryImages === 0;
+      let assPath: string | null = null;
+
+      if (input.zenEcoHomesEnabled) {
+        assPath = path.join(workingDirectory, `overlay-${String(index).padStart(3, "0")}.ass`);
+        await fs.writeFile(
+          assPath,
+          buildRemasterMixAssOverlay({
+            durationSeconds: segmentDuration,
+            sponsorSlide,
+            ctaText: input.ctaText,
+            zenEcoHomesEnabled: true,
+          }),
+          "utf8",
+        );
+      }
+
       const filter = buildOverlayFilter({
         imageIndex: index,
         frames,
-        fontPath,
-        sponsorEveryImages,
-        ctaText: input.ctaText,
-        zenEcoHomesEnabled: input.zenEcoHomesEnabled,
+        assPath,
       });
 
       await runFFmpeg(binary, [
@@ -226,6 +285,12 @@ export async function renderRemasterLongFormMix(input: RemasterMixVideoInput): P
     for (const segmentPath of segmentPaths) await fs.unlink(segmentPath).catch(() => undefined);
     for (const imagePath of imagePaths) await fs.unlink(imagePath).catch(() => undefined);
     await fs.unlink(concatPath).catch(() => undefined);
+    const overlayFiles = await fs.readdir(workingDirectory).catch(() => [] as string[]);
+    for (const file of overlayFiles) {
+      if (file.startsWith("overlay-") && file.endsWith(".ass")) {
+        await fs.unlink(path.join(workingDirectory, file)).catch(() => undefined);
+      }
+    }
 
     const stat = await fs.stat(videoPath);
     await input.onProgress?.(85, "video_ready");
