@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { classifyEmailConfigReadiness } from "@/lib/email/config-readiness";
+import { assessWhatsAppReadiness } from "@/lib/nexus/whatsapp-readiness";
 import { evaluateMetaCapabilities } from "@/lib/oauth/meta-capabilities";
 import { buildOsAttention } from "@/lib/os/attention";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
@@ -143,6 +144,7 @@ export async function GET(request: NextRequest) {
     };
   });
   const instagram = socialReadiness.filter((row: any) => row.platform === "instagram");
+  const whatsappReadiness = assessWhatsAppReadiness(process.env);
 
   const summary = {
     approvalsPending: approvals.length,
@@ -171,6 +173,9 @@ export async function GET(request: NextRequest) {
     instagramCommentReadReady: instagram.filter((row: any) => row.readComments).length,
     socialSyncEnabled,
     socialAutoReplyLive,
+    whatsappStatus: whatsappReadiness.status,
+    whatsappInboundReady: whatsappReadiness.inboundReady,
+    whatsappAutoReplyEnabled: whatsappReadiness.autoReplyEnabled,
   };
 
   const attention = buildOsAttention({
@@ -204,6 +209,30 @@ export async function GET(request: NextRequest) {
     bookReviewCandidatesPending,
   });
 
+  if (whatsappReadiness.status === "BLOCKED") {
+    attention.unshift({
+      id: "whatsapp:inbound-blocked",
+      severity: "high",
+      score: 96,
+      title: "WhatsApp lead capture is blocked",
+      detail: `Nexus cannot rely on WhatsApp inbound capture. Missing: ${whatsappReadiness.missingRequired.join(", ") || "required configuration"}.`,
+      href: "/nexus-os/communications",
+      source: "Nexus WhatsApp Readiness",
+    });
+  } else if (whatsappReadiness.status === "PARTIAL" && whatsappReadiness.inboundReady) {
+    attention.push({
+      id: "whatsapp:inbound-ready-autoreply-off",
+      severity: "low",
+      score: 42,
+      title: "WhatsApp inbound is ready; automatic replies are not fully active",
+      detail: whatsappReadiness.autoReplyEnabled
+        ? `Inbound capture is healthy, but automatic replies are incomplete. Missing: ${whatsappReadiness.missingRequired.join(", ") || "outbound configuration"}.`
+        : "Inbound lead capture is healthy. Automatic replies remain intentionally disabled.",
+      href: "/nexus-os/communications",
+      source: "Nexus WhatsApp Readiness",
+    });
+  }
+
   return NextResponse.json({
     generatedAt: new Date(nowMs).toISOString(),
     sourceState: {
@@ -212,6 +241,14 @@ export async function GET(request: NextRequest) {
     },
     summary,
     attention,
+    whatsapp: {
+      status: whatsappReadiness.status,
+      inboundReady: whatsappReadiness.inboundReady,
+      outboundReady: whatsappReadiness.outboundReady,
+      autoReplyEnabled: whatsappReadiness.autoReplyEnabled,
+      missingRequired: whatsappReadiness.missingRequired,
+      missingOptional: whatsappReadiness.missingOptional,
+    },
     approvals: approvals.slice(0, 10),
     social: {
       readiness: socialReadiness,
