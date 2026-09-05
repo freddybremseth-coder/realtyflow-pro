@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { persistWhatsAppInbound } from "@/lib/nexus/whatsapp-persistence";
+import { resolveWhatsAppLeadIdentity } from "@/lib/nexus/whatsapp-referral";
 import {
   parseMetaWhatsAppWebhook,
   parsePhoneBrandMap,
@@ -48,9 +49,57 @@ export async function POST(request: NextRequest) {
   const autoReplyEnabled = process.env.WHATSAPP_AUTOREPLY_ENABLED === "true";
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || "";
   const graphVersion = process.env.WHATSAPP_GRAPH_VERSION || "";
+  const configuredReferrerNames = process.env.WHATSAPP_SOLEADA_REFERRER_NAMES || "";
   const results: Array<Record<string, unknown>> = [];
 
-  for (const message of messages) {
+  for (const inbound of messages) {
+    const resolution = resolveWhatsAppLeadIdentity(inbound, { configuredReferrerNames });
+
+    if (resolution.mode === "REFERRAL_UNRESOLVED") {
+      const now = new Date().toISOString();
+      const customerName = resolution.customer?.name || "Ukjent kunde";
+      const referrerName = resolution.referrer?.name || "Soleada";
+      await supabase.from("work_items").insert({
+        title: `Soleada referral mangler kundetelefon: ${customerName}`,
+        description: `Lead sendt av ${referrerName}. Kundens telefon ble ikke funnet i WhatsApp-meldingen.\n\n${inbound.text}`,
+        status: "TO_DO",
+        priority: "HIGH",
+        due_date: now.slice(0, 10),
+        brand_id: inbound.brandId || "soleada",
+        source_type: "whatsapp_referral",
+        source_id: inbound.messageId,
+        assigned_agent: "sales",
+        next_action: "Finn eller be om kundens telefonnummer før leadet opprettes i CRM. Ikke bruk referrerens telefon som kundeidentitet.",
+        ai_score: 88,
+        metadata: {
+          whatsapp_message_id: inbound.messageId,
+          referrer_name: resolution.referrer?.name || null,
+          referrer_phone: resolution.referrer?.phone || null,
+          customer_name: resolution.customer?.name || null,
+          referral_resolution: resolution.mode,
+          original_text: inbound.text,
+        },
+        created_at: now,
+        updated_at: now,
+      });
+
+      results.push({
+        messageId: inbound.messageId,
+        ok: true,
+        duplicate: false,
+        referralMode: resolution.mode,
+        contactId: null,
+        workItemCreated: true,
+        autoReplyMode: "NONE",
+        autoReplyAllowed: false,
+        replySent: false,
+        replyError: null,
+        persistenceError: null,
+      });
+      continue;
+    }
+
+    const message = resolution.message || inbound;
     const persisted = await persistWhatsAppInbound(supabase, message);
     let replySent = false;
     let replyError: string | null = null;
@@ -62,11 +111,11 @@ export async function POST(request: NextRequest) {
       && autoReplyEnabled
       && accessToken
       && graphVersion
-      && message.phoneNumberId
+      && inbound.phoneNumberId
     ) {
       try {
         await sendMetaWhatsAppText({
-          phoneNumberId: message.phoneNumberId,
+          phoneNumberId: inbound.phoneNumberId,
           to: message.from,
           text: persisted.autoReply.suggestedReply,
           accessToken,
@@ -79,9 +128,12 @@ export async function POST(request: NextRequest) {
     }
 
     results.push({
-      messageId: message.messageId,
+      messageId: inbound.messageId,
       ok: persisted.ok,
       duplicate: persisted.duplicate,
+      referralMode: resolution.mode,
+      referrerName: resolution.referrer?.name || null,
+      customerPhone: resolution.customer?.phone || message.from,
       contactId: persisted.contactId || null,
       workItemCreated: Boolean(persisted.workItemCreated),
       autoReplyMode: persisted.autoReply.mode,
