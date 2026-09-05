@@ -13,6 +13,7 @@ on:
       - "src/workflows/remaster-mix-production.ts"
       - "src/app/api/neural-beat/mixes/**"
       - "src/app/api/cron/remaster-mix-worker/**"
+      - "src/middleware.ts"
   workflow_dispatch:
 
 permissions:
@@ -53,6 +54,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --silent
+
+      - name: Verify Re-Master mix middleware proxy access
+        run: >-
+          node -e "const fs=require('fs'); const s=fs.readFileSync('src/middleware.ts','utf8');
+          if (!s.includes('/api/neural-beat/mixes')) throw new Error('Mix proxy prefix missing from middleware');"
 
       - name: Test durable mix migration
         run: node scripts/test-remaster-mix-migration.mjs
