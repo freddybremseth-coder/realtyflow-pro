@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import { OAuth2Client } from "google-auth-library";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
 
@@ -90,16 +89,13 @@ export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterA
 
   try {
     const credentials = getGoogleCredentials();
-    const auth = new OAuth2Client(credentials.clientId, credentials.clientSecret);
+    const auth = new google.auth.OAuth2(credentials.clientId, credentials.clientSecret);
     auth.setCredentials({
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
     });
 
-    const analytics = google.youtubeAnalytics({
-      version: "v2",
-      auth,
-    });
+    const analytics = google.youtubeAnalytics({ version: "v2", auth });
     const response = await analytics.reports.query({
       ids: "channel==MINE",
       startDate,
