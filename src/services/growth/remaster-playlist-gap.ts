@@ -19,6 +19,7 @@ export type PlaylistGapCandidate = {
   label: string;
   title: string;
   description: string;
+  evidenceTrackCount: number;
   videoIds: string[];
   trackTitles: string[];
 };
@@ -120,6 +121,7 @@ export function findRemasterPlaylistGap(
     label: best.label,
     title: `Re-Master Freddy — ${label}`,
     description: `Official Re-Master Freddy playlist for ${label.toLowerCase()} tracks. Curated from the Re-Master catalog to help listeners discover related music in one session.`,
+    evidenceTrackCount: best.rows.length,
     videoIds: selected.map((row) => row.videoId),
     trackTitles: selected.map((row) => row.title),
   };
