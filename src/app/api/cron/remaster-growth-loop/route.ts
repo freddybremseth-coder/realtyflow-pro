@@ -2,25 +2,36 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { assessRemasterVideoPerformance, median } from "@/services/growth/remaster-growth-loop";
+import { evaluateRemasterGrowthOutcome } from "@/services/growth/remaster-growth-feedback";
 import { generateRemasterMetadataRefresh, selectBestRemasterPlaylist } from "@/services/growth/remaster-growth-optimizer";
-import { listRemasterActionHistory, recordCompletedRemasterAction, type RemasterActionHistoryRow } from "@/services/growth/remaster-action-history";
+import { listRemasterActionHistory, recordCompletedRemasterAction, recordRemasterActionFeedback, type RemasterActionHistoryRow } from "@/services/growth/remaster-action-history";
 import { addRemasterVideoToPlaylist, listRemasterChannelVideos, listRemasterPlaylists, updateRemasterVideoMetadata } from "@/services/integrations/remaster-youtube-actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-function videoIdFromHistory(row: RemasterActionHistoryRow) {
+function parsedLearnings(row: RemasterActionHistoryRow) {
   try {
     const parsed = JSON.parse(row.learnings || "{}");
-    return typeof parsed?.action?.videoId === "string" ? parsed.action.videoId : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    return null;
+    return {};
   }
+}
+
+function videoIdFromHistory(row: RemasterActionHistoryRow) {
+  const parsed = parsedLearnings(row);
+  return typeof parsed?.action?.videoId === "string" ? parsed.action.videoId : null;
 }
 
 function hasRecentAction(history: RemasterActionHistoryRow[], videoId: string, actionType: string, days: number) {
   const since = Date.now() - days * 86_400_000;
   return history.some((row) => row.action_type === actionType && row.status === "completed" && videoIdFromHistory(row) === videoId && Boolean(row.executed_at) && Date.parse(row.executed_at || "") >= since);
+}
+
+function hasMeasuredFeedback(row: RemasterActionHistoryRow) {
+  const parsed = parsedLearnings(row);
+  return Boolean(parsed?.feedback && parsed.feedback.outcome && parsed.feedback.outcome !== "INSUFFICIENT_DATA");
 }
 
 export async function GET(request: NextRequest) {
@@ -39,6 +50,42 @@ export async function GET(request: NextRequest) {
       listRemasterActionHistory(100),
     ]);
     const now = Date.now();
+    const videoById = new Map(videos.map((video) => [video.videoId, video]));
+    const feedback: Array<Record<string, unknown>> = [];
+
+    for (const row of history) {
+      if (!["update_metadata", "add_to_playlist"].includes(row.action_type) || row.status !== "completed" || !row.executed_at || hasMeasuredFeedback(row)) continue;
+      const learnings = parsedLearnings(row);
+      const videoId = videoIdFromHistory(row);
+      const video = videoId ? videoById.get(videoId) : undefined;
+      const before = learnings?.result?.before;
+      const beforeViews = Number(before?.viewCount);
+      const beforeViewsPerDay = Number(before?.viewsPerDay);
+      const executedMs = Date.parse(row.executed_at);
+      if (!video || !Number.isFinite(beforeViews) || !Number.isFinite(beforeViewsPerDay) || !Number.isFinite(executedMs)) continue;
+
+      const observedDays = Math.max(0, (now - executedMs) / 86_400_000);
+      const postActionViewsPerDay = observedDays > 0 ? Math.max(0, video.viewCount - beforeViews) / observedDays : 0;
+      const outcome = evaluateRemasterGrowthOutcome({
+        beforeViewsPerDay,
+        afterViewsPerDay: postActionViewsPerDay,
+        executedAt: row.executed_at,
+        nowMs: now,
+        minimumObservationDays: 7,
+      });
+      if (outcome.outcome === "INSUFFICIENT_DATA") continue;
+
+      await recordRemasterActionFeedback(row, {
+        ...outcome,
+        videoId,
+        currentViewCount: video.viewCount,
+        beforeViewCount: beforeViews,
+        measuredAt: new Date(now).toISOString(),
+        actionType: row.action_type,
+      });
+      feedback.push({ actionId: row.id, videoId, actionType: row.action_type, outcome: outcome.outcome, liftPct: outcome.liftPct });
+    }
+
     const rates = videos.map((video) => {
       const ageDays = Math.max(1, (now - Date.parse(video.publishedAt)) / 86_400_000);
       return video.viewCount / ageDays;
@@ -105,10 +152,12 @@ export async function GET(request: NextRequest) {
       channelTitle,
       measuredVideos: videos.length,
       channelMedianViewsPerDay,
+      feedbackMeasured: feedback.length,
+      feedback,
       underperforming: assessed.filter((item) => item.assessment.status === "UNDERPERFORMING").length,
       candidatesReviewed: candidates.length,
       actions,
-      guardrails: { maxVideosPerRun: 2, metadataCooldownDays: 14, playlistCooldownDays: 30, automaticTitleChanges: false, automaticThumbnailChanges: false },
+      guardrails: { maxVideosPerRun: 2, metadataCooldownDays: 14, playlistCooldownDays: 30, feedbackObservationDays: 7, automaticTitleChanges: false, automaticThumbnailChanges: false },
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Re-Master growth loop failed" }, { status: 500 });
