@@ -305,7 +305,7 @@ export default function MorningBriefPage() {
             <span className="rounded-full border border-slate-700 px-2 py-1">Confidence {primary.confidence.label} {primary.confidence.score}</span>
           </div>
           {primary.evidence?.length ? <div className="mt-3 text-xs leading-5 text-slate-400"><strong className="text-slate-300">Evidence:</strong> {primary.evidence.join(" · ")}</div> : null}
-          {primary.dataGapSummary ? <div className="mt-3 rounded-xl border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs leading-5 text-amber-200"><strong className="text-amber-100">Improve confidence:</strong> {primary.dataGapSummary}</div> : null}
+          {primary.dataGapSummary ? <div className="mt-3 rounded-xl border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs leading-5 text-amber-200"><strong className="text-amber-100">Improve confidence:</strong> {primary.dataGapSummary} <Link href={primary.href} className="ml-1 inline-flex items-center font-black text-amber-100 underline underline-offset-2">Open source <ArrowRight size={12} className="ml-1" /></Link></div> : null}
         </div>
         <Link href={primary.href} className="inline-flex items-center justify-center rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-black text-slate-950">Open <ArrowRight size={16} className="ml-2" /></Link>
       </div> : <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4 text-emerald-100"><CheckCircle2 size={19} className="mt-0.5" /><div><div className="font-black">Ingen sterk kandidat akkurat nå.</div><div className="mt-1 text-sm text-emerald-200">Det er bedre enn å produsere kunstig urgency.</div></div></div>}
@@ -323,7 +323,7 @@ export default function MorningBriefPage() {
         <p className="mt-2 text-sm leading-5 text-slate-600">{item.detail}</p>
         <div className="mt-3 text-[11px] font-bold text-slate-400">Source: {item.source} · score {item.score}/100 · confidence {item.confidence.label} {item.confidence.score}/100</div>
         {item.evidence?.length ? <div className="mt-2 text-[11px] leading-4 text-slate-400">{item.evidence.slice(0, 3).join(" · ")}</div> : null}
-        {item.dataGapSummary ? <div className="mt-2 text-[11px] leading-4 text-amber-700">{item.dataGapSummary}</div> : null}
+        {item.dataGapSummary ? <div className="mt-2 text-[11px] leading-4 text-amber-700">{item.dataGapSummary} <span className="font-black">Open to improve →</span></div> : null}
       </Link>)}
     </section>
 
