@@ -108,7 +108,7 @@ export function findRemasterPlaylistGap(
   const candidates = [...clusters.values()]
     .filter((cluster) => cluster.rows.length >= minimumTracks)
     .filter((cluster) => !playlistCovers(existing, cluster.label))
-    .sort((a, b) => b.rows.length - a.rows.length || dimensionRank[b.dimension] - dimensionRank[a.dimension] || a.label.localeCompare(b.label));
+    .sort((a, b) => dimensionRank[b.dimension] - dimensionRank[a.dimension] || b.rows.length - a.rows.length || a.label.localeCompare(b.label));
 
   const best = candidates[0];
   if (!best) return null;
