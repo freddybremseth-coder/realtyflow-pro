@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, BrainCircuit, CheckCircle2, CircleHelp, Loader2 } from "lucide-react";
+import { ArrowRight, BrainCircuit, CheckCircle2, CircleHelp, Loader2, Sparkles } from "lucide-react";
 
 type MeSummary = {
   activeClaims: number;
@@ -68,6 +68,17 @@ export default function StartPage() {
         <div className="rounded-xl bg-white/80 p-3"><strong>{summary.mentorSessions}</strong><br/>mentor sessions</div>
       </div>
     </section>}
+
+    {summary && !empty && <Link href="/personal-intelligence" className="group block rounded-3xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm hover:border-cyan-400">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Sparkles size={16} /> Daily flow</div>
+          <div className="mt-2 text-xl font-black text-slate-950">Open TODAY and continue where your attention matters now.</div>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">Onboarding er ikke lenger hovedoppgaven. Gå til ONE THING, WORTH KNOWING, CONTINUE og Mentor; kom tilbake hit bare når du vil bygge mer eksplisitt kontekst.</p>
+        </div>
+        <ArrowRight size={20} className="shrink-0 text-cyan-800 transition group-hover:translate-x-1" />
+      </div>
+    </Link>}
 
     <section className="grid gap-4 md:grid-cols-2">
       {steps.map((step) => <Link key={step.href} href={step.href} className="group rounded-3xl border border-slate-200 bg-white p-5 shadow-sm hover:border-cyan-300">
