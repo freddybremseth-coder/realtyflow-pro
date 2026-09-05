@@ -3,10 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 import { createYoutubeOAuthClient } from "@/services/integrations/youtube-oauth-client";
 
+const YOUTUBE_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
+
 interface Candidate {
   source: string;
   refreshToken: string;
   expectedChannelId?: string;
+  scopes?: string[];
 }
 
 const ALIASES: Record<string, string[]> = {
@@ -16,6 +19,10 @@ const ALIASES: Record<string, string[]> = {
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim().replace(/^["']|["']$/g, "").trim() : "";
+}
+
+function hasAnalyticsScope(scopes: string[] | undefined) {
+  return Array.isArray(scopes) && scopes.some((scope) => clean(scope) === YOUTUBE_ANALYTICS_SCOPE);
 }
 
 async function candidatesForBrand(brandId: string): Promise<Candidate[]> {
@@ -39,6 +46,7 @@ async function candidatesForBrand(brandId: string): Promise<Candidate[]> {
         source: `oauth_tokens:${channel.display_name}`,
         refreshToken,
         expectedChannelId: channel.external_id || undefined,
+        scopes: tokens?.scopes ?? [],
       });
     }
   } catch (error) {
@@ -54,7 +62,7 @@ async function candidatesForBrand(brandId: string): Promise<Candidate[]> {
     const refreshToken = clean(data?.settings?.youtube_refresh_token);
     if (!refreshToken || seen.has(refreshToken)) continue;
     seen.add(refreshToken);
-    results.push({ source: `brand:${candidateBrandId}`, refreshToken });
+    results.push({ source: `brand:${candidateBrandId}`, refreshToken, scopes: [] });
   }
 
   return results;
@@ -71,6 +79,8 @@ export async function checkBrandYouTubeHealth(brandId: string) {
     return {
       connected: false,
       configured: false,
+      analyticsReady: false,
+      analyticsScope: YOUTUBE_ANALYTICS_SCOPE,
       reason: "missing_brand_token",
       message: "Ingen brand-spesifikk YouTube-tilkobling er lagret.",
     };
@@ -97,6 +107,8 @@ export async function checkBrandYouTubeHealth(brandId: string) {
       return {
         connected: true,
         configured: true,
+        analyticsReady: hasAnalyticsScope(candidate.scopes),
+        analyticsScope: YOUTUBE_ANALYTICS_SCOPE,
         tokenSource: candidate.source,
         channel: {
           id: item.id,
@@ -115,6 +127,8 @@ export async function checkBrandYouTubeHealth(brandId: string) {
   return {
     connected: false,
     configured: true,
+    analyticsReady: false,
+    analyticsScope: YOUTUBE_ANALYTICS_SCOPE,
     reason: sawRevokedToken ? "token_expired_or_revoked" : "connection_failed",
     message: sawRevokedToken
       ? "YouTube-tokenet er utløpt eller tilbakekalt."
