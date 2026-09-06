@@ -6,6 +6,7 @@ on:
       - ".github/workflows/remaster-mediterranean-mix-integration.yml"
       - "scripts/test-remaster-mix-migration.mjs"
       - "scripts/test-remaster-mix-production-guard.mjs"
+      - "scripts/test-remaster-youtube-preflight.mjs"
       - "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql"
       - "supabase/migrations/20260905204500_remaster_mix_production_guard.sql"
       - "src/services/pipelines/remaster-mix-*.ts"
@@ -65,6 +66,9 @@ jobs:
 
       - name: Test 30-minute production claim guard
         run: node scripts/test-remaster-mix-production-guard.mjs
+
+      - name: Test YouTube preflight and upload-marker ordering
+        run: node scripts/test-remaster-youtube-preflight.mjs
 
       - name: Test mix planner, crossfade and long-form overlay contracts
         run: >-
