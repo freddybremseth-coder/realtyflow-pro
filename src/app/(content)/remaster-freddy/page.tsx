@@ -41,6 +41,8 @@ type Payload = {
     youtube: {
       connected: boolean;
       configured: boolean;
+      analyticsReady: boolean;
+      analyticsScope: string | null;
       reason: string | null;
       message: string | null;
       channel: { id: string; title: string; subscriberCount: number; videoCount: number; viewCount: number } | null;
@@ -156,9 +158,15 @@ export default function RemasterFreddyPage() {
           <div><div className="text-xs font-black uppercase tracking-[0.18em] text-pink-300">Growth Health</div><h2 className="mt-1 text-2xl font-black text-white">Autonom lyttervekst</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-100">Systemet måler, forbedrer og lærer fra publiserte Re-Master-videoer. Negative mønstre kan automatisk undertrykkes før de gjentas.</p></div>
           <div className={`rounded-full border px-4 py-2 text-xs font-black tracking-wide ${statusTone(data.growth.status)}`}>{data.growth.status.replaceAll("_", " ")}</div>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-xl border border-slate-600 bg-slate-900 p-4"><div className="text-[10px] font-black uppercase tracking-wider text-slate-300">Autopilot</div><div className="mt-1 text-lg font-black text-white">{data.growth.autopilotEnabled ? "Aktiv" : "Av"}</div><div className="mt-1 text-xs text-slate-200">{data.growth.autopilotEnabled ? "Daglig growth-loop er tillatt." : "Miljøvariabelen er ikke aktiv i runtime."}</div></div>
           <div className="rounded-xl border border-slate-600 bg-slate-900 p-4"><div className="text-[10px] font-black uppercase tracking-wider text-slate-300">YouTube</div><div className="mt-1 text-lg font-black text-white">{data.growth.youtube.connected ? "Connected" : "Ikke tilkoblet"}</div><div className="mt-1 text-xs text-slate-200">{data.growth.youtube.channel?.title || data.growth.youtube.message || "Ingen kanalinfo"}</div></div>
+          <div className={`rounded-xl border p-4 ${data.growth.youtube.analyticsReady ? "border-emerald-500/60 bg-emerald-950/40" : "border-amber-500/60 bg-amber-950/30"}`}>
+            <div className="text-[10px] font-black uppercase tracking-wider text-slate-300">YouTube Analytics</div>
+            <div className="mt-1 text-lg font-black text-white">{data.growth.youtube.analyticsReady ? "Analytics ready" : "Reconnect required"}</div>
+            <div className="mt-1 text-xs leading-5 text-slate-200">{data.growth.youtube.analyticsReady ? "Watch-quality metrics kan leses av Growth OS." : "Gi yt-analytics.readonly ved neste YouTube reconnect. Dagens growth-loop fortsetter trygt med eksisterende metrics."}</div>
+            {!data.growth.youtube.analyticsReady && data.growth.youtube.connected && <a href="/api/oauth/google?brand_id=remasterfreddy&service=youtube&return_to=/remaster-freddy" className="mt-3 inline-flex rounded-lg bg-amber-300 px-3 py-2 text-xs font-black text-slate-950 hover:bg-amber-200">Reconnect YouTube for Analytics</a>}
+          </div>
           {[data.growth.learning.metadata, data.growth.learning.playlist].map((item) => <div key={item.actionType} className="rounded-xl border border-slate-600 bg-slate-900 p-4"><div className="text-[10px] font-black uppercase tracking-wider text-slate-300">{item.actionType === "update_metadata" ? "Metadata learning" : "Playlist learning"}</div><span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-black ring-1 ${learningTone(item.mode)}`}>{item.mode}</span><div className="mt-2 text-xs text-slate-200">{item.measured} målt · {item.averageLiftPct ?? "–"}% snitt-lift</div></div>)}
         </div>
       </section>
