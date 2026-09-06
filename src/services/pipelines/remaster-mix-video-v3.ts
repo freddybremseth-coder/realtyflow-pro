@@ -7,14 +7,13 @@ import * as path from "path";
 import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
-import { buildRemasterMixGlobalAssOverlay } from "./remaster-mix-video-compat";
+import { buildRemasterMixGlobalAssOverlay, buildVisualConcatFile } from "./remaster-mix-video-compat";
 import { ZENECO_PRESENTED_PNG_BASE64 } from "./zeneco-brand-asset";
 
 const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
-const STATIC_INPUT_FPS = 1;
 const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
 
 export interface RemasterMixVideoV3Input {
@@ -213,27 +212,15 @@ export function buildSponsorEnableExpression(durationSeconds: number, sponsorInt
   return windows.length ? windows.join("+") : "0";
 }
 
-export function buildLoopedVisualFilter(
-  imageCount: number,
-  assPath: string | null,
-  logoInputIndex: number | null = null,
-  zenEcoLogoInputIndex: number | null = null,
-  sponsorIntervalMinutes = 10,
-  durationSeconds = 30 * 60,
+function appendBrandingFilters(
+  parts: string[],
+  currentInput: string,
+  logoInputIndex: number | null,
+  zenEcoLogoInputIndex: number | null,
+  sponsorIntervalMinutes: number,
+  durationSeconds: number,
 ) {
-  if (!Number.isInteger(imageCount) || imageCount < 2) throw new Error("At least two images are required.");
-  const parts: string[] = [];
-  for (let index = 0; index < imageCount; index += 1) {
-    parts.push(
-      `[${index}:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1,fps=${FPS}[v${index}]`,
-    );
-  }
-  const inputs = Array.from({ length: imageCount }, (_, index) => `[v${index}]`).join("");
-  parts.push(`${inputs}concat=n=${imageCount}:v=1:a=0[slideshow]`);
-  if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
-  else parts.push("[slideshow]null[texted]");
-
-  let current = "texted";
+  let current = currentInput;
   if (logoInputIndex !== null) {
     parts.push(`[${logoInputIndex}:v]scale=240:-1:force_original_aspect_ratio=decrease[remaster_logo]`);
     parts.push(`[${current}][remaster_logo]overlay=x=W-w-38:y=H-h-28:eof_action=repeat:shortest=0[with_remaster]`);
@@ -255,7 +242,62 @@ export function buildLoopedVisualFilter(
       current = "with_sponsor";
     }
   }
+  return current;
+}
 
+export function buildLoopedVisualFilter(
+  imageCount: number,
+  assPath: string | null,
+  logoInputIndex: number | null = null,
+  zenEcoLogoInputIndex: number | null = null,
+  sponsorIntervalMinutes = 10,
+  durationSeconds = 30 * 60,
+) {
+  if (!Number.isInteger(imageCount) || imageCount < 2) throw new Error("At least two images are required.");
+  const parts: string[] = [];
+  for (let index = 0; index < imageCount; index += 1) {
+    parts.push(
+      `[${index}:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1,fps=${FPS}[v${index}]`,
+    );
+  }
+  const inputs = Array.from({ length: imageCount }, (_, index) => `[v${index}]`).join("");
+  parts.push(`${inputs}concat=n=${imageCount}:v=1:a=0[slideshow]`);
+  if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
+  else parts.push("[slideshow]null[texted]");
+
+  const current = appendBrandingFilters(
+    parts,
+    "texted",
+    logoInputIndex,
+    zenEcoLogoInputIndex,
+    sponsorIntervalMinutes,
+    durationSeconds,
+  );
+  parts.push(`[${current}]format=yuv420p[vout]`);
+  return parts.join(";");
+}
+
+export function buildConcatVisualFilter(
+  assPath: string | null,
+  logoInputIndex: number | null = null,
+  zenEcoLogoInputIndex: number | null = null,
+  sponsorIntervalMinutes = 10,
+  durationSeconds = 30 * 60,
+) {
+  const parts: string[] = [
+    `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
+  ];
+  if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
+  else parts.push("[slideshow]null[texted]");
+
+  const current = appendBrandingFilters(
+    parts,
+    "texted",
+    logoInputIndex,
+    zenEcoLogoInputIndex,
+    sponsorIntervalMinutes,
+    durationSeconds,
+  );
   parts.push(`[${current}]format=yuv420p[vout]`);
   return parts.join(";");
 }
@@ -280,6 +322,9 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
     }
 
     const segmentDuration = expectedDuration / imagePaths.length;
+    const concatPath = path.join(workingDirectory, "visuals.ffconcat");
+    await fs.writeFile(concatPath, buildVisualConcatFile(imagePaths, segmentDuration), "utf8");
+
     let assPath: string | null = null;
     if (input.zenEcoHomesEnabled) {
       assPath = path.join(workingDirectory, "overlay.ass");
@@ -299,35 +344,30 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
       : null;
 
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v3.mp4");
-    const visualInputs = imagePaths.flatMap((imagePath) => [
-      "-loop", "1",
-      "-framerate", String(STATIC_INPUT_FPS),
-      "-t", segmentDuration.toFixed(3),
-      "-i", imagePath,
-    ]);
 
-    // Branding images are static. Feed each logo to FFmpeg once and let overlay's
-    // eof_action=repeat hold that single decoded/scaled frame for the full mix.
-    // Looping logo inputs for 30 minutes needlessly re-decodes and re-scales them
-    // and was the remaining hotspot exposed by the V3 runtime integration test.
+    // The concat demuxer is the proven single-pass path used by the integration
+    // contract. It decodes each property still once and carries its timestamp
+    // forward for the requested segment duration instead of running 12+ looped
+    // image decoders in parallel for the entire long-form render.
     const logoInput = logoPath ? ["-framerate", "1", "-i", logoPath] : [];
     const zenEcoLogoInput = zenEcoLogoPath ? ["-framerate", "1", "-i", zenEcoLogoPath] : [];
 
-    const logoInputIndex = logoPath ? imagePaths.length : null;
-    const zenEcoLogoInputIndex = zenEcoLogoPath ? imagePaths.length + (logoPath ? 1 : 0) : null;
-    const audioIndex = imagePaths.length + (logoPath ? 1 : 0) + (zenEcoLogoPath ? 1 : 0);
+    const logoInputIndex = logoPath ? 1 : null;
+    const zenEcoLogoInputIndex = zenEcoLogoPath ? 1 + (logoPath ? 1 : 0) : null;
+    const audioIndex = 1 + (logoPath ? 1 : 0) + (zenEcoLogoPath ? 1 : 0);
 
     await input.onProgress?.(18, "rendering_visuals_v3");
     await runFFmpeg(binary, [
       "-hide_banner",
       "-progress", "pipe:2",
       "-nostats",
-      ...visualInputs,
+      "-f", "concat",
+      "-safe", "0",
+      "-i", concatPath,
       ...logoInput,
       ...zenEcoLogoInput,
       "-i", input.audioPath,
-      "-filter_complex", buildLoopedVisualFilter(
-        imagePaths.length,
+      "-filter_complex", buildConcatVisualFilter(
         assPath,
         logoInputIndex,
         zenEcoLogoInputIndex,
@@ -359,6 +399,7 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
 
     await input.onProgress?.(82, "video_ready_v3");
     for (const imagePath of imagePaths) await fs.unlink(imagePath).catch(() => undefined);
+    await fs.unlink(concatPath).catch(() => undefined);
     if (assPath) await fs.unlink(assPath).catch(() => undefined);
     if (logoPath) await fs.unlink(logoPath).catch(() => undefined);
     if (zenEcoLogoPath) await fs.unlink(zenEcoLogoPath).catch(() => undefined);
