@@ -25,7 +25,9 @@ import {
   addRemasterLongFormToPlaylist,
   createRemasterTopLevelComment,
   ensureRemasterLongFormPlaylist,
+  isRemasterYouTubeReconnectRequired,
   uploadRemasterLongFormFile,
+  verifyRemasterLongFormYouTubeConnection,
 } from "@/services/integrations/remaster-youtube-longform";
 
 const LEASE_SECONDS = 1800;
@@ -156,11 +158,13 @@ async function completeJob(job: MixJobRow, videoId: string, youtubeUrl: string) 
 async function failJob(job: MixJobRow, error: unknown, retryable: boolean) {
   const supabase = getSupabase();
   const message = error instanceof Error ? error.message : String(error);
-  const code = /youtube/i.test(message)
-    ? "YOUTUBE_LONGFORM_FAILED"
-    : /ffmpeg|render|audio|visual/i.test(message)
-      ? "MIX_RENDER_FAILED"
-      : "MIX_WORKER_FAILED";
+  const code = isRemasterYouTubeReconnectRequired(error)
+    ? "YOUTUBE_RECONNECT_REQUIRED"
+    : /youtube/i.test(message)
+      ? "YOUTUBE_LONGFORM_FAILED"
+      : /ffmpeg|render|audio|visual/i.test(message)
+        ? "MIX_RENDER_FAILED"
+        : "MIX_WORKER_FAILED";
   const { error: failError } = await supabase.rpc("fail_remaster_mix_job", {
     p_job_id: job.id,
     p_lease_token: job.lease_token,
@@ -243,6 +247,9 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
   };
 
   try {
+    await report(2, "verifying_youtube_connection");
+    await verifyRemasterLongFormYouTubeConnection();
+
     await report(4, "building_crossfade_audio");
     audio = await buildRemasterMixAudio(
       tracks.map((track) => ({
@@ -294,15 +301,16 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     const tags = buildMixTags(job.style);
 
     await report(87, "preparing_youtube_upload");
-    await markUploadStarting(job);
-    uploadStarted = true;
-
     const upload = await uploadRemasterLongFormFile({
       videoPath: video.videoPath,
       title: job.title,
       description,
       tags,
       privacyStatus: mixPrivacy(),
+      onReadyToInsert: async () => {
+        await markUploadStarting(job);
+        uploadStarted = true;
+      },
     });
 
     // Persist the verified video before optional enrichment. Playlist/comment
@@ -351,7 +359,10 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
   } catch (error) {
     // Once a YouTube upload has started, never auto-retry the whole job: an
     // interrupted response can be ambiguous and a retry could duplicate video.
-    await failJob(job, error, !uploadStarted);
+    // A reconnect-required failure is also terminal until an operator repairs
+    // OAuth, otherwise the recovery loop would repeatedly rerender the mix.
+    const reconnectRequired = isRemasterYouTubeReconnectRequired(error);
+    await failJob(job, error, !uploadStarted && !reconnectRequired);
     throw error;
   } finally {
     clearInterval(heartbeatTimer);
