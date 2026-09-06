@@ -105,7 +105,9 @@ jobs:
         shell: bash
         run: |
           set +e
-          npm run build > build.log 2>&1
+          # CI needs slightly more heap during Next.js type validation than the
+          # production build script. Keep this override local to GitHub Actions.
+          node --max-old-space-size=5120 node_modules/next/dist/bin/next build > build.log 2>&1
           status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
           tail -n 80 build.log
