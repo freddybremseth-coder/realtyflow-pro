@@ -1,0 +1,24 @@
+<svg width="640" height="250" viewBox="0 0 640 250" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="638" height="248" rx="26" fill="#FFFFFF" fill-opacity="0.94" stroke="#E6E2D8" stroke-width="2"/>
+  <text x="320" y="47" text-anchor="middle" font-family="Arial, DejaVu Sans, sans-serif" font-size="25" font-weight="500" fill="#626262" letter-spacing="1.4">Presented by</text>
+  <g transform="translate(42, 63) scale(0.88)">
+    <g transform="translate(0, 0) scale(0.8)">
+      <path d="M70 20 L20 60 V120 H60" stroke="#1A2B45" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M70 20 L120 60 V90" stroke="#1A2B45" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M70 35 L40 60 V100 H100 V80" stroke="#C5A065" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <rect x="55" y="70" width="30" height="30" stroke="#1A2B45" stroke-width="3" fill="none"/>
+      <line x1="70" y1="70" x2="70" y2="100" stroke="#1A2B45" stroke-width="3"/>
+      <line x1="55" y1="85" x2="85" y2="85" stroke="#1A2B45" stroke-width="3"/>
+      <path d="M120 120 Q125 60 110 30" stroke="#7D9D7C" stroke-width="4" stroke-linecap="round" fill="none"/>
+      <path d="M110 30 Q130 20 140 35" stroke="#7D9D7C" stroke-width="4" fill="none"/>
+      <path d="M110 30 Q135 40 135 55" stroke="#7D9D7C" stroke-width="4" fill="none"/>
+      <path d="M110 30 Q90 20 85 35" stroke="#7D9D7C" stroke-width="4" fill="none"/>
+      <path d="M110 30 Q110 10 120 5" stroke="#7D9D7C" stroke-width="4" fill="none"/>
+      <path d="M10 110 Q50 100 70 120 T130 130" stroke="#1A2B45" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <path d="M30 120 Q60 135 90 125 T140 120" stroke="#C5A065" stroke-width="4" stroke-linecap="round" fill="none"/>
+    </g>
+    <text x="135" y="70" font-family="Arial, DejaVu Sans, sans-serif" font-weight="700" font-size="40" fill="#1A2B45" letter-spacing="2">ZEN<tspan fill="#C5A065">ECO</tspan>HOMES</text>
+    <text x="137" y="101" font-family="Arial, DejaVu Sans, sans-serif" font-weight="500" font-size="14" fill="#C5A065" letter-spacing="1">REAL ESTATE COSTA BLANCA</text>
+  </g>
+  <text x="320" y="224" text-anchor="middle" font-family="Arial, DejaVu Sans, sans-serif" font-size="18" fill="#1A2B45" letter-spacing="0.8">zenecohomes.com</text>
+</svg>
