@@ -13,6 +13,7 @@ const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
+const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
 
 export interface RemasterMixVideoV3Input {
   audioPath: string;
@@ -162,7 +163,8 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
         zenEcoHomesEnabled: true,
       }), "utf8");
     }
-    const logoPath = await downloadLogo(input.logoUrl, workingDirectory);
+    const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
+    const logoPath = await downloadLogo(logoUrl, workingDirectory);
 
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v3.mp4");
     const visualInputs = imagePaths.flatMap((imagePath) => [
