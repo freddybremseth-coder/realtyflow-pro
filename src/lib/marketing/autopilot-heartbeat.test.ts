@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { summarizeMarketingAutopilotHeartbeat } from "./autopilot-heartbeat";
 
 describe("Marketing Autopilot heartbeat", () => {
@@ -7,10 +8,10 @@ describe("Marketing Autopilot heartbeat", () => {
       { brandId: "zeneco", channel: "facebook", publications: [{ publicationId: "p1", error: null }] },
       { brandId: "donaanna", channel: "instagram", skipped: true, reason: "time slot" },
     ]);
-    expect(result.status).toBe("success");
-    expect(result.publicationResults).toBe(1);
-    expect(result.skipped).toBe(1);
-    expect(result.brands).toEqual(["donaanna", "zeneco"]);
+    assert.equal(result.status, "success");
+    assert.equal(result.publicationResults, 1);
+    assert.equal(result.skipped, 1);
+    assert.deepEqual(result.brands, ["donaanna", "zeneco"]);
   });
 
   it("marks partial when a brand or publication reports an error", () => {
@@ -18,8 +19,8 @@ describe("Marketing Autopilot heartbeat", () => {
       { brandId: "remasterfreddy", channel: "facebook", error: "generation failed" },
       { brandId: "zeneco", channel: "facebook", publications: [{ error: "publish failed" }] },
     ]);
-    expect(result.status).toBe("partial");
-    expect(result.errored).toBe(1);
-    expect(result.publicationErrors).toBe(1);
+    assert.equal(result.status, "partial");
+    assert.equal(result.errored, 1);
+    assert.equal(result.publicationErrors, 1);
   });
 });
