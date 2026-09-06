@@ -41,6 +41,21 @@ async function getVerifiedLongFormClient() {
   throw new Error("Re-Master Freddy YouTube-tilkoblingen er utløpt eller peker mot feil kanal.");
 }
 
+export function isRemasterYouTubeReconnectRequired(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ingen aktiv YouTube-kanaltilkobling|YouTube-tilkoblingen er utløpt eller peker mot feil kanal/i.test(message);
+}
+
+/**
+ * Strictly verifies the exact Re-Master Freddy channel before expensive work
+ * begins. This intentionally does not use brand aliases: a NeuralBeat token
+ * must never make the long-form Re-Master preflight pass.
+ */
+export async function verifyRemasterLongFormYouTubeConnection() {
+  const { channelId, channelTitle } = await getVerifiedLongFormClient();
+  return { channelId, channelTitle };
+}
+
 function sanitizeText(value: string, maxLength: number) {
   return String(value || "").replace(/[<>]/g, "").slice(0, maxLength).trim();
 }
@@ -64,6 +79,9 @@ function sanitizeTags(tags: string[]) {
 /**
  * Streams an MP4 from disk to YouTube. This avoids Buffering a 1–3 hour video
  * in Node memory. The connected Re-Master channel is verified before upload.
+ * `onReadyToInsert` runs only after that verification and immediately before
+ * videos.insert, so durable duplicate-upload protection is not armed by an
+ * OAuth failure that happened before any upload request was made.
  */
 export async function uploadRemasterLongFormFile(input: {
   videoPath: string;
@@ -71,6 +89,7 @@ export async function uploadRemasterLongFormFile(input: {
   description: string;
   tags: string[];
   privacyStatus?: PrivacyStatus;
+  onReadyToInsert?: () => Promise<void>;
 }) {
   const file = await stat(input.videoPath);
   if (!file.isFile() || file.size < 1024 * 1024) throw new Error("Long-form MP4 is missing or unexpectedly small.");
@@ -80,6 +99,8 @@ export async function uploadRemasterLongFormFile(input: {
   const safeDescription = sanitizeText(input.description, 4900);
   const safeTags = sanitizeTags(input.tags);
   const privacyStatus = input.privacyStatus || "private";
+
+  if (input.onReadyToInsert) await input.onReadyToInsert();
 
   const upload = await client.videos.insert({
     part: ["snippet", "status"],
