@@ -26,6 +26,38 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+async function recordMetricsHeartbeat(supabase: ReturnType<typeof getSupabase>, status: string, details: Record<string, unknown>) {
+  if (!supabase) return;
+  try {
+    await supabase.from("automation_logs").insert({
+      action: "marketing_growth_metrics",
+      agent_name: "nexus_marketing_growth_metrics_cron",
+      status,
+      details,
+    });
+  } catch {
+    // Observability is best-effort and must never break metrics collection.
+  }
+}
+
+function compactChannelResult(brandId: string, channel: string, value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  return {
+    brandId,
+    channel,
+    success: row.success !== false,
+    candidates: Number(row.candidates ?? 0),
+    synced: Number(row.synced ?? 0),
+    skipped: Number(row.skipped ?? 0),
+    failed: Number(row.failed ?? 0),
+    observations: Number(row.observations ?? 0),
+    learningRefreshed: row.learningRefreshed === true,
+    rulesWritten: Number(row.rulesWritten ?? 0),
+    error: row.success === false ? String(row.error ?? "unknown metrics error").slice(0, 500) : null,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const unauthorized = await requireNexusSchedulerApi(request);
   if (unauthorized) return unauthorized;
@@ -47,7 +79,10 @@ export async function GET(request: NextRequest) {
     .select("brand_id,status,autonomy_mode,metadata")
     .eq("status", "active")
     .eq("autonomy_mode", "controlled_auto");
-  if (plansError) return NextResponse.json({ error: plansError.message }, { status: 500 });
+  if (plansError) {
+    await recordMetricsHeartbeat(supabase, "error", { stage: "plans", error: plansError.message.slice(0, 500) });
+    return NextResponse.json({ error: plansError.message }, { status: 500 });
+  }
 
   const brands: Array<Record<string, unknown>> = [];
   for (const plan of plans ?? []) {
@@ -114,8 +149,29 @@ export async function GET(request: NextRequest) {
     brands.push(brandResult);
   }
 
+  const channelResults = brands.flatMap((brand) => {
+    const brandId = String(brand.brandId ?? "");
+    return ["instagram", "facebook"]
+      .map((channel) => compactChannelResult(brandId, channel, brand[channel]))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  });
+  const failedChannels = channelResults.filter((row) => !row.success || row.failed > 0);
+  const successfulChannels = channelResults.filter((row) => row.success && row.failed === 0);
+  const status = channelResults.length > 0 && successfulChannels.length === 0 ? "error" : failedChannels.length > 0 ? "partial" : "success";
+
+  await recordMetricsHeartbeat(supabase, status, {
+    config: { days, limit, minAgeHours, learningMinObservations, timeZone },
+    brand_count: brands.length,
+    channel_count: channelResults.length,
+    synced: channelResults.reduce((sum, row) => sum + row.synced, 0),
+    observations: channelResults.reduce((sum, row) => sum + row.observations, 0),
+    failed_channels: failedChannels.length,
+    channel_results: channelResults,
+  });
+
   return NextResponse.json({
-    success: true,
+    success: status !== "error",
+    status,
     config: { days, limit, minAgeHours, learningMinObservations, timeZone, excludedBrands: Array.from(EXCLUDED_BRANDS) },
     brands,
   });
