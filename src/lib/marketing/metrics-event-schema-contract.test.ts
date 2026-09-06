@@ -1,6 +1,7 @@
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
 import { MARKETING_EVENT_TYPES } from "@/lib/marketing/events";
 
 const migration = fs.readFileSync(
@@ -11,13 +12,13 @@ const migration = fs.readFileSync(
 describe("marketing event database contract", () => {
   it("allows every canonical Marketing Growth OS event type", () => {
     for (const eventType of MARKETING_EVENT_TYPES) {
-      expect(migration).toContain(`'${eventType}'::text`);
+      assert.ok(migration.includes(`'${eventType}'::text`));
     }
   });
 
   it("keeps metrics_snapshot explicitly constrained rather than disabling validation", () => {
-    expect(migration).toContain("add constraint marketing_events_event_type_check");
-    expect(migration).toContain("'metrics_snapshot'::text");
-    expect(migration).not.toContain("drop column");
+    assert.ok(migration.includes("add constraint marketing_events_event_type_check"));
+    assert.ok(migration.includes("'metrics_snapshot'::text"));
+    assert.equal(migration.includes("drop column"), false);
   });
 });
