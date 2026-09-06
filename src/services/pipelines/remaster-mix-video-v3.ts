@@ -14,6 +14,7 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
 const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
+const DEFAULT_ZENECO_LOGO_URL = "https://realtyflow.chatgenius.pro/brand-logos/zeneco.png";
 
 export interface RemasterMixVideoV3Input {
   audioPath: string;
@@ -24,6 +25,7 @@ export interface RemasterMixVideoV3Input {
   ctaText?: string | null;
   zenEcoHomesEnabled: boolean;
   logoUrl?: string | null;
+  zenEcoLogoUrl?: string | null;
   audioDurationSeconds?: number | null;
   onProgress?: (progress: number, step: string) => void | Promise<void>;
 }
@@ -92,16 +94,16 @@ async function downloadVisuals(urls: string[], workingDirectory: string) {
   return imagePaths;
 }
 
-async function downloadLogo(url: string | null | undefined, workingDirectory: string) {
+async function downloadLogo(url: string | null | undefined, workingDirectory: string, filename: string) {
   if (!url) return null;
-  const target = path.join(workingDirectory, "remaster-logo.png");
+  const target = path.join(workingDirectory, filename);
   try {
     await downloadImage(url, target);
     const stat = await fs.stat(target);
     if (stat.size <= 1024) throw new Error("Logo file is unexpectedly small.");
     return target;
   } catch (error) {
-    console.warn("[RemasterMixVideoV3] Logo skipped:", error instanceof Error ? error.message : error);
+    console.warn(`[RemasterMixVideoV3] ${filename} skipped:`, error instanceof Error ? error.message : error);
     await fs.unlink(target).catch(() => undefined);
     return null;
   }
@@ -111,7 +113,25 @@ function escapeAssFilterPath(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
-export function buildLoopedVisualFilter(imageCount: number, assPath: string | null, logoInputIndex: number | null = null) {
+export function buildSponsorEnableExpression(durationSeconds: number, sponsorIntervalMinutes: number) {
+  const duration = Math.max(1, durationSeconds);
+  const interval = Math.max(5, sponsorIntervalMinutes || 10) * 60;
+  const windows: string[] = [];
+  for (let start = interval; start < duration; start += interval) {
+    const end = Math.min(duration, start + 10);
+    windows.push(`between(t,${start.toFixed(3)},${end.toFixed(3)})`);
+  }
+  return windows.length ? windows.join("+") : "0";
+}
+
+export function buildLoopedVisualFilter(
+  imageCount: number,
+  assPath: string | null,
+  logoInputIndex: number | null = null,
+  zenEcoLogoInputIndex: number | null = null,
+  sponsorIntervalMinutes = 10,
+  durationSeconds = 30 * 60,
+) {
   if (!Number.isInteger(imageCount) || imageCount < 2) throw new Error("At least two images are required.");
   const parts: string[] = [];
   for (let index = 0; index < imageCount; index += 1) {
@@ -124,12 +144,24 @@ export function buildLoopedVisualFilter(imageCount: number, assPath: string | nu
   if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
   else parts.push("[slideshow]null[texted]");
 
+  let current = "texted";
   if (logoInputIndex !== null) {
-    parts.push(`[${logoInputIndex}:v]scale=240:-1:force_original_aspect_ratio=decrease[logo]`);
-    parts.push("[texted][logo]overlay=x=W-w-38:y=H-h-28:eof_action=repeat:shortest=0,format=yuv420p[vout]");
-  } else {
-    parts.push("[texted]format=yuv420p[vout]");
+    parts.push(`[${logoInputIndex}:v]scale=240:-1:force_original_aspect_ratio=decrease[remaster_logo]`);
+    parts.push(`[${current}][remaster_logo]overlay=x=W-w-38:y=H-h-28:eof_action=repeat:shortest=0[with_remaster]`);
+    current = "with_remaster";
   }
+
+  if (zenEcoLogoInputIndex !== null) {
+    const enable = buildSponsorEnableExpression(durationSeconds, sponsorIntervalMinutes);
+    parts.push(`[${zenEcoLogoInputIndex}:v]split=2[zen_persistent_src][zen_sponsor_src]`);
+    parts.push("[zen_persistent_src]scale=280:-1:force_original_aspect_ratio=decrease[zen_persistent]");
+    parts.push("[zen_sponsor_src]scale=700:-1:force_original_aspect_ratio=decrease[zen_sponsor]");
+    parts.push(`[${current}][zen_persistent]overlay=x=38:y=H-h-28:eof_action=repeat:shortest=0[with_zen]`);
+    parts.push(`[with_zen][zen_sponsor]overlay=x=(W-w)/2:y=(H-h)/2:enable='${enable}':eof_action=repeat:shortest=0[with_sponsor]`);
+    current = "with_sponsor";
+  }
+
+  parts.push(`[${current}]format=yuv420p[vout]`);
   return parts.join(";");
 }
 
@@ -163,8 +195,13 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
         zenEcoHomesEnabled: true,
       }), "utf8");
     }
+
     const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
-    const logoPath = await downloadLogo(logoUrl, workingDirectory);
+    const logoPath = await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png");
+    const zenEcoLogoUrl = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || DEFAULT_ZENECO_LOGO_URL;
+    const zenEcoLogoPath = input.zenEcoHomesEnabled
+      ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png")
+      : null;
 
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v3.mp4");
     const visualInputs = imagePaths.flatMap((imagePath) => [
@@ -179,16 +216,32 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
       "-t", expectedDuration.toFixed(3),
       "-i", logoPath,
     ] : [];
+    const zenEcoLogoInput = zenEcoLogoPath ? [
+      "-loop", "1",
+      "-framerate", "1",
+      "-t", expectedDuration.toFixed(3),
+      "-i", zenEcoLogoPath,
+    ] : [];
+
     const logoInputIndex = logoPath ? imagePaths.length : null;
-    const audioIndex = imagePaths.length + (logoPath ? 1 : 0);
+    const zenEcoLogoInputIndex = zenEcoLogoPath ? imagePaths.length + (logoPath ? 1 : 0) : null;
+    const audioIndex = imagePaths.length + (logoPath ? 1 : 0) + (zenEcoLogoPath ? 1 : 0);
 
     await input.onProgress?.(18, "rendering_visuals_v3");
     await runFFmpeg(binary, [
       "-hide_banner",
       ...visualInputs,
       ...logoInput,
+      ...zenEcoLogoInput,
       "-i", input.audioPath,
-      "-filter_complex", buildLoopedVisualFilter(imagePaths.length, assPath, logoInputIndex),
+      "-filter_complex", buildLoopedVisualFilter(
+        imagePaths.length,
+        assPath,
+        logoInputIndex,
+        zenEcoLogoInputIndex,
+        input.sponsorIntervalMinutes,
+        expectedDuration,
+      ),
       "-map", "[vout]",
       "-map", `${audioIndex}:a:0`,
       "-t", expectedDuration.toFixed(3),
@@ -212,6 +265,7 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
     for (const imagePath of imagePaths) await fs.unlink(imagePath).catch(() => undefined);
     if (assPath) await fs.unlink(assPath).catch(() => undefined);
     if (logoPath) await fs.unlink(logoPath).catch(() => undefined);
+    if (zenEcoLogoPath) await fs.unlink(zenEcoLogoPath).catch(() => undefined);
 
     const stat = await fs.stat(videoPath);
     await input.onProgress?.(85, "video_verified_v3");
