@@ -22,6 +22,7 @@ export interface RemasterMixVideoV3Input {
   sponsorIntervalMinutes: number;
   ctaText?: string | null;
   zenEcoHomesEnabled: boolean;
+  logoUrl?: string | null;
   audioDurationSeconds?: number | null;
   onProgress?: (progress: number, step: string) => void | Promise<void>;
 }
@@ -90,11 +91,26 @@ async function downloadVisuals(urls: string[], workingDirectory: string) {
   return imagePaths;
 }
 
+async function downloadLogo(url: string | null | undefined, workingDirectory: string) {
+  if (!url) return null;
+  const target = path.join(workingDirectory, "remaster-logo.png");
+  try {
+    await downloadImage(url, target);
+    const stat = await fs.stat(target);
+    if (stat.size <= 1024) throw new Error("Logo file is unexpectedly small.");
+    return target;
+  } catch (error) {
+    console.warn("[RemasterMixVideoV3] Logo skipped:", error instanceof Error ? error.message : error);
+    await fs.unlink(target).catch(() => undefined);
+    return null;
+  }
+}
+
 function escapeAssFilterPath(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
-export function buildLoopedVisualFilter(imageCount: number, assPath: string | null) {
+export function buildLoopedVisualFilter(imageCount: number, assPath: string | null, logoInputIndex: number | null = null) {
   if (!Number.isInteger(imageCount) || imageCount < 2) throw new Error("At least two images are required.");
   const parts: string[] = [];
   for (let index = 0; index < imageCount; index += 1) {
@@ -104,8 +120,15 @@ export function buildLoopedVisualFilter(imageCount: number, assPath: string | nu
   }
   const inputs = Array.from({ length: imageCount }, (_, index) => `[v${index}]`).join("");
   parts.push(`${inputs}concat=n=${imageCount}:v=1:a=0[slideshow]`);
-  if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}',format=yuv420p[vout]`);
-  else parts.push("[slideshow]format=yuv420p[vout]");
+  if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
+  else parts.push("[slideshow]null[texted]");
+
+  if (logoInputIndex !== null) {
+    parts.push(`[${logoInputIndex}:v]scale=240:-1:force_original_aspect_ratio=decrease[logo]`);
+    parts.push("[texted][logo]overlay=x=W-w-38:y=H-h-28:eof_action=repeat:shortest=0,format=yuv420p[vout]");
+  } else {
+    parts.push("[texted]format=yuv420p[vout]");
+  }
   return parts.join(";");
 }
 
@@ -139,6 +162,7 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
         zenEcoHomesEnabled: true,
       }), "utf8");
     }
+    const logoPath = await downloadLogo(input.logoUrl, workingDirectory);
 
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v3.mp4");
     const visualInputs = imagePaths.flatMap((imagePath) => [
@@ -147,14 +171,22 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
       "-t", segmentDuration.toFixed(3),
       "-i", imagePath,
     ]);
-    const audioIndex = imagePaths.length;
+    const logoInput = logoPath ? [
+      "-loop", "1",
+      "-framerate", "1",
+      "-t", expectedDuration.toFixed(3),
+      "-i", logoPath,
+    ] : [];
+    const logoInputIndex = logoPath ? imagePaths.length : null;
+    const audioIndex = imagePaths.length + (logoPath ? 1 : 0);
 
     await input.onProgress?.(18, "rendering_visuals_v3");
     await runFFmpeg(binary, [
       "-hide_banner",
       ...visualInputs,
+      ...logoInput,
       "-i", input.audioPath,
-      "-filter_complex", buildLoopedVisualFilter(imagePaths.length, assPath),
+      "-filter_complex", buildLoopedVisualFilter(imagePaths.length, assPath, logoInputIndex),
       "-map", "[vout]",
       "-map", `${audioIndex}:a:0`,
       "-t", expectedDuration.toFixed(3),
@@ -177,6 +209,7 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
     await input.onProgress?.(82, "video_ready_v3");
     for (const imagePath of imagePaths) await fs.unlink(imagePath).catch(() => undefined);
     if (assPath) await fs.unlink(assPath).catch(() => undefined);
+    if (logoPath) await fs.unlink(logoPath).catch(() => undefined);
 
     const stat = await fs.stat(videoPath);
     await input.onProgress?.(85, "video_verified_v3");
