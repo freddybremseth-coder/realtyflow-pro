@@ -14,7 +14,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-test("ASS overlay contains CTA without duplicate sponsor branding", () => {
+test("ASS overlay carries Re-Master and ZenEcoHomes branding without image inputs", () => {
   const overlay = buildRemasterMixAssOverlay({
     durationSeconds: 12.5,
     sponsorSlide: true,
@@ -22,13 +22,14 @@ test("ASS overlay contains CTA without duplicate sponsor branding", () => {
     zenEcoHomesEnabled: true,
   });
 
-  assert.match(overlay, /ZenEcoHomes\.com/);
+  assert.match(overlay, /RE-MASTER FREDDY/);
+  assert.match(overlay, /Presented by ZenEcoHomes\.com/);
   assert.match(overlay, /Dreaming of a home in Spain/);
-  assert.doesNotMatch(overlay, /Presented by ZenEcoHomes\.com/);
   assert.doesNotMatch(overlay, /drawtext/);
+  assert.doesNotMatch(overlay, /\.png/i);
 });
 
-test("global ASS overlay schedules recurring CTA while image lockup owns sponsor branding", () => {
+test("global ASS overlay keeps persistent branding and schedules recurring sponsor CTA", () => {
   const overlay = buildRemasterMixGlobalAssOverlay({
     durationSeconds: 1300,
     sponsorIntervalMinutes: 10,
@@ -36,12 +37,13 @@ test("global ASS overlay schedules recurring CTA while image lockup owns sponsor
     zenEcoHomesEnabled: true,
   });
 
-  assert.match(overlay, /ZenEcoHomes\.com/);
+  assert.match(overlay, /RE-MASTER FREDDY/);
+  assert.match(overlay, /Presented by ZenEcoHomes\.com/);
   assert.match(overlay, /0:10:00\.00/);
   assert.match(overlay, /0:20:00\.00/);
   assert.match(overlay, /Explore Costa Blanca/);
-  assert.doesNotMatch(overlay, /Presented by ZenEcoHomes\.com/);
   assert.doesNotMatch(overlay, /drawtext/);
+  assert.doesNotMatch(overlay, /\.png/i);
 });
 
 test("visual concat manifest uses durations and repeats final frame", () => {
@@ -52,7 +54,7 @@ test("visual concat manifest uses durations and repeats final frame", () => {
   assert.doesNotMatch(manifest, /segment-\d+\.ts/);
 });
 
-test("production ffmpeg-static build can render ASS overlays", async () => {
+test("production ffmpeg-static build can render branded ASS overlays", async () => {
   assert.ok(ffmpegPath, "ffmpeg-static did not provide a binary path");
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-ass-overlay-test-"));
   const assPath = path.join(dir, "overlay.ass");
@@ -88,7 +90,7 @@ test("production ffmpeg-static build can render ASS overlays", async () => {
   }
 });
 
-test("production ffmpeg-static can build a single-pass slideshow MP4 without TS segments", async () => {
+test("production ffmpeg-static can build a single-pass branded slideshow MP4 without TS segments", async () => {
   assert.ok(ffmpegPath, "ffmpeg-static did not provide a binary path");
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-single-pass-test-"));
   const imagePaths = [0, 1, 2].map((index) => path.join(dir, `visual-${index}.jpg`));
