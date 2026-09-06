@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { start } from "workflow/api";
 import { requireAdminApi } from "@/lib/api-admin";
+import {
+  isRemasterYouTubeReconnectRequired,
+  verifyRemasterLongFormYouTubeConnection,
+} from "@/services/integrations/remaster-youtube-longform";
 import { remasterMixProductionV2 } from "@/workflows/remaster-mix-production-v2";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +14,8 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 const bodySchema = z.object({ id: z.string().uuid() }).strict();
+const REMASTER_YOUTUBE_RECONNECT_URL =
+  "/api/oauth/google?brand_id=remasterfreddy&service=youtube&return_to=%2Fadmin";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -75,6 +81,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "This mix reached its retry limit and requires manual review.", code: "MIX_RETRY_LIMIT_REACHED" },
       { status: 409 },
+    );
+  }
+
+  try {
+    await verifyRemasterLongFormYouTubeConnection();
+  } catch (error) {
+    if (isRemasterYouTubeReconnectRequired(error)) {
+      return NextResponse.json(
+        {
+          error: "Re-Master Freddy YouTube må kobles til på nytt før produksjonen kan starte.",
+          code: "YOUTUBE_RECONNECT_REQUIRED",
+          reconnectUrl: REMASTER_YOUTUBE_RECONNECT_URL,
+        },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "YouTube preflight failed.",
+        code: "YOUTUBE_PREFLIGHT_FAILED",
+      },
+      { status: 503 },
     );
   }
 
