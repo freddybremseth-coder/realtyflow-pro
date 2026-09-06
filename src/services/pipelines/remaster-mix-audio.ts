@@ -5,6 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import { pipeline } from "stream/promises";
 import { Readable } from "stream";
+import { createClient } from "@supabase/supabase-js";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 
 export interface RemasterMixAudioTrack {
@@ -20,6 +21,75 @@ export interface RemasterMixAudioResult {
   durationSeconds: number;
 }
 
+type StableSongCandidate = {
+  id: string;
+  name: string | null;
+  file_url: string | null;
+  brand: string | null;
+  updated_at?: string | null;
+};
+
+export function isEphemeralAirtableUrl(url: string | null | undefined) {
+  return /(^|\.)airtableusercontent\.com\//i.test(String(url || ""));
+}
+
+export function isPermanentSupabaseAudioUrl(url: string | null | undefined) {
+  const value = String(url || "");
+  return /\.supabase\.co\/storage\/v1\/object\//i.test(value);
+}
+
+function normalizeTitle(value: string) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+export function chooseStableSongCandidate(
+  track: Pick<RemasterMixAudioTrack, "id" | "title">,
+  candidates: StableSongCandidate[],
+) {
+  const stable = candidates.filter((candidate) => isPermanentSupabaseAudioUrl(candidate.file_url));
+  const sameId = stable.find((candidate) => candidate.id === track.id);
+  if (sameId) return sameId;
+
+  const normalizedTrackTitle = normalizeTitle(track.title);
+  return stable
+    .filter((candidate) => normalizeTitle(candidate.name || "") === normalizedTrackTitle)
+    .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0] || null;
+}
+
+async function resolveStableAudioUrl(track: RemasterMixAudioTrack): Promise<string | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+
+  const supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const byId = await supabase
+    .from("songs")
+    .select("id,name,file_url,brand,updated_at")
+    .eq("id", track.id)
+    .limit(3);
+
+  const titleMatches = await supabase
+    .from("songs")
+    .select("id,name,file_url,brand,updated_at")
+    .eq("name", track.title)
+    .in("brand", ["remasterfreddy", "neural-beat", "neuralbeat"])
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
+  const candidates = [
+    ...((byId.data || []) as StableSongCandidate[]),
+    ...((titleMatches.data || []) as StableSongCandidate[]),
+  ];
+  return chooseStableSongCandidate(track, candidates)?.file_url || null;
+}
+
 async function downloadToFile(url: string, destination: string) {
   if (url.startsWith("/") || url.startsWith("file://")) {
     await fs.copyFile(url.replace(/^file:\/\//, ""), destination);
@@ -28,9 +98,27 @@ async function downloadToFile(url: string, destination: string) {
 
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok || !response.body) {
-    throw new Error(`Mix audio download failed (${response.status})`);
+    const error = new Error(`Mix audio download failed (${response.status})`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
   await pipeline(Readable.fromWeb(response.body as any), fsSync.createWriteStream(destination));
+}
+
+async function downloadTrackWithStableFallback(track: RemasterMixAudioTrack, destination: string) {
+  try {
+    await downloadToFile(track.audioUrl, destination);
+    return track.audioUrl;
+  } catch (error) {
+    const stableUrl = await resolveStableAudioUrl(track);
+    if (!stableUrl || stableUrl === track.audioUrl) throw error;
+
+    console.warn(
+      `[RemasterMixAudio] Replacing stale audio source for "${track.title}" with permanent Supabase Storage URL.`,
+    );
+    await downloadToFile(stableUrl, destination);
+    return stableUrl;
+  }
 }
 
 function runFFmpeg(binary: string, args: string[]) {
@@ -89,9 +177,9 @@ export function buildTargetDurationArgs(inputPath: string, outputPath: string, t
 
 /**
  * Downloads selected tracks, produces one natural chained-crossfade mix, then
- * normalizes that mix to the requested long-form duration. Production is
- * currently guarded to 30-minute jobs, so the backwards-compatible default is
- * 1800 seconds until 60/90/120/180-minute production is explicitly enabled.
+ * normalizes that mix to the requested long-form duration. Stale legacy
+ * Airtable attachment URLs are recovered from an exact permanent Supabase
+ * Storage copy (same id or same title) before the job is failed.
  */
 export async function buildRemasterMixAudio(
   tracks: RemasterMixAudioTrack[],
@@ -115,7 +203,7 @@ export async function buildRemasterMixAudio(
   try {
     for (let index = 0; index < tracks.length; index += 1) {
       const target = path.join(workingDirectory, `track-${String(index).padStart(2, "0")}.mp3`);
-      await downloadToFile(tracks[index].audioUrl, target);
+      await downloadTrackWithStableFallback(tracks[index], target);
       trackPaths.push(target);
     }
 
