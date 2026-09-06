@@ -36,9 +36,9 @@ describe("Re-Master promotion source", () => {
   it("respects channel and cooldown", () => {
     const now = Date.parse("2026-09-05T12:00:00Z");
     const picked = pickRemasterPromotionSource([
-      source({ id: "recent", last_planned_at: "2026-09-01T00:00:00Z" }),
-      source({ id: "wrong-channel", source_id: "song-2", recommended_channels: ["instagram"], last_planned_at: null }),
-      source({ id: "eligible", source_id: "song-3", last_planned_at: "2026-07-01T00:00:00Z" }),
+      source({ id: "recent", title: "Recent Signal", last_planned_at: "2026-09-01T00:00:00Z" }),
+      source({ id: "wrong-channel", source_id: "song-2", title: "Wrong Channel Signal", recommended_channels: ["instagram"], last_planned_at: null }),
+      source({ id: "eligible", source_id: "song-3", title: "Eligible Signal", last_planned_at: "2026-07-01T00:00:00Z" }),
     ], "facebook", now, 14);
     assert.equal(picked?.id, "eligible");
   });
