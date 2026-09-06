@@ -1,7 +1,7 @@
-import type { RemasterMixVideoV3Input, RemasterMixVideoV3Result } from "./remaster-mix-video-v3";
+import type { RemasterMixVideoV4Input, RemasterMixVideoV4Result } from "./remaster-mix-video-v4";
 
-export type RemasterMixVideoInput = RemasterMixVideoV3Input;
-export type RemasterMixVideoResult = RemasterMixVideoV3Result;
+export type RemasterMixVideoInput = RemasterMixVideoV4Input;
+export type RemasterMixVideoResult = RemasterMixVideoV4Result;
 
 export {
   buildRemasterMixAssOverlay,
@@ -10,6 +10,6 @@ export {
 } from "./remaster-mix-video-compat";
 
 export {
-  renderRemasterLongFormMixV3 as renderRemasterLongFormMix,
-  cleanupRemasterLongFormMixV3 as cleanupRemasterLongFormMix,
-} from "./remaster-mix-video-v3";
+  renderRemasterLongFormMixV4 as renderRemasterLongFormMix,
+  cleanupRemasterLongFormMixV4 as cleanupRemasterLongFormMix,
+} from "./remaster-mix-video-v4";

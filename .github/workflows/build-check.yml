@@ -26,4 +26,6 @@ jobs:
       - name: Build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
-        run: npm run build
+        # GitHub's type-validation phase exceeds the package script's 4 GB heap.
+        # Keep the larger heap local to CI so production/Vercel stays unchanged.
+        run: node --max-old-space-size=5120 node_modules/next/dist/bin/next build

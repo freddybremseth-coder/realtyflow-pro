@@ -7,32 +7,29 @@ import { promisify } from "node:util";
 import test from "node:test";
 import ffmpegPath from "ffmpeg-static";
 import {
-  buildLoopedVisualFilter,
-  renderRemasterLongFormMixV3,
-  cleanupRemasterLongFormMixV3,
-} from "./remaster-mix-video-v3";
+  buildConcatVisualFilterV4,
+  renderRemasterLongFormMixV4,
+  cleanupRemasterLongFormMixV4,
+} from "./remaster-mix-video-v4";
 
 const execFileAsync = promisify(execFile);
 
-test("V3 filter graph burns Re-Master and ZenEcoHomes overlays into output", () => {
-  const filter = buildLoopedVisualFilter(12, "/tmp/overlay.ass", 12, 13, 10, 1800);
-  assert.match(filter, /\[12:v\]scale=240:-1/);
-  assert.match(filter, /overlay=x=W-w-38:y=H-h-28/);
-  assert.match(filter, /\[13:v\]split=2/);
-  assert.match(filter, /scale=320:-1/);
-  assert.match(filter, /scale=760:-1/);
-  assert.match(filter, /between\(t,600\.000,610\.000\)/);
-  assert.match(filter, /between\(t,1200\.000,1210\.000\)/);
+test("V4 filter graph burns ASS branding into the single-pass slideshow", () => {
+  const filter = buildConcatVisualFilterV4("/tmp/overlay.ass");
+  assert.match(filter, /^\[0:v\]fps=6/);
+  assert.match(filter, /scale=1920:1080/);
   assert.match(filter, /ass=filename=/);
+  assert.match(filter, /format=yuv420p\[vout\]/);
+  assert.doesNotMatch(filter, /overlay=/);
+  assert.doesNotMatch(filter, /png/i);
 });
 
-test("V3 renderer preserves full duration with embedded ZenEcoHomes Presented by PNG", async () => {
+test("V4 renderer preserves duration without PNG branding inputs", { timeout: 60_000 }, async (t) => {
   assert.ok(ffmpegPath);
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-v3-runtime-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-v4-runtime-"));
   const images: string[] = [];
   const audioPath = path.join(dir, "audio.wav");
-  const logoPath = path.join(dir, "logo.png");
-  let result: Awaited<ReturnType<typeof renderRemasterLongFormMixV3>> | null = null;
+  let result: Awaited<ReturnType<typeof renderRemasterLongFormMixV4>> | null = null;
 
   try {
     for (let i = 0; i < 12; i += 1) {
@@ -40,26 +37,26 @@ test("V3 renderer preserves full duration with embedded ZenEcoHomes Presented by
       await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i",`color=c=${i % 2 ? "white" : "black"}:s=640x360:d=0.1`,`-frames:v`,`1`,`-q:v`,`2`,`-y`,p]);
       images.push(p);
     }
-    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","testsrc2=s=400x200:d=0.1","-frames:v","1","-y",logoPath]);
-    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=3","-c:a","pcm_s16le","-y",audioPath]);
+    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=24","-c:a","pcm_s16le","-y",audioPath]);
 
-    result = await renderRemasterLongFormMixV3({
+    result = await renderRemasterLongFormMixV4({
       audioPath,
       imageUrls: images,
       title: "runtime test",
-      targetMinutes: 0.05,
+      targetMinutes: 0.4,
       sponsorIntervalMinutes: 5,
       zenEcoHomesEnabled: true,
-      logoUrl: `file://${logoPath}`,
-      audioDurationSeconds: 3,
+      ctaText: "Explore Costa Blanca at ZenEcoHomes.com",
+      audioDurationSeconds: 24,
+      abortSignal: t.signal,
     });
 
-    assert.ok(result.durationSeconds >= 2.5 && result.durationSeconds <= 3.5, `unexpected duration ${result.durationSeconds}`);
+    assert.ok(result.durationSeconds >= 23.5 && result.durationSeconds <= 24.5, `unexpected duration ${result.durationSeconds}`);
     assert.equal(result.imageCount, 12);
     const stat = await fs.stat(result.videoPath);
     assert.ok(stat.size > 1024);
   } finally {
-    if (result) await cleanupRemasterLongFormMixV3(result);
+    if (result) await cleanupRemasterLongFormMixV4(result);
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
