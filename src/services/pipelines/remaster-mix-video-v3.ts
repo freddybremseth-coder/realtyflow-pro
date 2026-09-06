@@ -8,13 +8,13 @@ import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 import { buildRemasterMixGlobalAssOverlay } from "./remaster-mix-video-compat";
+import { ZENECO_PRESENTED_PNG_BASE64 } from "./zeneco-brand-asset";
 
 const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
 const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
-const DEFAULT_ZENECO_LOGO_URL = "https://realtyflow.chatgenius.pro/brand-logos/zeneco.png";
 
 export interface RemasterMixVideoV3Input {
   audioPath: string;
@@ -109,6 +109,15 @@ async function downloadLogo(url: string | null | undefined, workingDirectory: st
   }
 }
 
+async function resolveZenEcoPresentedLogo(url: string | null | undefined, workingDirectory: string) {
+  if (url) return downloadLogo(url, workingDirectory, "zeneco-presented.png");
+  const target = path.join(workingDirectory, "zeneco-presented.png");
+  await fs.writeFile(target, Buffer.from(ZENECO_PRESENTED_PNG_BASE64, "base64"));
+  const stat = await fs.stat(target);
+  if (stat.size <= 1024) throw new Error("Embedded ZenEcoHomes sponsor logo is unexpectedly small.");
+  return target;
+}
+
 function escapeAssFilterPath(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
@@ -153,12 +162,18 @@ export function buildLoopedVisualFilter(
 
   if (zenEcoLogoInputIndex !== null) {
     const enable = buildSponsorEnableExpression(durationSeconds, sponsorIntervalMinutes);
-    parts.push(`[${zenEcoLogoInputIndex}:v]split=2[zen_persistent_src][zen_sponsor_src]`);
-    parts.push("[zen_persistent_src]scale=280:-1:force_original_aspect_ratio=decrease[zen_persistent]");
-    parts.push("[zen_sponsor_src]scale=700:-1:force_original_aspect_ratio=decrease[zen_sponsor]");
-    parts.push(`[${current}][zen_persistent]overlay=x=38:y=H-h-28:eof_action=repeat:shortest=0[with_zen]`);
-    parts.push(`[with_zen][zen_sponsor]overlay=x=(W-w)/2:y=(H-h)/2:enable='${enable}':eof_action=repeat:shortest=0[with_sponsor]`);
-    current = "with_sponsor";
+    if (enable === "0") {
+      parts.push(`[${zenEcoLogoInputIndex}:v]scale=320:-1:force_original_aspect_ratio=decrease[zen_persistent]`);
+      parts.push(`[${current}][zen_persistent]overlay=x=38:y=H-h-28:eof_action=repeat:shortest=0[with_zen]`);
+      current = "with_zen";
+    } else {
+      parts.push(`[${zenEcoLogoInputIndex}:v]split=2[zen_persistent_src][zen_sponsor_src]`);
+      parts.push("[zen_persistent_src]scale=320:-1:force_original_aspect_ratio=decrease[zen_persistent]");
+      parts.push("[zen_sponsor_src]scale=760:-1:force_original_aspect_ratio=decrease[zen_sponsor]");
+      parts.push(`[${current}][zen_persistent]overlay=x=38:y=H-h-28:eof_action=repeat:shortest=0[with_zen]`);
+      parts.push(`[with_zen][zen_sponsor]overlay=x=(W-w)/2:y=(H-h)/2:enable='${enable}':eof_action=repeat:shortest=0[with_sponsor]`);
+      current = "with_sponsor";
+    }
   }
 
   parts.push(`[${current}]format=yuv420p[vout]`);
@@ -198,9 +213,9 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
 
     const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
     const logoPath = await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png");
-    const zenEcoLogoUrl = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || DEFAULT_ZENECO_LOGO_URL;
+    const zenEcoLogoOverride = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || null;
     const zenEcoLogoPath = input.zenEcoHomesEnabled
-      ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png")
+      ? await resolveZenEcoPresentedLogo(zenEcoLogoOverride, workingDirectory)
       : null;
 
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v3.mp4");

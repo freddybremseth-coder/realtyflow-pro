@@ -14,7 +14,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-test("ASS overlay contains ZenEcoHomes branding and CTA", () => {
+test("ASS overlay contains CTA without duplicate sponsor branding", () => {
   const overlay = buildRemasterMixAssOverlay({
     durationSeconds: 12.5,
     sponsorSlide: true,
@@ -23,12 +23,12 @@ test("ASS overlay contains ZenEcoHomes branding and CTA", () => {
   });
 
   assert.match(overlay, /ZenEcoHomes\.com/);
-  assert.match(overlay, /Presented by ZenEcoHomes\.com/);
   assert.match(overlay, /Dreaming of a home in Spain/);
+  assert.doesNotMatch(overlay, /Presented by ZenEcoHomes\.com/);
   assert.doesNotMatch(overlay, /drawtext/);
 });
 
-test("global ASS overlay schedules persistent branding and recurring sponsor CTA", () => {
+test("global ASS overlay schedules recurring CTA while image lockup owns sponsor branding", () => {
   const overlay = buildRemasterMixGlobalAssOverlay({
     durationSeconds: 1300,
     sponsorIntervalMinutes: 10,
@@ -40,6 +40,7 @@ test("global ASS overlay schedules persistent branding and recurring sponsor CTA
   assert.match(overlay, /0:10:00\.00/);
   assert.match(overlay, /0:20:00\.00/);
   assert.match(overlay, /Explore Costa Blanca/);
+  assert.doesNotMatch(overlay, /Presented by ZenEcoHomes\.com/);
   assert.doesNotMatch(overlay, /drawtext/);
 });
 

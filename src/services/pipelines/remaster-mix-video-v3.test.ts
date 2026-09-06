@@ -14,14 +14,19 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-test("V3 filter graph burns logo into lower-right output", () => {
-  const filter = buildLoopedVisualFilter(12, "/tmp/overlay.ass", 12);
+test("V3 filter graph burns Re-Master and ZenEcoHomes overlays into output", () => {
+  const filter = buildLoopedVisualFilter(12, "/tmp/overlay.ass", 12, 13, 10, 1800);
   assert.match(filter, /\[12:v\]scale=240:-1/);
   assert.match(filter, /overlay=x=W-w-38:y=H-h-28/);
+  assert.match(filter, /\[13:v\]split=2/);
+  assert.match(filter, /scale=320:-1/);
+  assert.match(filter, /scale=760:-1/);
+  assert.match(filter, /between\(t,600\.000,610\.000\)/);
+  assert.match(filter, /between\(t,1200\.000,1210\.000\)/);
   assert.match(filter, /ass=filename=/);
 });
 
-test("V3 renderer preserves full duration across multiple images with logo overlay", async () => {
+test("V3 renderer preserves full duration with embedded ZenEcoHomes Presented by PNG", async () => {
   assert.ok(ffmpegPath);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-v3-runtime-"));
   const images: string[] = [];
@@ -35,7 +40,7 @@ test("V3 renderer preserves full duration across multiple images with logo overl
       await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i",`color=c=${i % 2 ? "white" : "black"}:s=640x360:d=0.1`,`-frames:v`,`1`,`-q:v`,`2`,`-y`,p]);
       images.push(p);
     }
-    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=white:s=180x60:d=0.1","-frames:v","1","-y",logoPath]);
+    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","testsrc2=s=400x200:d=0.1","-frames:v","1","-y",logoPath]);
     await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=3","-c:a","pcm_s16le","-y",audioPath]);
 
     result = await renderRemasterLongFormMixV3({
@@ -44,7 +49,7 @@ test("V3 renderer preserves full duration across multiple images with logo overl
       title: "runtime test",
       targetMinutes: 0.05,
       sponsorIntervalMinutes: 5,
-      zenEcoHomesEnabled: false,
+      zenEcoHomesEnabled: true,
       logoUrl: `file://${logoPath}`,
       audioDurationSeconds: 3,
     });
