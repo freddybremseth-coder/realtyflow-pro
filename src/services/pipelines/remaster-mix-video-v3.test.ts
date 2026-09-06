@@ -26,7 +26,7 @@ test("V3 filter graph burns Re-Master and ZenEcoHomes overlays into output", () 
   assert.match(filter, /ass=filename=/);
 });
 
-test("V3 renderer preserves full duration with embedded ZenEcoHomes Presented by PNG", async () => {
+test("V3 renderer preserves duration with embedded ZenEcoHomes Presented by PNG", { timeout: 60_000 }, async () => {
   assert.ok(ffmpegPath);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-v3-runtime-"));
   const images: string[] = [];
@@ -41,20 +41,23 @@ test("V3 renderer preserves full duration with embedded ZenEcoHomes Presented by
       images.push(p);
     }
     await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","testsrc2=s=400x200:d=0.1","-frames:v","1","-y",logoPath]);
-    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=3","-c:a","pcm_s16le","-y",audioPath]);
+    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=12","-c:a","pcm_s16le","-y",audioPath]);
 
+    // Keep each static input segment at least one second. The production renderer
+    // uses 1 fps for source stills, so sub-frame test segments are invalid and can
+    // deadlock concat despite never occurring in real 30-minute jobs.
     result = await renderRemasterLongFormMixV3({
       audioPath,
       imageUrls: images,
       title: "runtime test",
-      targetMinutes: 0.05,
+      targetMinutes: 0.2,
       sponsorIntervalMinutes: 5,
       zenEcoHomesEnabled: true,
       logoUrl: `file://${logoPath}`,
-      audioDurationSeconds: 3,
+      audioDurationSeconds: 12,
     });
 
-    assert.ok(result.durationSeconds >= 2.5 && result.durationSeconds <= 3.5, `unexpected duration ${result.durationSeconds}`);
+    assert.ok(result.durationSeconds >= 11.5 && result.durationSeconds <= 12.5, `unexpected duration ${result.durationSeconds}`);
     assert.equal(result.imageCount, 12);
     const stat = await fs.stat(result.videoPath);
     assert.ok(stat.size > 1024);
