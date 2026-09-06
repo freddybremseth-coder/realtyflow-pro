@@ -10,9 +10,17 @@ import {
   buildLoopedVisualFilter,
   renderRemasterLongFormMixV3,
   cleanupRemasterLongFormMixV3,
+  remasterFfmpegRenderProgress,
 } from "./remaster-mix-video-v3";
 
 const execFileAsync = promisify(execFile);
+
+test("V3 render progress maps ffmpeg time into the 18-80 rendering window", () => {
+  assert.equal(remasterFfmpegRenderProgress(0, 1800), 18);
+  assert.equal(remasterFfmpegRenderProgress(900, 1800), 49);
+  assert.equal(remasterFfmpegRenderProgress(1800, 1800), 80);
+  assert.equal(remasterFfmpegRenderProgress(9999, 1800), 80);
+});
 
 test("V3 filter graph burns Re-Master and ZenEcoHomes overlays into output", () => {
   const filter = buildLoopedVisualFilter(12, "/tmp/overlay.ass", 12, 13, 10, 1800);
