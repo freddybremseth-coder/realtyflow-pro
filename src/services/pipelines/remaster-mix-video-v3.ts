@@ -54,6 +54,7 @@ function runFFmpeg(
     let lastReportedAt = 0;
     let lastRenderedSeconds = 0;
     let settled = false;
+    const diagnosticLines: string[] = [];
 
     const cleanup = () => {
       clearInterval(heartbeatTimer);
@@ -116,12 +117,19 @@ function runFFmpeg(
       for (const line of lines) {
         const match = line.match(/^out_time_(?:us|ms)=(\d+)$/);
         if (match) reportProgress(Number(match[1]) / 1_000_000);
+        if (/error|invalid|failed|corrupt|decode|decod|packet|mjpeg|png|image2|timestamp|non-monoton|mux|filter|conversion/i.test(line)) {
+          diagnosticLines.push(line);
+          if (diagnosticLines.length > 80) diagnosticLines.shift();
+        }
       }
     });
     child.on("error", fail);
     child.on("close", (code) => {
       if (code === 0) succeed();
-      else fail(new Error(`Long-form FFmpeg failed with code ${code}: ${stderr.slice(-2200)}`));
+      else {
+        const diagnostics = diagnosticLines.length ? `\nDiagnostics:\n${diagnosticLines.join("\n")}` : "";
+        fail(new Error(`Long-form FFmpeg failed with code ${code}.${diagnostics}\nTail:\n${stderr.slice(-3000)}`));
+      }
     });
   });
 }
