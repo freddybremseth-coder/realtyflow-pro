@@ -20,9 +20,9 @@ function assDocument(events: string[]) {
     "WrapStyle: 2", "ScaledBorderAndShadow: yes", "YCbCr Matrix: TV.709", "",
     "[V4+ Styles]",
     "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
-    "Style: Watermark,DejaVu Sans,27,&H00FFFFFF,&H000000FF,&H70000000,&H70000000,-1,0,0,0,100,100,0,0,3,0,0,9,34,34,30,1",
-    "Style: Sponsor,DejaVu Sans,58,&H00FFFFFF,&H000000FF,&H61000000,&H61000000,-1,0,0,0,100,100,0,0,3,0,0,5,30,30,20,1",
-    "Style: CTA,DejaVu Sans,30,&H00FFFFFF,&H000000FF,&H70000000,&H70000000,0,0,0,0,100,100,0,0,3,0,0,5,40,40,20,1",
+    "Style: BrandLeft,DejaVu Sans,30,&H00FFFFFF,&H000000FF,&H40000000,&H60000000,-1,0,0,0,100,100,0,0,3,0,0,1,38,38,30,1",
+    "Style: Sponsor,DejaVu Sans,60,&H00FFFFFF,&H000000FF,&H30000000,&H55000000,-1,0,0,0,100,100,0,0,3,1,0,5,30,30,20,1",
+    "Style: CTA,DejaVu Sans,34,&H00FFFFFF,&H000000FF,&H30000000,&H55000000,0,0,0,0,100,100,0,0,3,1,0,5,40,40,20,1",
     "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ...events, "",
   ].join("\n");
@@ -31,7 +31,7 @@ function assDocument(events: string[]) {
 export function buildRemasterMixAssOverlay(input: { durationSeconds: number; sponsorSlide: boolean; ctaText?: string | null; zenEcoHomesEnabled: boolean }) {
   if (!input.zenEcoHomesEnabled) return "";
   const end = assTime(input.durationSeconds);
-  const events = [`Dialogue: 0,0:00:00.00,${end},Watermark,,0,0,0,,ZenEcoHomes.com`];
+  const events = [`Dialogue: 0,0:00:00.00,${end},BrandLeft,,0,0,0,,Presented by ZenEcoHomes.com`];
   if (input.sponsorSlide) {
     events.push(`Dialogue: 1,0:00:00.00,${end},Sponsor,,0,0,0,,{\\pos(960,464)}Presented by ZenEcoHomes.com`);
     if (input.ctaText?.trim()) events.push(`Dialogue: 1,0:00:00.00,${end},CTA,,0,0,0,,{\\pos(960,594)}${escapeAssText(input.ctaText)}`);
@@ -42,10 +42,15 @@ export function buildRemasterMixAssOverlay(input: { durationSeconds: number; spo
 export function buildRemasterMixGlobalAssOverlay(input: { durationSeconds: number; sponsorIntervalMinutes: number; ctaText?: string | null; zenEcoHomesEnabled: boolean }) {
   if (!input.zenEcoHomesEnabled) return "";
   const duration = Math.max(1, input.durationSeconds);
-  const events = [`Dialogue: 0,0:00:00.00,${assTime(duration)},Watermark,,0,0,0,,ZenEcoHomes.com`];
-  const interval = Math.max(5, input.sponsorIntervalMinutes) * 60;
-  const sponsorDuration = Math.min(12, Math.max(7, interval * 0.08));
-  for (let start = 0; start < duration; start += interval) {
+  const events = [`Dialogue: 0,0:00:00.00,${assTime(duration)},BrandLeft,,0,0,0,,Presented by ZenEcoHomes.com`];
+  const intervalMinutes = Math.max(5, input.sponsorIntervalMinutes || 10);
+  const interval = intervalMinutes * 60;
+  const sponsorDuration = 10;
+
+  // The persistent lower-left sponsor line is visible throughout the mix.
+  // Full sponsor/CTA cards begin after the first interval, so 30-minute mixes
+  // show them at 10:00 and 20:00 rather than immediately at 0:00.
+  for (let start = interval; start < duration; start += interval) {
     const end = Math.min(duration, start + sponsorDuration);
     events.push(`Dialogue: 1,${assTime(start)},${assTime(end)},Sponsor,,0,0,0,,{\\pos(960,464)}Presented by ZenEcoHomes.com`);
     if (input.ctaText?.trim()) events.push(`Dialogue: 1,${assTime(start)},${assTime(end)},CTA,,0,0,0,,{\\pos(960,594)}${escapeAssText(input.ctaText)}`);
