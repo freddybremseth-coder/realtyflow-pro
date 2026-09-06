@@ -29,6 +29,7 @@ export interface RemasterMixVideoV3Input {
   zenEcoLogoUrl?: string | null;
   audioDurationSeconds?: number | null;
   onProgress?: (progress: number, step: string) => void | Promise<void>;
+  abortSignal?: AbortSignal;
 }
 
 export interface RemasterMixVideoV3Result {
@@ -44,6 +45,7 @@ function runFFmpeg(
   args: string[],
   expectedDurationSeconds: number,
   onRenderProgress?: (renderedSeconds: number) => void | Promise<void>,
+  abortSignal?: AbortSignal,
 ) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -51,6 +53,28 @@ function runFFmpeg(
     let progressBuffer = "";
     let lastReportedAt = 0;
     let lastRenderedSeconds = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      clearInterval(heartbeatTimer);
+      abortSignal?.removeEventListener("abort", handleAbort);
+    };
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+    const handleAbort = () => {
+      if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
+      fail(abortSignal?.reason instanceof Error ? abortSignal.reason : new Error("Long-form FFmpeg render aborted."));
+    };
 
     const reportProgress = (seconds: number) => {
       const now = Date.now();
@@ -75,6 +99,12 @@ function runFFmpeg(
       });
     }, 60_000);
 
+    if (abortSignal?.aborted) {
+      handleAbort();
+      return;
+    }
+    abortSignal?.addEventListener("abort", handleAbort, { once: true });
+
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
       stderr += text;
@@ -88,14 +118,10 @@ function runFFmpeg(
         if (match) reportProgress(Number(match[1]) / 1_000_000);
       }
     });
-    child.on("error", (error) => {
-      clearInterval(heartbeatTimer);
-      reject(error);
-    });
+    child.on("error", fail);
     child.on("close", (code) => {
-      clearInterval(heartbeatTimer);
-      if (code === 0) resolve();
-      else reject(new Error(`Long-form FFmpeg failed with code ${code}: ${stderr.slice(-2200)}`));
+      if (code === 0) succeed();
+      else fail(new Error(`Long-form FFmpeg failed with code ${code}: ${stderr.slice(-2200)}`));
     });
   });
 }
@@ -271,18 +297,13 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
       "-t", segmentDuration.toFixed(3),
       "-i", imagePath,
     ]);
-    const logoInput = logoPath ? [
-      "-loop", "1",
-      "-framerate", "1",
-      "-t", expectedDuration.toFixed(3),
-      "-i", logoPath,
-    ] : [];
-    const zenEcoLogoInput = zenEcoLogoPath ? [
-      "-loop", "1",
-      "-framerate", "1",
-      "-t", expectedDuration.toFixed(3),
-      "-i", zenEcoLogoPath,
-    ] : [];
+
+    // Branding images are static. Feed each logo to FFmpeg once and let overlay's
+    // eof_action=repeat hold that single decoded/scaled frame for the full mix.
+    // Looping logo inputs for 30 minutes needlessly re-decodes and re-scales them
+    // and was the remaining hotspot exposed by the V3 runtime integration test.
+    const logoInput = logoPath ? ["-framerate", "1", "-i", logoPath] : [];
+    const zenEcoLogoInput = zenEcoLogoPath ? ["-framerate", "1", "-i", zenEcoLogoPath] : [];
 
     const logoInputIndex = logoPath ? imagePaths.length : null;
     const zenEcoLogoInputIndex = zenEcoLogoPath ? imagePaths.length + (logoPath ? 1 : 0) : null;
@@ -321,7 +342,7 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
       const ratio = expectedDuration > 0 ? Math.max(0, Math.min(1, renderedSeconds / expectedDuration)) : 0;
       const progress = 18 + Math.floor(ratio * 62);
       await input.onProgress?.(Math.min(80, progress), "rendering_visuals_v3");
-    });
+    }, input.abortSignal);
 
     const measuredVideoDuration = await probeDuration(binary, videoPath);
     if (Math.abs(measuredVideoDuration - expectedDuration) > 2.5) {
