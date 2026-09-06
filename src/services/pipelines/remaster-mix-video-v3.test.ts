@@ -41,24 +41,24 @@ test("V3 renderer preserves duration with embedded ZenEcoHomes Presented by PNG"
       images.push(p);
     }
     await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","testsrc2=s=400x200:d=0.1","-frames:v","1","-y",logoPath]);
-    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=12","-c:a","pcm_s16le","-y",audioPath]);
+    await execFileAsync(ffmpegPath, ["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=24","-c:a","pcm_s16le","-y",audioPath]);
 
-    // Keep each static input segment at least one second. The production renderer
-    // uses 1 fps for source stills, so sub-frame test segments are invalid and can
-    // deadlock concat despite never occurring in real 30-minute jobs.
+    // ffmpeg-static must receive more than a single 1 fps frame per visual input.
+    // Exact 1.000-second synthetic segments can collapse concat timestamps in the
+    // production FFmpeg build; real 30-minute mixes have much longer segments.
     result = await renderRemasterLongFormMixV3({
       audioPath,
       imageUrls: images,
       title: "runtime test",
-      targetMinutes: 0.2,
+      targetMinutes: 0.4,
       sponsorIntervalMinutes: 5,
       zenEcoHomesEnabled: true,
       logoUrl: `file://${logoPath}`,
-      audioDurationSeconds: 12,
+      audioDurationSeconds: 24,
       abortSignal: t.signal,
     });
 
-    assert.ok(result.durationSeconds >= 11.5 && result.durationSeconds <= 12.5, `unexpected duration ${result.durationSeconds}`);
+    assert.ok(result.durationSeconds >= 23.5 && result.durationSeconds <= 24.5, `unexpected duration ${result.durationSeconds}`);
     assert.equal(result.imageCount, 12);
     const stat = await fs.stat(result.videoPath);
     assert.ok(stat.size > 1024);
