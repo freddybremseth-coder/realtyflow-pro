@@ -38,16 +38,66 @@ export interface RemasterMixVideoV3Result {
   fileSizeBytes: number;
 }
 
-function runFFmpeg(binary: string, args: string[]) {
+export function remasterFfmpegRenderProgress(renderedSeconds: number, durationSeconds: number) {
+  const duration = Math.max(1, Number(durationSeconds) || 1);
+  const rendered = Math.max(0, Number(renderedSeconds) || 0);
+  const ratio = Math.min(1, rendered / duration);
+  return Math.max(18, Math.min(80, Math.floor(18 + ratio * 62)));
+}
+
+function parseLastFfmpegTimeSeconds(value: string) {
+  const matches = [...value.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)];
+  const match = matches.at(-1);
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+function runFFmpeg(
+  binary: string,
+  args: string[],
+  progress?: {
+    durationSeconds: number;
+    onProgress?: (progress: number, step: string) => void | Promise<void>;
+  },
+) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
+    let lastReportedProgress = 18;
+    let lastReportedAt = 0;
+    let reportInFlight = false;
+    let progressError: unknown = null;
+
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
       if (stderr.length > 24000) stderr = stderr.slice(-24000);
+
+      if (!progress?.onProgress || progressError || reportInFlight) return;
+      const renderedSeconds = parseLastFfmpegTimeSeconds(stderr);
+      if (renderedSeconds === null) return;
+      const nextProgress = remasterFfmpegRenderProgress(renderedSeconds, progress.durationSeconds);
+      const now = Date.now();
+      if (nextProgress <= lastReportedProgress) return;
+      if (nextProgress < lastReportedProgress + 3 && now - lastReportedAt < 15000) return;
+
+      lastReportedProgress = nextProgress;
+      lastReportedAt = now;
+      reportInFlight = true;
+      Promise.resolve(progress.onProgress(nextProgress, "rendering_visuals_v3"))
+        .catch((error) => {
+          progressError = error;
+          child.kill("SIGTERM");
+        })
+        .finally(() => {
+          reportInFlight = false;
+        });
     });
     child.on("error", reject);
     child.on("close", (code) => {
+      if (progressError) {
+        reject(progressError);
+        return;
+      }
       if (code === 0) resolve();
       else reject(new Error(`Long-form FFmpeg failed with code ${code}: ${stderr.slice(-2200)}`));
     });
@@ -269,7 +319,10 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
       "-movflags", "+faststart",
       "-y",
       videoPath,
-    ]);
+    ], {
+      durationSeconds: expectedDuration,
+      onProgress: input.onProgress,
+    });
 
     const measuredVideoDuration = await probeDuration(binary, videoPath);
     if (Math.abs(measuredVideoDuration - expectedDuration) > 2.5) {
