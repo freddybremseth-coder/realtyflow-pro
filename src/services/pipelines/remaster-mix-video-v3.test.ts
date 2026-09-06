@@ -26,7 +26,7 @@ test("V3 filter graph burns Re-Master and ZenEcoHomes overlays into output", () 
   assert.match(filter, /ass=filename=/);
 });
 
-test("V3 renderer preserves duration with embedded ZenEcoHomes Presented by PNG", { timeout: 60_000 }, async () => {
+test("V3 renderer preserves duration with embedded ZenEcoHomes Presented by PNG", { timeout: 60_000 }, async (t) => {
   assert.ok(ffmpegPath);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-v3-runtime-"));
   const images: string[] = [];
@@ -55,6 +55,7 @@ test("V3 renderer preserves duration with embedded ZenEcoHomes Presented by PNG"
       zenEcoHomesEnabled: true,
       logoUrl: `file://${logoPath}`,
       audioDurationSeconds: 12,
+      abortSignal: t.signal,
     });
 
     assert.ok(result.durationSeconds >= 11.5 && result.durationSeconds <= 12.5, `unexpected duration ${result.durationSeconds}`);
