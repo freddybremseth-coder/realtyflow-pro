@@ -14,6 +14,7 @@ const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
+const STATIC_INPUT_FPS = 1;
 const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
 
 export interface RemasterMixVideoV3Input {
@@ -38,16 +39,61 @@ export interface RemasterMixVideoV3Result {
   fileSizeBytes: number;
 }
 
-function runFFmpeg(binary: string, args: string[]) {
+function runFFmpeg(
+  binary: string,
+  args: string[],
+  expectedDurationSeconds: number,
+  onRenderProgress?: (renderedSeconds: number) => void | Promise<void>,
+) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
+    let progressBuffer = "";
+    let lastReportedAt = 0;
+    let lastRenderedSeconds = 0;
+
+    const reportProgress = (seconds: number) => {
+      const now = Date.now();
+      lastRenderedSeconds = Math.max(lastRenderedSeconds, Math.min(expectedDurationSeconds, seconds));
+      if (!onRenderProgress || now - lastReportedAt < 30_000) return;
+      lastReportedAt = now;
+      Promise.resolve(onRenderProgress(lastRenderedSeconds)).catch((error) => {
+        console.warn(
+          "[RemasterMixVideoV3] FFmpeg progress callback failed:",
+          error instanceof Error ? error.message : error,
+        );
+      });
+    };
+
+    const heartbeatTimer = setInterval(() => {
+      if (!onRenderProgress) return;
+      Promise.resolve(onRenderProgress(lastRenderedSeconds)).catch((error) => {
+        console.warn(
+          "[RemasterMixVideoV3] FFmpeg heartbeat callback failed:",
+          error instanceof Error ? error.message : error,
+        );
+      });
+    }, 60_000);
+
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
       if (stderr.length > 24000) stderr = stderr.slice(-24000);
+
+      progressBuffer += text;
+      const lines = progressBuffer.split(/\r?\n/);
+      progressBuffer = lines.pop() || "";
+      for (const line of lines) {
+        const match = line.match(/^out_time_(?:us|ms)=(\d+)$/);
+        if (match) reportProgress(Number(match[1]) / 1_000_000);
+      }
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearInterval(heartbeatTimer);
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearInterval(heartbeatTimer);
       if (code === 0) resolve();
       else reject(new Error(`Long-form FFmpeg failed with code ${code}: ${stderr.slice(-2200)}`));
     });
@@ -221,7 +267,7 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v3.mp4");
     const visualInputs = imagePaths.flatMap((imagePath) => [
       "-loop", "1",
-      "-framerate", String(FPS),
+      "-framerate", String(STATIC_INPUT_FPS),
       "-t", segmentDuration.toFixed(3),
       "-i", imagePath,
     ]);
@@ -245,6 +291,8 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
     await input.onProgress?.(18, "rendering_visuals_v3");
     await runFFmpeg(binary, [
       "-hide_banner",
+      "-progress", "pipe:2",
+      "-nostats",
       ...visualInputs,
       ...logoInput,
       ...zenEcoLogoInput,
@@ -269,7 +317,11 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
       "-movflags", "+faststart",
       "-y",
       videoPath,
-    ]);
+    ], expectedDuration, async (renderedSeconds) => {
+      const ratio = expectedDuration > 0 ? Math.max(0, Math.min(1, renderedSeconds / expectedDuration)) : 0;
+      const progress = 18 + Math.floor(ratio * 62);
+      await input.onProgress?.(Math.min(80, progress), "rendering_visuals_v3");
+    });
 
     const measuredVideoDuration = await probeDuration(binary, videoPath);
     if (Math.abs(measuredVideoDuration - expectedDuration) > 2.5) {
