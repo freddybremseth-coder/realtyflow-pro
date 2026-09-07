@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   const [contactsR, inboundR, workR] = await Promise.all([
     supabase.from("contacts").select("id,name,email,brand_id,brand,pipeline_status,updated_at,last_contact,last_inbound_reply_at,next_followup,email_suppressed,do_not_contact,lost_reason").order("updated_at", { ascending: false }).limit(3000),
     supabase.from("email_messages").select("id,crm_contact_id,crm_reply_classification,received_at,created_at").eq("direction", "inbound").gte("received_at", since24).limit(1000),
-    supabase.from("work_items").select("id,status,priority,contact_id,source_type,created_at,updated_at").gte("updated_at", since7d).limit(2000),
+    supabase.from("work_items").select("id,status,priority,source_type,metadata,created_at,updated_at").gte("updated_at", since7d).limit(2000),
   ]);
   for (const result of [contactsR, inboundR, workR]) if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
 
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   const inbound = inboundR.data || [];
   const openWorkByContact = new Map<string, number>();
   for (const item of (workR.data || []) as any[]) {
-    const cid = String(item.contact_id || "");
+    const cid = String(item?.metadata?.contact_id || item?.metadata?.contactId || "");
     if (!cid || ["DONE","COMPLETED","CANCELLED"].includes(String(item.status || "").toUpperCase())) continue;
     openWorkByContact.set(cid, (openWorkByContact.get(cid) || 0) + 1);
   }
