@@ -15,7 +15,8 @@ test("property editorial migration persists raw facts plus generated JSON", () =
   for (const column of [
     "source_description",
     "floor_label",
-    "orientation_source",
+    "facing_source",
+    "usage_source",
     "amenities_no",
     "editorial_no",
     "editorial_no_approved",
@@ -33,12 +34,15 @@ test("raw feed source is preserved separately from generated Norwegian copy", ()
   assert.match(sql, /create trigger properties_preserve_feed_source/i);
   assert.match(sql, /new\.source_description := new\.description/i);
   assert.match(sql, /new\.source_description := coalesce\(old\.source_description, new\.description\)/i);
-  assert.match(sql, /property_feed_source_cache[\s\S]*source_description text[\s\S]*amenities_no text\[\][\s\S]*expires_at timestamptz/i);
+  assert.match(
+    sql,
+    /property_feed_source_cache[\s\S]*source_description text[\s\S]*amenities_no text\[\][\s\S]*facing_source text[\s\S]*usage_source text[\s\S]*expires_at timestamptz/i,
+  );
 });
 
 test("feed fact changes queue editorial work without creating a worker feedback loop", () => {
   assert.match(sql, /create trigger properties_queue_editorial_job/i);
-  assert.match(sql, /after insert or update of[\s\S]*source_description[\s\S]*description[\s\S]*price/i);
+  assert.match(sql, /after insert or update of[\s\S]*source_description[\s\S]*description[\s\S]*price[\s\S]*facing_source[\s\S]*usage_source/i);
   assert.doesNotMatch(
     sql.match(/after insert or update of[\s\S]*?on public\.properties/i)?.[0] || "",
     /editorial_no|title_no|description_no/i,
