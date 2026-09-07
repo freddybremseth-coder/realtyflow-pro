@@ -31,6 +31,7 @@ test("worker includes facing in factual input and records safe AI provenance", (
   assert.match(route, /generation_mode: usedFallback \? "template" : "ai"/);
   assert.match(route, /configured_ai_providers: providers/);
   assert.match(route, /fallback_reason: fallbackReason/);
+  assert.match(route, /ai_output_diagnostics: outputDiagnostics/);
   assert.doesNotMatch(route, /ANTHROPIC_API_KEY\s*[:=]\s*["'][^"']+["']/);
   assert.doesNotMatch(route, /GEMINI_API_KEY\s*[:=]\s*["'][^"']+["']/);
   assert.doesNotMatch(route, /OPENAI_API_KEY\s*[:=]\s*["'][^"']+["']/);
@@ -49,4 +50,15 @@ test("diagnosed generator uses the canonical repaired parser", () => {
   assert.doesNotMatch(diagnostics, /function parseEditorial\(/);
   assert.doesNotMatch(diagnostics, /function stripJsonFence\(/);
   assert.match(diagnostics, /fallbackOnInvalidResponse: true/);
+});
+
+test("invalid-output diagnostics persist structure only, never raw model text", () => {
+  assert.match(diagnostics, /summarizeInvalidPropertyEditorialOutput/);
+  assert.match(diagnostics, /top_level_keys/);
+  assert.match(diagnostics, /expected_fields/);
+  assert.match(diagnostics, /json_parseable/);
+  assert.match(diagnostics, /length: text\.length/);
+  assert.doesNotMatch(diagnostics, /raw_output\s*:/);
+  assert.doesNotMatch(diagnostics, /raw_text\s*:/);
+  assert.doesNotMatch(diagnostics, /preview\s*:/);
 });
