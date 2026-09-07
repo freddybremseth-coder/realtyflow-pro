@@ -100,6 +100,8 @@ jobs:
         run: npm run test:marketing
       - name: Instagram Growth learning tests
         run: npx tsx --test src/services/social-growth/performance-engine.test.ts src/services/social-growth/learning-ranking.test.ts src/services/social-growth/autopilot-learning-policy.test.ts
+      - name: Property editorial safety tests
+        run: npx tsx --test src/lib/realty/property-editorial-public-safety.test.ts src/lib/realty/property-editorial-quality.test.ts src/lib/realty/property-editorial-seo.test.ts src/lib/realty/property-editorial-missing-intro.test.ts
       - name: Build
         id: next_build
         shell: bash
