@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, Brain, Clock3, Flame, HelpCircle, Inbox, Loader2, MailCheck, RefreshCw, Send, ShieldOff, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AlertTriangle, ArrowRight, Brain, Clock3, Flame, HelpCircle, Inbox, KeyRound, Loader2, MailCheck, RefreshCw, Send, ShieldOff, ThumbsDown, ThumbsUp } from "lucide-react";
 
 type PropertySuggestion = { id:string; ref?:string|null; title?:string|null; price?:number|null; location?:string|null; bedrooms?:number|null; bathrooms?:number|null; primaryImage?:string|null; matchScore?:number; matchLabel?:"STRONG"|"GOOD"|"POSSIBLE"|"WEAK"; matchReasons?:string[]; matchCautions?:string[]; learningConfidence?:"high"|"medium"|"low"; matchReason?:string|null };
 type CustomerMemory = { known:string[]; avoid:string[]; evidenceCount:number; confidence:"high"|"medium"|"low" };
@@ -35,6 +35,8 @@ type Payload = {
   note?:string;
 };
 
+type PortalActionState = { status:"sending"|"sent"|"error"; message?:string };
+
 function ageLabel(minutes:number|null|undefined) {
   if (minutes == null) return "";
   if (minutes < 60) return `${minutes} min`;
@@ -60,6 +62,7 @@ export default function NexusReplyCommandCenter() {
   const [data, setData] = useState<Payload|null>(null);
   const [error, setError] = useState<string|null>(null);
   const [loading, setLoading] = useState(true);
+  const [portalActions, setPortalActions] = useState<Record<string, PortalActionState>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +79,30 @@ export default function NexusReplyCommandCenter() {
     }
   }, []);
 
+  async function sendPortalLink(reply: ImportantReply) {
+    if (!reply.contactId) return;
+    setPortalActions((current) => ({ ...current, [reply.messageId]: { status:"sending" } }));
+    try {
+      const response = await fetch("/api/portal/invite", {
+        method:"POST",
+        credentials:"same-origin",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ contactId:reply.contactId, sendInvite:true }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || `Kunne ikke sende Min side-lenke (${response.status})`);
+      setPortalActions((current) => ({
+        ...current,
+        [reply.messageId]: {
+          status:body?.emailSent ? "sent" : "error",
+          message:body?.emailSent ? "Min side-lenke sendt" : body?.emailError || "Lenken ble opprettet, men e-posten ble ikke sendt",
+        },
+      }));
+    } catch (e) {
+      setPortalActions((current) => ({ ...current, [reply.messageId]: { status:"error", message:e instanceof Error ? e.message : String(e) } }));
+    }
+  }
+
   useEffect(() => { void load(); }, [load]);
 
   return <main className="mx-auto max-w-[1400px] space-y-6 p-4 sm:p-6">
@@ -84,7 +111,7 @@ export default function NexusReplyCommandCenter() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Inbox size={16}/> Nexus Reply Command</div>
           <h1 className="mt-2 text-3xl font-black text-slate-950">Svar kundene mens de er aktive</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Hot Lead Score, svar-SLA, dokumentert kundehistorikk, AI-utkast, Next Best Question og forklarbar Next Best Property-score basert på kundens faktiske krav og tidligere feedback.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Hot Lead Score, svar-SLA, dokumentert kundehistorikk, AI-utkast, Next Best Question, forklarbar boligmatch og Min side-invitasjon når kunden er klar for en mer samlet kjøpsdialog.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">{loading ? <Loader2 size={16} className="mr-2 animate-spin"/> : <RefreshCw size={16} className="mr-2"/>}Oppdater</button>
       </div>
@@ -108,6 +135,7 @@ export default function NexusReplyCommandCenter() {
       {(data?.importantReplies ?? []).map(reply => {
         const s = sla(reply);
         const memory = reply.customerMemory;
+        const portalAction = portalActions[reply.messageId];
         return <article key={reply.messageId} className={`rounded-2xl border p-5 shadow-sm ${s.breached ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"}`}>
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 flex-1">
@@ -119,6 +147,21 @@ export default function NexusReplyCommandCenter() {
               <h3 className="mt-2 text-lg font-black text-slate-950">{reply.from.name || reply.from.email}</h3>
               <div className="mt-1 text-sm font-bold text-slate-700">{reply.subject || "Uten emne"}</div>
               {reply.summary && <p className="mt-3 text-sm leading-6 text-slate-700">{reply.summary}</p>}
+
+              {reply.contactId && <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void sendPortalLink(reply)}
+                  disabled={portalAction?.status === "sending" || portalAction?.status === "sent"}
+                  className="inline-flex items-center rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-black text-cyan-900 disabled:opacity-60"
+                  title="Sender en personlig passordfri innloggingslenke til Min side"
+                >
+                  {portalAction?.status === "sending" ? <Loader2 size={15} className="mr-2 animate-spin"/> : <KeyRound size={15} className="mr-2"/>}
+                  {portalAction?.status === "sent" ? "Min side-lenke sendt" : portalAction?.status === "sending" ? "Sender Min side…" : "Send Min side-lenke"}
+                </button>
+                {portalAction?.status === "error" && <span className="text-xs font-semibold text-rose-700">{portalAction.message}</span>}
+                {portalAction?.status === "sent" && <span className="text-xs font-semibold text-emerald-700">Kunden kan åpne boligoversikt og dialog uten midlertidig passord.</span>}
+              </div>}
 
               {memory && memory.evidenceCount > 0 && <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-700"><Brain size={15}/>Kjent om kunden</div><span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{memory.confidence} confidence · {memory.evidenceCount} signaler</span></div>
