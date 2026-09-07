@@ -10,6 +10,8 @@ type Reply = {
   from:{ name?:string|null; email:string };
   subject?:string|null;
   summary?:string|null;
+  intent?:string|null;
+  suggestedAction?:string|null;
   urgency?:string|null;
   hotLeadScore:number;
   hotLeadLabel:"HOT"|"WARM"|"ACTIVE"|"NORMAL";
@@ -60,6 +62,13 @@ type Portal = {
   customers:PortalCustomer[];
 };
 
+type NextBestAction = {
+  label:string;
+  reason:string;
+  href:string;
+  priority:"NOW"|"SOON"|"FOLLOW_UP";
+};
+
 function age(minutes:number|null|undefined) {
   if (minutes == null) return "ingen nylig aktivitet";
   if (minutes < 60) return `${minutes} min siden`;
@@ -71,6 +80,74 @@ function priorityLabel(reply: Reply) {
   if (reply.hotLeadScore >= 85) return "Svar nå";
   if (reply.hotLeadScore >= 70) return "Svar snart";
   return "Følg opp";
+}
+
+function nextBestAction(reply: Reply): NextBestAction {
+  const intent = String(reply.intent || "").toLowerCase();
+  const portalMessages = Number(reply.portal?.customerMessages24h || 0);
+  const interested = Number(reply.portal?.interested24h || 0);
+  const bestProperty = reply.suggestedProperties?.[0];
+
+  if (intent === "viewing_request") {
+    return {
+      label:"Foreslå visning",
+      reason:"Kunden har et dokumentert visningssignal. Avklar tidspunkt og bekreft aktuell bolig før interessen kjølner.",
+      href:"/nexus-os/replies",
+      priority:"NOW",
+    };
+  }
+  if (portalMessages > 0) {
+    return {
+      label:"Svar på Min side-meldingen",
+      reason:`Kunden har sendt ${portalMessages} melding${portalMessages === 1 ? "" : "er"} fra Min side siste 24 timer.`,
+      href:"/nexus-os/portal-engagement",
+      priority:"NOW",
+    };
+  }
+  if (interested > 0 && bestProperty) {
+    return {
+      label:`Følg opp ${bestProperty.ref || bestProperty.title || "interessert bolig"}`,
+      reason:`Kunden har markert bolig interessant, og beste dokumenterte match er ${bestProperty.matchScore ?? "–"}/100.`,
+      href:"/nexus-os/replies",
+      priority:reply.hotLeadScore >= 70 ? "NOW" : "SOON",
+    };
+  }
+  if (reply.hotLeadScore >= 85) {
+    return {
+      label:"Svar kunden nå",
+      reason:"Hot Lead Score er 85 eller høyere. E-postintent, aktualitet og øvrige salgssignaler tilsier rask respons.",
+      href:"/nexus-os/replies",
+      priority:"NOW",
+    };
+  }
+  if (reply.nextBestQuestion) {
+    return {
+      label:"Still neste kvalifiserende spørsmål",
+      reason:`Nexus mangler fortsatt viktig kjøperinformasjon: ${reply.nextBestQuestion}`,
+      href:"/nexus-os/replies",
+      priority:reply.hotLeadScore >= 70 ? "SOON" : "FOLLOW_UP",
+    };
+  }
+  if (bestProperty) {
+    return {
+      label:`Foreslå ${bestProperty.ref || bestProperty.title || "beste bolig"}`,
+      reason:`Dette er høyest rangerte dokumenterte boligmatch akkurat nå (${bestProperty.matchScore ?? "–"}/100).`,
+      href:"/nexus-os/replies",
+      priority:reply.hotLeadScore >= 70 ? "SOON" : "FOLLOW_UP",
+    };
+  }
+  return {
+    label:"Følg opp kunden",
+    reason:reply.suggestedAction || "Ingen sterkere handling er dokumentert ennå. Åpne Reply Command og vurder siste dialog før neste kontakt.",
+    href:"/nexus-os/replies",
+    priority:"FOLLOW_UP",
+  };
+}
+
+function actionClass(priority: NextBestAction["priority"]) {
+  if (priority === "NOW") return "border-orange-200 bg-orange-50 text-orange-950";
+  if (priority === "SOON") return "border-amber-200 bg-amber-50 text-amber-950";
+  return "border-cyan-100 bg-cyan-50 text-cyan-950";
 }
 
 export default function NexusDailyPage() {
@@ -124,7 +201,7 @@ export default function NexusDailyPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Gauge size={16}/> Nexus Daily</div>
           <h1 className="mt-2 text-3xl font-black text-slate-950">{headline}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Daglig salgsbrief basert på utsendelser, kundesvar, Hot Lead Score og dokumentert Min side-aktivitet. Aktivitet betyr nylig bruk av portalen, ikke sanntids presence.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Daglig salgsbrief basert på utsendelser, kundesvar, Hot Lead Score og dokumentert Min side-aktivitet. Hver kunde får én forklarbar Next Best Action. Aktivitet betyr nylig bruk av portalen, ikke sanntids presence.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">{loading ? <Loader2 size={16} className="mr-2 animate-spin"/> : <RefreshCw size={16} className="mr-2"/>}Oppdater</button>
       </div>
@@ -146,28 +223,37 @@ export default function NexusDailyPage() {
     <section className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
       <div className="space-y-3">
         <div className="flex items-end justify-between gap-3">
-          <div><h2 className="text-xl font-black text-slate-950">Kontakt først</h2><p className="mt-1 text-sm text-slate-500">Samme prioritering som Reply Command, inkludert begrenset Min side-boost.</p></div>
+          <div><h2 className="text-xl font-black text-slate-950">Kontakt først</h2><p className="mt-1 text-sm text-slate-500">Samme prioritering som Reply Command, inkludert begrenset Min side-boost og én forklarbar Next Best Action.</p></div>
           <Link href="/nexus-os/replies" className="text-sm font-black text-cyan-700">Åpne Reply Command <ArrowRight size={14} className="inline"/></Link>
         </div>
-        {topReplies.map((reply, index) => <article key={reply.messageId} className={`rounded-2xl border bg-white p-5 shadow-sm ${index === 0 && reply.hotLeadScore >= 85 ? "border-orange-200" : "border-slate-200"}`}>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
-                <span className={reply.hotLeadScore >= 85 ? "rounded-full bg-orange-100 px-2 py-1 text-orange-900" : "rounded-full bg-slate-100 px-2 py-1"}>{reply.hotLeadLabel} {reply.hotLeadScore}/100</span>
-                <span>{priorityLabel(reply)}</span>
-                <span>·</span><span>{age(reply.ageMinutes)}</span>
+        {topReplies.map((reply, index) => {
+          const action = nextBestAction(reply);
+          return <article key={reply.messageId} className={`rounded-2xl border bg-white p-5 shadow-sm ${index === 0 && reply.hotLeadScore >= 85 ? "border-orange-200" : "border-slate-200"}`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  <span className={reply.hotLeadScore >= 85 ? "rounded-full bg-orange-100 px-2 py-1 text-orange-900" : "rounded-full bg-slate-100 px-2 py-1"}>{reply.hotLeadLabel} {reply.hotLeadScore}/100</span>
+                  <span>{priorityLabel(reply)}</span>
+                  <span>·</span><span>{age(reply.ageMinutes)}</span>
+                </div>
+                <h3 className="mt-2 text-lg font-black text-slate-950">{reply.from.name || reply.from.email}</h3>
+                <div className="mt-1 text-sm font-bold text-slate-700">{reply.subject || "Uten emne"}</div>
+                {reply.summary && <p className="mt-2 text-sm leading-6 text-slate-600">{reply.summary}</p>}
+                <div className={`mt-3 rounded-xl border p-3 text-sm ${actionClass(action.priority)}`}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div><div className="text-[10px] font-black uppercase tracking-wider">Next Best Action · {action.priority === "NOW" ? "nå" : action.priority === "SOON" ? "snart" : "oppfølging"}</div><div className="mt-1 font-black">{action.label}</div><div className="mt-1 leading-5 opacity-80">{action.reason}</div></div>
+                    <Link href={action.href} className="shrink-0 text-xs font-black underline underline-offset-2">Åpne <ArrowRight size={12} className="inline"/></Link>
+                  </div>
+                </div>
+                {reply.portal && Number(reply.portal.priorityBoost || 0) > 0 && <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950"><b>Min side +{reply.portal.priorityBoost}:</b> {(reply.portal.reasons || []).join(" · ")}</div>}
+                {reply.nextBestQuestion && <div className="mt-2 text-sm text-violet-900"><b>Neste spørsmål:</b> {reply.nextBestQuestion}</div>}
               </div>
-              <h3 className="mt-2 text-lg font-black text-slate-950">{reply.from.name || reply.from.email}</h3>
-              <div className="mt-1 text-sm font-bold text-slate-700">{reply.subject || "Uten emne"}</div>
-              {reply.summary && <p className="mt-2 text-sm leading-6 text-slate-600">{reply.summary}</p>}
-              {reply.portal && Number(reply.portal.priorityBoost || 0) > 0 && <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950"><b>Min side +{reply.portal.priorityBoost}:</b> {(reply.portal.reasons || []).join(" · ")}</div>}
-              {reply.nextBestQuestion && <div className="mt-2 text-sm text-violet-900"><b>Neste spørsmål:</b> {reply.nextBestQuestion}</div>}
+              <div className="shrink-0 lg:text-right">
+                {reply.suggestedProperties?.[0] && <div className="rounded-xl bg-slate-50 p-3 text-sm"><div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Beste bolig nå</div><div className="mt-1 font-black text-slate-900">{reply.suggestedProperties[0].ref || reply.suggestedProperties[0].title}</div><div className="mt-1 text-slate-500">{reply.suggestedProperties[0].matchScore ?? "–"}/100 · {reply.suggestedProperties[0].location || ""}</div></div>}
+              </div>
             </div>
-            <div className="shrink-0 lg:text-right">
-              {reply.suggestedProperties?.[0] && <div className="rounded-xl bg-slate-50 p-3 text-sm"><div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Beste bolig nå</div><div className="mt-1 font-black text-slate-900">{reply.suggestedProperties[0].ref || reply.suggestedProperties[0].title}</div><div className="mt-1 text-slate-500">{reply.suggestedProperties[0].matchScore ?? "–"}/100 · {reply.suggestedProperties[0].location || ""}</div></div>}
-            </div>
-          </div>
-        </article>)}
+          </article>;
+        })}
         {!loading && communications && topReplies.length === 0 && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">Ingen ubesvarte aktive kundesvar akkurat nå.</div>}
       </div>
 
