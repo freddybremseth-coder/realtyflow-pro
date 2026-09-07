@@ -23,13 +23,15 @@ test("source refresh parses full RedSP facts and applies them through service RP
   assert.match(route, /extractRedspEditorialSourceRows\(xmlText\)/);
   assert.match(route, /property_feed_source_cache/);
   assert.match(route, /\.rpc\("apply_property_feed_source_facts"/);
-  assert.doesNotMatch(route, /\.from\("properties"\)\.(?:insert|upsert)/);
+  assert.doesNotMatch(route, /\.from\("properties"\)\.(?:insert|upsert|delete)/);
 });
 
 test("source refresh records sanitized operational result metadata", () => {
   assert.match(route, /source_facts_refreshed_at/);
   assert.match(route, /source_facts_parsed/);
   assert.match(route, /source_facts_updated/);
+  assert.match(route, /source_facts_status/);
+  assert.match(route, /source_facts_consecutive_empty_runs/);
   assert.match(route, /source_facts_last_error/);
   assert.match(route, /slice\(0, 1000\)/);
 });
@@ -42,5 +44,17 @@ test("zero-row diagnostics record structure only and never persist raw XML", () 
   assert.match(route, /has_property_tag/);
   assert.match(route, /has_ref_tag/);
   assert.match(route, /has_desc_tag/);
+  assert.match(route, /property_self_closing/);
+  assert.match(route, /property_attribute_names/);
+  assert.match(route, /feed_version/);
   assert.doesNotMatch(route, /source_facts_raw_xml|xml_preview|response_body/);
+});
+
+test("empty Kyero wrapper is classified without mutating property inventory", () => {
+  assert.match(route, /function looksLikeEmptyFeed/);
+  assert.match(route, /diagnostics\.response_bytes < 2048/);
+  assert.match(route, /diagnostics\.property_self_closing/);
+  assert.match(route, /status: "empty_feed"/);
+  assert.match(route, /Property source returned an empty Kyero feed/);
+  assert.match(route, /continue;/);
 });
