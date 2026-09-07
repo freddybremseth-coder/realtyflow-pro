@@ -36,11 +36,21 @@ export interface EditorialSourceData {
   epc: string;
   price: number | null;
   rawDescription: string;
+  facing: string;
   usage: string;
 }
 
 function normalizeText(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function normalizeLookup(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .trim();
 }
 
 function toFiniteNumber(value: unknown): number | null {
@@ -55,12 +65,62 @@ function stringArray(value: unknown): string[] {
   ).sort((left, right) => left.localeCompare(right, "nb"));
 }
 
+function knownFeatureNo(value: string): string | null {
+  const item = normalizeLookup(value);
+  if (!item) return null;
+  if (/^(air conditioning|aircondition|a\/c|aire acondicionado|climatizacion)$/.test(item)) return "Aircondition";
+  if (/^(private pool|piscina privada|privat basseng)$/.test(item)) return "Privat basseng";
+  if (/^(communal pool|community pool|shared pool|piscina comunitaria|fellesbasseng)$/.test(item)) return "Fellesbasseng";
+  if (/^(pool|piscina|basseng)$/.test(item)) return "Basseng";
+  if (/^(private parking|parking privado|aparcamiento privado|privat parkering)$/.test(item)) return "Privat parkering";
+  if (/^(parking|aparcamiento|parkering)$/.test(item)) return "Parkering";
+  if (/^(garage|garaje|garasje)$/.test(item)) return "Garasje";
+  if (/^(lift|elevator|ascensor|heis)$/.test(item)) return "Heis";
+  if (/^(terrace|terraza|terrasse)$/.test(item)) return "Terrasse";
+  if (/^(balcony|balcon|balkong)$/.test(item)) return "Balkong";
+  if (/^(garden|jardin|hage)$/.test(item)) return "Hage";
+  if (/^(sea view|sea views|vistas al mar|havutsikt)$/.test(item)) return "Havutsikt";
+  if (/^solarium$/.test(item)) return "Solarium";
+  if (/^(south facing|south-facing|orientacion sur|sur|sorvendt)$/.test(item)) return "Sørvendt";
+  if (/^(north facing|north-facing|orientacion norte|norte|nordvendt)$/.test(item)) return "Nordvendt";
+  if (/^(east facing|east-facing|orientacion este|este|ostvendt)$/.test(item)) return "Østvendt";
+  if (/^(west facing|west-facing|orientacion oeste|oeste|vestvendt)$/.test(item)) return "Vestvendt";
+  return null;
+}
+
+function facingNo(value: string): string | null {
+  const item = normalizeLookup(value);
+  const map: Record<string, string> = {
+    south: "Sørvendt",
+    sur: "Sørvendt",
+    "south facing": "Sørvendt",
+    north: "Nordvendt",
+    norte: "Nordvendt",
+    "north facing": "Nordvendt",
+    east: "Østvendt",
+    este: "Østvendt",
+    "east facing": "Østvendt",
+    west: "Vestvendt",
+    oeste: "Vestvendt",
+    "west facing": "Vestvendt",
+    southeast: "Sørøstvendt",
+    sureste: "Sørøstvendt",
+    southwest: "Sørvestvendt",
+    suroeste: "Sørvestvendt",
+    northeast: "Nordøstvendt",
+    noreste: "Nordøstvendt",
+    northwest: "Nordvestvendt",
+    noroeste: "Nordvestvendt",
+  };
+  return map[item] || knownFeatureNo(value);
+}
+
 export function propertyEditorialSource(property: Record<string, unknown>): EditorialSourceData {
   const features = stringArray(property.amenities_no ?? property.features);
-  if (property.pool === true && !features.some((feature) => /basseng|pool/i.test(feature))) {
+  if (property.pool === true && !features.some((feature) => /basseng|pool|piscina/i.test(feature))) {
     features.push("Basseng");
   }
-  if (property.garage === true && !features.some((feature) => /garasje|garage|parkering/i.test(feature))) {
+  if (property.garage === true && !features.some((feature) => /garasje|garage|garaje|parkering/i.test(feature))) {
     features.push("Garasje");
   }
 
@@ -76,6 +136,7 @@ export function propertyEditorialSource(property: Record<string, unknown>): Edit
     price: toFiniteNumber(property.price),
     rawDescription:
       normalizeText(property.source_description ?? property.raw_description ?? property.description ?? property.description_no),
+    facing: normalizeText(property.facing_source ?? property.facing ?? property.orientation),
     usage: normalizeText(property.usage_source ?? property.property_use ?? property.suitable_for),
   };
 }
@@ -93,6 +154,7 @@ export function computePropertyEditorialSourceHash(property: Record<string, unkn
     epc: source.epc,
     price: source.price,
     raw_description: source.rawDescription,
+    facing: source.facing,
     usage: source.usage,
   });
   return createHash("sha256").update(canonical).digest("hex");
@@ -127,7 +189,11 @@ export function buildPropertyEditorialFallback(
   if (source.m2) introParts.push(`Oppgitt areal ${source.m2} m².`);
   if (source.epc !== "Ikke angitt") introParts.push(`Energiklasse ${source.epc}.`);
 
-  const bullets = [...source.features].slice(0, 5);
+  const bullets = Array.from(
+    new Set(source.features.map(knownFeatureNo).filter((item): item is string => Boolean(item))),
+  );
+  const translatedFacing = facingNo(source.facing);
+  if (translatedFacing && !bullets.includes(translatedFacing)) bullets.push(translatedFacing);
   if (source.floor !== "Ikke angitt" && !bullets.some((item) => item.toLowerCase().includes("etasje"))) {
     bullets.push(`Etasje/plan: ${source.floor}`);
   }
@@ -135,7 +201,7 @@ export function buildPropertyEditorialFallback(
   return {
     headline_no: headline,
     intro_no: introParts.join(" "),
-    bullets_no: bullets.slice(0, 5),
+    bullets_no: bullets.slice(0, 6),
     orientation_no: source.usage || "Ikke angitt",
     source_hash: sourceHash,
     generated_at: now.toISOString(),
@@ -183,6 +249,7 @@ function buildUserPrompt(source: EditorialSourceData): string {
   return `Boligtype: ${source.type}          Soverom: ${source.beds ?? "Ikke angitt"}     Bad: ${source.baths ?? "Ikke angitt"}
 Område/by: ${source.area}          Oppgitt areal: ${source.m2 ?? "Ikke angitt"} m² Etasje/plan: ${source.floor}
 Fasiliteter: ${source.features.length > 0 ? source.features.join(", ") : "Ikke angitt"}    Energiklasse: ${source.epc}  Pris: ${source.price ? `€${source.price}` : "Ikke angitt"}
+Solretning/himmelretning (kilde): ${source.facing || "Ikke angitt"}
 Aktuell bruk (kilde): ${source.usage || "Ikke angitt"}
 Beskrivelse (kilde): ${source.rawDescription || "Ikke angitt"}`;
 }
