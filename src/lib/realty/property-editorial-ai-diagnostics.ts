@@ -35,6 +35,19 @@ export interface DiagnosedPropertyEditorialResult {
   outputDiagnostics?: PropertyEditorialOutputDiagnostics;
 }
 
+const PUBLIC_PLACEHOLDER = /\b(?:ukjent|ikke angitt|ikke spesifisert|ikke oppgitt|mangler)\b/i;
+const PUBLIC_PROMOTIONAL = /\b(?:drømmebolig|fantastisk|unik|eksklusiv|spektakulær|perfekt|førsteklasses|attraktiv(?:t|e)?|mest populære|svært populær|fredelig)\b/i;
+
+type ParsedEditorial = NonNullable<ReturnType<typeof parsePropertyEditorialAiResponse>>;
+
+export function isPropertyEditorialPublicCopySafe(editorial: ParsedEditorial): boolean {
+  const publicText = [editorial.headline_no, editorial.intro_no, ...editorial.bullets_no]
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Boolean(publicText) && !PUBLIC_PLACEHOLDER.test(publicText) && !PUBLIC_PROMOTIONAL.test(publicText);
+}
+
 function buildUserPrompt(property: Record<string, unknown>) {
   const source = propertyEditorialSource(property);
   return `Boligtype: ${source.type}          Soverom: ${source.beds ?? "Ikke angitt"}     Bad: ${source.baths ?? "Ikke angitt"}
@@ -42,7 +55,8 @@ Område/by: ${source.area}          Oppgitt areal: ${source.m2 ?? "Ikke angitt"}
 Fasiliteter: ${source.features.length > 0 ? source.features.join(", ") : "Ikke angitt"}    Energiklasse: ${source.epc}  Pris: ${source.price ? `€${source.price}` : "Ikke angitt"}
 Solretning/himmelretning (kilde): ${source.facing || "Ikke angitt"}
 Aktuell bruk (kilde): ${source.usage || "Ikke angitt"}
-Beskrivelse (kilde): ${source.rawDescription || "Ikke angitt"}`;
+Beskrivelse (kilde): ${source.rawDescription || "Ikke angitt"}
+Viktig for publisert tekst: Utelat fakta som mangler. Ikke skriv plassholderfraser som "Ikke angitt", "ukjent", "ikke spesifisert", "ikke oppgitt" eller "mangler" i headline_no, intro_no eller bullets_no. Unngå reklameord som "førsteklasses", "attraktiv", "mest populære", "svært populær" og "fredelig".`;
 }
 
 const RESPONSE_SCHEMA = {
@@ -174,13 +188,15 @@ export async function generatePropertyEditorialNoDiagnosed(
       temperature: 0.2,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      validateResponse: (text) =>
-        parsePropertyEditorialAiResponseWithFallbackIntro(text, fallback.intro_no) !== null,
+      validateResponse: (text) => {
+        const candidate = parsePropertyEditorialAiResponseWithFallbackIntro(text, fallback.intro_no);
+        return candidate !== null && isPropertyEditorialPublicCopySafe(candidate);
+      },
       fallbackOnInvalidResponse: true,
     });
 
     const parsed = parsePropertyEditorialAiResponseWithFallbackIntro(raw, fallback.intro_no);
-    if (!parsed) {
+    if (!parsed || !isPropertyEditorialPublicCopySafe(parsed)) {
       return {
         editorial: fallback,
         usedFallback: true,
