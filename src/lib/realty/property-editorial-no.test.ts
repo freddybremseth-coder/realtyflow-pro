@@ -14,10 +14,11 @@ const property = {
   location: "Finestrat",
   built_area: 92,
   floor_label: "2",
-  amenities_no: ["Privat parkering", "Aircondition", "Sørvendt"],
+  amenities_no: ["Privat parkering", "Aircondition"],
   energy_rating: "B",
   price: 349000,
   source_description: "Moderne leilighet med to soverom og sørvendt terrasse.",
+  facing_source: "South",
 };
 
 test("source hash is stable for insignificant whitespace but changes with factual input", () => {
@@ -33,7 +34,7 @@ test("source hash is stable for insignificant whitespace but changes with factua
   );
 });
 
-test("source payload preserves factual feed fields", () => {
+test("source payload preserves factual feed fields and separates facing from usage", () => {
   const source = propertyEditorialSource(property);
   assert.equal(source.type, "Leilighet");
   assert.equal(source.beds, 2);
@@ -43,23 +44,33 @@ test("source payload preserves factual feed fields", () => {
   assert.equal(source.floor, "2");
   assert.equal(source.epc, "B");
   assert.equal(source.price, 349000);
+  assert.equal(source.facing, "South");
+  assert.equal(source.usage, "");
   assert.match(source.rawDescription, /sørvendt terrasse/);
 });
 
-test("fallback is neutral and never invents an orientation", () => {
+test("fallback may expose documented facing as a bullet but never invents use orientation", () => {
   const fallback = buildPropertyEditorialFallback(
-    { ...property, orientation_source: undefined },
+    property,
     new Date("2026-09-07T10:00:00.000Z"),
   );
   assert.equal(fallback.orientation_no, "Ikke angitt");
+  assert.ok(fallback.bullets_no.includes("Sørvendt"));
   assert.equal(fallback.generated_at, "2026-09-07T10:00:00.000Z");
   assert.equal(fallback.model, "template-v1");
   assert.doesNotMatch(
     `${fallback.headline_no} ${fallback.intro_no} ${fallback.bullets_no.join(" ")}`,
     /drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt/i,
   );
+  assert.match(fallback.intro_no, /Oppgitt areal 92 m²/);
   assert.match(fallback.intro_no, /Energiklasse B/);
   assert.doesNotMatch(fallback.intro_no, /høy energieffektivitet|god energieffektivitet/i);
+});
+
+test("explicit usage may populate orientation_no without using compass facing", () => {
+  const fallback = buildPropertyEditorialFallback({ ...property, usage_source: "Feriebolig" });
+  assert.equal(fallback.orientation_no, "Feriebolig");
+  assert.ok(fallback.bullets_no.includes("Sørvendt"));
 });
 
 test("existing editorial is reused only while every source fact is unchanged", () => {
