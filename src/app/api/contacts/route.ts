@@ -3,6 +3,7 @@ import { getRequestAccessContext } from '@/lib/api-admin';
 import { hasPermission } from '@/lib/access-control';
 import { normalizeCustomerPipelineStatus } from '@/lib/customer-updates';
 import { buildRevenueEventDedupeKey, insertRevenueEvent } from '@/lib/revenue/events';
+import { recordPipelineTransition } from '@/lib/revenue/pipeline-transition';
 import { filterContactsByView, normalizeContactForClient, normalizeIncomingContact } from './lifecycle';
 import { getContactsSupabase } from './supabase-client';
 
@@ -230,6 +231,19 @@ export async function PATCH(request: NextRequest) {
   const nextStatus = normalizeCustomerPipelineStatus(data?.pipeline_status || updates.pipeline_status || previous?.pipeline_status);
   const contactId = String(data?.id || id);
   const brandId = String(data?.brand_id || data?.brand || previous?.brand_id || previous?.brand || '').trim();
+  const occurredAt = new Date().toISOString();
+
+  if (previousStatus !== nextStatus) {
+    await recordPipelineTransition(supabase, {
+      contactId,
+      brandId,
+      previousStatus,
+      nextStatus,
+      occurredAt,
+      actorType: 'human',
+      createdBy: 'api/contacts',
+    }).catch(() => undefined);
+  }
 
   if (brandId && previousStatus !== 'QUALIFIED' && nextStatus === 'QUALIFIED') {
     await insertRevenueEvent(supabase, {
@@ -241,7 +255,7 @@ export async function PATCH(request: NextRequest) {
       sourceType: 'pipeline_status',
       sourceId: contactId,
       actorType: 'human',
-      occurredAt: new Date().toISOString(),
+      occurredAt,
       dedupeKey: buildRevenueEventDedupeKey(['crm-qualified', brandId, contactId]),
       metadata: { previous_status: previousStatus, next_status: nextStatus },
       createdBy: 'api/contacts',
@@ -261,7 +275,7 @@ export async function PATCH(request: NextRequest) {
       sourceId: contactId,
       actorType: 'human',
       revenueImpactEur: salePrice,
-      occurredAt: new Date().toISOString(),
+      occurredAt,
       dedupeKey: buildRevenueEventDedupeKey(['crm-won', brandId, contactId]),
       metadata: {
         previous_status: previousStatus,
