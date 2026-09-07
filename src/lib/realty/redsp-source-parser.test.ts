@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { extractRedspEditorialSourceRows } from "./redsp-source-parser";
 
-test("extracts full multilingual description and editorial source facts", () => {
+test("extracts full multilingual description and distinct facing/usage source facts", () => {
   const xml = `
     <root>
       <property>
@@ -13,6 +13,7 @@ test("extracts full multilingual description and editorial source facts", () => 
         </desc>
         <floor>2</floor>
         <orientation>South</orientation>
+        <property_use>Holiday home</property_use>
         <tags>
           <tag>Aircondition</tag>
           <tag>Privat parkering</tag>
@@ -28,7 +29,8 @@ test("extracts full multilingual description and editorial source facts", () => 
   assert.match(rows[0]?.source_description || "", /Linje to/);
   assert.deepEqual(rows[0]?.amenities_no, ["Aircondition", "Privat parkering"]);
   assert.equal(rows[0]?.floor_label, "2");
-  assert.equal(rows[0]?.orientation_source, "South");
+  assert.equal(rows[0]?.facing_source, "South");
+  assert.equal(rows[0]?.usage_source, "Holiday home");
 });
 
 test("falls back to english description and ignores properties without ref", () => {
@@ -45,4 +47,6 @@ test("falls back to english description and ignores properties without ref", () 
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.ref, "SP200");
   assert.equal(rows[0]?.source_description, "English source description");
+  assert.equal(rows[0]?.facing_source, null);
+  assert.equal(rows[0]?.usage_source, null);
 });
