@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { buildCustomerMemory, propertyFeedbackScore, shouldAvoidProperty } from "@/lib/nexus-customer-memory";
+import { buildCustomerMemory, shouldAvoidProperty } from "@/lib/nexus-customer-memory";
+import { scorePropertyV2 } from "@/lib/nexus-property-match-v2";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -138,13 +139,16 @@ export async function GET(request: NextRequest) {
       const contactId = String(row.crm_contact_id || "");
       const contact = contactById.get(contactId) || null;
       const feedback = feedbackByContact.get(contactId) || [];
-      const memory = buildCustomerMemory({ notes: contact?.notes, interactions: contact?.interactions, recentConversation: historyByContact.get(contactId) || [], feedback, propertiesById: propertyById });
+      const history = historyByContact.get(contactId) || [];
+      const memory = buildCustomerMemory({ notes: contact?.notes, interactions: contact?.interactions, recentConversation: history, feedback, propertiesById: propertyById });
       const draft = draftByMessage.get(String(row.id)) ?? null;
+      const conversationText = [row.subject, row.ai_summary, row.ai_suggested_action, ...history.flatMap((item: any) => [item.subject, item.ai_summary]), ...memory.known].filter(Boolean).join(" ");
       const matchedProperties = (Array.isArray(row.matched_property_ids) ? row.matched_property_ids : [])
         .map((id: unknown) => propertyById.get(String(id)))
         .filter(Boolean)
         .filter((property: any) => !shouldAvoidProperty(String(property.id), feedback))
-        .sort((a: any, b: any) => propertyFeedbackScore(String(b.id), feedback) - propertyFeedbackScore(String(a.id), feedback))
+        .map((property: any) => ({ property, match: scorePropertyV2({ property, feedback, propertiesById: propertyById, conversationText, aiMatched: true }) }))
+        .sort((a: any, b: any) => b.match.score - a.match.score)
         .slice(0, 5);
       const hotScore = hotLeadScore(row, matchedProperties.length, memory.evidenceCount);
       const knownText = [...memory.known, ...memory.avoid].join(" ");
@@ -166,21 +170,22 @@ export async function GET(request: NextRequest) {
         nextBestQuestion: nextBestQuestion(row, matchedProperties.length, knownText),
         customerMemory: memory,
         draft: draft ? { id: draft.id, subject: draft.subject, bodyText: draft.body_text, confidence: draft.ai_confidence, status: draft.status } : null,
-        suggestedProperties: matchedProperties.map((property: any) => {
-          const feedbackScore = propertyFeedbackScore(String(property.id), feedback);
-          return {
-            id: property.id,
-            ref: property.ref,
-            title: property.title_no || property.title_en || property.title_es,
-            price: property.price,
-            location: property.location,
-            bedrooms: property.bedrooms,
-            bathrooms: property.bathrooms,
-            primaryImage: property.primary_image,
-            feedbackScore,
-            matchReason: feedbackScore > 0 ? "Tidligere markert interessant + aktuell AI-match" : "Aktuell AI-match; ingen negativ historikk registrert",
-          };
-        }),
+        suggestedProperties: matchedProperties.map(({ property, match }: any) => ({
+          id: property.id,
+          ref: property.ref,
+          title: property.title_no || property.title_en || property.title_es,
+          price: property.price,
+          location: property.location,
+          bedrooms: property.bedrooms,
+          bathrooms: property.bathrooms,
+          primaryImage: property.primary_image,
+          matchScore: match.score,
+          matchLabel: match.label,
+          matchReasons: match.reasons,
+          matchCautions: match.cautions,
+          learningConfidence: match.profile.confidence,
+          matchReason: match.reasons[0] || "Aktuell AI-match; utilstrekkelig historikk for sterkere konklusjon",
+        })),
       };
     })
     .sort((a: any, b: any) => b.hotLeadScore - a.hotLeadScore || b.priorityScore - a.priorityScore || Number(a.ageMinutes || 0) - Number(b.ageMinutes || 0));
@@ -196,6 +201,7 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date().toISOString(),
     windowHours: 24,
     memoryWindowDays: 90,
+    propertyMatchVersion: 2,
     summary: {
       sent: outboundR.count ?? (outboundR.data ?? []).length,
       inboundReplies: inbound.length,
@@ -208,6 +214,6 @@ export async function GET(request: NextRequest) {
     },
     classifications,
     importantReplies,
-    note: "Kundeminnet er evidensbasert fra CRM-notater/interaksjoner, 90 dagers innkommende dialog og eksplisitt property feedback. Boliger markert 'ikke for meg' filtreres ut av forslagene.",
+    note: "Next Best Property v2 ranger eksisterende AI-matcher med dokumenterte kundesignaler: eksplisitte krav i dialogen og tidligere interested/not_for_me. Matchscore er forklarbar og skal brukes som beslutningsstøtte, ikke som automatisk fasit.",
   });
 }
