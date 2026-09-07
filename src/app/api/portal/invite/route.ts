@@ -79,14 +79,16 @@ export async function POST(request: NextRequest) {
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
     type: "magiclink",
     email: String(contact.email).trim().toLowerCase(),
-    data: {
-      contact_id: contact.id,
-      brand_id: brandId,
-      name: contact.name,
-      role: "customer",
-      portal: true,
+    options: {
+      data: {
+        contact_id: contact.id,
+        brand_id: brandId,
+        name: contact.name,
+        role: "customer",
+        portal: true,
+      },
+      redirectTo,
     },
-    redirectTo,
   });
 
   if (linkError) return NextResponse.json({ error: linkError.message }, { status: 500 });
