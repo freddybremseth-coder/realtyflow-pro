@@ -1,0 +1,1 @@
+Temporary production diagnostics for RedSP feed structure. Remove or reduce cadence after parser fix is verified.
