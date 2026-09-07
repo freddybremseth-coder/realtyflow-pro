@@ -14,7 +14,7 @@ FAST format. Regler:
 - orientation_no beskriver aktuell bruk, for eksempel feriebolig eller helårsbolig. Det er IKKE himmelretning.
 - orientation_no skal være "Ikke angitt" hvis slik bruksorientering ikke er eksplisitt støttet av rådataene.`;
 
-const FORBIDDEN_CLAIMS = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt)\b/i;
+const FORBIDDEN_CLAIMS = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt)\b/gi;
 
 export interface PropertyEditorialNo {
   headline_no: string;
@@ -210,20 +210,12 @@ export function buildPropertyEditorialFallback(
   };
 }
 
-function editableAiShape(value: unknown): value is {
-  headline_no: string;
-  intro_no: string;
-  bullets_no: string[];
-  orientation_no: string;
-} {
-  if (!value || typeof value !== "object") return false;
-  const object = value as Record<string, unknown>;
-  if (typeof object.headline_no !== "string" || !object.headline_no.trim()) return false;
-  if (typeof object.intro_no !== "string" || !object.intro_no.trim()) return false;
-  if (!Array.isArray(object.bullets_no) || !object.bullets_no.every((item) => typeof item === "string")) return false;
-  if (typeof object.orientation_no !== "string" || !object.orientation_no.trim()) return false;
-  const combined = [object.headline_no, object.intro_no, ...object.bullets_no, object.orientation_no].join(" ");
-  return !FORBIDDEN_CLAIMS.test(combined);
+function neutralizePromotionalLanguage(value: string): string {
+  return value
+    .replace(FORBIDDEN_CLAIMS, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .trim();
 }
 
 function jsonCandidate(text: string): string {
@@ -246,12 +238,30 @@ export function parsePropertyEditorialAiResponse(text: string): {
 } | null {
   try {
     const parsed = JSON.parse(jsonCandidate(text)) as unknown;
-    if (!editableAiShape(parsed)) return null;
+    if (!parsed || typeof parsed !== "object") return null;
+    const object = parsed as Record<string, unknown>;
+    if (typeof object.headline_no !== "string" || !object.headline_no.trim()) return null;
+    if (typeof object.intro_no !== "string" || !object.intro_no.trim()) return null;
+
+    const headline = neutralizePromotionalLanguage(object.headline_no);
+    const intro = neutralizePromotionalLanguage(object.intro_no);
+    if (!headline || !intro) return null;
+
+    const bullets = Array.isArray(object.bullets_no)
+      ? object.bullets_no
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => neutralizePromotionalLanguage(item))
+          .filter(Boolean)
+      : [];
+    const orientation = typeof object.orientation_no === "string" && object.orientation_no.trim()
+      ? neutralizePromotionalLanguage(object.orientation_no) || "Ikke angitt"
+      : "Ikke angitt";
+
     return {
-      headline_no: parsed.headline_no.trim(),
-      intro_no: parsed.intro_no.trim(),
-      bullets_no: Array.from(new Set(parsed.bullets_no.map((item) => item.trim()).filter(Boolean))).slice(0, 6),
-      orientation_no: parsed.orientation_no.trim(),
+      headline_no: headline,
+      intro_no: intro,
+      bullets_no: Array.from(new Set(bullets)).slice(0, 6),
+      orientation_no: orientation,
     };
   } catch {
     return null;
