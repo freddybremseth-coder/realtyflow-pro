@@ -4,7 +4,8 @@
 alter table public.properties
   add column if not exists source_description text,
   add column if not exists floor_label text,
-  add column if not exists orientation_source text,
+  add column if not exists facing_source text,
+  add column if not exists usage_source text,
   add column if not exists amenities_no text[],
   add column if not exists editorial_no jsonb,
   add column if not exists editorial_no_approved boolean not null default false;
@@ -13,14 +14,16 @@ comment on column public.properties.source_description is
   'Full source/feed description used as factual input for editorial generation. Never overwritten by AI.';
 comment on column public.properties.floor_label is
   'Floor/level exactly as supplied by the property source when available.';
-comment on column public.properties.orientation_source is
-  'Orientation exactly as supplied by the property source when available.';
+comment on column public.properties.facing_source is
+  'Compass/solar orientation exactly as supplied by the property source when available.';
+comment on column public.properties.usage_source is
+  'Explicit source-supported use classification such as holiday home or year-round home; never inferred from compass orientation.';
 comment on column public.properties.amenities_no is
-  'Norwegian/source-supported property features used as factual editorial input.';
+  'Source-supported property features used as factual editorial input; AI may translate them to Norwegian.';
 comment on column public.properties.editorial_no is
   'Stable Norwegian editorial JSON: headline_no, intro_no, bullets_no, orientation_no, source_hash, generated_at and model.';
 comment on column public.properties.editorial_no_approved is
-  'Manual approval gate for editorial content that is classified as requiring Freddy review (level A).';
+  'Manual approval metadata for content that is classified as requiring Freddy review (level A).';
 
 -- Repeated feed imports must update the same property row so approvals,
 -- visibility rules, shortlist links and analytics keep their stable UUID.
@@ -77,7 +80,8 @@ create table if not exists public.property_feed_source_cache (
   source_description text,
   amenities_no text[] not null default '{}',
   floor_label text,
-  orientation_source text,
+  facing_source text,
+  usage_source text,
   fetched_at timestamptz not null default now(),
   expires_at timestamptz not null
 );
@@ -170,7 +174,8 @@ after insert or update of
   amenities_no,
   energy_rating,
   price,
-  orientation_source,
+  facing_source,
+  usage_source,
   pool,
   garage
 on public.properties
