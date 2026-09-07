@@ -24,7 +24,33 @@ function priorityScore(row: any) {
   return score;
 }
 
-function hotLeadScore(row: any, matchedCount: number, memoryEvidence: number) {
+function portalBoost(input: { lastLoginMinutes: number | null; interested24h: number; messages24h: number }) {
+  let boost = 0;
+  const reasons: string[] = [];
+  if (input.lastLoginMinutes != null) {
+    if (input.lastLoginMinutes <= 30) {
+      boost += 20;
+      reasons.push("Min side brukt siste 30 min");
+    } else if (input.lastLoginMinutes <= 120) {
+      boost += 12;
+      reasons.push("Min side brukt siste 2 timer");
+    } else if (input.lastLoginMinutes <= 24 * 60) {
+      boost += 5;
+      reasons.push("Min side brukt siste 24 timer");
+    }
+  }
+  if (input.interested24h > 0) {
+    boost += Math.min(20, input.interested24h * 10);
+    reasons.push(`${input.interested24h} bolig${input.interested24h === 1 ? "" : "er"} markert interessant siste 24t`);
+  }
+  if (input.messages24h > 0) {
+    boost += Math.min(20, input.messages24h * 10);
+    reasons.push(`${input.messages24h} melding${input.messages24h === 1 ? "" : "er"} sendt fra Min side siste 24t`);
+  }
+  return { boost: Math.min(30, boost), reasons };
+}
+
+function hotLeadScore(row: any, matchedCount: number, memoryEvidence: number, portalSignal = 0) {
   const text = `${row.subject || ""} ${row.ai_summary || ""} ${row.ai_suggested_action || ""}`.toLowerCase();
   const intent = String(row.ai_intent || "").toLowerCase();
   const urgency = String(row.ai_urgency || "").toLowerCase();
@@ -46,6 +72,7 @@ function hotLeadScore(row: any, matchedCount: number, memoryEvidence: number) {
   if (/\b(available|availability|ledig|tilgjengelig|disponible)\b/i.test(text)) score += 8;
   if (matchedCount > 0) score += Math.min(10, matchedCount * 3);
   if (memoryEvidence >= 3) score += 4;
+  score += portalSignal;
   return Math.max(0, Math.min(100, score));
 }
 
@@ -91,16 +118,28 @@ export async function GET(request: NextRequest) {
   const drafts = draftsR.data ?? [];
   const contactIds = Array.from(new Set(inbound.map((row: any) => String(row.crm_contact_id || "")).filter(Boolean)));
 
-  const [contactDetailsR, historyR, feedbackR] = contactIds.length ? await Promise.all([
+  const [contactDetailsR, historyR, feedbackR, portalR, portalMessagesR] = contactIds.length ? await Promise.all([
     supabase.from("contacts").select("id,name,email,notes,interactions,pipeline_status").in("id", contactIds).limit(500),
     supabase.from("email_messages").select("id,crm_contact_id,direction,subject,ai_summary,received_at,created_at").eq("direction", "inbound").in("crm_contact_id", contactIds).gte("received_at", historySince).order("received_at", { ascending: false }).limit(1000),
     supabase.from("property_feedback_events").select("contact_id,property_id,action,created_at").in("contact_id", contactIds).order("created_at", { ascending: false }).limit(1000),
-  ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+    supabase.from("portal_users").select("contact_id,status,invited_at,last_login_at").in("contact_id", contactIds).limit(500),
+    supabase.from("portal_messages").select("contact_id,sender_type,created_at").in("contact_id", contactIds).gte("created_at", since).limit(1000),
+  ]) : [
+    { data: [], error: null },
+    { data: [], error: null },
+    { data: [], error: null },
+    { data: [], error: null },
+    { data: [], error: null },
+  ];
 
   if (contactDetailsR.error) return NextResponse.json({ error: contactDetailsR.error.message }, { status: 500 });
   if (historyR.error) return NextResponse.json({ error: historyR.error.message }, { status: 500 });
-  const feedbackTableMissing = Boolean(feedbackR.error && /relation .*property_feedback_events.* does not exist|schema cache/i.test(feedbackR.error.message));
+  const feedbackTableMissing = Boolean(feedbackR.error && /relation .*property_feedback_events.* does not exist|schema cache/i.test(String(feedbackR.error.message || "")));
   if (feedbackR.error && !feedbackTableMissing) return NextResponse.json({ error: feedbackR.error.message }, { status: 500 });
+  const portalTableMissing = Boolean(portalR.error && /relation .*portal_users.* does not exist|schema cache/i.test(String(portalR.error.message || "")));
+  if (portalR.error && !portalTableMissing) return NextResponse.json({ error: portalR.error.message }, { status: 500 });
+  const portalMessagesMissing = Boolean(portalMessagesR.error && /relation .*portal_messages.* does not exist|schema cache/i.test(String(portalMessagesR.error.message || "")));
+  if (portalMessagesR.error && !portalMessagesMissing) return NextResponse.json({ error: portalMessagesR.error.message }, { status: 500 });
 
   const contactById = new Map((contactDetailsR.data ?? []).map((row: any) => [String(row.id), row]));
   const historyByContact = new Map<string, any[]>();
@@ -118,6 +157,15 @@ export async function GET(request: NextRequest) {
     const list = feedbackByContact.get(key) || [];
     list.push(row);
     feedbackByContact.set(key, list);
+  }
+  const portalByContact = new Map(((portalTableMissing ? [] : portalR.data) ?? []).map((row: any) => [String(row.contact_id), row]));
+  const portalMessagesByContact = new Map<string, any[]>();
+  for (const row of ((portalMessagesMissing ? [] : portalMessagesR.data) ?? []) as any[]) {
+    const key = String(row.contact_id || "");
+    if (!key) continue;
+    const list = portalMessagesByContact.get(key) || [];
+    list.push(row);
+    portalMessagesByContact.set(key, list);
   }
 
   const draftByMessage = new Map<string, any>();
@@ -150,7 +198,13 @@ export async function GET(request: NextRequest) {
         .map((property: any) => ({ property, match: scorePropertyV2({ property, feedback, propertiesById: propertyById, conversationText, aiMatched: true }) }))
         .sort((a: any, b: any) => b.match.score - a.match.score)
         .slice(0, 5);
-      const hotScore = hotLeadScore(row, matchedProperties.length, memory.evidenceCount);
+
+      const portal = portalByContact.get(contactId) || null;
+      const lastLoginMinutes = ageMinutes(portal?.last_login_at);
+      const interested24h = feedback.filter((item: any) => item.action === "interested" && String(item.created_at || "") >= since).length;
+      const customerMessages24h = (portalMessagesByContact.get(contactId) || []).filter((item: any) => item.sender_type === "customer").length;
+      const portalSignal = portalBoost({ lastLoginMinutes, interested24h, messages24h: customerMessages24h });
+      const hotScore = hotLeadScore(row, matchedProperties.length, memory.evidenceCount, portalSignal.boost);
       const knownText = [...memory.known, ...memory.avoid].join(" ");
       return {
         messageId: row.id,
@@ -167,6 +221,16 @@ export async function GET(request: NextRequest) {
         priorityScore: priorityScore(row),
         hotLeadScore: hotScore,
         hotLeadLabel: hotLabel(hotScore),
+        portal: portal ? {
+          status: portal.status,
+          invitedAt: portal.invited_at,
+          lastLoginAt: portal.last_login_at,
+          lastLoginMinutes,
+          interested24h,
+          customerMessages24h,
+          priorityBoost: portalSignal.boost,
+          reasons: portalSignal.reasons,
+        } : null,
         nextBestQuestion: nextBestQuestion(row, matchedProperties.length, knownText),
         customerMemory: memory,
         draft: draft ? { id: draft.id, subject: draft.subject, bodyText: draft.body_text, confidence: draft.ai_confidence, status: draft.status } : null,
@@ -202,18 +266,22 @@ export async function GET(request: NextRequest) {
     windowHours: 24,
     memoryWindowDays: 90,
     propertyMatchVersion: 2,
+    portalPriorityVersion: 1,
     summary: {
       sent: outboundR.count ?? (outboundR.data ?? []).length,
       inboundReplies: inbound.length,
       actionableUnanswered: actionableAll.length,
       hotLeads: actionableAll.filter((row: any) => row.hotLeadScore >= 85).length,
       slaAtRisk: actionableAll.filter((row: any) => Number(row.ageMinutes || 0) >= (String(row.urgency || "").toLowerCase() === "high" || String(row.urgency || "").toLowerCase() === "critical" ? 15 : String(row.urgency || "").toLowerCase() === "medium" ? 30 : 60)).length,
+      portalActive2h: actionableAll.filter((row: any) => row.portal?.lastLoginMinutes != null && row.portal.lastLoginMinutes <= 120).length,
+      portalInterested24h: actionableAll.reduce((sum: number, row: any) => sum + Number(row.portal?.interested24h || 0), 0),
+      portalMessages24h: actionableAll.reduce((sum: number, row: any) => sum + Number(row.portal?.customerMessages24h || 0), 0),
       purchasedLost: classifications.purchased || 0,
       unsubscribed: classifications.unsubscribe || 0,
       suppressedContacts: contacts24.filter((row: any) => row.email_suppressed || row.do_not_contact).length,
     },
     classifications,
     importantReplies,
-    note: "Next Best Property v2 ranger eksisterende AI-matcher med dokumenterte kundesignaler: eksplisitte krav i dialogen og tidligere interested/not_for_me. Matchscore er forklarbar og skal brukes som beslutningsstøtte, ikke som automatisk fasit.",
+    note: "Reply Command prioriterer nå med både e-postsignaler og dokumentert Min side-aktivitet. Portalboost er begrenset til 30 poeng og betyr nylig aktivitet, ikke sanntids presence. Next Best Property v2 bruker eksplisitte krav og interested/not_for_me som beslutningsstøtte.",
   });
 }
