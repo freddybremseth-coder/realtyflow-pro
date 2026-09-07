@@ -36,26 +36,31 @@ async function getVerifiedLongFormClient() {
 
   for (const channel of channels) {
     const tokens = await getDecryptedTokens(channel.id);
+    const accessToken = tokens?.accessToken?.trim();
     const refreshToken = tokens?.refreshToken?.trim();
-    if (!refreshToken) {
+    const accessTokenStillValid =
+      Boolean(accessToken) &&
+      Boolean(tokens?.expiresAt) &&
+      tokens!.expiresAt!.getTime() > Date.now() + 60_000;
+
+    if (!accessTokenStillValid && !refreshToken) {
       failures.push(`${channel.id}: missing_refresh_token`);
       continue;
     }
 
     try {
       const auth = new OAuth2Client(credentials.clientId, credentials.clientSecret);
-      const accessTokenStillValid =
-        Boolean(tokens?.accessToken) &&
-        Boolean(tokens?.expiresAt) &&
-        tokens!.expiresAt!.getTime() > Date.now() + 60_000;
 
-      auth.setCredentials({
-        access_token: accessTokenStillValid ? tokens!.accessToken : undefined,
-        expiry_date: tokens?.expiresAt?.getTime(),
-        refresh_token: refreshToken,
-      });
-
-      if (!accessTokenStillValid) await auth.getAccessToken();
+      if (accessTokenStillValid) {
+        // Keep the fresh access-token path completely isolated from refresh.
+        // Supplying a refresh token here lets google-auth-library decide to
+        // refresh on its own, which can invalidate a perfectly fresh OAuth
+        // reconnect before the first playlist repair has run.
+        auth.setCredentials({ access_token: accessToken });
+      } else {
+        auth.setCredentials({ refresh_token: refreshToken });
+        await auth.getAccessToken();
+      }
 
       const client = createYoutubeOAuthClient(auth);
       const mine = await client.channels.list({ part: ["snippet"], mine: true });
