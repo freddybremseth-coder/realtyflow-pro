@@ -16,15 +16,20 @@ function daysSince(value: unknown) {
   return Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 86_400_000)) : null;
 }
 
+function customerHref(id: string) {
+  return `/customers?contactId=${encodeURIComponent(id)}&tab=all`;
+}
+
 function nextMove(contact: any, staleDays: number | null) {
   const status = String(contact.pipeline_status || "NEW").toUpperCase();
   if (contact.do_not_contact || contact.email_suppressed || status === "LOST" || status === "WON") return null;
-  if (status === "NEW") return { action: "Kvalifiser lead", reason: "Ny kontakt uten dokumentert fremdrift", href: `/customers/${contact.id}` };
-  if (status === "CONTACT" && (staleDays ?? 99) >= 2) return { action: "Send personlig oppfølging", reason: `${staleDays} dager uten ny aktivitet`, href: `/customers/${contact.id}` };
-  if (status === "QUALIFIED" && (staleDays ?? 99) >= 3) return { action: "Foreslå 2–3 konkrete boliger", reason: "Kvalifisert kunde uten ny bevegelse", href: `/customers/${contact.id}` };
-  if (status === "VIEWING" && (staleDays ?? 99) >= 1) return { action: "Avklar neste steg etter visning", reason: "Visningskunde uten fersk registrert aktivitet", href: `/customers/${contact.id}` };
-  if (status === "NEGOTIATION" && (staleDays ?? 99) >= 1) return { action: "Følg opp forhandling i dag", reason: "Aktiv forhandling bør ikke stå stille", href: `/customers/${contact.id}` };
-  if ((staleDays ?? 0) >= 7) return { action: "Reaktiver eller avklar interesse", reason: `${staleDays} dager uten aktivitet`, href: `/customers/${contact.id}` };
+  const href = customerHref(String(contact.id));
+  if (status === "NEW") return { action: "Kvalifiser lead", reason: "Ny kontakt uten dokumentert fremdrift", href };
+  if (status === "CONTACT" && (staleDays ?? 99) >= 2) return { action: "Send personlig oppfølging", reason: `${staleDays} dager uten ny aktivitet`, href };
+  if (status === "QUALIFIED" && (staleDays ?? 99) >= 3) return { action: "Foreslå 2–3 konkrete boliger", reason: "Kvalifisert kunde uten ny bevegelse", href };
+  if (status === "VIEWING" && (staleDays ?? 99) >= 1) return { action: "Avklar neste steg etter visning", reason: "Visningskunde uten fersk registrert aktivitet", href };
+  if (status === "NEGOTIATION" && (staleDays ?? 99) >= 1) return { action: "Følg opp forhandling i dag", reason: "Aktiv forhandling bør ikke stå stille", href };
+  if ((staleDays ?? 0) >= 7) return { action: "Reaktiver eller avklar interesse", reason: `${staleDays} dager uten aktivitet`, href };
   return null;
 }
 
