@@ -31,6 +31,14 @@ function retryAt(attempts: number) {
   return new Date(Date.now() + delayMinutes * 60_000).toISOString();
 }
 
+function configuredAiProviders() {
+  return [
+    process.env.ANTHROPIC_API_KEY ? "anthropic" : null,
+    process.env.GEMINI_API_KEY ? "gemini" : null,
+    process.env.OPENAI_API_KEY ? "openai" : null,
+  ].filter((provider): provider is string => Boolean(provider));
+}
+
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronApi(request);
   if (unauthorized) return unauthorized;
@@ -96,7 +104,7 @@ export async function GET(request: NextRequest) {
         const { data: property, error: propertyError } = await supabase
           .from("properties")
           .select(
-            "id,ref,property_type,type,bedrooms,bathrooms,location,built_area,floor_label,amenities_no,energy_rating,price,source_description,description,description_no,usage_source,pool,garage,editorial_no,editorial_no_approved",
+            "id,ref,property_type,type,bedrooms,bathrooms,location,built_area,floor_label,amenities_no,energy_rating,price,source_description,description,description_no,facing_source,usage_source,pool,garage,editorial_no,editorial_no_approved",
           )
           .eq("id", claimed.property_id)
           .maybeSingle();
@@ -112,11 +120,21 @@ export async function GET(request: NextRequest) {
           return { status: "reused" as const };
         }
 
+        const providers = configuredAiProviders();
         const { editorial, usedFallback } = await generatePropertyEditorialNo(property);
+        const editorialWithProvenance = {
+          ...editorial,
+          generation_mode: usedFallback ? "template" : "ai",
+          configured_ai_providers: providers,
+          ...(usedFallback
+            ? { fallback_reason: providers.length === 0 ? "no_ai_provider" : "ai_error_or_invalid_output" }
+            : {}),
+        };
+
         const { error: updateError } = await supabase
           .from("properties")
           .update({
-            editorial_no: editorial,
+            editorial_no: editorialWithProvenance,
             editorial_no_approved: false,
             title_no: editorial.headline_no,
             description_no: editorialDescription(editorial),
