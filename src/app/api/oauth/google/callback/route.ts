@@ -11,6 +11,9 @@ import {
 } from "@/lib/oauth/google";
 import { buildRedirectUri, getGoogleCredentials } from "@/lib/oauth/providers";
 import { consumeState, createState } from "@/lib/oauth/state";
+import { repairRemasterPlaylistsWithFreshAccessToken } from "@/services/integrations/remaster-youtube-oauth-repair";
+
+export const maxDuration = 60;
 
 /**
  * GET /api/oauth/google/callback
@@ -68,7 +71,6 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = buildRedirectUri("google", req.nextUrl.origin);
 
-  // ─── 1. Code → tokens ────────────────────────────────────────────────────
   let tokenData;
   try {
     tokenData = await exchangeCodeForTokens(
@@ -88,16 +90,12 @@ export async function GET(req: NextRequest) {
   }
 
   if (!tokenData.refresh_token) {
-    // Google only issues refresh_token on first consent. /api/oauth/google
-    // always sets prompt=consent so this is unexpected — log and surface.
     console.error("[Google OAuth] No refresh_token in response.");
     return errorRedirect(req, state.brand_id, "no_refresh_token", state.return_to);
   }
 
-  // ─── 2. Enumerate channels ───────────────────────────────────────────────
   let channels: YouTubeChannelInfo[];
   if (service === "drive" || state.platform === "google_drive") {
-    // Drive flows authenticate a single Google account, no channel list.
     const userInfo = await fetchGoogleUserInfo(tokenData.access_token);
     channels = [
       {
@@ -123,7 +121,6 @@ export async function GET(req: NextRequest) {
     return errorRedirect(req, state.brand_id, "no_channels_found", state.return_to);
   }
 
-  // ─── 3a. Single channel → finalize immediately ───────────────────────────
   if (channels.length === 1) {
     try {
       await finalizeGoogleChannel({
@@ -147,6 +144,25 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    if (
+      state.brand_id === "remasterfreddy" &&
+      state.platform !== "google_drive" &&
+      service !== "drive"
+    ) {
+      try {
+        const repair = await repairRemasterPlaylistsWithFreshAccessToken({
+          brandId: state.brand_id,
+          accessToken: tokenData.access_token,
+          channelId: channels[0].id,
+        });
+        console.info("[Google OAuth] Re-Master playlist bootstrap:", repair);
+      } catch (err) {
+        // OAuth itself succeeded. Keep the connection and let the periodic
+        // recovery cron retry, while surfacing the exact server-side reason.
+        console.error("[Google OAuth] Re-Master playlist bootstrap failed:", err);
+      }
+    }
+
     return successRedirect(req, state.return_to, {
       platform: state.platform,
       brand: state.brand_id,
@@ -154,11 +170,6 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // ─── 3b. Multiple channels → re-issue state, redirect to picker ──────────
-  // Tokens are encrypted with OAUTH_ENCRYPTION_KEY before going into the
-  // (short-lived, single-use) state row. The picker page POSTs to
-  // /api/oauth/google/finalize with {state, external_id} and that endpoint
-  // decrypts the chosen one and creates the channel.
   const accessEnv = encryptOptional(tokenData.access_token);
   const refreshEnv = encryptOptional(tokenData.refresh_token);
   if (!accessEnv || !refreshEnv) {
@@ -190,8 +201,6 @@ export async function GET(req: NextRequest) {
   );
   return NextResponse.redirect(pickerUrl.toString());
 }
-
-// ─── Redirect helpers ───────────────────────────────────────────────────────
 
 function errorRedirect(
   req: NextRequest,
