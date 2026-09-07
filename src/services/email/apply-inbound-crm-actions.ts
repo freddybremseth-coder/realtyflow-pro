@@ -150,8 +150,6 @@ export async function applyInboundCrmActions(
     nextPipelineStatus = "LOST";
     suppressed = true;
   } else if (classification === "active_reply") {
-    // A genuine reply means the customer is active. Pause nurture so an automated
-    // sequence never races a human response, and put the item at the top of Nexus.
     update.nurture_status = "paused";
     update.next_followup = now;
   }
@@ -168,12 +166,13 @@ export async function applyInboundCrmActions(
       priority: priorityFor(params.urgency, classification),
       due_date: now.slice(0, 10),
       brand_id: params.brandId,
-      source_type: "email_reply",
+      source_type: "crm",
       source_id: params.emailMessageId,
       assigned_agent: "sales",
       next_action: params.suggestedAction || "Les AI-utkastet i Nexus Communications og svar kunden så raskt som mulig.",
       ai_score: String(params.urgency || "").toLowerCase() === "high" || String(params.urgency || "").toLowerCase() === "critical" ? 95 : 82,
       metadata: {
+        event_type: "email_reply",
         email_message_id: params.emailMessageId,
         contact_id: contact.id,
         from_address: fromAddress,
@@ -183,7 +182,8 @@ export async function applyInboundCrmActions(
       created_at: now,
       updated_at: now,
     });
-    workItemCreated = !workError;
+    if (workError) throw new Error(`CRM reply work item failed: ${workError.message}`);
+    workItemCreated = true;
   }
 
   return {
