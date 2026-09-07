@@ -77,7 +77,9 @@ function buildPropertyShortlist(input: {
   const personalized = scored.some((item) => item.match.score !== 20 || item.match.reasons.length > 0 || item.match.cautions.length > 0);
   if (personalized) scored.sort((a, b) => b.match.score - a.match.score || a.originalIndex - b.originalIndex);
 
-  const limit = personalized ? 80 : 160;
+  // Bevar eksisterende bredde når vi ikke har nok kundesignaler. Da er eneste
+  // endring at usynlige/feil-brandede/eksplisitt avviste boliger ikke sendes til AI-en.
+  const limit = personalized ? 80 : 200;
   const shortlist = scored.slice(0, limit);
   return {
     personalized,
