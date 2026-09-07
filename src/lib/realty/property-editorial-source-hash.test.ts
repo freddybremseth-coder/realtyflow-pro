@@ -13,7 +13,8 @@ const base = {
   energy_rating: "B",
   price: 300000,
   source_description: "Kilde",
-  orientation_source: "Sør",
+  facing_source: "South",
+  usage_source: "Holiday home",
 };
 
 test("every factual editorial input can invalidate the source hash", () => {
@@ -29,7 +30,8 @@ test("every factual editorial input can invalidate the source hash", () => {
     { energy_rating: "A" },
     { price: 310000 },
     { source_description: "Endret kilde" },
-    { orientation_source: "Øst" },
+    { facing_source: "East" },
+    { usage_source: "Year-round home" },
   ]) {
     assert.notEqual(computePropertyEditorialSourceHash({ ...base, ...changed }), hash);
   }
