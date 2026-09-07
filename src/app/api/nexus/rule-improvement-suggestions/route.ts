@@ -9,6 +9,8 @@ const LOW_HIT_RATE = 35;
 const STRONG_HIT_RATE = 70;
 const SLOW_HOURS = 72;
 
+type Category = "LOW_HIT_RATE" | "SLOW" | "STRONG" | "NEUTRAL" | "IMMATURE";
+
 function ms(value: unknown) {
   const parsed = new Date(String(value || "")).getTime();
   return Number.isFinite(parsed) ? parsed : null;
@@ -77,36 +79,53 @@ export async function GET(request: NextRequest) {
     grouped.set(key, group);
   }
 
-  const suggestions = Array.from(grouped.values()).filter((group) => group.samples >= MIN_SAMPLES).map((group) => {
+  const allGroups = Array.from(grouped.values()).map((group) => {
     const hitRate = Math.round((group.hits / group.samples) * 1000) / 10;
     const avgHoursToTarget = group.hits ? Math.round((group.totalHours / group.hits) * 10) / 10 : null;
-    let severity: "HIGH" | "MEDIUM" | "POSITIVE" = "POSITIVE";
-    let recommendation = "Behold regelen foreløpig og fortsett å samle data.";
-    let rationale = `Treffrate ${hitRate}% på ${group.samples} observasjoner.`;
+    let category: Category = "NEUTRAL";
+    let severity: "HIGH" | "MEDIUM" | "POSITIVE" | "INFO" = "INFO";
+    let recommendation = "Fortsett å samle data før regelen vurderes.";
+    let rationale = `${group.samples}/${MIN_SAMPLES} observasjoner samlet.`;
 
-    if (hitRate < LOW_HIT_RATE) {
+    if (group.samples < MIN_SAMPLES) {
+      category = "IMMATURE";
+      severity = "INFO";
+    } else if (hitRate < LOW_HIT_RATE) {
+      category = "LOW_HIT_RATE";
       severity = "HIGH";
       recommendation = "Vurder å endre anbefalingstekst, trigger eller målstadium før denne regelen får større vekt.";
       rationale = `Lav treffrate (${hitRate}%) på ${group.samples} observasjoner tyder på at anbefalingen ofte ikke gir ønsket pipeline-bevegelse.`;
     } else if (avgHoursToTarget != null && avgHoursToTarget > SLOW_HOURS) {
+      category = "SLOW";
       severity = "MEDIUM";
       recommendation = "Behold retningen, men vurder sterkere timing, tydeligere call-to-action eller tidligere oppfølging.";
       rationale = `Treff forekommer, men gjennomsnittlig tid til ${group.targetStage} er ${avgHoursToTarget} timer.`;
     } else if (hitRate >= STRONG_HIT_RATE) {
+      category = "STRONG";
       severity = "POSITIVE";
       recommendation = "Sterkt signal. Behold regelen og vurder senere kontrollert vekting hvis sample-størrelsen fortsetter å vokse.";
       rationale = `Høy treffrate (${hitRate}%) på ${group.samples} observasjoner.`;
+    } else {
+      category = "NEUTRAL";
+      severity = "INFO";
+      recommendation = "Behold regelen foreløpig og fortsett å samle data.";
+      rationale = `Treffrate ${hitRate}% på ${group.samples} observasjoner.`;
     }
 
-    return { ...group, hitRate, avgHoursToTarget, severity, recommendation, rationale };
-  }).sort((a,b) => {
-    const rank = { HIGH:3, MEDIUM:2, POSITIVE:1 } as const;
-    return rank[b.severity] - rank[a.severity] || b.samples - a.samples;
+    return { ...group, hitRate, avgHoursToTarget, category, severity, recommendation, rationale };
   });
+
+  const rank = { LOW_HIT_RATE:5, SLOW:4, STRONG:3, NEUTRAL:2, IMMATURE:1 } as const;
+  const suggestions = allGroups.sort((a,b) => rank[b.category] - rank[a.category] || b.samples - a.samples);
+  const categories = suggestions.reduce<Record<Category, number>>((acc, item) => {
+    acc[item.category] += 1;
+    return acc;
+  }, { LOW_HIT_RATE:0, SLOW:0, STRONG:0, NEUTRAL:0, IMMATURE:0 });
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     thresholds: { minimumSamples: MIN_SAMPLES, lowHitRate: LOW_HIT_RATE, strongHitRate: STRONG_HIT_RATE, slowHours: SLOW_HOURS },
+    categories,
     suggestions,
     note: "Dette er beslutningsstøtte. Ingen Movement-regel, score, pipeline-status eller kundekommunikasjon endres automatisk.",
   });
