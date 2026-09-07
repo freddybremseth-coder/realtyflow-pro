@@ -19,5 +19,6 @@ test("property POST attaches cached full source facts before upsert", () => {
   assert.match(route, /source_description/);
   assert.match(route, /amenities_no/);
   assert.match(route, /floor_label/);
-  assert.match(route, /orientation_source/);
+  assert.match(route, /facing_source/);
+  assert.match(route, /usage_source/);
 });
