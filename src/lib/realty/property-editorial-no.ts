@@ -9,7 +9,9 @@ FAST format. Regler:
 - Kildebeskrivelsen kan inneholde reklamespråk og superlativer. Ikke kopier slike subjektive formuleringer.
 - Naturlig, korrekt norsk — ingen maskinoversettelse-preg.
 - Returner KUN gyldig JSON etter skjemaet. Ingen forklaring, ingen markdown.
+- JSON-objektet SKAL inneholde nøyaktig disse feltene: headline_no (streng), intro_no (streng), bullets_no (liste med strenger), orientation_no (streng). Ikke legg til andre felter (som pris, energiklasse eller beliggenhet) – de finnes allerede i rådataene.
 - headline_no skal være kort og faktabasert. Ikke konverter antall soverom til et antall "rom" med mindre kilden sier det eksplisitt.
+- intro_no skal være 1–2 nøkterne setninger som oppsummerer boligen (boligtype, antall soverom og bad, område og eventuelt bruksareal), kun basert på rådataene. Feltet er påkrevd og skal aldri stå tomt.
 - bullets_no skal bare inneholde fasiliteter eller egenskaper som er eksplisitt støttet av rådataene.
 - orientation_no beskriver aktuell bruk, for eksempel feriebolig eller helårsbolig. Det er IKKE himmelretning.
 - orientation_no skal være "Ikke angitt" hvis slik bruksorientering ikke er eksplisitt støttet av rådataene.`;
