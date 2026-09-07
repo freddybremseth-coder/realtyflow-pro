@@ -7,6 +7,7 @@ export interface NexusCommand {
 }
 
 export const NEXUS_COMMANDS: NexusCommand[] = [
+  { id: "daily", label: "Nexus Daily", description: "Se dagens salgsbrief med HOT leads, kundesvar og Min side-aktivitet", href: "/nexus-os/daily", keywords: ["nexus daily", "daglig brief", "daglig oppdatering", "hvem skal jeg kontakte", "hot leads", "min side nå", "kundesvar i dag", "salgsbrief"] },
   { id: "today", label: "Nexus Today", description: "Se hva som trenger oppmerksomhet nå", href: "/nexus-os/today", keywords: ["i dag", "today", "oppmerksomhet", "prioritet", "neste handling"] },
   { id: "reply-command", label: "Reply Command", description: "Se aktive kundesvar, svar-SLA, AI-utkast og aktuelle boliger som bør foreslås", href: "/nexus-os/replies", keywords: ["reply command", "svar nå", "kundesvar", "e-post svar", "email replies", "svarfrist", "sla", "aktive kunder", "hvem må jeg svare", "hvem bør svares", "boligforslag"] },
   { id: "portal-engagement", label: "Min side aktivitet", description: "Se inviterte og aktive portalbrukere, nylig boliginteresse og kundemeldinger", href: "/nexus-os/portal-engagement", keywords: ["min side", "kundeportal", "portal", "aktiv kunde", "portalaktivitet", "interessert bolig", "siste aktivitet", "portal engagement", "magic link", "inviterte kunder"] },
