@@ -36,11 +36,17 @@ test("worker includes facing in factual input and records safe AI provenance", (
   assert.doesNotMatch(route, /OPENAI_API_KEY\s*[:=]\s*["'][^"']+["']/);
 });
 
-test("diagnosed generator distinguishes provider failure from invalid output and accepts JSON fences", () => {
+test("diagnosed generator uses the canonical repaired parser", () => {
   assert.match(diagnostics, /"no_ai_provider"/);
   assert.match(diagnostics, /"provider_chain_unavailable"/);
   assert.match(diagnostics, /"invalid_output"/);
-  assert.match(diagnostics, /stripJsonFence/);
-  assert.match(diagnostics, /```\(\?:json\)\?/);
+  assert.match(diagnostics, /parsePropertyEditorialAiResponse/);
+  assert.match(
+    diagnostics,
+    /validateResponse: \(text\) => parsePropertyEditorialAiResponse\(text\) !== null/,
+  );
+  assert.match(diagnostics, /const parsed = parsePropertyEditorialAiResponse\(raw\)/);
+  assert.doesNotMatch(diagnostics, /function parseEditorial\(/);
+  assert.doesNotMatch(diagnostics, /function stripJsonFence\(/);
   assert.match(diagnostics, /fallbackOnInvalidResponse: true/);
 });
