@@ -20,3 +20,14 @@ test("worker reuses unchanged hashes and retries failures with a bounded attempt
   assert.match(route, /status: exhausted \? "failed" : "retry"/);
   assert.match(route, /retryAt\(attempts\)/);
 });
+
+test("worker includes facing in factual input and records safe AI provenance", () => {
+  assert.match(route, /facing_source/);
+  assert.match(route, /generation_mode: usedFallback \? "template" : "ai"/);
+  assert.match(route, /configured_ai_providers: providers/);
+  assert.match(route, /"no_ai_provider"/);
+  assert.match(route, /"ai_error_or_invalid_output"/);
+  assert.doesNotMatch(route, /ANTHROPIC_API_KEY\s*[:=]\s*["'][^"']+["']/);
+  assert.doesNotMatch(route, /GEMINI_API_KEY\s*[:=]\s*["'][^"']+["']/);
+  assert.doesNotMatch(route, /OPENAI_API_KEY\s*[:=]\s*["'][^"']+["']/);
+});
