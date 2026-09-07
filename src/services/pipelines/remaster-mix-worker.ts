@@ -189,8 +189,8 @@ async function loadFallbackVisualUrls(tracks: MixSnapshotTrack[], targetMinutes:
 }
 
 function mixPrivacy() {
-  const raw = String(process.env.REMASTER_MIX_YOUTUBE_PRIVACY || "private").toLowerCase();
-  return raw === "public" || raw === "unlisted" ? raw : "private";
+  const raw = String(process.env.REMASTER_MIX_YOUTUBE_PRIVACY || "public").toLowerCase();
+  return raw === "private" || raw === "unlisted" ? raw : "public";
 }
 
 async function recordMixInSongHistory(
