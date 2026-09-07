@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   const { data: properties, error } = await supabase
     .from("properties")
     .select(
-      "id,ref,property_type,type,bedrooms,bathrooms,location,town,built_area,area,floor_label,amenities_no,energy_rating,price,source_description,description,description_no,orientation_source,pool,garage,editorial_no,editorial_no_approved",
+      "id,ref,property_type,type,bedrooms,bathrooms,location,built_area,floor_label,amenities_no,energy_rating,price,source_description,description,description_no,orientation_source,pool,garage,editorial_no,editorial_no_approved",
     )
     .in("id", propertyIds);
 
@@ -88,7 +88,6 @@ export async function POST(req: NextRequest) {
             editorial_no_approved: false,
             title_no: editorial.headline_no,
             description_no: editorialDescription(editorial),
-            date_updated: new Date().toISOString(),
           })
           .eq("id", id);
 
