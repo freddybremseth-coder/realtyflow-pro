@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { buildCustomerMemory, propertyFeedbackScore, shouldAvoidProperty } from "@/lib/nexus-customer-memory";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ function priorityScore(row: any) {
   return score;
 }
 
-function hotLeadScore(row: any, matchedCount: number) {
+function hotLeadScore(row: any, matchedCount: number, memoryEvidence: number) {
   const text = `${row.subject || ""} ${row.ai_summary || ""} ${row.ai_suggested_action || ""}`.toLowerCase();
   const intent = String(row.ai_intent || "").toLowerCase();
   const urgency = String(row.ai_urgency || "").toLowerCase();
@@ -43,26 +44,17 @@ function hotLeadScore(row: any, matchedCount: number) {
   if (/\b(next week|this week|tomorrow|i morgen|neste uke|esta semana|mañana)\b/i.test(text)) score += 10;
   if (/\b(available|availability|ledig|tilgjengelig|disponible)\b/i.test(text)) score += 8;
   if (matchedCount > 0) score += Math.min(10, matchedCount * 3);
+  if (memoryEvidence >= 3) score += 4;
   return Math.max(0, Math.min(100, score));
 }
 
-function nextBestQuestion(row: any, matchedCount: number) {
-  const text = `${row.subject || ""} ${row.ai_summary || ""}`.toLowerCase();
-  if (/\b(viewing|visning|appointment|cita)\b/i.test(text) && !/\b(date|dato|day|dag|week|uke|fecha|día)\b/i.test(text)) {
-    return "Hvilken dag og hvilket tidspunkt passer best for visning?";
-  }
-  if (/\b(price|pris|budget|budsjett|precio)\b/i.test(text) && !/\b(financing|finansiering|mortgage|hipoteca|cash|kontant)\b/i.test(text)) {
-    return "Har dere finansiering på plass, og hvilket totalbudsjett ønsker dere å holde dere innenfor?";
-  }
-  if (matchedCount === 0 && !/\b(altea|benidorm|finestrat|villajoyosa|albir|la nucia|polop|denia|moraira|calpe|quesada|torrevieja|pinoso|biar)\b/i.test(text)) {
-    return "Hvilke områder ønsker dere først og fremst å bo i?";
-  }
-  if (!/\b(bedroom|soverom|dormitorio|habitaci[oó]n)\b/i.test(text)) {
-    return "Hvor mange soverom er minimum for dere?";
-  }
-  if (!/\b(holiday|feriebolig|permanent|fast bolig|investment|investering|inversi[oó]n)\b/i.test(text)) {
-    return "Skal boligen hovedsakelig brukes som feriebolig, fast bolig eller investering?";
-  }
+function nextBestQuestion(row: any, matchedCount: number, knownText = "") {
+  const text = `${row.subject || ""} ${row.ai_summary || ""} ${knownText}`.toLowerCase();
+  if (/\b(viewing|visning|appointment|cita)\b/i.test(text) && !/\b(date|dato|day|dag|week|uke|fecha|día)\b/i.test(text)) return "Hvilken dag og hvilket tidspunkt passer best for visning?";
+  if (/\b(price|pris|budget|budsjett|precio)\b/i.test(text) && !/\b(financing|finansiering|mortgage|hipoteca|cash|kontant)\b/i.test(text)) return "Har dere finansiering på plass, og hvilket totalbudsjett ønsker dere å holde dere innenfor?";
+  if (matchedCount === 0 && !/\b(altea|benidorm|finestrat|villajoyosa|albir|la nucia|polop|denia|moraira|calpe|quesada|torrevieja|pinoso|biar)\b/i.test(text)) return "Hvilke områder ønsker dere først og fremst å bo i?";
+  if (!/\b(bedroom|soverom|dormitorio|habitaci[oó]n)\b/i.test(text)) return "Hvor mange soverom er minimum for dere?";
+  if (!/\b(holiday|feriebolig|permanent|fast bolig|investment|investering|inversi[oó]n)\b/i.test(text)) return "Skal boligen hovedsakelig brukes som feriebolig, fast bolig eller investering?";
   return null;
 }
 
@@ -81,41 +73,86 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const [outboundR, inboundR, contactsR, draftsR] = await Promise.all([
+  const historySince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const [outboundR, inboundR, contacts24R, draftsR] = await Promise.all([
     supabase.from("email_messages").select("id,brand_id,to_addresses,subject,created_at,received_at", { count: "exact" }).eq("direction", "outbound").gte("created_at", since).order("created_at", { ascending: false }).limit(500),
     supabase.from("email_messages").select("id,brand_id,from_address,from_name,subject,ai_summary,ai_intent,ai_urgency,ai_suggested_action,is_read,replied_at,received_at,created_at,matched_property_ids,crm_reply_classification,crm_contact_id").eq("direction", "inbound").gte("received_at", since).order("received_at", { ascending: false }).limit(500),
     supabase.from("contacts").select("id,name,email,pipeline_status,email_suppressed,do_not_contact,last_inbound_reply_at,last_reply_classification").gte("last_inbound_reply_at", since).limit(500),
     supabase.from("email_drafts").select("id,email_message_id,subject,body_text,ai_confidence,status,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(500),
   ]);
 
-  for (const result of [outboundR, inboundR, contactsR, draftsR]) {
+  for (const result of [outboundR, inboundR, contacts24R, draftsR]) {
     if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
   }
 
   const inbound = inboundR.data ?? [];
-  const contacts = contactsR.data ?? [];
+  const contacts24 = contacts24R.data ?? [];
   const drafts = draftsR.data ?? [];
+  const contactIds = Array.from(new Set(inbound.map((row: any) => String(row.crm_contact_id || "")).filter(Boolean)));
+
+  const [contactDetailsR, historyR, feedbackR] = contactIds.length ? await Promise.all([
+    supabase.from("contacts").select("id,name,email,notes,interactions,pipeline_status").in("id", contactIds).limit(500),
+    supabase.from("email_messages").select("id,crm_contact_id,direction,subject,ai_summary,received_at,created_at").eq("direction", "inbound").in("crm_contact_id", contactIds).gte("received_at", historySince).order("received_at", { ascending: false }).limit(1000),
+    supabase.from("property_feedback_events").select("contact_id,property_id,action,created_at").in("contact_id", contactIds).order("created_at", { ascending: false }).limit(1000),
+  ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+
+  if (contactDetailsR.error) return NextResponse.json({ error: contactDetailsR.error.message }, { status: 500 });
+  if (historyR.error) return NextResponse.json({ error: historyR.error.message }, { status: 500 });
+  const feedbackTableMissing = Boolean(feedbackR.error && /relation .*property_feedback_events.* does not exist|schema cache/i.test(feedbackR.error.message));
+  if (feedbackR.error && !feedbackTableMissing) return NextResponse.json({ error: feedbackR.error.message }, { status: 500 });
+
+  const contactById = new Map((contactDetailsR.data ?? []).map((row: any) => [String(row.id), row]));
+  const historyByContact = new Map<string, any[]>();
+  for (const row of (historyR.data ?? []) as any[]) {
+    const key = String(row.crm_contact_id || "");
+    if (!key) continue;
+    const list = historyByContact.get(key) || [];
+    if (list.length < 8) list.push(row);
+    historyByContact.set(key, list);
+  }
+  const feedbackByContact = new Map<string, any[]>();
+  for (const row of ((feedbackTableMissing ? [] : feedbackR.data) ?? []) as any[]) {
+    const key = String(row.contact_id || "");
+    if (!key) continue;
+    const list = feedbackByContact.get(key) || [];
+    list.push(row);
+    feedbackByContact.set(key, list);
+  }
+
   const draftByMessage = new Map<string, any>();
   for (const draft of drafts as any[]) if (draft.email_message_id && !draftByMessage.has(String(draft.email_message_id))) draftByMessage.set(String(draft.email_message_id), draft);
 
-  const propertyIds = Array.from(new Set(inbound.flatMap((row: any) => Array.isArray(row.matched_property_ids) ? row.matched_property_ids.map(String) : [])));
+  const matchedPropertyIds = inbound.flatMap((row: any) => Array.isArray(row.matched_property_ids) ? row.matched_property_ids.map(String) : []);
+  const feedbackPropertyIds = Array.from(feedbackByContact.values()).flatMap((rows) => rows.map((row: any) => String(row.property_id || "")).filter(Boolean));
+  const propertyIds = Array.from(new Set([...matchedPropertyIds, ...feedbackPropertyIds]));
   const { data: properties, error: propertiesError } = propertyIds.length
-    ? await supabase.from("properties").select("id,ref,price,location,bedrooms,bathrooms,title_no,title_en,title_es,primary_image").in("id", propertyIds).limit(300)
+    ? await supabase.from("properties").select("id,ref,price,location,bedrooms,bathrooms,title_no,title_en,title_es,primary_image").in("id", propertyIds).limit(500)
     : { data: [] as any[], error: null };
   if (propertiesError) return NextResponse.json({ error: propertiesError.message }, { status: 500 });
   const propertyById = new Map((properties ?? []).map((property: any) => [String(property.id), property]));
 
-  const actionable = inbound
+  const actionableAll = inbound
     .filter((row: any) => !["unsubscribe", "purchased", "informational"].includes(String(row.crm_reply_classification || "")))
     .filter((row: any) => !row.replied_at)
     .map((row: any) => {
+      const contactId = String(row.crm_contact_id || "");
+      const contact = contactById.get(contactId) || null;
+      const feedback = feedbackByContact.get(contactId) || [];
+      const memory = buildCustomerMemory({ notes: contact?.notes, interactions: contact?.interactions, recentConversation: historyByContact.get(contactId) || [], feedback, propertiesById: propertyById });
       const draft = draftByMessage.get(String(row.id)) ?? null;
-      const matchedProperties = (Array.isArray(row.matched_property_ids) ? row.matched_property_ids : []).map((id: unknown) => propertyById.get(String(id))).filter(Boolean).slice(0, 5);
-      const hotScore = hotLeadScore(row, matchedProperties.length);
+      const matchedProperties = (Array.isArray(row.matched_property_ids) ? row.matched_property_ids : [])
+        .map((id: unknown) => propertyById.get(String(id)))
+        .filter(Boolean)
+        .filter((property: any) => !shouldAvoidProperty(String(property.id), feedback))
+        .sort((a: any, b: any) => propertyFeedbackScore(String(b.id), feedback) - propertyFeedbackScore(String(a.id), feedback))
+        .slice(0, 5);
+      const hotScore = hotLeadScore(row, matchedProperties.length, memory.evidenceCount);
+      const knownText = [...memory.known, ...memory.avoid].join(" ");
       return {
         messageId: row.id,
         brandId: row.brand_id,
-        from: { name: row.from_name, email: row.from_address },
+        contactId: contactId || null,
+        from: { name: row.from_name || contact?.name, email: row.from_address },
         subject: row.subject,
         summary: row.ai_summary,
         intent: row.ai_intent,
@@ -126,15 +163,30 @@ export async function GET(request: NextRequest) {
         priorityScore: priorityScore(row),
         hotLeadScore: hotScore,
         hotLeadLabel: hotLabel(hotScore),
-        nextBestQuestion: nextBestQuestion(row, matchedProperties.length),
+        nextBestQuestion: nextBestQuestion(row, matchedProperties.length, knownText),
+        customerMemory: memory,
         draft: draft ? { id: draft.id, subject: draft.subject, bodyText: draft.body_text, confidence: draft.ai_confidence, status: draft.status } : null,
-        suggestedProperties: matchedProperties.map((property: any) => ({ id: property.id, ref: property.ref, title: property.title_no || property.title_en || property.title_es, price: property.price, location: property.location, bedrooms: property.bedrooms, bathrooms: property.bathrooms, primaryImage: property.primary_image })),
+        suggestedProperties: matchedProperties.map((property: any) => {
+          const feedbackScore = propertyFeedbackScore(String(property.id), feedback);
+          return {
+            id: property.id,
+            ref: property.ref,
+            title: property.title_no || property.title_en || property.title_es,
+            price: property.price,
+            location: property.location,
+            bedrooms: property.bedrooms,
+            bathrooms: property.bathrooms,
+            primaryImage: property.primary_image,
+            feedbackScore,
+            matchReason: feedbackScore > 0 ? "Tidligere markert interessant + aktuell AI-match" : "Aktuell AI-match; ingen negativ historikk registrert",
+          };
+        }),
       };
     })
-    .sort((a: any, b: any) => b.hotLeadScore - a.hotLeadScore || b.priorityScore - a.priorityScore || Number(a.ageMinutes || 0) - Number(b.ageMinutes || 0))
-    .slice(0, 12);
+    .sort((a: any, b: any) => b.hotLeadScore - a.hotLeadScore || b.priorityScore - a.priorityScore || Number(a.ageMinutes || 0) - Number(b.ageMinutes || 0));
 
-  const classifications = contacts.reduce<Record<string, number>>((acc, row: any) => {
+  const importantReplies = actionableAll.slice(0, 12);
+  const classifications = contacts24.reduce<Record<string, number>>((acc, row: any) => {
     const key = String(row.last_reply_classification || "unknown");
     acc[key] = (acc[key] || 0) + 1;
     return acc;
@@ -143,18 +195,19 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     windowHours: 24,
+    memoryWindowDays: 90,
     summary: {
       sent: outboundR.count ?? (outboundR.data ?? []).length,
       inboundReplies: inbound.length,
-      actionableUnanswered: actionable.length,
-      hotLeads: actionable.filter((row: any) => row.hotLeadScore >= 85).length,
-      slaAtRisk: actionable.filter((row: any) => Number(row.ageMinutes || 0) >= (String(row.urgency || "").toLowerCase() === "high" || String(row.urgency || "").toLowerCase() === "critical" ? 15 : String(row.urgency || "").toLowerCase() === "medium" ? 30 : 60)).length,
+      actionableUnanswered: actionableAll.length,
+      hotLeads: actionableAll.filter((row: any) => row.hotLeadScore >= 85).length,
+      slaAtRisk: actionableAll.filter((row: any) => Number(row.ageMinutes || 0) >= (String(row.urgency || "").toLowerCase() === "high" || String(row.urgency || "").toLowerCase() === "critical" ? 15 : String(row.urgency || "").toLowerCase() === "medium" ? 30 : 60)).length,
       purchasedLost: classifications.purchased || 0,
       unsubscribed: classifications.unsubscribe || 0,
-      suppressedContacts: contacts.filter((row: any) => row.email_suppressed || row.do_not_contact).length,
+      suppressedContacts: contacts24.filter((row: any) => row.email_suppressed || row.do_not_contact).length,
     },
     classifications,
-    importantReplies: actionable,
-    note: "Hot Lead Score er en prioriteringsheuristikk, ikke en fasit. Kundens faktiske melding, CRM-historikk og dokumenterte boligbehov har høyere prioritet.",
+    importantReplies,
+    note: "Kundeminnet er evidensbasert fra CRM-notater/interaksjoner, 90 dagers innkommende dialog og eksplisitt property feedback. Boliger markert 'ikke for meg' filtreres ut av forslagene.",
   });
 }
