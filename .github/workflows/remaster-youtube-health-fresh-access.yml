@@ -1,0 +1,18 @@
+name: Re-Master YouTube health fresh access
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/integrations/youtube-health.ts'
+      - 'scripts/test-remaster-youtube-health-fresh-access.mjs'
+      - '.github/workflows/remaster-youtube-health-fresh-access.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/test-remaster-youtube-health-fresh-access.mjs

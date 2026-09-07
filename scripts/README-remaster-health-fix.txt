@@ -1,0 +1,1 @@
+Scope: Re-Master playlist recovery YouTube health check. No schema changes. No renderer changes. No video re-upload.

@@ -7,7 +7,9 @@ const YOUTUBE_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.re
 
 interface Candidate {
   source: string;
-  refreshToken: string;
+  accessToken?: string;
+  accessExpiresAt?: Date | null;
+  refreshToken?: string;
   expectedChannelId?: string;
   scopes?: string[];
 }
@@ -40,11 +42,15 @@ async function candidatesForBrand(brandId: string): Promise<Candidate[]> {
     for (const channel of channels) {
       const tokens = await getDecryptedTokens(channel.id);
       const refreshToken = clean(tokens?.refreshToken);
-      if (!refreshToken || seen.has(refreshToken)) continue;
-      seen.add(refreshToken);
+      const accessToken = clean(tokens?.accessToken);
+      const dedupeKey = refreshToken || accessToken;
+      if (!dedupeKey || seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
       results.push({
         source: `oauth_tokens:${channel.display_name}`,
-        refreshToken,
+        accessToken: accessToken || undefined,
+        accessExpiresAt: tokens?.expiresAt ?? null,
+        refreshToken: refreshToken || undefined,
         expectedChannelId: channel.external_id || undefined,
         scopes: tokens?.scopes ?? [],
       });
@@ -92,8 +98,22 @@ export async function checkBrandYouTubeHealth(brandId: string) {
   for (const candidate of candidates) {
     try {
       const auth = new OAuth2Client(credentials.clientId, credentials.clientSecret);
-      auth.setCredentials({ refresh_token: candidate.refreshToken });
-      await auth.getAccessToken();
+      const accessTokenStillValid =
+        Boolean(candidate.accessToken) &&
+        Boolean(candidate.accessExpiresAt) &&
+        candidate.accessExpiresAt!.getTime() > Date.now() + 60_000;
+
+      if (accessTokenStillValid) {
+        auth.setCredentials({
+          access_token: candidate.accessToken,
+          expiry_date: candidate.accessExpiresAt!.getTime(),
+        });
+      } else if (candidate.refreshToken) {
+        auth.setCredentials({ refresh_token: candidate.refreshToken });
+        await auth.getAccessToken();
+      } else {
+        continue;
+      }
 
       const client = createYoutubeOAuthClient(auth);
       const result = await client.channels.list({
