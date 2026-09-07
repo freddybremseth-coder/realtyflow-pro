@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
   const { data: contacts, error } = await supabase
     .from("contacts")
-    .select("id,name,email,phone,brand_id,brand,pipeline_status,do_not_contact,email_suppressed,last_inbound_reply_at,last_contact,updated_at,created_at,next_followup,nurture_status,property_interest,waiting_on,waiting_until,preferred_location")
+    .select("id,name,email,phone,brand_id,brand,pipeline_status,do_not_contact,email_suppressed,last_inbound_reply_at,last_contact,updated_at,created_at,next_followup,nurture_status,property_interest,waiting_on,waiting_until")
     .limit(5000);
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
