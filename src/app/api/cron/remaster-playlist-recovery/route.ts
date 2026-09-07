@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     try {
       const playlist = await ensureRemasterLongFormPlaylist(playlistName, PLAYLIST_DESCRIPTION);
       const added = await addRemasterLongFormToPlaylist(videoId, playlist.playlistId);
-      results.push({
+      const result = {
         jobId: job.id,
         videoId,
         playlistName,
@@ -54,14 +54,32 @@ export async function GET(request: NextRequest) {
         playlistCreated: playlist.created,
         duplicate: added.duplicate,
         ok: true,
+      };
+      results.push(result);
+      await supabase.from("remaster_playlist_recovery_audit").insert({
+        job_id: job.id,
+        youtube_video_id: videoId,
+        playlist_name: playlistName,
+        playlist_id: playlist.playlistId,
+        playlist_created: playlist.created,
+        duplicate: added.duplicate,
+        ok: true,
       });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       results.push({
         jobId: job.id,
         videoId,
         playlistName,
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage,
+      });
+      await supabase.from("remaster_playlist_recovery_audit").insert({
+        job_id: job.id,
+        youtube_video_id: videoId,
+        playlist_name: playlistName,
+        ok: false,
+        error_message: errorMessage,
       });
     }
   }
