@@ -118,6 +118,50 @@ async function upsertBrandVisibility(
   }
 }
 
+async function attachCachedFeedSourceFacts(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  items: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  const refs = Array.from(
+    new Set(
+      items
+        .filter((item) => ["redsp", "xml"].includes(String(item.source || "").toLowerCase()))
+        .map((item) => String(item.ref || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (refs.length === 0) return items;
+
+  const { data, error } = await supabase
+    .from("property_feed_source_cache")
+    .select("ref,source_description,amenities_no,floor_label,facing_source,usage_source,expires_at")
+    .in("ref", refs)
+    .gt("expires_at", new Date().toISOString());
+
+  if (error) {
+    console.warn("[properties] feed source cache unavailable:", error.message);
+    return items;
+  }
+
+  const byRef = new Map((data || []).map((row) => [String(row.ref), row]));
+  return items.map((item): Record<string, unknown> => {
+    const ref = String(item.ref || "").trim();
+    const cached = byRef.get(ref);
+    if (!cached) return item;
+
+    return {
+      ...item,
+      ...(cached.source_description ? { source_description: cached.source_description } : {}),
+      ...(Array.isArray(cached.amenities_no) && cached.amenities_no.length > 0
+        ? { amenities_no: cached.amenities_no }
+        : {}),
+      ...(cached.floor_label ? { floor_label: cached.floor_label } : {}),
+      ...(cached.facing_source ? { facing_source: cached.facing_source } : {}),
+      ...(cached.usage_source ? { usage_source: cached.usage_source } : {}),
+    };
+  });
+}
+
 export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
@@ -156,39 +200,61 @@ export async function POST(req: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const body = await req.json();
-  const items: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
+  const receivedItems: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
+  const items: Record<string, unknown>[] = await attachCachedFeedSourceFacts(supabase, receivedItems);
 
-  // For each item with a ref, delete the old one then insert new - atomically per small batch
   const batchSize = 50;
   let deduplicated = 0;
   let inserted = 0;
   const errors: string[] = [];
+  const propertyIds: string[] = [];
 
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
+    const withRef = batch.filter((item) => typeof item.ref === "string" && item.ref.trim());
+    const withoutRef = batch.filter((item) => !(typeof item.ref === "string" && item.ref.trim()));
+    const refs = withRef.map((item) => String(item.ref).trim());
 
-    // Delete existing with matching refs in this batch
-    const batchRefs = batch
-      .map((item) => item.ref as string | undefined)
-      .filter((r): r is string => Boolean(r && r.trim()));
-
-    if (batchRefs.length > 0) {
-      const { data: deleted } = await supabase
+    if (refs.length > 0) {
+      const { data: existing, error: existingError } = await supabase
         .from("properties")
-        .delete()
-        .in("ref", batchRefs)
-        .select("id");
-      deduplicated += deleted?.length || 0;
+        .select("id,ref")
+        .in("ref", refs);
+
+      if (existingError) {
+        errors.push(`Batch ${Math.floor(i / batchSize) + 1} lookup: ${existingError.message}`);
+      } else {
+        deduplicated += existing?.length || 0;
+      }
+
+      const { data, error } = await supabase
+        .from("properties")
+        .upsert(withRef, { onConflict: "ref" })
+        .select("*");
+
+      if (error) {
+        errors.push(`Batch ${Math.floor(i / batchSize) + 1} upsert: ${error.message}`);
+      } else {
+        inserted += data?.length || 0;
+        propertyIds.push(...(data || []).map((row) => String(row.id)).filter(Boolean));
+        await upsertBrandVisibility(supabase, data || []);
+      }
     }
 
-    // Insert this batch
-    const { data, error } = await supabase.from("properties").insert(batch).select("*");
-    if (error) {
-      errors.push(`Batch ${Math.floor(i / batchSize) + 1}: ${error.message}`);
-      continue;
+    if (withoutRef.length > 0) {
+      const { data, error } = await supabase
+        .from("properties")
+        .insert(withoutRef)
+        .select("*");
+
+      if (error) {
+        errors.push(`Batch ${Math.floor(i / batchSize) + 1} insert: ${error.message}`);
+      } else {
+        inserted += data?.length || 0;
+        propertyIds.push(...(data || []).map((row) => String(row.id)).filter(Boolean));
+        await upsertBrandVisibility(supabase, data || []);
+      }
     }
-    inserted += data?.length || 0;
-    await upsertBrandVisibility(supabase, data || []);
   }
 
   if (errors.length > 0 && inserted === 0) {
@@ -198,6 +264,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     inserted,
     deduplicated,
+    propertyIds: Array.from(new Set(propertyIds)),
     errors: errors.length > 0 ? errors : undefined,
   });
 }
