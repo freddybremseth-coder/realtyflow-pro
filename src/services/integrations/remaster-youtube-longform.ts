@@ -144,7 +144,7 @@ export async function uploadRemasterLongFormFile(input: {
   const safeTitle = sanitizeText(input.title, 100) || "Re-Master Freddy Mediterranean Mix";
   const safeDescription = sanitizeText(input.description, 4900);
   const safeTags = sanitizeTags(input.tags);
-  const privacyStatus = input.privacyStatus || "private";
+  const privacyStatus = input.privacyStatus || "public";
 
   if (input.onReadyToInsert) await input.onReadyToInsert();
 
