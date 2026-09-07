@@ -230,42 +230,104 @@ function jsonCandidate(text: string): string {
   return unfenced;
 }
 
+function parseJsonRecursively(text: string): unknown {
+  let value: unknown = text;
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (typeof value !== "string") return value;
+    const source = depth === 0 ? jsonCandidate(value) : value.trim();
+    try {
+      value = JSON.parse(source) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  return value;
+}
+
+function hasEditorialKeys(object: Record<string, unknown>) {
+  return ["headline_no", "headline", "title_no", "title"].some((key) => key in object)
+    || ["intro_no", "intro", "description_no", "description", "summary"].some((key) => key in object);
+}
+
+function unwrapEditorialObject(value: unknown): Record<string, unknown> | null {
+  let current: unknown = value;
+  const wrapperKeys = ["editorial_no", "editorial", "result", "data", "output", "content", "property"];
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof current === "string") {
+      current = parseJsonRecursively(current);
+      continue;
+    }
+    if (Array.isArray(current)) {
+      current = current.find((item) => item && (typeof item === "object" || typeof item === "string")) ?? null;
+      continue;
+    }
+    if (!current || typeof current !== "object") return null;
+
+    const object = current as Record<string, unknown>;
+    if (hasEditorialKeys(object)) return object;
+
+    const wrapper = wrapperKeys.find((key) => object[key] !== undefined && object[key] !== null);
+    if (!wrapper) return null;
+    current = object[wrapper];
+  }
+
+  return null;
+}
+
+function firstString(object: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = object[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function bulletValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  if (typeof value === "string") {
+    return value
+      .split(/(?:\r?\n|•|;)+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 export function parsePropertyEditorialAiResponse(text: string): {
   headline_no: string;
   intro_no: string;
   bullets_no: string[];
   orientation_no: string;
 } | null {
-  try {
-    const parsed = JSON.parse(jsonCandidate(text)) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    const object = parsed as Record<string, unknown>;
-    if (typeof object.headline_no !== "string" || !object.headline_no.trim()) return null;
-    if (typeof object.intro_no !== "string" || !object.intro_no.trim()) return null;
+  const parsed = parseJsonRecursively(text);
+  const object = unwrapEditorialObject(parsed);
+  if (!object) return null;
 
-    const headline = neutralizePromotionalLanguage(object.headline_no);
-    const intro = neutralizePromotionalLanguage(object.intro_no);
-    if (!headline || !intro) return null;
+  const headlineRaw = firstString(object, ["headline_no", "headline", "title_no", "title"]);
+  const introRaw = firstString(object, ["intro_no", "intro", "description_no", "description", "summary"]);
+  if (!headlineRaw || !introRaw) return null;
 
-    const bullets = Array.isArray(object.bullets_no)
-      ? object.bullets_no
-          .filter((item): item is string => typeof item === "string")
-          .map((item) => neutralizePromotionalLanguage(item))
-          .filter(Boolean)
-      : [];
-    const orientation = typeof object.orientation_no === "string" && object.orientation_no.trim()
-      ? neutralizePromotionalLanguage(object.orientation_no) || "Ikke angitt"
-      : "Ikke angitt";
+  const headline = neutralizePromotionalLanguage(headlineRaw);
+  const intro = neutralizePromotionalLanguage(introRaw);
+  if (!headline || !intro) return null;
 
-    return {
-      headline_no: headline,
-      intro_no: intro,
-      bullets_no: Array.from(new Set(bullets)).slice(0, 6),
-      orientation_no: orientation,
-    };
-  } catch {
-    return null;
-  }
+  const bulletSource = object.bullets_no ?? object.bullets ?? object.highlights ?? object.features;
+  const bullets = bulletValues(bulletSource)
+    .map((item) => neutralizePromotionalLanguage(item))
+    .filter(Boolean);
+
+  const orientationRaw = firstString(object, ["orientation_no", "usage", "property_use", "use"]);
+  const orientation = orientationRaw
+    ? neutralizePromotionalLanguage(orientationRaw) || "Ikke angitt"
+    : "Ikke angitt";
+
+  return {
+    headline_no: headline,
+    intro_no: intro,
+    bullets_no: Array.from(new Set(bullets)).slice(0, 6),
+    orientation_no: orientation,
+  };
 }
 
 function buildUserPrompt(source: EditorialSourceData): string {
@@ -310,7 +372,7 @@ export async function generatePropertyEditorialNo(
       temperature: 0.2,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      validateResponse: (text) => parsePropertyEditorialAiResponse(text) !== null,
+      validateResponse: (value) => parsePropertyEditorialAiResponse(value) !== null,
       fallbackOnInvalidResponse: true,
     });
     const parsed = parsePropertyEditorialAiResponse(raw);
