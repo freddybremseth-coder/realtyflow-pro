@@ -7,6 +7,10 @@ const route = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/cron/property-editorial/route.ts"),
   "utf8",
 );
+const diagnostics = fs.readFileSync(
+  path.join(process.cwd(), "src/lib/realty/property-editorial-ai-diagnostics.ts"),
+  "utf8",
+);
 
 test("property editorial worker is cron protected and processes small batches", () => {
   assert.match(route, /requireCronApi\(request\)/);
@@ -23,11 +27,20 @@ test("worker reuses unchanged hashes and retries failures with a bounded attempt
 
 test("worker includes facing in factual input and records safe AI provenance", () => {
   assert.match(route, /facing_source/);
+  assert.match(route, /generatePropertyEditorialNoDiagnosed/);
   assert.match(route, /generation_mode: usedFallback \? "template" : "ai"/);
   assert.match(route, /configured_ai_providers: providers/);
-  assert.match(route, /"no_ai_provider"/);
-  assert.match(route, /"ai_error_or_invalid_output"/);
+  assert.match(route, /fallback_reason: fallbackReason/);
   assert.doesNotMatch(route, /ANTHROPIC_API_KEY\s*[:=]\s*["'][^"']+["']/);
   assert.doesNotMatch(route, /GEMINI_API_KEY\s*[:=]\s*["'][^"']+["']/);
   assert.doesNotMatch(route, /OPENAI_API_KEY\s*[:=]\s*["'][^"']+["']/);
+});
+
+test("diagnosed generator distinguishes provider failure from invalid output and accepts JSON fences", () => {
+  assert.match(diagnostics, /"no_ai_provider"/);
+  assert.match(diagnostics, /"provider_chain_unavailable"/);
+  assert.match(diagnostics, /"invalid_output"/);
+  assert.match(diagnostics, /stripJsonFence/);
+  assert.match(diagnostics, /```\(\?:json\)\?/);
+  assert.match(diagnostics, /fallbackOnInvalidResponse: true/);
 });
