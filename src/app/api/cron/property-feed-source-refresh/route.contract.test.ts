@@ -33,3 +33,14 @@ test("source refresh records sanitized operational result metadata", () => {
   assert.match(route, /source_facts_last_error/);
   assert.match(route, /slice\(0, 1000\)/);
 });
+
+test("zero-row diagnostics record structure only and never persist raw XML", () => {
+  assert.match(route, /source_facts_diagnostics/);
+  assert.match(route, /content_type/);
+  assert.match(route, /response_bytes/);
+  assert.match(route, /first_tags/);
+  assert.match(route, /has_property_tag/);
+  assert.match(route, /has_ref_tag/);
+  assert.match(route, /has_desc_tag/);
+  assert.doesNotMatch(route, /source_facts_raw_xml|xml_preview|response_body/);
+});
