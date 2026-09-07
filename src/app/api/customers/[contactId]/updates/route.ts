@@ -10,7 +10,9 @@ import {
   changedCustomerDetailFields,
   contactDetailPatch,
   customerWaitingStatePatch,
+  normalizeCustomerPipelineStatus,
 } from "@/lib/customer-updates";
+import { recordPipelineTransition } from "@/lib/revenue/pipeline-transition";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -157,6 +159,22 @@ export async function POST(
       error: result.error.message || "Kunne ikke oppdatere kunden",
       code: missingColumnFromError(result.error.message || "") === "interactions" ? "CUSTOMER_TIMELINE_NOT_AVAILABLE" : "CUSTOMER_UPDATE_FAILED",
     }, { status: 500 });
+  }
+
+  if (parsed.data.action === "UPDATE_DETAILS" && changedFields.includes("pipeline_status")) {
+    const previousStatus = normalizeCustomerPipelineStatus(contact.pipeline_status);
+    const nextStatus = normalizeCustomerPipelineStatus(result.data?.pipeline_status || result.appliedPayload.pipeline_status || contact.pipeline_status);
+    const brandId = String(result.data?.brand_id || result.data?.brand || contact.brand_id || contact.brand || "").trim();
+    await recordPipelineTransition(supabase, {
+      contactId: parsedContactId.data,
+      brandId,
+      previousStatus,
+      nextStatus,
+      occurredAt: now,
+      actorType: "human",
+      actorId: context.email,
+      createdBy: "api/customers/[contactId]/updates",
+    }).catch(() => undefined);
   }
 
   const appliedFields = Object.keys(result.appliedPayload).filter((field) => !["interactions", "updated_at"].includes(field));
