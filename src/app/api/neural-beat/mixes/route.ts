@@ -32,7 +32,7 @@ const createMixSchema = z
     zenEcoHomesEnabled: z.boolean().default(true),
     visualRegion: regionSchema.default("any"),
     visualType: visualTypeSchema.default("mixed"),
-    sponsorIntervalMinutes: z.number().int().min(5).max(60).default(20),
+    sponsorIntervalMinutes: z.number().int().min(5).max(60).default(10),
     ctaText: z.string().trim().max(500).default(""),
     selectedSongIds: z.array(z.string().trim().min(1).max(200)).min(2).max(60),
     queue: z.boolean().optional().default(false),
