@@ -10,7 +10,8 @@ FAST format. Regler:
 - Returner KUN gyldig JSON etter skjemaet. Ingen forklaring, ingen markdown.
 - headline_no skal være kort og faktabasert. Ikke konverter antall soverom til et antall "rom" med mindre kilden sier det eksplisitt.
 - bullets_no skal bare inneholde fasiliteter eller egenskaper som er eksplisitt støttet av rådataene.
-- orientation_no skal være "Ikke angitt" hvis bruksorientering ikke er eksplisitt støttet av rådataene.`;
+- orientation_no beskriver aktuell bruk, for eksempel feriebolig eller helårsbolig. Det er IKKE himmelretning.
+- orientation_no skal være "Ikke angitt" hvis slik bruksorientering ikke er eksplisitt støttet av rådataene.`;
 
 const FORBIDDEN_CLAIMS = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt)\b/i;
 
@@ -35,7 +36,7 @@ export interface EditorialSourceData {
   epc: string;
   price: number | null;
   rawDescription: string;
-  orientation: string;
+  usage: string;
 }
 
 function normalizeText(value: unknown): string {
@@ -75,7 +76,7 @@ export function propertyEditorialSource(property: Record<string, unknown>): Edit
     price: toFiniteNumber(property.price),
     rawDescription:
       normalizeText(property.source_description ?? property.raw_description ?? property.description ?? property.description_no),
-    orientation: normalizeText(property.orientation_source ?? property.orientation),
+    usage: normalizeText(property.usage_source ?? property.property_use ?? property.suitable_for),
   };
 }
 
@@ -92,7 +93,7 @@ export function computePropertyEditorialSourceHash(property: Record<string, unkn
     epc: source.epc,
     price: source.price,
     raw_description: source.rawDescription,
-    orientation: source.orientation,
+    usage: source.usage,
   });
   return createHash("sha256").update(canonical).digest("hex");
 }
@@ -123,7 +124,7 @@ export function buildPropertyEditorialFallback(
   const introParts: string[] = [];
   if (facts.length > 0) introParts.push(`${source.type} med ${facts.join(" og ")}${locationSuffix}.`);
   else introParts.push(`${source.type}${locationSuffix}.`);
-  if (source.m2) introParts.push(`Bruksareal ${source.m2} m².`);
+  if (source.m2) introParts.push(`Oppgitt areal ${source.m2} m².`);
   if (source.epc !== "Ikke angitt") introParts.push(`Energiklasse ${source.epc}.`);
 
   const bullets = [...source.features].slice(0, 5);
@@ -135,7 +136,7 @@ export function buildPropertyEditorialFallback(
     headline_no: headline,
     intro_no: introParts.join(" "),
     bullets_no: bullets.slice(0, 5),
-    orientation_no: source.orientation || "Ikke angitt",
+    orientation_no: source.usage || "Ikke angitt",
     source_hash: sourceHash,
     generated_at: now.toISOString(),
     model: "template-v1",
@@ -180,8 +181,9 @@ function parseAiEditorial(text: string): {
 
 function buildUserPrompt(source: EditorialSourceData): string {
   return `Boligtype: ${source.type}          Soverom: ${source.beds ?? "Ikke angitt"}     Bad: ${source.baths ?? "Ikke angitt"}
-Område/by: ${source.area}          Bruksareal: ${source.m2 ?? "Ikke angitt"} m² Etasje/plan: ${source.floor}
+Område/by: ${source.area}          Oppgitt areal: ${source.m2 ?? "Ikke angitt"} m² Etasje/plan: ${source.floor}
 Fasiliteter: ${source.features.length > 0 ? source.features.join(", ") : "Ikke angitt"}    Energiklasse: ${source.epc}  Pris: ${source.price ? `€${source.price}` : "Ikke angitt"}
+Aktuell bruk (kilde): ${source.usage || "Ikke angitt"}
 Beskrivelse (kilde): ${source.rawDescription || "Ikke angitt"}`;
 }
 
