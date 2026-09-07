@@ -118,6 +118,50 @@ async function upsertBrandVisibility(
   }
 }
 
+async function attachCachedFeedSourceFacts(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  items: Record<string, unknown>[],
+) {
+  const refs = Array.from(
+    new Set(
+      items
+        .filter((item) => ["redsp", "xml"].includes(String(item.source || "").toLowerCase()))
+        .map((item) => String(item.ref || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (refs.length === 0) return items;
+
+  const { data, error } = await supabase
+    .from("property_feed_source_cache")
+    .select("ref,source_description,amenities_no,floor_label,orientation_source,expires_at")
+    .in("ref", refs)
+    .gt("expires_at", new Date().toISOString());
+
+  if (error) {
+    // Additive migration may not be live yet. Never block the property import.
+    console.warn("[properties] feed source cache unavailable:", error.message);
+    return items;
+  }
+
+  const byRef = new Map((data || []).map((row) => [String(row.ref), row]));
+  return items.map((item) => {
+    const ref = String(item.ref || "").trim();
+    const cached = byRef.get(ref);
+    if (!cached) return item;
+
+    return {
+      ...item,
+      ...(cached.source_description ? { source_description: cached.source_description } : {}),
+      ...(Array.isArray(cached.amenities_no) && cached.amenities_no.length > 0
+        ? { amenities_no: cached.amenities_no }
+        : {}),
+      ...(cached.floor_label ? { floor_label: cached.floor_label } : {}),
+      ...(cached.orientation_source ? { orientation_source: cached.orientation_source } : {}),
+    };
+  });
+}
+
 export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
@@ -156,7 +200,8 @@ export async function POST(req: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const body = await req.json();
-  const items: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
+  const receivedItems: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
+  const items = await attachCachedFeedSourceFacts(supabase, receivedItems);
 
   // Feed rows are updated in place by their unique ref. This preserves the
   // property UUID and therefore approvals, visibility rows, shortlist links,
