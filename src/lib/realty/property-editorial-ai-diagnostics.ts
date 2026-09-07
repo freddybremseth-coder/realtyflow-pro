@@ -1,6 +1,7 @@
 import { askClaude } from "@/services/ai/claude-client";
 import {
   buildPropertyEditorialFallback,
+  buildPropertyEditorialSeo,
   parsePropertyEditorialAiResponse,
   propertyEditorialSource,
   PROPERTY_EDITORIAL_NO_SYSTEM_PROMPT,
@@ -150,6 +151,8 @@ export async function generatePropertyEditorialNoDiagnosed(
     return {
       editorial: {
         ...parsed,
+        // SEO utledes deterministisk fra samme fakta (ikke eget AI-kall).
+        ...buildPropertyEditorialSeo(propertyEditorialSource(property)),
         source_hash: fallback.source_hash,
         generated_at: (options?.now ?? new Date()).toISOString(),
         model: "realtyflow-ai-chain/haiku",
