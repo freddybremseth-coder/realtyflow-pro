@@ -5,6 +5,7 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 export const dynamic = "force-dynamic";
 
 const ACTIVE_STAGES = ["QUALIFIED", "MATCHING", "VIEWING"];
+const LEAD_INTELLIGENCE_READINESS = new Set(["READY_FOR_SHORTLIST", "MATCHING_WITHOUT_SHORTLIST"]);
 
 function upper(value: unknown) {
   return String(value || "").trim().toUpperCase();
@@ -161,11 +162,16 @@ export async function GET(request: NextRequest) {
       targetStage = "NEGOTIATION";
     }
 
+    const brand = String(contact.brand_id || contact.brand || "");
+    const href = profile && LEAD_INTELLIGENCE_READINESS.has(readiness)
+      ? `/lead-intelligence?buyerProfileId=${encodeURIComponent(String(profile.id))}${brand ? `&brand=${encodeURIComponent(brand)}` : ""}`
+      : `/customers?contactId=${encodeURIComponent(String(contact.id))}`;
+
     return {
       contactId: contact.id,
       name: contact.name || contact.email || "Ukjent kunde",
       email: contact.email,
-      brand: contact.brand_id || contact.brand,
+      brand,
       stage,
       pipelineValue: Number(contact.pipeline_value || 0),
       profile: profile ? { id: profile.id, status: profile.status, purchaseReadiness: profile.purchase_readiness } : null,
@@ -176,7 +182,7 @@ export async function GET(request: NextRequest) {
       readiness,
       nextAction,
       targetStage,
-      href: `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
+      href,
     };
   });
 
