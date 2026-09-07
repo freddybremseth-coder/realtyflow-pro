@@ -17,7 +17,10 @@ export interface DiagnosedPropertyEditorialResult {
   fallbackReason?: PropertyEditorialFallbackReason;
 }
 
-const FORBIDDEN_CLAIMS = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt)\b/i;
+// Promotional wording is removed deterministically instead of making an
+// otherwise valid structured response fail. We never replace it with another
+// subjective adjective because that could introduce an unsupported claim.
+const PROMOTIONAL_WORDS = /\b(?:drømmebolig(?:en)?|unik(?:e)?|fantastisk(?:e)?|eksklusiv(?:e)?|spektakulær(?:e)?|perfekt(?:e)?)\b/gi;
 
 function stripJsonFence(text: string) {
   const trimmed = text.trim();
@@ -25,7 +28,18 @@ function stripJsonFence(text: string) {
   return fenced ? fenced[1].trim() : trimmed;
 }
 
-function parseEditorial(text: string): {
+export function sanitizePropertyEditorialText(value: string) {
+  return value
+    .replace(PROMOTIONAL_WORDS, "")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/([,;:])\s*([,;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .replace(/^([,;:.!?]\s*)+/, "")
+    .trim();
+}
+
+export function parsePropertyEditorialAiOutput(text: string): {
   headline_no: string;
   intro_no: string;
   bullets_no: string[];
@@ -34,22 +48,31 @@ function parseEditorial(text: string): {
   try {
     const parsed = JSON.parse(stripJsonFence(text)) as Record<string, unknown>;
     if (!parsed || typeof parsed !== "object") return null;
-    if (typeof parsed.headline_no !== "string" || !parsed.headline_no.trim()) return null;
-    if (typeof parsed.intro_no !== "string" || !parsed.intro_no.trim()) return null;
+    if (typeof parsed.headline_no !== "string") return null;
+    if (typeof parsed.intro_no !== "string") return null;
     if (!Array.isArray(parsed.bullets_no) || !parsed.bullets_no.every((item) => typeof item === "string")) return null;
-    if (typeof parsed.orientation_no !== "string" || !parsed.orientation_no.trim()) return null;
+    if (typeof parsed.orientation_no !== "string") return null;
 
+    const headline = sanitizePropertyEditorialText(parsed.headline_no);
+    const intro = sanitizePropertyEditorialText(parsed.intro_no);
+    const orientation = sanitizePropertyEditorialText(parsed.orientation_no);
     const bullets = Array.from(
-      new Set(parsed.bullets_no.map((item) => String(item).trim()).filter(Boolean)),
+      new Set(
+        parsed.bullets_no
+          .map((item) => sanitizePropertyEditorialText(String(item)))
+          .filter(Boolean),
+      ),
     ).slice(0, 6);
-    const combined = [parsed.headline_no, parsed.intro_no, ...bullets, parsed.orientation_no].join(" ");
-    if (FORBIDDEN_CLAIMS.test(combined)) return null;
+
+    // Required editorial fields must still contain useful text after cleanup.
+    // Empty promotional-only output is rejected and falls back to the factual template.
+    if (!headline || !intro || !orientation) return null;
 
     return {
-      headline_no: parsed.headline_no.trim(),
-      intro_no: parsed.intro_no.trim(),
+      headline_no: headline,
+      intro_no: intro,
       bullets_no: bullets,
-      orientation_no: parsed.orientation_no.trim(),
+      orientation_no: orientation,
     };
   } catch {
     return null;
@@ -99,11 +122,11 @@ export async function generatePropertyEditorialNoDiagnosed(
       temperature: 0.2,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      validateResponse: (text) => parseEditorial(text) !== null,
+      validateResponse: (text) => parsePropertyEditorialAiOutput(text) !== null,
       fallbackOnInvalidResponse: true,
     });
 
-    const parsed = parseEditorial(raw);
+    const parsed = parsePropertyEditorialAiOutput(raw);
     if (!parsed) {
       return { editorial: fallback, usedFallback: true, fallbackReason: "invalid_output" };
     }
