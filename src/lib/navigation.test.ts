@@ -19,7 +19,7 @@ test("navigation groups every existing sidebar link exactly once", () => {
   assert.equal(new Set(coverage.sourceHrefs).size, coverage.sourceHrefs.length);
 });
 
-test("owner navigation promotes Nexus Today, Personal Intelligence, Nexus Inbox and Nexus OS as main work areas", () => {
+test("owner navigation promotes Nexus Today, Nexus Daily, Personal Intelligence, Nexus Inbox and Nexus OS as main work areas", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
@@ -27,7 +27,7 @@ test("owner navigation promotes Nexus Today, Personal Intelligence, Nexus Inbox 
   );
   assert.deepEqual(
     sections.find((section) => section.id === "workspace")?.items.map((item) => item.href),
-    ["/", "/nexus-os/today", "/personal-intelligence", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
+    ["/", "/nexus-os/today", "/nexus-os/daily", "/personal-intelligence", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
   );
   assert.deepEqual(
     sections.find((section) => section.id === "os")?.items.slice(0, 5).map((item) => item.href),
@@ -69,6 +69,7 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/book-growth/economics", sections), "publishing");
   assert.equal(activeNavigationSection("/os", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/today", sections), "workspace");
+  assert.equal(activeNavigationSection("/nexus-os/daily", sections), "workspace");
   assert.equal(activeNavigationSection("/personal-intelligence/start", sections), "workspace");
   assert.equal(activeNavigationSection("/personal-intelligence/learn", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/inbox", sections), "workspace");
@@ -106,6 +107,10 @@ test("menu search finds OS, Personal Intelligence and growth surfaces by label",
   const today = filterNavigationSections(sections, "Nexus Today");
   assert.equal(today.length, 1);
   assert.deepEqual(today[0]?.items.map((item) => item.href), ["/nexus-os/today"]);
+
+  const daily = filterNavigationSections(sections, "Nexus Daily");
+  assert.equal(daily.length, 1);
+  assert.deepEqual(daily[0]?.items.map((item) => item.href), ["/nexus-os/daily"]);
 
   const inbox = filterNavigationSections(sections, "Nexus Inbox");
   assert.equal(inbox.length, 1);
