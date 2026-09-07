@@ -12,6 +12,7 @@ export const maxDuration = 120;
 
 const JOB_LIMIT = 6;
 const MAX_ATTEMPTS = 5;
+const STALE_PROCESSING_MINUTES = 15;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -39,7 +40,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  const now = new Date().toISOString();
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
+  const staleBefore = new Date(nowDate.getTime() - STALE_PROCESSING_MINUTES * 60_000).toISOString();
+
+  // Recover jobs left in processing after a terminated invocation.
+  await supabase
+    .from("property_editorial_jobs")
+    .update({
+      status: "retry",
+      available_at: now,
+      last_error: "Recovered stale processing job",
+      updated_at: now,
+    })
+    .eq("status", "processing")
+    .lt("updated_at", staleBefore);
+
+  // Keep the short-lived XML bridge bounded.
+  await supabase
+    .from("property_feed_source_cache")
+    .delete()
+    .lt("expires_at", new Date(nowDate.getTime() - 24 * 60 * 60 * 1000).toISOString());
+
   const { data: jobs, error: jobsError } = await supabase
     .from("property_editorial_jobs")
     .select("id,property_id,status,attempts")
@@ -74,7 +96,7 @@ export async function GET(request: NextRequest) {
         const { data: property, error: propertyError } = await supabase
           .from("properties")
           .select(
-            "id,ref,property_type,type,bedrooms,bathrooms,location,built_area,floor_label,amenities_no,energy_rating,price,source_description,description,description_no,orientation_source,pool,garage,editorial_no,editorial_no_approved",
+            "id,ref,property_type,type,bedrooms,bathrooms,location,built_area,floor_label,amenities_no,energy_rating,price,source_description,description,description_no,usage_source,pool,garage,editorial_no,editorial_no_approved",
           )
           .eq("id", claimed.property_id)
           .maybeSingle();
