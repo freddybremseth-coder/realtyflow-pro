@@ -1,6 +1,7 @@
 import { askClaude } from "@/services/ai/claude-client";
 import {
   buildPropertyEditorialFallback,
+  parsePropertyEditorialAiResponse,
   propertyEditorialSource,
   PROPERTY_EDITORIAL_NO_SYSTEM_PROMPT,
   type PropertyEditorialNo,
@@ -15,45 +16,6 @@ export interface DiagnosedPropertyEditorialResult {
   editorial: PropertyEditorialNo;
   usedFallback: boolean;
   fallbackReason?: PropertyEditorialFallbackReason;
-}
-
-const FORBIDDEN_CLAIMS = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt)\b/i;
-
-function stripJsonFence(text: string) {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fenced ? fenced[1].trim() : trimmed;
-}
-
-function parseEditorial(text: string): {
-  headline_no: string;
-  intro_no: string;
-  bullets_no: string[];
-  orientation_no: string;
-} | null {
-  try {
-    const parsed = JSON.parse(stripJsonFence(text)) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object") return null;
-    if (typeof parsed.headline_no !== "string" || !parsed.headline_no.trim()) return null;
-    if (typeof parsed.intro_no !== "string" || !parsed.intro_no.trim()) return null;
-    if (!Array.isArray(parsed.bullets_no) || !parsed.bullets_no.every((item) => typeof item === "string")) return null;
-    if (typeof parsed.orientation_no !== "string" || !parsed.orientation_no.trim()) return null;
-
-    const bullets = Array.from(
-      new Set(parsed.bullets_no.map((item) => String(item).trim()).filter(Boolean)),
-    ).slice(0, 6);
-    const combined = [parsed.headline_no, parsed.intro_no, ...bullets, parsed.orientation_no].join(" ");
-    if (FORBIDDEN_CLAIMS.test(combined)) return null;
-
-    return {
-      headline_no: parsed.headline_no.trim(),
-      intro_no: parsed.intro_no.trim(),
-      bullets_no: bullets,
-      orientation_no: parsed.orientation_no.trim(),
-    };
-  } catch {
-    return null;
-  }
 }
 
 function buildUserPrompt(property: Record<string, unknown>) {
@@ -99,11 +61,11 @@ export async function generatePropertyEditorialNoDiagnosed(
       temperature: 0.2,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      validateResponse: (text) => parseEditorial(text) !== null,
+      validateResponse: (text) => parsePropertyEditorialAiResponse(text) !== null,
       fallbackOnInvalidResponse: true,
     });
 
-    const parsed = parseEditorial(raw);
+    const parsed = parsePropertyEditorialAiResponse(raw);
     if (!parsed) {
       return { editorial: fallback, usedFallback: true, fallbackReason: "invalid_output" };
     }
