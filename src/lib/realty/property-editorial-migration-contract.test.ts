@@ -11,19 +11,29 @@ const sql = fs.readFileSync(
   "utf8",
 );
 
-test("property editorial migration is additive and persists source plus generated JSON", () => {
+test("property editorial migration persists raw facts plus generated JSON", () => {
   for (const column of [
     "source_description",
     "floor_label",
     "orientation_source",
+    "amenities_no",
     "editorial_no",
     "editorial_no_approved",
   ]) {
     assert.match(sql, new RegExp(`add column if not exists ${column}`, "i"));
   }
+  assert.match(sql, /create unique index if not exists idx_properties_ref_unique/i);
+  assert.match(sql, /create table if not exists public\.property_feed_source_cache/i);
   assert.match(sql, /create table if not exists public\.property_editorial_jobs/i);
   assert.match(sql, /unique \(property_id\)/i);
   assert.match(sql, /create index if not exists idx_property_editorial_jobs_ready/i);
+});
+
+test("raw feed source is preserved separately from generated Norwegian copy", () => {
+  assert.match(sql, /create trigger properties_preserve_feed_source/i);
+  assert.match(sql, /new\.source_description := new\.description/i);
+  assert.match(sql, /new\.source_description := coalesce\(old\.source_description, new\.description\)/i);
+  assert.match(sql, /property_feed_source_cache[\s\S]*source_description text[\s\S]*amenities_no text\[\][\s\S]*expires_at timestamptz/i);
 });
 
 test("feed fact changes queue editorial work without creating a worker feedback loop", () => {
@@ -36,8 +46,8 @@ test("feed fact changes queue editorial work without creating a worker feedback 
   assert.match(sql, /new\.source[\s\S]*'redsp'[\s\S]*'xml'[\s\S]*'csv'/i);
 });
 
-test("editorial queue is service-only and retries are represented explicitly", () => {
-  assert.match(sql, /enable row level security/i);
+test("editorial queue and source cache are service-only", () => {
+  assert.match(sql, /revoke all on table public\.property_feed_source_cache from anon, authenticated/i);
   assert.match(sql, /revoke all on table public\.property_editorial_jobs from anon, authenticated/i);
   assert.match(sql, /status in \('queued', 'processing', 'retry', 'failed'\)/i);
 });
