@@ -6,6 +6,7 @@ Du får rådata om én bolig. Skriv en kort, nøktern norsk annonsetekst i et
 FAST format. Regler:
 - Ikke overdriv, ikke bruk superlativer ("drømmebolig", "unik", "fantastisk").
 - Ikke finn på fakta. Bruk kun det som står i rådataene.
+- Kildebeskrivelsen kan inneholde reklamespråk og superlativer. Ikke kopier slike subjektive formuleringer.
 - Naturlig, korrekt norsk — ingen maskinoversettelse-preg.
 - Returner KUN gyldig JSON etter skjemaet. Ingen forklaring, ingen markdown.
 - headline_no skal være kort og faktabasert. Ikke konverter antall soverom til et antall "rom" med mindre kilden sier det eksplisitt.
@@ -225,14 +226,26 @@ function editableAiShape(value: unknown): value is {
   return !FORBIDDEN_CLAIMS.test(combined);
 }
 
-function parseAiEditorial(text: string): {
+function jsonCandidate(text: string): string {
+  const trimmed = text.trim();
+  const unfenced = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const firstBrace = unfenced.indexOf("{");
+  const lastBrace = unfenced.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) return unfenced.slice(firstBrace, lastBrace + 1);
+  return unfenced;
+}
+
+export function parsePropertyEditorialAiResponse(text: string): {
   headline_no: string;
   intro_no: string;
   bullets_no: string[];
   orientation_no: string;
 } | null {
   try {
-    const parsed = JSON.parse(text) as unknown;
+    const parsed = JSON.parse(jsonCandidate(text)) as unknown;
     if (!editableAiShape(parsed)) return null;
     return {
       headline_no: parsed.headline_no.trim(),
@@ -287,10 +300,10 @@ export async function generatePropertyEditorialNo(
       temperature: 0.2,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      validateResponse: (text) => parseAiEditorial(text) !== null,
+      validateResponse: (text) => parsePropertyEditorialAiResponse(text) !== null,
       fallbackOnInvalidResponse: true,
     });
-    const parsed = parseAiEditorial(raw);
+    const parsed = parsePropertyEditorialAiResponse(raw);
     if (!parsed) return { editorial: fallback, usedFallback: true };
 
     return {
