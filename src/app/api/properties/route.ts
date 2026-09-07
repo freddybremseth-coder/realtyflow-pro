@@ -121,7 +121,7 @@ async function upsertBrandVisibility(
 async function attachCachedFeedSourceFacts(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   items: Record<string, unknown>[],
-) {
+): Promise<Record<string, unknown>[]> {
   const refs = Array.from(
     new Set(
       items
@@ -144,7 +144,7 @@ async function attachCachedFeedSourceFacts(
   }
 
   const byRef = new Map((data || []).map((row) => [String(row.ref), row]));
-  return items.map((item) => {
+  return items.map((item): Record<string, unknown> => {
     const ref = String(item.ref || "").trim();
     const cached = byRef.get(ref);
     if (!cached) return item;
@@ -201,7 +201,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const receivedItems: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
-  const items = await attachCachedFeedSourceFacts(supabase, receivedItems);
+  const items: Record<string, unknown>[] = await attachCachedFeedSourceFacts(supabase, receivedItems);
 
   const batchSize = 50;
   let deduplicated = 0;
