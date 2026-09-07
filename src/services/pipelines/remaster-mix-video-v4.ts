@@ -13,6 +13,8 @@ const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
+const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
+const DEFAULT_ZENECO_LOGO_URL = "https://realtyflow.chatgenius.pro/brand-logos/zeneco.png";
 
 export interface RemasterMixVideoV4Input {
   audioPath: string;
@@ -155,17 +157,67 @@ async function downloadVisuals(urls: string[], workingDirectory: string) {
   return imagePaths;
 }
 
+async function downloadLogo(url: string | null | undefined, workingDirectory: string, filename: string) {
+  if (!url) return null;
+  const target = path.join(workingDirectory, filename);
+  try {
+    await downloadImage(url, target);
+    const stat = await fs.stat(target);
+    if (stat.size <= 1024) throw new Error("Logo file is unexpectedly small.");
+    return target;
+  } catch (error) {
+    console.warn(`[RemasterMixVideoV4] ${filename} skipped:`, error instanceof Error ? error.message : error);
+    await fs.unlink(target).catch(() => undefined);
+    return null;
+  }
+}
+
 function escapeAssFilterPath(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
-export function buildConcatVisualFilterV4(assPath: string | null) {
+export function buildSponsorEnableExpressionV4(durationSeconds: number, sponsorIntervalMinutes: number) {
+  const duration = Math.max(1, durationSeconds);
+  const interval = Math.max(5, sponsorIntervalMinutes || 10) * 60;
+  const windows: string[] = [];
+  for (let start = interval; start < duration; start += interval) {
+    const end = Math.min(duration, start + 10);
+    windows.push(`between(t,${start.toFixed(3)},${end.toFixed(3)})`);
+  }
+  return windows.length ? windows.join("+") : "0";
+}
+
+export function buildConcatVisualFilterV4(
+  assPath: string | null,
+  logoInputIndex: number | null = null,
+  zenEcoLogoInputIndex: number | null = null,
+  sponsorIntervalMinutes = 10,
+  durationSeconds = 30 * 60,
+) {
   const parts = [
     `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
   ];
-  if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[branded]`);
-  else parts.push("[slideshow]null[branded]");
-  parts.push("[branded]format=yuv420p[vout]");
+  if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
+  else parts.push("[slideshow]null[texted]");
+
+  let current = "texted";
+  if (logoInputIndex !== null) {
+    parts.push(`[${logoInputIndex}:v]scale=240:-1:force_original_aspect_ratio=decrease[remaster_logo]`);
+    parts.push(`[${current}][remaster_logo]overlay=x=W-w-38:y=28:eof_action=repeat:shortest=0[with_remaster_logo]`);
+    current = "with_remaster_logo";
+  }
+
+  if (zenEcoLogoInputIndex !== null) {
+    const enable = buildSponsorEnableExpressionV4(durationSeconds, sponsorIntervalMinutes);
+    parts.push(`[${zenEcoLogoInputIndex}:v]split=2[zen_persistent_src][zen_sponsor_src]`);
+    parts.push("[zen_persistent_src]scale=280:-1:force_original_aspect_ratio=decrease[zen_persistent]");
+    parts.push("[zen_sponsor_src]scale=700:-1:force_original_aspect_ratio=decrease[zen_sponsor]");
+    parts.push(`[${current}][zen_persistent]overlay=x=38:y=28:eof_action=repeat:shortest=0[with_zen_logo]`);
+    parts.push(`[with_zen_logo][zen_sponsor]overlay=x=(W-w)/2:y=180:enable='${enable}':eof_action=repeat:shortest=0[with_sponsor_logo]`);
+    current = "with_sponsor_logo";
+  }
+
+  parts.push(`[${current}]format=yuv420p[vout]`);
   return parts.join(";");
 }
 
@@ -203,6 +255,19 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
       }), "utf8");
     }
 
+    const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
+    const logoPath = await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png");
+    const zenEcoLogoUrl = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || DEFAULT_ZENECO_LOGO_URL;
+    const zenEcoLogoPath = input.zenEcoHomesEnabled
+      ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png")
+      : null;
+
+    const logoInput = logoPath ? ["-framerate", "1", "-i", logoPath] : [];
+    const zenEcoLogoInput = zenEcoLogoPath ? ["-framerate", "1", "-i", zenEcoLogoPath] : [];
+    const logoInputIndex = logoPath ? 1 : null;
+    const zenEcoLogoInputIndex = zenEcoLogoPath ? 1 + (logoPath ? 1 : 0) : null;
+    const audioInputIndex = 1 + (logoPath ? 1 : 0) + (zenEcoLogoPath ? 1 : 0);
+
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v4.mp4");
     await input.onProgress?.(18, "rendering_visuals_v4");
     await runFFmpeg(binary, [
@@ -212,10 +277,18 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
       "-f", "concat",
       "-safe", "0",
       "-i", concatPath,
+      ...logoInput,
+      ...zenEcoLogoInput,
       "-i", input.audioPath,
-      "-filter_complex", buildConcatVisualFilterV4(assPath),
+      "-filter_complex", buildConcatVisualFilterV4(
+        assPath,
+        logoInputIndex,
+        zenEcoLogoInputIndex,
+        input.sponsorIntervalMinutes,
+        expectedDuration,
+      ),
       "-map", "[vout]",
-      "-map", "1:a:0",
+      "-map", `${audioInputIndex}:a:0`,
       "-t", expectedDuration.toFixed(3),
       "-c:v", "libx264",
       "-preset", "ultrafast",
@@ -241,6 +314,8 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
     for (const imagePath of imagePaths) await fs.unlink(imagePath).catch(() => undefined);
     await fs.unlink(concatPath).catch(() => undefined);
     if (assPath) await fs.unlink(assPath).catch(() => undefined);
+    if (logoPath) await fs.unlink(logoPath).catch(() => undefined);
+    if (zenEcoLogoPath) await fs.unlink(zenEcoLogoPath).catch(() => undefined);
 
     const stat = await fs.stat(videoPath);
     await input.onProgress?.(85, "video_verified_v4");
