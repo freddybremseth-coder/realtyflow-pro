@@ -6,6 +6,9 @@ const SYSTEM_SENDERS = [
   /mailer-daemon@/i,
   /postmaster@/i,
   /notifications?@/i,
+  /posts-recap@/i,
+  /@mail\.instagram\.com$/i,
+  /@facebookmail\.com$/i,
   /accounts\.google\.com$/i,
   /google\.com$/i,
 ];
@@ -19,6 +22,7 @@ const SYSTEM_SUBJECTS = [
   /bekreftelseskode/i,
   /billing account/i,
   /expired card/i,
+  /se hva som er nytt på instagram/i,
 ];
 
 const NEWSLETTER_SUBJECTS = [
