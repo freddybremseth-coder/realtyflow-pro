@@ -1,10 +1,11 @@
 -- Norwegian feed editorial enrichment for imported properties.
--- Additive only: raw source facts are preserved separately from generated copy.
+-- Raw source facts are preserved separately from generated copy.
 
 alter table public.properties
   add column if not exists source_description text,
   add column if not exists floor_label text,
   add column if not exists orientation_source text,
+  add column if not exists amenities_no text[],
   add column if not exists editorial_no jsonb,
   add column if not exists editorial_no_approved boolean not null default false;
 
@@ -14,10 +15,59 @@ comment on column public.properties.floor_label is
   'Floor/level exactly as supplied by the property source when available.';
 comment on column public.properties.orientation_source is
   'Orientation exactly as supplied by the property source when available.';
+comment on column public.properties.amenities_no is
+  'Norwegian/source-supported property features used as factual editorial input.';
 comment on column public.properties.editorial_no is
   'Stable Norwegian editorial JSON: headline_no, intro_no, bullets_no, orientation_no, source_hash, generated_at and model.';
 comment on column public.properties.editorial_no_approved is
   'Manual approval gate for editorial content that is classified as requiring Freddy review (level A).';
+
+-- Repeated feed imports must update the same property row so approvals,
+-- visibility rules, shortlist links and analytics keep their stable UUID.
+-- PostgreSQL UNIQUE permits NULL, so manually created rows without a ref remain valid.
+create unique index if not exists idx_properties_ref_unique
+  on public.properties (ref);
+
+-- Preserve the best source text currently available for existing imported rows.
+update public.properties
+set source_description = description
+where source_description is null
+  and coalesce(source, '') in ('redsp', 'xml', 'csv')
+  and nullif(btrim(coalesce(description, '')), '') is not null;
+
+create or replace function public.preserve_property_feed_source()
+returns trigger
+language plpgsql
+set search_path = public
+as $function$
+begin
+  if coalesce(new.source, '') not in ('redsp', 'xml', 'csv') then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    if nullif(btrim(coalesce(new.source_description, '')), '') is null then
+      new.source_description := new.description;
+    end if;
+  elsif new.description is distinct from old.description then
+    if new.source_description is null
+       or new.source_description is not distinct from old.source_description then
+      new.source_description := new.description;
+    end if;
+  end if;
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.preserve_property_feed_source() from public;
+
+drop trigger if exists properties_preserve_feed_source on public.properties;
+create trigger properties_preserve_feed_source
+before insert or update of description, source_description, source
+on public.properties
+for each row
+execute function public.preserve_property_feed_source();
 
 create table if not exists public.property_editorial_jobs (
   id uuid primary key default gen_random_uuid(),
