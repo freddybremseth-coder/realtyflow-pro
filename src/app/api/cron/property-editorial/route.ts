@@ -9,6 +9,10 @@ import {
   propertyEditorialSource,
 } from "@/lib/realty/property-editorial-no";
 import { generatePropertyEditorialNoDiagnosed } from "@/lib/realty/property-editorial-ai-diagnostics";
+import {
+  evaluatePropertyEditorialApproval,
+  normalizePropertyForEditorial,
+} from "@/lib/realty/property-editorial-quality";
 
 export const maxDuration = 120;
 
@@ -115,10 +119,12 @@ export async function GET(request: NextRequest) {
           return { status: "removed" as const };
         }
 
-        if (existingEditorialHasSameSource(property, property.editorial_no)) {
-          // Existing editorial can predate the SEO columns. Reuse the approved copy/source
-          // but always backfill deterministic SEO so source-hash reuse cannot leave holes.
-          const seo = buildPropertyEditorialSeo(propertyEditorialSource(property));
+        const editorialProperty = normalizePropertyForEditorial(property);
+
+        if (existingEditorialHasSameSource(editorialProperty, property.editorial_no)) {
+          // Existing editorial can predate the SEO columns. Reuse the copy/source but
+          // always backfill deterministic SEO so source-hash reuse cannot leave holes.
+          const seo = buildPropertyEditorialSeo(propertyEditorialSource(editorialProperty));
           const existingEditorial = property.editorial_no as Record<string, unknown>;
           const { error: reuseUpdateError } = await supabase
             .from("properties")
@@ -135,11 +141,14 @@ export async function GET(request: NextRequest) {
 
         const providers = configuredAiProviders();
         const { editorial, usedFallback, fallbackReason, outputDiagnostics } =
-          await generatePropertyEditorialNoDiagnosed(property);
+          await generatePropertyEditorialNoDiagnosed(editorialProperty);
+        const approval = evaluatePropertyEditorialApproval(property, editorial);
         const editorialWithProvenance = {
           ...editorial,
           generation_mode: usedFallback ? "template" : "ai",
           configured_ai_providers: providers,
+          approval_status: approval.status,
+          approval_reasons: approval.reasons,
           ...(usedFallback && fallbackReason ? { fallback_reason: fallbackReason } : {}),
           ...(usedFallback && outputDiagnostics
             ? { ai_output_diagnostics: outputDiagnostics }
@@ -150,7 +159,7 @@ export async function GET(request: NextRequest) {
           .from("properties")
           .update({
             editorial_no: editorialWithProvenance,
-            editorial_no_approved: false,
+            editorial_no_approved: approval.approved,
             title_no: editorial.headline_no,
             description_no: editorialDescription(editorial),
             meta_title_no: editorial.meta_title_no,
@@ -160,7 +169,10 @@ export async function GET(request: NextRequest) {
 
         if (updateError) throw updateError;
         await supabase.from("property_editorial_jobs").delete().eq("id", claimed.id);
-        return { status: usedFallback ? ("fallback" as const) : ("generated" as const) };
+        return {
+          status: usedFallback ? ("fallback" as const) : ("generated" as const),
+          approval: approval.status,
+        };
       } catch (error) {
         const attempts = Number(claimed.attempts || 0) + 1;
         const exhausted = attempts >= MAX_ATTEMPTS;
@@ -189,5 +201,7 @@ export async function GET(request: NextRequest) {
     fallbacks: count("fallback"),
     failed: count("failed"),
     skipped: count("skipped"),
+    autoApproved: results.filter((result) => "approval" in result && result.approval === "auto_approved").length,
+    needsReview: results.filter((result) => "approval" in result && result.approval === "needs_review").length,
   });
 }
