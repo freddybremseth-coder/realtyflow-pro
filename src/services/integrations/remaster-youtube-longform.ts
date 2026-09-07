@@ -9,36 +9,77 @@ const REMASTER_BRAND_ID = "remasterfreddy";
 
 type PrivacyStatus = "private" | "unlisted" | "public";
 
+function summarizeGoogleAuthError(error: unknown) {
+  const value = error as {
+    message?: unknown;
+    code?: unknown;
+    response?: { data?: { error?: unknown; error_description?: unknown } };
+  };
+  const raw =
+    value?.response?.data?.error_description ||
+    value?.response?.data?.error ||
+    value?.message ||
+    value?.code ||
+    String(error);
+  return String(raw)
+    .replace(/ya29\.[A-Za-z0-9._-]+/g, "[redacted-access-token]")
+    .replace(/1\/\/[A-Za-z0-9._-]+/g, "[redacted-refresh-token]")
+    .slice(0, 300);
+}
+
 async function getVerifiedLongFormClient() {
   const channels = await getChannelsByBrand(REMASTER_BRAND_ID, "youtube");
   if (channels.length === 0) throw new Error("Re-Master Freddy har ingen aktiv YouTube-kanaltilkobling.");
 
   const credentials = getGoogleCredentials();
+  const failures: string[] = [];
+
   for (const channel of channels) {
     const tokens = await getDecryptedTokens(channel.id);
     const refreshToken = tokens?.refreshToken?.trim();
-    if (!refreshToken) continue;
+    if (!refreshToken) {
+      failures.push(`${channel.id}: missing_refresh_token`);
+      continue;
+    }
 
     try {
       const auth = new OAuth2Client(credentials.clientId, credentials.clientSecret);
-      auth.setCredentials({ refresh_token: refreshToken });
-      await auth.getAccessToken();
+      const accessTokenStillValid =
+        Boolean(tokens?.accessToken) &&
+        Boolean(tokens?.expiresAt) &&
+        tokens!.expiresAt!.getTime() > Date.now() + 60_000;
+
+      auth.setCredentials({
+        access_token: accessTokenStillValid ? tokens!.accessToken : undefined,
+        expiry_date: tokens?.expiresAt?.getTime(),
+        refresh_token: refreshToken,
+      });
+
+      if (!accessTokenStillValid) await auth.getAccessToken();
+
       const client = createYoutubeOAuthClient(auth);
       const mine = await client.channels.list({ part: ["snippet"], mine: true });
       const verified = mine.data.items?.[0];
-      if (!verified?.id) continue;
-      if (channel.external_id && channel.external_id !== verified.id) continue;
+      if (!verified?.id) {
+        failures.push(`${channel.id}: channels_list_empty`);
+        continue;
+      }
+      if (channel.external_id && channel.external_id !== verified.id) {
+        failures.push(`${channel.id}: channel_mismatch expected=${channel.external_id} actual=${verified.id}`);
+        continue;
+      }
       return {
         client,
         channelId: verified.id,
         channelTitle: verified.snippet?.title || channel.display_name,
       };
-    } catch {
-      continue;
+    } catch (error) {
+      failures.push(`${channel.id}: ${summarizeGoogleAuthError(error)}`);
     }
   }
 
-  throw new Error("Re-Master Freddy YouTube-tilkoblingen er utløpt eller peker mot feil kanal.");
+  const detail = failures.length ? ` Detalj: ${failures.join(" | ")}` : "";
+  throw new Error(`Re-Master Freddy YouTube-tilkoblingen er utløpt eller peker mot feil kanal.${detail}`);
 }
 
 export function isRemasterYouTubeReconnectRequired(error: unknown) {
