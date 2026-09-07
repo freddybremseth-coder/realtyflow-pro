@@ -134,7 +134,7 @@ async function attachCachedFeedSourceFacts(
 
   const { data, error } = await supabase
     .from("property_feed_source_cache")
-    .select("ref,source_description,amenities_no,floor_label,usage_source,expires_at")
+    .select("ref,source_description,amenities_no,floor_label,facing_source,usage_source,expires_at")
     .in("ref", refs)
     .gt("expires_at", new Date().toISOString());
 
@@ -156,6 +156,7 @@ async function attachCachedFeedSourceFacts(
         ? { amenities_no: cached.amenities_no }
         : {}),
       ...(cached.floor_label ? { floor_label: cached.floor_label } : {}),
+      ...(cached.facing_source ? { facing_source: cached.facing_source } : {}),
       ...(cached.usage_source ? { usage_source: cached.usage_source } : {}),
     };
   });
