@@ -3,7 +3,11 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
-import { existingEditorialHasSameSource } from "@/lib/realty/property-editorial-no";
+import {
+  buildPropertyEditorialSeo,
+  existingEditorialHasSameSource,
+  propertyEditorialSource,
+} from "@/lib/realty/property-editorial-no";
 import { generatePropertyEditorialNoDiagnosed } from "@/lib/realty/property-editorial-ai-diagnostics";
 
 export const maxDuration = 120;
@@ -112,6 +116,19 @@ export async function GET(request: NextRequest) {
         }
 
         if (existingEditorialHasSameSource(property, property.editorial_no)) {
+          // Existing editorial can predate the SEO columns. Reuse the approved copy/source
+          // but always backfill deterministic SEO so source-hash reuse cannot leave holes.
+          const seo = buildPropertyEditorialSeo(propertyEditorialSource(property));
+          const existingEditorial = property.editorial_no as Record<string, unknown>;
+          const { error: reuseUpdateError } = await supabase
+            .from("properties")
+            .update({
+              editorial_no: { ...existingEditorial, ...seo },
+              meta_title_no: seo.meta_title_no,
+              meta_description_no: seo.meta_description_no,
+            })
+            .eq("id", property.id);
+          if (reuseUpdateError) throw reuseUpdateError;
           await supabase.from("property_editorial_jobs").delete().eq("id", claimed.id);
           return { status: "reused" as const };
         }
