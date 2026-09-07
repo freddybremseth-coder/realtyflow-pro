@@ -25,6 +25,7 @@
     { "path": "/api/cron/remaster-source-sync", "schedule": "40 * * * *" },
     { "path": "/api/cron/remaster-health-monitor", "schedule": "50 * * * *" },
     { "path": "/api/cron/remaster-mix-worker", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/remaster-playlist-recovery", "schedule": "5,20,35,50 * * * *" },
     { "path": "/api/cron/marketing-growth-metrics", "schedule": "10 19 * * *" },
     { "path": "/api/cron/remaster-analytics-snapshot", "schedule": "20 19 * * *" },
     { "path": "/api/cron/remaster-growth-loop", "schedule": "35 19 * * *" },
