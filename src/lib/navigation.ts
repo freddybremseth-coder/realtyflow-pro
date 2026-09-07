@@ -28,7 +28,7 @@ const NEXUS_INBOX_NAV_ITEM: NavigationItem = { label: "Nexus Inbox", href: "/nex
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/nexus-os/today", "/personal-intelligence", "/today", "/nexus-os/inbox", "/approvals", "/communications"] },
-  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/brand-brain", "/nexus-os/communications", "/nexus-os/runtime", "/nexus-os/autonomy", "/connections"] },
+  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/os", "/nexus-os", "/nexus-os/daily", "/nexus-os/focus", "/nexus-os/brand-brain", "/nexus-os/communications", "/nexus-os/runtime", "/nexus-os/autonomy", "/connections"] },
   { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar", "/automation/nurture"] },
   { id: "care", label: "Keyholding Care", icon: "KeyRound", hrefs: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"] },
   { id: "revenue", label: "Økonomi & closing", icon: "Handshake", hrefs: ["/revenue-command", "/closing", "/closing-pack", "/commissions", "/billing", "/forecast", "/monthly-close", "/goals"] },
