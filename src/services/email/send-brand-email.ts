@@ -9,8 +9,8 @@ import { sendEmail, type OutgoingAttachment, type SmtpConfig } from "@/services/
  * email_messages logging that /api/email/send does, so the nurture engine
  * (and any future automation) can send without duplicating that logic.
  *
- * Returns { skipped: true } when the brand has no active SMTP config — the
- * caller decides whether that is an error or just a no-op.
+ * Returns { skipped: true } when the brand has no active SMTP config or when
+ * CRM suppression blocks a recipient.
  */
 export async function sendBrandEmail(
   supabase: SupabaseClient,
@@ -28,8 +28,30 @@ export async function sendBrandEmail(
      *  SMTP, men vil fremstå som et annet (f.eks. Soleada-leads sendt fra
      *  freddy@zenecohomes.com, men signert "Freddy Bremseth – Soleada.no"). */
     fromName?: string;
+    /** Kun for eksplisitt transaksjonell kommunikasjon som juridisk/operativt
+     *  må sendes selv om markedsføring er stoppet. Standard er false. */
+    allowSuppressed?: boolean;
   }
 ): Promise<{ success: boolean; skipped?: boolean; messageId?: string; error?: string }> {
+  const recipients = params.to.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
+
+  if (!params.allowSuppressed && recipients.length) {
+    const { data: suppressed, error: suppressionError } = await supabase
+      .from("contacts")
+      .select("id,email,do_not_contact,email_suppressed,suppression_reason")
+      .in("email", recipients)
+      .or("do_not_contact.eq.true,email_suppressed.eq.true")
+      .limit(recipients.length);
+
+    if (suppressionError) {
+      return { success: false, skipped: true, error: `CRM suppression check failed: ${suppressionError.message}` };
+    }
+    if ((suppressed || []).length > 0) {
+      const blocked = (suppressed || []).map((row: any) => row.email).filter(Boolean).join(", ");
+      return { success: false, skipped: true, error: `Recipient suppressed in CRM${blocked ? `: ${blocked}` : ""}` };
+    }
+  }
+
   // Duplikat-trygt: et merke kan ha flere aktive konfig-rader. Velg eksplisitt
   // adresse hvis oppgitt, ellers den sist oppdaterte (aldri .single()-krasj).
   let configQuery = supabase
