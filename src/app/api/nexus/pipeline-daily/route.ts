@@ -29,6 +29,10 @@ function learningKey(cause: unknown, action: unknown, targetStage: unknown) {
   return `${String(cause || "")}|${String(action || "")}|${String(targetStage || "").toUpperCase()}`;
 }
 
+function latestAutomation(rows: any[], action: string) {
+  return rows.find((row) => String(row?.action || "") === action) || null;
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -38,12 +42,14 @@ export async function GET(request: NextRequest) {
   const since24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-  const [contactsR, inboundR, workR, recommendationsR, transitionsR] = await Promise.all([
+  const [contactsR, inboundR, workR, recommendationsR, transitionsR, automationR, pendingInboundR] = await Promise.all([
     supabase.from("contacts").select("id,name,email,phone,brand_id,brand,pipeline_status,pipeline_value,updated_at,created_at,last_contact,last_inbound_reply_at,next_followup,waiting_on,waiting_reason,waiting_until,property_interest,nurture_status,nurture_sequence,interactions,email_suppressed,do_not_contact,lost_reason").order("updated_at", { ascending: false }).limit(3000),
     supabase.from("email_messages").select("id,crm_contact_id,crm_reply_classification,received_at,created_at").eq("direction", "inbound").eq("is_archived", false).gte("received_at", since24).limit(1000),
     supabase.from("work_items").select("id,status,priority,source_type,metadata,created_at,updated_at").gte("updated_at", since7d).limit(2000),
     supabase.from("revenue_events").select("id,contact_id,occurred_at,created_at,metadata").eq("event_type", "automation_recommended").eq("source_system", "nexus_movement").eq("source_type", "pipeline_movement_recommendation").gte("occurred_at", since90d).limit(10000),
     supabase.from("revenue_events").select("id,contact_id,occurred_at,created_at,metadata").eq("event_type", "contact_updated").eq("source_system", "crm_pipeline").eq("source_type", "pipeline_stage_changed").gte("occurred_at", since90d).limit(10000),
+    supabase.from("automation_logs").select("action,status,created_at,details").in("action", ["email_ingest","email_auto_draft","email_crm_sync"]).order("created_at", { ascending: false }).limit(60),
+    supabase.from("email_messages").select("id", { count: "exact", head: true }).eq("direction", "inbound").eq("is_archived", false).is("crm_processed_at", null).gte("received_at", since7d),
   ]);
   for (const result of [contactsR, inboundR, workR]) if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
 
@@ -90,6 +96,15 @@ export async function GET(request: NextRequest) {
       learningByKey.set(key, group);
     }
   }
+
+  const automationRows = automationR.error ? [] : (automationR.data || []);
+  const lastIngest = latestAutomation(automationRows, "email_ingest");
+  const lastDraft = latestAutomation(automationRows, "email_auto_draft");
+  const lastCrmSync = latestAutomation(automationRows, "email_crm_sync");
+  const pipelineTransitions = transitionsR.error ? 0 : (transitionsR.data || []).length;
+  const movementRecommendations = recommendationsR.error ? 0 : (recommendationsR.data || []).length;
+  const pendingInbound = pendingInboundR.error ? null : Number(pendingInboundR.count || 0);
+  const emailHealthy = [lastIngest, lastDraft, lastCrmSync].every((row) => row && String(row.status || "").toLowerCase() === "success");
 
   const movement = contacts.map((contact: any) => {
     const activityAt = contact.last_inbound_reply_at || contact.last_contact || contact.updated_at;
@@ -156,7 +171,20 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
-    movementVersion: 2,
+    movementVersion: 3,
+    health: {
+      emailHealthy,
+      pendingInbound,
+      lastIngest: lastIngest ? { status: lastIngest.status, at: lastIngest.created_at } : null,
+      lastAutoDraft: lastDraft ? { status: lastDraft.status, at: lastDraft.created_at } : null,
+      lastCrmSync: lastCrmSync ? { status: lastCrmSync.status, at: lastCrmSync.created_at } : null,
+      outcomeLearningStarted: movementRecommendations > 0,
+      movementRecommendations,
+      pipelineTransitions,
+      note: movementRecommendations > 0
+        ? "Outcome Learning samler nå reelle observasjoner."
+        : "Outcome Learning er installert, men første daglige recommendation snapshot er ikke registrert ennå.",
+    },
     learning: {
       active: learningByKey.size > 0,
       recommendationGroups: learningByKey.size,
