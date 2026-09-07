@@ -40,3 +40,67 @@ comment on table public.property_editorial_jobs is
 
 alter table public.property_editorial_jobs enable row level security;
 revoke all on table public.property_editorial_jobs from anon, authenticated;
+
+create or replace function public.queue_property_editorial_job()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $function$
+begin
+  -- Only feed-imported rows belong to the automatic level-B editorial flow.
+  if coalesce(new.source, '') not in ('redsp', 'xml', 'csv') then
+    return new;
+  end if;
+
+  insert into public.property_editorial_jobs (
+    property_id,
+    status,
+    attempts,
+    available_at,
+    last_error,
+    updated_at
+  ) values (
+    new.id,
+    'queued',
+    0,
+    now(),
+    null,
+    now()
+  )
+  on conflict (property_id) do update
+  set status = 'queued',
+      attempts = 0,
+      available_at = now(),
+      last_error = null,
+      updated_at = now();
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.queue_property_editorial_job() from public;
+
+-- Queue work when factual feed fields are inserted or changed. The worker only
+-- writes title_no/description_no/editorial_no, so its own writes cannot loop
+-- back into this trigger.
+drop trigger if exists properties_queue_editorial_job on public.properties;
+create trigger properties_queue_editorial_job
+after insert or update of
+  source_description,
+  description,
+  property_type,
+  bedrooms,
+  bathrooms,
+  location,
+  built_area,
+  floor_label,
+  amenities_no,
+  energy_rating,
+  price,
+  orientation_source,
+  pool,
+  garage
+on public.properties
+for each row
+execute function public.queue_property_editorial_job();
