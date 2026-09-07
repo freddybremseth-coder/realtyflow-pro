@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
           // Existing editorial can predate the SEO columns. Reuse the copy/source but
           // always backfill deterministic SEO so source-hash reuse cannot leave holes.
           const seo = buildPropertyEditorialSeo(propertyEditorialSource(editorialProperty));
-          const existingEditorial = property.editorial_no as Record<string, unknown>;
+          const existingEditorial = property.editorial_no;
           const { error: reuseUpdateError } = await supabase
             .from("properties")
             .update({
