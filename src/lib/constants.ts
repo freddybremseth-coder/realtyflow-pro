@@ -40,6 +40,7 @@ export const SIDEBAR_NAV = {
   ],
   automation: [
     { label: "Nexus OS", href: "/nexus-os", icon: "Boxes" },
+    { label: "Nexus Daily", href: "/nexus-os/daily", icon: "Gauge" },
     { label: "Mitt fokus", href: "/nexus-os/focus", icon: "Target" },
     { label: "Nexus Communications", href: "/nexus-os/communications", icon: "MessageSquareText" },
     { label: "Nexus Runtime Controls", href: "/nexus-os/runtime", icon: "Gauge" },
