@@ -3,10 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
-import {
-  existingEditorialHasSameSource,
-  generatePropertyEditorialNo,
-} from "@/lib/realty/property-editorial-no";
+import { existingEditorialHasSameSource } from "@/lib/realty/property-editorial-no";
+import { generatePropertyEditorialNoDiagnosed } from "@/lib/realty/property-editorial-ai-diagnostics";
 
 export const maxDuration = 120;
 
@@ -52,7 +50,6 @@ export async function GET(request: NextRequest) {
   const now = nowDate.toISOString();
   const staleBefore = new Date(nowDate.getTime() - STALE_PROCESSING_MINUTES * 60_000).toISOString();
 
-  // Recover jobs left in processing after a terminated invocation.
   await supabase
     .from("property_editorial_jobs")
     .update({
@@ -64,7 +61,6 @@ export async function GET(request: NextRequest) {
     .eq("status", "processing")
     .lt("updated_at", staleBefore);
 
-  // Keep the short-lived XML bridge bounded.
   await supabase
     .from("property_feed_source_cache")
     .delete()
@@ -121,14 +117,12 @@ export async function GET(request: NextRequest) {
         }
 
         const providers = configuredAiProviders();
-        const { editorial, usedFallback } = await generatePropertyEditorialNo(property);
+        const { editorial, usedFallback, fallbackReason } = await generatePropertyEditorialNoDiagnosed(property);
         const editorialWithProvenance = {
           ...editorial,
           generation_mode: usedFallback ? "template" : "ai",
           configured_ai_providers: providers,
-          ...(usedFallback
-            ? { fallback_reason: providers.length === 0 ? "no_ai_provider" : "ai_error_or_invalid_output" }
-            : {}),
+          ...(usedFallback && fallbackReason ? { fallback_reason: fallbackReason } : {}),
         };
 
         const { error: updateError } = await supabase
