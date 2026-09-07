@@ -5,6 +5,7 @@ import {
   sanitizePropertyEditorialText,
 } from "./property-editorial-ai-diagnostics";
 
+// Regression coverage for production fallback_reason=invalid_output on N3849.
 test("sanitizer removes promotional wording without inventing replacement claims", () => {
   assert.equal(
     sanitizePropertyEditorialText("Fantastisk villa med unik beliggenhet og perfekt terrasse."),
