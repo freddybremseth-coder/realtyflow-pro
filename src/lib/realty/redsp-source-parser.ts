@@ -3,6 +3,7 @@ export interface RedspEditorialSourceRow {
   source_description: string | null;
   amenities_no: string[];
   floor_label: string | null;
+  facing_source: string | null;
   usage_source: string | null;
 }
 
@@ -89,6 +90,10 @@ export function extractRedspEditorialSourceRows(xmlText: string): RedspEditorial
       directTag(block, "level"),
       directTag(block, "floor_number"),
     );
+    const facing = firstNonEmpty(
+      directTag(block, "orientation"),
+      directTag(block, "facing"),
+    );
     const usage = firstNonEmpty(
       directTag(block, "property_use"),
       directTag(block, "usage"),
@@ -101,6 +106,7 @@ export function extractRedspEditorialSourceRows(xmlText: string): RedspEditorial
       source_description: description || null,
       amenities_no: amenities,
       floor_label: floor || null,
+      facing_source: facing || null,
       usage_source: usage || null,
     });
   }
