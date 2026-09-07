@@ -64,3 +64,35 @@ $function$;
 revoke all on function public.apply_property_feed_source_facts(jsonb) from public;
 revoke all on function public.apply_property_feed_source_facts(jsonb) from anon, authenticated;
 grant execute on function public.apply_property_feed_source_facts(jsonb) to service_role;
+
+-- Inventory currently ships with this RedSP feed as its default source. Register
+-- it once so the server-side refresher can backfill legacy rows immediately.
+-- Future admin imports register their validated URL automatically in the route.
+insert into public.import_sources (
+  brand_id,
+  name,
+  type,
+  url,
+  mapping_config,
+  active,
+  last_imported_at,
+  created_at,
+  updated_at
+)
+select
+  'zeneco',
+  'RedSP property XML feed',
+  'xml_url',
+  'https://xml.redsp.net/files/901/46721pms78l/21-3-25-all-extended.xml',
+  '{"source_format":"redsp","editorial_source_cache":true,"registered_by":"migration_seed"}'::jsonb,
+  true,
+  null,
+  now(),
+  now()
+where not exists (
+  select 1
+  from public.import_sources
+  where brand_id = 'zeneco'
+    and type = 'xml_url'
+    and url = 'https://xml.redsp.net/files/901/46721pms78l/21-3-25-all-extended.xml'
+);
