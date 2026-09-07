@@ -117,12 +117,16 @@ export async function GET(request: NextRequest) {
         }
 
         const providers = configuredAiProviders();
-        const { editorial, usedFallback, fallbackReason } = await generatePropertyEditorialNoDiagnosed(property);
+        const { editorial, usedFallback, fallbackReason, outputDiagnostics } =
+          await generatePropertyEditorialNoDiagnosed(property);
         const editorialWithProvenance = {
           ...editorial,
           generation_mode: usedFallback ? "template" : "ai",
           configured_ai_providers: providers,
           ...(usedFallback && fallbackReason ? { fallback_reason: fallbackReason } : {}),
+          ...(usedFallback && outputDiagnostics
+            ? { ai_output_diagnostics: outputDiagnostics }
+            : {}),
         };
 
         const { error: updateError } = await supabase
