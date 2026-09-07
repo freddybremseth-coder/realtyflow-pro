@@ -23,15 +23,39 @@ test("accepts provider text around one JSON object", () => {
   assert.deepEqual(parsePropertyEditorialAiResponse(wrapped), valid);
 });
 
-test("still rejects promotional claims", () => {
-  assert.equal(
-    parsePropertyEditorialAiResponse(
-      JSON.stringify({ ...valid, intro_no: "Fantastisk villa med 3 soverom." }),
-    ),
-    null,
+test("neutralizes promotional words instead of discarding an otherwise usable response", () => {
+  const parsed = parsePropertyEditorialAiResponse(
+    JSON.stringify({
+      ...valid,
+      headline_no: "Fantastisk villa med 3 soverom i La Romana",
+      intro_no: "En unik og eksklusiv villa med 3 soverom og 2 bad.",
+      bullets_no: ["Perfekt beliggenhet", "Parkering"],
+    }),
+  );
+  assert.ok(parsed);
+  assert.doesNotMatch(
+    `${parsed.headline_no} ${parsed.intro_no} ${parsed.bullets_no.join(" ")}`,
+    /drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt/i,
   );
 });
 
-test("rejects incomplete output", () => {
+test("normalizes missing optional list/use fields safely", () => {
+  assert.deepEqual(
+    parsePropertyEditorialAiResponse(
+      JSON.stringify({
+        headline_no: valid.headline_no,
+        intro_no: valid.intro_no,
+      }),
+    ),
+    {
+      headline_no: valid.headline_no,
+      intro_no: valid.intro_no,
+      bullets_no: [],
+      orientation_no: "Ikke angitt",
+    },
+  );
+});
+
+test("still rejects output without the two required text fields", () => {
   assert.equal(parsePropertyEditorialAiResponse(JSON.stringify({ headline_no: "Villa" })), null);
 });
