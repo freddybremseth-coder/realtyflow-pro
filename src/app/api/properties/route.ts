@@ -158,37 +158,61 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const items: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
 
-  // For each item with a ref, delete the old one then insert new - atomically per small batch
+  // Feed rows are updated in place by their unique ref. This preserves the
+  // property UUID and therefore approvals, visibility rows, shortlist links,
+  // analytics and any other foreign-key relationships across repeated imports.
   const batchSize = 50;
   let deduplicated = 0;
   let inserted = 0;
   const errors: string[] = [];
+  const propertyIds: string[] = [];
 
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
+    const withRef = batch.filter((item) => typeof item.ref === "string" && item.ref.trim());
+    const withoutRef = batch.filter((item) => !(typeof item.ref === "string" && item.ref.trim()));
+    const refs = withRef.map((item) => String(item.ref).trim());
 
-    // Delete existing with matching refs in this batch
-    const batchRefs = batch
-      .map((item) => item.ref as string | undefined)
-      .filter((r): r is string => Boolean(r && r.trim()));
-
-    if (batchRefs.length > 0) {
-      const { data: deleted } = await supabase
+    if (refs.length > 0) {
+      const { data: existing, error: existingError } = await supabase
         .from("properties")
-        .delete()
-        .in("ref", batchRefs)
-        .select("id");
-      deduplicated += deleted?.length || 0;
+        .select("id,ref")
+        .in("ref", refs);
+
+      if (existingError) {
+        errors.push(`Batch ${Math.floor(i / batchSize) + 1} lookup: ${existingError.message}`);
+      } else {
+        deduplicated += existing?.length || 0;
+      }
+
+      const { data, error } = await supabase
+        .from("properties")
+        .upsert(withRef, { onConflict: "ref" })
+        .select("*");
+
+      if (error) {
+        errors.push(`Batch ${Math.floor(i / batchSize) + 1} upsert: ${error.message}`);
+      } else {
+        inserted += data?.length || 0;
+        propertyIds.push(...(data || []).map((row) => String(row.id)).filter(Boolean));
+        await upsertBrandVisibility(supabase, data || []);
+      }
     }
 
-    // Insert this batch
-    const { data, error } = await supabase.from("properties").insert(batch).select("*");
-    if (error) {
-      errors.push(`Batch ${Math.floor(i / batchSize) + 1}: ${error.message}`);
-      continue;
+    if (withoutRef.length > 0) {
+      const { data, error } = await supabase
+        .from("properties")
+        .insert(withoutRef)
+        .select("*");
+
+      if (error) {
+        errors.push(`Batch ${Math.floor(i / batchSize) + 1} insert: ${error.message}`);
+      } else {
+        inserted += data?.length || 0;
+        propertyIds.push(...(data || []).map((row) => String(row.id)).filter(Boolean));
+        await upsertBrandVisibility(supabase, data || []);
+      }
     }
-    inserted += data?.length || 0;
-    await upsertBrandVisibility(supabase, data || []);
   }
 
   if (errors.length > 0 && inserted === 0) {
@@ -198,6 +222,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     inserted,
     deduplicated,
+    propertyIds: Array.from(new Set(propertyIds)),
     errors: errors.length > 0 ? errors : undefined,
   });
 }
