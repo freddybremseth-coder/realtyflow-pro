@@ -23,6 +23,32 @@ test("accepts provider text around one JSON object", () => {
   assert.deepEqual(parsePropertyEditorialAiResponse(wrapped), valid);
 });
 
+test("accepts double encoded JSON strings", () => {
+  assert.deepEqual(
+    parsePropertyEditorialAiResponse(JSON.stringify(JSON.stringify(valid))),
+    valid,
+  );
+});
+
+test("unwraps common provider result wrappers", () => {
+  assert.deepEqual(
+    parsePropertyEditorialAiResponse(JSON.stringify({ result: { editorial_no: valid } })),
+    valid,
+  );
+});
+
+test("normalizes common safe key aliases", () => {
+  assert.deepEqual(
+    parsePropertyEditorialAiResponse(JSON.stringify({
+      title: valid.headline_no,
+      description: valid.intro_no,
+      highlights: "Privat basseng; Parkering",
+      usage: "Ikke angitt",
+    })),
+    valid,
+  );
+});
+
 test("neutralizes promotional words instead of discarding an otherwise usable response", () => {
   const parsed = parsePropertyEditorialAiResponse(
     JSON.stringify({
