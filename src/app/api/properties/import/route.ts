@@ -6,6 +6,8 @@ import { extractRedspEditorialSourceRows } from "@/lib/realty/redsp-source-parse
 
 export const maxDuration = 60;
 
+const DEFAULT_PROPERTY_IMPORT_BRAND = "zeneco";
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -42,6 +44,54 @@ async function cacheEditorialSourceFacts(xmlText: string) {
   }
 }
 
+async function registerImportSource(url: string) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  const now = new Date().toISOString();
+  const { data: existing, error: lookupError } = await supabase
+    .from("import_sources")
+    .select("id,mapping_config")
+    .eq("brand_id", DEFAULT_PROPERTY_IMPORT_BRAND)
+    .eq("type", "xml_url")
+    .eq("url", url)
+    .maybeSingle();
+
+  if (lookupError) {
+    console.warn("[property-import] source registration lookup skipped:", lookupError.message);
+    return;
+  }
+
+  const existingConfig = existing?.mapping_config && typeof existing.mapping_config === "object"
+    ? existing.mapping_config as Record<string, unknown>
+    : {};
+  const payload = {
+    brand_id: DEFAULT_PROPERTY_IMPORT_BRAND,
+    name: "RedSP property XML feed",
+    type: "xml_url",
+    url,
+    active: true,
+    last_imported_at: now,
+    updated_at: now,
+    mapping_config: {
+      ...existingConfig,
+      source_format: "redsp",
+      editorial_source_cache: true,
+      registered_by: "property_import",
+    },
+  };
+
+  const query = existing?.id
+    ? supabase.from("import_sources").update(payload).eq("id", existing.id)
+    : supabase.from("import_sources").insert(payload);
+  const { error } = await query;
+  if (error) {
+    // Source registration is additive bookkeeping. It must never block the
+    // property import itself if an older deployment/schema cannot persist it.
+    console.warn("[property-import] source registration skipped:", error.message);
+  }
+}
+
 export async function GET(req: NextRequest) {
   const unauthorized = await requireAdminApi(req);
   if (unauthorized) return unauthorized;
@@ -67,6 +117,7 @@ export async function GET(req: NextRequest) {
 
     const text = await response.text();
     await cacheEditorialSourceFacts(text);
+    await registerImportSource(url);
 
     return new NextResponse(text, {
       headers: {
