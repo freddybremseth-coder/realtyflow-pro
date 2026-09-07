@@ -22,13 +22,18 @@ export async function GET(request: NextRequest) {
 
   const limit = Math.max(1, Math.min(250, Number(request.nextUrl.searchParams.get("limit") || 100)));
   const minConfidence = Math.max(0, Math.min(100, Number(request.nextUrl.searchParams.get("minConfidence") || 0)));
+  const contactId = String(request.nextUrl.searchParams.get("contactId") || "").trim();
+  if (contactId && !/^[0-9a-f-]{36}$/i.test(contactId)) {
+    return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+  }
 
-  const contactsResult = await supabase
+  let contactsQuery = supabase
     .from("contacts")
     .select("id,name,email,phone,notes,property_interest,pipeline_status,pipeline_value,source,brand_id,brand,interactions")
     .not("pipeline_status", "in", "(WON,LOST)")
-    .order("updated_at", { ascending: false })
-    .limit(1000);
+    .order("updated_at", { ascending: false });
+  contactsQuery = contactId ? contactsQuery.eq("id", contactId).limit(1) : contactsQuery.limit(1000);
+  const contactsResult = await contactsQuery;
 
   if (contactsResult.error) return NextResponse.json({ error: contactsResult.error.message }, { status: 500 });
   const contacts = contactsResult.data || [];
@@ -59,8 +64,8 @@ export async function GET(request: NextRequest) {
 
       if (criteriaResult.error) return NextResponse.json({ error: criteriaResult.error.message }, { status: 500 });
       for (const criterion of criteriaResult.data || []) {
-        const contactId = contactByProfile.get(String(criterion.buyer_profile_id));
-        if (contactId) approvedPersonaContactIds.add(contactId);
+        const linkedContactId = contactByProfile.get(String(criterion.buyer_profile_id));
+        if (linkedContactId) approvedPersonaContactIds.add(linkedContactId);
       }
     }
   }
@@ -86,6 +91,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
+    requestedContactId: contactId || null,
     summary: {
       scanned: contacts.length,
       alreadyApproved: approvedPersonaContactIds.size,
