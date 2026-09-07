@@ -4,6 +4,8 @@ import { requireAdminApi } from "@/lib/api-admin";
 
 export const dynamic = "force-dynamic";
 
+const KNOWN_PIPELINE_STATUSES = new Set(["NEW","CONTACT","QUALIFIED","MATCHING","VIEWING","NEGOTIATION","RESERVED","ON_HOLD","LOST","WON"]);
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -24,11 +26,15 @@ function nextMove(contact: any, staleDays: number | null) {
   const status = String(contact.pipeline_status || "NEW").toUpperCase();
   if (contact.do_not_contact || contact.email_suppressed || status === "LOST" || status === "WON") return null;
   const href = customerHref(String(contact.id));
+  if (!KNOWN_PIPELINE_STATUSES.has(status)) return { action: "Avklar pipeline-status", reason: `Ukjent status «${status}» må normaliseres før Nexus kan gi et sikkert salgsforslag`, href };
   if (status === "NEW") return { action: "Kvalifiser lead", reason: "Ny kontakt uten dokumentert fremdrift", href };
   if (status === "CONTACT" && (staleDays ?? 99) >= 2) return { action: "Send personlig oppfølging", reason: `${staleDays} dager uten ny aktivitet`, href };
   if (status === "QUALIFIED" && (staleDays ?? 99) >= 3) return { action: "Foreslå 2–3 konkrete boliger", reason: "Kvalifisert kunde uten ny bevegelse", href };
+  if (status === "MATCHING" && (staleDays ?? 99) >= 2) return { action: "Oppdater shortlist og kontakt kunden", reason: "Matchingsfasen mangler fersk aktivitet", href };
   if (status === "VIEWING" && (staleDays ?? 99) >= 1) return { action: "Avklar neste steg etter visning", reason: "Visningskunde uten fersk registrert aktivitet", href };
   if (status === "NEGOTIATION" && (staleDays ?? 99) >= 1) return { action: "Følg opp forhandling i dag", reason: "Aktiv forhandling bør ikke stå stille", href };
+  if (status === "RESERVED" && (staleDays ?? 99) >= 2) return { action: "Kontroller closing-milepæl", reason: "Reservert handel uten fersk registrert aktivitet", href };
+  if (status === "ON_HOLD" && (staleDays ?? 99) >= 14) return { action: "Avklar om kunden fortsatt skal stå på vent", reason: `${staleDays} dager i ro`, href };
   if ((staleDays ?? 0) >= 7) return { action: "Reaktiver eller avklar interesse", reason: `${staleDays} dager uten aktivitet`, href };
   return null;
 }
@@ -80,6 +86,7 @@ export async function GET(request: NextRequest) {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
+  const unknownStages = Object.fromEntries(Object.entries(stages).filter(([stage]) => !KNOWN_PIPELINE_STATUSES.has(stage)));
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
@@ -89,10 +96,12 @@ export async function GET(request: NextRequest) {
       stalled: stalled.length,
       noActivity7d: active.filter((row: any) => Number(row.staleDays || 0) >= 7).length,
       openWork: Array.from(openWorkByContact.values()).reduce((a,b) => a+b, 0),
+      unknownPipelineStatus: Object.values(unknownStages).reduce((sum, count) => sum + Number(count || 0), 0),
     },
     stages,
+    unknownStages,
     stalled: stalled.slice(0, 40),
     recentlyMoved: movement.filter((row: any) => Number(row.staleDays ?? 99) <= 1).slice(0, 40),
-    note: "Stagnasjon er beslutningsstøtte basert på siste dokumenterte CRM-aktivitet og pipeline-status. Ingen automatiske kundekontakter utføres her.",
+    note: "Stagnasjon er beslutningsstøtte basert på siste dokumenterte CRM-aktivitet og pipeline-status. Ukjente statusverdier flagges for avklaring. Ingen automatiske kundekontakter utføres her.",
   });
 }
