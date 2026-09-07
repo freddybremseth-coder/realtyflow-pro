@@ -24,10 +24,11 @@ function normalizeBrandId(value: string) {
 }
 
 function portalUrlForBrand(brandId: string) {
-  const configured = process.env.CUSTOMER_PORTAL_URL?.trim();
-  if (configured) return configured;
-  if (brandId === "pinosoecolife") return "https://www.pinosoecolife.com/min-side";
-  return "https://www.zenecohomes.com/min-side";
+  const generic = process.env.CUSTOMER_PORTAL_URL?.trim();
+  if (generic) return generic;
+  if (brandId === "zeneco") return process.env.CUSTOMER_PORTAL_URL_ZENECO?.trim() || "https://www.zenecohomes.com/min-side";
+  if (brandId === "pinosoecolife") return process.env.CUSTOMER_PORTAL_URL_PINOSO?.trim() || null;
+  return null;
 }
 
 function brandLabel(brandId: string) {
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
 
   const brandId = normalizeBrandId(firstText(contact.brand_id, contact.brand, "zeneco"));
   const redirectTo = portalUrlForBrand(brandId);
+  if (!redirectTo) return NextResponse.json({ error: `Customer portal URL is not configured for brand ${brandId}` }, { status: 409 });
   const now = new Date().toISOString();
 
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
