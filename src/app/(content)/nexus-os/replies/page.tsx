@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, Brain, Clock3, Flame, HelpCircle, Inbox, Loader2, MailCheck, RefreshCw, Send, ShieldOff, ThumbsDown, ThumbsUp } from "lucide-react";
 
-type PropertySuggestion = { id:string; ref?:string|null; title?:string|null; price?:number|null; location?:string|null; bedrooms?:number|null; bathrooms?:number|null; primaryImage?:string|null; feedbackScore?:number; matchReason?:string|null };
+type PropertySuggestion = { id:string; ref?:string|null; title?:string|null; price?:number|null; location?:string|null; bedrooms?:number|null; bathrooms?:number|null; primaryImage?:string|null; matchScore?:number; matchLabel?:"STRONG"|"GOOD"|"POSSIBLE"|"WEAK"; matchReasons?:string[]; matchCautions?:string[]; learningConfidence?:"high"|"medium"|"low"; matchReason?:string|null };
 type CustomerMemory = { known:string[]; avoid:string[]; evidenceCount:number; confidence:"high"|"medium"|"low" };
 type ImportantReply = {
   messageId:string;
@@ -29,6 +29,7 @@ type ImportantReply = {
 type Payload = {
   generatedAt:string;
   memoryWindowDays?:number;
+  propertyMatchVersion?:number;
   summary:{ sent:number; inboundReplies:number; actionableUnanswered:number; hotLeads:number; slaAtRisk:number; purchasedLost:number; unsubscribed:number; suppressedContacts:number };
   importantReplies:ImportantReply[];
   note?:string;
@@ -47,6 +48,12 @@ function sla(reply: ImportantReply) {
   const target = urgency === "critical" || urgency === "high" ? 15 : urgency === "medium" ? 30 : 60;
   const age = Number(reply.ageMinutes || 0);
   return { target, breached: age > target, dueIn: Math.max(0, target - age) };
+}
+
+function matchBadge(property: PropertySuggestion) {
+  const label = property.matchLabel || "POSSIBLE";
+  const className = label === "STRONG" ? "bg-emerald-100 text-emerald-800" : label === "GOOD" ? "bg-cyan-100 text-cyan-800" : label === "POSSIBLE" ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600";
+  return <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wider ${className}`}>{label} {property.matchScore ?? "–"}/100</span>;
 }
 
 export default function NexusReplyCommandCenter() {
@@ -77,7 +84,7 @@ export default function NexusReplyCommandCenter() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Inbox size={16}/> Nexus Reply Command</div>
           <h1 className="mt-2 text-3xl font-black text-slate-950">Svar kundene mens de er aktive</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Hot Lead Score, svar-SLA, dokumentert kundehistorikk, AI-utkast, Next Best Question og boligforslag som tar hensyn til tidligere interesse og avvisninger.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Hot Lead Score, svar-SLA, dokumentert kundehistorikk, AI-utkast, Next Best Question og forklarbar Next Best Property-score basert på kundens faktiske krav og tidligere feedback.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">{loading ? <Loader2 size={16} className="mr-2 animate-spin"/> : <RefreshCw size={16} className="mr-2"/>}Oppdater</button>
       </div>
@@ -97,7 +104,7 @@ export default function NexusReplyCommandCenter() {
     </section>
 
     <section className="space-y-3">
-      <div className="flex items-end justify-between gap-3"><div><h2 className="text-xl font-black text-slate-950">Svar nå</h2><p className="mt-1 text-sm text-slate-500">Sortert etter Hot Lead Score. Kundeminne bygger på CRM, dialog og eksplisitt boligfeedback.</p></div><Link href="/nexus-os/communications" className="text-sm font-black text-cyan-700">Åpne Communications <ArrowRight size={14} className="inline"/></Link></div>
+      <div className="flex items-end justify-between gap-3"><div><h2 className="text-xl font-black text-slate-950">Svar nå</h2><p className="mt-1 text-sm text-slate-500">Sortert etter Hot Lead Score. Boligforslagene rangeres med Next Best Property v{data?.propertyMatchVersion || 1}.</p></div><Link href="/nexus-os/communications" className="text-sm font-black text-cyan-700">Åpne Communications <ArrowRight size={14} className="inline"/></Link></div>
       {(data?.importantReplies ?? []).map(reply => {
         const s = sla(reply);
         const memory = reply.customerMemory;
@@ -123,9 +130,16 @@ export default function NexusReplyCommandCenter() {
               {reply.suggestedAction && <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><b>Nexus foreslår:</b> {reply.suggestedAction}</div>}
               {reply.draft?.bodyText && <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 p-4"><div className="text-xs font-black uppercase tracking-wider text-cyan-800">Foreslått svar {reply.draft.confidence != null ? `· ${Math.round(reply.draft.confidence * 100)}% confidence` : ""}</div><div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{reply.draft.bodyText}</div></div>}
             </div>
-            <div className="w-full xl:w-[360px]">
-              <div className="text-xs font-black uppercase tracking-wider text-slate-500">Aktuelle boliger</div>
-              <div className="mt-2 space-y-2">{reply.suggestedProperties.length ? reply.suggestedProperties.map(property => <div key={property.id} className="rounded-xl border border-slate-200 bg-white p-3 text-sm"><div className="font-black text-slate-950">{property.ref || property.title || property.id}</div><div className="mt-1 text-slate-600">{[property.location, property.bedrooms ? `${property.bedrooms} sov` : null, property.bathrooms ? `${property.bathrooms} bad` : null].filter(Boolean).join(" · ")}</div>{property.price ? <div className="mt-1 font-bold text-slate-800">€{Number(property.price).toLocaleString("nb-NO")}</div> : null}{property.matchReason && <div className={`mt-2 text-xs leading-5 ${Number(property.feedbackScore || 0) > 0 ? "text-emerald-700" : "text-slate-500"}`}>{property.matchReason}</div>}</div>) : <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Ingen sikker boligmatch ennå, eller tidligere avviste boliger er filtrert bort.</div>}</div>
+            <div className="w-full xl:w-[390px]">
+              <div className="text-xs font-black uppercase tracking-wider text-slate-500">Next Best Property</div>
+              <div className="mt-2 space-y-2">{reply.suggestedProperties.length ? reply.suggestedProperties.map((property,index) => <div key={property.id} className={`rounded-xl border bg-white p-3 text-sm ${index === 0 && Number(property.matchScore || 0) >= 65 ? "border-emerald-200 shadow-sm" : "border-slate-200"}`}>
+                <div className="flex items-start justify-between gap-2"><div className="font-black text-slate-950">{property.ref || property.title || property.id}</div>{matchBadge(property)}</div>
+                <div className="mt-1 text-slate-600">{[property.location, property.bedrooms ? `${property.bedrooms} sov` : null, property.bathrooms ? `${property.bathrooms} bad` : null].filter(Boolean).join(" · ")}</div>
+                {property.price ? <div className="mt-1 font-bold text-slate-800">€{Number(property.price).toLocaleString("nb-NO")}</div> : null}
+                {(property.matchReasons || []).length > 0 && <ul className="mt-2 space-y-1 text-xs leading-5 text-emerald-800">{property.matchReasons?.map((reason,reasonIndex)=><li key={`${property.id}-reason-${reasonIndex}`} className="flex gap-1.5"><ThumbsUp size={12} className="mt-1 shrink-0"/><span>{reason}</span></li>)}</ul>}
+                {(property.matchCautions || []).length > 0 && <ul className="mt-2 space-y-1 text-xs leading-5 text-amber-900">{property.matchCautions?.map((warning,warningIndex)=><li key={`${property.id}-warning-${warningIndex}`} className="flex gap-1.5"><AlertTriangle size={12} className="mt-1 shrink-0"/><span>{warning}</span></li>)}</ul>}
+                <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-400">Læringsgrunnlag: {property.learningConfidence || "low"}</div>
+              </div>) : <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Ingen sikker boligmatch ennå, eller tidligere avviste boliger er filtrert bort.</div>}</div>
             </div>
           </div>
         </article>;
