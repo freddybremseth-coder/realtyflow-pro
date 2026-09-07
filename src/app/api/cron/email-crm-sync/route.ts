@@ -8,6 +8,7 @@ import { applyInboundCrmActions } from "@/services/email/apply-inbound-crm-actio
 
 export const maxDuration = 300;
 const PATH = "/api/cron/email-crm-sync";
+const MAX_AUTOMATIC_REPLY_AGE_DAYS = 7;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,26 +22,27 @@ export async function GET(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const safeMode = await evaluateCronSafeMode(PATH);
-  if (safeMode.skip) {
-    return NextResponse.json({ success: true, skipped: true, mode: safeMode.mode, reason: safeMode.reason });
-  }
+  if (safeMode.skip) return NextResponse.json({ success: true, skipped: true, mode: safeMode.mode, reason: safeMode.reason });
 
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
+  // Old mail remains available as read-only customer context, but it must not
+  // suddenly mutate pipeline/suppression state because a new cron was deployed.
+  const automaticCutoff = new Date(Date.now() - MAX_AUTOMATIC_REPLY_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { data: rows, error } = await supabase
     .from("email_messages")
-    .select("id,brand_id,from_address,subject,body_text,body_html,ai_summary,ai_urgency,ai_suggested_action,crm_processed_at")
+    .select("id,brand_id,from_address,subject,body_text,body_html,ai_summary,ai_urgency,ai_suggested_action,crm_processed_at,received_at")
     .eq("direction", "inbound")
     .eq("has_draft_reply", true)
     .is("crm_processed_at", null)
+    .gte("received_at", automaticCutoff)
     .order("received_at", { ascending: true })
     .limit(50);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const results: Array<{ id: string; classification?: string; contactId?: string | null; status: "processed" | "failed"; error?: string }> = [];
-
   for (const row of rows ?? []) {
     try {
       const action = await applyInboundCrmActions(supabase, {
@@ -55,15 +57,11 @@ export async function GET(request: NextRequest) {
       });
 
       const processedAt = new Date().toISOString();
-      const { error: markError } = await supabase
-        .from("email_messages")
-        .update({
-          crm_processed_at: processedAt,
-          crm_reply_classification: action.classification,
-          crm_contact_id: action.contactId,
-        })
-        .eq("id", row.id)
-        .is("crm_processed_at", null);
+      const { error: markError } = await supabase.from("email_messages").update({
+        crm_processed_at: processedAt,
+        crm_reply_classification: action.classification,
+        crm_contact_id: action.contactId,
+      }).eq("id", row.id).is("crm_processed_at", null);
       if (markError) throw new Error(`Email CRM marker failed: ${markError.message}`);
 
       results.push({ id: String(row.id), classification: action.classification, contactId: action.contactId, status: "processed" });
@@ -82,6 +80,8 @@ export async function GET(request: NextRequest) {
       scanned: (rows ?? []).length,
       processed,
       failed,
+      automatic_reply_age_days: MAX_AUTOMATIC_REPLY_AGE_DAYS,
+      automatic_cutoff: automaticCutoff,
       runtime_control: `cron:${PATH}`,
       classifications: results.reduce<Record<string, number>>((acc, item) => {
         if (item.classification) acc[item.classification] = (acc[item.classification] || 0) + 1;
@@ -90,5 +90,5 @@ export async function GET(request: NextRequest) {
     },
   }).then(() => {}).then(undefined, () => {});
 
-  return NextResponse.json({ success: true, scanned: (rows ?? []).length, processed, failed, results });
+  return NextResponse.json({ success: true, scanned: (rows ?? []).length, processed, failed, automaticCutoff, results });
 }
