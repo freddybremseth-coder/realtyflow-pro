@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { assessPipelineMovement } from "@/lib/nexus-pipeline-movement";
 
 export const dynamic = "force-dynamic";
 
@@ -18,27 +19,6 @@ function daysSince(value: unknown) {
   return Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 86_400_000)) : null;
 }
 
-function customerHref(id: string) {
-  return `/customers?contactId=${encodeURIComponent(id)}&tab=all`;
-}
-
-function nextMove(contact: any, staleDays: number | null) {
-  const status = String(contact.pipeline_status || "NEW").toUpperCase();
-  if (contact.do_not_contact || contact.email_suppressed || status === "LOST" || status === "WON") return null;
-  const href = customerHref(String(contact.id));
-  if (!KNOWN_PIPELINE_STATUSES.has(status)) return { action: "Avklar pipeline-status", reason: `Ukjent status «${status}» må normaliseres før Nexus kan gi et sikkert salgsforslag`, href };
-  if (status === "NEW") return { action: "Kvalifiser lead", reason: "Ny kontakt uten dokumentert fremdrift", href };
-  if (status === "CONTACT" && (staleDays ?? 99) >= 2) return { action: "Send personlig oppfølging", reason: `${staleDays} dager uten ny aktivitet`, href };
-  if (status === "QUALIFIED" && (staleDays ?? 99) >= 3) return { action: "Foreslå 2–3 konkrete boliger", reason: "Kvalifisert kunde uten ny bevegelse", href };
-  if (status === "MATCHING" && (staleDays ?? 99) >= 2) return { action: "Oppdater shortlist og kontakt kunden", reason: "Matchingsfasen mangler fersk aktivitet", href };
-  if (status === "VIEWING" && (staleDays ?? 99) >= 1) return { action: "Avklar neste steg etter visning", reason: "Visningskunde uten fersk registrert aktivitet", href };
-  if (status === "NEGOTIATION" && (staleDays ?? 99) >= 1) return { action: "Følg opp forhandling i dag", reason: "Aktiv forhandling bør ikke stå stille", href };
-  if (status === "RESERVED" && (staleDays ?? 99) >= 2) return { action: "Kontroller closing-milepæl", reason: "Reservert handel uten fersk registrert aktivitet", href };
-  if (status === "ON_HOLD" && (staleDays ?? 99) >= 14) return { action: "Avklar om kunden fortsatt skal stå på vent", reason: `${staleDays} dager i ro`, href };
-  if ((staleDays ?? 0) >= 7) return { action: "Reaktiver eller avklar interesse", reason: `${staleDays} dager uten aktivitet`, href };
-  return null;
-}
-
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -48,8 +28,8 @@ export async function GET(request: NextRequest) {
   const since24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const [contactsR, inboundR, workR] = await Promise.all([
-    supabase.from("contacts").select("id,name,email,brand_id,brand,pipeline_status,updated_at,last_contact,last_inbound_reply_at,next_followup,email_suppressed,do_not_contact,lost_reason").order("updated_at", { ascending: false }).limit(3000),
-    supabase.from("email_messages").select("id,crm_contact_id,crm_reply_classification,received_at,created_at").eq("direction", "inbound").gte("received_at", since24).limit(1000),
+    supabase.from("contacts").select("id,name,email,phone,brand_id,brand,pipeline_status,pipeline_value,updated_at,created_at,last_contact,last_inbound_reply_at,next_followup,waiting_on,waiting_reason,waiting_until,property_interest,nurture_status,nurture_sequence,interactions,email_suppressed,do_not_contact,lost_reason").order("updated_at", { ascending: false }).limit(3000),
+    supabase.from("email_messages").select("id,crm_contact_id,crm_reply_classification,received_at,created_at").eq("direction", "inbound").eq("is_archived", false).gte("received_at", since24).limit(1000),
     supabase.from("work_items").select("id,status,priority,source_type,metadata,created_at,updated_at").gte("updated_at", since7d).limit(2000),
   ]);
   for (const result of [contactsR, inboundR, workR]) if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
@@ -66,42 +46,76 @@ export async function GET(request: NextRequest) {
   const movement = contacts.map((contact: any) => {
     const activityAt = contact.last_inbound_reply_at || contact.last_contact || contact.updated_at;
     const staleDays = daysSince(activityAt);
+    const intelligence = assessPipelineMovement(contact);
     return {
       id: contact.id,
       name: contact.name || contact.email || "Ukjent kunde",
       email: contact.email,
       brand: contact.brand_id || contact.brand,
       pipelineStatus: contact.pipeline_status || "NEW",
+      pipelineValue: Number(contact.pipeline_value || 0),
       activityAt,
       staleDays,
       openWork: openWorkByContact.get(String(contact.id)) || 0,
-      nextMove: nextMove(contact, staleDays),
+      movement: intelligence,
+      nextMove: intelligence ? {
+        action: intelligence.action,
+        reason: intelligence.reason,
+        href: intelligence.href,
+        targetStage: intelligence.targetStage,
+        score: intelligence.score,
+        priority: intelligence.priority,
+        cause: intelligence.cause,
+        causeLabel: intelligence.causeLabel,
+        reactivationSegment: intelligence.reactivationSegment,
+        reactivationScore: intelligence.reactivationScore,
+      } : null,
     };
   });
 
   const active = movement.filter((row: any) => !["LOST","WON"].includes(String(row.pipelineStatus).toUpperCase()));
-  const stalled = active.filter((row: any) => row.nextMove).sort((a: any,b: any) => Number(b.staleDays || 0) - Number(a.staleDays || 0));
+  const stalled = active
+    .filter((row: any) => row.movement?.needsAction)
+    .sort((a: any,b: any) => Number(b.movement?.score || 0) - Number(a.movement?.score || 0) || Number(b.pipelineValue || 0) - Number(a.pipelineValue || 0));
+  const plannedWaiting = active.filter((row: any) => row.movement?.cause === "waiting_planned");
   const stages = active.reduce<Record<string, number>>((acc, row: any) => {
     const key = String(row.pipelineStatus || "NEW").toUpperCase();
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
   const unknownStages = Object.fromEntries(Object.entries(stages).filter(([stage]) => !KNOWN_PIPELINE_STATUSES.has(stage)));
+  const causes = stalled.reduce<Record<string, number>>((acc, row: any) => {
+    const key = String(row.movement?.cause || "unknown");
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const targetStages = stalled.reduce<Record<string, number>>((acc, row: any) => {
+    const key = String(row.movement?.targetStage || "NO_TARGET");
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
+    movementVersion: 1,
     summary: {
       activePipeline: active.length,
       inboundReplies24h: inbound.filter((row: any) => row.crm_contact_id && ["active_reply","purchased","unsubscribe","informational"].includes(String(row.crm_reply_classification || ""))).length,
-      stalled: stalled.length,
-      noActivity7d: active.filter((row: any) => Number(row.staleDays || 0) >= 7).length,
+      needsMovement: stalled.length,
+      plannedWaiting: plannedWaiting.length,
+      noActivity7d: active.filter((row: any) => Number(row.staleDays || 0) >= 7 && row.movement?.cause !== "waiting_planned").length,
       openWork: Array.from(openWorkByContact.values()).reduce((a,b) => a+b, 0),
       unknownPipelineStatus: Object.values(unknownStages).reduce((sum, count) => sum + Number(count || 0), 0),
+      highPriorityMovement: stalled.filter((row: any) => ["CRITICAL","HIGH"].includes(String(row.movement?.priority || ""))).length,
+      dormantReactivation: stalled.filter((row: any) => row.movement?.cause === "dormant_reactivation").length,
     },
     stages,
+    causes,
+    targetStages,
     unknownStages,
-    stalled: stalled.slice(0, 40),
+    stalled: stalled.slice(0, 60),
+    plannedWaiting: plannedWaiting.slice(0, 40),
     recentlyMoved: movement.filter((row: any) => Number(row.staleDays ?? 99) <= 1).slice(0, 40),
-    note: "Stagnasjon er beslutningsstøtte basert på siste dokumenterte CRM-aktivitet og pipeline-status. Ukjente statusverdier flagges for avklaring. Ingen automatiske kundekontakter utføres her.",
+    note: "Movement Intelligence kombinerer lifecycle-prioritet, planlagt venting og dormant reaktivering. Den foreslår neste steg og målstatus, men utfører ingen kundekontakt eller pipeline-endring automatisk.",
   });
 }
