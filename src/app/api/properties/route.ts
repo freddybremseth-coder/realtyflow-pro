@@ -134,12 +134,11 @@ async function attachCachedFeedSourceFacts(
 
   const { data, error } = await supabase
     .from("property_feed_source_cache")
-    .select("ref,source_description,amenities_no,floor_label,orientation_source,expires_at")
+    .select("ref,source_description,amenities_no,floor_label,usage_source,expires_at")
     .in("ref", refs)
     .gt("expires_at", new Date().toISOString());
 
   if (error) {
-    // Additive migration may not be live yet. Never block the property import.
     console.warn("[properties] feed source cache unavailable:", error.message);
     return items;
   }
@@ -157,7 +156,7 @@ async function attachCachedFeedSourceFacts(
         ? { amenities_no: cached.amenities_no }
         : {}),
       ...(cached.floor_label ? { floor_label: cached.floor_label } : {}),
-      ...(cached.orientation_source ? { orientation_source: cached.orientation_source } : {}),
+      ...(cached.usage_source ? { usage_source: cached.usage_source } : {}),
     };
   });
 }
@@ -203,9 +202,6 @@ export async function POST(req: NextRequest) {
   const receivedItems: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
   const items = await attachCachedFeedSourceFacts(supabase, receivedItems);
 
-  // Feed rows are updated in place by their unique ref. This preserves the
-  // property UUID and therefore approvals, visibility rows, shortlist links,
-  // analytics and any other foreign-key relationships across repeated imports.
   const batchSize = 50;
   let deduplicated = 0;
   let inserted = 0;
