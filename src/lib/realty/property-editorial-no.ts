@@ -9,7 +9,9 @@ FAST format. Regler:
 - Kildebeskrivelsen kan inneholde reklamespråk og superlativer. Ikke kopier slike subjektive formuleringer.
 - Naturlig, korrekt norsk — ingen maskinoversettelse-preg.
 - Returner KUN gyldig JSON etter skjemaet. Ingen forklaring, ingen markdown.
+- JSON-objektet SKAL inneholde nøyaktig disse feltene: headline_no (streng), intro_no (streng), bullets_no (liste med strenger), orientation_no (streng). Ikke legg til andre felter (som pris, energiklasse eller beliggenhet) – de finnes allerede i rådataene.
 - headline_no skal være kort og faktabasert. Ikke konverter antall soverom til et antall "rom" med mindre kilden sier det eksplisitt.
+- intro_no skal være 1–2 nøkterne setninger som oppsummerer boligen (boligtype, antall soverom og bad, område og eventuelt bruksareal), kun basert på rådataene. Feltet er påkrevd og skal aldri stå tomt.
 - bullets_no skal bare inneholde fasiliteter eller egenskaper som er eksplisitt støttet av rådataene.
 - orientation_no beskriver aktuell bruk, for eksempel feriebolig eller helårsbolig. Det er IKKE himmelretning.
 - orientation_no skal være "Ikke angitt" hvis slik bruksorientering ikke er eksplisitt støttet av rådataene.`;
@@ -21,6 +23,10 @@ export interface PropertyEditorialNo {
   intro_no: string;
   bullets_no: string[];
   orientation_no: string;
+  // SEO-metadata utledet deterministisk fra samme dokumenterte fakta (ingen eget
+  // AI-kall). Uten branding – Next-appen legger på "| Zen Eco Homes".
+  meta_title_no: string;
+  meta_description_no: string;
   source_hash: string;
   generated_at: string;
   model: string;
@@ -169,6 +175,47 @@ function bathroomPhrase(count: number | null): string {
   return count ? `${count} bad` : "";
 }
 
+/** Gjør ROPENDE feed-type ("VILLA") om til pen setningsform ("Villa"). */
+function deCaps(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  // Kun hvis den ser ropende ut (ingen små bokstaver): normaliser til Title Case.
+  if (/[A-ZÆØÅ]/.test(trimmed) && !/[a-zæøå]/.test(trimmed)) {
+    return trimmed
+      .toLowerCase()
+      .replace(/(^|\s)([a-zæøå])/g, (_m, sp, ch) => `${sp}${ch.toUpperCase()}`);
+  }
+  return trimmed;
+}
+
+/** Faktafragment brukt i både SEO-title og -description, kun fra dokumenterte fakta. */
+function seoFactFragment(source: EditorialSourceData): string {
+  const type = deCaps(source.type) || "Bolig";
+  const bed = source.beds ? `${source.beds} soverom` : "";
+  const area = source.area && source.area !== "Ikke angitt" ? source.area : "";
+  if (bed && area) return `${type} med ${bed} i ${area}`;
+  if (bed) return `${type} med ${bed}`;
+  if (area) return `${type} i ${area}`;
+  return type;
+}
+
+/**
+ * Deterministisk SEO-metadata fra dokumenterte fakta. Ingen superlativer, ingen
+ * oppfunne egenskaper (strand/utsikt/energiklasse gjettes aldri), ingen ALL CAPS,
+ * ingen branding (Next-appen legger på "| Zen Eco Homes").
+ */
+export function buildPropertyEditorialSeo(source: EditorialSourceData): {
+  meta_title_no: string;
+  meta_description_no: string;
+} {
+  const fragment = seoFactFragment(source);
+  const metaTitle = fragment.length > 60 ? fragment.slice(0, 60).replace(/\s+\S*$/, "").trim() : fragment;
+  const description = `${fragment}. Se pris, kjøpskostnader, viktige sjekkpunkter og Zen Eco Homes' vurdering.`;
+  const metaDescription =
+    description.length > 160 ? `${description.slice(0, 159).replace(/\s+\S*$/, "").trim()}…` : description;
+  return { meta_title_no: metaTitle, meta_description_no: metaDescription };
+}
+
 export function buildPropertyEditorialFallback(
   property: Record<string, unknown>,
   now: Date = new Date(),
@@ -204,6 +251,7 @@ export function buildPropertyEditorialFallback(
     intro_no: introParts.join(" "),
     bullets_no: bullets.slice(0, 6),
     orientation_no: source.usage || "Ikke angitt",
+    ...buildPropertyEditorialSeo(source),
     source_hash: sourceHash,
     generated_at: now.toISOString(),
     model: "template-v1",
@@ -381,6 +429,8 @@ export async function generatePropertyEditorialNo(
     return {
       editorial: {
         ...parsed,
+        // SEO utledes deterministisk fra samme fakta (ikke eget AI-kall).
+        ...buildPropertyEditorialSeo(source),
         source_hash: fallback.source_hash,
         generated_at: (options?.now ?? new Date()).toISOString(),
         model: "realtyflow-ai-chain/haiku",

@@ -136,6 +136,8 @@ export async function GET(request: NextRequest) {
             editorial_no_approved: false,
             title_no: editorial.headline_no,
             description_no: editorialDescription(editorial),
+            meta_title_no: editorial.meta_title_no,
+            meta_description_no: editorial.meta_description_no,
           })
           .eq("id", property.id);
 
