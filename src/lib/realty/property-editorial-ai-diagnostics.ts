@@ -66,13 +66,18 @@ function classifyValue(value: unknown): PropertyEditorialOutputDiagnostics["valu
   return "text";
 }
 
-export function summarizeInvalidPropertyEditorialOutput(text: string): PropertyEditorialOutputDiagnostics {
-  const trimmed = text.trim();
-  const fenced = /^```(?:json)?\s*/i.test(trimmed);
-  let candidate = trimmed
+function stripJsonFence(text: string): string {
+  return text
+    .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
+}
+
+export function summarizeInvalidPropertyEditorialOutput(text: string): PropertyEditorialOutputDiagnostics {
+  const trimmed = text.trim();
+  const fenced = /^```(?:json)?\s*/i.test(trimmed);
+  const candidate = stripJsonFence(text);
 
   let parsed: unknown = undefined;
   let jsonParseable = false;
@@ -112,6 +117,41 @@ export function summarizeInvalidPropertyEditorialOutput(text: string): PropertyE
   };
 }
 
+/**
+ * Some providers have returned otherwise valid property editorial JSON while
+ * omitting only intro_no. In that exact case we repair the response with the
+ * deterministic, property-derived fallback intro. This does not add any new
+ * AI facts: the replacement intro is generated solely from trusted property
+ * fields by buildPropertyEditorialFallback().
+ */
+export function parsePropertyEditorialAiResponseWithFallbackIntro(
+  text: string,
+  fallbackIntro: string,
+): ReturnType<typeof parsePropertyEditorialAiResponse> {
+  const direct = parsePropertyEditorialAiResponse(text);
+  if (direct) return direct;
+
+  try {
+    let parsed = JSON.parse(stripJsonFence(text)) as unknown;
+    if (typeof parsed === "string") parsed = JSON.parse(parsed) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+    const object = parsed as Record<string, unknown>;
+    const hasHeadline = typeof object.headline_no === "string" && object.headline_no.trim().length > 0;
+    const missingIntro = !(typeof object.intro_no === "string" && object.intro_no.trim().length > 0);
+    if (!hasHeadline || !missingIntro || !fallbackIntro.trim()) return null;
+
+    return parsePropertyEditorialAiResponse(
+      JSON.stringify({
+        ...object,
+        intro_no: fallbackIntro,
+      }),
+    );
+  } catch {
+    return null;
+  }
+}
+
 export async function generatePropertyEditorialNoDiagnosed(
   property: Record<string, unknown>,
   options?: { now?: Date },
@@ -133,11 +173,12 @@ export async function generatePropertyEditorialNoDiagnosed(
       temperature: 0.2,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      validateResponse: (text) => parsePropertyEditorialAiResponse(text) !== null,
+      validateResponse: (text) =>
+        parsePropertyEditorialAiResponseWithFallbackIntro(text, fallback.intro_no) !== null,
       fallbackOnInvalidResponse: true,
     });
 
-    const parsed = parsePropertyEditorialAiResponse(raw);
+    const parsed = parsePropertyEditorialAiResponseWithFallbackIntro(raw, fallback.intro_no);
     if (!parsed) {
       return {
         editorial: fallback,
