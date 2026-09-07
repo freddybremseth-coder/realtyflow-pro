@@ -72,19 +72,30 @@ function parseMinBedrooms(text: string) {
   return null;
 }
 
+function parseMoneyToken(token: string) {
+  const raw = token.replace(/\s/g, "");
+  const separatorMatches = raw.match(/[.,]/g) || [];
+  let normalized = raw;
+  if (separatorMatches.length) {
+    const lastSeparator = Math.max(raw.lastIndexOf("."), raw.lastIndexOf(","));
+    const decimals = raw.length - lastSeparator - 1;
+    if (decimals === 3) normalized = raw.replace(/[.,]/g, "");
+    else normalized = raw.replace(/\./g, "").replace(",", ".");
+  }
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
 function parseMaxBudget(text: string) {
-  const cleaned = text.replace(/\s/g, "");
   const patterns = [
-    /(?:budget|budsjett|maks|max|maximum|hasta|precio)[^\d€]{0,20}€?(\d{3,7})(?:[.,](\d{3}))?/i,
-    /€(\d{3,7})(?:[.,](\d{3}))?/i,
+    /(?:budget|budsjett|maks|max|maximum|hasta|precio)[^\d€]{0,20}€?\s*([\d][\d\s.,]{2,12})/i,
+    /€\s*([\d][\d\s.,]{2,12})/i,
   ];
   for (const pattern of patterns) {
-    const match = cleaned.match(pattern);
+    const match = text.match(pattern);
     if (!match?.[1]) continue;
-    const base = Number(match[1]);
-    const tail = match[2] ? Number(match[2]) : 0;
-    const value = tail && base < 10000 ? base * 1000 + tail : base;
-    if (value >= 50000 && value <= 10000000) return value;
+    const value = parseMoneyToken(match[1]);
+    if (value != null && value >= 50000 && value <= 10000000) return value;
   }
   return null;
 }
@@ -147,7 +158,9 @@ export function scorePropertyV2(input: {
   aiMatched?: boolean;
 }): PropertyMatchV2 {
   const property = input.property;
-  const profile = learnPropertyProfile({ feedback: input.feedback, propertiesById: input.propertiesById, conversationText: input.conversationText });
+  const conversationText = String(input.conversationText || "");
+  const normalizedConversation = normalize(conversationText);
+  const profile = learnPropertyProfile({ feedback: input.feedback, propertiesById: input.propertiesById, conversationText });
   const reasons: string[] = [];
   const cautions: string[] = [];
   let score = input.aiMatched === false ? 20 : 35;
@@ -166,7 +179,10 @@ export function scorePropertyV2(input: {
   }
 
   const location = compactLocation(property.location);
-  if (location && profile.preferredLocations.includes(location)) {
+  if (location && normalizedConversation.includes(location)) {
+    score += 22;
+    reasons.push(`Kunden nevner området direkte: ${property.location}`);
+  } else if (location && profile.preferredLocations.includes(location)) {
     score += 18;
     reasons.push(`Område samsvarer med tidligere interesse: ${property.location}`);
   }
@@ -189,11 +205,9 @@ export function scorePropertyV2(input: {
   }
 
   const baths = Number(property.bathrooms || 0);
-  if (profile.preferredBathrooms != null && baths) {
-    if (baths === profile.preferredBathrooms) {
-      score += 6;
-      reasons.push(`${baths} bad samsvarer med tidligere interesserte boliger`);
-    }
+  if (profile.preferredBathrooms != null && baths && baths === profile.preferredBathrooms) {
+    score += 6;
+    reasons.push(`${baths} bad samsvarer med tidligere interesserte boliger`);
   }
 
   const price = Number(property.price || 0);
