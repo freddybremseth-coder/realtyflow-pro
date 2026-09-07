@@ -49,11 +49,11 @@ begin
     if nullif(btrim(coalesce(new.source_description, '')), '') is null then
       new.source_description := new.description;
     end if;
-  elsif new.description is distinct from old.description then
-    if new.source_description is null
-       or new.source_description is not distinct from old.source_description then
-      new.source_description := new.description;
-    end if;
+  elsif new.source_description is null then
+    -- Never replace a previously preserved full source description with the
+    -- client's shortened display description. A fresh full source value, when
+    -- available, is attached by the import cache before the upsert.
+    new.source_description := coalesce(old.source_description, new.description);
   end if;
 
   return new;
@@ -68,6 +68,28 @@ before insert or update of description, source_description, source
 on public.properties
 for each row
 execute function public.preserve_property_feed_source();
+
+-- Durable short-lived bridge between the XML proxy and the chunked property
+-- POST requests. This avoids losing the full feed description when the browser
+-- intentionally keeps only a shortened display description.
+create table if not exists public.property_feed_source_cache (
+  ref text primary key,
+  source_description text,
+  amenities_no text[] not null default '{}',
+  floor_label text,
+  orientation_source text,
+  fetched_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+
+create index if not exists idx_property_feed_source_cache_expires
+  on public.property_feed_source_cache (expires_at);
+
+comment on table public.property_feed_source_cache is
+  'Service-only short-lived raw XML facts keyed by property ref for chunked feed imports.';
+
+alter table public.property_feed_source_cache enable row level security;
+revoke all on table public.property_feed_source_cache from anon, authenticated;
 
 create table if not exists public.property_editorial_jobs (
   id uuid primary key default gen_random_uuid(),
