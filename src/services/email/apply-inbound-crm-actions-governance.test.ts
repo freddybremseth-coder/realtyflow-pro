@@ -4,11 +4,20 @@ import path from "node:path";
 import test from "node:test";
 
 const source = fs.readFileSync(path.join(process.cwd(), "src/services/email/apply-inbound-crm-actions.ts"), "utf8");
+const cronSource = fs.readFileSync(path.join(process.cwd(), "src/app/api/cron/email-crm-sync/route.ts"), "utf8");
 
 test("inbound CRM writer uses governed Reply Intelligence", () => {
   assert.match(source, /classifyInboundReply/);
   assert.match(source, /governInboundReply/);
   assert.match(source, /governance\.safety\.tier/);
+});
+
+test("CRM sync analyzes recent inbound mail even when no reply draft exists", () => {
+  assert.match(cronSource, /\.eq\("direction", "inbound"\)/);
+  assert.match(cronSource, /\.is\("crm_processed_at", null\)/);
+  assert.match(cronSource, /\.gte\("received_at", automaticCutoff\)/);
+  assert.doesNotMatch(cronSource, /\.eq\("has_draft_reply", true\)/);
+  assert.match(cronSource, /applyInboundCrmActions/);
 });
 
 test("explicit DNC is persisted as permanent stopped nurture", () => {
