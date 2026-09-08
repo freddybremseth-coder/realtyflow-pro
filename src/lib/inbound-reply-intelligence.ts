@@ -3,6 +3,7 @@ import { decideAutopilotTier, type AutopilotSafetyDecision } from "@/lib/autopil
 export type InboundReplyIntent =
   | "do_not_contact"
   | "purchased_elsewhere"
+  | "no_longer_buying"
   | "active_interest"
   | "property_interest"
   | "update_preferences"
@@ -18,6 +19,7 @@ export interface InboundReplyClassification {
   proposedPipelineAction:
     | "suppress_contact"
     | "mark_lost_purchased_elsewhere"
+    | "mark_lost_no_longer_buying"
     | "move_to_contact"
     | "refresh_buyer_profile"
     | "prioritize_property_match"
@@ -72,6 +74,9 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   const purchasedElsewhere = /\b(already bought|already purchased|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|allerede kjøpt)\b/i.test(text);
   if (purchasedElsewhere) return result("purchased_elsewhere", 0.98, "mark_lost_purchased_elsewhere", ["Customer states that a property has already been purchased."], { shouldStopNurture: true });
 
+  const noLongerBuying = /\b(no longer looking|not looking anymore|not buying anymore|not going to buy|decided not to buy|we are not buying|i am not buying|no longer interested in buying|ikke lenger på utkikk|ser ikke lenger etter bolig|skal ikke kjøpe|kommer ikke til å kjøpe|har bestemt oss for ikke å kjøpe|har bestemt meg for ikke å kjøpe|ikke aktuelt å kjøpe)\b/i.test(text);
+  if (noLongerBuying) return result("no_longer_buying", 0.97, "mark_lost_no_longer_buying", ["Customer explicitly states that the buying journey has ended."], { shouldStopNurture: true });
+
   const viewing = /\b(viewing|view it|see the property|see this property|book a viewing|schedule a viewing|visning|se boligen|se denne|kan vi se|booke visning|avtale visning)\b/i.test(text);
   if (viewing) return result("viewing_request", 0.97, "prioritize_viewing", ["Explicit viewing intent detected."], { shouldPauseNurture: true, requiresFastResponse: true, shouldRunPropertyMatching: true });
 
@@ -99,8 +104,11 @@ export function governInboundReply(classification: InboundReplyClassification): 
     return { classification, safety, canApplyAutomatically: true };
   }
 
-  if (classification.intent === "purchased_elsewhere") {
-    const safety = decideAutopilotTier({ actionType: "pipeline_transition", risk: "medium", confidence: classification.confidence, currentStage: "QUALIFIED", targetStage: "LOST" });
+  if (classification.intent === "purchased_elsewhere" || classification.intent === "no_longer_buying") {
+    const explicitTerminal = classification.confidence >= 0.97 && classification.shouldStopNurture;
+    const safety: AutopilotSafetyDecision = explicitTerminal
+      ? { tier: "AUTO", allowed: true, reason: "Explicit customer-stated terminal buying outcome may close sales follow-up automatically", requiresAudit: true }
+      : { tier: "FREDDY", allowed: false, reason: "Terminal outcome is not explicit enough for automatic closure", requiresAudit: true };
     return { classification, safety, canApplyAutomatically: safety.tier === "AUTO" && safety.allowed };
   }
 
