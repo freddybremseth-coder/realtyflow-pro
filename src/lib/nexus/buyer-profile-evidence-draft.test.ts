@@ -22,6 +22,16 @@ const bedrooms = {
   sourceText: "Minimum 3 bedrooms.",
 };
 
+const purchaseTimeline = {
+  key: "other" as const,
+  otherKey: "purchase timeline",
+  operator: "eq" as const,
+  value: "within_3_months",
+  confidence: 0.97,
+  source: "notes" as const,
+  sourceText: "Customer wants to buy within 3 months.",
+};
+
 test("high-confidence explicit evidence becomes pending draft preferences", () => {
   const decision = decideBuyerProfileEvidenceDraft({ candidates: [propertyType, bedrooms], conflictCount: 0 });
   assert.equal(decision.eligible, true);
@@ -36,6 +46,19 @@ test("high-confidence explicit evidence becomes pending draft preferences", () =
     assert.equal(criterion.approvedBy, null);
     assert.equal(criterion.approvedAt, null);
   }
+});
+
+test("purchase timeline remains a pending other criterion instead of being dropped", () => {
+  const decision = decideBuyerProfileEvidenceDraft({ candidates: [purchaseTimeline], conflictCount: 0 });
+  assert.equal(decision.eligible, true);
+  assert.equal(decision.criteria.length, 1);
+  assert.equal(decision.criteria[0]?.key, "other");
+  assert.equal(decision.criteria[0]?.otherKey, "purchase timeline");
+  assert.equal(decision.criteria[0]?.operator, "eq");
+  assert.equal(decision.criteria[0]?.value, "within_3_months");
+  assert.equal(decision.criteria[0]?.confidence, 0.97);
+  assert.equal(decision.criteria[0]?.criterionType, "preference");
+  assert.equal(decision.criteria[0]?.approvalStatus, "pending");
 });
 
 test("conflicting evidence blocks draft persistence", () => {
