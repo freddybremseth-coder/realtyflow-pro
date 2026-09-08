@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildBuyerProfileEvidencePreview } from "./buyer-profile-evidence";
+import { buildBuyerProfileEvidencePreview, type BuyerProfileEvidenceInput } from "./buyer-profile-evidence";
 
-function completeContact(overrides: Record<string, unknown> = {}) {
+function completeContact(overrides: Partial<BuyerProfileEvidenceInput> = {}): BuyerProfileEvidenceInput {
   return {
     email: "buyer@example.com",
     pipeline_value: 450000,
