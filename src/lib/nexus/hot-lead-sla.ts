@@ -64,8 +64,16 @@ const HOT_LEAD_POLICY: Record<InboundReplyIntent, HotLeadSlaDecision> = {
     isHotLead: false,
     priority: "MEDIUM",
     responseMinutes: null,
-    aiScore: 96,
-    reason: "Terminal commercial outcome needs governed review",
+    aiScore: 25,
+    reason: "Customer reports a completed purchase elsewhere",
+    operationalTarget: "REVIEW",
+  },
+  no_longer_buying: {
+    isHotLead: false,
+    priority: "MEDIUM",
+    responseMinutes: null,
+    aiScore: 20,
+    reason: "Customer explicitly ended the buying journey",
     operationalTarget: "REVIEW",
   },
   do_not_contact: {

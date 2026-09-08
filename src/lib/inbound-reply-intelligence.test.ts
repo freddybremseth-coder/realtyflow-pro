@@ -11,14 +11,25 @@ test("explicit do-not-contact is honored automatically and stops nurture", () =>
   assert.equal(governed.canApplyAutomatically, true);
 });
 
-test("purchased elsewhere is detected but LOST remains human-controlled in v1", () => {
+test("explicit purchase elsewhere is AUTO terminal outcome", () => {
   const classification = classifyInboundReply({ body: "Thanks, we already bought a house elsewhere." });
   assert.equal(classification.intent, "purchased_elsewhere");
   assert.equal(classification.proposedPipelineAction, "mark_lost_purchased_elsewhere");
   assert.equal(classification.shouldStopNurture, true);
   const governed = governInboundReply(classification);
-  assert.equal(governed.safety.tier, "FREDDY");
-  assert.equal(governed.canApplyAutomatically, false);
+  assert.equal(governed.safety.tier, "AUTO");
+  assert.equal(governed.canApplyAutomatically, true);
+  assert.equal(governed.safety.requiresAudit, true);
+});
+
+test("explicit no-longer-buying reply is AUTO terminal outcome", () => {
+  const classification = classifyInboundReply({ body: "We have decided not to buy and are no longer looking." });
+  assert.equal(classification.intent, "no_longer_buying");
+  assert.equal(classification.proposedPipelineAction, "mark_lost_no_longer_buying");
+  assert.equal(classification.shouldStopNurture, true);
+  const governed = governInboundReply(classification);
+  assert.equal(governed.safety.tier, "AUTO");
+  assert.equal(governed.canApplyAutomatically, true);
 });
 
 test("viewing request becomes fast-response priority", () => {
