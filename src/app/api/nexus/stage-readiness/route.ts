@@ -11,6 +11,12 @@ function upper(value: unknown) {
   return String(value || "").trim().toUpperCase();
 }
 
+function isActionableMatchingCriterion(criterion: any) {
+  const key = String(criterion?.key || "").trim().toLowerCase();
+  const otherKey = String(criterion?.other_key || "").trim().toLowerCase();
+  return !(key === "other" && otherKey === "routing_persona");
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -46,7 +52,13 @@ export async function GET(request: NextRequest) {
 
   const [criteriaR, shortlistsR] = await Promise.all([
     profileIds.length
-      ? supabase.from("buyer_profile_criteria").select("id,buyer_profile_id,active,approval_status,customer_confirmed").in("buyer_profile_id", profileIds).eq("active", true).limit(10000)
+      ? supabase
+          .from("buyer_profile_criteria")
+          .select("id,buyer_profile_id,key,other_key,active,approval_status,customer_confirmed")
+          .in("buyer_profile_id", profileIds)
+          .eq("active", true)
+          .eq("approval_status", "approved")
+          .limit(10000)
       : Promise.resolve({ data: [], error: null }),
     profileIds.length
       ? supabase.from("lead_property_shortlists").select("id,buyer_profile_id,status,approved_at,archived_at,updated_at").in("buyer_profile_id", profileIds).is("archived_at", null).order("updated_at", { ascending: false }).limit(5000)
@@ -108,6 +120,7 @@ export async function GET(request: NextRequest) {
     const contactProfiles = profilesByContact.get(String(contact.id)) || [];
     const profile = contactProfiles.find((row: any) => upper(row.status) === "APPROVED") || contactProfiles[0] || null;
     const profileCriteria = profile ? criteriaByProfile.get(String(profile.id)) || [] : [];
+    const actionableCriteria = profileCriteria.filter(isActionableMatchingCriterion);
     const profileShortlists = profile ? shortlistsByProfile.get(String(profile.id)) || [] : [];
     const latestShortlist = profileShortlists[0] || null;
     const shortlistItems = latestShortlist ? itemsByShortlist.get(String(latestShortlist.id)) || [] : [];
@@ -125,9 +138,9 @@ export async function GET(request: NextRequest) {
       readiness = "PROFILE_NEEDS_APPROVAL";
       nextAction = "Gjennomgå og godkjenn buyer profile.";
       targetStage = "MATCHING";
-    } else if (stage === "QUALIFIED" && profileCriteria.length === 0) {
+    } else if (stage === "QUALIFIED" && actionableCriteria.length === 0) {
       readiness = "MISSING_CRITERIA";
-      nextAction = "Bekreft kjøpskriterier før shortlist genereres.";
+      nextAction = "Bekreft faktiske kjøpskriterier før shortlist genereres. Routing Persona alene er ikke nok.";
       targetStage = "MATCHING";
     } else if (stage === "QUALIFIED" && !latestShortlist) {
       readiness = "READY_FOR_SHORTLIST";
@@ -175,7 +188,8 @@ export async function GET(request: NextRequest) {
       stage,
       pipelineValue: Number(contact.pipeline_value || 0),
       profile: profile ? { id: profile.id, status: profile.status, purchaseReadiness: profile.purchase_readiness } : null,
-      criteriaCount: profileCriteria.length,
+      criteriaCount: actionableCriteria.length,
+      totalApprovedCriteriaCount: profileCriteria.length,
       shortlistCount: profileShortlists.length,
       shortlistItemCount: shortlistItems.length,
       interestedItemCount: interestedItems.length,
@@ -209,6 +223,6 @@ export async function GET(request: NextRequest) {
       readyForViewing: rows.filter((row) => row.readiness === "READY_FOR_VIEWING").length,
     },
     rows: priority,
-    note: "Stage Readiness er read-only beslutningsstøtte. Den oppretter ikke buyer profiles, shortlists, kundemeldinger eller pipeline-overganger automatisk.",
+    note: "Stage Readiness er read-only beslutningsstøtte. Bare aktive, godkjente, faktiske matching-kriterier teller som criteria readiness; routing Persona alene teller ikke. Ingen buyer profiles, shortlists, kundemeldinger eller pipeline-overganger opprettes automatisk.",
   });
 }
