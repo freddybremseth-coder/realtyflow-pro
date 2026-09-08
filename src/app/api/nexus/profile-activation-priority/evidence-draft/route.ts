@@ -120,7 +120,6 @@ export async function POST(request: NextRequest) {
       }
 
       const preview = buildBuyerProfileEvidencePreview({
-        id: contact.id,
         email: contact.email,
         phone: contact.phone,
         pipeline_value: contact.pipeline_value,
