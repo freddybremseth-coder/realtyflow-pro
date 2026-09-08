@@ -24,7 +24,7 @@ test("follow-up requires at least 90 percent confidence", () => {
 
 test("calendar is best effort after CRM persistence", () => {
   const saveIndex = source.indexOf('from("contacts").update(updates)');
-  const calendarIndex = source.indexOf("createGoogleFollowupEvent");
+  const calendarIndex = source.indexOf("calendar = await createGoogleFollowupEvent");
   assert.ok(saveIndex > 0);
   assert.ok(calendarIndex > saveIndex);
 });
