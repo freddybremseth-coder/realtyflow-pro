@@ -17,6 +17,7 @@ export const revalidate = 0;
 
 const ContactIdSchema = z.string().uuid();
 const BodySchema = z.object({ note: z.string().trim().min(3).max(8000) }).strict();
+const OPEN_WORK_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
 
 export async function POST(request: NextRequest, { params }: { params: { contactId: string } }) {
   const context = await getRequestAccessContext(request);
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: { contact
   if (!supabase) return NextResponse.json({ ok: false, error: "Contacts database is not configured" }, { status: 500 });
   const { data: contact, error } = await supabase
     .from("contacts")
-    .select("id,name,email,phone,notes,interactions,next_followup,pipeline_value,property_interest")
+    .select("id,name,email,phone,notes,interactions,next_followup,pipeline_value,property_interest,brand_id,brand")
     .eq("id", contactId.data)
     .single();
   if (error || !contact) return NextResponse.json({ ok: false, error: error?.message || "Customer not found" }, { status: 404 });
@@ -116,6 +117,44 @@ export async function POST(request: NextRequest, { params }: { params: { contact
   const saved = await supabase.from("contacts").update(updates).eq("id", contactId.data).select("id,next_followup").single();
   if (saved.error) return NextResponse.json({ ok: false, error: saved.error.message }, { status: 500 });
 
+  let workItem = { created: false, cancelledPrevious: false };
+  if (followupAt) {
+    const cancelled = await supabase
+      .from("work_items")
+      .update({ status: "CANCELLED", updated_at: now, next_action: "Erstattet av nyere CRM salgsassistent-oppfølging." })
+      .in("status", OPEN_WORK_STATUSES)
+      .eq("source_type", "crm")
+      .contains("metadata", { contact_id: contact.id, source: "crm-sales-assistant" });
+    if (cancelled.error) return NextResponse.json({ ok: false, error: cancelled.error.message }, { status: 500 });
+
+    const brandId = String(contact.brand_id || contact.brand || "zeneco");
+    const inserted = await supabase.from("work_items").insert({
+      title: `Følg opp ${contact.name || contact.email || "kunde"}`,
+      description: analysis.polishedNote.slice(0, 1600),
+      status: "TO_DO",
+      priority: "MEDIUM",
+      due_date: followupAt.slice(0, 10),
+      brand_id: brandId,
+      source_type: "crm",
+      source_id: `sales-assistant-note:${interactionId}`,
+      assigned_agent: "sales",
+      next_action: followupBrief,
+      ai_score: 70,
+      metadata: {
+        contact_id: contact.id,
+        source: "crm-sales-assistant",
+        interaction_id: interactionId,
+        followup_at: followupAt,
+        followup_brief: followupBrief,
+        buyer_profile_evidence_review_recommended: buyerProfileEvidence.reviewRecommended,
+      },
+      created_at: now,
+      updated_at: now,
+    });
+    if (inserted.error) return NextResponse.json({ ok: false, error: inserted.error.message }, { status: 500 });
+    workItem = { created: true, cancelledPrevious: true };
+  }
+
   let calendar = { created: false as boolean, configured: false as boolean, eventId: null as string | null, href: null as string | null, error: null as string | null };
   if (followupAt && shouldCreateFollowupCalendarEvent(analysis)) {
     calendar = await createGoogleFollowupEvent({
@@ -134,6 +173,7 @@ export async function POST(request: NextRequest, { params }: { params: { contact
     buyerProfileEvidence,
     contactId: contact.id,
     interactionId,
+    workItem,
     calendar,
     safety: {
       originalNotePreserved: true,
@@ -142,6 +182,7 @@ export async function POST(request: NextRequest, { params }: { params: { contact
       hardBuyerProfileFactsChanged: false,
       buyerProfileEvidencePersisted: false,
       buyerProfileEvidenceReviewFirst: true,
+      nexusFollowupCreatedOnlyWhenExplicitTiming: Boolean(followupAt),
     },
   });
 }
