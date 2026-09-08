@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CustomerUpdatePanel } from "@/components/customers/customer-update-panel";
+import { CustomerSalesAssistantNote } from "@/components/customers/customer-sales-assistant-note";
 
 interface Customer360Payload {
   generatedAt: string;
@@ -312,6 +313,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                     <h3 className="font-semibold text-white">Samme kundekort – ingen separat Customer 360-side</h3>
                     <p className="mt-1 text-sm text-slate-400">Rediger kundedata eller registrer samtale, WhatsApp, e-post, møte, visning, tilbud, økonomi eller closing direkte her.</p>
                   </div>
+                  <CustomerSalesAssistantNote contactId={contactId} onSaved={() => void load()} />
                   <CustomerUpdatePanel contactId={contactId} defaultExpanded defaultTab="update" onSaved={() => void load()} />
                 </div>
               )}
