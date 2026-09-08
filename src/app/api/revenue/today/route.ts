@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
 import { readHotLeadSla } from "@/lib/revenue/hot-lead-work-item";
+import { applyPortalRecencyBoost } from "@/lib/revenue/portal-recency";
 import {
   buildRecommendedRevenuePlay,
   buildRevenuePriority,
@@ -141,7 +142,7 @@ export async function GET(request: NextRequest) {
   if (contactIds.length) {
     const eventsResult = await supabase
       .from("revenue_events")
-      .select("id,event_type,title,description,contact_id,actor_type,occurred_at,metadata,created_at")
+      .select("id,event_type,title,description,contact_id,actor_type,source_system,source_type,occurred_at,metadata,created_at")
       .in("contact_id", contactIds)
       .order("occurred_at", { ascending: false })
       .limit(1000);
@@ -163,8 +164,12 @@ export async function GET(request: NextRequest) {
 
   const priorities = sortRevenuePriorities(
     contacts
-      .map((contact) => buildRevenuePriority(contact, now, { revenueEvents: eventsByContact.get(String(contact.id || "")) || [] }))
-      .filter((item): item is RevenuePriorityItem => Boolean(item)),
+      .map((contact) => {
+        const contactEvents = eventsByContact.get(String(contact.id || "")) || [];
+        const priority = buildRevenuePriority(contact, now, { revenueEvents: contactEvents });
+        return priority ? applyPortalRecencyBoost(priority, contactEvents, now) : null;
+      })
+      .filter((item): item is RevenuePriorityItem & { portalActiveNow: boolean; portalLastActiveAt: string | null } => Boolean(item)),
   );
 
   const workItems = (workItemsResult.data || [])
