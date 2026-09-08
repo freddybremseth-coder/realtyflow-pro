@@ -27,6 +27,11 @@ test("explicit DNC is persisted as permanent stopped nurture", () => {
   assert.match(source, /update\.nurture_status = "stopped"/);
 });
 
+test("explicit DNC also cancels all open sales work", () => {
+  assert.match(source, /classification\.intent === "do_not_contact"[\s\S]*closeOpenSalesWorkItems/);
+  assert.match(source, /kunden har bedt om stopp \/ ingen videre kontakt/);
+});
+
 test("explicit terminal customer outcomes auto-close sales pipeline and follow-up", () => {
   assert.match(source, /isTerminalSalesOutcome/);
   assert.match(source, /terminalAutoClose/);
@@ -37,11 +42,12 @@ test("explicit terminal customer outcomes auto-close sales pipeline and follow-u
   assert.match(source, /recordPipelineTransition/);
 });
 
-test("terminal outcomes cancel stale CRM and portal sales tasks instead of creating a hot lead", () => {
+test("terminal outcomes cancel stale CRM, portal and lead-intelligence sales tasks", () => {
   assert.match(source, /closeOpenSalesWorkItems/);
   assert.match(source, /status: "CANCELLED"/);
-  assert.match(source, /\.in\("source_type", \["crm", "portal"\]\)/);
-  assert.match(source, /\.contains\("metadata", \{ contact_id: contactId \}\)/);
+  assert.match(source, /source_type\.in\.\(crm,portal,ai_agent\)/);
+  assert.match(source, /assigned_agent\.in\.\(sales,lead_intelligence\)/);
+  assert.match(source, /metadata->>contact_id\.eq/);
   assert.match(source, /!terminalAutoClose && classification\.intent !== "do_not_contact"/);
 });
 

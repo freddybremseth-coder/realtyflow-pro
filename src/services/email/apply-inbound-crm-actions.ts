@@ -39,8 +39,8 @@ async function closeOpenSalesWorkItems(supabase: SupabaseClient, contactId: stri
       updated_at: now,
     })
     .in("status", OPEN_WORK_STATUSES)
-    .in("source_type", ["crm", "portal"])
-    .contains("metadata", { contact_id: contactId });
+    .or(`metadata->>contact_id.eq.${contactId},source_id.eq.${contactId}`)
+    .or("source_type.in.(crm,portal,ai_agent),assigned_agent.in.(sales,lead_intelligence)");
   if (result.error) throw new Error(`Terminal CRM work-item cleanup failed: ${result.error.message}`);
 }
 
@@ -267,7 +267,9 @@ export async function applyInboundCrmActions(
   const { error: updateError } = await supabase.from("contacts").update(update).eq("id", contact.id);
   if (updateError) throw new Error(`CRM reply update failed: ${updateError.message}`);
 
-  if (terminalAutoClose) {
+  if (classification.intent === "do_not_contact") {
+    await closeOpenSalesWorkItems(supabase, String(contact.id), "kunden har bedt om stopp / ingen videre kontakt", now);
+  } else if (terminalAutoClose) {
     await closeOpenSalesWorkItems(
       supabase,
       String(contact.id),

@@ -44,6 +44,34 @@ function normalize(value: string) {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Reply bodies often contain the full quoted outbound thread. Classification must
+ * be based on the customer's newest reply, otherwise our own phrases such as
+ * "fortsatt interessert" or property links can create false hot leads.
+ */
+export function extractLatestReplyText(value: string | null | undefined) {
+  const raw = String(value || "").replace(/\r\n/g, "\n");
+  if (!raw.trim()) return "";
+
+  const lines = raw.split("\n");
+  const kept: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (
+      /^>/.test(trimmed)
+      || /^(from|fra):\s/i.test(trimmed)
+      || /^(on|den)\s.+\b(wrote|skrev):?\s*$/i.test(trimmed)
+      || /^_{5,}$/.test(trimmed)
+      || /^-{5,}\s*original message\s*-{5,}$/i.test(trimmed)
+    ) {
+      break;
+    }
+    kept.push(line);
+  }
+
+  return kept.join("\n").trim().slice(0, 4000);
+}
+
 function result(
   intent: InboundReplyIntent,
   confidence: number,
@@ -66,15 +94,19 @@ function result(
 }
 
 export function classifyInboundReply(input: { subject?: string | null; body?: string | null }): InboundReplyClassification {
-  const text = normalize(`${input.subject || ""} ${input.body || ""}`);
+  const latestReply = extractLatestReplyText(input.body);
+  // Do not let a reply subject like "Re: Er bolig ... fortsatt aktuelt?" create
+  // positive intent. Subject is fallback only when there is no usable body.
+  const text = normalize(latestReply || input.subject || "");
 
-  const dnc = /\b(do not contact|don't contact|dont contact|stop contacting|unsubscribe|remove me|avmeld|ikke kontakt|ikke send|stopp e-?post|stopp mail)\b/i.test(text);
+  const dnc = /^(stopp|stop|unsubscribe|avmeld)\b/i.test(text)
+    || /\b(do not contact|don't contact|dont contact|stop contacting|unsubscribe|remove me|avmeld|ikke kontakt|ikke send|stopp e-?post|stopp mail)\b/i.test(text);
   if (dnc) return result("do_not_contact", 0.995, "suppress_contact", ["Explicit do-not-contact signal detected."], { shouldStopNurture: true });
 
   const purchasedElsewhere = /\b(already bought|already purchased|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|allerede kjøpt)\b/i.test(text);
   if (purchasedElsewhere) return result("purchased_elsewhere", 0.98, "mark_lost_purchased_elsewhere", ["Customer states that a property has already been purchased."], { shouldStopNurture: true });
 
-  const noLongerBuying = /\b(no longer looking|not looking anymore|not buying anymore|not going to buy|decided not to buy|we are not buying|i am not buying|no longer interested in buying|ikke lenger på utkikk|ser ikke lenger etter bolig|skal ikke kjøpe|kommer ikke til å kjøpe|har bestemt oss for ikke å kjøpe|har bestemt meg for ikke å kjøpe|ikke aktuelt å kjøpe)\b/i.test(text);
+  const noLongerBuying = /\b(no longer looking|not looking anymore|not buying anymore|not going to buy|decided not to buy|we are not buying|i am not buying|no longer interested in buying|not interested anymore|not relevant anymore|decided to rent|rent instead|ikke lenger på utkikk|ser ikke lenger etter bolig|skal ikke kjøpe|kommer ikke til å kjøpe|har bestemt oss for ikke å kjøpe|har bestemt meg for ikke å kjøpe|ikke aktuelt å kjøpe|ikke aktuelt lenger|ikke lenger aktuelt|ikke aktuelt for oss|ikke aktuelt for meg|ikke interessert lenger|har bestemt oss for å leie|har bestemt meg for å leie|skal leie i fremtiden)\b/i.test(text);
   if (noLongerBuying) return result("no_longer_buying", 0.97, "mark_lost_no_longer_buying", ["Customer explicitly states that the buying journey has ended."], { shouldStopNurture: true });
 
   const viewing = /\b(viewing|view it|see the property|see this property|book a viewing|schedule a viewing|visning|se boligen|se denne|kan vi se|booke visning|avtale visning)\b/i.test(text);
