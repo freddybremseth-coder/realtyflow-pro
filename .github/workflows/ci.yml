@@ -85,7 +85,7 @@ jobs:
       - name: Nexus Social scheduler and canonical contract tests
         run: npx tsx --test src/middleware.test.ts src/services/integrations/nexus-social-inbox-sync.contract.test.ts
       - name: Nexus OS Attention Center tests
-        run: npx tsx --test src/lib/os/attention.test.ts src/lib/nexus/buyer-profile-auto-activation.test.ts src/lib/nexus/buyer-profile-evidence.test.ts src/lib/nexus/buyer-profile-discovery-priority.test.ts src/lib/nexus/buyer-profile-evidence-draft.test.ts src/app/api/nexus/profile-activation-priority/route.contract.test.ts src/app/api/nexus/profile-activation-priority/evidence-draft/route.contract.test.ts
+        run: npx tsx --test src/lib/os/attention.test.ts src/lib/nexus/buyer-profile-auto-activation.test.ts src/lib/nexus/buyer-profile-evidence.test.ts src/lib/nexus/buyer-profile-discovery-priority.test.ts src/lib/nexus/buyer-profile-evidence-draft.test.ts src/lib/nexus/buyer-profile-draft-promotion.test.ts src/app/api/nexus/profile-activation-priority/route.contract.test.ts src/app/api/nexus/profile-activation-priority/evidence-draft/route.contract.test.ts src/app/api/nexus/profile-activation-priority/evidence-draft/review/route.contract.test.ts
       - name: DemoSites Signature design tests
         run: npm run test:demosites-design
       - name: Ad Campaign Generator planner tests
