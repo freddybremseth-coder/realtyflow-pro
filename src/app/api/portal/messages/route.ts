@@ -4,6 +4,7 @@ import {
   buildRevenueEventDedupeKey,
   insertRevenueEvent,
 } from "@/lib/revenue/events";
+import { decidePortalIntent, portalWorkItemMetadata } from "@/lib/nexus/portal-intent-policy";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -86,6 +87,8 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  const now = data.created_at || new Date().toISOString();
+  const decision = decidePortalIntent("customer_message");
   const eventResult = await insertRevenueEvent(supabase, {
     eventType: "note",
     title: "Kundemelding på Min side",
@@ -98,8 +101,8 @@ export async function POST(request: NextRequest) {
     sourceType: "customer_message",
     sourceId: data.id,
     actorType: "customer",
-    confidenceScore: contact?.id ? 92 : 70,
-    occurredAt: data.created_at || new Date().toISOString(),
+    confidenceScore: contact?.id ? decision.aiScore : 70,
+    occurredAt: now,
     dedupeKey: buildRevenueEventDedupeKey([
       "portal",
       "customer_message",
@@ -112,6 +115,10 @@ export async function POST(request: NextRequest) {
       attachment_name: attachmentName || null,
       portal_message_id: data.id,
       work_item_requested: Boolean(contact?.id),
+      portal_signal: "customer_message",
+      hot_lead: contact?.id ? decision.hotLead : false,
+      response_sla_minutes: contact?.id ? decision.responseMinutes : null,
+      operational_target: contact?.id ? decision.operationalTarget : null,
     },
     createdBy: "api/portal/messages",
   });
@@ -125,15 +132,20 @@ export async function POST(request: NextRequest) {
       title: `Ny melding på Min side fra ${contact.name || email}`,
       description: text.slice(0, 240) || attachmentName || attachmentUrl,
       status: "TO_DO",
-      priority: "HIGH",
-      due_date: new Date().toISOString().slice(0, 10),
+      priority: decision.priority,
+      due_date: now.slice(0, 10),
       brand_id: "zeneco",
       source_type: "chatbot",
       source_id: data.id,
       assigned_agent: "sales",
-      next_action: "Svar kunden i Min side og vurder om meldingen er et kjøpssignal.",
-      ai_score: 84,
-      metadata: { portal_message: true, email },
+      next_action: "Svar kunden i Min side og vurder meldingen i lys av kjøpsfasen og de siste boligsignalene.",
+      ai_score: decision.aiScore,
+      metadata: {
+        ...portalWorkItemMetadata("customer_message", now),
+        portal_message: true,
+        email,
+        contact_id: contact.id,
+      },
     }).then(() => null);
   }
 

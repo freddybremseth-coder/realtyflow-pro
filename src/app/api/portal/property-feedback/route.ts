@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildRevenueEventDedupeKey, insertRevenueEvent } from "@/lib/revenue/events";
+import { decidePortalIntent, portalWorkItemMetadata } from "@/lib/nexus/portal-intent-policy";
 import { propertyMatchesBrand } from "@/lib/realty/brand-rules";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
 
   const eventType = action === "interested" ? "property_interested" : "property_not_for_me";
   const title = action === "interested" ? "Bolig markert interessant på Min side" : "Bolig markert ikke for meg på Min side";
+  const interestDecision = action === "interested" ? decidePortalIntent("property_interested") : null;
   const revenue = await insertRevenueEvent(supabase, {
     eventType,
     title,
@@ -91,10 +93,19 @@ export async function POST(request: NextRequest) {
     sourceType: "property_feedback",
     sourceId: propertyId,
     actorType: "customer",
-    confidenceScore: 100,
+    confidenceScore: interestDecision?.aiScore ?? 100,
     occurredAt: now,
     dedupeKey: buildRevenueEventDedupeKey(["portal_property_feedback", contact.id, propertyId, action, now.slice(0, 16)]),
-    metadata: { property_id: propertyId, action, channel: "portal", property_ref: property.ref || null },
+    metadata: {
+      property_id: propertyId,
+      action,
+      channel: "portal",
+      property_ref: property.ref || null,
+      portal_signal: action === "interested" ? "property_interested" : "property_not_for_me",
+      hot_lead: interestDecision?.hotLead ?? false,
+      response_sla_minutes: interestDecision?.responseMinutes ?? null,
+      operational_target: interestDecision?.operationalTarget ?? null,
+    },
     createdBy: "api/portal/property-feedback",
   });
   if (!revenue.ok && !revenue.tableNotReady) console.warn("[portal/property-feedback] revenue event failed", revenue.error);
@@ -104,6 +115,7 @@ export async function POST(request: NextRequest) {
   await supabase.from("contacts").update(contactUpdate).eq("id", contact.id);
 
   if (action === "interested") {
+    const decision = interestDecision!;
     const sourceId = `portal:${contact.id}:${propertyId}`;
     const { data: existingWorkItem } = await supabase
       .from("work_items")
@@ -117,15 +129,21 @@ export async function POST(request: NextRequest) {
     const workItem = {
       title: `Kunde interessert i bolig: ${contact.name || email}`,
       description: `${property.ref || property.title_no || property.title || propertyId} · ${property.location || property.town || ""}`,
-      priority: "HIGH",
+      priority: decision.priority,
       due_date: now.slice(0, 10),
       brand_id: brandId,
       source_type: "portal_property_interest",
       source_id: sourceId,
       assigned_agent: "sales",
       next_action: "Kunden er aktiv på Min side og markerte boligen som interessant. Svar raskt med detaljer, relevante spørsmål og forslag til neste steg.",
-      ai_score: 96,
-      metadata: { contact_id: contact.id, property_id: propertyId, property_ref: property.ref || null, portal_signal: true },
+      ai_score: decision.aiScore,
+      metadata: {
+        ...portalWorkItemMetadata("property_interested", now),
+        contact_id: contact.id,
+        property_id: propertyId,
+        property_ref: property.ref || null,
+        portal_signal: "property_interested",
+      },
       updated_at: now,
     };
     if (existingWorkItem?.id) await supabase.from("work_items").update(workItem).eq("id", existingWorkItem.id);

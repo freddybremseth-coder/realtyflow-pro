@@ -4,6 +4,7 @@ import {
   buildRevenueEventDedupeKey,
   insertRevenueEvent,
 } from "@/lib/revenue/events";
+import { decidePortalIntent, portalResponseDueAt, portalWorkItemMetadata } from "@/lib/nexus/portal-intent-policy";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -60,7 +61,8 @@ export async function POST(request: NextRequest) {
   if (!summary) return NextResponse.json({ error: "No preferences supplied" }, { status: 400 });
 
   const now = new Date().toISOString();
-  const followupAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const decision = decidePortalIntent("preferences_updated");
+  const followupAt = portalResponseDueAt(now, decision.responseMinutes) || now;
   const email = user.email.toLowerCase();
 
   const { data: existing } = await supabase
@@ -117,7 +119,7 @@ export async function POST(request: NextRequest) {
     sourceType: "preferences_updated",
     sourceId: signal.id,
     actorType: "customer",
-    confidenceScore: 94,
+    confidenceScore: decision.aiScore,
     occurredAt: now,
     dedupeKey: buildRevenueEventDedupeKey([
       "portal",
@@ -135,6 +137,11 @@ export async function POST(request: NextRequest) {
       next_followup: followupAt,
       property_interest: payload.property_interest,
       pipeline_value: payload.pipeline_value,
+      portal_signal: "preferences_updated",
+      hot_lead: decision.hotLead,
+      response_sla_minutes: decision.responseMinutes,
+      response_due_at: followupAt,
+      operational_target: decision.operationalTarget,
     },
     createdBy: "api/portal/preferences",
   });
@@ -146,15 +153,16 @@ export async function POST(request: NextRequest) {
   const workItemPayload = {
     title: `Kunden oppdaterte boligønsker: ${contact.name || email}`,
     description: summary.slice(0, 500),
-    priority: "HIGH",
+    priority: decision.priority,
     due_date: followupAt.slice(0, 10),
     brand_id: contact.brand_id || "zeneco",
     source_type: "crm",
     source_id: contact.id,
     assigned_agent: "sales",
     next_action: "Match 3–5 relevante boliger mot de nye ønskene og svar kunden personlig i Min side eller på e-post.",
-    ai_score: 92,
+    ai_score: decision.aiScore,
     metadata: {
+      ...portalWorkItemMetadata("preferences_updated", now),
       portal_preferences: true,
       email,
       signal_id: signal.id,
@@ -162,6 +170,7 @@ export async function POST(request: NextRequest) {
       preferences,
       property_interest: payload.property_interest,
       pipeline_value: payload.pipeline_value,
+      contact_id: contact.id,
     },
     updated_at: now,
   };
