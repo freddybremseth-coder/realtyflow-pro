@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const contactsR = await supabase
     .from("contacts")
-    .select("id,name,email,phone,notes,property_interest,preferred_location,next_followup,pipeline_status,pipeline_value,source,brand_id,brand,interactions,updated_at,email_suppressed,do_not_contact")
+    .select("id,name,email,phone,notes,property_interest,next_followup,pipeline_status,pipeline_value,source,brand_id,brand,interactions,updated_at,email_suppressed,do_not_contact")
     .in("pipeline_status", ACTIVE_STAGES)
     .eq("do_not_contact", false)
     .eq("email_suppressed", false)
