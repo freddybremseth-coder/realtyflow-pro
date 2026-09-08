@@ -10,6 +10,7 @@ import {
   shouldCreateFollowupCalendarEvent,
 } from "@/lib/customers/sales-assistant-note";
 import { createGoogleFollowupEvent } from "@/lib/calendar/google-followup";
+import { buildBuyerProfileEvidencePreview } from "@/lib/nexus/buyer-profile-evidence";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,7 +32,11 @@ export async function POST(request: NextRequest, { params }: { params: { contact
 
   const supabase = getContactsSupabase();
   if (!supabase) return NextResponse.json({ ok: false, error: "Contacts database is not configured" }, { status: 500 });
-  const { data: contact, error } = await supabase.from("contacts").select("id,name,email,interactions,next_followup").eq("id", contactId.data).single();
+  const { data: contact, error } = await supabase
+    .from("contacts")
+    .select("id,name,email,phone,notes,interactions,next_followup,pipeline_value,property_interest")
+    .eq("id", contactId.data)
+    .single();
   if (error || !contact) return NextResponse.json({ ok: false, error: error?.message || "Customer not found" }, { status: 404 });
 
   const now = new Date().toISOString();
@@ -48,6 +53,27 @@ export async function POST(request: NextRequest, { params }: { params: { contact
   }
 
   const followupAt = analysis.nextFollowup && analysis.followupConfidence >= 0.9 ? analysis.nextFollowup : null;
+  const buyerProfilePreview = buildBuyerProfileEvidencePreview({
+    email: contact.email,
+    phone: contact.phone,
+    pipeline_value: contact.pipeline_value,
+    property_interest: contact.property_interest,
+    next_followup: followupAt || contact.next_followup,
+    notes: body.data.note,
+    interactions: [],
+  });
+  const buyerProfileEvidence = {
+    candidates: buyerProfilePreview.candidates,
+    conflicts: buyerProfilePreview.conflicts,
+    reviewRecommended: buyerProfilePreview.candidates.length > 0 && buyerProfilePreview.conflicts.length === 0,
+    projectedCompleteness: buyerProfilePreview.projectedCompleteness,
+    href: "/nexus-os/profile-activation-priority",
+    persisted: false as const,
+  };
+
+  const followupBrief = [analysis.nextAction, analysis.propertyReference ? `Bolig/ref: ${analysis.propertyReference}` : null]
+    .filter(Boolean)
+    .join(" · ") || analysis.title || analysis.polishedNote.slice(0, 240);
   const interactionId = crypto.randomUUID();
   const interaction = {
     id: interactionId,
@@ -67,10 +93,14 @@ export async function POST(request: NextRequest, { params }: { params: { contact
       original_note: body.data.note,
       polished_note: analysis.polishedNote,
       next_action: analysis.nextAction,
+      followup_brief: followupBrief,
       next_followup: followupAt,
       followup_confidence: analysis.followupConfidence,
       property_reference: analysis.propertyReference,
       explicit_facts: analysis.explicitFacts,
+      buyer_profile_evidence_candidates: buyerProfileEvidence.candidates,
+      buyer_profile_evidence_conflicts: buyerProfileEvidence.conflicts,
+      buyer_profile_evidence_review_recommended: buyerProfileEvidence.reviewRecommended,
       ai_structured: true,
       actor_email: context.email.toLowerCase(),
       no_customer_contact: true,
@@ -92,14 +122,16 @@ export async function POST(request: NextRequest, { params }: { params: { contact
       title: analysis.calendarTitle || `Følg opp ${contact.name || contact.email || "kunde"}`,
       startIso: followupAt,
       durationMinutes: analysis.calendarDurationMinutes || 30,
-      description: [analysis.nextAction, analysis.polishedNote, `RealtyFlow CRM customer: ${contact.name || contact.email || contact.id}`].filter(Boolean).join("\n\n"),
+      description: [followupBrief, analysis.polishedNote, `RealtyFlow CRM customer: ${contact.name || contact.email || contact.id}`].filter(Boolean).join("\n\n"),
     });
   }
 
   return NextResponse.json({
     ok: true,
     analysis,
+    followupBrief,
     followupApplied: Boolean(followupAt),
+    buyerProfileEvidence,
     contactId: contact.id,
     interactionId,
     calendar,
@@ -108,6 +140,8 @@ export async function POST(request: NextRequest, { params }: { params: { contact
       customerContactSent: false,
       pipelineChanged: false,
       hardBuyerProfileFactsChanged: false,
+      buyerProfileEvidencePersisted: false,
+      buyerProfileEvidenceReviewFirst: true,
     },
   });
 }
