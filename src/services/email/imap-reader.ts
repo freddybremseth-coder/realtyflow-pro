@@ -55,6 +55,17 @@ async function parsedContent(source: Buffer | undefined) {
   return { text, html };
 }
 
+async function safeLogout(client: ImapFlow) {
+  try {
+    await client.logout();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/connection not available|not connected|connection closed|socket.*closed/i.test(message)) {
+      console.warn(`[IMAP] logout cleanup failed`, error);
+    }
+  }
+}
+
 // ─── IMAP Reader ─────────────────────────────────────────────────────
 
 /**
@@ -142,7 +153,7 @@ export async function fetchRecentEmails(
       lock.release();
     }
   } finally {
-    await client.logout();
+    await safeLogout(client);
   }
 }
 
@@ -232,7 +243,7 @@ export async function fetchHistoricalMailboxEmails(
       lock.release();
     }
   } finally {
-    await client.logout();
+    await safeLogout(client);
   }
 }
 
