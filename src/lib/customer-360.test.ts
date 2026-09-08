@@ -56,6 +56,39 @@ test("customer next action blocks follow-up when contact channel is missing", ()
   assert.match(action.description, /mangler både e-post og telefon/i);
 });
 
+test("cancelled work items never drive Customer 360 AI action", () => {
+  const completeness = buildCustomerProfileCompleteness({
+    email: "buyer@example.com",
+    next_followup: "2026-07-15T09:00:00.000Z",
+  });
+  const action = buildCustomerNextAction(
+    { id: "contact-cancelled", email: "buyer@example.com", next_followup: "2026-07-15T09:00:00.000Z" },
+    "Kontakt kunden rolig senere.",
+    completeness,
+    [{ title: "Gammel kritisk oppgave", next_action: "Svar nå", priority: "CRITICAL", status: "CANCELLED" }],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.notEqual(action.title, "Gammel kritisk oppgave");
+  assert.notEqual(action.reason, "kritisk åpen kundeoppgave");
+});
+
+test("terminal pipeline stages suppress active sales urgency regardless of old tasks", () => {
+  const completeness = buildCustomerProfileCompleteness({ email: "buyer@example.com" });
+  const action = buildCustomerNextAction(
+    { id: "contact-lost", email: "buyer@example.com", pipeline_status: "LOST" },
+    "Svar kunden nå.",
+    completeness,
+    [{ title: "Gammel kritisk oppgave", next_action: "Svar nå", priority: "CRITICAL", status: "TO_DO" }],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.title, "Saken er avsluttet");
+  assert.equal(action.priority, "LOW");
+  assert.equal(action.reason, "pipeline-status er LOST");
+  assert.match(action.description, /Ingen aktiv salgsoppfølging/i);
+});
+
 test("customer next action prioritizes overdue follow-up after contact is reachable", () => {
   const completeness = buildCustomerProfileCompleteness({
     email: "buyer@example.com",
