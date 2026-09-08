@@ -17,11 +17,12 @@ const completeCriteria: ReviewedDraftCriterion[] = [
   { key: "other", other_key: "purchase timeline", approval_status: "approved", active: true },
 ];
 
-test("complete reviewed draft can be promoted", () => {
+test("complete explicitly approved draft can be promoted", () => {
   const decision = decideBuyerProfileDraftPromotion({ contact: completeContact, criteria: completeCriteria });
   assert.equal(decision.canPromote, true);
   assert.equal(decision.completeness.score, 100);
   assert.equal(decision.pendingCount, 0);
+  assert.equal(decision.editedActiveCount, 0);
 });
 
 test("pending active criterion blocks promotion", () => {
@@ -31,10 +32,20 @@ test("pending active criterion blocks promotion", () => {
   });
   assert.equal(decision.canPromote, false);
   assert.equal(decision.pendingCount, 1);
-  assert.match(decision.reason, /pending review/i);
+  assert.match(decision.reason, /explicit approval/i);
 });
 
-test("incomplete Customer 360 profile blocks promotion even when criteria are reviewed", () => {
+test("edited active criterion still requires explicit approval", () => {
+  const decision = decideBuyerProfileDraftPromotion({
+    contact: completeContact,
+    criteria: [{ ...completeCriteria[0], approval_status: "edited" }, ...completeCriteria.slice(1)],
+  });
+  assert.equal(decision.canPromote, false);
+  assert.equal(decision.editedActiveCount, 1);
+  assert.match(decision.reason, /explicit approval/i);
+});
+
+test("incomplete Customer 360 profile blocks promotion even when criteria are approved", () => {
   const decision = decideBuyerProfileDraftPromotion({
     contact: { ...completeContact, pipeline_value: 0 },
     criteria: completeCriteria,
