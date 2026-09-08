@@ -25,11 +25,24 @@ test("profile activation priority projects explicit CRM evidence through Custome
   assert.match(source, /autoActivationConfidence: 95/);
 });
 
+test("profile activation priority ranks one read-only discovery action per incomplete profile", () => {
+  assert.match(source, /buildBuyerProfileDiscoveryPriority/);
+  assert.match(source, /projectedCompletenessScore/);
+  assert.match(source, /projectedMissing/);
+  assert.match(source, /evidenceConflictCount/);
+  assert.match(source, /b\.discovery\.score - a\.discovery\.score/);
+  assert.match(source, /discoveryNeeded:/);
+  assert.match(source, /discoveryCritical:/);
+  assert.match(source, /discoveryHigh:/);
+  assert.match(source, /discoveryPriorityOnly: true/);
+});
+
 test("profile activation priority remains read-only", () => {
   assert.doesNotMatch(source, /\.insert\(/);
   assert.doesNotMatch(source, /\.update\(/);
   assert.doesNotMatch(source, /sendEmail|sendBrandEmail/);
   assert.match(source, /readOnly: true/);
   assert.match(source, /evidencePreviewOnly: true/);
+  assert.match(source, /discoveryPriorityOnly: true/);
   assert.match(source, /buyerProfileWritten: false/);
 });
