@@ -37,6 +37,18 @@ test("profile activation priority ranks one read-only discovery action per incom
   assert.match(source, /discoveryPriorityOnly: true/);
 });
 
+test("profile activation priority surfaces draft eligibility without approving or executing it", () => {
+  assert.match(source, /decideBuyerProfileEvidenceDraft/);
+  assert.match(source, /\.in\("status", \["approved", "draft"\]\)/);
+  assert.match(source, /draftByContact/);
+  assert.match(source, /evidenceDraftEligible:/);
+  assert.match(source, /existingEvidenceDrafts:/);
+  assert.match(source, /eligible: evidenceDraftDecision\.eligible && !existingDraft/);
+  assert.match(source, /requiresReview: true/);
+  assert.match(source, /evidenceDraftEligibilityOnly: true/);
+  assert.match(source, /executorEligible: false/);
+});
+
 test("profile activation priority remains read-only", () => {
   assert.doesNotMatch(source, /\.insert\(/);
   assert.doesNotMatch(source, /\.update\(/);
