@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildBuyerProfileDiscoveryPriority } from "@/lib/nexus/buyer-profile-discovery-priority";
 import { buildBuyerProfileEvidencePreview } from "@/lib/nexus/buyer-profile-evidence";
+import { decideBuyerProfileEvidenceDraft } from "@/lib/nexus/buyer-profile-evidence-draft";
 import { decideBuyerProfileAutoActivation } from "@/lib/nexus/buyer-profile-auto-activation";
 import { prioritizePersonaBackfill } from "@/lib/persona-backfill";
 import { LeadIntelligenceRealEstateBrandSchema } from "@/services/lead-intelligence/brand-allowlist";
@@ -39,14 +40,24 @@ export async function GET(request: NextRequest) {
   const profilesR = contactIds.length
     ? await supabase
         .from("buyer_profiles")
-        .select("contact_id,status")
+        .select("id,contact_id,version,status,created_at")
         .in("contact_id", contactIds)
-        .eq("status", "approved")
+        .in("status", ["approved", "draft"])
+        .order("created_at", { ascending: false })
         .limit(5000)
     : { data: [], error: null } as any;
 
   if (profilesR.error) return NextResponse.json({ error: profilesR.error.message }, { status: 500 });
-  const withApprovedProfile = new Set((profilesR.data || []).map((row: any) => String(row.contact_id || "")));
+  const withApprovedProfile = new Set(
+    (profilesR.data || []).filter((row: any) => row.status === "approved").map((row: any) => String(row.contact_id || "")),
+  );
+  const draftByContact = new Map<string, { id: string; version: number }>();
+  for (const row of profilesR.data || []) {
+    if (row.status !== "draft") continue;
+    const contactId = String(row.contact_id || "");
+    if (!contactId || draftByContact.has(contactId)) continue;
+    draftByContact.set(contactId, { id: String(row.id), version: Number(row.version || 1) });
+  }
   const missingProfileContacts = eligibleContacts.filter((contact: any) => !withApprovedProfile.has(String(contact.id)));
 
   const ranked = prioritizePersonaBackfill(missingProfileContacts).map(({ contact, candidate }) => {
@@ -57,6 +68,11 @@ export async function GET(request: NextRequest) {
         : "DISCOVERY_REQUIRED";
 
     const evidencePreview = buildBuyerProfileEvidencePreview(contact);
+    const evidenceDraftDecision = decideBuyerProfileEvidenceDraft({
+      candidates: evidencePreview.candidates,
+      conflictCount: evidencePreview.conflicts.length,
+    });
+    const existingDraft = draftByContact.get(String(contact.id)) || null;
     const autonomy = decideBuyerProfileAutoActivation(candidate, evidencePreview.currentCompleteness);
     const projectedAutonomy = decideBuyerProfileAutoActivation(candidate, evidencePreview.projectedCompleteness);
     const discovery = buildBuyerProfileDiscoveryPriority({
@@ -90,6 +106,16 @@ export async function GET(request: NextRequest) {
         projectedProfileComplete: evidencePreview.projectedProfileComplete,
         safeForAutoPersistence: evidencePreview.safeForAutoPersistence,
         readOnly: evidencePreview.readOnly,
+      },
+      evidenceDraft: {
+        eligible: evidenceDraftDecision.eligible && !existingDraft,
+        reason: existingDraft
+          ? `Draft Buyer Profile v${existingDraft.version} finnes allerede.`
+          : evidenceDraftDecision.reason,
+        criterionCount: evidenceDraftDecision.criteria.length,
+        requiresReview: true,
+        existingDraft,
+        createHref: "/api/nexus/profile-activation-priority/evidence-draft",
       },
       autonomy: {
         tier: autonomy.safety.tier,
@@ -129,6 +155,8 @@ export async function GET(request: NextRequest) {
       profileAutoEligible: ranked.filter((row) => row.autonomy.canAutoActivate).length,
       evidenceCandidates: ranked.filter((row) => row.evidencePreview.candidates.length > 0).length,
       evidenceConflicts: ranked.filter((row) => row.evidencePreview.conflicts.length > 0).length,
+      evidenceDraftEligible: ranked.filter((row) => row.evidenceDraft.eligible).length,
+      existingEvidenceDrafts: ranked.filter((row) => Boolean(row.evidenceDraft.existingDraft)).length,
       projectedProfileComplete: ranked.filter((row) => row.evidencePreview.projectedProfileComplete).length,
       projectedAutoGate: ranked.filter((row) => row.projectedAutonomy.wouldMeetAutoGateIfEvidenceApproved).length,
       discoveryNeeded: ranked.filter((row) => row.discovery.requiresCustomerInput).length,
@@ -143,6 +171,7 @@ export async function GET(request: NextRequest) {
       readOnly: true,
       evidencePreviewOnly: true,
       discoveryPriorityOnly: true,
+      evidenceDraftEligibilityOnly: true,
       projectedEvidenceExecutorEligible: false,
       personaAutoEligibilityEvaluated: true,
       profileAutoEligibilityEvaluated: true,
