@@ -13,8 +13,17 @@ test("profile activation priority reuses governed persona scoring", () => {
   assert.match(source, /DISCOVERY_REQUIRED/);
 });
 
+test("profile activation priority exposes central AUTO eligibility without weakening review threshold", () => {
+  assert.match(source, /decideBuyerProfileAutoActivation/);
+  assert.match(source, /autoActivationConfidence: 95/);
+  assert.match(source, /autoEligible:/);
+  assert.match(source, /canAutoActivate/);
+  assert.match(source, /autoActivationExecuted: false/);
+});
+
 test("profile activation priority remains read-only", () => {
   assert.doesNotMatch(source, /\.insert\(/);
   assert.doesNotMatch(source, /\.update\(/);
   assert.doesNotMatch(source, /sendEmail|sendBrandEmail/);
+  assert.match(source, /readOnly: true/);
 });
