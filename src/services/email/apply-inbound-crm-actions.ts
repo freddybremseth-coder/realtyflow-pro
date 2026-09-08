@@ -4,6 +4,7 @@ import {
   governInboundReply,
   type InboundReplyIntent,
 } from "@/lib/inbound-reply-intelligence";
+import { decideHotLeadSla, responseDueAt } from "@/lib/nexus/hot-lead-sla";
 
 export interface InboundCrmActionResult {
   contactId: string | null;
@@ -16,14 +17,6 @@ export interface InboundCrmActionResult {
 
 function normalize(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function priorityFor(urgency: string | null | undefined, intent: InboundReplyIntent) {
-  if (intent === "viewing_request" || intent === "property_interest") return "HIGH";
-  if (intent === "do_not_contact" || intent === "purchased_elsewhere") return "MEDIUM";
-  const value = String(urgency || "").toLowerCase();
-  if (value === "critical" || value === "high") return "HIGH";
-  return "MEDIUM";
 }
 
 async function ensureWorkItem(
@@ -70,6 +63,63 @@ async function ensureWorkItem(
   return true;
 }
 
+async function loadBuyerProfileSignal(supabase: SupabaseClient, contactId: string) {
+  const result = await supabase
+    .from("buyer_profiles")
+    .select("id,status,purchase_readiness,updated_at")
+    .eq("contact_id", contactId)
+    .neq("status", "archived")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (result.error) return { profileId: null, profileStatus: null, purchaseReadiness: null };
+  return {
+    profileId: result.data?.id ? String(result.data.id) : null,
+    profileStatus: result.data?.status ? String(result.data.status).toUpperCase() : null,
+    purchaseReadiness: result.data?.purchase_readiness ? String(result.data.purchase_readiness) : null,
+  };
+}
+
+function operationalNextAction(input: {
+  intent: InboundReplyIntent;
+  profileId: string | null;
+  profileStatus: string | null;
+  suggestedAction?: string | null;
+}) {
+  if (input.suggestedAction) return normalize(input.suggestedAction);
+
+  if (input.intent === "update_preferences") {
+    return input.profileId
+      ? "Åpne eksisterende Buyer Profile, oppdater kriteriene fra kundens svar og kjør ny matching."
+      : "Opprett Buyer Profile fra kundens oppdaterte kriterier før matching.";
+  }
+
+  if (input.intent === "viewing_request") {
+    return input.profileId && input.profileStatus === "APPROVED"
+      ? "Behandle som hot lead: verifiser aktuell bolig/shortlist og avtal visning umiddelbart."
+      : "Behandle som hot lead: avklar boligen, ferdigstill Buyer Profile ved behov og avtal visning umiddelbart.";
+  }
+
+  if (input.intent === "property_interest") {
+    return input.profileId && input.profileStatus === "APPROVED"
+      ? "Behandle som hot lead: åpne Buyer Profile/Stage Readiness, sjekk boligen og prioriter matching/shortlist."
+      : "Behandle som hot lead: identifiser boligen, opprett/ferdigstill Buyer Profile og prioriter matching.";
+  }
+
+  if (input.intent === "active_interest") {
+    return input.profileId
+      ? "Åpne Buyer Profile og Stage Readiness, oppdater kjøpsstatus og prioriter neste matchingsteg."
+      : "Opprett Buyer Profile og prioriter kunden for matching.";
+  }
+
+  if (input.intent === "question") {
+    return "Svar kunden raskt. Bruk Customer 360 og aktuell bolig-/kundedata før svaret sendes.";
+  }
+
+  return "Les AI-utkastet i Nexus Communications og følg opp kunden.";
+}
+
 export async function applyInboundCrmActions(
   supabase: SupabaseClient,
   params: {
@@ -88,7 +138,9 @@ export async function applyInboundCrmActions(
   const body = normalize(params.body);
   const classification = classifyInboundReply({ subject, body });
   const governance = governInboundReply(classification);
+  const sla = decideHotLeadSla(classification);
   const now = new Date().toISOString();
+  const responseDue = responseDueAt(now, sla.responseMinutes);
 
   const { data: contact } = fromAddress
     ? await supabase
@@ -111,6 +163,7 @@ export async function applyInboundCrmActions(
     };
   }
 
+  const buyerProfile = await loadBuyerProfileSignal(supabase, String(contact.id));
   const summary = normalize(params.summary) || body.slice(0, 500) || subject || "Innkommende e-post";
   const existingInteractions = Array.isArray(contact.interactions) ? contact.interactions : [];
   const interactionId = `email-reply-${params.emailMessageId}`;
@@ -121,6 +174,7 @@ export async function applyInboundCrmActions(
       `Innkommende e-post: ${subject || "(uten emne)"}`,
       `Klassifisering: ${classification.intent}`,
       `Autopilot: ${governance.safety.tier}`,
+      sla.isHotLead ? `Hot Lead SLA: ${sla.responseMinutes} min` : "",
       `Oppsummering: ${summary}`,
       params.suggestedAction ? `Foreslått handling: ${normalize(params.suggestedAction)}` : "",
     ].filter(Boolean).join("\n"),
@@ -133,6 +187,11 @@ export async function applyInboundCrmActions(
       confidence: classification.confidence,
       governance_tier: governance.safety.tier,
       urgency: params.urgency || null,
+      hot_lead: sla.isHotLead,
+      response_due_at: responseDue,
+      operational_target: sla.operationalTarget,
+      buyer_profile_id: buyerProfile.profileId,
+      buyer_profile_status: buyerProfile.profileStatus,
     },
   };
 
@@ -157,9 +216,6 @@ export async function applyInboundCrmActions(
     update.next_followup = null;
     suppressed = true;
   } else if (classification.intent === "purchased_elsewhere") {
-    // Commercially terminal intent is strongly detected, but LOST remains a
-    // governed human outcome in v1. Stop further automated outreach now and
-    // create one idempotent review item instead of mutating pipeline_status.
     update.email_suppressed = true;
     update.suppression_reason = "purchase_reported_by_customer_pending_outcome_review";
     update.nurture_status = "stopped";
@@ -183,6 +239,17 @@ export async function applyInboundCrmActions(
     confidence: classification.confidence,
     governance_tier: governance.safety.tier,
     urgency: params.urgency || null,
+    hot_lead: sla.isHotLead,
+    hot_lead_reason: sla.reason,
+    response_due_at: responseDue,
+    response_sla_minutes: sla.responseMinutes,
+    operational_target: sla.operationalTarget,
+    buyer_profile_id: buyerProfile.profileId,
+    buyer_profile_status: buyerProfile.profileStatus,
+    purchase_readiness: buyerProfile.purchaseReadiness,
+    stage_readiness_href: buyerProfile.profileId
+      ? `/lead-intelligence?buyerProfileId=${encodeURIComponent(buyerProfile.profileId)}&brand=${encodeURIComponent(params.brandId)}`
+      : `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
   };
 
   if (classification.intent === "purchased_elsewhere") {
@@ -197,19 +264,19 @@ export async function applyInboundCrmActions(
       metadata,
     });
   } else if (classification.intent !== "do_not_contact" && classification.intent !== "unclear") {
-    const fast = classification.requiresFastResponse;
     workItemCreated = await ensureWorkItem(supabase, {
       sourceId: params.emailMessageId,
-      title: fast ? `Svar kunde raskt: ${contact.name || fromAddress}` : `Følg opp kundesvar: ${contact.name || fromAddress}`,
+      title: sla.isHotLead ? `HOT LEAD: ${contact.name || fromAddress}` : `Følg opp kundesvar: ${contact.name || fromAddress}`,
       description: `${subject || "Innkommende e-post"}\n${summary}`,
-      priority: priorityFor(params.urgency, classification.intent),
+      priority: sla.priority,
       brandId: params.brandId,
-      nextAction: params.suggestedAction || (classification.shouldRefreshBuyerProfile
-        ? "Oppdater Buyer Profile fra kundens nye krav og kjør ny matching."
-        : classification.shouldRunPropertyMatching
-          ? "Prioriter kunden i matching og forbered relevant svar/boligforslag."
-          : "Les AI-utkastet i Nexus Communications og følg opp kunden."),
-      aiScore: fast ? 95 : 82,
+      nextAction: operationalNextAction({
+        intent: classification.intent,
+        profileId: buyerProfile.profileId,
+        profileStatus: buyerProfile.profileStatus,
+        suggestedAction: params.suggestedAction,
+      }),
+      aiScore: sla.aiScore,
       metadata,
     });
   } else if (classification.intent === "unclear") {
