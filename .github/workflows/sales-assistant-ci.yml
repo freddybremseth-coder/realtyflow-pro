@@ -5,6 +5,8 @@ on:
     paths:
       - "src/lib/customers/sales-assistant-note.ts"
       - "src/lib/customers/sales-assistant-note.test.ts"
+      - "src/lib/customers/sales-assistant-buyer-evidence.test.ts"
+      - "src/lib/nexus/buyer-profile-evidence.ts"
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
@@ -14,6 +16,8 @@ on:
     branches: [main]
     paths:
       - "src/lib/customers/sales-assistant-note.ts"
+      - "src/lib/customers/sales-assistant-buyer-evidence.test.ts"
+      - "src/lib/nexus/buyer-profile-evidence.ts"
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
@@ -30,5 +34,5 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci --silent
-      - name: Sales assistant policy and route tests
-        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts
+      - name: Sales assistant policy, evidence and route tests
+        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/lib/customers/sales-assistant-buyer-evidence.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts
