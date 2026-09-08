@@ -25,7 +25,7 @@ jobs:
       - name: Email admin and backfill safety tests
         run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/app/api/email-admin-routes-auth.test.ts src/lib/email/connection-repair-policy.test.ts src/lib/email/imap-transient-health.contract.test.ts src/lib/email/history-backfill-policy.test.ts src/lib/email/history-backfill-readiness.test.ts src/lib/email/history-backfill-review-links.test.ts src/lib/email/history-backfill-preview-fingerprint.test.ts src/lib/email/history-backfill-preview-cookie.test.ts src/lib/email/history-backfill-account-gate.test.ts src/lib/email/history-backfill-audit.test.ts src/lib/email/operations-audit.test.ts src/lib/email/config-readiness.test.ts
       - name: Inbound Reply governance tests
-        run: npx tsx --test src/lib/inbound-reply-intelligence.test.ts src/lib/nexus/hot-lead-sla.test.ts src/services/email/apply-inbound-crm-actions-governance.test.ts
+        run: npx tsx --test src/lib/inbound-reply-intelligence.test.ts src/lib/nexus/hot-lead-sla.test.ts src/services/email/apply-inbound-crm-actions-governance.test.ts src/services/email/inbound-reply-reconciliation.test.ts
       - name: Revenue Inbox tests
         run: npm run test:revenue-today && npx tsx --test src/lib/revenue/hot-lead-work-item.test.ts src/lib/revenue/portal-recency.test.ts src/app/api/revenue/today/portal-recency.contract.test.ts
       - name: Closing Workspace tests
