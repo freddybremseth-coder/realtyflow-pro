@@ -27,7 +27,7 @@ jobs:
       - name: Inbound Reply governance tests
         run: npx tsx --test src/lib/inbound-reply-intelligence.test.ts src/lib/nexus/hot-lead-sla.test.ts src/services/email/apply-inbound-crm-actions-governance.test.ts
       - name: Revenue Inbox tests
-        run: npm run test:revenue-today && npx tsx --test src/lib/revenue/hot-lead-work-item.test.ts
+        run: npm run test:revenue-today && npx tsx --test src/lib/revenue/hot-lead-work-item.test.ts src/lib/revenue/portal-recency.test.ts
       - name: Closing Workspace tests
         run: npm run test:closing
       - name: Customer 360 tests
