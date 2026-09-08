@@ -32,6 +32,12 @@ test("Buyer Profile evidence remains review-first and does not persist hard crit
   assert.match(source, /hardBuyerProfileFactsChanged: false/);
 });
 
+test("draft request is exposed only for conflict-free evidence and a server-validated real-estate brand", () => {
+  assert.match(source, /isLeadIntelligenceRealEstateBrand\(contactBrand\)/);
+  assert.match(source, /reviewRecommended = buyerProfilePreview\.candidates\.length > 0 && buyerProfilePreview\.conflicts\.length === 0/);
+  assert.match(source, /draftRequest: reviewRecommended && draftBrand \? \{ contactId: contact\.id, brand: draftBrand \} : null/);
+});
+
 test("explicit follow-up creates a CRM work item with the conversation brief for Nexus Today", () => {
   assert.match(source, /from\("work_items"\)/);
   assert.match(source, /source: "crm-sales-assistant"/);

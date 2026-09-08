@@ -65,6 +65,9 @@ export interface CustomerNextAction {
   secondaryHref?: string;
 }
 
+const OPEN_CUSTOMER_WORK_STATUSES = new Set(["TO_DO", "IN_PROGRESS", "REVIEW"]);
+const TERMINAL_CUSTOMER_STAGES = new Set(["LOST", "WON"]);
+
 export function buildCustomerProfileCompleteness(
   contact: Customer360ContactInput,
   criteria: BuyerCriterionInput[] = [],
@@ -125,8 +128,22 @@ export function buildCustomerNextAction(
 ): CustomerNextAction {
   const contactId = String(contact.id || "").trim();
   const stage = String(contact.pipeline_status || "NEW").toUpperCase();
+
+  if (TERMINAL_CUSTOMER_STAGES.has(stage)) {
+    return {
+      title: stage === "WON" ? "Kunden er vunnet" : "Saken er avsluttet",
+      description: stage === "WON"
+        ? "Ingen aktiv salgsoppfølging er nødvendig. Bruk kundevisningen for eventuell etter-salg eller service."
+        : "Ingen aktiv salgsoppfølging er nødvendig med mindre kunden senere gir et nytt kjøpssignal.",
+      reason: `pipeline-status er ${stage}`,
+      priority: "LOW",
+      primaryLabel: "Åpne kundedetaljer",
+      primaryHref: customerHref(contactId),
+    };
+  }
+
   const openWorkItem = workItems
-    .filter((item) => String(item.status || "TO_DO").toUpperCase() !== "DONE")
+    .filter((item) => OPEN_CUSTOMER_WORK_STATUSES.has(String(item.status || "TO_DO").toUpperCase()))
     .sort((a, b) => {
       const weights: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
       return (weights[String(b.priority || "LOW").toUpperCase()] || 1) - (weights[String(a.priority || "LOW").toUpperCase()] || 1);

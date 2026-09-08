@@ -11,6 +11,7 @@ import {
 } from "@/lib/customers/sales-assistant-note";
 import { createGoogleFollowupEvent } from "@/lib/calendar/google-followup";
 import { buildBuyerProfileEvidencePreview } from "@/lib/nexus/buyer-profile-evidence";
+import { isLeadIntelligenceRealEstateBrand } from "@/services/lead-intelligence/brand-allowlist";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -63,12 +64,16 @@ export async function POST(request: NextRequest, { params }: { params: { contact
     notes: body.data.note,
     interactions: [],
   });
+  const contactBrand = String(contact.brand_id || contact.brand || "").trim().toLowerCase();
+  const draftBrand = isLeadIntelligenceRealEstateBrand(contactBrand) ? contactBrand : null;
+  const reviewRecommended = buyerProfilePreview.candidates.length > 0 && buyerProfilePreview.conflicts.length === 0;
   const buyerProfileEvidence = {
     candidates: buyerProfilePreview.candidates,
     conflicts: buyerProfilePreview.conflicts,
-    reviewRecommended: buyerProfilePreview.candidates.length > 0 && buyerProfilePreview.conflicts.length === 0,
+    reviewRecommended,
     projectedCompleteness: buyerProfilePreview.projectedCompleteness,
     href: "/nexus-os/profile-activation-priority",
+    draftRequest: reviewRecommended && draftBrand ? { contactId: contact.id, brand: draftBrand } : null,
     persisted: false as const,
   };
 

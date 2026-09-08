@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AlertTriangle, Bot, CalendarClock, CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, CalendarClock, CheckCircle2, FilePlus2, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type EvidenceCandidate = {
@@ -28,6 +28,7 @@ type SalesAssistantResult = {
     reviewRecommended?: boolean;
     href?: string;
     persisted?: boolean;
+    draftRequest?: { contactId: string; brand: string } | null;
   };
 };
 
@@ -44,8 +45,11 @@ function evidenceLabel(candidate: EvidenceCandidate) {
 export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: string; onSaved?: () => void }) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [creatingDraft, setCreatingDraft] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [draftMessage, setDraftMessage] = useState("");
+  const [draftError, setDraftError] = useState("");
   const [result, setResult] = useState<SalesAssistantResult | null>(null);
 
   async function save() {
@@ -53,6 +57,8 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     setSaving(true);
     setError("");
     setMessage("");
+    setDraftMessage("");
+    setDraftError("");
     setResult(null);
     try {
       const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/sales-assistant-note`, {
@@ -75,8 +81,41 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     }
   }
 
+  async function createReviewDraft() {
+    const draftRequest = result?.buyerProfileEvidence?.draftRequest;
+    if (!draftRequest) return;
+    setCreatingDraft(true);
+    setDraftMessage("");
+    setDraftError("");
+    try {
+      const response = await fetch("/api/nexus/profile-activation-priority/evidence-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draftRequest),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke opprette Buyer Profile review-utkast.");
+      const existing = Boolean(body.result?.existingDraft || body.result?.duplicate);
+      setDraftMessage(existing ? "Eksisterende Buyer Profile-utkast er klart for review." : "Buyer Profile review-utkast er opprettet med pending kriterier.");
+      setResult((current) => current ? {
+        ...current,
+        buyerProfileEvidence: current.buyerProfileEvidence ? { ...current.buyerProfileEvidence, persisted: true } : current.buyerProfileEvidence,
+      } : current);
+    } catch (draftFailure) {
+      setDraftError(draftFailure instanceof Error ? draftFailure.message : "Kunne ikke opprette Buyer Profile review-utkast.");
+    } finally {
+      setCreatingDraft(false);
+    }
+  }
+
   const candidates = result?.buyerProfileEvidence?.candidates || [];
   const conflicts = result?.buyerProfileEvidence?.conflicts || [];
+  const canCreateDraft = Boolean(
+    result?.buyerProfileEvidence?.reviewRecommended
+      && result?.buyerProfileEvidence?.draftRequest
+      && conflicts.length === 0
+      && !result?.buyerProfileEvidence?.persisted,
+  );
 
   return (
     <section className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-4 sm:p-5">
@@ -116,12 +155,22 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
               <p className="text-sm font-semibold text-white">Buyer Profile-forslag</p>
               <p className="text-xs text-slate-500">AI kan foreslå eksplisitte fakta, men ingenting blir gjort til hardt kriterium uten review.</p>
             </div>
-            {result?.buyerProfileEvidence?.href && (
-              <Button asChild size="sm" variant="outline">
-                <Link href={result.buyerProfileEvidence.href}>Åpne review</Link>
-              </Button>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {canCreateDraft && (
+                <Button type="button" size="sm" onClick={createReviewDraft} disabled={creatingDraft}>
+                  {creatingDraft ? <Loader2 size={14} className="mr-2 animate-spin" /> : <FilePlus2 size={14} className="mr-2" />}Lag review-utkast
+                </Button>
+              )}
+              {result?.buyerProfileEvidence?.href && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={result.buyerProfileEvidence.href}>Åpne review</Link>
+                </Button>
+              )}
+            </div>
           </div>
+
+          {draftMessage && <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-200">{draftMessage}</div>}
+          {draftError && <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">{draftError}</div>}
 
           {candidates.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
