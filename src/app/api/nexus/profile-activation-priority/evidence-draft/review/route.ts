@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
         );
         promoted = promotedResult.rows.length === 1;
         if (!promoted) {
-          throw new LeadIntelligenceError("REVIEW_CONFLICT", "Buyer Profile draft changed before promotion", 409);
+          throw new LeadIntelligenceError("INVALID_REQUEST", "Buyer Profile draft changed before promotion", 409);
         }
       }
 
