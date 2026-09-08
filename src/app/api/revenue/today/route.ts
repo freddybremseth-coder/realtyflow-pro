@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
+import { readHotLeadSla } from "@/lib/revenue/hot-lead-work-item";
 import {
   buildRecommendedRevenuePlay,
   buildRevenuePriority,
@@ -32,6 +33,8 @@ function emptyPayload() {
       newLeads: 0,
       overdueFollowups: 0,
       hotSignals: 0,
+      hotLeads: 0,
+      hotLeadSlaOverdue: 0,
       closingOpportunities: 0,
       missingNextAction: 0,
       totalPipelineValue: 0,
@@ -50,21 +53,37 @@ function workItemHref(sourceType: string) {
   return "/marketing-tasks";
 }
 
-function normalizeWorkItem(item: Record<string, any>) {
+function normalizeWorkItem(item: Record<string, any>, now: Date) {
   const sourceType = String(item.source_type || "manual").toLowerCase();
+  const hotLead = readHotLeadSla(item.metadata, now);
+  const priority = hotLead.isSlaOverdue
+    ? "CRITICAL"
+    : String(item.priority || (hotLead.hotLead ? "HIGH" : "MEDIUM"));
+  const aiScore = hotLead.isSlaOverdue
+    ? 100
+    : Math.max(Number(item.ai_score || 0), hotLead.hotLead ? 95 : 0);
+
   return {
     id: String(item.id),
     title: String(item.title || "Oppgave uten tittel"),
     description: item.description ? String(item.description) : null,
     status: String(item.status || "TO_DO"),
-    priority: String(item.priority || "MEDIUM"),
-    dueAt: item.due_date || null,
+    priority,
+    dueAt: hotLead.responseDueAt || item.due_date || null,
     brandId: normalizeBrandId(item.brand_id || item.brand) || null,
     sourceType,
     sourceId: item.source_id || null,
-    nextAction: item.next_action ? String(item.next_action) : null,
-    aiScore: Number(item.ai_score || 0),
-    href: workItemHref(sourceType),
+    nextAction: hotLead.isSlaOverdue
+      ? `SLA er overskredet. ${item.next_action ? String(item.next_action) : "Svar kunden nå og gjennomfør neste konkrete salgssteg."}`
+      : item.next_action ? String(item.next_action) : null,
+    aiScore,
+    href: hotLead.stageReadinessHref || workItemHref(sourceType),
+    hotLead: hotLead.hotLead,
+    isSlaOverdue: hotLead.isSlaOverdue,
+    responseDueAt: hotLead.responseDueAt,
+    responseSlaMinutes: hotLead.responseSlaMinutes,
+    operationalTarget: hotLead.operationalTarget,
+    buyerProfileId: hotLead.buyerProfileId,
   };
 }
 
@@ -149,12 +168,14 @@ export async function GET(request: NextRequest) {
   );
 
   const workItems = (workItemsResult.data || [])
-    .map(normalizeWorkItem)
+    .map((item) => normalizeWorkItem(item, now))
     .filter((item) => {
       const brandMatches = item.brandId ? REAL_ESTATE_BRANDS.has(item.brandId) : false;
       return brandMatches || REVENUE_WORK_SOURCES.has(item.sourceType);
     })
     .sort((a, b) => {
+      if (a.isSlaOverdue !== b.isSlaOverdue) return a.isSlaOverdue ? -1 : 1;
+      if (a.hotLead !== b.hotLead) return a.hotLead ? -1 : 1;
       const priorityDelta = priorityWeight(b.priority) - priorityWeight(a.priority);
       if (priorityDelta !== 0) return priorityDelta;
       if (b.aiScore !== a.aiScore) return b.aiScore - a.aiScore;
@@ -162,11 +183,18 @@ export async function GET(request: NextRequest) {
     })
     .slice(0, 30);
 
+  const hotLeadWorkItems = workItems.filter((item) => item.hotLead);
+  const overdueHotLeadWorkItems = hotLeadWorkItems.filter((item) => item.isSlaOverdue);
+  const priorityHotSignals = priorities.filter((item) => item.score >= 75).length;
+  const priorityOverdue = priorities.filter((item) => item.isOverdue).length;
+
   const summary = {
     activeLeads: priorities.length,
     newLeads: priorities.filter((item) => item.kind === "new").length,
-    overdueFollowups: priorities.filter((item) => item.isOverdue).length,
-    hotSignals: priorities.filter((item) => item.score >= 75).length,
+    overdueFollowups: Math.max(priorityOverdue, overdueHotLeadWorkItems.length),
+    hotSignals: Math.max(priorityHotSignals, hotLeadWorkItems.length),
+    hotLeads: hotLeadWorkItems.length,
+    hotLeadSlaOverdue: overdueHotLeadWorkItems.length,
     closingOpportunities: priorities.filter((item) => item.kind === "closing").length,
     missingNextAction: priorities.filter((item) => item.isMissingNextAction).length,
     totalPipelineValue: priorities.reduce((sum, item) => sum + item.value, 0),
@@ -178,6 +206,7 @@ export async function GET(request: NextRequest) {
     summary,
     priorities: priorities.slice(0, 100),
     workItems,
+    hotLeads: hotLeadWorkItems.slice(0, 20),
     recommendedPlay: buildRecommendedRevenuePlay(priorities, workItems),
     warnings,
   });
