@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     .from("email_messages")
     .select("id,brand_id,from_address,subject,body_text,body_html,ai_summary,ai_urgency,ai_suggested_action,crm_processed_at,received_at")
     .eq("direction", "inbound")
-    .eq("has_draft_reply", true)
     .is("crm_processed_at", null)
     .gte("received_at", automaticCutoff)
     .order("received_at", { ascending: true })
