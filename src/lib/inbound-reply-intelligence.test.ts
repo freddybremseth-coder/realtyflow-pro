@@ -60,6 +60,6 @@ test("unclear messages remain manual review", () => {
   const classification = classifyInboundReply({ body: "Thanks for the information." });
   assert.equal(classification.intent, "unclear");
   const governed = governInboundReply(classification);
-  assert.equal(governed.safety.tier, "FREDDY");
+  assert.equal(governed.safety.tier, "REVIEW");
   assert.equal(governed.canApplyAutomatically, false);
 });
