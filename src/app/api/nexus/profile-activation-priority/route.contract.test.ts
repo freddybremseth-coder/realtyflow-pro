@@ -13,8 +13,20 @@ test("profile activation priority reuses governed persona scoring", () => {
   assert.match(source, /DISCOVERY_REQUIRED/);
 });
 
+test("profile activation priority uses Customer 360 completeness before full AUTO eligibility", () => {
+  assert.match(source, /buildCustomerProfileCompleteness/);
+  assert.match(source, /decideBuyerProfileAutoActivation\(candidate, profileCompleteness\)/);
+  assert.match(source, /personaAutoEligible:/);
+  assert.match(source, /profileAutoEligible:/);
+  assert.match(source, /profileCompleteness/);
+  assert.match(source, /autoActivationConfidence: 95/);
+  assert.match(source, /autoActivationExecuted: false/);
+});
+
 test("profile activation priority remains read-only", () => {
   assert.doesNotMatch(source, /\.insert\(/);
   assert.doesNotMatch(source, /\.update\(/);
   assert.doesNotMatch(source, /sendEmail|sendBrandEmail/);
+  assert.match(source, /readOnly: true/);
+  assert.match(source, /buyerProfileWritten: false/);
 });

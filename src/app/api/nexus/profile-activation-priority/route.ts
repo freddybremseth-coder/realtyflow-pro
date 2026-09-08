@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { buildCustomerProfileCompleteness } from "@/lib/customer-360";
+import { decideBuyerProfileAutoActivation } from "@/lib/nexus/buyer-profile-auto-activation";
 import { prioritizePersonaBackfill } from "@/lib/persona-backfill";
 import { LeadIntelligenceRealEstateBrandSchema } from "@/services/lead-intelligence/brand-allowlist";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
@@ -19,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const contactsR = await supabase
     .from("contacts")
-    .select("id,name,email,phone,notes,property_interest,pipeline_status,pipeline_value,source,brand_id,brand,interactions,updated_at,email_suppressed,do_not_contact")
+    .select("id,name,email,phone,notes,property_interest,next_followup,pipeline_status,pipeline_value,source,brand_id,brand,interactions,updated_at,email_suppressed,do_not_contact")
     .in("pipeline_status", ACTIVE_STAGES)
     .eq("do_not_contact", false)
     .eq("email_suppressed", false)
@@ -53,6 +55,13 @@ export async function GET(request: NextRequest) {
         ? "REVIEW_REQUIRED"
         : "DISCOVERY_REQUIRED";
 
+    // Missing-profile contacts have no approved Buyer Profile criteria yet.
+    // Customer 360 therefore remains the canonical completeness contract and
+    // prevents Persona-only evidence from being mislabelled as a complete
+    // Buyer Profile ready for autonomous activation.
+    const profileCompleteness = buildCustomerProfileCompleteness(contact, []);
+    const autonomy = decideBuyerProfileAutoActivation(candidate, profileCompleteness);
+
     return {
       contact: {
         id: contact.id,
@@ -66,6 +75,18 @@ export async function GET(request: NextRequest) {
       },
       candidate,
       bucket,
+      profileCompleteness,
+      autonomy: {
+        tier: autonomy.safety.tier,
+        allowed: autonomy.safety.allowed,
+        personaAutoEligible: autonomy.personaAutoEligible,
+        canAutoActivate: autonomy.canAutoActivate,
+        personaEvidenceComplete: autonomy.personaEvidenceComplete,
+        profileComplete: autonomy.profileComplete,
+        confidence: autonomy.confidence,
+        reason: autonomy.reason,
+        requiresAudit: autonomy.safety.requiresAudit,
+      },
       activationHref: `/nexus-os/stage-readiness/profile-activation?contactId=${encodeURIComponent(String(contact.id))}`,
       customer360Href: `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
     };
@@ -74,9 +95,12 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     directApprovalConfidence: DIRECT_APPROVAL_CONFIDENCE,
+    autoActivationConfidence: 95,
     summary: {
       scanned: eligibleContacts.length,
       missingProfile: missingProfileContacts.length,
+      personaAutoEligible: ranked.filter((row) => row.autonomy.personaAutoEligible).length,
+      profileAutoEligible: ranked.filter((row) => row.autonomy.canAutoActivate).length,
       readyToApprove: ranked.filter((row) => row.bucket === "READY_TO_APPROVE").length,
       reviewRequired: ranked.filter((row) => row.bucket === "REVIEW_REQUIRED").length,
       discoveryRequired: ranked.filter((row) => row.bucket === "DISCOVERY_REQUIRED").length,
@@ -84,7 +108,9 @@ export async function GET(request: NextRequest) {
     items: ranked,
     safety: {
       readOnly: true,
-      humanApprovalRequired: true,
+      personaAutoEligibilityEvaluated: true,
+      profileAutoEligibilityEvaluated: true,
+      autoActivationExecuted: false,
       buyerProfileWritten: false,
       crmUpdated: false,
       pipelineUpdated: false,
