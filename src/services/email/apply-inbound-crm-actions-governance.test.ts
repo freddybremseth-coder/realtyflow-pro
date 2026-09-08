@@ -18,11 +18,27 @@ test("explicit DNC is persisted as permanent stopped nurture", () => {
   assert.match(source, /update\.nurture_status = "stopped"/);
 });
 
-test("purchased elsewhere does not auto-mutate terminal pipeline stage", () => {
-  const purchasedBranch = source.split('classification.intent === "purchased_elsewhere"')[1]?.split('} else if')[0] || "";
-  assert.doesNotMatch(purchasedBranch, /update\.pipeline_status\s*=\s*"LOST"/);
-  assert.match(source, /purchased-outcome-review/);
-  assert.match(source, /Bekreft LOST/);
+test("explicit terminal customer outcomes auto-close sales pipeline and follow-up", () => {
+  assert.match(source, /isTerminalSalesOutcome/);
+  assert.match(source, /terminalAutoClose/);
+  assert.match(source, /update\.pipeline_status = "LOST"/);
+  assert.match(source, /update\.lost_reason = lostReasonForIntent/);
+  assert.match(source, /update\.next_followup = null/);
+  assert.match(source, /nextPipelineStatus = "LOST"/);
+  assert.match(source, /recordPipelineTransition/);
+});
+
+test("terminal outcomes cancel stale CRM and portal sales tasks instead of creating a hot lead", () => {
+  assert.match(source, /closeOpenSalesWorkItems/);
+  assert.match(source, /status: "CANCELLED"/);
+  assert.match(source, /\.in\("source_type", \["crm", "portal"\]\)/);
+  assert.match(source, /\.contains\("metadata", \{ contact_id: contactId \}\)/);
+  assert.match(source, /!terminalAutoClose && classification\.intent !== "do_not_contact"/);
+});
+
+test("terminal fallback still requires review when governance does not allow AUTO", () => {
+  assert.match(source, /terminal-outcome-review/);
+  assert.match(source, /Bekreft terminal kundeutfall/);
 });
 
 test("work items use source-based idempotency lookup", () => {
