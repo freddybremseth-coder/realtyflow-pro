@@ -34,3 +34,18 @@ test("interaction history deduplicates the same inbound message", () => {
   assert.match(source, /interactionId = `email-reply-\$\{params\.emailMessageId\}`/);
   assert.match(source, /dedupedInteractions/);
 });
+
+test("hot lead SLA is persisted into work-item metadata", () => {
+  assert.match(source, /decideHotLeadSla\(classification\)/);
+  assert.match(source, /responseDueAt\(now, sla\.responseMinutes\)/);
+  assert.match(source, /response_due_at: responseDue/);
+  assert.match(source, /response_sla_minutes: sla\.responseMinutes/);
+  assert.match(source, /operational_target: sla\.operationalTarget/);
+});
+
+test("hot lead routing reuses buyer profile and stage-readiness context", () => {
+  assert.match(source, /from\("buyer_profiles"\)/);
+  assert.match(source, /buyer_profile_id: buyerProfile\.profileId/);
+  assert.match(source, /stage_readiness_href/);
+  assert.match(source, /\/lead-intelligence\?buyerProfileId=/);
+});
