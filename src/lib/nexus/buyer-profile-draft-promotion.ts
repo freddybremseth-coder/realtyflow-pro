@@ -9,6 +9,7 @@ export type BuyerProfileDraftPromotionDecision = {
   canPromote: boolean;
   completeness: ReturnType<typeof buildCustomerProfileCompleteness>;
   pendingCount: number;
+  editedActiveCount: number;
   rejectedActiveCount: number;
   reason: string;
 };
@@ -19,19 +20,20 @@ export function decideBuyerProfileDraftPromotion(input: {
 }): BuyerProfileDraftPromotionDecision {
   const activeCriteria = input.criteria.filter((criterion) => criterion.active !== false);
   const pendingCount = activeCriteria.filter((criterion) => criterion.approval_status === "pending").length;
+  const editedActiveCount = activeCriteria.filter((criterion) => criterion.approval_status === "edited").length;
   const rejectedActiveCount = activeCriteria.filter((criterion) => criterion.approval_status === "rejected").length;
-  const approvedCriteria = activeCriteria.filter((criterion) =>
-    criterion.approval_status === "approved" || criterion.approval_status === "edited",
-  );
+  const approvedCriteria = activeCriteria.filter((criterion) => criterion.approval_status === "approved");
   const completeness = buildCustomerProfileCompleteness(input.contact, approvedCriteria);
 
-  if (pendingCount > 0) {
+  if (pendingCount > 0 || editedActiveCount > 0) {
+    const unresolved = pendingCount + editedActiveCount;
     return {
       canPromote: false,
       completeness,
       pendingCount,
+      editedActiveCount,
       rejectedActiveCount,
-      reason: `${pendingCount} active Buyer Profile criterion${pendingCount === 1 ? " is" : " are"} still pending review.`,
+      reason: `${unresolved} active Buyer Profile criterion${unresolved === 1 ? " still requires" : "s still require"} explicit approval.`,
     };
   }
 
@@ -40,6 +42,7 @@ export function decideBuyerProfileDraftPromotion(input: {
       canPromote: false,
       completeness,
       pendingCount,
+      editedActiveCount,
       rejectedActiveCount,
       reason: "Rejected criteria cannot remain active before Buyer Profile promotion.",
     };
@@ -50,6 +53,7 @@ export function decideBuyerProfileDraftPromotion(input: {
       canPromote: false,
       completeness,
       pendingCount,
+      editedActiveCount,
       rejectedActiveCount,
       reason: `Buyer Profile is ${completeness.score}% complete. Missing: ${completeness.missing.join(", ") || "unknown"}.`,
     };
@@ -59,7 +63,8 @@ export function decideBuyerProfileDraftPromotion(input: {
     canPromote: true,
     completeness,
     pendingCount,
+    editedActiveCount,
     rejectedActiveCount,
-    reason: "All active criteria are reviewed and Customer 360 completeness is 100%.",
+    reason: "All active criteria are explicitly approved and Customer 360 completeness is 100%.",
   };
 }
