@@ -5,6 +5,7 @@ import {
   type InboundReplyIntent,
 } from "@/lib/inbound-reply-intelligence";
 import { decideHotLeadSla, responseDueAt } from "@/lib/nexus/hot-lead-sla";
+import { recordPipelineTransition } from "@/lib/revenue/pipeline-transition";
 
 export interface InboundCrmActionResult {
   contactId: string | null;
@@ -15,8 +16,32 @@ export interface InboundCrmActionResult {
   governanceTier: "AUTO" | "REVIEW" | "FREDDY";
 }
 
+const OPEN_WORK_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
+
 function normalize(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function isTerminalSalesOutcome(intent: InboundReplyIntent) {
+  return intent === "purchased_elsewhere" || intent === "no_longer_buying";
+}
+
+function lostReasonForIntent(intent: InboundReplyIntent) {
+  return intent === "purchased_elsewhere" ? "purchased_elsewhere" : "no_longer_buying";
+}
+
+async function closeOpenSalesWorkItems(supabase: SupabaseClient, contactId: string, reason: string, now: string) {
+  const result = await supabase
+    .from("work_items")
+    .update({
+      status: "CANCELLED",
+      next_action: `Automatisk lukket: ${reason}`,
+      updated_at: now,
+    })
+    .in("status", OPEN_WORK_STATUSES)
+    .in("source_type", ["crm", "portal"])
+    .contains("metadata", { contact_id: contactId });
+  if (result.error) throw new Error(`Terminal CRM work-item cleanup failed: ${result.error.message}`);
 }
 
 async function ensureWorkItem(
@@ -156,7 +181,7 @@ export async function applyInboundCrmActions(
     return {
       contactId: null,
       classification: classification.intent,
-      suppressed: classification.intent === "do_not_contact" || classification.intent === "purchased_elsewhere",
+      suppressed: classification.intent === "do_not_contact" || isTerminalSalesOutcome(classification.intent),
       pipelineStatus: null,
       workItemCreated: false,
       governanceTier: governance.safety.tier,
@@ -204,8 +229,10 @@ export async function applyInboundCrmActions(
     updated_at: now,
   };
 
-  let nextPipelineStatus = String(contact.pipeline_status || "") || null;
+  const previousPipelineStatus = String(contact.pipeline_status || "") || null;
+  let nextPipelineStatus = previousPipelineStatus;
   let suppressed = Boolean(contact.email_suppressed || contact.do_not_contact);
+  const terminalAutoClose = isTerminalSalesOutcome(classification.intent) && governance.canApplyAutomatically;
 
   if (classification.intent === "do_not_contact") {
     update.do_not_contact = true;
@@ -215,9 +242,20 @@ export async function applyInboundCrmActions(
     update.nurture_status = "stopped";
     update.next_followup = null;
     suppressed = true;
-  } else if (classification.intent === "purchased_elsewhere") {
+  } else if (terminalAutoClose) {
+    update.pipeline_status = "LOST";
+    update.lost_reason = lostReasonForIntent(classification.intent);
     update.email_suppressed = true;
-    update.suppression_reason = "purchase_reported_by_customer_pending_outcome_review";
+    update.suppression_reason = classification.intent === "purchased_elsewhere"
+      ? "purchase_reported_by_customer"
+      : "customer_no_longer_buying";
+    update.nurture_status = "stopped";
+    update.next_followup = null;
+    nextPipelineStatus = "LOST";
+    suppressed = true;
+  } else if (isTerminalSalesOutcome(classification.intent)) {
+    update.email_suppressed = true;
+    update.suppression_reason = "terminal_outcome_pending_review";
     update.nurture_status = "stopped";
     update.next_followup = null;
     suppressed = true;
@@ -228,6 +266,25 @@ export async function applyInboundCrmActions(
 
   const { error: updateError } = await supabase.from("contacts").update(update).eq("id", contact.id);
   if (updateError) throw new Error(`CRM reply update failed: ${updateError.message}`);
+
+  if (terminalAutoClose) {
+    await closeOpenSalesWorkItems(
+      supabase,
+      String(contact.id),
+      classification.intent === "purchased_elsewhere" ? "kunden har kjøpt annet sted" : "kunden skal ikke kjøpe lenger",
+      now,
+    );
+    await recordPipelineTransition(supabase, {
+      contactId: String(contact.id),
+      brandId: params.brandId,
+      previousStatus: previousPipelineStatus,
+      nextStatus: "LOST",
+      occurredAt: now,
+      actorType: "customer",
+      actorId: fromAddress || null,
+      createdBy: "email-crm-sync:terminal-reply",
+    }).catch(() => undefined);
+  }
 
   let workItemCreated = false;
   const metadata = {
@@ -252,18 +309,18 @@ export async function applyInboundCrmActions(
       : `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
   };
 
-  if (classification.intent === "purchased_elsewhere") {
+  if (isTerminalSalesOutcome(classification.intent) && !terminalAutoClose) {
     workItemCreated = await ensureWorkItem(supabase, {
-      sourceId: `${params.emailMessageId}:purchased-outcome-review`,
-      title: `Bekreft LOST – kunde har kjøpt annet sted: ${contact.name || fromAddress}`,
+      sourceId: `${params.emailMessageId}:terminal-outcome-review`,
+      title: `Bekreft terminal kundeutfall: ${contact.name || fromAddress}`,
       description: `${subject || "Innkommende e-post"}\n${summary}`,
       priority: "MEDIUM",
       brandId: params.brandId,
-      nextAction: "Bekreft at kunden har kjøpt annet sted, sett LOST med korrekt årsak og behold permanent suppression.",
-      aiScore: 96,
+      nextAction: "Bekreft kundens terminale utfall før pipeline endres til LOST.",
+      aiScore: 80,
       metadata,
     });
-  } else if (classification.intent !== "do_not_contact" && classification.intent !== "unclear") {
+  } else if (!terminalAutoClose && classification.intent !== "do_not_contact" && classification.intent !== "unclear") {
     workItemCreated = await ensureWorkItem(supabase, {
       sourceId: params.emailMessageId,
       title: sla.isHotLead ? `HOT LEAD: ${contact.name || fromAddress}` : `Følg opp kundesvar: ${contact.name || fromAddress}`,
