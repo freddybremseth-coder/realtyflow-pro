@@ -18,7 +18,10 @@ import { LeadIntelligenceRealEstateBrandSchema } from "@/services/lead-intellige
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const RequestSchema = z.object({ contactId: z.string().uuid() }).strict();
+const RequestSchema = z.object({
+  contactId: z.string().uuid(),
+  brand: LeadIntelligenceRealEstateBrandSchema,
+}).strict();
 const ACTIVE_STAGES = new Set(["QUALIFIED", "VIEWING"]);
 
 function asInteractions(value: unknown) {
@@ -45,7 +48,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await withLeadIntelligenceTransaction("zeneco", async (client) => {
+    const result = await withLeadIntelligenceTransaction(parsed.data.brand, async (client) => {
       const contactResult = await client.query<{
         id: string;
         name: string | null;
@@ -79,6 +82,10 @@ export async function POST(request: NextRequest) {
         throw new LeadIntelligenceError("INVALID_REQUEST", "Contact brand is not eligible for Buyer Profile evidence draft", 409);
       }
       const brand = brandParse.data;
+      if (brand !== parsed.data.brand) {
+        throw new LeadIntelligenceError("INVALID_REQUEST", "Contact brand changed or does not match the evidence-draft request", 409);
+      }
+
       const stage = text(contact.pipeline_status, 40).toUpperCase();
       if (!ACTIVE_STAGES.has(stage)) {
         throw new LeadIntelligenceError("INVALID_REQUEST", "Contact is no longer in a Buyer Profile activation stage", 409);
