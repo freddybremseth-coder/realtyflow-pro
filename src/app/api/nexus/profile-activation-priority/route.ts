@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { buildBuyerProfileDiscoveryPriority } from "@/lib/nexus/buyer-profile-discovery-priority";
 import { buildBuyerProfileEvidencePreview } from "@/lib/nexus/buyer-profile-evidence";
 import { decideBuyerProfileAutoActivation } from "@/lib/nexus/buyer-profile-auto-activation";
 import { prioritizePersonaBackfill } from "@/lib/persona-backfill";
@@ -58,6 +59,14 @@ export async function GET(request: NextRequest) {
     const evidencePreview = buildBuyerProfileEvidencePreview(contact);
     const autonomy = decideBuyerProfileAutoActivation(candidate, evidencePreview.currentCompleteness);
     const projectedAutonomy = decideBuyerProfileAutoActivation(candidate, evidencePreview.projectedCompleteness);
+    const discovery = buildBuyerProfileDiscoveryPriority({
+      pipelineStatus: contact.pipeline_status,
+      pipelineValue: Number(contact.pipeline_value || 0),
+      personaConfidence: candidate.confidence,
+      projectedCompletenessScore: evidencePreview.projectedCompleteness.score,
+      projectedMissing: evidencePreview.projectedCompleteness.missing,
+      evidenceConflictCount: evidencePreview.conflicts.length,
+    });
 
     return {
       contact: {
@@ -72,6 +81,7 @@ export async function GET(request: NextRequest) {
       },
       candidate,
       bucket,
+      discovery,
       profileCompleteness: evidencePreview.currentCompleteness,
       evidencePreview: {
         candidates: evidencePreview.candidates,
@@ -101,7 +111,12 @@ export async function GET(request: NextRequest) {
       activationHref: `/nexus-os/stage-readiness/profile-activation?contactId=${encodeURIComponent(String(contact.id))}`,
       customer360Href: `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
     };
-  });
+  }).sort((a, b) =>
+    b.discovery.score - a.discovery.score
+    || b.evidencePreview.projectedCompleteness.score - a.evidencePreview.projectedCompleteness.score
+    || b.contact.pipelineValue - a.contact.pipelineValue
+    || b.candidate.confidence - a.candidate.confidence,
+  );
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
@@ -116,6 +131,9 @@ export async function GET(request: NextRequest) {
       evidenceConflicts: ranked.filter((row) => row.evidencePreview.conflicts.length > 0).length,
       projectedProfileComplete: ranked.filter((row) => row.evidencePreview.projectedProfileComplete).length,
       projectedAutoGate: ranked.filter((row) => row.projectedAutonomy.wouldMeetAutoGateIfEvidenceApproved).length,
+      discoveryNeeded: ranked.filter((row) => row.discovery.requiresCustomerInput).length,
+      discoveryCritical: ranked.filter((row) => row.discovery.priority === "CRITICAL").length,
+      discoveryHigh: ranked.filter((row) => row.discovery.priority === "HIGH").length,
       readyToApprove: ranked.filter((row) => row.bucket === "READY_TO_APPROVE").length,
       reviewRequired: ranked.filter((row) => row.bucket === "REVIEW_REQUIRED").length,
       discoveryRequired: ranked.filter((row) => row.bucket === "DISCOVERY_REQUIRED").length,
@@ -124,6 +142,7 @@ export async function GET(request: NextRequest) {
     safety: {
       readOnly: true,
       evidencePreviewOnly: true,
+      discoveryPriorityOnly: true,
       projectedEvidenceExecutorEligible: false,
       personaAutoEligibilityEvaluated: true,
       profileAutoEligibilityEvaluated: true,
