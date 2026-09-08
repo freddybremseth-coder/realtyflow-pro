@@ -80,9 +80,6 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function chooseField(missing: string[], pipelineStatus: string) {
-  // For VIEWING, an absent next follow-up is the operational risk that must be
-  // resolved first. For all other cases, purchase intent/timeline comes first
-  // because production data shows it is the scarcest Buyer Profile signal.
   const ordered = pipelineStatus === "VIEWING"
     ? FIELD_RULES
     : [FIELD_RULES[1], FIELD_RULES[2], FIELD_RULES[3], FIELD_RULES[4], FIELD_RULES[5], FIELD_RULES[0]];
@@ -158,6 +155,11 @@ export function buildBuyerProfileDiscoveryPriority(
 }
 
 export function sortBuyerProfileDiscoveryPriorities<T extends BuyerProfileDiscoveryPriority>(items: T[]) {
-  const weight: Record<T["priority"], number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+  const weight: Record<BuyerProfileDiscoveryPriority["priority"], number> = {
+    CRITICAL: 4,
+    HIGH: 3,
+    MEDIUM: 2,
+    LOW: 1,
+  };
   return [...items].sort((a, b) => weight[b.priority] - weight[a.priority] || b.score - a.score || a.label.localeCompare(b.label, "nb"));
 }
