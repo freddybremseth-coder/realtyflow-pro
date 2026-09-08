@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { decideBuyerProfileAutoActivation } from "@/lib/nexus/buyer-profile-auto-activation";
 import { prioritizePersonaBackfill } from "@/lib/persona-backfill";
 import { LeadIntelligenceRealEstateBrandSchema } from "@/services/lead-intelligence/brand-allowlist";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
       : candidate.persona
         ? "REVIEW_REQUIRED"
         : "DISCOVERY_REQUIRED";
+    const autonomy = decideBuyerProfileAutoActivation(candidate);
 
     return {
       contact: {
@@ -66,6 +68,15 @@ export async function GET(request: NextRequest) {
       },
       candidate,
       bucket,
+      autonomy: {
+        tier: autonomy.safety.tier,
+        allowed: autonomy.safety.allowed,
+        canAutoActivate: autonomy.canAutoActivate,
+        requiredDataComplete: autonomy.requiredDataComplete,
+        confidence: autonomy.confidence,
+        reason: autonomy.reason,
+        requiresAudit: autonomy.safety.requiresAudit,
+      },
       activationHref: `/nexus-os/stage-readiness/profile-activation?contactId=${encodeURIComponent(String(contact.id))}`,
       customer360Href: `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
     };
@@ -74,9 +85,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     directApprovalConfidence: DIRECT_APPROVAL_CONFIDENCE,
+    autoActivationConfidence: 95,
     summary: {
       scanned: eligibleContacts.length,
       missingProfile: missingProfileContacts.length,
+      autoEligible: ranked.filter((row) => row.autonomy.canAutoActivate).length,
       readyToApprove: ranked.filter((row) => row.bucket === "READY_TO_APPROVE").length,
       reviewRequired: ranked.filter((row) => row.bucket === "REVIEW_REQUIRED").length,
       discoveryRequired: ranked.filter((row) => row.bucket === "DISCOVERY_REQUIRED").length,
@@ -84,7 +97,8 @@ export async function GET(request: NextRequest) {
     items: ranked,
     safety: {
       readOnly: true,
-      humanApprovalRequired: true,
+      autoEligibilityEvaluated: true,
+      autoActivationExecuted: false,
       buyerProfileWritten: false,
       crmUpdated: false,
       pipelineUpdated: false,
