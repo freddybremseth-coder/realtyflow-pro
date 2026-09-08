@@ -10,12 +10,28 @@ import { buildEmailReceivedRevenueEventInput, normalizeEmailAddresses } from "@/
 
 export const maxDuration = 300;
 const FAILURE_PAUSE_THRESHOLD = 3;
+const TRANSIENT_RETRY_DELAY_MS = 1200;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
+}
+
+function isTransientImapError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /connection not available|not connected|connection closed|socket.*closed|econnreset|etimedout|econnrefused|timeout|temporar|upstream/i.test(message);
+}
+
+async function fetchRecentEmailsWithRetry(imap: ImapConfig, maxCount: number, sinceDays: number) {
+  try {
+    return await fetchRecentEmails(imap, maxCount, sinceDays);
+  } catch (error) {
+    if (!isTransientImapError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS));
+    return fetchRecentEmails(imap, maxCount, sinceDays);
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -52,7 +68,7 @@ export async function GET(request: NextRequest) {
       const password = decryptPassword(config.encrypted_password, config.encryption_iv);
       const imap: ImapConfig = { host: config.imap_host, port: config.imap_port, secure: config.imap_secure, email: config.email_address, password };
       const sinceDays = config.last_fetched_at ? Math.max(1, Math.min(30, Math.ceil((now - new Date(config.last_fetched_at).getTime()) / 86_400_000))) : 7;
-      const fetched = await fetchRecentEmails(imap, 100, sinceDays);
+      const fetched = await fetchRecentEmailsWithRetry(imap, 100, sinceDays);
       totalFetched += fetched.length;
 
       const messageIds = fetched.map((email) => email.messageId).filter(Boolean);
@@ -115,14 +131,17 @@ export async function GET(request: NextRequest) {
       results.push({ brand: config.brand_id, email: config.email_address, fetched: fetched.length, inserted: insertedCount, health: "healthy" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      const transient = isTransientImapError(e);
       const failures = Number(config.consecutive_failures || 0) + 1;
-      const pause = failures >= FAILURE_PAUSE_THRESHOLD;
+      const pause = !transient && failures >= FAILURE_PAUSE_THRESHOLD;
       await supabase.from("brand_email_configs").update({
         health_status: pause ? "paused" : "degraded",
         health_message: message,
         consecutive_failures: failures,
         last_error_at: new Date().toISOString(),
-        ...(pause ? { auto_fetch: false, auto_fetch_paused_by_system: true } : {}),
+        ...(pause
+          ? { auto_fetch: false, auto_fetch_paused_by_system: true }
+          : { auto_fetch_paused_by_system: false }),
       }).eq("id", config.id);
       results.push({ brand: config.brand_id, email: config.email_address, fetched: 0, inserted: 0, error: message, health: pause ? "paused" : "degraded" });
     }
