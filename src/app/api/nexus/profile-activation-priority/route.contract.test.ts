@@ -13,14 +13,16 @@ test("profile activation priority reuses governed persona scoring", () => {
   assert.match(source, /DISCOVERY_REQUIRED/);
 });
 
-test("profile activation priority uses Customer 360 completeness before full AUTO eligibility", () => {
-  assert.match(source, /buildCustomerProfileCompleteness/);
-  assert.match(source, /decideBuyerProfileAutoActivation\(candidate, profileCompleteness\)/);
-  assert.match(source, /personaAutoEligible:/);
+test("profile activation priority projects explicit CRM evidence through Customer 360 completeness", () => {
+  assert.match(source, /buildBuyerProfileEvidencePreview/);
+  assert.match(source, /evidencePreview\.currentCompleteness/);
+  assert.match(source, /evidencePreview\.projectedCompleteness/);
+  assert.match(source, /wouldMeetAutoGateIfEvidenceApproved/);
+  assert.match(source, /executorEligible: false/);
+  assert.match(source, /projectedEvidenceExecutorEligible: false/);
   assert.match(source, /profileAutoEligible:/);
-  assert.match(source, /profileCompleteness/);
+  assert.match(source, /projectedProfileComplete:/);
   assert.match(source, /autoActivationConfidence: 95/);
-  assert.match(source, /autoActivationExecuted: false/);
 });
 
 test("profile activation priority remains read-only", () => {
@@ -28,5 +30,6 @@ test("profile activation priority remains read-only", () => {
   assert.doesNotMatch(source, /\.update\(/);
   assert.doesNotMatch(source, /sendEmail|sendBrandEmail/);
   assert.match(source, /readOnly: true/);
+  assert.match(source, /evidencePreviewOnly: true/);
   assert.match(source, /buyerProfileWritten: false/);
 });

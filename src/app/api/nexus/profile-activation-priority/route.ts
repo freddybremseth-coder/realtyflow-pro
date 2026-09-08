@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { buildCustomerProfileCompleteness } from "@/lib/customer-360";
+import { buildBuyerProfileEvidencePreview } from "@/lib/nexus/buyer-profile-evidence";
 import { decideBuyerProfileAutoActivation } from "@/lib/nexus/buyer-profile-auto-activation";
 import { prioritizePersonaBackfill } from "@/lib/persona-backfill";
 import { LeadIntelligenceRealEstateBrandSchema } from "@/services/lead-intelligence/brand-allowlist";
@@ -55,12 +55,9 @@ export async function GET(request: NextRequest) {
         ? "REVIEW_REQUIRED"
         : "DISCOVERY_REQUIRED";
 
-    // Missing-profile contacts have no approved Buyer Profile criteria yet.
-    // Customer 360 therefore remains the canonical completeness contract and
-    // prevents Persona-only evidence from being mislabelled as a complete
-    // Buyer Profile ready for autonomous activation.
-    const profileCompleteness = buildCustomerProfileCompleteness(contact, []);
-    const autonomy = decideBuyerProfileAutoActivation(candidate, profileCompleteness);
+    const evidencePreview = buildBuyerProfileEvidencePreview(contact);
+    const autonomy = decideBuyerProfileAutoActivation(candidate, evidencePreview.currentCompleteness);
+    const projectedAutonomy = decideBuyerProfileAutoActivation(candidate, evidencePreview.projectedCompleteness);
 
     return {
       contact: {
@@ -75,7 +72,15 @@ export async function GET(request: NextRequest) {
       },
       candidate,
       bucket,
-      profileCompleteness,
+      profileCompleteness: evidencePreview.currentCompleteness,
+      evidencePreview: {
+        candidates: evidencePreview.candidates,
+        conflicts: evidencePreview.conflicts,
+        projectedCompleteness: evidencePreview.projectedCompleteness,
+        projectedProfileComplete: evidencePreview.projectedProfileComplete,
+        safeForAutoPersistence: evidencePreview.safeForAutoPersistence,
+        readOnly: evidencePreview.readOnly,
+      },
       autonomy: {
         tier: autonomy.safety.tier,
         allowed: autonomy.safety.allowed,
@@ -86,6 +91,12 @@ export async function GET(request: NextRequest) {
         confidence: autonomy.confidence,
         reason: autonomy.reason,
         requiresAudit: autonomy.safety.requiresAudit,
+      },
+      projectedAutonomy: {
+        tier: projectedAutonomy.safety.tier,
+        wouldMeetAutoGateIfEvidenceApproved: projectedAutonomy.canAutoActivate,
+        executorEligible: false,
+        reason: projectedAutonomy.reason,
       },
       activationHref: `/nexus-os/stage-readiness/profile-activation?contactId=${encodeURIComponent(String(contact.id))}`,
       customer360Href: `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
@@ -101,6 +112,10 @@ export async function GET(request: NextRequest) {
       missingProfile: missingProfileContacts.length,
       personaAutoEligible: ranked.filter((row) => row.autonomy.personaAutoEligible).length,
       profileAutoEligible: ranked.filter((row) => row.autonomy.canAutoActivate).length,
+      evidenceCandidates: ranked.filter((row) => row.evidencePreview.candidates.length > 0).length,
+      evidenceConflicts: ranked.filter((row) => row.evidencePreview.conflicts.length > 0).length,
+      projectedProfileComplete: ranked.filter((row) => row.evidencePreview.projectedProfileComplete).length,
+      projectedAutoGate: ranked.filter((row) => row.projectedAutonomy.wouldMeetAutoGateIfEvidenceApproved).length,
       readyToApprove: ranked.filter((row) => row.bucket === "READY_TO_APPROVE").length,
       reviewRequired: ranked.filter((row) => row.bucket === "REVIEW_REQUIRED").length,
       discoveryRequired: ranked.filter((row) => row.bucket === "DISCOVERY_REQUIRED").length,
@@ -108,6 +123,8 @@ export async function GET(request: NextRequest) {
     items: ranked,
     safety: {
       readOnly: true,
+      evidencePreviewOnly: true,
+      projectedEvidenceExecutorEligible: false,
       personaAutoEligibilityEvaluated: true,
       profileAutoEligibilityEvaluated: true,
       autoActivationExecuted: false,
