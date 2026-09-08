@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyInboundReply, governInboundReply } from "./inbound-reply-intelligence";
+import { classifyInboundReply, extractLatestReplyText, governInboundReply } from "./inbound-reply-intelligence";
 
 test("explicit do-not-contact is honored automatically and stops nurture", () => {
   const classification = classifyInboundReply({ body: "Please do not contact me again." });
@@ -9,6 +9,17 @@ test("explicit do-not-contact is honored automatically and stops nurture", () =>
   const governed = governInboundReply(classification);
   assert.equal(governed.safety.tier, "AUTO");
   assert.equal(governed.canApplyAutomatically, true);
+});
+
+test("bare stop reply is do-not-contact even when quoted thread contains active language", () => {
+  const classification = classifyInboundReply({
+    subject: "Re: Er bolig i Spania fortsatt aktuelt for deg?",
+    body: "Stopp\n\nOn Tue, Sep 8, 2026 at 09:01 Freddy wrote:\n> fortsatt interessert\n> https://zenecohomes.com/property/123",
+  });
+  assert.equal(classification.intent, "do_not_contact");
+  assert.equal(classification.shouldStopNurture, true);
+  assert.equal(classification.requiresFastResponse, false);
+  assert.equal(classification.shouldRunPropertyMatching, false);
 });
 
 test("explicit purchase elsewhere is AUTO terminal outcome", () => {
@@ -30,6 +41,30 @@ test("explicit no-longer-buying reply is AUTO terminal outcome", () => {
   const governed = governInboundReply(classification);
   assert.equal(governed.safety.tier, "AUTO");
   assert.equal(governed.canApplyAutomatically, true);
+});
+
+test("Norwegian ikke aktuelt lenger beats quoted subject, property links and active language", () => {
+  const body = `Ikke aktuelt lenger.\n\nSendt fra Outlook for Android\n________________________________\nFrom: Freddy Bremseth – Zen Eco Homes <freddy@zenecohomes.com>\nSubject: Er bolig i Spania fortsatt aktuelt for deg?\nSvar gjerne «fortsatt interessert».\nhttps://zenecohomes.com/property/123`;
+  const classification = classifyInboundReply({
+    subject: "Re: Er bolig i Spania fortsatt aktuelt for deg?",
+    body,
+  });
+  assert.equal(classification.intent, "no_longer_buying");
+  assert.equal(classification.shouldStopNurture, true);
+  assert.equal(classification.requiresFastResponse, false);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+  assert.equal(governInboundReply(classification).canApplyAutomatically, true);
+});
+
+test("latest reply extraction removes Outlook quoted history", () => {
+  const body = "Ikke aktuelt lenger.\n________________________________\nFrom: Freddy <freddy@example.com>\nfortsatt interessert";
+  assert.equal(extractLatestReplyText(body), "Ikke aktuelt lenger.");
+});
+
+test("decided to rent instead is terminal buying outcome", () => {
+  const classification = classifyInboundReply({ body: "Takk for mail. Vi har bestemt oss for å leie i fremtiden." });
+  assert.equal(classification.intent, "no_longer_buying");
+  assert.equal(classification.shouldStopNurture, true);
 });
 
 test("viewing request becomes fast-response priority", () => {
