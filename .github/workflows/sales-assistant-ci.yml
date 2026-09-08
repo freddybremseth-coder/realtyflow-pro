@@ -10,6 +10,7 @@ on:
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
+      - "src/components/customers/customer-sales-assistant-note.contract.test.ts"
       - "src/components/crm/crm-customer-card.tsx"
       - ".github/workflows/sales-assistant-ci.yml"
   push:
@@ -21,6 +22,7 @@ on:
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
+      - "src/components/customers/customer-sales-assistant-note.contract.test.ts"
       - "src/components/crm/crm-customer-card.tsx"
 
 jobs:
@@ -34,5 +36,5 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci --silent
-      - name: Sales assistant policy, evidence and route tests
-        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/lib/customers/sales-assistant-buyer-evidence.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts
+      - name: Sales assistant policy, evidence, route and UI tests
+        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/lib/customers/sales-assistant-buyer-evidence.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts src/components/customers/customer-sales-assistant-note.contract.test.ts
