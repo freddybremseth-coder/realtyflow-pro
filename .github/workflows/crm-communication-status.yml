@@ -1,0 +1,26 @@
+name: CRM Communication Status
+
+on:
+  pull_request:
+    paths:
+      - "src/lib/customers/communication-status.ts"
+      - "src/lib/customers/communication-status.test.ts"
+      - "src/app/api/contacts/route.ts"
+      - "src/app/(realty)/customers/page.tsx"
+      - ".github/workflows/crm-communication-status.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --silent
+      - name: Communication state tests
+        run: node --import tsx --test src/lib/customers/communication-status.test.ts
