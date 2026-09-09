@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CrmCustomerCard } from "@/components/crm/crm-customer-card";
+import { CrmCommandMenu } from "@/components/crm/crm-command-menu";
 import { DomainWorkItems } from "@/components/hub/domain-work-items";
 import {
   REAL_ESTATE_STAGE_LABELS,
@@ -116,6 +117,7 @@ const MAIL_FILTERS: Array<{ id: MailStatus; label: string }> = [
   { id: "REPLIED", label: "Har svart" },
   { id: "PAUSED", label: "Pauset" },
   { id: "STOPPED", label: "STOPP / blokkert" },
+  { id: "NO_EMAIL", label: "Mangler e-post" },
 ];
 
 const TAB_STAGES: Record<Exclude<CrmTab, "all">, Set<string>> = {
@@ -211,6 +213,18 @@ export default function CustomersPage() {
   function selectMail(nextMail: MailStatus) { setMailFilter(nextMail); syncUrl({ mail: nextMail }); }
   function toggleActionOnly() { const next = !actionOnly; setActionOnly(next); syncUrl({ actionOnly: next }); }
 
+  function applyCommandView(next: { tab?: CrmTab; mail?: MailStatus; actionOnly?: boolean }) {
+    const nextTab = next.tab || "all";
+    const nextMail = next.mail || "ALL";
+    const nextActionOnly = Boolean(next.actionOnly);
+    setTab(nextTab);
+    setStageFilter("all");
+    setMailFilter(nextMail);
+    setActionOnly(nextActionOnly);
+    setSearch("");
+    syncUrl({ tab: nextTab, stage: "all", mail: nextMail, actionOnly: nextActionOnly });
+  }
+
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     return contacts
@@ -255,6 +269,11 @@ export default function CustomersPage() {
     return [...canonical, ...extras];
   }, [stageCounts]);
 
+  const brandOptions = useMemo(() => {
+    const ids = [...new Set(contacts.map((contact) => String(contact.brand_id || contact.brand || "").trim()).filter(Boolean))].sort();
+    return ids.map((id) => ({ id, label: BRAND_LABELS[id] || id }));
+  }, [contacts]);
+
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
       <header className="flex flex-col gap-4 rounded-2xl border border-slate-700/70 bg-slate-900/70 p-4 sm:p-6 xl:flex-row xl:items-center xl:justify-between">
@@ -273,6 +292,18 @@ export default function CustomersPage() {
       </header>
 
       {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle size={18} />{error}</div>}
+
+      <CrmCommandMenu
+        brands={brandOptions}
+        onShowReady={() => applyCommandView({ mail: "READY_NOT_STARTED" })}
+        onShowReplied={() => applyCommandView({ mail: "REPLIED" })}
+        onShowStopped={() => applyCommandView({ mail: "STOPPED" })}
+        onShowAction={() => applyCommandView({ actionOnly: true })}
+        onShowPipeline={() => applyCommandView({ tab: "pipeline" })}
+        onShowClosed={() => applyCommandView({ tab: "customers" })}
+        onShowNoEmail={() => applyCommandView({ mail: "NO_EMAIL" })}
+        onRefresh={() => void load()}
+      />
 
       <DomainWorkItems title="Salg & CRM-hub" description="Åpne salgs- og kundeoppgaver fra Oppgave-HUB-en — fullfør dem her." icon={<Users className="h-4 w-4" />} sources={["crm", "website_lead", "chatbot"]} links={[{ label: "Lead Intelligence", href: "/lead-intelligence" }, { label: "Oppgave-HUB", href: "/marketing-tasks" }, { label: "E-post AI", href: "/email" }]} />
 
