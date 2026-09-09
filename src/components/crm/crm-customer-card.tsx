@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CustomerUpdatePanel } from "@/components/customers/customer-update-panel";
 import { CustomerSalesAssistantNote } from "@/components/customers/customer-sales-assistant-note";
+import { CustomerPipelineControl } from "@/components/customers/customer-pipeline-control";
 
 interface Customer360Payload {
   generatedAt: string;
@@ -68,8 +69,10 @@ const STAGE_LABELS: Record<string, string> = {
   NEW: "Ny",
   CONTACT: "Kontaktet",
   QUALIFIED: "Kvalifisert",
+  MATCHING: "Boligmatching",
   VIEWING: "Visning",
   NEGOTIATION: "Forhandling",
+  RESERVED: "Reservert",
   WON: "Kunde / vunnet",
   LOST: "Tapt",
   ON_HOLD: "På vent",
@@ -101,6 +104,8 @@ const CRITERION_LABELS: Record<string, string> = {
   distance_to_beach: "Avstand til strand",
   other: "Annet",
 };
+
+const OPEN_TASK_STATUSES = new Set(["TO_DO", "IN_PROGRESS", "REVIEW"]);
 
 function money(value: unknown) {
   return new Intl.NumberFormat("nb-NO", {
@@ -187,7 +192,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
     return groups;
   }, [data?.criteria]);
 
-  const openTasks = (data?.workItems || []).filter((item) => String(item.status || "TO_DO").toUpperCase() !== "DONE");
+  const openTasks = (data?.workItems || []).filter((item) => OPEN_TASK_STATUSES.has(String(item.status || "TO_DO").toUpperCase()));
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/75 p-3 md:p-6" onClick={onClose}>
@@ -221,6 +226,17 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
               <Button variant="ghost" size="icon" onClick={onClose} aria-label="Lukk kundekort"><X size={20} /></Button>
             </div>
           </div>
+
+          {data?.contact && (
+            <div className="mt-4">
+              <CustomerPipelineControl
+                contactId={contactId}
+                currentStatus={data.contact.pipeline_status}
+                doNotContact={Boolean(data.contact.do_not_contact)}
+                onSaved={() => void load()}
+              />
+            </div>
+          )}
 
           <nav className="mt-4 flex gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/70 p-1">
             {([

@@ -23,6 +23,8 @@ export const CUSTOMER_UPDATE_OUTCOMES = [
   "offer_submitted",
   "waiting_customer",
   "waiting_third_party",
+  "won",
+  "lost",
   "other",
 ] as const;
 
@@ -169,6 +171,8 @@ export const CUSTOMER_UPDATE_OUTCOME_LABELS: Record<(typeof CUSTOMER_UPDATE_OUTC
   offer_submitted: "Tilbud gitt",
   waiting_customer: "Venter på kunden",
   waiting_third_party: "Venter på tredjepart",
+  won: "Vunnet / gjennomført",
+  lost: "Tapt / avsluttet",
   other: "Annet resultat",
 };
 
@@ -198,8 +202,6 @@ export function customerWaitingStatePatch(update: CustomerTimelineUpdate) {
     };
   }
 
-  // A concrete non-waiting outcome means the previous wait has resolved.
-  // An internal/general note with outcome=null or outcome=other must not silently clear waiting.
   if (update.outcome && update.outcome !== "other") {
     return {
       waiting_on: null,
@@ -209,6 +211,34 @@ export function customerWaitingStatePatch(update: CustomerTimelineUpdate) {
     };
   }
 
+  return {};
+}
+
+export function customerOutcomePipelinePatch(update: CustomerTimelineUpdate) {
+  if (update.outcome === "won") {
+    return {
+      pipeline_status: "WON" as const,
+      lost_reason: null,
+      waiting_on: null,
+      waiting_reason: null,
+      waiting_until: null,
+      next_followup: null,
+      nurture_status: "stopped",
+    };
+  }
+  if (update.outcome === "lost") {
+    return {
+      pipeline_status: "LOST" as const,
+      lost_reason: update.details.slice(0, 500),
+      waiting_on: null,
+      waiting_reason: null,
+      waiting_until: null,
+      next_followup: null,
+      nurture_status: "stopped",
+      email_suppressed: true,
+      suppression_reason: "manual_pipeline_lost",
+    };
+  }
   return {};
 }
 
