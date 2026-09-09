@@ -83,7 +83,7 @@ async function closeOpenSalesWorkItems(supabase: any, contactId: string, status:
     .in("status", OPEN_WORK_STATUSES)
     .in("source_type", SALES_WORK_SOURCES)
     .contains("metadata", { contact_id: contactId });
-  if (result.error) throw new Error(`Manual terminal work-item cleanup failed: ${result.error.message}`);
+  return result.error ? `Kunne ikke rydde gamle salgsoppgaver: ${result.error.message}` : null;
 }
 
 function detailsAuditInteraction(params: { fields: string[]; actorEmail: string; date: string }) {
@@ -212,6 +212,7 @@ export async function POST(
   const previousStatus = normalizeCustomerPipelineStatus(contact.pipeline_status);
   const nextStatus = normalizeCustomerPipelineStatus(result.data?.pipeline_status || result.appliedPayload.pipeline_status || contact.pipeline_status);
   const pipelineChanged = previousStatus !== nextStatus;
+  let warning: string | null = null;
 
   if (pipelineChanged) {
     const brandId = String(result.data?.brand_id || result.data?.brand || contact.brand_id || contact.brand || "").trim();
@@ -227,7 +228,7 @@ export async function POST(
     }).catch(() => undefined);
 
     if (nextStatus === "WON" || nextStatus === "LOST") {
-      await closeOpenSalesWorkItems(supabase, parsedContactId.data, nextStatus, now);
+      warning = await closeOpenSalesWorkItems(supabase, parsedContactId.data, nextStatus, now);
     }
   }
 
@@ -240,6 +241,7 @@ export async function POST(
     appliedFields,
     skippedFields: result.removed,
     pipelineTransition: pipelineChanged ? { previousStatus, nextStatus } : null,
+    warning,
     noCustomerContact: true,
   });
 }
