@@ -7,6 +7,7 @@ import {
   buildRealEstateQualificationBrief,
   canPrepareRealEstateQualificationMission,
   preparedQualificationTraceStep,
+  qualificationWorkItemPriority,
 } from "@/lib/nexus-real-estate-qualification-preparer";
 import {
   storeRowToOpportunity,
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
         title: brief.title,
         description: brief.description,
         status: "TO_DO",
-        priority: mission.priority,
+        priority: qualificationWorkItemPriority(mission.priority),
         due_date: new Date().toISOString().slice(0, 10),
         brand_id: contact.brand_id || mission.brandId || null,
         source_type: "ai_agent",
