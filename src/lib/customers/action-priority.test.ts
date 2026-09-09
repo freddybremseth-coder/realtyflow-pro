@@ -4,21 +4,21 @@ import { buildCustomerListAction, normalizeRealEstateStage } from "./action-prio
 
 const now = new Date("2026-08-26T12:00:00.000Z");
 
-test("customer list triage makes missing contact channel critical", () => {
+test("customer list triage makes missing contact channel high, not critical", () => {
   const result = buildCustomerListAction({ pipeline_status: "NEW" }, now);
-  assert.equal(result.priority, "CRITICAL");
-  assert.equal(result.score, 100);
+  assert.equal(result.priority, "HIGH");
+  assert.equal(result.score, 88);
   assert.match(result.reason, /mangler både e-post og telefon/i);
 });
 
-test("customer list triage prioritizes overdue follow-up", () => {
+test("customer list triage keeps ordinary overdue follow-up high, not critical", () => {
   const result = buildCustomerListAction({
     email: "buyer@example.com",
     pipeline_status: "QUALIFIED",
     next_followup: "2026-08-25T09:00:00.000Z",
   }, now);
-  assert.equal(result.priority, "CRITICAL");
-  assert.equal(result.label, "Følg opp nå");
+  assert.equal(result.priority, "HIGH");
+  assert.equal(result.label, "Følg opp");
 });
 
 test("future explicit waiting state suppresses action noise without changing pipeline stage", () => {
@@ -36,15 +36,15 @@ test("future explicit waiting state suppresses action noise without changing pip
   assert.equal(result.reason, "Kunden avklarer finansiering");
 });
 
-test("expired waiting state becomes the highest resume action", () => {
+test("expired waiting state becomes high resume action without false critical alarm", () => {
   const result = buildCustomerListAction({
     email: "buyer@example.com",
     pipeline_status: "QUALIFIED",
     waiting_on: "third_party",
     waiting_until: "2026-08-25T09:00:00.000Z",
   }, now);
-  assert.equal(result.priority, "CRITICAL");
-  assert.equal(result.score, 97);
+  assert.equal(result.priority, "HIGH");
+  assert.equal(result.score, 89);
   assert.equal(result.label, "Gjenoppta oppfølging");
   assert.match(result.reason, /tredjepart/i);
 });
@@ -59,7 +59,7 @@ test("waiting state without resume date is surfaced as incomplete", () => {
   assert.equal(result.label, "Sett dato for ventetilstand");
 });
 
-test("negotiation outranks viewing when neither is overdue", () => {
+test("negotiation remains the genuine critical commercial stage", () => {
   const negotiation = buildCustomerListAction({
     email: "buyer@example.com",
     pipeline_status: "NEGOTIATION",
@@ -69,6 +69,7 @@ test("negotiation outranks viewing when neither is overdue", () => {
     pipeline_status: "VIEWING",
   }, now);
   assert.ok(negotiation.score > viewing.score);
+  assert.equal(negotiation.priority, "CRITICAL");
   assert.equal(negotiation.label, "Fremdrift i forhandling");
   assert.equal(viewing.label, "Følg opp visningen");
 });
@@ -135,4 +136,41 @@ test("closed customers are not presented as active actions", () => {
   const result = buildCustomerListAction({ email: "buyer@example.com", pipeline_status: "WON" }, now);
   assert.equal(result.needsAction, false);
   assert.equal(result.priority, "LOW");
+});
+
+test("STOPP and suppression override stale overdue follow-up", () => {
+  const result = buildCustomerListAction({
+    email: "buyer@example.com",
+    pipeline_status: "CONTACT",
+    do_not_contact: true,
+    email_suppressed: true,
+    next_followup: "2026-08-20T09:00:00.000Z",
+    communication: { status: "STOPPED" },
+  }, now);
+  assert.equal(result.priority, "LOW");
+  assert.equal(result.needsAction, false);
+  assert.equal(result.label, "Kontakt stoppet");
+});
+
+test("customer reply is handled without duplicating hot-lead SLA as critical CRM noise", () => {
+  const result = buildCustomerListAction({
+    email: "buyer@example.com",
+    pipeline_status: "CONTACT",
+    next_followup: "2026-08-20T09:00:00.000Z",
+    communication: { status: "REPLIED", hasReplyAfterLastSend: true },
+  }, now);
+  assert.equal(result.priority, "MEDIUM");
+  assert.equal(result.needsAction, true);
+  assert.equal(result.label, "Behandle kundesvar");
+});
+
+test("paused communication suppresses action noise", () => {
+  const result = buildCustomerListAction({
+    email: "buyer@example.com",
+    pipeline_status: "QUALIFIED",
+    next_followup: "2026-08-20T09:00:00.000Z",
+    communication: { status: "PAUSED" },
+  }, now);
+  assert.equal(result.priority, "LOW");
+  assert.equal(result.needsAction, false);
 });
