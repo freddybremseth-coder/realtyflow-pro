@@ -5,6 +5,7 @@ import { buildNexusMissionAgenticPlan } from "./nexus-mission-agentic";
 import {
   buildRealEstateQualificationBrief,
   canPrepareRealEstateQualificationMission,
+  qualificationWorkItemPriority,
 } from "./nexus-real-estate-qualification-preparer";
 
 const opportunity = {
@@ -36,6 +37,13 @@ test("qualified buyer is governed as enrichment, not customer draft", () => {
   assert.equal(mission.objective, "qualify");
   assert.equal(plan.actionClass, "enrich");
   assert.equal(canPrepareRealEstateQualificationMission(mission, plan), true);
+});
+
+test("internal qualification work never inherits CRITICAL urgency", () => {
+  assert.equal(qualificationWorkItemPriority("CRITICAL"), "HIGH");
+  assert.equal(qualificationWorkItemPriority("HIGH"), "HIGH");
+  assert.equal(qualificationWorkItemPriority("MEDIUM"), "MEDIUM");
+  assert.equal(qualificationWorkItemPriority("LOW"), "LOW");
 });
 
 test("qualification brief includes core and lifestyle gaps without sending", () => {
