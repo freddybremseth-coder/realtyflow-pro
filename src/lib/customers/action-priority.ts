@@ -15,6 +15,16 @@ export interface CustomerListContact {
   preferred_location?: string | null;
   nurture_status?: string | null;
   nurture_sequence?: string | null;
+  do_not_contact?: boolean | null;
+  email_suppressed?: boolean | null;
+  last_reply_classification?: string | null;
+  communication?: {
+    status?: string | null;
+    label?: string | null;
+    shouldReceiveEmail?: boolean | null;
+    blockedReason?: string | null;
+    hasReplyAfterLastSend?: boolean | null;
+  } | null;
 }
 
 export type CustomerListActionPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -118,24 +128,46 @@ function waitingPartyLabel(value: unknown) {
   return String(value || "").toLowerCase() === "third_party" ? "tredjepart" : "kunden";
 }
 
+function communicationStatus(contact: CustomerListContact) {
+  return String(contact.communication?.status || "").trim().toUpperCase();
+}
+
 export function buildCustomerListAction(contact: CustomerListContact, now = new Date()): CustomerListAction {
   const status = normalizeRealEstateStage(contact.pipeline_status);
-  if (["WON", "LOST"].includes(status)) {
+  const commStatus = communicationStatus(contact);
+
+  // Canonical customer/contact state always wins over stale follow-up dates.
+  if (["WON", "LOST"].includes(status) || commStatus === "CLOSED") {
     return { priority: "LOW", score: 5, label: "Ingen aktiv salgsoppfølging", reason: "kunden er avsluttet i pipeline", needsAction: false };
+  }
+  if (contact.do_not_contact || contact.email_suppressed || commStatus === "STOPPED") {
+    return { priority: "LOW", score: 4, label: "Kontakt stoppet", reason: "kunden skal ikke ha videre salgsoppfølging", needsAction: false };
+  }
+  if (commStatus === "PAUSED") {
+    return { priority: "LOW", score: 16, label: "Oppfølging pauset", reason: "kommunikasjon er satt på pause", needsAction: false };
+  }
+  if (commStatus === "REPLIED" || contact.communication?.hasReplyAfterLastSend) {
+    return {
+      priority: "MEDIUM",
+      score: 66,
+      label: "Behandle kundesvar",
+      reason: "kunden har svart; CRM-status og neste steg må avklares før ny automasjon",
+      needsAction: true,
+    };
   }
 
   if (!contact.email && !contact.phone) {
-    return { priority: "CRITICAL", score: 100, label: "Finn kontaktkanal", reason: "mangler både e-post og telefon", needsAction: true };
+    return { priority: "HIGH", score: 88, label: "Finn kontaktkanal", reason: "mangler både e-post og telefon", needsAction: true };
   }
 
   if (contact.waiting_on) {
     const waitingUntil = validDate(contact.waiting_until);
     const party = waitingPartyLabel(contact.waiting_on);
     if (!waitingUntil) {
-      return { priority: "HIGH", score: 91, label: "Sett dato for ventetilstand", reason: `venter på ${party} uten gjenopptakelsesdato`, needsAction: true };
+      return { priority: "HIGH", score: 82, label: "Sett dato for ventetilstand", reason: `venter på ${party} uten gjenopptakelsesdato`, needsAction: true };
     }
     if (waitingUntil.getTime() < now.getTime()) {
-      return { priority: "CRITICAL", score: 97, label: "Gjenoppta oppfølging", reason: `ventetiden på ${party} er utløpt`, needsAction: true };
+      return { priority: "HIGH", score: 89, label: "Gjenoppta oppfølging", reason: `ventetiden på ${party} er utløpt`, needsAction: true };
     }
     return {
       priority: "LOW",
@@ -148,9 +180,11 @@ export function buildCustomerListAction(contact: CustomerListContact, now = new 
 
   const followup = validDate(contact.next_followup);
   if (followup && followup.getTime() < now.getTime()) {
-    return { priority: "CRITICAL", score: 96, label: "Følg opp nå", reason: "oppfølging er forfalt", needsAction: true };
+    return { priority: "HIGH", score: 90, label: "Følg opp", reason: "avtalt oppfølging er forfalt", needsAction: true };
   }
 
+  // CRITICAL is intentionally reserved for genuinely time-sensitive deal work.
+  // Hot-lead SLA urgency lives in work_items/Nexus Today, not in a stale CRM date.
   if (status === "NEGOTIATION") {
     return { priority: "CRITICAL", score: 94, label: "Fremdrift i forhandling", reason: "kunden er i forhandling", needsAction: true };
   }
