@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRequestAccessContext } from '@/lib/api-admin';
 import { hasPermission } from '@/lib/access-control';
 import { normalizeCustomerPipelineStatus } from '@/lib/customer-updates';
+import { buildCustomerCommunicationState, summarizeNurtureEvents } from '@/lib/customers/communication-status';
 import { buildRevenueEventDedupeKey, insertRevenueEvent } from '@/lib/revenue/events';
 import { recordPipelineTransition } from '@/lib/revenue/pipeline-transition';
 import { filterContactsByView, normalizeContactForClient, normalizeIncomingContact } from './lifecycle';
@@ -168,12 +169,35 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ contacts: [], error: error.message });
 
   const normalizedContacts = (data || []).map(normalizeContactForClient);
-  const contacts = filterContactsByView(normalizedContacts, view);
+  const filteredContacts = filterContactsByView(normalizedContacts, view);
+  const contactIds = filteredContacts.map((contact: any) => String(contact.id)).filter(Boolean);
+  let nurtureEvents: any[] = [];
+  if (contactIds.length > 0) {
+    const { data: eventRows } = await supabase
+      .from('lead_nurture_events')
+      .select('contact_id,status,dry_run,error,sent_at,created_at')
+      .in('contact_id', contactIds)
+      .order('created_at', { ascending: false });
+    nurtureEvents = eventRows || [];
+  }
+  const nurtureSummary = summarizeNurtureEvents(nurtureEvents);
+  const emptySummary = { sentCount: 0, lastSentAt: null, failedCount: 0, lastFailedAt: null, lastError: null };
+  const contacts = filteredContacts.map((contact: any) => ({
+    ...contact,
+    communication: buildCustomerCommunicationState(contact, nurtureSummary.get(String(contact.id)) || emptySummary),
+  }));
+
+  const communicationCounts = contacts.reduce((counts: Record<string, number>, contact: any) => {
+    const status = String(contact.communication?.status || 'UNKNOWN');
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+
   const repairs = contacts
     .filter((c: any) => isCustomerStatus(c.pipeline_status) && (c.buying_signal_score !== 100 || c.purchase_signal_score !== 100 || c.sentiment === 'neutral'))
     .map((c: any) => updateContactWithFallbacks(supabase, c.id, { pipeline_status: 'WON', sentiment: 'hot', buying_signal_score: 100, purchase_signal_score: 100, updated_at: new Date().toISOString() }));
   if (repairs.length > 0) Promise.allSettled(repairs).catch(() => {});
-  return NextResponse.json({ contacts });
+  return NextResponse.json({ contacts, communicationCounts });
 }
 
 export async function POST(request: NextRequest) {
