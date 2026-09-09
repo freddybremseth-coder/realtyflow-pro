@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CUSTOMER_PIPELINE_STATUS_LABELS,
+  CUSTOMER_UPDATE_OUTCOME_LABELS,
   CustomerUpdateRequestSchema,
   appendCustomerInteraction,
   buildCustomerTimelineInteraction,
   changedCustomerDetailFields,
   contactDetailPatch,
+  customerOutcomePipelinePatch,
   customerWaitingStatePatch,
   normalizeCustomerPipelineStatus,
 } from "./customer-updates";
@@ -65,6 +67,66 @@ test("customer details accepts matching and reserved as persisted CRM stages", (
     assert.equal(parsed.action, "UPDATE_DETAILS");
     if (parsed.action === "UPDATE_DETAILS") assert.equal(contactDetailPatch(parsed.details).pipeline_status, pipelineStatus);
   }
+});
+
+test("manual won outcome promotes the pipeline and clears old sales follow-up", () => {
+  const parsed = CustomerUpdateRequestSchema.parse({
+    action: "ADD_UPDATE",
+    update: {
+      updateType: "closing",
+      occurredAt: "2026-09-09T10:00:00.000Z",
+      title: "Sale completed",
+      details: "Customer completed the purchase.",
+      propertyReference: "PROP-1",
+      outcome: "won",
+      nextAction: null,
+      nextFollowup: null,
+      direction: "internal",
+    },
+  });
+  assert.equal(parsed.action, "ADD_UPDATE");
+  if (parsed.action !== "ADD_UPDATE") return;
+  assert.equal(CUSTOMER_UPDATE_OUTCOME_LABELS.won, "Vunnet / gjennomført");
+  assert.deepEqual(customerOutcomePipelinePatch(parsed.update), {
+    pipeline_status: "WON",
+    lost_reason: null,
+    waiting_on: null,
+    waiting_reason: null,
+    waiting_until: null,
+    next_followup: null,
+    nurture_status: "stopped",
+  });
+});
+
+test("manual lost outcome closes the pipeline with a human reason and suppresses sales mail", () => {
+  const parsed = CustomerUpdateRequestSchema.parse({
+    action: "ADD_UPDATE",
+    update: {
+      updateType: "general_note",
+      occurredAt: "2026-09-09T10:00:00.000Z",
+      title: "Customer closed",
+      details: "Customer has decided not to purchase in Spain.",
+      propertyReference: null,
+      outcome: "lost",
+      nextAction: null,
+      nextFollowup: null,
+      direction: "internal",
+    },
+  });
+  assert.equal(parsed.action, "ADD_UPDATE");
+  if (parsed.action !== "ADD_UPDATE") return;
+  assert.equal(CUSTOMER_UPDATE_OUTCOME_LABELS.lost, "Tapt / avsluttet");
+  assert.deepEqual(customerOutcomePipelinePatch(parsed.update), {
+    pipeline_status: "LOST",
+    lost_reason: "Customer has decided not to purchase in Spain.",
+    waiting_on: null,
+    waiting_reason: null,
+    waiting_until: null,
+    next_followup: null,
+    nurture_status: "stopped",
+    email_suppressed: true,
+    suppression_reason: "manual_pipeline_lost",
+  });
 });
 
 test("viewing update becomes an append-only internal interaction with actor and next step", () => {
