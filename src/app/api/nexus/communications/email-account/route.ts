@@ -4,76 +4,13 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { encryptPassword } from "@/services/email/crypto";
 import { checkImapConnection } from "@/services/email/imap-connection-check";
 import type { ImapConfig } from "@/services/email/imap-reader";
+import {
+  buildEmailProviderConfig,
+  type EmailProvider,
+} from "@/services/email/provider-config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const PROVIDERS = {
-  hostinger: {
-    imap_host: "imap.hostinger.com",
-    imap_port: 993,
-    imap_secure: true,
-    smtp_host: "smtp.hostinger.com",
-    smtp_port: 465,
-    smtp_secure: true,
-  },
-  gmail: {
-    imap_host: "imap.gmail.com",
-    imap_port: 993,
-    imap_secure: true,
-    smtp_host: "smtp.gmail.com",
-    smtp_port: 465,
-    smtp_secure: true,
-  },
-} as const;
-
-type Provider = keyof typeof PROVIDERS | "custom";
-
-type MailPreset = {
-  imap_host: string;
-  imap_port: number;
-  imap_secure: boolean;
-  smtp_host: string;
-  smtp_port: number;
-  smtp_secure: boolean;
-};
-
-function asPort(value: unknown, fallback?: number) {
-  const parsed = Number(value);
-  if (Number.isInteger(parsed) && parsed > 0 && parsed <= 65535) return parsed;
-  return fallback ?? 0;
-}
-
-function asBool(value: unknown, fallback: boolean) {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    if (["1", "true", "yes", "on"].includes(value.toLowerCase())) return true;
-    if (["0", "false", "no", "off"].includes(value.toLowerCase())) return false;
-  }
-  return fallback;
-}
-
-function buildPreset(provider: Provider, body: Record<string, unknown>): MailPreset | null {
-  if (provider !== "custom") return PROVIDERS[provider] ?? null;
-
-  const imapHost = String(body.imapHost || "").trim();
-  const smtpHost = String(body.smtpHost || "").trim();
-  const imapPort = asPort(body.imapPort, 993);
-  const smtpPort = asPort(body.smtpPort, 465);
-  const imapSecure = asBool(body.imapSecure, true);
-  const smtpSecure = asBool(body.smtpSecure, true);
-
-  if (!imapHost || !smtpHost || !imapPort || !smtpPort) return null;
-
-  return {
-    imap_host: imapHost,
-    imap_port: imapPort,
-    imap_secure: imapSecure,
-    smtp_host: smtpHost,
-    smtp_port: smtpPort,
-    smtp_secure: smtpSecure,
-  };
-}
 
 export async function POST(request: NextRequest) {
   const denied = await requireAdminApi(request);
@@ -81,7 +18,7 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const accountId = String(body.accountId || "").trim();
-  const provider = String(body.provider || "").trim().toLowerCase() as Provider;
+  const provider = String(body.provider || "").trim().toLowerCase() as EmailProvider;
   const emailAddress = String(body.emailAddress || "").trim().toLowerCase();
   const password = String(body.password || "");
 
@@ -93,7 +30,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Passord/app-passord kreves" }, { status: 400 });
   }
 
-  const preset = buildPreset(provider, body);
+  const preset = buildEmailProviderConfig(provider, body);
   if (!preset) {
     return NextResponse.json(
       {
