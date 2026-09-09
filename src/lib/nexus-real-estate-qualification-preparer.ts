@@ -29,6 +29,16 @@ export interface RealEstateBuyerProfileInput {
   summary?: string | null;
 }
 
+export function qualificationWorkItemPriority(priority: unknown): "HIGH" | "MEDIUM" | "LOW" {
+  const normalized = String(priority || "MEDIUM").trim().toUpperCase();
+  // Completing or enriching a Buyer Profile is important internal work, but
+  // it is not itself a real-time customer emergency. CRITICAL is reserved for
+  // genuine Hot Lead SLA / negotiation urgency elsewhere in Nexus.
+  if (normalized === "CRITICAL" || normalized === "HIGH") return "HIGH";
+  if (normalized === "LOW") return "LOW";
+  return "MEDIUM";
+}
+
 export function canPrepareRealEstateQualificationMission(
   mission: NexusGrowthMission,
   plan: NexusMissionAgenticPlan,
