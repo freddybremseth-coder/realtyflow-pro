@@ -28,10 +28,10 @@ export type MailProviderConfig = {
   smtp_secure: boolean;
 };
 
-function asPort(value: unknown, fallback?: number) {
+function asPort(value: unknown) {
   const parsed = Number(value);
   if (Number.isInteger(parsed) && parsed > 0 && parsed <= 65535) return parsed;
-  return fallback ?? 0;
+  return 0;
 }
 
 function asBool(value: unknown, fallback: boolean) {
@@ -51,8 +51,8 @@ export function buildEmailProviderConfig(
 
   const imapHost = String(input.imapHost || "").trim();
   const smtpHost = String(input.smtpHost || "").trim();
-  const imapPort = asPort(input.imapPort, 993);
-  const smtpPort = asPort(input.smtpPort, 465);
+  const imapPort = input.imapPort == null || input.imapPort === "" ? 993 : asPort(input.imapPort);
+  const smtpPort = input.smtpPort == null || input.smtpPort === "" ? 465 : asPort(input.smtpPort);
   const imapSecure = asBool(input.imapSecure, true);
   const smtpSecure = asBool(input.smtpSecure, true);
 
