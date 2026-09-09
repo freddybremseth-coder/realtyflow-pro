@@ -4,45 +4,44 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { encryptPassword } from "@/services/email/crypto";
 import { checkImapConnection } from "@/services/email/imap-connection-check";
 import type { ImapConfig } from "@/services/email/imap-reader";
+import {
+  buildEmailProviderConfig,
+  type EmailProvider,
+} from "@/services/email/provider-config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const PROVIDERS = {
-  hostinger: {
-    imap_host: "imap.hostinger.com",
-    imap_port: 993,
-    imap_secure: true,
-    smtp_host: "smtp.hostinger.com",
-    smtp_port: 465,
-    smtp_secure: true,
-  },
-  gmail: {
-    imap_host: "imap.gmail.com",
-    imap_port: 993,
-    imap_secure: true,
-    smtp_host: "smtp.gmail.com",
-    smtp_port: 465,
-    smtp_secure: true,
-  },
-} as const;
-
-type Provider = keyof typeof PROVIDERS;
 
 export async function POST(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
 
-  const body = await request.json().catch(() => ({}));
-  const accountId = String(body?.accountId || "").trim();
-  const provider = String(body?.provider || "").trim().toLowerCase() as Provider;
-  const emailAddress = String(body?.emailAddress || "").trim().toLowerCase();
-  const password = String(body?.password || "");
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const accountId = String(body.accountId || "").trim();
+  const provider = String(body.provider || "").trim().toLowerCase() as EmailProvider;
+  const emailAddress = String(body.emailAddress || "").trim().toLowerCase();
+  const password = String(body.password || "");
 
   if (!accountId) return NextResponse.json({ error: "accountId mangler" }, { status: 400 });
-  if (!PROVIDERS[provider]) return NextResponse.json({ error: "Ukjent e-postprovider" }, { status: 400 });
-  if (!emailAddress || !emailAddress.includes("@")) return NextResponse.json({ error: "Gyldig e-postadresse kreves" }, { status: 400 });
-  if (!password || password.length < 4) return NextResponse.json({ error: "Passord/app-passord kreves" }, { status: 400 });
+  if (!emailAddress || !emailAddress.includes("@")) {
+    return NextResponse.json({ error: "Gyldig e-postadresse kreves" }, { status: 400 });
+  }
+  if (!password || password.length < 4) {
+    return NextResponse.json({ error: "Passord/app-passord kreves" }, { status: 400 });
+  }
+
+  const preset = buildEmailProviderConfig(provider, body);
+  if (!preset) {
+    return NextResponse.json(
+      {
+        error:
+          provider === "custom"
+            ? "Custom provider krever gyldig IMAP-host, IMAP-port, SMTP-host og SMTP-port"
+            : "Ukjent e-postprovider",
+      },
+      { status: 400 },
+    );
+  }
 
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
@@ -56,7 +55,6 @@ export async function POST(request: NextRequest) {
   if (accountError) return NextResponse.json({ error: accountError.message }, { status: 500 });
   if (!account) return NextResponse.json({ error: "E-postkonto ikke funnet" }, { status: 404 });
 
-  const preset = PROVIDERS[provider];
   const imap: ImapConfig = {
     host: preset.imap_host,
     port: preset.imap_port,
@@ -73,7 +71,15 @@ export async function POST(request: NextRequest) {
       action: "email_reconnect_test",
       agent_name: "nexus_communications",
       status: "failed",
-      details: { account_id: accountId, brand_id: account.brand_id, provider, email_address: emailAddress, error: message },
+      details: {
+        account_id: accountId,
+        brand_id: account.brand_id,
+        provider,
+        email_address: emailAddress,
+        imap_host: preset.imap_host,
+        imap_port: preset.imap_port,
+        error: message,
+      },
     });
     return NextResponse.json({ error: `Tilkobling feilet: ${message}` }, { status: 422 });
   }
@@ -103,8 +109,30 @@ export async function POST(request: NextRequest) {
     action: "email_reconnect",
     agent_name: "nexus_communications",
     status: "success",
-    details: { account_id: accountId, brand_id: account.brand_id, provider, email_address: emailAddress },
+    details: {
+      account_id: accountId,
+      brand_id: account.brand_id,
+      provider,
+      email_address: emailAddress,
+      imap_host: preset.imap_host,
+      smtp_host: preset.smtp_host,
+    },
   });
 
-  return NextResponse.json({ success: true, accountId, brandId: account.brand_id, provider, emailAddress, health: "healthy" });
+  return NextResponse.json({
+    success: true,
+    accountId,
+    brandId: account.brand_id,
+    provider,
+    emailAddress,
+    health: "healthy",
+    config: {
+      imapHost: preset.imap_host,
+      imapPort: preset.imap_port,
+      imapSecure: preset.imap_secure,
+      smtpHost: preset.smtp_host,
+      smtpPort: preset.smtp_port,
+      smtpSecure: preset.smtp_secure,
+    },
+  });
 }

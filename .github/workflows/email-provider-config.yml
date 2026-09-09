@@ -1,0 +1,22 @@
+name: Email Provider Config
+
+on:
+  pull_request:
+    paths:
+      - "src/services/email/provider-config.ts"
+      - "src/services/email/provider-config.test.ts"
+      - "src/app/api/nexus/communications/email-account/route.ts"
+      - "src/app/(content)/nexus-os/communications/page.tsx"
+      - ".github/workflows/email-provider-config.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsx src/services/email/provider-config.test.ts
