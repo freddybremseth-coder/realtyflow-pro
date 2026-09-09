@@ -62,6 +62,9 @@ export async function runLeadNurtureRequest(request: NextRequest) {
           flagged_spam: result.flaggedSpam,
           awaiting_live: result.awaitingLive,
           duplicate_dry_runs_suppressed: result.duplicateDryRunsSuppressed,
+          sendability_blocked: result.sendabilityBlocked,
+          sendability_review: result.sendabilityReview,
+          sendability_reasons: result.sendabilityReasons,
           dry_run_planned: result.dryRun ? result.planned.length : undefined,
         },
       });
