@@ -27,7 +27,7 @@
     "test:revenue-today": "tsx --test src/lib/revenue/today.test.ts src/lib/realty/public-lead-brand.test.ts",
     "test:closing": "tsx --test src/lib/revenue/closing.test.ts",
     "test:customer-360": "tsx --test src/lib/customer-360.test.ts",
-    "test:customer-crm": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/customer-updates.test.ts src/lib/persona-backfill.test.ts src/services/lead-intelligence/delete-buyer-profiles.test.ts",
+    "test:customer-crm": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/customer-updates.test.ts src/lib/customer-pipeline-control.test.ts src/lib/persona-backfill.test.ts src/services/lead-intelligence/delete-buyer-profiles.test.ts",
     "test:approvals": "tsx --test src/lib/approvals.test.ts",
     "test:after-sales": "tsx --test src/lib/revenue/after-sales.test.ts",
     "test:forecast": "tsx --test src/lib/revenue/forecast.test.ts",
@@ -108,14 +108,14 @@
   "devDependencies": {
     "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
-    "@types/node-cron": "^3.0.11",
-    "@types/papaparse": "^5.5.2",
+    "@types/node-cron": "^3.4.3",
+    "@types/papaparse": "^5.5.3",
     "@types/react": "^18",
     "@types/react-big-calendar": "^1.8.9",
     "@types/react-dom": "^18",
     "postcss": "^8",
-    "tailwindcss": "^3.4.1",
+    "tailwindcss": "^3.4.17",
     "tsx": "^4.22.4",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   }
 }
