@@ -1,0 +1,22 @@
+name: CRM Command Menu
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/customers/commands/**"
+      - "src/components/crm/crm-command-menu.tsx"
+      - "src/app/(realty)/customers/page.tsx"
+      - "src/lib/customers/crm-command-menu.contract.test.ts"
+      - ".github/workflows/crm-command-menu.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsx src/lib/customers/crm-command-menu.contract.test.ts
