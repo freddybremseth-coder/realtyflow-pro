@@ -9,6 +9,7 @@ import {
   buildCustomerTimelineInteraction,
   changedCustomerDetailFields,
   contactDetailPatch,
+  customerOutcomePipelinePatch,
   customerWaitingStatePatch,
   normalizeCustomerPipelineStatus,
 } from "@/lib/customer-updates";
@@ -18,6 +19,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const ContactIdSchema = z.string().uuid();
+const OPEN_WORK_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
+const SALES_WORK_SOURCES = ["crm", "portal", "ai_agent", "lead_intelligence"];
 
 function missingColumnFromError(message = "") {
   const match = message.match(/'([^']+)' column|column "([^"]+)"|Could not find the '([^']+)' column/i);
@@ -69,6 +72,20 @@ async function updateContactWithFallbacks(supabase: any, id: string, updates: Re
   };
 }
 
+async function closeOpenSalesWorkItems(supabase: any, contactId: string, status: "WON" | "LOST", now: string) {
+  const result = await supabase
+    .from("work_items")
+    .update({
+      status: "CANCELLED",
+      next_action: status === "WON" ? "Automatisk lukket: kunden er vunnet" : "Automatisk lukket: kunden er tapt/avsluttet",
+      updated_at: now,
+    })
+    .in("status", OPEN_WORK_STATUSES)
+    .in("source_type", SALES_WORK_SOURCES)
+    .contains("metadata", { contact_id: contactId });
+  if (result.error) throw new Error(`Manual terminal work-item cleanup failed: ${result.error.message}`);
+}
+
 function detailsAuditInteraction(params: { fields: string[]; actorEmail: string; date: string }) {
   return {
     id: crypto.randomUUID(),
@@ -85,6 +102,35 @@ function detailsAuditInteraction(params: { fields: string[]; actorEmail: string;
       no_customer_contact: true,
     },
   };
+}
+
+function terminalDetailPatch(status: string, contact: Record<string, any>) {
+  const normalized = normalizeCustomerPipelineStatus(status);
+  if (normalized === "WON") {
+    return {
+      pipeline_status: "WON",
+      lost_reason: null,
+      waiting_on: null,
+      waiting_reason: null,
+      waiting_until: null,
+      next_followup: null,
+      nurture_status: "stopped",
+    };
+  }
+  if (normalized === "LOST") {
+    return {
+      pipeline_status: "LOST",
+      lost_reason: contact.lost_reason || "Manuelt markert tapt",
+      waiting_on: null,
+      waiting_reason: null,
+      waiting_until: null,
+      next_followup: null,
+      nurture_status: "stopped",
+      email_suppressed: true,
+      suppression_reason: contact.suppression_reason || "manual_pipeline_lost",
+    };
+  }
+  return {};
 }
 
 export async function POST(
@@ -137,6 +183,7 @@ export async function POST(
       updated_at: now,
       ...(parsed.data.update.nextFollowup ? { next_followup: parsed.data.update.nextFollowup } : {}),
       ...customerWaitingStatePatch(parsed.data.update),
+      ...customerOutcomePipelinePatch(parsed.data.update),
     };
   } else {
     const detailPatch = contactDetailPatch(parsed.data.details);
@@ -147,6 +194,7 @@ export async function POST(
     const auditInteraction = detailsAuditInteraction({ fields: changedFields, actorEmail: context.email, date: now });
     updates = {
       ...detailPatch,
+      ...terminalDetailPatch(String(detailPatch.pipeline_status || ""), contact),
       interactions: appendCustomerInteraction(contact.interactions, auditInteraction),
       updated_at: now,
     };
@@ -161,9 +209,11 @@ export async function POST(
     }, { status: 500 });
   }
 
-  if (parsed.data.action === "UPDATE_DETAILS" && changedFields.includes("pipeline_status")) {
-    const previousStatus = normalizeCustomerPipelineStatus(contact.pipeline_status);
-    const nextStatus = normalizeCustomerPipelineStatus(result.data?.pipeline_status || result.appliedPayload.pipeline_status || contact.pipeline_status);
+  const previousStatus = normalizeCustomerPipelineStatus(contact.pipeline_status);
+  const nextStatus = normalizeCustomerPipelineStatus(result.data?.pipeline_status || result.appliedPayload.pipeline_status || contact.pipeline_status);
+  const pipelineChanged = previousStatus !== nextStatus;
+
+  if (pipelineChanged) {
     const brandId = String(result.data?.brand_id || result.data?.brand || contact.brand_id || contact.brand || "").trim();
     await recordPipelineTransition(supabase, {
       contactId: parsedContactId.data,
@@ -175,6 +225,10 @@ export async function POST(
       actorId: context.email,
       createdBy: "api/customers/[contactId]/updates",
     }).catch(() => undefined);
+
+    if (nextStatus === "WON" || nextStatus === "LOST") {
+      await closeOpenSalesWorkItems(supabase, parsedContactId.data, nextStatus, now);
+    }
   }
 
   const appliedFields = Object.keys(result.appliedPayload).filter((field) => !["interactions", "updated_at"].includes(field));
@@ -185,6 +239,7 @@ export async function POST(
     changedFields,
     appliedFields,
     skippedFields: result.removed,
+    pipelineTransition: pipelineChanged ? { previousStatus, nextStatus } : null,
     noCustomerContact: true,
   });
 }
