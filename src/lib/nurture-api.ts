@@ -44,30 +44,46 @@ export async function runLeadNurtureRequest(request: NextRequest) {
   try {
     const result = await runNurtureCycle(supabase, { dryRun, brandId, limit, email });
 
-    await supabase
+    const { error: logError } = await supabase
       .from("automation_logs")
       .insert({
-        type: "lead_nurture",
+        action: "lead_nurture",
+        agent_name: "lead_nurture_cron",
         status: result.failed > 0 ? "partial" : "success",
         details: {
           runtime_control: "feature:nurture_live",
           nexus_live: nexusLive,
-          dryRun: result.dryRun,
+          dry_run: result.dryRun,
           scanned: result.scanned,
           eligible: result.eligible,
           sent: result.sent,
           failed: result.failed,
+          skipped: result.skipped,
+          flagged_spam: result.flaggedSpam,
+          awaiting_live: result.awaitingLive,
+          duplicate_dry_runs_suppressed: result.duplicateDryRunsSuppressed,
           dry_run_planned: result.dryRun ? result.planned.length : undefined,
         },
+      });
+
+    if (logError) {
+      console.warn("[lead-nurture] automation log insert failed", logError.message);
+    }
+
+    return NextResponse.json({ success: true, nexusLive, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Internal error";
+    await supabase
+      .from("automation_logs")
+      .insert({
+        action: "lead_nurture",
+        agent_name: "lead_nurture_cron",
+        status: "failed",
+        details: { error: message, runtime_control: "feature:nurture_live", nexus_live: nexusLive },
       })
       .then(() => {})
       .then(undefined, () => {});
 
-    return NextResponse.json({ success: true, nexusLive, ...result });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
