@@ -20,7 +20,7 @@ test("ZenEco Facebook Canary explicitly requests a manual-review-only draft", ()
 test("ZenEco Facebook Canary keeps readable foregrounds on light card surfaces", () => {
   assert.match(page, /const box: React\.CSSProperties = \{[^\n]*background: "#ffffff"[^\n]*color: "#111827"/);
   assert.match(page, /const pre: React\.CSSProperties = \{[^\n]*background: "#f8fafc"[^\n]*color: "#111827"/);
-  assert.match(page, /<textarea[^>]*background: "#ffffff", color: "#111827"/);
+  assert.match(page, /border: "1px solid #9ca3af", background: "#ffffff", color: "#111827"/);
   assert.match(page, /color: enabled \? "#ffffff" : "#374151"/);
 });
 
