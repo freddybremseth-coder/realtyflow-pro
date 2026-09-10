@@ -43,14 +43,18 @@ export async function runLeadNurtureRequest(request: NextRequest) {
 
   try {
     const result = await runNurtureCycle(supabase, { dryRun, brandId, limit, email });
+    const outcome = result.failed > 0 ? (result.sent > 0 ? "partial" : "failed") : "success";
 
     const { error: logError } = await supabase
       .from("automation_logs")
       .insert({
         action: "lead_nurture",
         agent_name: "lead_nurture_cron",
-        status: result.failed > 0 ? "partial" : "success",
+        // Production schema only allows success/error. Preserve richer outcome
+        // semantics in details instead of writing unsupported status values.
+        status: result.failed > 0 ? "error" : "success",
         details: {
+          outcome,
           runtime_control: "feature:nurture_live",
           nexus_live: nexusLive,
           dry_run: result.dryRun,
@@ -81,8 +85,13 @@ export async function runLeadNurtureRequest(request: NextRequest) {
       .insert({
         action: "lead_nurture",
         agent_name: "lead_nurture_cron",
-        status: "failed",
-        details: { error: message, runtime_control: "feature:nurture_live", nexus_live: nexusLive },
+        status: "error",
+        details: {
+          outcome: "failed",
+          error: message,
+          runtime_control: "feature:nurture_live",
+          nexus_live: nexusLive,
+        },
       })
       .then(() => {})
       .then(undefined, () => {});
