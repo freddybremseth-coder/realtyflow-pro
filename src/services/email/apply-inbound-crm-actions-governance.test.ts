@@ -74,6 +74,11 @@ test("hot lead SLA is persisted into work-item metadata", () => {
   assert.match(source, /operational_target: sla\.operationalTarget/);
 });
 
+test("hot lead SLA does not create a duplicate immediate CRM follow-up date", () => {
+  assert.doesNotMatch(source, /requiresFastResponse\) update\.next_followup = now/);
+  assert.match(source, /Real-time urgency is represented by the/);
+});
+
 test("hot lead routing reuses buyer profile and stage-readiness context", () => {
   assert.match(source, /from\("buyer_profiles"\)/);
   assert.match(source, /buyer_profile_id: buyerProfile\.profileId/);

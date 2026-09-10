@@ -260,8 +260,10 @@ export async function applyInboundCrmActions(
     update.next_followup = null;
     suppressed = true;
   } else if (classification.shouldPauseNurture) {
+    // A customer reply pauses nurture. Real-time urgency is represented by the
+    // governed work item / response_due_at SLA below, not by abusing the CRM
+    // next_followup field as an immediate timestamp.
     update.nurture_status = "paused";
-    if (classification.requiresFastResponse) update.next_followup = now;
   }
 
   const { error: updateError } = await supabase.from("contacts").update(update).eq("id", contact.id);
