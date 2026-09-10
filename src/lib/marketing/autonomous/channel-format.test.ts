@@ -19,6 +19,7 @@ const REEL_SCRIPT = [
 
 const CLEAN_CAPTION =
   "Drømmer du om et hjem i solen? Våre energieffektive nybygg på Costa Blanca gir deg norsk oppfølging hele veien. Book gratis boligsamtale.";
+const PROPERTY_URL = "https://www.zenecohomes.com/eiendommer/N5798";
 
 function assetWith(body: string, extra: Partial<GeneratedAsset> = {}): GeneratedAsset {
   return {
@@ -87,4 +88,24 @@ test("findProductionDirection: fanger uppercase-markører og norske manus-etiket
   assert.ok(findProductionDirection("Klipp: 3 sek").includes("Klipp:"));
   // Vanlige ord skal IKKE gi falske treff.
   assert.deepEqual(findProductionDirection("Book en visning i solen på kysten."), []);
+});
+
+// 7) Facebook/Meta body skal ikke bruke Markdown-lenke eller gjenta system-CTA.
+test("channelFormatFitness: Markdown + tredje forekomst av samme property-URL blokkeres", () => {
+  const dirty = [
+    `Les mer: [Moderne villa](${PROPERTY_URL})`,
+    `Se boligen: ${PROPERTY_URL}`,
+    `Kontakt oss: ${PROPERTY_URL}#kontakt`,
+  ].join("\n");
+  const markers = findProductionDirection(dirty);
+  assert.ok(markers.includes("Markdown-link"));
+  assert.ok(markers.includes("Repeated CTA URL"));
+  assert.equal(channelFormatFitness(dirty).ok, false);
+});
+
+// 8) Den kanoniske system-CTA-en har to URL-varianter og skal fortsatt passere.
+test("channelFormatFitness: property URL + #kontakt nøyaktig én gang hver er tillatt", () => {
+  const canonicalCta = `Se boligen: ${PROPERTY_URL}\nKontakt oss om boligen: ${PROPERTY_URL}#kontakt`;
+  assert.deepEqual(findProductionDirection(canonicalCta), []);
+  assert.equal(channelFormatFitness(canonicalCta).ok, true);
 });

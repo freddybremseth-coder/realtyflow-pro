@@ -17,6 +17,16 @@ const CLEAN_QUALITATIVE =
   "Drømmer du om et hjem i solen? Energieffektive boliger på Costa Blanca med norsk oppfølging hele veien. Book gratis boligsamtale.";
 const CANARY_ABSOLUTE_TREND =
   "Forestill deg sol året rundt. Flere nordmenn ser i dag mot Costa Blanca. Ingen skjulte overraskelser, ingen språkbarrierer.";
+const N5798_BAD_COPY =
+  "Oppdag vår moderne villa med 4 soverom og 4 bad, plassert i det vakre området Balcón de Finestrat. " +
+  "Boligen har luksuriøse finisher som virkelig hever standarden. Med en energimerking på B er dette et hjem du kan føle deg trygg på. " +
+  "Les mer om denne fantastiske boligen.";
+const N5798_FACTS = [
+  { claim: "Tittel: Moderne villa med 4 soverom og 4 bad", source: "RealtyFlow Inventory" },
+  { claim: "Sted: BALCÓN DE FINESTRAT", source: "RealtyFlow Inventory" },
+  { claim: "Energimerking: B", source: "RealtyFlow Inventory" },
+  { claim: "Inventory-beskrivelse: Boligen er bygget med luksuriøse finisher.", source: "RealtyFlow Inventory" },
+];
 
 function assetWith(body: string, extra: Partial<GeneratedAsset> = {}): GeneratedAsset {
   return {
@@ -69,10 +79,24 @@ test("unsupportedOutcomeClaims: trendpåstand krever uavhengig trendkilde", () =
   );
 });
 
+test("N5798 regression: subjektiv pynt og energimerke→trygghet er udekkede claims", () => {
+  assert.deepEqual(unsupportedOutcomeClaims(N5798_BAD_COPY, N5798_FACTS), [
+    "beautiful area",
+    "fantastic property",
+    "raises the standard",
+    "energy rating implies safety",
+  ]);
+});
+
 test("findOwnershipClaims: «våre boliger» treffer, formidler-formulering treffer ikke", () => {
   assert.deepEqual(findOwnershipClaims("Utforsk våre boliger på Costa Blanca."), ["våre boliger"]);
   assert.deepEqual(findOwnershipClaims("Utforsk boligene vi hjelper deg å finne på Costa Blanca."), []);
   assert.deepEqual(findOwnershipClaims("Se boligene vi formidler."), []);
+});
+
+test("findOwnershipClaims: eierskap fanges selv med adjektiv mellom vår/our og boligtype", () => {
+  assert.deepEqual(findOwnershipClaims("Oppdag vår moderne villa i Finestrat."), ["våre villaer"]);
+  assert.deepEqual(findOwnershipClaims("Explore our modern Mediterranean villa."), ["our villas"]);
 });
 
 test("brandSupportsOwnership: default (rådgiver) = false; ownsInventory=true = true", () => {
@@ -133,6 +157,16 @@ test("gate: «lavere energikostnader» støttet KUN av Brand Brain → fortsatt 
   const r = contentQualityGate(assetWith(ENERGY_CLAIM), { brand });
   assert.equal(r.checks.claimsVerified, false);
   assert.deepEqual(r.unsupportedOutcomeClaims, ["lavere energikostnader"]);
+});
+
+test("N5798 regression: quality kan ikke være 100 for unsupported pynt + rådgiver-eierskap", () => {
+  const brand = parseBrandContext({ brandId: "b1", brandName: "Zen Eco Homes" });
+  const r = contentQualityGate(assetWith(N5798_BAD_COPY, { factSources: N5798_FACTS }), { brand });
+  assert.equal(r.checks.claimsVerified, false);
+  assert.equal(r.checks.roleConsistent, false);
+  assert.ok(r.unsupportedOutcomeClaims.includes("energy rating implies safety"));
+  assert.deepEqual(r.roleViolations, ["våre villaer"]);
+  assert.ok(r.score < 100, `score var ${r.score}`);
 });
 
 // ── Quality-gate: eierskap/rolle ─────────────────────────────────────────

@@ -5,13 +5,14 @@
  *
  * Bakgrunn: AI-modus genererte et helt Reel-produksjonsmanus som «FINAL
  * INSTAGRAM CAPTION» fordi genome defaulter til format="reel". En Meta-caption
- * skal ALDRI inneholde produksjonsanvisninger — uansett format.
+ * skal ALDRI inneholde produksjonsanvisninger — uansett format. Sosial copy
+ * skal heller ikke inneholde Markdown-lenker eller repetere samme CTA-URL.
  */
 
 import type { ContentFormat } from "../genome";
 
-/** Markører som avslører at teksten er et produksjonsmanus, ikke en caption. */
-const PRODUCTION_MARKERS: Array<{ label: string; re: RegExp }> = [
+/** Statiske markører som avslører at teksten ikke er en ren kanal-caption. */
+const FORMAT_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "HOOK", re: /(^|\n|\s)HOOK\b/ },
   { label: "SCENE", re: /(^|\n|\s)SCENE\b|scene\s*\d/i },
   { label: "Bilde:", re: /(^|\n)\s*bilde\s*:/i },
@@ -22,12 +23,31 @@ const PRODUCTION_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "Shot", re: /(^|\n|\s)shot\s*\d/i },
   { label: "Klipp:", re: /(^|\n)\s*klipp\s*:/i },
   { label: "B-roll", re: /\bb-roll\b/i },
+  { label: "Markdown-link", re: /\[[^\]\n]{1,160}\]\(\s*https?:\/\/[^)\s]+\s*\)/i },
 ];
 
-/** Returnerer funne produksjonsmarkører i teksten (tom = ren caption). */
+function repeatedUrlBase(text: string): boolean {
+  const urls = text.match(/https?:\/\/[^\s)\]]+/gi) ?? [];
+  const counts = new Map<string, number>();
+  for (const raw of urls) {
+    const clean = raw.replace(/[.,;!?]+$/g, "");
+    const base = clean.split("#")[0].replace(/\/$/, "").toLowerCase();
+    counts.set(base, (counts.get(base) ?? 0) + 1);
+  }
+  // Den kanoniske property-CTA-en bruker samme base to ganger (bolig + #kontakt).
+  // Tre eller flere forekomster betyr at modellen også har lagt lenken i body.
+  return Array.from(counts.values()).some((count) => count >= 3);
+}
+
+/**
+ * Returnerer formatmarkører i teksten (tom = ren caption). Navnet beholdes for
+ * bakoverkompatibilitet, men inkluderer nå også Markdown-/CTA-duplikatbrudd.
+ */
 export function findProductionDirection(text: string | null | undefined): string[] {
   const t = text ?? "";
-  return PRODUCTION_MARKERS.filter((m) => m.re.test(t)).map((m) => m.label);
+  const markers = FORMAT_MARKERS.filter((m) => m.re.test(t)).map((m) => m.label);
+  if (repeatedUrlBase(t)) markers.push("Repeated CTA URL");
+  return markers;
 }
 
 export interface ChannelFormatFitness {
@@ -38,14 +58,14 @@ export interface ChannelFormatFitness {
 
 /**
  * Caption-fitness for kanalen: en Meta-caption (uansett format) skal være ren
- * kundevendt tekst — aldri produksjonsmanus. For reel kan manus ligge i et EGET
- * felt/artefakt, men captionen selv må være ren.
+ * kundevendt tekst — aldri produksjonsmanus, Markdown-lenke eller CTA-duplikat.
+ * For reel kan manus ligge i et EGET felt/artefakt, men captionen selv må være ren.
  */
 export function channelFormatFitness(caption: string | null | undefined): ChannelFormatFitness {
   const markers = findProductionDirection(caption);
   return markers.length === 0
     ? { ok: true, markers: [], reason: "Ren caption." }
-    : { ok: false, markers, reason: `CHANNEL_FORMAT_MISMATCH: captionen inneholder produksjonsanvisninger (${markers.join(", ")}) — ikke kundevendt tekst.` };
+    : { ok: false, markers, reason: `CHANNEL_FORMAT_MISMATCH: captionen bryter kanalformatet (${markers.join(", ")}) — regenerer kundevendt tekst.` };
 }
 
 /**
