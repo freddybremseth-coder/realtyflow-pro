@@ -17,6 +17,13 @@ test("ZenEco Facebook Canary explicitly requests a manual-review-only draft", ()
   assert.match(page, /first\.mode !== "manual-review"/);
 });
 
+test("ZenEco Facebook Canary keeps readable foregrounds on light card surfaces", () => {
+  assert.match(page, /const box: React\.CSSProperties = \{[^\n]*background: "#ffffff"[^\n]*color: "#111827"/);
+  assert.match(page, /const pre: React\.CSSProperties = \{[^\n]*background: "#f8fafc"[^\n]*color: "#111827"/);
+  assert.match(page, /border: "1px solid #9ca3af", background: "#ffffff", color: "#111827"/);
+  assert.match(page, /color: enabled \? "#ffffff" : "#374151"/);
+});
+
 test("campaign draft route rejects manual-review requests for channels already enabled in controlled-auto", () => {
   assert.match(route, /body\.forceManualReview === true/);
   assert.match(route, /marketing_brand_growth_plans/);

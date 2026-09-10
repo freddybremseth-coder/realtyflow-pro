@@ -52,9 +52,9 @@ async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; statu
   return { ok: res.ok, status: res.status, data };
 }
 
-const box: React.CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "white", marginTop: 14 };
-const pre: React.CSSProperties = { whiteSpace: "pre-wrap", background: "#f8fafc", padding: 12, borderRadius: 8, fontSize: 12, overflowX: "auto" };
-const btn = (enabled = true): React.CSSProperties => ({ border: 0, borderRadius: 9, padding: "10px 14px", fontWeight: 700, background: enabled ? "#111827" : "#d1d5db", color: "white", cursor: enabled ? "pointer" : "not-allowed" });
+const box: React.CSSProperties = { border: "1px solid #cbd5e1", borderRadius: 12, padding: 16, background: "#ffffff", color: "#111827", marginTop: 14 };
+const pre: React.CSSProperties = { whiteSpace: "pre-wrap", background: "#f8fafc", color: "#111827", padding: 12, borderRadius: 8, fontSize: 12, overflowX: "auto" };
+const btn = (enabled = true): React.CSSProperties => ({ border: 0, borderRadius: 9, padding: "10px 14px", fontWeight: 700, background: enabled ? "#111827" : "#d1d5db", color: enabled ? "#ffffff" : "#374151", cursor: enabled ? "pointer" : "not-allowed" });
 const dot = (status: string) => status === "ok" ? "#16a34a" : status === "warn" ? "#d97706" : "#dc2626";
 
 export default function FacebookCanaryPage() {
@@ -138,22 +138,22 @@ export default function FacebookCanaryPage() {
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <h1 style={{ margin: 0, fontSize: 24 }}>Marketing Growth OS — ZenEco Facebook Canary</h1>
-      <p style={{ color: "#6b7280", marginTop: 6 }}>
+      <p style={{ color: "#cbd5e1", marginTop: 6 }}>
         AI-only · Inventory-grounded · COPILOT/manual-review · Facebook-side <b>{CANARY.accountName}</b> ({CANARY.publishingAccountId}). Ingen automatisk publisering.
       </p>
 
-      {error && <div style={{ marginTop: 12, padding: 12, background: "#fef2f2", color: "#b91c1c", borderRadius: 8 }}>⛔ {error}</div>}
+      {error && <div style={{ marginTop: 12, padding: 12, background: "#fef2f2", color: "#991b1b", borderRadius: 8 }}>⛔ {error}</div>}
 
       <section style={box}>
         <h2 style={{ fontSize: 17, marginTop: 0 }}>Facebook-vinkel</h2>
-        <textarea value={masterIdea} onChange={(e) => setMasterIdea(e.target.value)} rows={5} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }} />
+        <textarea value={masterIdea} onChange={(e) => setMasterIdea(e.target.value)} rows={5} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #9ca3af", background: "#ffffff", color: "#111827" }} />
       </section>
 
       <section style={box}>
         <h2 style={{ fontSize: 17, marginTop: 0 }}>1. Live Preflight</h2>
         <button style={btn()} disabled={busy === "preflight"} onClick={doPreflight}>{busy === "preflight" ? "Kjører…" : "Run Facebook Preflight"}</button>
         {preflight && <div style={{ marginTop: 12 }}>
-          <b style={{ color: ready ? "#16a34a" : "#dc2626" }}>{preflight.status}</b>
+          <b style={{ color: ready ? "#15803d" : "#b91c1c" }}>{preflight.status}</b>
           {preflight.inventoryProperty && <div style={{ marginTop: 8, fontSize: 13 }}>
             Valgt bolig: <b>{preflight.inventoryProperty.ref ?? "—"}</b> · {preflight.inventoryProperty.title} · {preflight.inventoryProperty.factSourceCount} fakta
           </div>}
