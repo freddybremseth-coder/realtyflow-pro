@@ -79,7 +79,7 @@ export async function listRemasterChannelVideos(maxResults = 50) {
 
   const itemById = new Map<string, any>();
   for (const batch of chunks(ids, 50)) {
-    const response = await client.videos.list({ part: ["snippet", "statistics"], id: batch });
+    const response = await client.videos.list({ part: ["snippet", "statistics", "status"], id: batch });
     for (const item of response.data.items ?? []) {
       if (item.id && item.snippet?.channelId === channelId) itemById.set(String(item.id), item);
     }
@@ -87,13 +87,14 @@ export async function listRemasterChannelVideos(maxResults = 50) {
 
   const videos = ids.flatMap((id) => {
     const item = itemById.get(id);
-    if (!item) return [];
+    if (!item || item.status?.privacyStatus !== "public") return [];
     return [{
       videoId: String(item.id),
       title: item.snippet?.title || "Re-Master Freddy",
       publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
       description: item.snippet?.description || "",
       tags: item.snippet?.tags || [],
+      privacyStatus: item.status?.privacyStatus || "unknown",
       viewCount: Number(item.statistics?.viewCount || 0),
       likeCount: Number(item.statistics?.likeCount || 0),
       commentCount: Number(item.statistics?.commentCount || 0),
