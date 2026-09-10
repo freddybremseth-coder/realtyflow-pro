@@ -79,7 +79,7 @@ const INVENTORY_NARRATIVE_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "beautiful landscape", re: /(?:vakr(?:e|t)?|nydelig(?:e|t)?|beautiful|stunning)\s+(?:landskap(?:et)?|natur(?:en)?|landscape|scenery)/i },
   { label: "holiday-home suitability", re: /(?:ser\s+etter|egnet(?:\s+som)?|passer(?:\s+som)?|ideell(?:\s+som)?|perfekt(?:\s+som)?|looking\s+for|suitable\s+as|ideal\s+as|perfect\s+as)[^.!?]{0,70}(?:feriebolig|holiday\s+home)/i },
   { label: "permanent-home suitability", re: /(?:permanent\s+hjem|helårsbolig|permanent\s+home|year[-\s]?round\s+home)/i },
-  { label: "property comfort or safety promise", re: /(?:bolig(?:en)?|villa(?:en)?|eiendom(?:men)?|leilighet(?:en)?|hjem(?:met)?|home|property|villa|apartment|residence)[^.!?]{0,120}(?:gir|tilbyr|vil\s+gi|gives?|offers?|provides?)[^.!?]{0,100}(?:trygghet(?:en)?|komfort(?:en)?|peace\s+of\s+mind|comfort|security)/i },
+  { label: "property comfort or safety promise", re: /(?:bolig(?:en)?|villa(?:en)?|eiendom(?:men)?|leilighet(?:en)?|hjem(?:met)?|home|property|villa|apartment|residence)[^.!?]{0,120}(?:gir|gi|tilbyr|vil\s+gi|gives?|offers?|provides?)[^.!?]{0,100}(?:trygghet(?:en)?|komfort(?:en)?|peace\s+of\s+mind|comfort|security)/i },
 ];
 
 export interface ClaimGuardOptions {
