@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bot, CheckCircle2, Filter, Loader2, Mail, Play, ShieldCheck, Users } from "lucide-react";
+import { Bot, CheckCircle2, Filter, Loader2, Mail, Play, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type CommandId =
@@ -16,24 +16,42 @@ type CommandId =
 
 type Preview = {
   candidateCount: number;
+  blockedCount: number;
+  blockedReasons: Record<string, number>;
   byBrand: Record<string, number>;
   batchSize: number;
+  auditLogged?: boolean;
   sample: Array<{ id: string; name: string; email: string; brandId: string | null }>;
 };
 
 type ExecuteResult = Preview & {
   attempted: number;
+  started: number;
   sent: number;
   failed: number;
+  notStarted: number;
   remaining: number;
+  engineSkipped?: number;
+  nexusHref?: string;
   note?: string;
+};
+
+const BLOCK_REASON_LABELS: Record<string, string> = {
+  MISSING_EMAIL: "mangler e-post",
+  INVALID_EMAIL: "ugyldig e-post",
+  MULTIPLE_EMAILS: "flere e-postadresser",
+  DUPLICATE_EMAIL: "duplikat i samme merkevare",
+  DO_NOT_CONTACT: "STOPP / ikke kontakt",
+  EMAIL_SUPPRESSED: "e-post blokkert",
+  TERMINAL_PIPELINE: "vunnet / tapt",
+  UNRESOLVED_INBOUND_REPLY: "kundesvar må behandles først",
 };
 
 const COMMANDS: Array<{ id: CommandId; label: string; description: string; destructive?: boolean }> = [
   {
     id: "send_first_email_safe",
-    label: "Send første e-post til alle trygge som ikke har fått mail",
-    description: "Forhåndsviser først. Ekskluderer STOPP, suppression, WON/LOST, kunder som har svart, ugyldige adresser og duplikater. Sender maks 25 per manuell batch; resten blir liggende i nurture-køen.",
+    label: "Start automatisk oppfølging for trygge «Klar – ikke sendt»",
+    description: "Forhåndsviser først og sender ingenting før du trykker start. STOPP, suppression, WON/LOST, ubehandlede kundesvar, ugyldige/flere adresser og duplikater blokkeres. Maks 25 startes per manuell batch; videre steg håndteres av nurture-automatikken.",
     destructive: true,
   },
   { id: "show_ready", label: "Vis Klar – ikke sendt", description: "Vis bare kunder som kan kontaktes og som ikke har en registrert reell utsendelse." },
@@ -178,10 +196,18 @@ export function CrmCommandMenu({
         <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/60 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="text-sm font-semibold text-white">{preview.candidateCount} trygge kandidater</div>
+              <div className="text-sm font-semibold text-white">{preview.candidateCount} trygge kandidater klare for automatisk oppfølging</div>
               <div className="mt-1 text-xs text-slate-400">
                 {Object.entries(preview.byBrand).map(([brand, count]) => `${brand}: ${count}`).join(" · ") || "Ingen kandidater"}
               </div>
+              <div className="mt-1 text-xs text-slate-500">Maks per kjøring: {preview.batchSize}</div>
+              {preview.blockedCount > 0 ? (
+                <div className="mt-2 text-xs text-amber-300">
+                  Blokkert av siste sikkerhetskontroll: {preview.blockedCount} · {Object.entries(preview.blockedReasons)
+                    .map(([reason, count]) => `${BLOCK_REASON_LABELS[reason] || reason}: ${count}`)
+                    .join(" · ")}
+                </div>
+              ) : null}
             </div>
             <Button
               onClick={() => void callSendCommand("execute")}
@@ -189,7 +215,7 @@ export function CrmCommandMenu({
               className="bg-emerald-600 hover:bg-emerald-500"
             >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-              Send trygg batch nå
+              Start automatisk oppfølging (maks {preview.batchSize})
             </Button>
           </div>
           {preview.sample.length ? (
@@ -197,6 +223,7 @@ export function CrmCommandMenu({
               {preview.sample.map((item) => <div key={item.id}>{item.name} · {item.email}</div>)}
             </div>
           ) : null}
+          {preview.auditLogged === false ? <div className="mt-2 text-xs text-amber-300">Forhåndsvisningen lyktes, men audit-loggen kunne ikke skrives.</div> : null}
         </div>
       ) : null}
 
@@ -204,10 +231,14 @@ export function CrmCommandMenu({
         <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-100">
           <CheckCircle2 className="h-5 w-5" />
           <span>Forsøkt: {executed.attempted}</span>
-          <span>Sendt: {executed.sent}</span>
+          <span>Startet: {executed.started}</span>
+          <span>Første steg sendt: {executed.sent}</span>
+          <span>Ikke startet: {executed.notStarted}</span>
           <span>Feil: {executed.failed}</span>
           <span>Gjenstår: {executed.remaining}</span>
           {executed.note ? <span className="w-full text-xs text-emerald-200/80">{executed.note}</span> : null}
+          <a href={executed.nexusHref || "/nexus-os/communications"} className="text-xs font-semibold text-cyan-200 underline underline-offset-2">Se oppdatert nurture-resultat i Nexus Communications</a>
+          {executed.auditLogged === false ? <span className="w-full text-xs text-amber-300">Kjøringen ble gjennomført, men audit-loggen kunne ikke skrives.</span> : null}
         </div>
       ) : null}
     </section>
