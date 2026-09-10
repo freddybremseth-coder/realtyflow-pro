@@ -41,6 +41,10 @@ const OUTCOME_CLAIM_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "most popular area", re: /(?:mest\s+populær(?:e|t)?|most\s+popular)\s+(?:bolig)?områd(?:e|er|ene)?/i },
   { label: "most attractive area", re: /(?:mest\s+attraktiv(?:e|t)?|most\s+attractive)\s+(?:bolig)?områd(?:e|er|ene)?/i },
   { label: "prestigious area", re: /(?:prestisjefylt(?:e)?|prestigious)\s+(?:bolig)?områd(?:e|er|ene)?/i },
+  { label: "beautiful area", re: /(?:vakr(?:e|t)?|nydelig(?:e|t)?|beautiful|stunning)\s+(?:område(?:t|r|ne)?|beliggenhet(?:en)?|area|location|neighbou?rhood)/i },
+  { label: "fantastic property", re: /(?:fantastisk(?:e|t)?|amazing|stunning|exceptional|incredible)\s+(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|eiendom(?:men|mer|mene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|home|property|villa|apartment|residence)/i },
+  { label: "raises the standard", re: /(?:(?:virkelig\s+)?(?:hever|løfter)\s+standarden|(?:really\s+)?raises?\s+the\s+standard)/i },
+  { label: "energy rating implies safety", re: /(?:energimerk(?:ing|ingen|e)|energy\s+(?:rating|label|certificate))[^.!?]{0,140}(?:føle\s+deg\s+trygg|\btrygg\b|\bsikker\b|\bsafe\b|\bsecure\b|peace\s+of\s+mind)/i },
   { label: "modern property", re: /(?:moderne\s+(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|boligprosjekt(?:et|er|ene)?|arkitektur|design)|modern\s+(?:home|villa|apartment|property|residence|development|architecture|design))/i },
   { label: "luxury property", re: /(?:(?:luksuriøs(?:e|t)?|luksus)\s+(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|boligprosjekt(?:et|er|ene)?)|(?:luxury|luxurious)\s+(?:home|villa|apartment|property|residence|development))/i },
   { label: "exclusive property", re: /(?:eksklusiv(?:e|t)?\s+(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|boligprosjekt(?:et|er|ene)?)|exclusive\s+(?:home|villa|apartment|property|residence|development))/i },
@@ -76,22 +80,24 @@ export function unsupportedOutcomeClaims(
   return present.filter((m) => !sourcedLabels.has(m.label)).map((m) => m.label);
 }
 
+const EN_ADJECTIVE = "(?:[a-z-]+\\s+){0,3}";
+const NO_ADJECTIVE = "(?:[a-zæøå-]+\\s+){0,3}";
 const OWNERSHIP_MARKERS: Array<{ label: string; re: RegExp }> = [
-  { label: "our homes", re: /\bour\s+homes?\b/i },
-  { label: "our properties", re: /\bour\s+propert(?:y|ies)\b/i },
-  { label: "our villas", re: /\bour\s+villas?\b/i },
-  { label: "our apartments", re: /\bour\s+apartments?\b/i },
-  { label: "our developments", re: /\bour\s+developments?\b/i },
-  { label: "our projects", re: /\bour\s+(?:residential\s+|new[- ]?build\s+)?projects?\b/i },
-  { label: "our complexes", re: /\bour\s+(?:residential\s+)?complex(?:es)?\b/i },
-  { label: "våre boliger", re: /(?:^|[^a-zæøå])vår[et]?\s+bolig(?:er|en|ene)?(?![a-zæøå])/i },
-  { label: "våre villaer", re: /(?:^|[^a-zæøå])vår[et]?\s+villa(?:er|en|ene)?(?![a-zæøå])/i },
-  { label: "våre eiendommer", re: /(?:^|[^a-zæøå])vår[et]?\s+eiendom(?:mer|men|mene)?(?![a-zæøå])/i },
-  { label: "våre leiligheter", re: /(?:^|[^a-zæøå])vår[et]?\s+leilighet(?:er|en|ene)?(?![a-zæøå])/i },
-  { label: "våre prosjekter", re: /(?:^|[^a-zæøå])vår[et]?\s+prosjekt(?:er|et|ene)?(?![a-zæøå])/i },
-  { label: "våre boligprosjekter", re: /(?:^|[^a-zæøå])vår[et]?\s+(?:nybygg)?boligprosjekt(?:er|et|ene)?(?![a-zæøå])/i },
-  { label: "våre boligkomplekser", re: /(?:^|[^a-zæøå])vår[et]?\s+boligkompleks(?:er|et|ene)?(?![a-zæøå])/i },
-  { label: "våre komplekser", re: /(?:^|[^a-zæøå])vår[et]?\s+kompleks(?:er|et|ene)?(?![a-zæøå])/i },
+  { label: "our homes", re: new RegExp(`\\bour\\s+${EN_ADJECTIVE}homes?\\b`, "i") },
+  { label: "our properties", re: new RegExp(`\\bour\\s+${EN_ADJECTIVE}propert(?:y|ies)\\b`, "i") },
+  { label: "our villas", re: new RegExp(`\\bour\\s+${EN_ADJECTIVE}villas?\\b`, "i") },
+  { label: "our apartments", re: new RegExp(`\\bour\\s+${EN_ADJECTIVE}apartments?\\b`, "i") },
+  { label: "our developments", re: new RegExp(`\\bour\\s+${EN_ADJECTIVE}developments?\\b`, "i") },
+  { label: "our projects", re: new RegExp(`\\bour\\s+${EN_ADJECTIVE}projects?\\b`, "i") },
+  { label: "our complexes", re: new RegExp(`\\bour\\s+${EN_ADJECTIVE}complex(?:es)?\\b`, "i") },
+  { label: "våre boliger", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}bolig(?:er|en|ene)?(?![a-zæøå])`, "i") },
+  { label: "våre villaer", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}villa(?:er|en|ene)?(?![a-zæøå])`, "i") },
+  { label: "våre eiendommer", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}eiendom(?:mer|men|mene)?(?![a-zæøå])`, "i") },
+  { label: "våre leiligheter", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}leilighet(?:er|en|ene)?(?![a-zæøå])`, "i") },
+  { label: "våre prosjekter", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}prosjekt(?:er|et|ene)?(?![a-zæøå])`, "i") },
+  { label: "våre boligprosjekter", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}(?:nybygg)?boligprosjekt(?:er|et|ene)?(?![a-zæøå])`, "i") },
+  { label: "våre boligkomplekser", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}boligkompleks(?:er|et|ene)?(?![a-zæøå])`, "i") },
+  { label: "våre komplekser", re: new RegExp(`(?:^|[^a-zæøå])vår[et]?\\s+${NO_ADJECTIVE}kompleks(?:er|et|ene)?(?![a-zæøå])`, "i") },
 ];
 
 export function findOwnershipClaims(text: string | null | undefined): string[] {
