@@ -63,7 +63,24 @@ type PortfolioPayload = {
   };
 };
 
-type MarketingPayload = { rows?: SocialAutopilotRow[] };
+type MarketingPayload = {
+  rows?: SocialAutopilotRow[];
+  controlGate?: {
+    status?: "WAIT" | "RUN_NEXT_CANARY";
+    controlBrandId?: string;
+    controlChannel?: string;
+    eligibleObservations?: number;
+    requiredObservations?: number;
+    evaluatedRules?: number;
+    actionableRules?: number;
+    reason?: string;
+    nextRecommendedCanary?: {
+      brandId: string;
+      channel: string;
+      path: string;
+    } | null;
+  };
+};
 type LoadState<T> = { data: T | null; error: string | null };
 
 async function readJson<T>(url: string): Promise<LoadState<T>> {
@@ -88,6 +105,19 @@ function priorityTone(priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW") {
   if (priority === "HIGH") return "border-amber-200 bg-amber-50 text-amber-950";
   if (priority === "MEDIUM") return "border-cyan-200 bg-cyan-50 text-cyan-950";
   return "border-slate-200 bg-slate-50 text-slate-950";
+}
+
+function brandLabel(brandId?: string) {
+  if (brandId === "zeneco") return "ZenEco Homes";
+  if (brandId === "donaanna") return "Dona Anna";
+  if (brandId === "pinosoecolife") return "Pinoso EcoLife";
+  if (brandId === "chatgenius") return "ChatGenius";
+  return brandId || "Brand";
+}
+
+function channelLabel(channel?: string) {
+  if (!channel) return "kanal";
+  return channel.charAt(0).toUpperCase() + channel.slice(1);
 }
 
 export default function NexusTodayPage() {
@@ -123,6 +153,9 @@ export default function NexusTodayPage() {
     () => summarizeSocialAutopilot(marketing.data?.rows ?? []),
     [marketing.data?.rows],
   );
+  const marketingCanary = marketing.data?.controlGate?.status === "RUN_NEXT_CANARY"
+    ? marketing.data.controlGate.nextRecommendedCanary ?? null
+    : null;
   const errors = [attention.error, revenue.error, portfolio.error, marketing.error].filter((value): value is string => Boolean(value));
   const summary = revenue.data?.summary;
   const portfolioSummary = portfolio.data?.summary;
@@ -151,7 +184,7 @@ export default function NexusTodayPage() {
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Sparkles size={16} /> Nexus Today</div>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Hva trenger din oppmerksomhet i dag?</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én arbeidsflate for salg, drift og merkevarer. Nexus gjenbruker canonical Attention, Revenue Inbox og Marketing Readiness — dette er et enklere beslutningslag, ikke en ny parallell motor.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Nexus finner neste beste handling på tvers av salg, drift og merkevarer. Du trenger ikke lete etter funksjonen selv — systemet viser hva som bør gjøres og hvorfor.</p>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">
             {loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater
@@ -160,6 +193,25 @@ export default function NexusTodayPage() {
       </header>
 
       {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex items-start gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><strong>Nexus mangler én eller flere datakilder.</strong><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
+
+      {marketingCanary && (
+        <section className="rounded-3xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-cyan-800"><Sparkles size={16} /> Anbefalt nå</div>
+              <h2 className="mt-2 text-2xl font-black text-slate-950">{brandLabel(marketingCanary.brandId)} · {channelLabel(marketingCanary.channel)}</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-700">Growth OS har nok læring fra kontrollkanalen og anbefaler at neste kontrollerte test kjøres nå. RealtyFlow tar deg direkte til riktig test — du trenger ikke finne Canary, Preflight eller learning-regler selv.</p>
+              <details className="mt-3 text-xs text-slate-600">
+                <summary className="cursor-pointer font-bold text-slate-700">Vis tekniske detaljer</summary>
+                <div className="mt-2 leading-5">Kontroll: {brandLabel(marketing.data?.controlGate?.controlBrandId)} · {channelLabel(marketing.data?.controlGate?.controlChannel)} · observasjoner {marketing.data?.controlGate?.eligibleObservations ?? "—"}/{marketing.data?.controlGate?.requiredObservations ?? "—"} · evaluerte regler {marketing.data?.controlGate?.evaluatedRules ?? "—"} · handlingsregler {marketing.data?.controlGate?.actionableRules ?? "—"}</div>
+              </details>
+            </div>
+            <Link href={marketingCanary.path} className="inline-flex shrink-0 items-center justify-center rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+              Kjør {brandLabel(marketingCanary.brandId)} {channelLabel(marketingCanary.channel)}-test <ArrowRight size={16} className="ml-2" />
+            </Link>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
