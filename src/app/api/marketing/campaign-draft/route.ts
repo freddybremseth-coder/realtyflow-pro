@@ -5,7 +5,13 @@ import { createCampaignDraft, getServiceSupabase, type CreateCampaignDraftInput 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_MANUAL_REVIEW_NOVELTY_ATTEMPTS = 3;
+const MAX_MANUAL_REVIEW_REGENERATION_ATTEMPTS = 3;
+const RECOVERABLE_COPY_ERROR_PREFIXES = [
+  "FACT_NOT_VERIFIED",
+  "CLAIM_NOT_VERIFIED",
+  "BRAND_ROLE_MISMATCH",
+  "CHANNEL_FORMAT_MISMATCH",
+] as const;
 
 type CampaignDraftRequest = Partial<CreateCampaignDraftInput> & {
   /**
@@ -22,15 +28,25 @@ function configuredAutopilotChannels(metadata: Record<string, unknown> | null | 
   return new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean));
 }
 
-function noveltyRetryMasterIdea(masterIdea: string, attempt: number): string {
+function isRecoverableCopyError(error: string | null | undefined): boolean {
+  return !!error && RECOVERABLE_COPY_ERROR_PREFIXES.some((prefix) => error.startsWith(prefix));
+}
+
+function manualReviewRetryMasterIdea(masterIdea: string, attempt: number, previousErrors: string): string {
   return [
     masterIdea,
     "",
-    `NOVELTY RETRY ${attempt}: Forrige AI-variant ble stoppet av novelty-gaten fordi den var for lik nylig publisert innhold.`,
+    `MANUAL-REVIEW REGENERATION ${attempt}: Forrige AI-variant ble stoppet av en sikkerhets-/kvalitetsgate.`,
+    previousErrors && `Forrige gate-feil: ${previousErrors}`,
     "Lag en vesentlig ny Facebook-vinkel, men behold samme verifiserte Inventory-bolig og de samme faktakravene.",
     "Ikke åpne med eller parafraser «Drømmer du om et hjem i solen?» eller andre generiske drømmehjem-åpninger.",
-    "Start heller med ett konkret, verifisert trekk ved boligen eller stedet. Ikke finn på fakta, ikke legg til superlativer og ikke svekk kildekravene.",
-  ].join("\n");
+    "Start heller med ett konkret, verifisert trekk ved boligen eller stedet.",
+    "Zen Eco Homes er rådgiver/formidler: skriv aldri «vår/våre» foran bolig, villa, eiendom eller leilighet — heller ikke med adjektiv imellom, som «vår moderne villa».",
+    "Ikke legg til subjektiv pynt som «vakkert område», «fantastisk bolig», «hever standarden», «perfekt» eller tilsvarende dersom det ikke er eksplisitt og uavhengig dokumentert. Foretrekk nøkterne fakta.",
+    "Hvis faktakilden bare sier energimerking, gjengi bare energimerkingen. Ikke koble energimerket til trygghet, kvalitet, komfort, besparelse eller andre følger.",
+    "BODY skal ikke inneholde URL-er eller Markdown-lenker. Systemet legger inn den verifiserte bolig-/kontakt-CTA-en automatisk; ikke gjenta den i body.",
+    "Ikke finn på fakta, ikke legg til superlativer og ikke svekk kildekravene.",
+  ].filter(Boolean).join("\n");
 }
 
 /** Phase 7.1B — create campaign content. Canary callers can enforce a fail-closed manual-review contract. */
@@ -75,10 +91,11 @@ export async function POST(request: NextRequest) {
 
   try {
     let res: Awaited<ReturnType<typeof createCampaignDraft>> | null = null;
+    let previousErrors = "";
 
-    const maxAttempts = body.forceManualReview === true ? MAX_MANUAL_REVIEW_NOVELTY_ATTEMPTS : 1;
+    const maxAttempts = body.forceManualReview === true ? MAX_MANUAL_REVIEW_REGENERATION_ATTEMPTS : 1;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const masterIdea = attempt === 1 ? body.masterIdea : noveltyRetryMasterIdea(body.masterIdea, attempt);
+      const masterIdea = attempt === 1 ? body.masterIdea : manualReviewRetryMasterIdea(body.masterIdea, attempt, previousErrors);
       res = await createCampaignDraft(supabase, {
         brandId: body.brandId,
         masterIdea,
@@ -97,8 +114,9 @@ export async function POST(request: NextRequest) {
       });
 
       if (body.forceManualReview !== true) break;
-      const noveltyRejected = res.results.some((item) => item.state === "regenerate");
-      if (!noveltyRejected) break;
+      const recoverable = res.results.filter((item) => item.state === "regenerate" || (item.mode === "blocked" && isRecoverableCopyError(item.error)));
+      if (!recoverable.length) break;
+      previousErrors = recoverable.map((item) => item.error ?? `state=${item.state}`).join(" | ");
     }
 
     if (!res) throw new Error("CAMPAIGN_DRAFT_EMPTY_RESULT");
@@ -109,7 +127,9 @@ export async function POST(request: NextRequest) {
         const detail = unexpected.error ? ` — ${unexpected.error}` : "";
         const code = unexpected.state === "regenerate"
           ? "NOVELTY_REGENERATION_EXHAUSTED"
-          : "MANUAL_REVIEW_CONTRACT_VIOLATION";
+          : isRecoverableCopyError(unexpected.error)
+            ? "COPY_QUALITY_REGENERATION_EXHAUSTED"
+            : "MANUAL_REVIEW_CONTRACT_VIOLATION";
         return NextResponse.json({
           error: `${code}: forventet manual-review, fikk ${unexpected.mode} (state=${unexpected.state})${detail}`,
           marketingRunId: res.marketingRunId,

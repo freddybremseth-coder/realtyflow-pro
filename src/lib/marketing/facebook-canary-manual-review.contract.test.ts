@@ -7,6 +7,8 @@ const page = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/marketi
 const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/marketing/campaign-draft/route.ts"), "utf8");
 const preflightRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/marketing/preflight/route.ts"), "utf8");
 const creative = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/creative.ts"), "utf8");
+const claimGuard = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/claim-guard.ts"), "utf8");
+const channelFormat = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/channel-format.ts"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/inventory-property-adapter.ts"), "utf8");
 
 test("ZenEco Facebook Canary locks the draft to the property selected by preflight", () => {
@@ -41,15 +43,22 @@ test("manual-review contract is checked before createCampaignDraft is invoked", 
   assert.ok(guard >= 0 && create > guard, "manual-review live-channel guard must execute before campaign creation");
 });
 
-test("Canary automatically retries AI drafts rejected only by the novelty gate", () => {
-  assert.match(route, /MAX_MANUAL_REVIEW_NOVELTY_ATTEMPTS = 3/);
+test("Canary automatically retries novelty and deterministic copy-quality rejections", () => {
+  assert.match(route, /MAX_MANUAL_REVIEW_REGENERATION_ATTEMPTS = 3/);
   assert.match(route, /item\.state === "regenerate"/);
-  assert.match(route, /noveltyRetryMasterIdea/);
+  assert.match(route, /item\.mode === "blocked"/);
+  assert.match(route, /isRecoverableCopyError/);
+  assert.match(route, /CLAIM_NOT_VERIFIED/);
+  assert.match(route, /BRAND_ROLE_MISMATCH/);
+  assert.match(route, /CHANNEL_FORMAT_MISMATCH/);
+  assert.match(route, /manualReviewRetryMasterIdea/);
   assert.match(route, /Drømmer du om et hjem i solen/);
+  assert.match(route, /BODY skal ikke inneholde URL-er eller Markdown-lenker/);
 });
 
-test("Canary preserves fail-closed semantics after novelty retries are exhausted", () => {
+test("Canary preserves fail-closed semantics after regeneration retries are exhausted", () => {
   assert.match(route, /NOVELTY_REGENERATION_EXHAUSTED/);
+  assert.match(route, /COPY_QUALITY_REGENERATION_EXHAUSTED/);
   assert.match(route, /unexpected\.error/);
   assert.match(route, /state=\$\{unexpected\.state\}/);
   assert.match(route, /propertyRef: unexpected\.propertyRef/);
@@ -79,4 +88,14 @@ test("property prompt forbids unsupported property-specific filler claims", () =
   assert.match(creative, /ALLE boligspesifikke fakta og egenskaper/);
   assert.match(creative, /nærhet til strand/);
   assert.match(creative, /lokale fasiliteter/);
+});
+
+test("N5798 copy regression is covered by hard claim, role and channel-format gates", () => {
+  assert.match(claimGuard, /beautiful area/);
+  assert.match(claimGuard, /fantastic property/);
+  assert.match(claimGuard, /raises the standard/);
+  assert.match(claimGuard, /energy rating implies safety/);
+  assert.match(claimGuard, /NO_ADJECTIVE/);
+  assert.match(channelFormat, /Markdown-link/);
+  assert.match(channelFormat, /Repeated CTA URL/);
 });
