@@ -89,8 +89,14 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
 
   // Utfalls-/rollegatene gjelder KUN generert copy. Legacy/menneske-forfattet
   // self-sources (factSources = body) → utfallspåstander blir automatisk dekket.
+  // En konkret Inventory-bolig (propertyId i genome) får streng source-bound
+  // narrativkontroll: livsstil, klima og egnethet kan ikke fylles inn fra modellens
+  // allmennkunnskap når de ikke finnes i factSources.
   const generated = opts.generated ?? true;
-  const outcomeViolations = generated ? unsupportedOutcomeClaims(caption, asset.factSources) : [];
+  const inventoryBound = typeof (g as { propertyId?: unknown }).propertyId === "string";
+  const outcomeViolations = generated
+    ? unsupportedOutcomeClaims(caption, asset.factSources, { inventoryBound })
+    : [];
   const roleViolations = generated && !brandSupportsOwnership(opts.brand) ? findOwnershipClaims(caption) : [];
 
   const brandFit = !opts.brandTerms?.length || opts.brandTerms.some((t) => text.includes(t.toLowerCase()));
