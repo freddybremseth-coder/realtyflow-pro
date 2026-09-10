@@ -37,8 +37,9 @@ export interface InventoryMarketingProperty {
 
 const AUTO_VISIBILITY_LIMIT = 400;
 const PROPERTY_BATCH_SIZE = 100;
+const RECENT_SELECTION_ATTEMPT_HOURS = 24;
 const isHttps = (value: unknown): value is string => typeof value === "string" && /^https:\/\//i.test(value);
-const BROAD_REGION_ONLY = /^(?:costa\s+blanca(?:\s+(?:north|south))?(?:\s*-\s*inland)?|costa\s+calida(?:\s*-\s*inland)?|alicante(?:\s+province)?|murcia(?:\s+region)?)$/i;
+const BROAD_REGION_ONLY = /^(?:costa\s+blanca(?:\s+(?:north|south|nord|sør|norte|sur))?(?:\s*-\s*inland)?|costa\s+calida(?:\s+(?:north|south|nord|sør|norte|sur))?(?:\s*-\s*inland)?|alicante(?:\s+(?:province|provins|provincia))?|murcia(?:\s+(?:region|regionen|región))?)$/i;
 const GENERIC_PLACE_ONLY = /^(?:stranden|strand|sjøen|sjø|havet|hav|kysten|kyst|golfbanen|golfbane|golf|beach|sea|coast|golf\s*course|playa|mar|costa|campo\s+de\s+golf)$/i;
 
 export function isBroadInventoryRegion(value: string | null | undefined): boolean {
@@ -87,6 +88,7 @@ export function deriveSpecificLocationFromDescription(value: unknown): string | 
     /\b(?:boligen|villaen|eiendommen|prosjektet)\s+(?:ligger|er\s+beliggende)\s+(?:i|på)\s+([A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})(?=[,.;]|\s+(?:og|med|som)\b)/i,
     /\b(?:property|villa|development|project)\s+(?:is\s+)?(?:located|situated)\s+in\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})(?=[,.;]|\s+(?:and|with|which)\b)/i,
     /\b(?:la\s+propiedad|la\s+villa|el\s+proyecto)\s+(?:está\s+)?(?:ubicad[oa]|situad[oa])\s+en\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})(?=[,.;]|\s+(?:y|con|que)\b)/i,
+    /\b(?:nybyggingsvilla|villa|boligen|bolig|eiendommen|eiendom|property|development|project|proyecto)\s+(?:i|in|en)\s+([A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})(?=[,.;]|\s+(?:og|med|som|and|with|which|y|con|que)\b)/i,
     /\b(?:landsbyen|byen|området|urbanisasjonen)\s+([A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})\s+(?:er|ligger)\b/i,
   ];
   for (const pattern of patterns) {
@@ -116,8 +118,9 @@ function asNumber(value: unknown): number | null {
 function resolvedLocation(row: any): { location: string; specificity: "specific" | "region"; derivedTown: string | null } {
   const raw = String(row.location || "").trim();
   if (!isBroadInventoryRegion(raw)) return { location: raw, specificity: "specific", derivedTown: null };
-  const titleTown = deriveSpecificLocationFromTitle(row.title_no || row.title);
-  const descriptionTown = titleTown ? null : deriveSpecificLocationFromDescription(row.description_no || row.description);
+  const titleTown = deriveSpecificLocationFromTitle(row.title_no) ?? deriveSpecificLocationFromTitle(row.title);
+  const descriptionTown = titleTown ? null
+    : deriveSpecificLocationFromDescription(row.description_no) ?? deriveSpecificLocationFromDescription(row.description);
   const town = titleTown ?? descriptionTown;
   if (town) {
     return {
@@ -220,17 +223,36 @@ async function loadPropertiesBatched(
   return map;
 }
 
-async function recentlyPublishedPropertyIds(supabase: MarketingSupabaseLike, brandId: string): Promise<Set<string>> {
-  const { data } = await supabase.from("marketing_publications")
+async function recentlyUsedPropertyIds(supabase: MarketingSupabaseLike, brandId: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const { data: publications, error: publicationError } = await supabase.from("marketing_publications")
     .select("source_id, updated_at")
     .eq("brand_id", brandId)
     .eq("state", "published")
     .order("updated_at", { ascending: false })
     .limit(100);
-  const ids = new Set<string>();
-  for (const row of (data ?? []) as any[]) {
+  if (publicationError) throw new Error(`INVENTORY_ROTATION_PUBLICATION_LOOKUP_FAILED: ${publicationError.message}`);
+  for (const row of (publications ?? []) as any[]) {
     const sourceId = String(row?.source_id ?? "");
     if (sourceId.startsWith("property:")) ids.add(sourceId.slice("property:".length));
+  }
+
+  // A failed/manual Canary draft must also advance the automatic property rotation.
+  // Otherwise the deterministic score always picks the same top property after refresh.
+  const since = new Date(Date.now() - RECENT_SELECTION_ATTEMPT_HOURS * 3_600_000).toISOString();
+  const { data: assets, error: assetError } = await supabase.from("marketing_assets")
+    .select("property_ids, genome, created_at")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (assetError) throw new Error(`INVENTORY_ROTATION_ASSET_LOOKUP_FAILED: ${assetError.message}`);
+  for (const row of (assets ?? []) as any[]) {
+    if (String(row?.genome?.brandId ?? "") !== brandId) continue;
+    const propertyIds = Array.isArray(row?.property_ids) ? row.property_ids : [];
+    for (const propertyId of propertyIds) {
+      const value = String(propertyId ?? "").trim();
+      if (value) ids.add(value);
+    }
   }
   return ids;
 }
@@ -238,8 +260,8 @@ async function recentlyPublishedPropertyIds(supabase: MarketingSupabaseLike, bra
 /**
  * Resolve one marketable property for a brand.
  * - explicit propertyId: must be visible for the brand (fail closed)
- * - automatic: prefer not-recently-published, featured, strong image galleries,
- *   specific location data and high brand-visibility score.
+ * - automatic: prefer properties not recently published or attempted, then featured,
+ *   strong image galleries, specific location data and high brand-visibility score.
  */
 export async function resolveInventoryMarketingProperty(
   supabase: MarketingSupabaseLike,
@@ -273,7 +295,7 @@ export async function resolveInventoryMarketingProperty(
     supabase,
     rankedVisible.map((row) => String(row.property_id)),
   );
-  const recent = await recentlyPublishedPropertyIds(supabase, args.brandId).catch(() => new Set<string>());
+  const recent = await recentlyUsedPropertyIds(supabase, args.brandId).catch(() => new Set<string>());
   const candidates: Array<{ property: InventoryMarketingProperty; score: number; recent: boolean }> = [];
 
   for (const candidate of rankedVisible) {
@@ -300,6 +322,6 @@ export async function resolveInventoryMarketingProperty(
   const chosen = pool[0];
   return {
     ...chosen.property,
-    selectionReason: `${chosen.recent ? "rotation_pool_exhausted" : "not_recently_published"}; score=${chosen.score}; featured=${chosen.property.featured}; gallery=${chosen.property.gallery.length}; location=specific; candidate_pool=${candidates.length}; visibility_scanned=${rankedVisible.length}`,
+    selectionReason: `${chosen.recent ? "rotation_pool_exhausted" : "not_recently_used"}; score=${chosen.score}; featured=${chosen.property.featured}; gallery=${chosen.property.gallery.length}; location=specific; candidate_pool=${candidates.length}; visibility_scanned=${rankedVisible.length}`,
   };
 }
