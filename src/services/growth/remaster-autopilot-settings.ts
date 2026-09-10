@@ -1,8 +1,8 @@
-export type RemasterAutopilotMode = "off" | "preview" | "plan_non_destructive";
+export type RemasterAutopilotMode = "off" | "preview" | "plan_non_destructive" | "execute_guarded";
 
 export interface RemasterAutopilotSettings {
   mode: RemasterAutopilotMode;
-  allowMetadataUpdates: false;
+  allowMetadataUpdates: boolean;
   allowNonDestructivePlans: boolean;
   maxActionsPerRun: number;
   updatedAt?: string;
@@ -38,7 +38,7 @@ function restHeaders(key: string, prefer?: string) {
 }
 
 function normalizeMode(value: unknown): RemasterAutopilotMode {
-  if (value === "preview" || value === "plan_non_destructive") return value;
+  if (value === "preview" || value === "plan_non_destructive" || value === "execute_guarded") return value;
   return "off";
 }
 
@@ -48,8 +48,8 @@ function normalizeSettings(value: unknown): RemasterAutopilotSettings {
   const max = Number(raw.maxActionsPerRun || DEFAULT_SETTINGS.maxActionsPerRun);
   return {
     mode,
-    allowMetadataUpdates: false,
-    allowNonDestructivePlans: mode === "plan_non_destructive" && raw.allowNonDestructivePlans !== false,
+    allowMetadataUpdates: mode === "execute_guarded" && raw.allowMetadataUpdates !== false,
+    allowNonDestructivePlans: (mode === "plan_non_destructive" || mode === "execute_guarded") && raw.allowNonDestructivePlans !== false,
     maxActionsPerRun: Number.isFinite(max) ? Math.max(1, Math.min(Math.round(max), 10)) : DEFAULT_SETTINGS.maxActionsPerRun,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
     updatedBy: typeof raw.updatedBy === "string" ? raw.updatedBy : undefined,
@@ -92,8 +92,8 @@ export async function saveRemasterAutopilotSettings(
     ...current,
     ...next,
     mode,
-    allowMetadataUpdates: false,
-    allowNonDestructivePlans: mode === "plan_non_destructive" && next.allowNonDestructivePlans !== false,
+    allowMetadataUpdates: mode === "execute_guarded",
+    allowNonDestructivePlans: mode === "plan_non_destructive" || mode === "execute_guarded",
     updatedAt: new Date().toISOString(),
     updatedBy,
   });
@@ -108,10 +108,6 @@ export async function saveRemasterAutopilotSettings(
   };
 
   const { baseUrl, key } = restConfig();
-  // brand_settings uses brand_id as a unique business key rather than the table's
-  // primary key. PostgREST must be told which unique constraint to target;
-  // otherwise merge-duplicates falls back to the PK and an existing brand row
-  // raises brand_settings_brand_id_key instead of being updated.
   const upsertUrl = `${baseUrl}?on_conflict=brand_id`;
   const response = await fetch(upsertUrl, {
     method: "POST",
