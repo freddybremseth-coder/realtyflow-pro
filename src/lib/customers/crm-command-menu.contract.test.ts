@@ -41,7 +41,8 @@ test("CRM command writes a non-PII audit summary and links result to Nexus", () 
   assert.match(route, /by_brand/);
   assert.doesNotMatch(route, /sample: preview\.sample/);
   assert.match(route, /nexusHref: "\/nexus-os\/communications"/);
-  assert.match(component, /Se oppdatert nurture-resultat i Nexus Communications/);
+  assert.match(component, /href="\/nexus-os\/communications\/nurture"/);
+  assert.match(component, /Se detaljert nurture-resultat i Nexus/);
 });
 
 test("nurture automation logs only use production-supported success/error statuses", () => {
