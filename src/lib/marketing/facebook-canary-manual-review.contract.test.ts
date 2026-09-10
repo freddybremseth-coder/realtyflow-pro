@@ -34,6 +34,20 @@ test("campaign draft route rejects manual-review requests for channels already e
 
 test("manual-review contract is checked before createCampaignDraft is invoked", () => {
   const guard = route.indexOf("MANUAL_REVIEW_CHANNEL_ALREADY_LIVE");
-  const create = route.indexOf("const res = await createCampaignDraft");
+  const create = route.indexOf("await createCampaignDraft");
   assert.ok(guard >= 0 && create > guard, "manual-review live-channel guard must execute before campaign creation");
+});
+
+test("Canary automatically retries AI drafts rejected only by the novelty gate", () => {
+  assert.match(route, /MAX_MANUAL_REVIEW_NOVELTY_ATTEMPTS = 3/);
+  assert.match(route, /item\.state === "regenerate"/);
+  assert.match(route, /noveltyRetryMasterIdea/);
+  assert.match(route, /Drømmer du om et hjem i solen/);
+});
+
+test("Canary preserves fail-closed semantics after novelty retries are exhausted", () => {
+  assert.match(route, /NOVELTY_REGENERATION_EXHAUSTED/);
+  assert.match(route, /unexpected\.error/);
+  assert.match(route, /state=\$\{unexpected\.state\}/);
+  assert.match(route, /propertyRef: unexpected\.propertyRef/);
 });
