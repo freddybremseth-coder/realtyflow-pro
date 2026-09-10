@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.7";
+export const CREATIVE_PROMPT_VERSION = "cg-1.8";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -74,6 +74,18 @@ function resolvedCta(req: CreativeRequest, generatedCta?: string): string | unde
   return `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`;
 }
 
+function factValue(req: CreativeRequest, prefix: string): string | null {
+  for (const fact of req.facts ?? []) {
+    const claim = String(fact.claim ?? "").trim();
+    if (claim.toLowerCase().startsWith(prefix.toLowerCase())) return claim.slice(prefix.length).trim() || null;
+  }
+  return null;
+}
+
+function genomeValue(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 80);
+}
+
 export function buildCreativePrompt(req: CreativeRequest): { system: string; user: string } {
   const { brief, brand } = req;
   const spec = CHANNEL_SPECS[brief.channel as MarketingChannel];
@@ -94,6 +106,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller nøktern, kildebasert posisjonering med dokumentert boligtype, sted, fasiliteter og norsk oppfølging — uten å love et konkret økonomisk utfall.`,
     `Hvis en factSource bare oppgir en energimerking (for eksempel «Energimerking: B»), gjengi KUN selve energimerkingen. Ikke utled eller skriv at boligen derfor er «moderne», «energieffektiv», har «lavt energiforbruk», «lavere kostnader» eller lignende med mindre akkurat den egenskapen også står eksplisitt i en factSource.`,
     `Kvalitative boligord som «moderne», «luksuriøs/luksus», «eksklusiv» og «energieffektiv» er property-claims og krever eksplisitt støtte i en factSource for akkurat den boligen. Ikke utled slike ord fra nybyggstatus, høy pris, område, energimerke, bilder, designinntrykk eller generisk Brand Brain-språk. Hvis kilden ikke sier egenskapen, bruk nøytrale fakta i stedet.`,
+    `Når denne posten gjelder en konkret Inventory-bolig, skal ALLE boligspesifikke fakta og egenskaper være direkte støttet av de oppgitte factSources. Ikke legg til nærhet til strand, lokale fasiliteter, nabolagskvalitet, bruk som ferie-/helårsbolig, lys/romslighet, moderne standard, utsikt, basseng eller andre egenskaper dersom akkurat dette ikke står i factSources.`,
     `Leverandør-/Inventory-beskrivelser kan inneholde markedsføringsspråk. Ikke gjør subjektive superlativer, rangeringer eller popularitetsord til nye fakta. Ikke omskriv «et av de beste områdene» til «et av de mest populære områdene», «mest attraktive», «mest ettertraktede», «best beliggende» eller lignende uten en egen uavhengig factSource. Foretrekk nøkterne formuleringer om sted, boligtype, utsikt, fasiliteter og dokumenterte egenskaper.`,
     `Bevar geografiske factSources semantisk nøyaktig. «Region: Costa Blanca South» betyr at boligen ligger i den sørlige delen av Costa Blanca / Costa Blanca South — ALDRI «sør for Costa Blanca». Ikke bruk uverifiserte geografiske aliaser som «solkysten» når factSources sier Costa Blanca; det kan forveksles med Costa del Sol. Tilsvarende gjelder North/Inland: omskriv aldri en region til en annen geografisk relasjon.`,
     `En factSource kan være avkortet eller ende med «...». ALDRI fullfør, gjett eller rekonstruer den manglende delen. Bruk bare ordene og fakta som faktisk er synlige i factSource. Hvis en setning stopper midt i et stedsnavn, avstand, fasilitet eller annen påstand, utelat den delen helt.`,
@@ -134,7 +147,12 @@ export function assembleAsset(
   meta: { model?: string; costEur?: number; now?: string },
 ): CreativeResult {
   const now = meta.now ?? new Date().toISOString();
-  const genome: ContentGenome = req.brief.genome;
+  const propertyType = factValue(req, "Boligtype:");
+  const genome: ContentGenome = {
+    ...req.brief.genome,
+    ...(req.propertyIds?.[0] ? { propertyId: req.propertyIds[0] } : {}),
+    ...(propertyType ? { propertyType: genomeValue(propertyType) } : {}),
+  };
   const learningRulesUsed = req.recommendation ? Object.entries(req.recommendation.favor).map(([d, v]) => `${d}=${v?.value}`) : [];
   return {
     asset: {

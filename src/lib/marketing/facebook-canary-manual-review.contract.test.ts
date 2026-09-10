@@ -5,6 +5,9 @@ import test from "node:test";
 
 const page = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/marketing-canary-facebook/page.tsx"), "utf8");
 const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/marketing/campaign-draft/route.ts"), "utf8");
+const preflightRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/marketing/preflight/route.ts"), "utf8");
+const creative = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/creative.ts"), "utf8");
+const inventory = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/inventory-property-adapter.ts"), "utf8");
 
 test("ZenEco Facebook Canary locks the draft to the property selected by preflight", () => {
   assert.match(page, /const propertyId = preflight\?\.inventoryProperty\?\.id/);
@@ -50,4 +53,30 @@ test("Canary preserves fail-closed semantics after novelty retries are exhausted
   assert.match(route, /unexpected\.error/);
   assert.match(route, /state=\$\{unexpected\.state\}/);
   assert.match(route, /propertyRef: unexpected\.propertyRef/);
+});
+
+test("Inventory-generated assets put property identity into the novelty genome", () => {
+  assert.match(creative, /propertyId: req\.propertyIds\[0\]/);
+  assert.match(creative, /propertyType: genomeValue\(propertyType\)/);
+  assert.match(creative, /CREATIVE_PROMPT_VERSION = "cg-1\.8"/);
+});
+
+test("automatic Inventory selection rotates away from recently attempted property drafts", () => {
+  assert.match(inventory, /RECENT_SELECTION_ATTEMPT_HOURS = 24/);
+  assert.match(inventory, /from\("marketing_assets"\)/);
+  assert.match(inventory, /property_ids, genome, created_at/);
+  assert.match(inventory, /recentlyUsedPropertyIds/);
+  assert.match(inventory, /not_recently_used/);
+});
+
+test("broad Costa regions are not accepted as a concrete town and source text is used as fallback", () => {
+  assert.match(inventory, /north\|south\|nord\|sør\|norte\|sur/);
+  assert.match(inventory, /deriveSpecificLocationFromDescription\(row\.description\)/);
+  assert.match(preflightRoute, /deriveSpecificLocationFromDescription\(property\.description\)/);
+});
+
+test("property prompt forbids unsupported property-specific filler claims", () => {
+  assert.match(creative, /ALLE boligspesifikke fakta og egenskaper/);
+  assert.match(creative, /nærhet til strand/);
+  assert.match(creative, /lokale fasiliteter/);
 });
