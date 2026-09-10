@@ -5,6 +5,8 @@ import { createCampaignDraft, getServiceSupabase, type CreateCampaignDraftInput 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const MAX_MANUAL_REVIEW_NOVELTY_ATTEMPTS = 3;
+
 type CampaignDraftRequest = Partial<CreateCampaignDraftInput> & {
   /**
    * Safety contract for Canary/manual-review callers. The route refuses to run
@@ -18,6 +20,17 @@ function configuredAutopilotChannels(metadata: Record<string, unknown> | null | 
   const raw = metadata?.autopilot_channels ?? metadata?.autopilot_scope;
   const values = Array.isArray(raw) ? raw.map(String) : typeof raw === "string" ? raw.split(",") : [];
   return new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean));
+}
+
+function noveltyRetryMasterIdea(masterIdea: string, attempt: number): string {
+  return [
+    masterIdea,
+    "",
+    `NOVELTY RETRY ${attempt}: Forrige AI-variant ble stoppet av novelty-gaten fordi den var for lik nylig publisert innhold.`,
+    "Lag en vesentlig ny Facebook-vinkel, men behold samme verifiserte Inventory-bolig og de samme faktakravene.",
+    "Ikke åpne med eller parafraser «Drømmer du om et hjem i solen?» eller andre generiske drømmehjem-åpninger.",
+    "Start heller med ett konkret, verifisert trekk ved boligen eller stedet. Ikke finn på fakta, ikke legg til superlativer og ikke svekk kildekravene.",
+  ].join("\n");
 }
 
 /** Phase 7.1B — create campaign content. Canary callers can enforce a fail-closed manual-review contract. */
@@ -61,29 +74,52 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const res = await createCampaignDraft(supabase, {
-      brandId: body.brandId,
-      masterIdea: body.masterIdea,
-      goal: { kind: body.goal.kind, target: body.goal.target ?? 10, horizonDays: body.goal.horizonDays ?? 30 },
-      focus: body.focus,
-      service: body.service,
-      market: body.market,
-      language: body.language,
-      publishingAccountId: body.publishingAccountId,
-      publishingCapacityPerWeek: body.publishingCapacityPerWeek,
-      legacyPublicationId: body.legacyPublicationId,
-      channel: body.channel,
-      mediaUrl: body.mediaUrl,
-      useInventoryProperty: body.useInventoryProperty,
-      propertyId: body.propertyId,
-    });
+    let res: Awaited<ReturnType<typeof createCampaignDraft>> | null = null;
+
+    const maxAttempts = body.forceManualReview === true ? MAX_MANUAL_REVIEW_NOVELTY_ATTEMPTS : 1;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const masterIdea = attempt === 1 ? body.masterIdea : noveltyRetryMasterIdea(body.masterIdea, attempt);
+      res = await createCampaignDraft(supabase, {
+        brandId: body.brandId,
+        masterIdea,
+        goal: { kind: body.goal.kind, target: body.goal.target ?? 10, horizonDays: body.goal.horizonDays ?? 30 },
+        focus: body.focus,
+        service: body.service,
+        market: body.market,
+        language: body.language,
+        publishingAccountId: body.publishingAccountId,
+        publishingCapacityPerWeek: body.publishingCapacityPerWeek,
+        legacyPublicationId: body.legacyPublicationId,
+        channel: body.channel,
+        mediaUrl: body.mediaUrl,
+        useInventoryProperty: body.useInventoryProperty,
+        propertyId: body.propertyId,
+      });
+
+      if (body.forceManualReview !== true) break;
+      const noveltyRejected = res.results.some((item) => item.state === "regenerate");
+      if (!noveltyRejected) break;
+    }
+
+    if (!res) throw new Error("CAMPAIGN_DRAFT_EMPTY_RESULT");
 
     if (body.forceManualReview === true) {
       const unexpected = res.results.find((item) => item.mode !== "manual-review");
       if (unexpected) {
+        const detail = unexpected.error ? ` — ${unexpected.error}` : "";
+        const code = unexpected.state === "regenerate"
+          ? "NOVELTY_REGENERATION_EXHAUSTED"
+          : "MANUAL_REVIEW_CONTRACT_VIOLATION";
         return NextResponse.json({
-          error: `MANUAL_REVIEW_CONTRACT_VIOLATION: forventet manual-review, fikk ${unexpected.mode}`,
+          error: `${code}: forventet manual-review, fikk ${unexpected.mode} (state=${unexpected.state})${detail}`,
           marketingRunId: res.marketingRunId,
+          result: {
+            state: unexpected.state,
+            mode: unexpected.mode,
+            error: unexpected.error ?? null,
+            propertyId: unexpected.propertyId ?? null,
+            propertyRef: unexpected.propertyRef ?? null,
+          },
         }, { status: 409 });
       }
     }
