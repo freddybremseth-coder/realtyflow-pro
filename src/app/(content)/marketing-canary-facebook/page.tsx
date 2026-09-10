@@ -97,6 +97,8 @@ export default function FacebookCanaryPage() {
   });
 
   const doDraft = () => run("draft", async () => {
+    const propertyId = preflight?.inventoryProperty?.id;
+    if (!propertyId) throw new Error("Kjør Preflight på nytt. Canary må låse samme Inventory-bolig før utkast lages.");
     const r = await post<Draft>("/api/marketing/campaign-draft", {
       brandId: CANARY.brandId,
       channel: CANARY.channel,
@@ -105,6 +107,8 @@ export default function FacebookCanaryPage() {
       language: "no",
       goal: { kind: "qualified_leads", target: 10 },
       useInventoryProperty: true,
+      propertyId,
+      forceManualReview: true,
     });
     if (!r.ok) throw new Error((r.data as any)?.error || `campaign-draft feilet (${r.status})`);
     const first = r.data.results?.[0];
@@ -113,6 +117,7 @@ export default function FacebookCanaryPage() {
     if (first.source !== "generated") throw new Error(`STOPP: forventet generated source, fikk ${first.source ?? "ukjent"}`);
     if (first.mode !== "manual-review") throw new Error(`STOPP: forventet manual-review, fikk ${first.mode}`);
     if (!first.propertyId || !first.imageUrl) throw new Error("STOPP: Inventory-grounding mangler propertyId eller bilde.");
+    if (first.propertyId !== propertyId) throw new Error(`STOPP: draft byttet Inventory-bolig etter Preflight (${propertyId} → ${first.propertyId}).`);
     setDraft(r.data);
   });
 

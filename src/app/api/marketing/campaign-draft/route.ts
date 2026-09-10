@@ -5,7 +5,22 @@ import { createCampaignDraft, getServiceSupabase, type CreateCampaignDraftInput 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Phase 7.1B — "Create campaign draft" fra Nexus. COPILOT: lager utkast + approval-kø, publiserer aldri. */
+type CampaignDraftRequest = Partial<CreateCampaignDraftInput> & {
+  /**
+   * Safety contract for Canary/manual-review callers. The route refuses to run
+   * when the requested channel is already preapproved for controlled-auto.
+   * This prevents a button labelled "Create Draft" from silently publishing.
+   */
+  forceManualReview?: boolean;
+};
+
+function configuredAutopilotChannels(metadata: Record<string, unknown> | null | undefined): Set<string> {
+  const raw = metadata?.autopilot_channels ?? metadata?.autopilot_scope;
+  const values = Array.isArray(raw) ? raw.map(String) : typeof raw === "string" ? raw.split(",") : [];
+  return new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean));
+}
+
+/** Phase 7.1B — create campaign content. Canary callers can enforce a fail-closed manual-review contract. */
 export async function POST(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -14,9 +29,35 @@ export async function POST(request: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
-  const body = (await request.json().catch(() => ({}))) as Partial<CreateCampaignDraftInput>;
+  const body = (await request.json().catch(() => ({}))) as CampaignDraftRequest;
   if (!body.brandId || !body.masterIdea || !body.goal?.kind) {
     return NextResponse.json({ error: "brandId, masterIdea og goal.kind er påkrevd" }, { status: 400 });
+  }
+
+  // A Canary/manual-review action must never inherit a channel that has already
+  // been enabled for controlled-auto. Refuse BEFORE createCampaignDraft so there
+  // is no possibility of a hidden live side effect.
+  if (body.forceManualReview === true) {
+    if (!body.channel) {
+      return NextResponse.json({ error: "MANUAL_REVIEW_CHANNEL_REQUIRED" }, { status: 400 });
+    }
+    const { data: plan, error: planError } = await supabase
+      .from("marketing_brand_growth_plans")
+      .select("status,autonomy_mode,metadata")
+      .eq("brand_id", body.brandId)
+      .maybeSingle();
+    if (planError) {
+      return NextResponse.json({ error: `MANUAL_REVIEW_POLICY_CHECK_FAILED: ${planError.message}` }, { status: 503 });
+    }
+    const liveChannels = configuredAutopilotChannels((plan?.metadata ?? {}) as Record<string, unknown>);
+    const channelAlreadyLive = plan?.status === "active"
+      && plan?.autonomy_mode === "controlled_auto"
+      && liveChannels.has(String(body.channel).toLowerCase());
+    if (channelAlreadyLive) {
+      return NextResponse.json({
+        error: `MANUAL_REVIEW_CHANNEL_ALREADY_LIVE: ${body.brandId}/${body.channel} er aktivert for controlled-auto. Canary må være pending/manual-review før utkast kan lages.`,
+      }, { status: 409 });
+    }
   }
 
   try {
@@ -36,6 +77,17 @@ export async function POST(request: NextRequest) {
       useInventoryProperty: body.useInventoryProperty,
       propertyId: body.propertyId,
     });
+
+    if (body.forceManualReview === true) {
+      const unexpected = res.results.find((item) => item.mode !== "manual-review");
+      if (unexpected) {
+        return NextResponse.json({
+          error: `MANUAL_REVIEW_CONTRACT_VIOLATION: forventet manual-review, fikk ${unexpected.mode}`,
+          marketingRunId: res.marketingRunId,
+        }, { status: 409 });
+      }
+    }
+
     return NextResponse.json(res);
   } catch (err) {
     const message = err instanceof Error ? err.message : "campaign-draft feilet";
