@@ -18,6 +18,11 @@ import {
   nurtureStateAfterSuccessfulSend,
   shouldPersistCompletedWhenIneligible,
 } from "@/services/growth/nurture-state";
+import {
+  evaluateNurtureSendability,
+  normalizeNurtureEmail,
+  type NurtureSendabilityReason,
+} from "@/services/growth/nurture-sendability";
 
 // Hvilke statuser som nurtures avgjøres per sekvens (sequence.eligibleStatuses).
 // Nurture state er separat fra pipeline: eligible = kan vurderes, enrolled = faktisk aktiv sekvens.
@@ -58,6 +63,9 @@ export interface NurtureRunResult {
   flaggedSpam: number;
   awaitingLive: number;
   duplicateDryRunsSuppressed: number;
+  sendabilityBlocked: number;
+  sendabilityReview: number;
+  sendabilityReasons: Partial<Record<NurtureSendabilityReason, number>>;
 }
 
 interface NurtureRevenueContact {
@@ -73,6 +81,17 @@ function daysSince(iso: string | null | undefined): number {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return 0;
   return (Date.now() - t) / DAY_MS;
+}
+
+function newestIso(values: Array<string | null | undefined>): string | null {
+  let newest: { value: string; time: number } | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) continue;
+    if (!newest || time > newest.time) newest = { value, time };
+  }
+  return newest?.value ?? null;
 }
 
 async function loadApprovedRoutingPersona(supabase: SupabaseClient, contactId: string): Promise<string | null> {
@@ -106,7 +125,7 @@ async function loadApprovedRoutingPersona(supabase: SupabaseClient, contactId: s
 function nextDueStep(
   sequence: NurtureSequence,
   ageDays: number,
-  sentStepIds: Set<string>
+  sentStepIds: Set<string>,
 ): NurtureStep | null {
   for (const step of [...sequence.steps].sort((a, b) => a.dayOffset - b.dayOffset)) {
     if (sentStepIds.has(step.id)) continue;
@@ -168,7 +187,7 @@ export function buildNurtureRevenueEventInput({
 
 export async function runNurtureCycle(
   supabase: SupabaseClient,
-  options: NurtureRunOptions
+  options: NurtureRunOptions,
 ): Promise<NurtureRunResult> {
   const { dryRun, brandId, limit = 50, maxAgeDays = 21, email } = options;
 
@@ -183,6 +202,9 @@ export async function runNurtureCycle(
     flaggedSpam: 0,
     awaitingLive: 0,
     duplicateDryRunsSuppressed: 0,
+    sendabilityBlocked: 0,
+    sendabilityReview: 0,
+    sendabilityReasons: {},
   };
 
   // Teller nye innmeldinger per sekvens denne kjøringen (for daglig bolk-tak).
@@ -191,7 +213,7 @@ export async function runNurtureCycle(
   let query = supabase
     .from("contacts")
     .select(
-      "id, name, email, brand_id, brand, source, pipeline_status, nurture_status, nurture_sequence, property_interest, created_at, nurture_enrolled_at"
+      "id, name, email, brand_id, brand, source, pipeline_status, nurture_status, nurture_sequence, property_interest, created_at, nurture_enrolled_at, do_not_contact, email_suppressed, last_inbound_reply_at",
     )
     .order("created_at", { ascending: false })
     .limit(Math.max(limit, 1000));
@@ -204,6 +226,18 @@ export async function runNurtureCycle(
 
   result.scanned = contacts?.length || 0;
 
+  // Duplicate safety is brand-local: the same person may legitimately exist in
+  // separate brands, but the same normalized email must not have multiple active
+  // CRM rows competing for one nurture sequence in the same brand.
+  const emailCounts = new Map<string, number>();
+  for (const candidate of contacts || []) {
+    const normalized = normalizeNurtureEmail(candidate.email);
+    if (!normalized) continue;
+    const candidateBrand = String(candidate.brand_id || candidate.brand || "");
+    const key = `${candidateBrand}:${normalized}`;
+    emailCounts.set(key, (emailCounts.get(key) || 0) + 1);
+  }
+
   for (const contact of contacts || []) {
     const cBrand: string = contact.brand_id || contact.brand || "";
     const routingPersona = await loadApprovedRoutingPersona(supabase, contact.id);
@@ -212,9 +246,7 @@ export async function runNurtureCycle(
 
     const status = String(contact.pipeline_status || "").toUpperCase();
     const nurtureState = normalizeNurtureState(contact);
-    const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(contact.email || ""));
 
-    if (!hasEmail) continue;
     if (!canEvaluateForNurture(nurtureState)) continue;
 
     // Beskytt avsenderomdømmet: aldri send til åpenbar spam/bot.
@@ -252,20 +284,45 @@ export async function runNurtureCycle(
     // hver cron-kjøring mens LIVE-bryteren fortsatt er av.
     const { data: events } = await supabase
       .from("lead_nurture_events")
-      .select("step_id, status, dry_run")
+      .select("step_id, status, dry_run, sent_at")
       .eq("contact_id", contact.id)
       .eq("sequence_id", sequence.id);
 
     const sentStepIds = new Set(
       (events || [])
-        .filter((e) => e.status === "sent" || e.status === "queued")
-        .map((e) => String(e.step_id))
+        .filter((event) => event.status === "sent" || event.status === "queued")
+        .map((event) => String(event.step_id)),
     );
     const dryRunStepIds = new Set(
       (events || [])
-        .filter((e) => e.status === "dry_run" || e.dry_run === true)
-        .map((e) => String(e.step_id))
+        .filter((event) => event.status === "dry_run" || event.dry_run === true)
+        .map((event) => String(event.step_id)),
     );
+    const lastRealSendAt = newestIso(
+      (events || [])
+        .filter((event) => event.status === "sent")
+        .map((event) => event.sent_at as string | null | undefined),
+    );
+
+    const normalized = normalizeNurtureEmail(contact.email);
+    const sendability = evaluateNurtureSendability({
+      email: contact.email,
+      normalizedEmailCount: normalized ? emailCounts.get(`${cBrand}:${normalized}`) || 1 : 1,
+      doNotContact: contact.do_not_contact,
+      emailSuppressed: contact.email_suppressed,
+      pipelineStatus: status,
+      lastInboundReplyAt: contact.last_inbound_reply_at,
+      lastRealSendAt,
+    });
+
+    if (!sendability.sendable || !sendability.normalizedEmail) {
+      result.sendabilityBlocked += 1;
+      result.skipped += 1;
+      if (sendability.requiresReview) result.sendabilityReview += 1;
+      result.sendabilityReasons[sendability.reason] = (result.sendabilityReasons[sendability.reason] || 0) + 1;
+      continue;
+    }
+    const safeEmail = sendability.normalizedEmail;
 
     const isReactivation = sequence.mode === "reactivation";
     const alreadyEnrolled = nurtureState === "enrolled" || !!contact.nurture_enrolled_at || !!contact.nurture_sequence;
@@ -316,7 +373,7 @@ export async function runNurtureCycle(
     const planned: NurturePlannedSend = {
       contactId: contact.id,
       name: contact.name,
-      email: contact.email,
+      email: safeEmail,
       brandId: cBrand,
       stepId: step.id,
       subject,
@@ -351,7 +408,7 @@ export async function runNurtureCycle(
     // LIVE: send via merkets SMTP. Først etter vellykket send blir kontakten `enrolled`.
     const send = await sendBrandEmail(supabase, {
       brandId: sequence.sendBrandId || cBrand,
-      to: [contact.email],
+      to: [safeEmail],
       subject,
       bodyText,
       fromAddress: sequence.fromAddress,
@@ -390,7 +447,7 @@ export async function runNurtureCycle(
       const eventResult = await insertRevenueEvent(
         supabase,
         buildNurtureRevenueEventInput({
-          contact,
+          contact: { ...contact, email: safeEmail },
           sequence,
           step,
           brandId: cBrand,
@@ -398,7 +455,7 @@ export async function runNurtureCycle(
           bodyPreview: bodyText.slice(0, 280),
           sentAt: now,
           previousPipelineStatus: status,
-        })
+        }),
       );
 
       if (!eventResult.ok && !eventResult.tableNotReady) {
