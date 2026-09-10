@@ -1,0 +1,21 @@
+name: Facebook Canary Safety
+
+on:
+  pull_request:
+    paths:
+      - "src/app/(content)/marketing-canary-facebook/page.tsx"
+      - "src/app/api/marketing/campaign-draft/route.ts"
+      - "src/lib/marketing/facebook-canary-manual-review.contract.test.ts"
+      - ".github/workflows/facebook-canary-safety.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsx src/lib/marketing/facebook-canary-manual-review.contract.test.ts
