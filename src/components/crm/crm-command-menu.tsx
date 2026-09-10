@@ -237,7 +237,7 @@ export function CrmCommandMenu({
           <span>Feil: {executed.failed}</span>
           <span>Gjenstår: {executed.remaining}</span>
           {executed.note ? <span className="w-full text-xs text-emerald-200/80">{executed.note}</span> : null}
-          <a href={executed.nexusHref || "/nexus-os/communications"} className="text-xs font-semibold text-cyan-200 underline underline-offset-2">Se oppdatert nurture-resultat i Nexus Communications</a>
+          <a href="/nexus-os/communications/nurture" className="text-xs font-semibold text-cyan-200 underline underline-offset-2">Se detaljert nurture-resultat i Nexus</a>
           {executed.auditLogged === false ? <span className="w-full text-xs text-amber-300">Kjøringen ble gjennomført, men audit-loggen kunne ikke skrives.</span> : null}
         </div>
       ) : null}
