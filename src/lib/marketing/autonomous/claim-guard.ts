@@ -75,7 +75,7 @@ const INVENTORY_NARRATIVE_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "property lifestyle claim", re: /(?:bolig(?:en)?|villa(?:en)?|eiendom(?:men)?|leilighet(?:en)?|hjem(?:met)?|home|property|villa|apartment|residence)[^.!?]{0,100}(?:tilbyr|gir|offers?|provides?)[^.!?]{0,100}(?:praktisk(?:\s+og)?\s+komfortabel\s+livsstil|komfortabel\s+livsstil|comfortable\s+lifestyle|practical\s+(?:and\s+)?comfortable\s+lifestyle)/i },
   { label: "sustainability property", re: /(?:(?:bærekraftig(?:e|t)?|sustainable)\s+(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|eiendom(?:men|mer|mene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|home|property|villa|apartment|residence)|(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|eiendom(?:men|mer|mene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|home|property|villa|apartment|residence)[^.!?]{0,120}(?:bærekraft|sustainab(?:le|ility)))/i },
   { label: "area reputation claim", re: /(?:område(?:t)?|region(?:en)?|area|region)[^.!?]{0,80}(?:kjent\s+for|known\s+for)/i },
-  { label: "mild climate", re: /\b(?:mildt|behagelig|stabilt)\s+klima\b|\b(?:mild|pleasant|stable)\s+climate\b/i },
+  { label: "mild climate", re: /\b(?:mild(?:t|e)?|behagelig(?:e|t)?|stabil(?:t|e)?)\s+klima\b|\b(?:mild|pleasant|stable)\s+climate\b/i },
   { label: "beautiful landscape", re: /(?:vakr(?:e|t)?|nydelig(?:e|t)?|beautiful|stunning)\s+(?:landskap(?:et)?|natur(?:en)?|landscape|scenery)/i },
   { label: "holiday-home suitability", re: /(?:ser\s+etter|egnet(?:\s+som)?|passer(?:\s+som)?|ideell(?:\s+som)?|perfekt(?:\s+som)?|looking\s+for|suitable\s+as|ideal\s+as|perfect\s+as)[^.!?]{0,70}(?:feriebolig|holiday\s+home)/i },
   { label: "permanent-home suitability", re: /(?:permanent\s+hjem|helårsbolig|permanent\s+home|year[-\s]?round\s+home)/i },
