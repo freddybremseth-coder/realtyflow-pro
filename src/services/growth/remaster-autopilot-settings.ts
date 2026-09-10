@@ -108,7 +108,12 @@ export async function saveRemasterAutopilotSettings(
   };
 
   const { baseUrl, key } = restConfig();
-  const response = await fetch(baseUrl, {
+  // brand_settings uses brand_id as a unique business key rather than the table's
+  // primary key. PostgREST must be told which unique constraint to target;
+  // otherwise merge-duplicates falls back to the PK and an existing brand row
+  // raises brand_settings_brand_id_key instead of being updated.
+  const upsertUrl = `${baseUrl}?on_conflict=brand_id`;
+  const response = await fetch(upsertUrl, {
     method: "POST",
     headers: restHeaders(key, "resolution=merge-duplicates,return=representation"),
     body: JSON.stringify(payload),
