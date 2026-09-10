@@ -23,9 +23,9 @@ export interface QualityChecks {
   genomeCompleteness: number; // 0..1
   attributionReady: boolean;
   duplicateFree: boolean;
-  /** Captionen er ren kundevendt tekst (ingen produksjonsanvisninger). */
+  /** Captionen er ren kundevendt kanaltekst (ingen manus/Markdown/CTA-duplikat). */
   formatClean: boolean;
-  /** Ingen udekket målbar/komparativ utfallspåstand (uten uavhengig kilde). */
+  /** Ingen udekket målbar/komparativ/subjektiv property-påstand. */
   claimsVerified: boolean;
   /** Ingen eierskaps-/rollepåstand i strid med Brand Brain. */
   roleConsistent: boolean;
@@ -35,7 +35,7 @@ export interface QualityResult {
   score: number; // 0..100
   checks: QualityChecks;
   sensitiveClaimsWithoutSource: string[];
-  /** Målbare/komparative utfallspåstander uten uavhengig factSource. */
+  /** Målbare/komparative/subjektive property-påstander uten uavhengig factSource. */
   unsupportedOutcomeClaims: string[];
   /** Eierskaps-/rollepåstander i strid med Brand Brain. */
   roleViolations: string[];
@@ -85,7 +85,7 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
 
   // Captionen (den faktiske Meta-payloaden) skal være ren kundevendt tekst.
   const caption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
-  const productionMarkers = findProductionDirection(caption);
+  const formatMarkers = findProductionDirection(caption);
 
   // Utfalls-/rollegatene gjelder KUN generert copy. Legacy/menneske-forfattet
   // self-sources (factSources = body) → utfallspåstander blir automatisk dekket.
@@ -102,7 +102,7 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
     genomeCompleteness,
     attributionReady: !!asset.contentId,
     duplicateFree: opts.duplicateFree ?? true,
-    formatClean: productionMarkers.length === 0,
+    formatClean: formatMarkers.length === 0,
     claimsVerified: outcomeViolations.length === 0,
     roleConsistent: roleViolations.length === 0,
   };
@@ -129,9 +129,9 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
 
   const reasons: string[] = [];
   if (sensitiveClaimsWithoutSource.length) reasons.push(`Sensitive fakta uten kilde: ${sensitiveClaimsWithoutSource.join(", ")} → krever godkjenning.`);
-  if (outcomeViolations.length) reasons.push(`CLAIM_NOT_VERIFIED: udekket utfallspåstand (${outcomeViolations.join(", ")}) — krever uavhengig kilde.`);
+  if (outcomeViolations.length) reasons.push(`CLAIM_NOT_VERIFIED: udekket utfall/property-påstand (${outcomeViolations.join(", ")}) — krever uavhengig kilde eller omskriving.`);
   if (roleViolations.length) reasons.push(`BRAND_ROLE_MISMATCH: eierskaps-/rollepåstand (${roleViolations.join(", ")}) uten støtte i Brand Brain.`);
-  if (!checks.formatClean) reasons.push(`CHANNEL_FORMAT_MISMATCH: captionen inneholder produksjonsanvisninger (${productionMarkers.join(", ")}).`);
+  if (!checks.formatClean) reasons.push(`CHANNEL_FORMAT_MISMATCH: captionen bryter kanalformatet (${formatMarkers.join(", ")}).`);
   if (!checks.hasCta) reasons.push("Mangler CTA — ingen konverteringsvei.");
   if (!checks.channelFit) reasons.push("Genome-kanal matcher ikke asset-kanal.");
   if (genomeCompleteness < 1) reasons.push("Ufullstendig content genome (svekker læring).");
