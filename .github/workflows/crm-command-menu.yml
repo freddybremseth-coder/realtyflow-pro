@@ -7,6 +7,10 @@ on:
       - "src/components/crm/crm-command-menu.tsx"
       - "src/app/(realty)/customers/page.tsx"
       - "src/lib/customers/crm-command-menu.contract.test.ts"
+      - "src/app/api/nexus/communications/nurture/**"
+      - "src/app/(content)/nexus-os/communications/nurture/**"
+      - "src/app/(content)/nexus-os/layout.tsx"
+      - "src/lib/nexus/nurture-command-visibility.contract.test.ts"
       - ".github/workflows/crm-command-menu.yml"
 
 jobs:
@@ -20,3 +24,4 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsx src/lib/customers/crm-command-menu.contract.test.ts
+      - run: npx tsx src/lib/nexus/nurture-command-visibility.contract.test.ts
