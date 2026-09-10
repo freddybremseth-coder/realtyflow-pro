@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { askClaude } from "@/services/ai/claude-client";
 
-const CONVERSION_VERSION = "conversion-v1";
-const FORBIDDEN = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt|førsteklasses|uslåelig|enestående)\b/i;
+const CONVERSION_VERSION = "conversion-v2";
+const FORBIDDEN = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt|førsteklasses|uslåelig|enestående|attraktiv(?:t|e)?|ideell(?:t|e)?|idealet)\b/i;
 const PLACEHOLDER = /\b(ikke angitt|ukjent|ikke oppgitt|ikke spesifisert|mangler)\b/i;
+const UNSUPPORTED_AUDIENCE = /\b(investor(?:er|ene)?|investering(?:sformål|spotensial)?|utleie(?:potensial|inntekt)?|ferieutleie|avkastning)\b/i;
+const UNSUPPORTED_LIFESTYLE = /\b(aktiv livsstil|naturskjønn(?:e|t)?|fredelig(?:e)?|rolig(?:e)? omgivelser|sosial atmosfære|underholdning|året rundt komfort|komfort året rundt)\b/i;
 
 export interface PropertyConversionNo {
   selling_intro_no: string;
@@ -34,6 +36,8 @@ type ConversionSource = {
   features: string[];
   rawDescription: string;
 };
+
+type ConversionCopy = Omit<PropertyConversionNo, "source_hash" | "generated_at" | "model" | "generation_mode" | "version">;
 
 function clean(value: unknown): string {
   return typeof value === "string"
@@ -145,7 +149,6 @@ export function buildPropertyConversionFallback(
   const type = deCaps(source.type);
   const place = placeLabel(source);
   const features = documentedFeatures(source);
-
   const facts = [
     source.bedrooms ? `${source.bedrooms} soverom` : "",
     source.bathrooms ? `${source.bathrooms} bad` : "",
@@ -156,14 +159,12 @@ export function buildPropertyConversionFallback(
 
   const introFacts = facts.slice(0, 3).join(", ");
   const featureTail = features.slice(0, 3).join(", ").toLowerCase();
-  const sellingIntro = `${type} i ${place}${introFacts ? ` med ${introFacts}` : ""}. ${
-    featureTail
-      ? `Det som gjør boligen verdt å se nærmere på er kombinasjonen av ${featureTail}.`
-      : "Planløsning, beliggenhet og leveranse bør vurderes samlet før du sammenligner den med andre alternativer."
-  }`;
+  const sellingIntro = `${type} i ${place}${introFacts ? ` med ${introFacts}` : ""}. ${featureTail
+    ? `Boligdataene oppgir blant annet ${featureTail}, noe som er relevant når boligen sammenlignes med andre alternativer.`
+    : "Planløsning, beliggenhet og leveranse bør vurderes samlet før boligen sammenlignes med andre alternativer."}`;
 
   const reasons = Array.from(new Set([
-    source.bedrooms ? `${source.bedrooms} separate soverom gir fleksibilitet for familie, gjester eller hjemmekontor.` : "",
+    source.bedrooms ? `${source.bedrooms} separate soverom gir fleksibilitet for ulike behov.` : "",
     source.bathrooms && source.bathrooms > 1 ? `${source.bathrooms} bad gjør boligen mer praktisk når flere bruker den samtidig.` : "",
     source.builtArea ? `Oppgitt boligareal er ${Math.round(source.builtArea)} m².` : "",
     source.plotSize ? `Tomten er oppgitt til ${Math.round(source.plotSize)} m².` : "",
@@ -173,13 +174,12 @@ export function buildPropertyConversionFallback(
 
   const outdoor = features.filter((item) => /basseng|terrasse|hage|solarium/i.test(item));
   const lifestyle = outdoor.length
-    ? `${outdoor.join(", ")} gir boligen et tydelig utefokus. Sammen med planløsningen er dette noe vi ville vurdert konkret på visning.`
-    : `Denne boligen bør vurderes ut fra hvordan planløsningen fungerer i praksis, hvilke kvaliteter som faktisk følger leveransen og hvordan beliggenheten passer hverdagen din.`;
+    ? `${outdoor.join(", ")} gir dokumenterte muligheter for uteopphold. Hvordan dette fungerer i praksis bør vurderes på visning.`
+    : "Hvordan boligen fungerer i hverdagen bør vurderes ut fra planløsning, leveranse og beliggenhet, ikke antas ut fra feeddata alene.";
 
   const idealFor = Array.from(new Set([
-    source.bedrooms && source.bedrooms >= 3 ? `Familie eller par som ønsker ${source.bedrooms} soverom.` : "",
-    source.bedrooms && source.bedrooms >= 2 ? "Kjøpere som ønsker plass til gjester eller hjemmekontor." : "",
-    outdoor.length ? "Kjøpere som prioriterer privat eller felles uteareal." : "",
+    source.bedrooms && source.bedrooms >= 2 ? `Kjøpere som ønsker ${source.bedrooms} separate soverom.` : "",
+    outdoor.length ? "Kjøpere som prioriterer dokumentert uteareal eller basseng." : "",
     source.plotSize ? "Kjøpere som ønsker en bolig med egen tomt." : "",
   ].filter(Boolean))).slice(0, 3);
 
@@ -188,39 +188,64 @@ export function buildPropertyConversionFallback(
     key_reasons_no: reasons,
     lifestyle_no: lifestyle,
     ideal_for_no: idealFor,
-    cta_reason_no: "Be om komplett prospekt og plantegninger, så sjekker vi oppdatert tilgjengelighet, hva som faktisk er inkludert og hvordan boligen står seg mot relevante alternativer.",
+    cta_reason_no: "Be om komplett prospekt og plantegninger, så sjekker vi oppdatert tilgjengelighet, leveranseomfang og hvordan boligen står seg mot relevante alternativer.",
     source_hash: computePropertyConversionSourceHash(property),
     generated_at: now.toISOString(),
-    model: "template-conversion-v1",
+    model: "template-conversion-v2",
     generation_mode: "template",
     version: CONVERSION_VERSION,
   };
 }
 
-function outputIsSafe(value: Omit<PropertyConversionNo, "source_hash" | "generated_at" | "model" | "generation_mode" | "version">) {
+function sourceAllowsClaim(source: ConversionSource, claim: RegExp) {
+  return claim.test([source.rawDescription, source.features.join(" ")].join(" "));
+}
+
+export function propertyConversionOutputIsSafe(value: ConversionCopy, source?: ConversionSource) {
   const all = [value.selling_intro_no, ...value.key_reasons_no, value.lifestyle_no, ...value.ideal_for_no, value.cta_reason_no]
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  return Boolean(all) && !FORBIDDEN.test(all) && !PLACEHOLDER.test(all)
-    && value.selling_intro_no.length >= 80
-    && value.key_reasons_no.length >= 3
-    && value.key_reasons_no.length <= 6
-    && value.ideal_for_no.length <= 4;
+
+  if (!all || FORBIDDEN.test(all) || PLACEHOLDER.test(all) || UNSUPPORTED_AUDIENCE.test(all) || UNSUPPORTED_LIFESTYLE.test(all)) return false;
+  if (value.selling_intro_no.length < 80 || value.key_reasons_no.length < 3 || value.key_reasons_no.length > 6 || value.ideal_for_no.length > 4) return false;
+
+  if (source) {
+    const lower = all.toLowerCase();
+    const groundedClaims: Array<[RegExp, RegExp, boolean]> = [
+      [/\b(havutsikt|sjøutsikt|utsikt mot havet)\b/i, /sea views?|havutsikt|vistas al mar/i, false],
+      [/\b(golf|golfbane|golfanlegg)\b/i, /golf/i, false],
+      [/\b(strand|kystliv|sjøen)\b/i, /beach|strand|playa|sea|mar/i, false],
+      [/\b(solarium)\b/i, /solarium/i, false],
+      [/\b(terrasse)\b/i, /terrace|terrasse|terraza/i, Boolean(source.terraceSize)],
+      [/\b(basseng)\b/i, /pool|basseng|piscina/i, source.pool],
+      [/\b(garasje)\b/i, /garage|garasje|garaje/i, source.garage],
+      [/\b(aircondition|klimaanlegg)\b/i, /air conditioning|aircondition|aire acondicionado|a\/c/i, false],
+    ];
+    for (const [outputPattern, sourcePattern, explicitFlag] of groundedClaims) {
+      if (outputPattern.test(lower) && !explicitFlag && !sourceAllowsClaim(source, sourcePattern)) return false;
+    }
+
+    const numericClaims = Array.from(all.matchAll(/\b(\d{2,5})\s*m²\b/g)).map((match) => Number(match[1]));
+    const allowedNumbers = [source.builtArea, source.plotSize, source.terraceSize].filter((n): n is number => Boolean(n)).map(Math.round);
+    if (numericClaims.some((n) => !allowedNumbers.includes(n))) return false;
+  }
+
+  return true;
 }
 
-function parseAi(text: string) {
+function parseAi(text: string, source: ConversionSource) {
   try {
     const candidate = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
     const raw = JSON.parse(candidate) as Record<string, unknown>;
-    const parsed = {
+    const parsed: ConversionCopy = {
       selling_intro_no: clean(raw.selling_intro_no),
       key_reasons_no: textArray(raw.key_reasons_no).slice(0, 6),
       lifestyle_no: clean(raw.lifestyle_no),
       ideal_for_no: textArray(raw.ideal_for_no).slice(0, 4),
       cta_reason_no: clean(raw.cta_reason_no),
     };
-    return outputIsSafe(parsed) ? parsed : null;
+    return propertyConversionOutputIsSafe(parsed, source) ? parsed : null;
   } catch {
     return null;
   }
@@ -240,18 +265,19 @@ const RESPONSE_SCHEMA = {
 };
 
 const SYSTEM_PROMPT = `Du skriver konverterende, men nøktern norsk boligtekst for Zen Eco Homes.
-Målet er at en seriøs boligkjøper skal forstå hvorfor akkurat denne boligen er verdt å undersøke videre og få lyst til å be om prospekt eller visning.
+Målet er å gjøre dokumenterte kvaliteter enklere å forstå, ikke å overtale med antakelser.
 
 Regler:
-- Bruk KUN fakta i input. Ikke finn på avstander, utsikt, solforhold, møbler, materialkvalitet, ferdigstillelse, utleiepotensial, nærservice eller hva som er inkludert.
-- Hvis noe ikke er dokumentert, utelat det. Ikke skriv plassholdere.
-- Ikke bruk superlativer eller klassisk meglerhype: drømmebolig, unik, fantastisk, eksklusiv, spektakulær, perfekt, førsteklasses, uslåelig, enestående.
-- Du kan forklare praktisk verdi av dokumenterte fakta med forsiktig språk, for eksempel "gir fleksibilitet", "kan passe for" og "gjør boligen praktisk når flere bruker den".
-- selling_intro_no: 2–4 naturlige setninger som skaper interesse gjennom konkrete kvaliteter, ikke hype.
-- key_reasons_no: 3–6 korte, ulike grunner basert på dokumenterte fakta.
-- lifestyle_no: 1–3 setninger om hvordan de dokumenterte boligkvalitetene kan påvirke bruken av hjemmet. Ikke dikt opp nærområdet.
-- ideal_for_no: 1–4 korte målgruppebeskrivelser formulert som "kan passe for" eller tilsvarende, utledet forsiktig fra planløsning/uteareal.
-- cta_reason_no: én konkret grunn til å ta kontakt: prospekt, plantegninger, oppdatert tilgjengelighet, leveranseomfang og sammenligning med alternativer.
+- Bruk KUN eksplisitte fakta i input. Hvis et faktum ikke står i input, skal det ikke omtales.
+- Ikke utled investor-/utleiepotensial, avkastning, målgrupper eller livsstil som ikke følger direkte av dokumenterte boligegenskaper.
+- Ikke bruk ordene investor, investering, utleiepotensial, ideell/ideelt, attraktiv/attraktivt, aktiv livsstil, naturskjønn, fredelig eller rolige omgivelser.
+- Ikke finn på eller generaliser avstander, utsikt, solforhold, møbler, materialkvalitet, ferdigstillelse, nærservice eller hva som er inkludert.
+- Tall i teksten skal være de samme som i input. Ikke regn ut eller avrund nye tall.
+- selling_intro_no: 2–4 naturlige setninger basert på boligtype, sted og dokumenterte egenskaper.
+- key_reasons_no: 3–6 korte, ulike grunner. Praktiske forklaringer som «to bad gjør boligen mer praktisk når flere bruker den» er tillatt.
+- lifestyle_no: beskriv bare praktisk bruk av dokumenterte planløsnings-/utearealfakta. Ingen stemning, områdekarakter eller antatt livsstil.
+- ideal_for_no: 1–4 nøkterne behovsbeskrivelser, f.eks. «Kjøpere som ønsker tre separate soverom». Ikke bruk demografi, investorprofil eller antatt bruk.
+- cta_reason_no: én konkret grunn til å be om prospekt/plantegninger og få bekreftet leveranse/tilgjengelighet.
 - Returner KUN gyldig JSON etter skjemaet.`;
 
 function buildUserPrompt(source: ConversionSource) {
@@ -272,14 +298,14 @@ export async function generatePropertyConversionNo(
     const raw = await askClaude(buildUserPrompt(source), {
       systemPrompt: SYSTEM_PROMPT,
       model: "haiku",
-      maxTokens: 950,
-      temperature: 0.25,
+      maxTokens: 900,
+      temperature: 0.15,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      validateResponse: (value) => parseAi(value) !== null,
+      validateResponse: (value) => parseAi(value, source) !== null,
       fallbackOnInvalidResponse: true,
     });
-    const parsed = parseAi(raw);
+    const parsed = parseAi(raw, source);
     if (!parsed) return fallback;
     return {
       ...parsed,
