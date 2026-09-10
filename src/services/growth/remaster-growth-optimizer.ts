@@ -1,12 +1,36 @@
 import { askClaude } from "@/services/ai/claude-client";
 
+const REMASTER_METADATA_SCHEMA = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    tags: { type: "array", items: { type: "string" } },
+  },
+  required: ["description", "tags"],
+  additionalProperties: false,
+} as const;
+
 function extractJson(text: string) {
-  const stripped = text.replace(/```(?:json)?/g, "").trim();
+  const stripped = text.replace(/```(?:json)?/gi, "").trim();
   try { return JSON.parse(stripped); } catch { /* continue */ }
   const start = stripped.indexOf("{");
   const end = stripped.lastIndexOf("}");
-  if (start >= 0 && end > start) return JSON.parse(stripped.slice(start, end + 1));
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(stripped.slice(start, end + 1)); } catch { /* continue */ }
+  }
   throw new Error("Could not parse Re-Master metadata optimization response");
+}
+
+function isValidMetadataResponse(text: string) {
+  try {
+    const parsed = extractJson(text) as { description?: unknown; tags?: unknown };
+    return typeof parsed.description === "string"
+      && parsed.description.trim().length >= 200
+      && Array.isArray(parsed.tags)
+      && parsed.tags.filter((tag) => typeof tag === "string" && tag.trim()).length >= 5;
+  } catch {
+    return false;
+  }
 }
 
 export async function generateRemasterMetadataRefresh(input: {
@@ -23,6 +47,10 @@ export async function generateRemasterMetadataRefresh(input: {
   const response = await askClaude(JSON.stringify(input), {
     maxTokens: 1800,
     temperature: 0.45,
+    responseMimeType: "application/json",
+    responseSchema: REMASTER_METADATA_SCHEMA,
+    validateResponse: isValidMetadataResponse,
+    fallbackOnInvalidResponse: true,
     systemPrompt: `You optimize metadata for the verified Re-Master Freddy YouTube music channel.
 Return ONLY JSON with this shape: {"description":"...","tags":["..."]}.
 Do not change or propose the title. Do not invent awards, chart positions, listener counts, artist collaborations, licenses, genres or factual claims not supported by the supplied metadata.
