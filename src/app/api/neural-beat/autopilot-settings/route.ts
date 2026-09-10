@@ -16,7 +16,7 @@ function authorizeMigration(request: NextRequest) {
 }
 
 function isMode(value: unknown): value is RemasterAutopilotMode {
-  return value === "off" || value === "preview" || value === "plan_non_destructive";
+  return value === "off" || value === "preview" || value === "plan_non_destructive" || value === "execute_guarded";
 }
 
 export async function GET(request: NextRequest) {
@@ -55,8 +55,8 @@ export async function PUT(request: NextRequest) {
     const settings = await saveRemasterAutopilotSettings(
       {
         mode: body.mode,
-        allowMetadataUpdates: false,
-        allowNonDestructivePlans: body.mode === "plan_non_destructive",
+        allowMetadataUpdates: body.mode === "execute_guarded",
+        allowNonDestructivePlans: body.mode === "plan_non_destructive" || body.mode === "execute_guarded",
         maxActionsPerRun,
       },
       request.headers.get("x-remaster-admin") || "freddy.bremseth@gmail.com",
@@ -68,7 +68,9 @@ export async function PUT(request: NextRequest) {
         ? "Autopilot er slått av."
         : settings.mode === "preview"
           ? "Autopilot analyserer og forhåndsviser, men utfører ingenting."
-          : "Autopilot kan lagre ikke-destruktive planer. YouTube-metadata krever fortsatt manuell godkjenning.",
+          : settings.mode === "plan_non_destructive"
+            ? "Autopilot kan lagre ikke-destruktive planer."
+            : "Guarded autopilot er aktiv: beskrivelse/tags og sikre playlist-tiltak kan utføres automatisk, logges og måles. Titler og thumbnails forblir manuelle.",
       settings,
     });
   } catch (error) {
