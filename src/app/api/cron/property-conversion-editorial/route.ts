@@ -11,6 +11,7 @@ import {
 export const maxDuration = 120;
 
 const BATCH_LIMIT = 6;
+const SCAN_LIMIT = 180;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -25,6 +26,10 @@ function conversionIsCurrent(property: Record<string, unknown>) {
   return (value as Record<string, unknown>).source_hash === computePropertyConversionSourceHash(property);
 }
 
+function isWebsiteVisible(property: Record<string, unknown>) {
+  return property.show_on_website !== false && property.website_visible !== false;
+}
+
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronApi(request);
   if (unauthorized) return unauthorized;
@@ -35,16 +40,15 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("properties")
     .select(
-      "id,ref,title,title_no,property_type,type,bedrooms,bathrooms,town,location,built_area,area_m2,plot_size,terrace_size,price,pool,garage,energy_rating,amenities_no,source_description,description,description_no,conversion_no,show_on_website,website_visible,status",
+      "id,ref,title,title_no,property_type,type,bedrooms,bathrooms,town,location,built_area,area_m2,plot_size,price,pool,garage,energy_rating,amenities_no,source_description,description,description_no,conversion_no,show_on_website,website_visible,status",
     )
-    .neq("show_on_website", false)
-    .neq("website_visible", false)
     .order("created_at", { ascending: false })
-    .limit(120);
+    .limit(SCAN_LIMIT);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const candidates = (data || [])
+    .filter((property) => isWebsiteVisible(property as Record<string, unknown>))
     .filter((property) => !conversionIsCurrent(property as Record<string, unknown>))
     .slice(0, BATCH_LIMIT);
 
