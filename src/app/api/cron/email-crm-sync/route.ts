@@ -6,10 +6,14 @@ import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { applyInboundCrmActions } from "@/services/email/apply-inbound-crm-actions";
 import { classifyInboundMailSource } from "@/services/email/inbound-mail-filter";
+import { reconcileInboundReplies, type ReconciliationEmailRow } from "@/services/email/inbound-reply-reconciliation";
 
 export const maxDuration = 300;
 const PATH = "/api/cron/email-crm-sync";
 const MAX_AUTOMATIC_REPLY_AGE_DAYS = 7;
+const RECONCILIATION_AGE_DAYS = 30;
+const RECONCILIATION_SCAN_LIMIT = 250;
+const RECONCILIATION_APPLY_LIMIT = 20;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -72,18 +76,73 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const reconciliationCutoff = new Date(Date.now() - RECONCILIATION_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data: reconciliationRows, error: reconciliationReadError } = await supabase
+    .from("email_messages")
+    .select("id,brand_id,from_address,subject,body_text,body_html,ai_summary,ai_urgency,ai_suggested_action,crm_reply_classification,crm_processed_at,received_at")
+    .eq("direction", "inbound")
+    .not("crm_processed_at", "is", null)
+    .gte("received_at", reconciliationCutoff)
+    .order("received_at", { ascending: false })
+    .limit(RECONCILIATION_SCAN_LIMIT);
+
+  const reconciliation = reconciliationReadError
+    ? {
+        candidates: 0,
+        reconciled: 0,
+        failed: 1,
+        results: [{
+          id: "reconciliation-read",
+          fromAddress: "",
+          previousClassification: null,
+          classification: "unclear" as const,
+          contactId: null,
+          status: "failed" as const,
+          error: reconciliationReadError.message,
+        }],
+      }
+    : await reconcileInboundReplies(
+        supabase,
+        (reconciliationRows ?? []) as ReconciliationEmailRow[],
+        RECONCILIATION_APPLY_LIMIT,
+      );
+
   const processed = results.filter((x) => x.status === "processed").length;
   const filtered = results.filter((x) => x.status === "filtered").length;
   const failed = results.filter((x) => x.status === "failed").length;
+  const totalFailed = failed + reconciliation.failed;
   await supabase.from("automation_logs").insert({
     action: "email_crm_sync", agent_name: "nexus_email_crm_sync_cron",
-    status: failed ? (processed || filtered ? "partial" : "failed") : "success",
+    status: totalFailed ? (processed || filtered || reconciliation.reconciled ? "partial" : "failed") : "success",
     details: {
       scanned: (rows ?? []).length, processed, filtered, failed, automatic_reply_age_days: MAX_AUTOMATIC_REPLY_AGE_DAYS,
       automatic_cutoff: automaticCutoff, runtime_control: `cron:${PATH}`,
       classifications: results.reduce<Record<string, number>>((acc, item) => { if (item.classification) acc[item.classification] = (acc[item.classification] || 0) + 1; return acc; }, {}),
+      reconciliation: {
+        age_days: RECONCILIATION_AGE_DAYS,
+        scanned: (reconciliationRows ?? []).length,
+        candidates: reconciliation.candidates,
+        reconciled: reconciliation.reconciled,
+        failed: reconciliation.failed,
+      },
     },
   }).then(() => {}).then(undefined, () => {});
 
-  return NextResponse.json({ success: true, scanned: (rows ?? []).length, processed, filtered, failed, automaticCutoff, results });
+  return NextResponse.json({
+    success: totalFailed === 0,
+    scanned: (rows ?? []).length,
+    processed,
+    filtered,
+    failed,
+    automaticCutoff,
+    results,
+    reconciliation: {
+      cutoff: reconciliationCutoff,
+      scanned: (reconciliationRows ?? []).length,
+      candidates: reconciliation.candidates,
+      reconciled: reconciliation.reconciled,
+      failed: reconciliation.failed,
+      results: reconciliation.results,
+    },
+  });
 }
