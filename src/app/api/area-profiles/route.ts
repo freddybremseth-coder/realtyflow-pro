@@ -23,6 +23,43 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+type PublicAreaProfile = {
+  id?: string;
+  slug?: string | null;
+  name?: string | null;
+  show_on_website?: boolean | null;
+  updated_at?: string | null;
+};
+
+/**
+ * Historical imports left a few duplicate area rows with the same slug. The
+ * public API must expose exactly one canonical profile per slug so consumers
+ * such as ZenEco never render conflicting geography/copy. Prefer the most
+ * recently updated visible row; admin GET still returns every row for cleanup.
+ */
+export function dedupePublicAreaProfiles<T extends PublicAreaProfile>(rows: T[]): T[] {
+  const visible = rows.filter((profile) =>
+    typeof profile.show_on_website === "boolean" ? profile.show_on_website : true,
+  );
+
+  const newestFirst = [...visible].sort((a, b) => {
+    const aTime = a.updated_at ? Date.parse(a.updated_at) : 0;
+    const bTime = b.updated_at ? Date.parse(b.updated_at) : 0;
+    return bTime - aTime;
+  });
+
+  const bySlug = new Map<string, T>();
+  for (const profile of newestFirst) {
+    const key = (profile.slug || slugify(profile.name || "")).trim().toLowerCase();
+    if (!key || bySlug.has(key)) continue;
+    bySlug.set(key, profile);
+  }
+
+  return Array.from(bySlug.values()).sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || ""), "nb"),
+  );
+}
+
 export async function GET(req: NextRequest) {
   const brandId = req.nextUrl.searchParams.get("brandId");
   const publicOnly = req.nextUrl.searchParams.get("public") === "1";
@@ -45,9 +82,7 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const profiles = publicOnly
-    ? (data || []).filter((profile: { show_on_website?: boolean }) =>
-        typeof profile.show_on_website === "boolean" ? profile.show_on_website : true,
-      )
+    ? dedupePublicAreaProfiles((data || []) as PublicAreaProfile[])
     : data || [];
   return NextResponse.json({ profiles });
 }
