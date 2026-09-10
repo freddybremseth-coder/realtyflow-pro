@@ -71,8 +71,10 @@ export async function POST(request: NextRequest) {
     if (property) {
       const rawLocation = String(property.location ?? "").trim();
       const derivedLocation = isBroadInventoryRegion(rawLocation)
-        ? deriveSpecificLocationFromTitle(property.title_no || property.title)
-          || deriveSpecificLocationFromDescription(property.description_no || property.description)
+        ? deriveSpecificLocationFromTitle(property.title_no)
+          || deriveSpecificLocationFromTitle(property.title)
+          || deriveSpecificLocationFromDescription(property.description_no)
+          || deriveSpecificLocationFromDescription(property.description)
         : rawLocation;
 
       const locationOk = !!derivedLocation && !isBroadInventoryRegion(derivedLocation);
