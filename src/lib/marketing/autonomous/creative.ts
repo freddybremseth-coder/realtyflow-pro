@@ -82,9 +82,8 @@ function factValue(req: CreativeRequest, prefix: string): string | null {
   return null;
 }
 
-function genomeValue(value: string | null | undefined): string | undefined {
-  const normalized = String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_").slice(0, 80);
-  return normalized || undefined;
+function genomeValue(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 80);
 }
 
 export function buildCreativePrompt(req: CreativeRequest): { system: string; user: string } {
@@ -166,7 +165,7 @@ export function assembleAsset(
       body: output.body,
       cta: resolvedCta(req, output.cta),
       factSources: req.facts ?? [],
-      generator: { model: meta.model, costEur: meta.costPerCallEur ?? 0 },
+      generator: { model: meta.model, costEur: meta.costEur ?? 0 },
     },
     provenance: {
       generatedBy: "creative-generator",
