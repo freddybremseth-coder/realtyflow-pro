@@ -23,6 +23,7 @@ const LINKS = [
   { href: "/nexus-os/focus", label: "Owner Focus" },
   { href: "/nexus-os/director", label: "Director" },
   { href: "/nexus-os/communications", label: "Communications" },
+  { href: "/nexus-os/communications/nurture", label: "Nurture Control" },
   { href: "/nexus-os/communications/readiness", label: "Email Readiness" },
   { href: "/nexus-os/communications/audit", label: "Email Audit" },
   { href: "/nexus-os/runtime", label: "Runtime" },
