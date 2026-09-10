@@ -1,5 +1,15 @@
 import { askClaude } from "@/services/ai/claude-client";
 
+const REMASTER_METADATA_SCHEMA = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    tags: { type: "array", items: { type: "string" } },
+  },
+  required: ["description", "tags"],
+  additionalProperties: false,
+} as const;
+
 function extractJson(text: string) {
   const stripped = text.replace(/```(?:json)?/gi, "").trim();
   try { return JSON.parse(stripped); } catch { /* continue */ }
@@ -38,6 +48,7 @@ export async function generateRemasterMetadataRefresh(input: {
     maxTokens: 1800,
     temperature: 0.45,
     responseMimeType: "application/json",
+    responseSchema: REMASTER_METADATA_SCHEMA,
     validateResponse: isValidMetadataResponse,
     fallbackOnInvalidResponse: true,
     systemPrompt: `You optimize metadata for the verified Re-Master Freddy YouTube music channel.
