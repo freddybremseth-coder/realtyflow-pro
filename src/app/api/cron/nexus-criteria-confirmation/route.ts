@@ -45,6 +45,19 @@ function analysisFromReviewMetadata(metadata: Record<string, unknown>) {
   };
 }
 
+function isExplicitCriteriaCorrection(value: string | null | undefined) {
+  const latest = extractLatestReplyText(value || "") || String(value || "");
+  const normalized = latest
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return false;
+  if (/\d/.test(normalized)) return true;
+  return /\b(nei|endre|endring|endret|feil|skal være|i stedet|isteden|bortsett|budsjett|pris|soverom|bad|område|sted|boligtype|villa|leilighet|rekkehus|instead|change|changed|wrong|budget|price|bedroom|bathroom|location|property type|except|cambiar|cambio|incorrecto|presupuesto|precio|dormitorio|baño|zona|tipo de vivienda)\b/i.test(normalized);
+}
+
 async function finishConfirmationReview(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   input: {
@@ -55,6 +68,8 @@ async function finishConfirmationReview(
     nextAction: string;
     done: boolean;
     extra?: Record<string, unknown>;
+    priority?: string;
+    title?: string;
   },
 ) {
   const now = new Date().toISOString();
@@ -72,6 +87,8 @@ async function finishConfirmationReview(
       status: input.done ? "DONE" : "TO_DO",
       metadata: nextMetadata,
       next_action: input.nextAction,
+      ...(input.priority ? { priority: input.priority } : {}),
+      ...(input.title ? { title: input.title } : {}),
       updated_at: now,
     })
     .eq("id", input.reviewWorkItemId);
@@ -104,6 +121,7 @@ export async function GET(request: NextRequest) {
   let awaitingReply = 0;
   let confirmedApplied = 0;
   let correctionReplies = 0;
+  let ambiguousReplies = 0;
   let confirmedButReview = 0;
   let failed = 0;
 
@@ -168,15 +186,34 @@ export async function GET(request: NextRequest) {
 
       const latestReply = extractLatestReplyText(String(inbound.data.body_text || inbound.data.body_html || ""));
       if (!isAffirmativeCriteriaConfirmation(latestReply)) {
-        correctionReplies += 1;
-        await finishConfirmationReview(supabase, {
-          reviewWorkItemId: String(row.id),
-          metadata,
-          outcome: "correction_or_clarification_received",
-          responseEmailMessageId: String(inbound.data.id),
-          nextAction: "Kunden svarte med en korrigering eller utdyping. Nexus behandler det nye kundesvaret og bygger kriteriene på nytt.",
-          done: true,
-        });
+        if (isExplicitCriteriaCorrection(latestReply)) {
+          correctionReplies += 1;
+          await finishConfirmationReview(supabase, {
+            reviewWorkItemId: String(row.id),
+            metadata,
+            outcome: "correction_or_clarification_received",
+            responseEmailMessageId: String(inbound.data.id),
+            nextAction: "Kunden svarte med en tydelig korrigering eller utdyping. Nexus behandler det nye kundesvaret og bygger kriteriene på nytt.",
+            done: true,
+          });
+        } else {
+          ambiguousReplies += 1;
+          await finishConfirmationReview(supabase, {
+            reviewWorkItemId: String(row.id),
+            metadata,
+            outcome: "ambiguous_confirmation_reply",
+            responseEmailMessageId: String(inbound.data.id),
+            nextAction: "Tvetydig kundesvar: tolk hva kunden mener, legg inn korrekte søkekriterier og godkjenn Buyer Profile før matching fortsetter.",
+            done: false,
+            priority: "HIGH",
+            title: "Tolk tvetydig kundesvar før søkekriterier endres",
+            extra: {
+              requires_human_interpretation: true,
+              human_interpretation_reason: "ambiguous_confirmation_reply",
+              human_interpretation_reply_preview: latestReply.slice(0, 800),
+            },
+          });
+        }
         continue;
       }
 
@@ -190,6 +227,8 @@ export async function GET(request: NextRequest) {
           responseEmailMessageId: String(inbound.data.id),
           nextAction: "Kunden har bekreftet, men bekreftelseskonteksten mangler. Kontroller kriteriene manuelt før matching.",
           done: false,
+          priority: "HIGH",
+          extra: { requires_human_interpretation: true, human_interpretation_reason: "confirmed_missing_context" },
         });
         continue;
       }
@@ -209,6 +248,8 @@ export async function GET(request: NextRequest) {
           responseEmailMessageId: String(inbound.data.id),
           nextAction: "Kunden har bekreftet kriteriene, men kildeoppgaven mangler. Kontroller Buyer Profile manuelt.",
           done: false,
+          priority: "HIGH",
+          extra: { requires_human_interpretation: true, human_interpretation_reason: "confirmed_source_work_missing" },
         });
         continue;
       }
@@ -261,6 +302,8 @@ export async function GET(request: NextRequest) {
           responseEmailMessageId: String(inbound.data.id),
           nextAction: "Kunden har bekreftet kriteriene, men Nexus kunne ikke aktivere Buyer Profile sikkert. Kontroller og godkjenn profilen manuelt.",
           done: false,
+          priority: "HIGH",
+          extra: { requires_human_interpretation: true, human_interpretation_reason: "confirmed_but_manual_review_required" },
         });
         continue;
       }
@@ -298,6 +341,7 @@ export async function GET(request: NextRequest) {
           confirmed_buyer_profile_id: buyerProfileId,
           confirmed_buyer_profile_status: "APPROVED",
           confirmed_revision_version: revisionVersion,
+          requires_human_interpretation: false,
         },
       });
       confirmedApplied += 1;
@@ -313,7 +357,7 @@ export async function GET(request: NextRequest) {
   await supabase.from("automation_logs").insert({
     action: "nexus_criteria_confirmation",
     agent_name: "nexus_criteria_confirmation_autopilot",
-    status: failed ? (confirmationSent || confirmedApplied || correctionReplies ? "partial" : "failed") : "success",
+    status: failed ? (confirmationSent || confirmedApplied || correctionReplies || ambiguousReplies ? "partial" : "failed") : "success",
     details: {
       considered,
       confirmation_sent: confirmationSent,
@@ -321,6 +365,7 @@ export async function GET(request: NextRequest) {
       awaiting_reply: awaitingReply,
       confirmed_applied: confirmedApplied,
       correction_replies: correctionReplies,
+      ambiguous_replies: ambiguousReplies,
       confirmed_but_review: confirmedButReview,
       failed,
       runtime_control: `cron:${PATH}`,
@@ -335,6 +380,7 @@ export async function GET(request: NextRequest) {
     awaitingReply,
     confirmedApplied,
     correctionReplies,
+    ambiguousReplies,
     confirmedButReview,
     failed,
   });
