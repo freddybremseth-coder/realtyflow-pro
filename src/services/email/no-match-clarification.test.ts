@@ -64,6 +64,6 @@ test("clarification email is transparent and asks for missing facts without chan
   assert.match(email.bodyText, /ingen boliger/i);
   assert.match(email.bodyText, /boligtyper/i);
   assert.match(email.bodyText, /soverom/i);
-  assert.match(email.bodyText, /svarer direkte på denne e-posten/i);
+  assert.match(email.bodyText, /svare direkte på denne e-posten/i);
   assert.doesNotMatch(email.bodyText, /jeg har endret/i);
 });
