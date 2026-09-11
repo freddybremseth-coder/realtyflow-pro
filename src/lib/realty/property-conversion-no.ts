@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { askClaude } from "@/services/ai/claude-client";
 import { unsupportedOutcomeClaims } from "@/lib/marketing/autonomous/claim-guard";
 
-const CONVERSION_VERSION = "conversion-v5";
+const CONVERSION_VERSION = "conversion-v6";
 const FORBIDDEN = /\b(drømmebolig|unik|fantastisk|fabelaktig|eksklusiv|spektakulær|perfekt|førsteklasses|uslåelig|enestående|attraktiv(?:t|e)?|ideell(?:t|e)?|idealet)\b/i;
 const PLACEHOLDER = /\b(ikke angitt|ukjent|ikke oppgitt|ikke spesifisert|mangler)\b/i;
 const UNSUPPORTED_AUDIENCE = /\b(investor(?:er|ene)?|investering(?:sformål|spotensial)?|utleie(?:potensial|inntekt)?|ferieutleie|avkastning)\b/i;
@@ -63,6 +63,10 @@ function textArray(value: unknown): string[] {
   return Array.from(new Set(value.map(clean).filter(Boolean))).slice(0, 18);
 }
 
+function metric(value: string) {
+  return value.replace(".", ",");
+}
+
 export function propertyConversionSource(property: Record<string, unknown>): ConversionSource {
   const features = textArray(property.amenities_no ?? property.features);
   return {
@@ -117,7 +121,7 @@ function explicitRawFeatures(source: ConversionSource): string[] {
   const text = source.rawDescription.toLowerCase();
   const items: string[] = [];
   if (/privat(?:e)? basseng|private pool|piscina privada/.test(text)) items.push("Privat basseng");
-  else if (/fellesbasseng|communal pool|community pool|piscina comunitaria/.test(text)) items.push("Fellesbasseng");
+  else if (/felles svømmebasseng|fellesbasseng|communal pool|community pool|piscina comunitaria/.test(text)) items.push("Fellesbasseng");
   else if (/\bbasseng\b|\bpool\b|\bpiscina\b/.test(text)) items.push("Basseng");
   if (/\bterrasse\b|\bterrace\b|\bterraza\b/.test(text)) items.push("Terrasse");
   if (/\bhage\b|\bgarden\b|\bjard[ií]n\b/.test(text)) items.push("Hage");
@@ -126,7 +130,7 @@ function explicitRawFeatures(source: ConversionSource): string[] {
   if (/\bparkering\b|\bparking\b|\baparcamiento\b/.test(text)) items.push("Parkering");
   if (/\bheis\b|\blift\b|\bascensor\b/.test(text)) items.push("Heis");
   if (/\bhavutsikt\b|\bsea views?\b|\bvistas al mar\b/.test(text)) items.push("Havutsikt");
-  if (/\baircondition\b|\bair conditioning\b|\baire acondicionado\b/.test(text)) items.push("Aircondition");
+  if (/\baircondition\b|\bair conditioning\b|\baire acondicionado\b|\bklimaanlegg\b/.test(text)) items.push("Aircondition");
   if (/åpen(?:t)? kjøkken|open[- ]plan kitchen|open plan kitchen|cocina abierta/.test(text)) items.push("Åpen kjøkkenløsning");
   return items;
 }
@@ -138,6 +142,40 @@ function documentedFeatures(source: ConversionSource): string[] {
     ...(source.pool ? ["Basseng"] : []),
     ...(source.garage ? ["Garasje"] : []),
   ])).slice(0, 8);
+}
+
+function sourceFactHighlights(source: ConversionSource): string[] {
+  const raw = source.rawDescription;
+  const items: string[] = [];
+  const add = (value: string | null) => { if (value) items.push(value); };
+  let m: RegExpMatchArray | null;
+
+  if (/\bgolfutsikt\b/i.test(raw)) add("Golfutsikt er oppgitt i kildebeskrivelsen.");
+  if (/frontlinjen av\s+ALHAMA SIGNATURE GOLF/i.test(raw)) add("Frontlinje ved Alhama Signature Golf er oppgitt i kildebeskrivelsen.");
+  if (/18-hulls golfbane designet av Jack Nicklaus/i.test(raw)) add("Kildebeskrivelsen oppgir en 18-hulls golfbane designet av Jack Nicklaus.");
+  if (/\bhavutsikt\b/i.test(raw)) add("Havutsikt er oppgitt i kildebeskrivelsen.");
+  if (/felles svømmebasseng|fellesbasseng/i.test(raw)) add("Felles svømmebasseng er oppgitt i kildebeskrivelsen.");
+  if (/privat(?:e)? basseng/i.test(raw)) add("Privat basseng er oppgitt i kildebeskrivelsen.");
+  if (/\b2 minutters gange fra stranden\b/i.test(raw)) add("Kildebeskrivelsen oppgir 2 minutters gange til stranden.");
+  if (/aerotermisk system|aerotermikk/i.test(raw)) add("Aerotermisk system er oppgitt i kildebeskrivelsen.");
+  if (/gulvvarme/i.test(raw)) add("Gulvvarme er oppgitt i kildebeskrivelsen.");
+  if (/sørøst orientert/i.test(raw)) add("Sørøstlig orientering er oppgitt i kildebeskrivelsen.");
+  if (/kan tilpasses|tilpasses med/i.test(raw)) add("Kildebeskrivelsen oppgir mulighet for enkelte tilpasninger.");
+  if (/\bnybyggvilla\b|\bnye leiligheter\b/i.test(raw)) add("Boligen er omtalt som nybygg i kildebeskrivelsen.");
+  if (/\bi én etasje\b/i.test(raw)) add("Boligen er oppgitt i én etasje.");
+
+  m = raw.match(/(?:bygget på en\s+)?(\d+(?:[,.]\d+)?)\s*m(?:2|²)\s*tomt/i);
+  if (m) add(`Tomten er oppgitt til ${metric(m[1])} m².`);
+  m = raw.match(/konstruert areal på\s*(\d+(?:[,.]\d+)?)\s*m(?:2|²)/i);
+  if (m) add(`Konstruert areal er oppgitt til ${metric(m[1])} m².`);
+  m = raw.match(/(?:en\s+)?(\d+(?:[,.]\d+)?)\s*m(?:2|²)\s*veranda/i);
+  if (m) add(`Veranda er oppgitt til ${metric(m[1])} m².`);
+  m = raw.match(/(?:en\s+)?(\d+(?:[,.]\d+)?)\s*m(?:2|²)\s*stue-spisestue-kjøkken/i);
+  if (m) add(`Stue, spisestue og kjøkken er oppgitt til ${metric(m[1])} m².`);
+  m = raw.match(/(?:et\s+)?(\d+(?:[,.]\d+)?)\s*m(?:2|²)\s*solarium/i);
+  if (m) add(`Solarium er oppgitt til ${metric(m[1])} m².`);
+
+  return Array.from(new Set(items)).slice(0, 8);
 }
 
 function placeLabel(source: ConversionSource): string {
@@ -159,6 +197,7 @@ export function propertyConversionFactSources(source: ConversionSource): Array<{
     source.garage ? "Garasje: ja" : "",
     source.energy && source.energy !== "X" ? `Energiklasse: ${source.energy}` : "",
     ...documentedFeatures(source).map((feature) => `Fasilitet: ${feature}`),
+    ...sourceFactHighlights(source).map((fact) => `Kilde: ${fact}`),
   ].filter(Boolean);
   return facts.map((claim) => ({ claim, source: "RealtyFlow Inventory" }));
 }
@@ -171,6 +210,7 @@ export function buildPropertyConversionFallback(
   const type = deCaps(source.type);
   const place = placeLabel(source);
   const features = documentedFeatures(source);
+  const highlights = sourceFactHighlights(source);
   const facts = [
     source.bedrooms ? `${source.bedrooms} soverom` : "",
     source.bathrooms ? `${source.bathrooms} bad` : "",
@@ -181,31 +221,40 @@ export function buildPropertyConversionFallback(
 
   const introFacts = facts.slice(0, 3).join(", ");
   const featureTail = features.slice(0, 3).join(", ").toLowerCase();
-  const sellingIntro = `${type} i ${place}${introFacts ? ` med ${introFacts}` : ""}. ${featureTail
-    ? `Fasiliteter oppgitt i boligdataene: ${featureTail}.`
-    : "Ytterligere kvaliteter bør bekreftes i prospekt og plantegninger før de beskrives nærmere."}`;
+  const sellingIntro = `${type} i ${place}${introFacts ? ` med ${introFacts}` : ""}. ${highlights.length
+    ? highlights.slice(0, 2).join(" ")
+    : featureTail
+      ? `Fasiliteter oppgitt i boligdataene: ${featureTail}.`
+      : "Ytterligere kvaliteter bør bekreftes i prospekt og plantegninger før de beskrives nærmere."}`;
 
   const reasons = Array.from(new Set([
     source.bedrooms ? `${source.bedrooms} soverom er oppgitt i boligdataene.` : "",
     source.bathrooms ? `${source.bathrooms} bad er oppgitt i boligdataene.` : "",
+    ...highlights,
     source.builtArea ? `Oppgitt boligareal er ${source.builtArea} m².` : "",
     source.plotSize ? `Tomten er oppgitt til ${source.plotSize} m².` : "",
     source.terraceSize ? `Terrassen er oppgitt til ${source.terraceSize} m².` : "",
     ...features.map((feature) => `${feature} er oppgitt i boligdataene.`),
     `Boligtypen er oppgitt som ${type}.`,
-  ].filter(Boolean))).slice(0, 5);
+  ].filter(Boolean))).slice(0, 6);
 
   const outdoor = features.filter((item) => /basseng|terrasse|hage|solarium/i.test(item));
-  const lifestyle = outdoor.length
-    ? `${outdoor.join(", ")} er oppgitt i boligdataene. Bruk og utforming bør bekreftes i prospekt og plantegninger.`
-    : "Boligdataene gir ikke grunnlag for å beskrive livsstil eller praktisk bruk utover de oppgitte faktaene.";
+  const practicalFacts = highlights.filter((item) => /veranda|solarium|én etasje|golfutsikt|havutsikt|basseng|orientering|gulvvarme|aerotermisk/i.test(item));
+  const lifestyle = practicalFacts.length
+    ? practicalFacts.slice(0, 2).join(" ")
+    : outdoor.length
+      ? `${outdoor.join(", ")} er oppgitt i boligdataene. Bruk og utforming bør bekreftes i prospekt og plantegninger.`
+      : "Boligdataene gir ikke grunnlag for å beskrive livsstil eller praktisk bruk utover de oppgitte faktaene.";
 
   const idealFor = Array.from(new Set([
     source.bedrooms && source.bedrooms >= 2 ? `Kjøpere som ønsker ${source.bedrooms} separate soverom.` : "",
     source.bathrooms && source.bathrooms >= 2 ? `Kjøpere som ønsker ${source.bathrooms} bad.` : "",
+    /golfutsikt/i.test(source.rawDescription) ? "Kjøpere som ønsker dokumentert golfutsikt." : "",
+    /havutsikt/i.test(source.rawDescription) ? "Kjøpere som ønsker dokumentert havutsikt." : "",
+    /\bi én etasje\b/i.test(source.rawDescription) ? "Kjøpere som ønsker bolig i én etasje." : "",
     outdoor.length ? "Kjøpere som ønsker dokumentert uteareal eller basseng." : "",
-    source.plotSize ? "Kjøpere som ønsker en bolig med oppgitt egen tomt." : "",
-  ].filter(Boolean))).slice(0, 3);
+    source.plotSize || /\bm(?:2|²)\s*tomt/i.test(source.rawDescription) ? "Kjøpere som ønsker en bolig med oppgitt egen tomt." : "",
+  ].filter(Boolean))).slice(0, 4);
 
   return {
     selling_intro_no: sellingIntro,
@@ -215,7 +264,7 @@ export function buildPropertyConversionFallback(
     cta_reason_no: "Be om komplett prospekt og plantegninger for å bekrefte tilgjengelighet, leveranseomfang og øvrige boligfakta.",
     source_hash: computePropertyConversionSourceHash(property),
     generated_at: now.toISOString(),
-    model: "template-conversion-v5",
+    model: "template-conversion-v6",
     generation_mode: "template",
     version: CONVERSION_VERSION,
   };
