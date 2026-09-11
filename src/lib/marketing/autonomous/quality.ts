@@ -57,6 +57,27 @@ export interface QualityOptions {
   generated?: boolean;
 }
 
+const INVENTORY_QUALITY_MARKERS: Array<{ label: string; re: RegExp }> = [
+  {
+    label: "energy label implies efficiency",
+    re: /(?:energimerk(?:ing|ingen|et)?|energiklasse|energy\s+(?:rating|label|class))[^.!?]{0,120}(?:indikasjon\s+på\s+energieffektivitet|tyder\s+på\s+energieffektivitet|energieffektivitet|energy\s+efficien(?:cy|t))/i,
+  },
+  {
+    label: "subjective opportunity",
+    re: /\b(?:spennende|attraktiv|lovende|exciting|attractive|promising)\s+(?:mulighet|opportunity)\b/i,
+  },
+];
+
+function inventoryQualityViolations(
+  caption: string,
+  factSources: Array<{ claim: string; source: string }>,
+): string[] {
+  return INVENTORY_QUALITY_MARKERS
+    .filter((marker) => marker.re.test(caption))
+    .filter((marker) => !factSources.some((source) => marker.re.test(source.claim ?? "")))
+    .map((marker) => marker.label);
+}
+
 function textOf(a: GeneratedAsset): string {
   return [a.headline, a.body, a.cta].filter(Boolean).join(" ").toLowerCase();
 }
@@ -94,9 +115,13 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
   // allmennkunnskap når de ikke finnes i factSources.
   const generated = opts.generated ?? true;
   const inventoryBound = typeof (g as { propertyId?: unknown }).propertyId === "string";
-  const outcomeViolations = generated
+  const baseOutcomeViolations = generated
     ? unsupportedOutcomeClaims(caption, asset.factSources, { inventoryBound })
     : [];
+  const inventoryViolations = generated && inventoryBound
+    ? inventoryQualityViolations(caption, asset.factSources)
+    : [];
+  const outcomeViolations = Array.from(new Set([...baseOutcomeViolations, ...inventoryViolations]));
   const roleViolations = generated && !brandSupportsOwnership(opts.brand) ? findOwnershipClaims(caption) : [];
 
   const brandFit = !opts.brandTerms?.length || opts.brandTerms.some((t) => text.includes(t.toLowerCase()));
