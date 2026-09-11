@@ -20,6 +20,12 @@ test("CRM sync analyzes recent inbound mail even when no reply draft exists", ()
   assert.match(cronSource, /applyInboundCrmActions/);
 });
 
+test("inbound reply interactions carry an explicit Nexus automation audit actor", () => {
+  assert.match(source, /source: "nexus-email-crm-sync"/);
+  assert.match(source, /performed_by: "Nexus Email Autopilot"/);
+  assert.match(source, /actor_type: "automation"/);
+});
+
 test("explicit DNC is persisted as permanent stopped nurture", () => {
   assert.match(source, /classification\.intent === "do_not_contact"/);
   assert.match(source, /update\.do_not_contact = true/);

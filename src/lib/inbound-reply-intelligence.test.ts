@@ -95,6 +95,14 @@ test("later request pauses nurture and schedules follow-up", () => {
   assert.equal(classification.shouldPauseNurture, true);
 });
 
+test("temporary Norwegian not-now reply is not misclassified as active interest", () => {
+  const classification = classifyInboundReply({ body: "Boligkjøp i Spania er ikke aktuelt for oss med det første, men takk for henvendelsen." });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.proposedPipelineAction, "schedule_followup");
+  assert.equal(classification.requiresFastResponse, false);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
 test("plain customer question is not mistaken for a terminal outcome", () => {
   const classification = classifyInboundReply({ body: "How much is the community fee?" });
   assert.equal(classification.intent, "question");

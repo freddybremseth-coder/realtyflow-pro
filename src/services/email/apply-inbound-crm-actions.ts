@@ -207,6 +207,9 @@ export async function applyInboundCrmActions(
     direction: "in",
     brand_id: params.brandId,
     metadata: {
+      source: "nexus-email-crm-sync",
+      performed_by: "Nexus Email Autopilot",
+      actor_type: "automation",
       email_message_id: params.emailMessageId,
       classification: classification.intent,
       confidence: classification.confidence,
