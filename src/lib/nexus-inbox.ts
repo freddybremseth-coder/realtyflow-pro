@@ -1,7 +1,7 @@
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 import { summarizeSocialAutopilot } from "@/lib/social-autopilot";
 
-export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity";
+export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity" | "buyer_criteria";
 export type NexusInboxPriority = "critical" | "high" | "medium" | "low";
 
 export interface NexusInboxItem {
@@ -46,6 +46,16 @@ type EmailIdentityReviewItem = {
   occurredAt?: string | null;
 };
 
+type BuyerCriteriaReviewItem = {
+  id: string;
+  priority?: string | null;
+  customerName?: string | null;
+  replyPreview?: string | null;
+  nextAction?: string | null;
+  reviewHref: string;
+  updatedAt?: string | null;
+};
+
 const PRIORITY_WEIGHT: Record<NexusInboxPriority, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
 function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
@@ -64,6 +74,7 @@ export function buildNexusInbox(input: {
   approvals: ApprovalItem[];
   marketingRows: SocialAutopilotRow[];
   emailIdentityReviews?: EmailIdentityReviewItem[];
+  buyerCriteriaReviews?: BuyerCriteriaReviewItem[];
 }): NexusInboxItem[] {
   const items: NexusInboxItem[] = [];
 
@@ -131,10 +142,26 @@ export function buildNexusInbox(input: {
     });
   }
 
+  for (const row of input.buyerCriteriaReviews ?? []) {
+    const preview = String(row.replyPreview || "").trim();
+    const nextAction = String(row.nextAction || "Tolk kundens svar og legg inn korrekte søkekriterier før matching fortsetter.").trim();
+    items.push({
+      id: `buyer-criteria:${row.id}`,
+      source: "buyer_criteria",
+      priority: String(row.priority || "HIGH").toUpperCase() === "CRITICAL" ? "critical" : "high",
+      title: "Kundesvar trenger din tolkning",
+      reason: preview ? `Kunden svarte: «${preview}» · ${nextAction}` : nextAction,
+      href: row.reviewHref,
+      actionLabel: "Tolk svar",
+      customerName: row.customerName ?? null,
+      occurredAt: row.updatedAt ?? null,
+    });
+  }
+
   return items.sort((a, b) => {
     const priorityDifference = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
     if (priorityDifference) return priorityDifference;
-    if (a.source === "email_identity" && b.source === "email_identity") {
+    if (a.source === b.source && ["email_identity", "buyer_criteria"].includes(a.source)) {
       const recencyDifference = timestamp(b.occurredAt) - timestamp(a.occurredAt);
       if (recencyDifference) return recencyDifference;
     }
@@ -149,6 +176,7 @@ export function summarizeNexusInbox(items: NexusInboxItem[]) {
     approvals: items.filter((item) => item.source === "approval").length,
     marketing: items.filter((item) => item.source === "marketing").length,
     emailIdentity: items.filter((item) => item.source === "email_identity").length,
+    buyerCriteria: items.filter((item) => item.source === "buyer_criteria").length,
     system: items.filter((item) => item.source === "system").length,
   };
 }
