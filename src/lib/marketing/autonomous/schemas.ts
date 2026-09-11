@@ -143,8 +143,8 @@ export const GeneratedAssetSchema = z.object({
     mediaType: z.enum(["image", "video", "reel"]).optional(),
     altText: z.string().optional(),
   }).optional(),
-  /** Genererings-metadata (modell, kostnad). */
-  generator: z.object({ model: z.string().optional(), costEur: z.number().min(0).optional() }).default({}),
+  /** Genererings-metadata (modell, kostnad, eller deterministisk modus). */
+  generator: z.object({ model: z.string().optional(), costEur: z.number().min(0).optional(), mode: z.string().optional() }).default({}),
 });
 export type GeneratedAsset = z.infer<typeof GeneratedAssetSchema>;
 
