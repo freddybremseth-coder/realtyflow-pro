@@ -6,6 +6,7 @@ import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { applyInboundCrmActions } from "@/services/email/apply-inbound-crm-actions";
 import { classifyInboundMailSource } from "@/services/email/inbound-mail-filter";
+import { extractLatestReplyText } from "@/services/email/latest-reply-text";
 
 export const maxDuration = 300;
 const PATH = "/api/cron/email-crm-sync";
@@ -55,9 +56,11 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      const rawBody = row.body_text || row.body_html || "";
+      const latestReply = extractLatestReplyText(rawBody) || String(rawBody);
       const action = await applyInboundCrmActions(supabase, {
         emailMessageId: String(row.id), brandId: String(row.brand_id), fromAddress: String(row.from_address || ""), subject: row.subject,
-        body: row.body_text || row.body_html || "", summary: row.ai_summary, urgency: row.ai_urgency, suggestedAction: row.ai_suggested_action,
+        body: latestReply, summary: row.ai_summary, urgency: row.ai_urgency, suggestedAction: row.ai_suggested_action,
       });
       const processedAt = new Date().toISOString();
       const { error: markError } = await supabase.from("email_messages").update({
