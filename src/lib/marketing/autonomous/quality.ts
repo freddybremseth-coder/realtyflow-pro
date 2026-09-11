@@ -66,6 +66,30 @@ const INVENTORY_QUALITY_MARKERS: Array<{ label: string; re: RegExp }> = [
     label: "subjective opportunity",
     re: /\b(?:spennende|attraktiv|lovende|exciting|attractive|promising)\s+(?:mulighet|opportunity)\b/i,
   },
+  {
+    label: "dream-home-in-the-sun wording",
+    re: /(?:drømmer\s+du\s+om|drømmen\s+om|gjøre\s+drømmen\s+om|dream(?:ing)?\s+of|dream\s+of)[^.!?]{0,80}(?:hjem|bolig|home|property)[^.!?]{0,30}(?:i\s+solen|in\s+the\s+sun)/i,
+  },
+  {
+    label: "beautiful property",
+    re: /(?:nydelig(?:e|t)?|vakker(?:t|e)?|beautiful|stunning)\s+(?:bungalow(?:en|er)?|bolig(?:en|er|ene)?|villa(?:en|er|ene)?|eiendom(?:men|mer|mene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|home|property|villa|apartment|residence)/i,
+  },
+  {
+    label: "spacious design",
+    re: /(?:romslig(?:e|t)?|spacious)\s+(?:design|planløsning|layout)/i,
+  },
+  {
+    label: "modern facilities",
+    re: /(?:moderne|modern)\s+(?:fasiliteter|facilities|amenities)/i,
+  },
+  {
+    label: "vacation-and-permanent-stay suitability",
+    re: /(?:ideell(?:t|e)?|perfekt|egnet|suitable|ideal|perfect)[^.!?]{0,60}(?:ferie|holiday|vacation)[^.!?]{0,60}(?:permanent\s+opphold|fast\s+bosted|permanent\s+stay|permanent\s+residence|year[-\s]?round)/i,
+  },
+  {
+    label: "full-process guidance promise",
+    re: /(?:veilede|hjelpe|guide|help)[^.!?]{0,80}(?:gjennom\s+hele\s+prosessen|through\s+the\s+entire\s+process|throughout\s+the\s+process)/i,
+  },
 ];
 
 function inventoryQualityViolations(
