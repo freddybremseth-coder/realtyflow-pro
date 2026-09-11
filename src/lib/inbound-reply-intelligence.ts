@@ -118,8 +118,10 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   const changed = /\b(changed|different area|different budget|new budget|other area|other location|requirements changed|endret|andre ønsker|annet område|nytt budsjett|annet budsjett|ser etter noe annet)\b/i.test(text);
   if (changed) return result("update_preferences", 0.91, "refresh_buyer_profile", ["Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
-  const later = /\b(later|next year|in a few months|not now|after summer|after christmas|senere|neste år|om noen måneder|ikke nå|etter sommeren|etter jul)\b/i.test(text);
-  if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], { shouldPauseNurture: true });
+  // Temporary negative answers must win before the broad active keyword "aktuelt".
+  // This prevents phrases such as "ikke aktuelt med det første" from becoming HOT LEAD.
+  const later = /\b(later|next year|in a few months|not now|not at the moment|not for now|not anytime soon|not in the near future|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|ikke nå|ikke aktuelt nå|ikke aktuelt akkurat nå|ikke aktuelt med det første|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund|etter sommeren|etter jul)\b/i.test(text);
+  if (later) return result("follow_up_later", 0.94, "schedule_followup", ["Customer indicates that buying is not current but may be relevant later."], { shouldPauseNurture: true });
 
   const active = /\b(still interested|still looking|interested|yes we are|yes i am|ready to buy|ready to move forward|fortsatt interessert|fortsatt aktuelt|vi ser fortsatt|jeg ser fortsatt|interessert|klar til å kjøpe|aktuelt)\b/i.test(text);
   if (active) return result("active_interest", 0.91, "move_to_contact", ["Customer confirms active buying interest."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
