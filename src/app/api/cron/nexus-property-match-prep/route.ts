@@ -65,6 +65,8 @@ export async function GET(request: NextRequest) {
         buyerProfileStatus,
       });
       const now = new Date().toISOString();
+      const hasMatches = result.prepared && result.properties.length > 0;
+      const noMatch = result.prepared && result.properties.length === 0;
       const nextMetadata = {
         ...metadata,
         property_match_prepared_at: now,
@@ -73,10 +75,17 @@ export async function GET(request: NextRequest) {
         property_match_analyzed: result.analyzed,
         property_match_count: result.properties.length,
         property_match_candidates: result.properties,
+        ...(noMatch ? {
+          no_match_followup_required: true,
+          no_match_followup_status: null,
+          no_match_review_required: false,
+        } : {}),
       };
-      const nextAction = result.properties.length > 0
+      const nextAction = hasMatches
         ? `Nexus har kjørt matching og klargjort ${result.properties.length} kandidat${result.properties.length === 1 ? "" : "er"}. Kontroller shortlist og send bare relevante boliger til kunden.`
-        : row.next_action;
+        : noMatch
+          ? `Nexus analyserte ${result.analyzed} boliger, men fant ingen gode nok treff. Nexus avklarer nå om søkekriteriene mangler nødvendig presisjon; kriteriene endres ikke automatisk.`
+          : row.next_action;
 
       const { error: updateError } = await supabase
         .from("work_items")
@@ -84,8 +93,8 @@ export async function GET(request: NextRequest) {
         .eq("id", row.id);
       if (updateError) throw updateError;
 
-      if (result.prepared && result.properties.length > 0) prepared += 1;
-      else if (result.prepared) noMatches += 1;
+      if (hasMatches) prepared += 1;
+      else if (noMatch) noMatches += 1;
       else skipped += 1;
     } catch (workerError) {
       failed += 1;
