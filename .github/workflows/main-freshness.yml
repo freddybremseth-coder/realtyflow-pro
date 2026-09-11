@@ -1,0 +1,99 @@
+name: Main Freshness Guard
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  require-current-main:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout actual PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch current main
+        run: git fetch --no-tags origin main
+
+      - name: Require PR head to contain current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_MAIN="$(git rev-parse origin/main)"
+          HEAD_SHA="$(git rev-parse HEAD)"
+          EXPECTED_HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "Current main: $CURRENT_MAIN"
+          echo "PR head:      $HEAD_SHA"
+          echo "Event head:   $EXPECTED_HEAD"
+
+          if [ "$HEAD_SHA" != "$EXPECTED_HEAD" ]; then
+            echo "ERROR: Checkout is not the actual PR head SHA."
+            exit 1
+          fi
+
+          if git merge-base --is-ancestor "$CURRENT_MAIN" "$HEAD_SHA"; then
+            echo "PR head contains the latest main. Freshness check passed."
+            exit 0
+          fi
+
+          MERGE_BASE="$(git merge-base "$HEAD_SHA" "$CURRENT_MAIN")"
+          echo "PR is stale. Merge base: $MERGE_BASE"
+          echo "Commits added to main since this PR diverged:"
+          git log --oneline "$MERGE_BASE..$CURRENT_MAIN" || true
+          echo
+          echo "Files changed on main since this PR diverged:"
+          git diff --name-only "$MERGE_BASE..$CURRENT_MAIN" || true
+          echo
+          echo "Files changed by this PR:"
+          git diff --name-only "$MERGE_BASE..$HEAD_SHA" || true
+          echo
+          echo "ERROR: This PR head does not contain the latest main. Rebase or merge current main into the branch, rerun CI, and only then merge."
+          exit 1
+
+  refresh-open-pr-statuses:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Mark every open main PR fresh or stale
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO="$GITHUB_REPOSITORY"
+          CURRENT_MAIN="$GITHUB_SHA"
+
+          gh api --paginate "repos/$REPO/pulls?state=open&base=main&per_page=100" \
+            --jq '.[] | [.number, .head.sha] | @tsv' |
+          while IFS=$'\t' read -r PR_NUMBER HEAD_SHA; do
+            [ -n "$HEAD_SHA" ] || continue
+
+            COMPARE_STATUS="$(gh api "repos/$REPO/compare/$CURRENT_MAIN...$HEAD_SHA" --jq '.status')"
+            if [ "$COMPARE_STATUS" = "ahead" ] || [ "$COMPARE_STATUS" = "identical" ]; then
+              STATE="success"
+              DESCRIPTION="PR contains current main $CURRENT_MAIN"
+            else
+              STATE="failure"
+              DESCRIPTION="PR is stale after main advanced; refresh before merge"
+            fi
+
+            echo "PR #$PR_NUMBER $HEAD_SHA -> $STATE ($COMPARE_STATUS)"
+            gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+              -f state="$STATE" \
+              -f context="Main Freshness / current-main" \
+              -f description="$DESCRIPTION" \
+              >/dev/null
+          done
