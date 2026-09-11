@@ -18,7 +18,7 @@ test("Nexus Inbox combines system, approval, marketing and high email identity a
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.priority, "critical");
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.href, "/nexus-os/email-link-health?messageId=mail-conflict");
   const summary = summarizeNexusInbox(items);
-  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, system: 1 });
+  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, shortlistReview: 0, system: 1 });
 });
 
 test("ambiguous buyer criteria reply becomes a high-priority human interpretation item", () => {
@@ -47,6 +47,32 @@ test("ambiguous buyer criteria reply becomes a high-priority human interpretatio
   assert.equal(items[0]?.href, "/customers/contact-1");
   assert.equal(items[0]?.actionLabel, "Tolk svar");
   assert.equal(summarizeNexusInbox(items).buyerCriteria, 1);
+});
+
+test("prepared property shortlist becomes a focused high-priority review item", () => {
+  const items = buildNexusInbox({
+    attention: [],
+    approvals: [],
+    marketingRows: [],
+    shortlistReviews: [{
+      id: "crm-work-1",
+      priority: "HIGH",
+      customerName: "Ola Nordmann",
+      candidateCount: 4,
+      nextAction: "Kontroller kvalitet og relevans før kundeutsending.",
+      reviewHref: "/nexus-os/shortlist-review?workItemId=crm-work-1",
+      updatedAt: "2026-09-11T15:00:00Z",
+    }],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.source, "shortlist_review");
+  assert.equal(items[0]?.priority, "high");
+  assert.equal(items[0]?.customerName, "Ola Nordmann");
+  assert.match(items[0]?.reason || "", /4 boligkandidater/);
+  assert.equal(items[0]?.actionLabel, "Review boliger");
+  assert.equal(items[0]?.href, "/nexus-os/shortlist-review?workItemId=crm-work-1");
+  assert.equal(summarizeNexusInbox(items).shortlistReview, 1);
 });
 
 test("blocked approval stays visible but is not elevated above ready work", () => {
