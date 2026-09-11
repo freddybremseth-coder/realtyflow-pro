@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import { askClaude } from "@/services/ai/claude-client";
 import { unsupportedOutcomeClaims } from "@/lib/marketing/autonomous/claim-guard";
 
-const CONVERSION_VERSION = "conversion-v4";
-const FORBIDDEN = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt|førsteklasses|uslåelig|enestående|attraktiv(?:t|e)?|ideell(?:t|e)?|idealet)\b/i;
+const CONVERSION_VERSION = "conversion-v5";
+const FORBIDDEN = /\b(drømmebolig|unik|fantastisk|fabelaktig|eksklusiv|spektakulær|perfekt|førsteklasses|uslåelig|enestående|attraktiv(?:t|e)?|ideell(?:t|e)?|idealet)\b/i;
 const PLACEHOLDER = /\b(ikke angitt|ukjent|ikke oppgitt|ikke spesifisert|mangler)\b/i;
 const UNSUPPORTED_AUDIENCE = /\b(investor(?:er|ene)?|investering(?:sformål|spotensial)?|utleie(?:potensial|inntekt)?|ferieutleie|avkastning)\b/i;
+const DEMOGRAPHIC_AUDIENCE = /\b(familie(?:r|n)?|barnefamilie(?:r|n)?|par(?:et)?|pensjonist(?:er|ene)?|førstegangskjøper(?:e|ne)?|personer|de som|for deg som)\b/i;
 const UNSUPPORTED_LIFESTYLE = /\b(aktiv livsstil|naturskjønn(?:e|t)?|fredelig(?:e)?|rolig(?:e)? omgivelser|sosial atmosfære|underholdning|året rundt komfort|komfort året rundt)\b/i;
 const SUBJECTIVE_SOURCE_COPY = /\b(romslig(?:e|t)?|fullt utstyrt|velutstyrt|stor tomt|typisk spansk landsby|sosialt område|konsolidert urbanisering|godt tilpasset|komfortabel(?:t|e)? opphold|nyte utendørsarealer|flott(?:e|t)? område|god beliggenhet)\b/i;
 
@@ -214,7 +215,7 @@ export function buildPropertyConversionFallback(
     cta_reason_no: "Be om komplett prospekt og plantegninger for å bekrefte tilgjengelighet, leveranseomfang og øvrige boligfakta.",
     source_hash: computePropertyConversionSourceHash(property),
     generated_at: now.toISOString(),
-    model: "template-conversion-v4",
+    model: "template-conversion-v5",
     generation_mode: "template",
     version: CONVERSION_VERSION,
   };
@@ -236,18 +237,42 @@ function numericClaimsAreGrounded(text: string, source: ConversionSource) {
   );
 }
 
+function idealForClaimsAreGrounded(items: string[], source: ConversionSource) {
+  if (items.length < 1 || items.length > 4) return false;
+  const features = documentedFeatures(source).join(" ").toLowerCase();
+  const raw = source.rawDescription.toLowerCase();
+
+  return items.every((item) => {
+    if (!/^Kjøpere som ønsker\b/i.test(item)) return false;
+    if (DEMOGRAPHIC_AUDIENCE.test(item) || UNSUPPORTED_AUDIENCE.test(item)) return false;
+
+    const lower = item.toLowerCase();
+    if (/soverom/.test(lower)) return Boolean(source.bedrooms && new RegExp(`\\b${source.bedrooms}\\b`).test(lower));
+    if (/\bbad\b/.test(lower)) return Boolean(source.bathrooms && new RegExp(`\\b${source.bathrooms}\\b`).test(lower));
+    if (/havutsikt|sjøutsikt|utsikt mot havet/.test(lower)) return /sea views?|havutsikt|vistas al mar/.test(raw);
+    if (/golf/.test(lower)) return /golf/.test(raw);
+    if (/basseng/.test(lower)) return /basseng|pool|piscina/.test(`${features} ${raw}`);
+    if (/terrasse|hage|solarium|uteareal/.test(lower)) return /terrasse|terrace|terraza|hage|garden|jard[ií]n|solarium|basseng|pool|piscina/.test(`${features} ${raw}`);
+    if (/tomt/.test(lower)) return Boolean(source.plotSize || /tomt|plot|parcela/.test(raw));
+    if (/nybygg/.test(lower)) return /nybygg|new build|obra nueva/.test(raw);
+    if (/én etasje|en etasje|ett plan/.test(lower)) return /én etasje|en etasje|one floor|single storey|single-story|una planta/.test(raw);
+    return false;
+  });
+}
+
 export function propertyConversionOutputIsSafe(value: ConversionCopy, source?: ConversionSource) {
   const all = [value.selling_intro_no, ...value.key_reasons_no, value.lifestyle_no, ...value.ideal_for_no, value.cta_reason_no]
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!all || FORBIDDEN.test(all) || PLACEHOLDER.test(all) || UNSUPPORTED_AUDIENCE.test(all) || UNSUPPORTED_LIFESTYLE.test(all) || SUBJECTIVE_SOURCE_COPY.test(all)) return false;
-  if (value.selling_intro_no.length < 80 || value.key_reasons_no.length < 3 || value.key_reasons_no.length > 6 || value.ideal_for_no.length > 4) return false;
+  if (!all || FORBIDDEN.test(all) || PLACEHOLDER.test(all) || UNSUPPORTED_AUDIENCE.test(all) || DEMOGRAPHIC_AUDIENCE.test(all) || UNSUPPORTED_LIFESTYLE.test(all) || SUBJECTIVE_SOURCE_COPY.test(all)) return false;
+  if (value.selling_intro_no.length < 80 || value.key_reasons_no.length < 3 || value.key_reasons_no.length > 6 || value.ideal_for_no.length < 1 || value.ideal_for_no.length > 4) return false;
 
   if (source) {
     const sharedUnsupported = unsupportedOutcomeClaims(all, propertyConversionFactSources(source), { inventoryBound: true });
     if (sharedUnsupported.length > 0) return false;
+    if (!idealForClaimsAreGrounded(value.ideal_for_no, source)) return false;
 
     const lower = all.toLowerCase();
     const groundedClaims: Array<[RegExp, RegExp, boolean]> = [
@@ -306,7 +331,7 @@ Målet er å gjøre dokumenterte egenskaper enklere å forstå, ikke å overtale
 Regler:
 - Bruk KUN eksplisitte fakta i input. Hvis et faktum ikke står i input, skal det ikke omtales.
 - Ikke utled investor-/utleiepotensial, avkastning, målgrupper eller livsstil som ikke følger direkte av dokumenterte boligegenskaper.
-- Ikke gjenta subjektive salgsord fra kildebeskrivelsen. Ord som luksus/luksuriøs, moderne, romslig, sjarmerende, vakker, flott, fantastisk, eksklusiv, perfekt, ideell eller attraktiv skal utelates selv om de finnes i feedteksten.
+- Ikke gjenta subjektive salgsord fra kildebeskrivelsen. Ord som luksus/luksuriøs, moderne, romslig, sjarmerende, vakker, flott, fantastisk, fabelaktig, eksklusiv, perfekt, ideell eller attraktiv skal utelates selv om de finnes i feedteksten.
 - Unngå også vage formuleringer som «stor tomt», «fullt utstyrt», «velutstyrt», «typisk spansk landsby», «sosialt område», «konsolidert urbanisering», «godt tilpasset» og formuleringer om å «nyte» en bestemt livsstil. Beskriv heller den konkrete egenskapen.
 - Ikke utled energieffektivitet, lave kostnader eller komfort fra energiklasse eller tekniske systemer alene.
 - Ikke finn på eller generaliser avstander, utsikt, solforhold, møbler, materialkvalitet, ferdigstillelse, nærservice eller hva som er inkludert.
@@ -314,7 +339,7 @@ Regler:
 - selling_intro_no: 2–4 naturlige setninger basert på boligtype, sted og dokumenterte egenskaper.
 - key_reasons_no: 3–6 korte, ulike og faktabaserte punkter. Beskriv hva som er oppgitt; unngå antatte fordeler.
 - lifestyle_no: beskriv bare dokumenterte planløsnings-/utearealfakta. Ingen stemning, områdekarakter eller antatt livsstil.
-- ideal_for_no: 1–4 nøkterne behovsbeskrivelser. Ikke bruk demografi, investorprofil eller antatt bruk.
+- ideal_for_no: 1–4 nøkterne behovsbeskrivelser. HVER linje skal starte med «Kjøpere som ønsker ...». Ikke bruk familier, personer, par, pensjonister, investorer, «de som» eller annen demografi. Bruk bare dokumenterte behov som antall soverom/bad, eksplisitt dokumentert havutsikt/golf/basseng/uteareal/tomt/nybygg/én etasje.
 - cta_reason_no: én konkret grunn til å be om prospekt/plantegninger og få bekreftet leveranse/tilgjengelighet.
 - Returner KUN gyldig JSON etter skjemaet.`;
 
