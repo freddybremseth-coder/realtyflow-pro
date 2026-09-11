@@ -27,6 +27,25 @@ const N5798_FACTS = [
   { claim: "Energimerking: B", source: "RealtyFlow Inventory" },
   { claim: "Inventory-beskrivelse: Boligen er bygget med luksuriøse finisher.", source: "RealtyFlow Inventory" },
 ];
+const N5876_BAD_COPY = [
+  "Oppdag denne sjarmerende leiligheten i Costa Cálida",
+  "Denne leiligheten med 2 soverom og 2 bad, plassert i Costa Cálida, tilbyr en praktisk og komfortabel livsstil.",
+  "Med energimerking B, kan du nyte et hjem som er utformet med tanke på bærekraft.",
+  "Her får du muligheten til å bo i et område kjent for sitt milde klima og vakre landskap.",
+  "Enten du ser etter feriebolig eller et permanent hjem, vil denne leiligheten gi deg den tryggheten og komforten du trenger.",
+].join(" ");
+const N5876_FACTS = [
+  { claim: "Referanse: N5876", source: "RealtyFlow Inventory" },
+  { claim: "Tittel: Leilighet med 2 soverom i Costa Cálida", source: "RealtyFlow Inventory" },
+  { claim: "Sted: Costa Cálida", source: "RealtyFlow Inventory" },
+  { claim: "Region: Costa Calida", source: "RealtyFlow Inventory" },
+  { claim: "Pris: €356500", source: "RealtyFlow Inventory" },
+  { claim: "Soverom: 2", source: "RealtyFlow Inventory" },
+  { claim: "Bad: 2", source: "RealtyFlow Inventory" },
+  { claim: "Boligtype: Ground floor apartment", source: "RealtyFlow Inventory" },
+  { claim: "Energimerking: B", source: "RealtyFlow Inventory" },
+  { claim: "Inventory-beskrivelse: Leilighet med 2 soverom og 2 bad i Costa Cálida. Energiklasse B.", source: "RealtyFlow Inventory" },
+];
 
 function assetWith(body: string, extra: Partial<GeneratedAsset> = {}): GeneratedAsset {
   return {
@@ -86,6 +105,34 @@ test("N5798 regression: subjektiv pynt og energimerke→trygghet er udekkede cla
     "raises the standard",
     "energy rating implies safety",
   ]);
+});
+
+test("N5876 regression: inventory-bound copy fanger livsstil, klima, bærekraft og egnethet", () => {
+  assert.deepEqual(unsupportedOutcomeClaims(N5876_BAD_COPY, N5876_FACTS, { inventoryBound: true }), [
+    "charming property",
+    "property lifestyle claim",
+    "sustainability property",
+    "area reputation claim",
+    "mild climate",
+    "beautiful landscape",
+    "holiday-home suitability",
+    "permanent-home suitability",
+    "property comfort or safety promise",
+  ]);
+});
+
+test("inventory narrative claim tillates når samme egenskap faktisk finnes i factSources", () => {
+  const caption = "Sjarmerende leilighet i Costa Cálida.";
+  assert.deepEqual(
+    unsupportedOutcomeClaims(caption, [
+      { claim: "Inventory-beskrivelse: Sjarmerende leilighet i Costa Cálida.", source: "RealtyFlow Inventory" },
+    ], { inventoryBound: true }),
+    [],
+  );
+});
+
+test("inventory-only narrative markers påvirker ikke generelt brand-innhold", () => {
+  assert.deepEqual(unsupportedOutcomeClaims("Et område kjent for mildt klima.", []), []);
 });
 
 test("findOwnershipClaims: «våre boliger» treffer, formidler-formulering treffer ikke", () => {
@@ -166,6 +213,21 @@ test("N5798 regression: quality kan ikke være 100 for unsupported pynt + rådgi
   assert.equal(r.checks.roleConsistent, false);
   assert.ok(r.unsupportedOutcomeClaims.includes("energy rating implies safety"));
   assert.deepEqual(r.roleViolations, ["våre villaer"]);
+  assert.ok(r.score < 100, `score var ${r.score}`);
+});
+
+test("N5876 regression: concrete Inventory asset kan ikke få quality 100 med udokumentert filler", () => {
+  const brand = parseBrandContext({ brandId: "b1", brandName: "Zen Eco Homes" });
+  const baseGenome = assetWith("").genome;
+  const r = contentQualityGate(assetWith(N5876_BAD_COPY, {
+    factSources: N5876_FACTS,
+    genome: { ...baseGenome, propertyId: "f4533cfa-4d17-4802-a65e-79998244ada5" } as GeneratedAsset["genome"],
+  }), { brand });
+  assert.equal(r.checks.claimsVerified, false);
+  assert.ok(r.unsupportedOutcomeClaims.includes("charming property"));
+  assert.ok(r.unsupportedOutcomeClaims.includes("sustainability property"));
+  assert.ok(r.unsupportedOutcomeClaims.includes("mild climate"));
+  assert.ok(r.unsupportedOutcomeClaims.includes("property comfort or safety promise"));
   assert.ok(r.score < 100, `score var ${r.score}`);
 });
 

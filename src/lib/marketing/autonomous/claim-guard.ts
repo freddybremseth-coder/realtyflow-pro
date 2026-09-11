@@ -64,16 +64,42 @@ const OUTCOME_CLAIM_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "garantert", re: /\bgarantert?e?\b/i },
 ];
 
-export function findOutcomeClaims(text: string | null | undefined): string[] {
+/**
+ * Strengere markører for én konkret Inventory-bolig. Disse er ikke generelle
+ * brand-forbud: de er påstander som må finnes eksplisitt i factSources når
+ * captionen er bundet til propertyId. Dette hindrer at modellen fyller sparse
+ * boligdata med plausible, men udokumenterte livsstils-/områdepåstander.
+ */
+const INVENTORY_NARRATIVE_MARKERS: Array<{ label: string; re: RegExp }> = [
+  { label: "charming property", re: /(?:sjarmerende|charming)\s+(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|eiendom(?:men|mer|mene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|home|property|villa|apartment|residence)/i },
+  { label: "property lifestyle claim", re: /(?:bolig(?:en)?|villa(?:en)?|eiendom(?:men)?|leilighet(?:en)?|hjem(?:met)?|home|property|villa|apartment|residence)[^.!?]{0,100}(?:tilbyr|gir|offers?|provides?)[^.!?]{0,100}(?:praktisk(?:\s+og)?\s+komfortabel\s+livsstil|komfortabel\s+livsstil|comfortable\s+lifestyle|practical\s+(?:and\s+)?comfortable\s+lifestyle)/i },
+  { label: "sustainability property", re: /(?:(?:bærekraftig(?:e|t)?|sustainable)\s+(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|eiendom(?:men|mer|mene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|home|property|villa|apartment|residence)|(?:bolig(?:en|er|ene)?|villa(?:en|er|ene)?|eiendom(?:men|mer|mene)?|leilighet(?:en|er|ene)?|hjem(?:met)?|home|property|villa|apartment|residence)[^.!?]{0,120}(?:bærekraft|sustainab(?:le|ility)))/i },
+  { label: "area reputation claim", re: /(?:område(?:t)?|region(?:en)?|area|region)[^.!?]{0,80}(?:kjent\s+for|known\s+for)/i },
+  { label: "mild climate", re: /\b(?:mild(?:t|e)?|behagelig(?:e|t)?|stabil(?:t|e)?)\s+klima\b|\b(?:mild|pleasant|stable)\s+climate\b/i },
+  { label: "beautiful landscape", re: /(?:vakr(?:e|t)?|nydelig(?:e|t)?|beautiful|stunning)\s+(?:landskap(?:et)?|natur(?:en)?|landscape|scenery)/i },
+  { label: "holiday-home suitability", re: /(?:ser\s+etter|egnet(?:\s+som)?|passer(?:\s+som)?|ideell(?:\s+som)?|perfekt(?:\s+som)?|looking\s+for|suitable\s+as|ideal\s+as|perfect\s+as)[^.!?]{0,70}(?:feriebolig|holiday\s+home)/i },
+  { label: "permanent-home suitability", re: /(?:permanent\s+hjem|helårsbolig|permanent\s+home|year[-\s]?round\s+home)/i },
+  { label: "property comfort or safety promise", re: /(?:bolig(?:en)?|villa(?:en)?|eiendom(?:men)?|leilighet(?:en)?|hjem(?:met)?|home|property|villa|apartment|residence)[^.!?]{0,120}(?:gir|gi|tilbyr|vil\s+gi|gives?|offers?|provides?)[^.!?]{0,100}(?:trygghet(?:en)?|komfort(?:en)?|peace\s+of\s+mind|comfort|security)/i },
+];
+
+export interface ClaimGuardOptions {
+  /** Aktiver streng source-bound copy for en konkret Inventory-bolig. */
+  inventoryBound?: boolean;
+}
+
+export function findOutcomeClaims(text: string | null | undefined, opts: ClaimGuardOptions = {}): string[] {
   const t = text ?? "";
-  return OUTCOME_CLAIM_MARKERS.filter((m) => m.re.test(t)).map((m) => m.label);
+  const markers = opts.inventoryBound ? [...OUTCOME_CLAIM_MARKERS, ...INVENTORY_NARRATIVE_MARKERS] : OUTCOME_CLAIM_MARKERS;
+  return markers.filter((m) => m.re.test(t)).map((m) => m.label);
 }
 
 export function unsupportedOutcomeClaims(
   caption: string | null | undefined,
   factSources: Array<{ claim: string; source: string }> = [],
+  opts: ClaimGuardOptions = {},
 ): string[] {
-  const present = OUTCOME_CLAIM_MARKERS.filter((m) => m.re.test(caption ?? ""));
+  const markers = opts.inventoryBound ? [...OUTCOME_CLAIM_MARKERS, ...INVENTORY_NARRATIVE_MARKERS] : OUTCOME_CLAIM_MARKERS;
+  const present = markers.filter((m) => m.re.test(caption ?? ""));
   if (!present.length) return [];
   const sourced = present.filter((m) => factSources.some((f) => m.re.test(f.claim ?? "")));
   const sourcedLabels = new Set(sourced.map((m) => m.label));

@@ -43,7 +43,9 @@ function manualReviewRetryMasterIdea(masterIdea: string, attempt: number, previo
     "Start heller med ett konkret, verifisert trekk ved boligen eller stedet.",
     "Zen Eco Homes er rådgiver/formidler: skriv aldri «vår/våre» foran bolig, villa, eiendom eller leilighet — heller ikke med adjektiv imellom, som «vår moderne villa».",
     "Ikke legg til subjektiv pynt som «vakkert område», «fantastisk bolig», «hever standarden», «perfekt» eller tilsvarende dersom det ikke er eksplisitt og uavhengig dokumentert. Foretrekk nøkterne fakta.",
-    "Hvis faktakilden bare sier energimerking, gjengi bare energimerkingen. Ikke koble energimerket til trygghet, kvalitet, komfort, besparelse eller andre følger.",
+    "Ikke fyll sparse Inventory-fakta med «sjarmerende», «praktisk/komfortabel livsstil», «område kjent for», «mildt klima», «vakre landskap», «bærekraft», ferie-/helårsbolig-egnethet eller løfter om trygghet/komfort. Alt slikt krever eksplisitt factSource.",
+    "Hvis faktakilden bare sier energimerking, gjengi bare energimerkingen. Ikke koble energimerket til bærekraft, trygghet, kvalitet, komfort, besparelse eller andre følger.",
+    "Når factSources er sparsomme, skriv kortere: 2–4 kompakte faktasetninger er bedre enn kreativ utfylling.",
     "BODY skal ikke inneholde URL-er eller Markdown-lenker. Systemet legger inn den verifiserte bolig-/kontakt-CTA-en automatisk; ikke gjenta den i body.",
     "Ikke finn på fakta, ikke legg til superlativer og ikke svekk kildekravene.",
   ].filter(Boolean).join("\n");

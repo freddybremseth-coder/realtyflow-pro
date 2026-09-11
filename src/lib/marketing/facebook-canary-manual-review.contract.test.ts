@@ -10,6 +10,7 @@ const creative = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/aut
 const claimGuard = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/claim-guard.ts"), "utf8");
 const channelFormat = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/channel-format.ts"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/inventory-property-adapter.ts"), "utf8");
+const quality = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/quality.ts"), "utf8");
 
 test("ZenEco Facebook Canary locks the draft to the property selected by preflight", () => {
   assert.match(page, /const propertyId = preflight\?\.inventoryProperty\?\.id/);
@@ -54,6 +55,9 @@ test("Canary automatically retries novelty and deterministic copy-quality reject
   assert.match(route, /manualReviewRetryMasterIdea/);
   assert.match(route, /Drømmer du om et hjem i solen/);
   assert.match(route, /BODY skal ikke inneholde URL-er eller Markdown-lenker/);
+  assert.match(route, /sjarmerende/);
+  assert.match(route, /mildt klima/);
+  assert.match(route, /Når factSources er sparsomme, skriv kortere/);
 });
 
 test("Canary preserves fail-closed semantics after regeneration retries are exhausted", () => {
@@ -64,10 +68,12 @@ test("Canary preserves fail-closed semantics after regeneration retries are exha
   assert.match(route, /propertyRef: unexpected\.propertyRef/);
 });
 
-test("Inventory-generated assets put property identity into the novelty genome", () => {
+test("Inventory-generated assets put property identity into the novelty and quality genome", () => {
   assert.match(creative, /propertyId: req\.propertyIds\[0\]/);
   assert.match(creative, /propertyType: genomeValue\(propertyType\)/);
-  assert.match(creative, /CREATIVE_PROMPT_VERSION = "cg-1\.8"/);
+  assert.match(creative, /CREATIVE_PROMPT_VERSION = "cg-1\.9"/);
+  assert.match(quality, /inventoryBound/);
+  assert.match(quality, /unsupportedOutcomeClaims\(caption, asset\.factSources, \{ inventoryBound \}\)/);
 });
 
 test("automatic Inventory selection rotates away from recently attempted property drafts", () => {
@@ -86,6 +92,10 @@ test("broad Costa regions are not accepted as a concrete town and source text is
 
 test("property prompt forbids unsupported property-specific filler claims", () => {
   assert.match(creative, /ALLE boligspesifikke fakta og egenskaper/);
+  assert.match(creative, /SOURCE-BOUND COPY/);
+  assert.match(creative, /praktisk\/komfortabel livsstil/);
+  assert.match(creative, /mildt klima/);
+  assert.match(creative, /Manglende fakta skal gi mindre tekst/);
   assert.match(creative, /nærhet til strand/);
   assert.match(creative, /lokale fasiliteter/);
 });
@@ -98,4 +108,17 @@ test("N5798 copy regression is covered by hard claim, role and channel-format ga
   assert.match(claimGuard, /NO_ADJECTIVE/);
   assert.match(channelFormat, /Markdown-link/);
   assert.match(channelFormat, /Repeated CTA URL/);
+});
+
+test("N5876 copy regression is covered by inventory-bound narrative gates", () => {
+  assert.match(claimGuard, /INVENTORY_NARRATIVE_MARKERS/);
+  assert.match(claimGuard, /charming property/);
+  assert.match(claimGuard, /property lifestyle claim/);
+  assert.match(claimGuard, /sustainability property/);
+  assert.match(claimGuard, /area reputation claim/);
+  assert.match(claimGuard, /mild climate/);
+  assert.match(claimGuard, /beautiful landscape/);
+  assert.match(claimGuard, /holiday-home suitability/);
+  assert.match(claimGuard, /permanent-home suitability/);
+  assert.match(claimGuard, /property comfort or safety promise/);
 });
