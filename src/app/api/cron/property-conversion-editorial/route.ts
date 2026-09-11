@@ -63,6 +63,8 @@ export async function GET(request: NextRequest) {
     return unauthorized;
   }
 
+  // Claiming happens in Postgres, not through a nullable REST read. The processing
+  // lease is persisted before rows are returned, so concurrent runs cannot overlap.
   const { data: claimedRows, error: claimError } = await supabase.rpc(
     "claim_property_conversion_candidates",
     { p_limit: BATCH_LIMIT, p_stale_minutes: CLAIM_STALE_MINUTES },
