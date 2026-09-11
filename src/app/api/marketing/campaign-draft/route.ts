@@ -101,6 +101,10 @@ export async function POST(request: NextRequest) {
 
     const maxAttempts = body.forceManualReview === true ? MAX_MANUAL_REVIEW_REGENERATION_ATTEMPTS : 1;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const deterministicInventoryFallback = body.forceManualReview === true
+        && body.useInventoryProperty === true
+        && attempt === maxAttempts
+        && isRecoverableCopyError(previousErrors);
       const masterIdea = attempt === 1 ? body.masterIdea : manualReviewRetryMasterIdea(body.masterIdea, attempt, previousErrors);
       res = await createCampaignDraft(supabase, {
         brandId: body.brandId,
@@ -117,6 +121,7 @@ export async function POST(request: NextRequest) {
         mediaUrl: body.mediaUrl,
         useInventoryProperty: body.useInventoryProperty,
         propertyId: body.propertyId,
+        deterministicInventoryCopy: deterministicInventoryFallback,
       });
 
       if (body.forceManualReview !== true) break;
