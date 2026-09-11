@@ -1,7 +1,7 @@
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 import { summarizeSocialAutopilot } from "@/lib/social-autopilot";
 
-export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity" | "buyer_criteria";
+export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity" | "buyer_criteria" | "shortlist_review";
 export type NexusInboxPriority = "critical" | "high" | "medium" | "low";
 
 export interface NexusInboxItem {
@@ -56,6 +56,16 @@ type BuyerCriteriaReviewItem = {
   updatedAt?: string | null;
 };
 
+type ShortlistReviewItem = {
+  id: string;
+  priority?: string | null;
+  customerName?: string | null;
+  candidateCount?: number | null;
+  nextAction?: string | null;
+  reviewHref: string;
+  updatedAt?: string | null;
+};
+
 const PRIORITY_WEIGHT: Record<NexusInboxPriority, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
 function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
@@ -75,6 +85,7 @@ export function buildNexusInbox(input: {
   marketingRows: SocialAutopilotRow[];
   emailIdentityReviews?: EmailIdentityReviewItem[];
   buyerCriteriaReviews?: BuyerCriteriaReviewItem[];
+  shortlistReviews?: ShortlistReviewItem[];
 }): NexusInboxItem[] {
   const items: NexusInboxItem[] = [];
 
@@ -158,10 +169,28 @@ export function buildNexusInbox(input: {
     });
   }
 
+  for (const row of input.shortlistReviews ?? []) {
+    const candidateCount = Math.max(0, Number(row.candidateCount || 0));
+    const nextAction = String(row.nextAction || "Kontroller kandidatene og marker hvilke boliger som er klare for kunden.").trim();
+    items.push({
+      id: `shortlist-review:${row.id}`,
+      source: "shortlist_review",
+      priority: String(row.priority || "HIGH").toUpperCase() === "CRITICAL" ? "critical" : "high",
+      title: "Boligforslag trenger kvalitetssjekk",
+      reason: candidateCount > 0
+        ? `Nexus har klargjort ${candidateCount} boligkandidat${candidateCount === 1 ? "" : "er"}. ${nextAction}`
+        : nextAction,
+      href: row.reviewHref,
+      actionLabel: "Review boliger",
+      customerName: row.customerName ?? null,
+      occurredAt: row.updatedAt ?? null,
+    });
+  }
+
   return items.sort((a, b) => {
     const priorityDifference = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
     if (priorityDifference) return priorityDifference;
-    if (a.source === b.source && ["email_identity", "buyer_criteria"].includes(a.source)) {
+    if (a.source === b.source && ["email_identity", "buyer_criteria", "shortlist_review"].includes(a.source)) {
       const recencyDifference = timestamp(b.occurredAt) - timestamp(a.occurredAt);
       if (recencyDifference) return recencyDifference;
     }
@@ -177,6 +206,7 @@ export function summarizeNexusInbox(items: NexusInboxItem[]) {
     marketing: items.filter((item) => item.source === "marketing").length,
     emailIdentity: items.filter((item) => item.source === "email_identity").length,
     buyerCriteria: items.filter((item) => item.source === "buyer_criteria").length,
+    shortlistReview: items.filter((item) => item.source === "shortlist_review").length,
     system: items.filter((item) => item.source === "system").length,
   };
 }
