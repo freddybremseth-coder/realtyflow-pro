@@ -1,0 +1,1 @@
+Diagnostic-only Vercel baseline probe from commit 77ce9e2a7495fe470ee710e5c5880ca0247b4c46. No application behavior changes.
