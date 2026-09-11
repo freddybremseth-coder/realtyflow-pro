@@ -6,6 +6,7 @@ import { getAdminEmails, verifyAdminSession } from "@/lib/admin-auth";
 import { hasPermission, type AccessRole } from "@/lib/access-control";
 import { loadAccessSettings } from "@/lib/access-control-server";
 import { buildRevenueCommandCenter } from "@/lib/revenue/command";
+import { buildRevenueBrain } from "@/lib/nexus/revenue-brain";
 import {
   buildRevenueGoalScorecard,
   emptyRevenueGoalConfig,
@@ -265,13 +266,13 @@ async function calendarEvents(role: AccessRole, now: Date) {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = await requireAdminApi(request, { briefing: null });
+  const denied = await requireAdminApi(request, { briefing: null, revenueBrain: null });
   if (denied) return denied;
   const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
-  if (!session?.email || !session.role) return NextResponse.json({ error: "Unauthorized", briefing: null }, { status: 401 });
+  if (!session?.email || !session.role) return NextResponse.json({ error: "Unauthorized", briefing: null, revenueBrain: null }, { status: 401 });
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured", briefing: null }, { status: 500 });
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured", briefing: null, revenueBrain: null }, { status: 500 });
   const now = new Date();
   const scope = goalScope(session.role);
   const month = currentMonth(now);
@@ -295,7 +296,7 @@ export async function GET(request: NextRequest) {
     const message = results[0].status === "rejected"
       ? results[0].reason instanceof Error ? results[0].reason.message : "Kunne ikke hente CRM-data"
       : results[0].value?.error?.message || "Kunne ikke hente CRM-data";
-    return NextResponse.json({ error: message, briefing: null }, { status: 500 });
+    return NextResponse.json({ error: message, briefing: null, revenueBrain: null }, { status: 500 });
   }
 
   const warnings: string[] = [];
@@ -332,6 +333,7 @@ export async function GET(request: NextRequest) {
     now,
   });
   const command = buildRevenueCommandCenter({ contacts: overlay.contacts, profiles, shortlists, presentations, messageDrafts, warnings: [] }, now);
+  const revenueBrain = buildRevenueBrain(command, 10);
   const goals = buildRevenueGoalScorecard({
     contacts: overlay.contacts,
     config: goalConfig(goalRow, scope, month),
@@ -357,5 +359,5 @@ export async function GET(request: NextRequest) {
     now,
   });
 
-  return NextResponse.json({ briefing });
+  return NextResponse.json({ briefing, revenueBrain });
 }
