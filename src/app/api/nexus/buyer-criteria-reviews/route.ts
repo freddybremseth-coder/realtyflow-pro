@@ -83,9 +83,9 @@ export async function GET(request: NextRequest) {
     const profile = profileMap.get(contactId) || null;
     const brandId = String(row.brand_id || profile?.brand || "");
     const reviewParams = new URLSearchParams();
+    reviewParams.set("reviewId", String(row.id));
     if (brandId) reviewParams.set("brand", brandId);
     if (profile?.id) reviewParams.set("buyerProfileId", profile.id);
-    reviewParams.set("criteriaReviewId", String(row.id));
     if (contactId) reviewParams.set("contactId", contactId);
 
     return {
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       reviewHref: profile?.id
-        ? `/lead-intelligence?${reviewParams.toString()}`
+        ? `/nexus-os/buyer-criteria-review?${reviewParams.toString()}`
         : contactId
           ? `/customers/${encodeURIComponent(contactId)}`
           : "/nexus-os/inbox",
