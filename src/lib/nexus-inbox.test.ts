@@ -18,7 +18,35 @@ test("Nexus Inbox combines system, approval, marketing and high email identity a
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.priority, "critical");
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.href, "/nexus-os/email-link-health?messageId=mail-conflict");
   const summary = summarizeNexusInbox(items);
-  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, system: 1 });
+  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, system: 1 });
+});
+
+test("ambiguous buyer criteria reply becomes a high-priority human interpretation item", () => {
+  const items = buildNexusInbox({
+    attention: [],
+    approvals: [],
+    marketingRows: [],
+    emailIdentityReviews: [],
+    buyerCriteriaReviews: [{
+      id: "review-1",
+      priority: "HIGH",
+      customerName: "Kari Nordmann",
+      replyPreview: "Ja, kanskje Altea, men vi er litt usikre på budsjettet.",
+      nextAction: "Tolk kundens svar og legg inn korrekte søkekriterier før matching fortsetter.",
+      reviewHref: "/customers/contact-1",
+      updatedAt: "2026-09-11T12:00:00Z",
+    }],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.id, "buyer-criteria:review-1");
+  assert.equal(items[0]?.source, "buyer_criteria");
+  assert.equal(items[0]?.priority, "high");
+  assert.equal(items[0]?.customerName, "Kari Nordmann");
+  assert.match(items[0]?.reason || "", /kanskje Altea/);
+  assert.equal(items[0]?.href, "/customers/contact-1");
+  assert.equal(items[0]?.actionLabel, "Tolk svar");
+  assert.equal(summarizeNexusInbox(items).buyerCriteria, 1);
 });
 
 test("blocked approval stays visible but is not elevated above ready work", () => {
