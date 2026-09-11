@@ -48,7 +48,10 @@ test("Canary automatically retries novelty and deterministic copy-quality reject
   assert.match(route, /MAX_MANUAL_REVIEW_REGENERATION_ATTEMPTS = 3/);
   assert.match(route, /item\.state === "regenerate"/);
   assert.match(route, /item\.mode === "blocked"/);
+  assert.match(route, /item\.state === "rejected"/);
   assert.match(route, /isRecoverableCopyError/);
+  assert.match(route, /error\.includes\(prefix\)/);
+  assert.match(route, /CREATIVE_OUTPUT_INVALID/);
   assert.match(route, /CLAIM_NOT_VERIFIED/);
   assert.match(route, /BRAND_ROLE_MISMATCH/);
   assert.match(route, /CHANNEL_FORMAT_MISMATCH/);
