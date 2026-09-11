@@ -39,12 +39,6 @@ async function writeRunLog(
   }
 }
 
-function claimedProperty(row: unknown): Record<string, unknown> | null {
-  if (!row || typeof row !== "object") return null;
-  const property = (row as { property?: unknown }).property;
-  return property && typeof property === "object" ? (property as Record<string, unknown>) : null;
-}
-
 export async function GET(request: NextRequest) {
   const startedAt = new Date().toISOString();
   const supabase = getSupabase();
@@ -63,10 +57,10 @@ export async function GET(request: NextRequest) {
     return unauthorized;
   }
 
-  // Claiming happens in Postgres, not through a nullable REST read. The processing
-  // lease is persisted before rows are returned, so concurrent runs cannot overlap.
+  // Claim in Postgres and return normal property rows. The v2 RPC name plus
+  // SETOF return avoids the stale/wrapped PostgREST result observed in production.
   const { data: claimedRows, error: claimError } = await supabase.rpc(
-    "claim_property_conversion_candidates",
+    "claim_property_conversion_candidates_v2",
     { p_limit: BATCH_LIMIT, p_stale_minutes: CLAIM_STALE_MINUTES },
   );
 
@@ -80,11 +74,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: claimError.message }, { status: 500 });
   }
 
-  const mappedProperties: Array<Record<string, unknown> | null> = (
-    Array.isArray(claimedRows) ? claimedRows : []
-  ).map((row: unknown) => claimedProperty(row));
-  const properties = mappedProperties.filter(
-    (property): property is Record<string, unknown> => property !== null,
+  const properties = (Array.isArray(claimedRows) ? claimedRows : []).filter(
+    (row): row is Record<string, unknown> => Boolean(row && typeof row === "object"),
   );
 
   const claimedRefs = properties
@@ -103,6 +94,7 @@ export async function GET(request: NextRequest) {
       template: 0,
       claimed: 0,
       claimed_refs: [],
+      rpc_version: "v2",
       started_at: startedAt,
       finished_at: new Date().toISOString(),
     });
@@ -114,6 +106,7 @@ export async function GET(request: NextRequest) {
       template: 0,
       claimed: 0,
       claimed_refs: [],
+      rpc_version: "v2",
     });
   }
 
@@ -165,6 +158,7 @@ export async function GET(request: NextRequest) {
     claimed: properties.length,
     claimed_refs: claimedRefs,
     claimed_ids: claimedIds,
+    rpc_version: "v2",
     refs: successful.map((result) => result.ref).filter(Boolean),
     failures: results.filter((result) => !result.ok),
   };
