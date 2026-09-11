@@ -7,6 +7,7 @@ import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { classifyInboundReply } from "@/lib/inbound-reply-intelligence";
 import { applyInboundCrmActions } from "@/services/email/apply-inbound-crm-actions";
 import { ensureInboundBuyerProfile } from "@/services/email/inbound-buyer-profile-autopilot";
+import { autoReviseBuyerProfileFromInboundEvidence } from "@/services/email/inbound-buyer-profile-revision";
 import { extractLatestReplyText } from "@/services/email/latest-reply-text";
 
 export const maxDuration = 300;
@@ -117,6 +118,7 @@ export async function GET(request: NextRequest) {
   let considered = 0;
   let created = 0;
   let linked = 0;
+  let revised = 0;
   let reviewRequired = 0;
   let revisionRequired = 0;
   let reclassified = 0;
@@ -226,29 +228,63 @@ export async function GET(request: NextRequest) {
           : "Nexus koblet kundesvaret til eksisterende godkjent Buyer Profile. Automatisk boligmatching kjører videre.";
         if (result.status === "created") created += 1;
         else linked += 1;
-      } else if (result.status === "revision_required" || result.status === "review_required") {
+      } else if (result.status === "revision_required") {
+        const revision = await autoReviseBuyerProfileFromInboundEvidence({
+          brandId,
+          contactId,
+          buyerProfileId: result.buyerProfileId,
+          emailMessageId,
+          rawText: latestReply,
+          analysis: result.analysis,
+        });
+
+        if (revision.status === "revised") {
+          nextMetadata.buyer_profile_id = revision.buyerProfileId;
+          nextMetadata.buyer_profile_status = revision.buyerProfileStatus;
+          nextMetadata.buyer_profile_sync_status = "revised";
+          nextMetadata.buyer_profile_auto_revised = true;
+          nextMetadata.buyer_profile_revision_version = revision.version;
+          nextMetadata.buyer_profile_revision_changed_keys = revision.changedKeys;
+          nextMetadata.buyer_profile_revision_required = false;
+          nextMetadata.buyer_profile_review_required = false;
+          nextAction = `Nexus oppdaterte Buyer Profile v${revision.version} fra eksplisitte kundeendringer (${revision.changedKeys.join(", ")}). Automatisk boligmatching kjører videre; kontroller kandidatene før utsending.`;
+          revised += 1;
+        } else {
+          const reviewId = await ensureReviewWorkItem(supabase, {
+            sourceWorkItemId: String(row.id),
+            brandId,
+            contactId,
+            emailMessageId,
+            status: "revision_required",
+            reason: revision.reason,
+            analysis: result.analysis,
+            verifiedCriteriaCount: result.verifiedCriteriaCount,
+          });
+          nextMetadata.buyer_profile_review_work_item_id = reviewId;
+          nextMetadata.buyer_profile_review_required = true;
+          nextMetadata.buyer_profile_id = result.buyerProfileId;
+          nextMetadata.buyer_profile_status = "REVISION_REQUIRED";
+          nextMetadata.buyer_profile_revision_required = true;
+          nextMetadata.buyer_profile_revision_reason = revision.reason;
+          nextMetadata.buyer_profile_revision_changed_keys = revision.changedKeys;
+          nextAction = "Kunden har endret preferanser, men én eller flere endringer er ikke sikre nok for automatisk revisjon. Review endringen før ny matching eller utsending.";
+          revisionRequired += 1;
+        }
+      } else if (result.status === "review_required") {
         const reviewId = await ensureReviewWorkItem(supabase, {
           sourceWorkItemId: String(row.id),
           brandId,
           contactId,
           emailMessageId,
-          status: result.status,
-          reason: result.status === "review_required" ? result.reason : "customer_changed_preferences",
+          status: "review_required",
+          reason: result.reason,
           analysis: result.analysis,
           verifiedCriteriaCount: result.verifiedCriteriaCount,
         });
         nextMetadata.buyer_profile_review_work_item_id = reviewId;
         nextMetadata.buyer_profile_review_required = true;
-        if (result.status === "revision_required") {
-          nextMetadata.buyer_profile_id = result.buyerProfileId;
-          nextMetadata.buyer_profile_status = "REVISION_REQUIRED";
-          nextMetadata.buyer_profile_revision_required = true;
-        }
-        nextAction = result.status === "revision_required"
-          ? "Kunden har endret preferanser. Review Buyer Profile-endringen før ny matching eller utsending."
-          : "Review eksplisitte kundekriterier før Buyer Profile aktiveres og matching starter.";
-        if (result.status === "revision_required") revisionRequired += 1;
-        else reviewRequired += 1;
+        nextAction = "Review eksplisitte kundekriterier før Buyer Profile aktiveres og matching starter.";
+        reviewRequired += 1;
       } else {
         skipped += 1;
       }
@@ -270,11 +306,12 @@ export async function GET(request: NextRequest) {
   await supabase.from("automation_logs").insert({
     action: "nexus_buyer_profile_sync",
     agent_name: "nexus_buyer_profile_autopilot",
-    status: failed ? (created || linked || reviewRequired || revisionRequired || reclassified ? "partial" : "failed") : "success",
+    status: failed ? (created || linked || revised || reviewRequired || revisionRequired || reclassified ? "partial" : "failed") : "success",
     details: {
       considered,
       created,
       linked_existing: linked,
+      revised,
       review_required: reviewRequired,
       revision_required: revisionRequired,
       reclassified,
@@ -289,6 +326,7 @@ export async function GET(request: NextRequest) {
     considered,
     created,
     linked,
+    revised,
     reviewRequired,
     revisionRequired,
     reclassified,
