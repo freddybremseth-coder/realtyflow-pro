@@ -29,7 +29,11 @@ function configuredAutopilotChannels(metadata: Record<string, unknown> | null | 
 }
 
 function isRecoverableCopyError(error: string | null | undefined): boolean {
-  return !!error && RECOVERABLE_COPY_ERROR_PREFIXES.some((prefix) => error.startsWith(prefix));
+  if (!error) return false;
+  // Some generator failures wrap the deterministic gate error, e.g.
+  // "CREATIVE_OUTPUT_INVALID: CHANNEL_FORMAT_MISMATCH ...". Match the embedded
+  // gate code as well as a direct prefix so manual-review can regenerate safely.
+  return RECOVERABLE_COPY_ERROR_PREFIXES.some((prefix) => error.includes(prefix));
 }
 
 function manualReviewRetryMasterIdea(masterIdea: string, attempt: number, previousErrors: string): string {
@@ -116,7 +120,10 @@ export async function POST(request: NextRequest) {
       });
 
       if (body.forceManualReview !== true) break;
-      const recoverable = res.results.filter((item) => item.state === "regenerate" || (item.mode === "blocked" && isRecoverableCopyError(item.error)));
+      const recoverable = res.results.filter((item) =>
+        item.state === "regenerate"
+        || ((item.mode === "blocked" || item.state === "rejected") && isRecoverableCopyError(item.error)),
+      );
       if (!recoverable.length) break;
       previousErrors = recoverable.map((item) => item.error ?? `state=${item.state}`).join(" | ");
     }
