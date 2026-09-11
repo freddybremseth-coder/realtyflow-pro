@@ -1,7 +1,7 @@
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 import { summarizeSocialAutopilot } from "@/lib/social-autopilot";
 
-export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity" | "buyer_criteria" | "shortlist_review";
+export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity" | "buyer_criteria" | "shortlist_review" | "no_match";
 export type NexusInboxPriority = "critical" | "high" | "medium" | "low";
 
 export interface NexusInboxItem {
@@ -66,6 +66,17 @@ type ShortlistReviewItem = {
   updatedAt?: string | null;
 };
 
+type NoMatchReviewItem = {
+  id: string;
+  priority?: string | null;
+  customerName?: string | null;
+  analyzed?: number | null;
+  criteria?: string[] | null;
+  nextAction?: string | null;
+  reviewHref: string;
+  updatedAt?: string | null;
+};
+
 const PRIORITY_WEIGHT: Record<NexusInboxPriority, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
 function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
@@ -86,6 +97,7 @@ export function buildNexusInbox(input: {
   emailIdentityReviews?: EmailIdentityReviewItem[];
   buyerCriteriaReviews?: BuyerCriteriaReviewItem[];
   shortlistReviews?: ShortlistReviewItem[];
+  noMatchReviews?: NoMatchReviewItem[];
 }): NexusInboxItem[] {
   const items: NexusInboxItem[] = [];
 
@@ -187,10 +199,28 @@ export function buildNexusInbox(input: {
     });
   }
 
+  for (const row of input.noMatchReviews ?? []) {
+    const analyzed = Math.max(0, Number(row.analyzed || 0));
+    const criteria = Array.isArray(row.criteria) ? row.criteria.filter(Boolean).slice(0, 4) : [];
+    const context = criteria.length ? ` Registrert: ${criteria.join(" · ")}.` : "";
+    const nextAction = String(row.nextAction || "Vurder om kunden bør spørres om fleksibilitet før kriteriene endres.").trim();
+    items.push({
+      id: `no-match:${row.id}`,
+      source: "no_match",
+      priority: String(row.priority || "HIGH").toUpperCase() === "CRITICAL" ? "critical" : "high",
+      title: "Ingen gode boligtreff – trenger vurdering",
+      reason: `${analyzed > 0 ? `Nexus analyserte ${analyzed} boliger uten å finne et godt nok treff.` : "Nexus fant ingen gode nok boligtreff."}${context} ${nextAction}`.trim(),
+      href: row.reviewHref,
+      actionLabel: "Vurder søk",
+      customerName: row.customerName ?? null,
+      occurredAt: row.updatedAt ?? null,
+    });
+  }
+
   return items.sort((a, b) => {
     const priorityDifference = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
     if (priorityDifference) return priorityDifference;
-    if (a.source === b.source && ["email_identity", "buyer_criteria", "shortlist_review"].includes(a.source)) {
+    if (a.source === b.source && ["email_identity", "buyer_criteria", "shortlist_review", "no_match"].includes(a.source)) {
       const recencyDifference = timestamp(b.occurredAt) - timestamp(a.occurredAt);
       if (recencyDifference) return recencyDifference;
     }
@@ -207,6 +237,7 @@ export function summarizeNexusInbox(items: NexusInboxItem[]) {
     emailIdentity: items.filter((item) => item.source === "email_identity").length,
     buyerCriteria: items.filter((item) => item.source === "buyer_criteria").length,
     shortlistReview: items.filter((item) => item.source === "shortlist_review").length,
+    noMatch: items.filter((item) => item.source === "no_match").length,
     system: items.filter((item) => item.source === "system").length,
   };
 }
