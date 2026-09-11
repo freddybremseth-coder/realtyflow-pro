@@ -168,8 +168,13 @@ export async function POST(request: NextRequest) {
       note: typeof value.note === "string" ? value.note.trim().slice(0, 1000) : null,
     };
   });
-  if (normalized.some((review) => !allowedIds.has(review.itemId) || !REVIEW_STATUSES.has(review.status))) {
-    return NextResponse.json({ error: "One or more shortlist review items are invalid" }, { status: 400 });
+  const submittedIds = new Set(normalized.map((review) => review.itemId));
+  if (
+    normalized.some((review) => !allowedIds.has(review.itemId) || !REVIEW_STATUSES.has(review.status)) ||
+    submittedIds.size !== normalized.length ||
+    submittedIds.size !== allowedIds.size
+  ) {
+    return NextResponse.json({ error: "All shortlist candidates must receive one valid review decision" }, { status: 400 });
   }
 
   const checkedAt = new Date().toISOString();
@@ -196,18 +201,23 @@ export async function POST(request: NextRequest) {
   if (refreshed.error) return NextResponse.json({ error: refreshed.error.message }, { status: 500 });
   const clientReadyCount = (refreshed.data || []).filter((item) => item.quality_review_status === "client_ready").length;
   const unresolvedCount = (refreshed.data || []).filter((item) => item.quality_review_status === "needs_review").length;
+  const reviewComplete = unresolvedCount === 0;
+  const presentationWillPrepareAutomatically = reviewComplete && clientReadyCount > 0;
 
   const nextMetadata = {
     ...metadata,
     shortlist_human_review_at: checkedAt,
     shortlist_human_review_by: context.email,
+    shortlist_human_review_complete: reviewComplete,
     shortlist_client_ready_count: clientReadyCount,
     shortlist_unresolved_count: unresolvedCount,
-    shortlist_review_required: clientReadyCount === 0,
+    shortlist_review_required: !reviewComplete,
   };
-  const nextAction = clientReadyCount > 0
-    ? `Du har markert ${clientReadyCount} bolig${clientReadyCount === 1 ? "" : "er"} klar for kunde. Nexus lager presentasjon og e-postutkast automatisk.`
-    : "Ingen bolig er markert klar for kunde ennå. Kontroller kandidatene eller avvis dem før Nexus går videre.";
+  const nextAction = !reviewComplete
+    ? `Shortlist-review er lagret, men ${unresolvedCount} kandidat${unresolvedCount === 1 ? "" : "er"} står fortsatt som må vurderes. Fullfør review før Nexus går videre.`
+    : clientReadyCount > 0
+      ? `Du har markert ${clientReadyCount} bolig${clientReadyCount === 1 ? "" : "er"} klar for kunde. Nexus lager presentasjon og e-postutkast automatisk.`
+      : "Shortlist-review er komplett, men ingen bolig er markert klar for kunde. Nexus sender ingenting; vurder nye kandidater eller nytt søk.";
   const workUpdate = await supabase
     .from("work_items")
     .update({ metadata: nextMetadata, next_action: nextAction, updated_at: checkedAt })
@@ -220,7 +230,8 @@ export async function POST(request: NextRequest) {
     shortlistId,
     clientReadyCount,
     unresolvedCount,
-    presentationWillPrepareAutomatically: clientReadyCount > 0,
+    reviewComplete,
+    presentationWillPrepareAutomatically,
     safety: { customerMessageSent: false, presentationPublished: false },
   });
 }
