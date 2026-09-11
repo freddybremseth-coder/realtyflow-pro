@@ -9,7 +9,8 @@ const source = fs.readFileSync(
 );
 const vercel = fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf8");
 
-test("presentation autopilot only advances after explicit client-ready review", () => {
+test("presentation autopilot only advances after completed human review and explicit client-ready review", () => {
+  assert.match(source, /shortlist_human_review_complete !== true/);
   assert.match(source, /quality_review_status/);
   assert.match(source, /client_ready/);
   assert.match(source, /clientReadyCount === 0/);
