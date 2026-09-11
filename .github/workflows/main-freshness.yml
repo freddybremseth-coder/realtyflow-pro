@@ -13,25 +13,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout PR branch
+      - name: Checkout actual PR head
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Fetch current main
         run: git fetch --no-tags origin main
 
-      - name: Require PR to contain current main
+      - name: Require PR head to contain current main
         shell: bash
         run: |
           set -euo pipefail
           CURRENT_MAIN="$(git rev-parse origin/main)"
           HEAD_SHA="$(git rev-parse HEAD)"
+          EXPECTED_HEAD="${{ github.event.pull_request.head.sha }}"
           echo "Current main: $CURRENT_MAIN"
           echo "PR head:      $HEAD_SHA"
+          echo "Event head:   $EXPECTED_HEAD"
+
+          if [ "$HEAD_SHA" != "$EXPECTED_HEAD" ]; then
+            echo "ERROR: Checkout is not the actual PR head SHA."
+            exit 1
+          fi
 
           if git merge-base --is-ancestor "$CURRENT_MAIN" "$HEAD_SHA"; then
-            echo "PR contains the latest main. Freshness check passed."
+            echo "PR head contains the latest main. Freshness check passed."
             exit 0
           fi
 
@@ -46,5 +54,5 @@ jobs:
           echo "Files changed by this PR:"
           git diff --name-only "$MERGE_BASE..$HEAD_SHA" || true
           echo
-          echo "ERROR: This PR does not contain the latest main. Rebase or merge current main into the branch, rerun CI, and only then merge."
+          echo "ERROR: This PR head does not contain the latest main. Rebase or merge current main into the branch, rerun CI, and only then merge."
           exit 1
