@@ -20,24 +20,19 @@ export interface QualityChecks {
   hasCta: boolean;
   channelFit: boolean;
   languageQuality: boolean;
-  genomeCompleteness: number; // 0..1
+  genomeCompleteness: number;
   attributionReady: boolean;
   duplicateFree: boolean;
-  /** Captionen er ren kundevendt kanaltekst (ingen manus/Markdown/CTA-duplikat). */
   formatClean: boolean;
-  /** Ingen udekket målbar/komparativ/subjektiv property-påstand. */
   claimsVerified: boolean;
-  /** Ingen eierskaps-/rollepåstand i strid med Brand Brain. */
   roleConsistent: boolean;
 }
 
 export interface QualityResult {
-  score: number; // 0..100
+  score: number;
   checks: QualityChecks;
   sensitiveClaimsWithoutSource: string[];
-  /** Målbare/komparative/subjektive property-påstander uten uavhengig factSource. */
   unsupportedOutcomeClaims: string[];
-  /** Eierskaps-/rollepåstander i strid med Brand Brain. */
   roleViolations: string[];
   requiresApproval: boolean;
   reasons: string[];
@@ -45,15 +40,8 @@ export interface QualityResult {
 
 export interface QualityOptions {
   brandTerms?: string[];
-  /** Fra novelty-motoren: er innholdet tilstrekkelig unikt? */
   duplicateFree?: boolean;
-  /** Brand Context — brukes for rolle-/eierskapsgaten (advisor vs eier). */
   brand?: Pick<BrandContext, "allowedClaims" | "services"> & { ownsInventory?: boolean };
-  /**
-   * Er innholdet AI-generert? Utfalls-/rollegatene gjelder KUN generert copy —
-   * menneske-/legacy-forfattet innhold self-sources og er allerede review-et.
-   * Default true (default source_type er «generated»).
-   */
   generated?: boolean;
 }
 
@@ -66,12 +54,29 @@ const INVENTORY_QUALITY_MARKERS: Array<{ label: string; re: RegExp }> = [
     label: "subjective opportunity",
     re: /\b(?:spennende|attraktiv|lovende|exciting|attractive|promising)\s+(?:mulighet|opportunity)\b/i,
   },
+  {
+    label: "subjective property praise",
+    re: /\b(?:nydelig(?:e|t)?|vakker|vakre|beautiful|lovely)\s+(?:bungalow(?:en)?|bolig(?:en)?|villa(?:en)?|leilighet(?:en)?|eiendom(?:men)?|home|property|villa|apartment)\b/i,
+  },
+  {
+    label: "spacious design",
+    re: /\b(?:romslig(?:e|t)?|spacious)\s+(?:design|planløsning|layout)\b/i,
+  },
+  {
+    label: "modern amenities",
+    re: /\b(?:moderne|modern)\s+(?:fasiliteter|amenities|features)\b/i,
+  },
+  {
+    label: "holiday and permanent suitability",
+    re: /\b(?:ideelt?|perfekt|suitable|ideal|perfect)[^.!?]{0,80}(?:ferie|holiday)[^.!?]{0,80}(?:permanent|helår|year[-\s]?round)|\b(?:ferie|holiday)[^.!?]{0,80}(?:og|and)[^.!?]{0,40}(?:permanent|helår|year[-\s]?round)/i,
+  },
+  {
+    label: "dream-home fulfillment",
+    re: /(?:gjøre|realisere|make|turn)[^.!?]{0,80}(?:drømmen|dream)[^.!?]{0,80}(?:hjem\s+i\s+solen|home\s+in\s+the\s+sun)[^.!?]{0,40}(?:virkelighet|reality)/i,
+  },
 ];
 
-function inventoryQualityViolations(
-  caption: string,
-  factSources: Array<{ claim: string; source: string }>,
-): string[] {
+function inventoryQualityViolations(caption: string, factSources: Array<{ claim: string; source: string }>): string[] {
   return INVENTORY_QUALITY_MARKERS
     .filter((marker) => marker.re.test(caption))
     .filter((marker) => !factSources.some((source) => marker.re.test(source.claim ?? "")))
@@ -85,13 +90,11 @@ function textOf(a: GeneratedAsset): string {
 export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions = {}): QualityResult {
   const text = textOf(asset);
   const sourcedClaims = new Set(asset.factSources.map((f) => f.claim.toLowerCase()));
-
-  // Sensitive fakta uten kilde. Ordgrense-matching for alfabetiske termer, så
-  // «kr» ikke treffer inne i «bærekraftige» og «lov» ikke i «lovende».
   const sensitiveClaimsWithoutSource: string[] = [];
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const hits = (haystack: string, term: string) =>
     /^[a-zæøå ]+$/i.test(term) ? new RegExp(`(^|[^a-zæøå0-9])${escape(term)}([^a-zæøå0-9]|$)`, "i").test(haystack) : haystack.includes(term);
+
   for (const term of SENSITIVE_FACT_TERMS) {
     if (hits(text, term)) {
       const covered = Array.from(sourcedClaims).some((c) => hits(c, term));
@@ -103,18 +106,13 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
   const requiredDims = ["channel", "format", "hookType", "ctaType", "goal"] as const;
   const present = requiredDims.filter((d) => g[d] != null).length;
   const genomeCompleteness = present / requiredDims.length;
-
-  // Captionen (den faktiske Meta-payloaden) skal være ren kundevendt tekst.
   const caption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
   const formatMarkers = findProductionDirection(caption);
 
-  // Utfalls-/rollegatene gjelder KUN generert copy. Legacy/menneske-forfattet
-  // self-sources (factSources = body) → utfallspåstander blir automatisk dekket.
-  // En konkret Inventory-bolig (propertyId i genome) får streng source-bound
-  // narrativkontroll: livsstil, klima og egnethet kan ikke fylles inn fra modellens
-  // allmennkunnskap når de ikke finnes i factSources.
   const generated = opts.generated ?? true;
-  const inventoryBound = typeof (g as { propertyId?: unknown }).propertyId === "string";
+  const hasGenomePropertyId = typeof (g as { propertyId?: unknown }).propertyId === "string";
+  const hasInventoryFactSource = asset.factSources.some((f) => /RealtyFlow\s+Inventory/i.test(f.source ?? ""));
+  const inventoryBound = hasGenomePropertyId || hasInventoryFactSource;
   const baseOutcomeViolations = generated
     ? unsupportedOutcomeClaims(caption, asset.factSources, { inventoryBound })
     : [];
@@ -152,10 +150,6 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
       (checks.roleConsistent ? weights.roleConsistent : 0),
   );
 
-  // Point 4: en uverifisert sensitiv faktapåstand (pris/skatt/rente/marked …)
-  // skal aldri gi full score. Den blokkerer/utløser allerede approval, men
-  // score må også reflektere risikoen — cap under 100, symmetrisk med de tre
-  // andre bruddene (utfall/rolle/format) som hver koster 10 poeng.
   if (sensitiveClaimsWithoutSource.length) score = Math.min(score, 90);
 
   const reasons: string[] = [];
