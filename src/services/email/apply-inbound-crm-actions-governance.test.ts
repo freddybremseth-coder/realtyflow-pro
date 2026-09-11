@@ -48,6 +48,17 @@ test("explicit terminal customer outcomes auto-close sales pipeline and follow-u
   assert.match(source, /recordPipelineTransition/);
 });
 
+test("governed active interest auto-advances only NEW leads to CONTACT and keeps human follow-up work", () => {
+  assert.match(source, /activeInterestAutoAdvance/);
+  assert.match(source, /classification\.intent === "active_interest"[\s\S]*governance\.canApplyAutomatically/);
+  assert.match(source, /normalizedPreviousPipelineStatus === "NEW"/);
+  assert.match(source, /update\.pipeline_status = "CONTACT"/);
+  assert.match(source, /update\.nurture_status = "paused"/);
+  assert.match(source, /nextStatus: "CONTACT"/);
+  assert.match(source, /createdBy: "email-crm-sync:active-interest"/);
+  assert.match(source, /ensureWorkItem/);
+});
+
 test("terminal outcomes cancel stale CRM, portal and lead-intelligence sales tasks", () => {
   assert.match(source, /closeOpenSalesWorkItems/);
   assert.match(source, /status: "CANCELLED"/);
