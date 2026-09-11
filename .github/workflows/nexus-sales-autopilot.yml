@@ -6,6 +6,11 @@ on:
       - "src/app/api/cron/nexus-shortlist-prep/**"
       - "src/app/api/cron/nexus-property-match-prep/**"
       - "src/app/api/cron/nexus-presentation-prep/**"
+      - "src/app/api/nexus/shortlist-reviews/**"
+      - "src/app/(content)/nexus-os/shortlist-review/**"
+      - "src/app/(content)/nexus-os/inbox/page.tsx"
+      - "src/lib/nexus-inbox.ts"
+      - "src/lib/nexus-inbox.test.ts"
       - "src/services/email/inbound-property-match.ts"
       - "src/services/lead-intelligence/presentation.ts"
       - "vercel.json"
@@ -17,6 +22,11 @@ on:
       - "src/app/api/cron/nexus-shortlist-prep/**"
       - "src/app/api/cron/nexus-property-match-prep/**"
       - "src/app/api/cron/nexus-presentation-prep/**"
+      - "src/app/api/nexus/shortlist-reviews/**"
+      - "src/app/(content)/nexus-os/shortlist-review/**"
+      - "src/app/(content)/nexus-os/inbox/page.tsx"
+      - "src/lib/nexus-inbox.ts"
+      - "src/lib/nexus-inbox.test.ts"
       - "src/services/email/inbound-property-match.ts"
       - "src/services/lead-intelligence/presentation.ts"
       - "vercel.json"
@@ -36,4 +46,4 @@ jobs:
       - name: Install dependencies
         run: npm ci --silent
       - name: Nexus sales autopilot tests
-        run: npx tsx --test src/app/api/cron/nexus-shortlist-prep/route.contract.test.ts src/app/api/cron/nexus-presentation-prep/route.contract.test.ts src/services/email/inbound-buyer-profile-autopilot.test.ts src/services/lead-intelligence/presentation.test.ts
+        run: npx tsx --test src/app/api/cron/nexus-shortlist-prep/route.contract.test.ts src/app/api/cron/nexus-presentation-prep/route.contract.test.ts src/app/api/nexus/shortlist-reviews/route.contract.test.ts src/lib/nexus-inbox.test.ts src/services/email/inbound-buyer-profile-autopilot.test.ts src/services/lead-intelligence/presentation.test.ts
