@@ -37,7 +37,7 @@ type PublicAreaProfile = {
  * such as ZenEco never render conflicting geography/copy. Prefer the most
  * recently updated visible row; admin GET still returns every row for cleanup.
  */
-export function dedupePublicAreaProfiles<T extends PublicAreaProfile>(rows: T[]): T[] {
+function dedupePublicAreaProfiles<T extends PublicAreaProfile>(rows: T[]): T[] {
   const visible = rows.filter((profile) =>
     typeof profile.show_on_website === "boolean" ? profile.show_on_website : true,
   );
