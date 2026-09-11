@@ -73,6 +73,11 @@ export async function GET(request: NextRequest) {
 
     considered += 1;
     try {
+      if (metadata.shortlist_human_review_complete !== true) {
+        waitingForReview += 1;
+        continue;
+      }
+
       const readiness = await supabase
         .from("lead_property_shortlist_items")
         .select("id,quality_review_status")
