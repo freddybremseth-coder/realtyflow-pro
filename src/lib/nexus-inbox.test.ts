@@ -18,7 +18,7 @@ test("Nexus Inbox combines system, approval, marketing and high email identity a
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.priority, "critical");
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.href, "/nexus-os/email-link-health?messageId=mail-conflict");
   const summary = summarizeNexusInbox(items);
-  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, shortlistReview: 0, system: 1 });
+  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, shortlistReview: 0, noMatch: 0, system: 1 });
 });
 
 test("ambiguous buyer criteria reply becomes a high-priority human interpretation item", () => {
@@ -73,6 +73,34 @@ test("prepared property shortlist becomes a focused high-priority review item", 
   assert.equal(items[0]?.actionLabel, "Review boliger");
   assert.equal(items[0]?.href, "/nexus-os/shortlist-review?workItemId=crm-work-1");
   assert.equal(summarizeNexusInbox(items).shortlistReview, 1);
+});
+
+test("specific no-match case becomes a high-priority search review without suggesting automatic relaxation", () => {
+  const items = buildNexusInbox({
+    attention: [],
+    approvals: [],
+    marketingRows: [],
+    noMatchReviews: [{
+      id: "crm-work-no-match",
+      priority: "HIGH",
+      customerName: "Anne Kunde",
+      analyzed: 120,
+      criteria: ["Område: Altea", "Budsjett: EUR 500 000", "Boligtype: villa"],
+      nextAction: "Vurder om kunden bør spørres om fleksibilitet før kriteriene endres.",
+      reviewHref: "/customers?contactId=contact-1",
+      updatedAt: "2026-09-11T16:00:00Z",
+    }],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.source, "no_match");
+  assert.equal(items[0]?.priority, "high");
+  assert.equal(items[0]?.customerName, "Anne Kunde");
+  assert.match(items[0]?.reason || "", /120 boliger/);
+  assert.match(items[0]?.reason || "", /Altea/);
+  assert.equal(items[0]?.actionLabel, "Vurder søk");
+  assert.equal(items[0]?.href, "/customers?contactId=contact-1");
+  assert.equal(summarizeNexusInbox(items).noMatch, 1);
 });
 
 test("blocked approval stays visible but is not elevated above ready work", () => {
