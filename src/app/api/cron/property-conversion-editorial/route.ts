@@ -8,6 +8,8 @@ import { generatePropertyConversionNo } from "@/lib/realty/property-conversion-n
 export const maxDuration = 120;
 
 const BATCH_LIMIT = 6;
+const ACTION = "property_conversion_editorial";
+const AGENT = "zeneco_property_conversion_cron";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,12 +18,43 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-export async function GET(request: NextRequest) {
-  const unauthorized = requireCronApi(request);
-  if (unauthorized) return unauthorized;
+async function writeRunLog(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  status: "success" | "error",
+  details: Record<string, unknown>,
+) {
+  const { error } = await supabase.from("automation_logs").insert({
+    action: ACTION,
+    agent_name: AGENT,
+    status,
+    details: {
+      path: "/api/cron/property-conversion-editorial",
+      ...details,
+    },
+  });
 
+  if (error) {
+    console.error("[property-conversion-editorial] failed to write automation log", error.message);
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const startedAt = new Date().toISOString();
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+
+  const unauthorized = requireCronApi(request);
+  if (unauthorized) {
+    await writeRunLog(supabase, "error", {
+      stage: "auth",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      has_authorization_header: Boolean(request.headers.get("authorization")),
+      has_vercel_cron_header: Boolean(request.headers.get("x-vercel-cron")),
+      schedule: request.headers.get("x-vercel-cron-schedule"),
+    });
+    return unauthorized;
+  }
 
   const { data, error } = await supabase
     .from("properties")
@@ -34,9 +67,26 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(BATCH_LIMIT);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    await writeRunLog(supabase, "error", {
+      stage: "select",
+      error: error.message,
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+    });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   if (!data || data.length === 0) {
+    await writeRunLog(supabase, "success", {
+      stage: "complete",
+      processed: 0,
+      generated: 0,
+      ai: 0,
+      template: 0,
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+    });
     return NextResponse.json({ success: true, processed: 0, generated: 0, ai: 0, template: 0 });
   }
 
@@ -62,7 +112,7 @@ export async function GET(request: NextRequest) {
   );
 
   const successful = results.filter((result) => result.ok);
-  return NextResponse.json({
+  const response = {
     success: results.every((result) => result.ok),
     processed: results.length,
     generated: successful.length,
@@ -71,5 +121,14 @@ export async function GET(request: NextRequest) {
     failed: results.length - successful.length,
     refs: successful.map((result) => result.ref).filter(Boolean),
     failures: results.filter((result) => !result.ok),
+  };
+
+  await writeRunLog(supabase, response.success ? "success" : "error", {
+    stage: "complete",
+    ...response,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
   });
+
+  return NextResponse.json(response);
 }
