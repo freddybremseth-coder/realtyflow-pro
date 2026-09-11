@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { askClaude } from "@/services/ai/claude-client";
+import { unsupportedOutcomeClaims } from "@/lib/marketing/autonomous/claim-guard";
 
-const CONVERSION_VERSION = "conversion-v2";
+const CONVERSION_VERSION = "conversion-v3";
 const FORBIDDEN = /\b(drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt|førsteklasses|uslåelig|enestående|attraktiv(?:t|e)?|ideell(?:t|e)?|idealet)\b/i;
 const PLACEHOLDER = /\b(ikke angitt|ukjent|ikke oppgitt|ikke spesifisert|mangler)\b/i;
 const UNSUPPORTED_AUDIENCE = /\b(investor(?:er|ene)?|investering(?:sformål|spotensial)?|utleie(?:potensial|inntekt)?|ferieutleie|avkastning)\b/i;
@@ -141,6 +142,25 @@ function placeLabel(source: ConversionSource): string {
   return source.town || source.region || "Spania";
 }
 
+export function propertyConversionFactSources(source: ConversionSource): Array<{ claim: string; source: string }> {
+  const facts = [
+    source.type ? `Boligtype: ${deCaps(source.type)}` : "",
+    source.town ? `Sted: ${source.town}` : "",
+    source.region ? `Region: ${source.region}` : "",
+    source.bedrooms ? `Soverom: ${source.bedrooms}` : "",
+    source.bathrooms ? `Bad: ${source.bathrooms}` : "",
+    source.builtArea ? `Boligareal: ${Math.round(source.builtArea)} m²` : "",
+    source.plotSize ? `Tomt: ${Math.round(source.plotSize)} m²` : "",
+    source.terraceSize ? `Terrasse: ${Math.round(source.terraceSize)} m²` : "",
+    source.price ? `Pris: €${Math.round(source.price)}` : "",
+    source.pool ? "Basseng: ja" : "",
+    source.garage ? "Garasje: ja" : "",
+    source.energy && source.energy !== "X" ? `Energiklasse: ${source.energy}` : "",
+    ...documentedFeatures(source).map((feature) => `Fasilitet: ${feature}`),
+  ].filter(Boolean);
+  return facts.map((claim) => ({ claim, source: "RealtyFlow Inventory" }));
+}
+
 export function buildPropertyConversionFallback(
   property: Record<string, unknown>,
   now = new Date(),
@@ -160,27 +180,29 @@ export function buildPropertyConversionFallback(
   const introFacts = facts.slice(0, 3).join(", ");
   const featureTail = features.slice(0, 3).join(", ").toLowerCase();
   const sellingIntro = `${type} i ${place}${introFacts ? ` med ${introFacts}` : ""}. ${featureTail
-    ? `Boligdataene oppgir blant annet ${featureTail}, noe som er relevant når boligen sammenlignes med andre alternativer.`
-    : "Planløsning, beliggenhet og leveranse bør vurderes samlet før boligen sammenlignes med andre alternativer."}`;
+    ? `Fasiliteter oppgitt i boligdataene: ${featureTail}.`
+    : "Ytterligere kvaliteter bør bekreftes i prospekt og plantegninger før de beskrives nærmere."}`;
 
   const reasons = Array.from(new Set([
-    source.bedrooms ? `${source.bedrooms} separate soverom gir fleksibilitet for ulike behov.` : "",
-    source.bathrooms && source.bathrooms > 1 ? `${source.bathrooms} bad gjør boligen mer praktisk når flere bruker den samtidig.` : "",
+    source.bedrooms ? `${source.bedrooms} soverom er oppgitt i boligdataene.` : "",
+    source.bathrooms ? `${source.bathrooms} bad er oppgitt i boligdataene.` : "",
     source.builtArea ? `Oppgitt boligareal er ${Math.round(source.builtArea)} m².` : "",
     source.plotSize ? `Tomten er oppgitt til ${Math.round(source.plotSize)} m².` : "",
     source.terraceSize ? `Terrassen er oppgitt til ${Math.round(source.terraceSize)} m².` : "",
     ...features.map((feature) => `${feature} er oppgitt i boligdataene.`),
+    `Boligtypen er oppgitt som ${type}.`,
   ].filter(Boolean))).slice(0, 5);
 
   const outdoor = features.filter((item) => /basseng|terrasse|hage|solarium/i.test(item));
   const lifestyle = outdoor.length
-    ? `${outdoor.join(", ")} gir dokumenterte muligheter for uteopphold. Hvordan dette fungerer i praksis bør vurderes på visning.`
-    : "Hvordan boligen fungerer i hverdagen bør vurderes ut fra planløsning, leveranse og beliggenhet, ikke antas ut fra feeddata alene.";
+    ? `${outdoor.join(", ")} er oppgitt i boligdataene. Bruk og utforming bør bekreftes i prospekt og plantegninger.`
+    : "Boligdataene gir ikke grunnlag for å beskrive livsstil eller praktisk bruk utover de oppgitte faktaene.";
 
   const idealFor = Array.from(new Set([
     source.bedrooms && source.bedrooms >= 2 ? `Kjøpere som ønsker ${source.bedrooms} separate soverom.` : "",
-    outdoor.length ? "Kjøpere som prioriterer dokumentert uteareal eller basseng." : "",
-    source.plotSize ? "Kjøpere som ønsker en bolig med egen tomt." : "",
+    source.bathrooms && source.bathrooms >= 2 ? `Kjøpere som ønsker ${source.bathrooms} bad.` : "",
+    outdoor.length ? "Kjøpere som ønsker dokumentert uteareal eller basseng." : "",
+    source.plotSize ? "Kjøpere som ønsker en bolig med oppgitt egen tomt." : "",
   ].filter(Boolean))).slice(0, 3);
 
   return {
@@ -188,10 +210,10 @@ export function buildPropertyConversionFallback(
     key_reasons_no: reasons,
     lifestyle_no: lifestyle,
     ideal_for_no: idealFor,
-    cta_reason_no: "Be om komplett prospekt og plantegninger, så sjekker vi oppdatert tilgjengelighet, leveranseomfang og hvordan boligen står seg mot relevante alternativer.",
+    cta_reason_no: "Be om komplett prospekt og plantegninger for å bekrefte tilgjengelighet, leveranseomfang og øvrige boligfakta.",
     source_hash: computePropertyConversionSourceHash(property),
     generated_at: now.toISOString(),
-    model: "template-conversion-v2",
+    model: "template-conversion-v3",
     generation_mode: "template",
     version: CONVERSION_VERSION,
   };
@@ -211,6 +233,9 @@ export function propertyConversionOutputIsSafe(value: ConversionCopy, source?: C
   if (value.selling_intro_no.length < 80 || value.key_reasons_no.length < 3 || value.key_reasons_no.length > 6 || value.ideal_for_no.length > 4) return false;
 
   if (source) {
+    const sharedUnsupported = unsupportedOutcomeClaims(all, propertyConversionFactSources(source), { inventoryBound: true });
+    if (sharedUnsupported.length > 0) return false;
+
     const lower = all.toLowerCase();
     const groundedClaims: Array<[RegExp, RegExp, boolean]> = [
       [/\b(havutsikt|sjøutsikt|utsikt mot havet)\b/i, /sea views?|havutsikt|vistas al mar/i, false],
@@ -264,24 +289,38 @@ const RESPONSE_SCHEMA = {
   additionalProperties: false,
 };
 
-const SYSTEM_PROMPT = `Du skriver konverterende, men nøktern norsk boligtekst for Zen Eco Homes.
-Målet er å gjøre dokumenterte kvaliteter enklere å forstå, ikke å overtale med antakelser.
+const SYSTEM_PROMPT = `Du skriver faktabasert, nøktern norsk boligtekst for Zen Eco Homes.
+Målet er å gjøre dokumenterte egenskaper enklere å forstå, ikke å overtale med antakelser eller markedsføringsspråk.
 
 Regler:
 - Bruk KUN eksplisitte fakta i input. Hvis et faktum ikke står i input, skal det ikke omtales.
 - Ikke utled investor-/utleiepotensial, avkastning, målgrupper eller livsstil som ikke følger direkte av dokumenterte boligegenskaper.
-- Ikke bruk ordene investor, investering, utleiepotensial, ideell/ideelt, attraktiv/attraktivt, aktiv livsstil, naturskjønn, fredelig eller rolige omgivelser.
+- Ikke gjenta subjektive salgsord fra kildebeskrivelsen. Ord som luksus/luksuriøs, moderne, romslig, sjarmerende, vakker, flott, fantastisk, eksklusiv, perfekt, ideell eller attraktiv skal utelates selv om de finnes i feedteksten.
+- Ikke utled energieffektivitet, lave kostnader eller komfort fra energiklasse eller tekniske systemer alene.
 - Ikke finn på eller generaliser avstander, utsikt, solforhold, møbler, materialkvalitet, ferdigstillelse, nærservice eller hva som er inkludert.
 - Tall i teksten skal være de samme som i input. Ikke regn ut eller avrund nye tall.
 - selling_intro_no: 2–4 naturlige setninger basert på boligtype, sted og dokumenterte egenskaper.
-- key_reasons_no: 3–6 korte, ulike grunner. Praktiske forklaringer som «to bad gjør boligen mer praktisk når flere bruker den» er tillatt.
-- lifestyle_no: beskriv bare praktisk bruk av dokumenterte planløsnings-/utearealfakta. Ingen stemning, områdekarakter eller antatt livsstil.
+- key_reasons_no: 3–6 korte, ulike og faktabaserte punkter. Beskriv hva som er oppgitt; unngå antatte fordeler.
+- lifestyle_no: beskriv bare dokumenterte planløsnings-/utearealfakta. Ingen stemning, områdekarakter eller antatt livsstil.
 - ideal_for_no: 1–4 nøkterne behovsbeskrivelser, f.eks. «Kjøpere som ønsker tre separate soverom». Ikke bruk demografi, investorprofil eller antatt bruk.
 - cta_reason_no: én konkret grunn til å be om prospekt/plantegninger og få bekreftet leveranse/tilgjengelighet.
 - Returner KUN gyldig JSON etter skjemaet.`;
 
 function buildUserPrompt(source: ConversionSource) {
-  return `Boligtype: ${source.type}\nBy/sted (kanonisk): ${source.town || "-"}\nRegion/feed-lokasjon: ${source.region || "-"}\nSoverom: ${source.bedrooms ?? "-"}\nBad: ${source.bathrooms ?? "-"}\nBoligareal: ${source.builtArea ?? "-"}\nTomt: ${source.plotSize ?? "-"}\nTerrasse: ${source.terraceSize ?? "-"}\nPris: ${source.price ?? "-"}\nBassengflag: ${source.pool ? "ja" : "nei/ikke oppgitt"}\nGarasjeflag: ${source.garage ? "ja" : "nei/ikke oppgitt"}\nEnergiklasse: ${source.energy || "-"}\nDokumenterte fasiliteter: ${source.features.join(", ") || "-"}\nKildebeskrivelse: ${source.rawDescription || "-"}`;
+  return `Boligtype: ${source.type}\
+By/sted (kanonisk): ${source.town || "-"}\
+Region/feed-lokasjon: ${source.region || "-"}\
+Soverom: ${source.bedrooms ?? "-"}\
+Bad: ${source.bathrooms ?? "-"}\
+Boligareal: ${source.builtArea ?? "-"}\
+Tomt: ${source.plotSize ?? "-"}\
+Terrasse: ${source.terraceSize ?? "-"}\
+Pris: ${source.price ?? "-"}\
+Bassengflag: ${source.pool ? "ja" : "nei/ikke oppgitt"}\
+Garasjeflag: ${source.garage ? "ja" : "nei/ikke oppgitt"}\
+Energiklasse: ${source.energy || "-"}\
+Dokumenterte fasiliteter: ${source.features.join(", ") || "-"}\
+Kildebeskrivelse: ${source.rawDescription || "-"}`;
 }
 
 export async function generatePropertyConversionNo(
