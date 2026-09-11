@@ -39,7 +39,7 @@ test("fallback creates factual structure without broker hype", () => {
   assert.match(conversion.lifestyle_no, /oppgitt i boligdataene/i);
   assert.doesNotMatch(
     JSON.stringify(conversion),
-    /drømmebolig|unik|fantastisk|eksklusiv|spektakulær|perfekt|førsteklasses|investor|ideell|attraktiv|luksus|romslig|sjarmerende/i,
+    /drømmebolig|unik|fantastisk|fabelaktig|eksklusiv|spektakulær|perfekt|førsteklasses|investor|ideell|attraktiv|luksus|romslig|sjarmerende/i,
   );
 });
 
@@ -163,6 +163,40 @@ test("fact gate accepts directly grounded neutral feature claims", () => {
     key_reasons_no: ["To soverom er oppgitt.", "To bad er oppgitt.", "Havutsikt og terrasse er oppgitt i kilden."],
     lifestyle_no: "Terrasse er oppgitt i boligdataene, og utforming bør bekreftes i plantegningene.",
     ideal_for_no: ["Kjøpere som ønsker to separate soverom."],
+    cta_reason_no: "Be om prospekt og plantegninger for å bekrefte boligfakta.",
+  }, source), true);
+});
+
+test("v5 rejects demographic audience inference even when source is factual", () => {
+  const source = propertyConversionSource({
+    property_type: "Villa",
+    town: "Aspe",
+    bedrooms: 3,
+    bathrooms: 2,
+    source_description: "Nybyggvilla i Aspe med tre soverom, to bad, solarium og én etasje.",
+  });
+  assert.equal(propertyConversionOutputIsSafe({
+    selling_intro_no: "Villa i Aspe med tre soverom og to bad. Kildebeskrivelsen oppgir solarium og én etasje.",
+    key_reasons_no: ["Tre soverom er oppgitt.", "To bad er oppgitt.", "Solarium er oppgitt."],
+    lifestyle_no: "Solarium er oppgitt i kildebeskrivelsen.",
+    ideal_for_no: ["Familier som trenger flere soverom."],
+    cta_reason_no: "Be om prospekt og plantegninger for å bekrefte boligfakta.",
+  }, source), false);
+});
+
+test("v5 accepts neutral buyer need when the feature is directly grounded", () => {
+  const source = propertyConversionSource({
+    property_type: "Apartment",
+    town: "Alhama de Murcia",
+    bedrooms: 2,
+    bathrooms: 2,
+    source_description: "Ny leilighet med to soverom og to bad med golfutsikt i frontlinjen av Alhama Signature Golf.",
+  });
+  assert.equal(propertyConversionOutputIsSafe({
+    selling_intro_no: "Leilighet i Alhama de Murcia med to soverom og to bad. Kildebeskrivelsen oppgir golfutsikt og frontlinje ved Alhama Signature Golf.",
+    key_reasons_no: ["To soverom er oppgitt.", "To bad er oppgitt.", "Golfutsikt er oppgitt i kilden."],
+    lifestyle_no: "Golfutsikt er oppgitt i kildebeskrivelsen.",
+    ideal_for_no: ["Kjøpere som ønsker golfutsikt."],
     cta_reason_no: "Be om prospekt og plantegninger for å bekrefte boligfakta.",
   }, source), true);
 });
