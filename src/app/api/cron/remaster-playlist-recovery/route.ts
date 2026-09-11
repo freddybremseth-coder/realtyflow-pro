@@ -4,6 +4,7 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import {
   addRemasterLongFormToPlaylist,
   ensureRemasterLongFormPlaylist,
+  verifyRemasterLongFormYouTubeConnection,
 } from "@/services/integrations/remaster-youtube-longform";
 
 export const dynamic = "force-dynamic";
@@ -36,12 +37,55 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: `Could not load completed Re-Master mixes: ${error.message}` }, { status: 500 });
   }
 
-  const results: Array<Record<string, unknown>> = [];
-
-  for (const job of jobs || []) {
+  const eligibleJobs = (jobs || []).filter((job) => {
     const videoId = String(job.youtube_video_id || "").trim();
     const playlistName = String(job.playlist_name || "").trim();
-    if (!videoId || !playlistName) continue;
+    return Boolean(videoId && playlistName);
+  });
+
+  // Verify the shared Re-Master YouTube connection only once per cron run.
+  // A revoked refresh token is account-wide, so retrying the same Google OAuth
+  // refresh for every completed mix only burns quota and produces duplicate noise.
+  try {
+    await verifyRemasterLongFormYouTubeConnection();
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const results = eligibleJobs.map((job) => ({
+      jobId: job.id,
+      videoId: String(job.youtube_video_id || "").trim(),
+      playlistName: String(job.playlist_name || "").trim(),
+      ok: false,
+      error: errorMessage,
+    }));
+
+    if (results.length) {
+      await supabase.from("remaster_playlist_recovery_audit").insert(
+        results.map((result) => ({
+          job_id: result.jobId,
+          youtube_video_id: result.videoId,
+          playlist_name: result.playlistName,
+          ok: false,
+          error_message: result.error,
+        })),
+      );
+    }
+
+    return NextResponse.json({
+      success: false,
+      checked: results.length,
+      repaired: 0,
+      alreadyCorrect: 0,
+      failed: results.length,
+      connectionPreflightFailed: true,
+      results,
+    }, { status: 207 });
+  }
+
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const job of eligibleJobs) {
+    const videoId = String(job.youtube_video_id || "").trim();
+    const playlistName = String(job.playlist_name || "").trim();
 
     try {
       const playlist = await ensureRemasterLongFormPlaylist(playlistName, PLAYLIST_DESCRIPTION);
