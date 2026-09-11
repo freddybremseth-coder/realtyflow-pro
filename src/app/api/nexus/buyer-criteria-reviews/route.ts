@@ -18,6 +18,10 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function profileKey(contactId: string, brandId: string) {
+  return `${contactId}::${brandId}`;
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -67,11 +71,13 @@ export async function GET(request: NextRequest) {
     }
     for (const profile of profiles.data || []) {
       const contactId = String(profile.contact_id || "");
-      if (!contactId || profileMap.has(contactId)) continue;
-      profileMap.set(contactId, {
+      const brand = String(profile.brand || "");
+      const key = profileKey(contactId, brand);
+      if (!contactId || !brand || profileMap.has(key)) continue;
+      profileMap.set(key, {
         id: String(profile.id),
         version: Number(profile.version || 1),
-        brand: String(profile.brand || ""),
+        brand,
       });
     }
   }
@@ -79,9 +85,10 @@ export async function GET(request: NextRequest) {
   const items = rows.map((row) => {
     const metadata = record(row.metadata);
     const contactId = String(metadata.contact_id || "");
+    const rowBrandId = String(row.brand_id || "");
     const contact = contactMap.get(contactId) || null;
-    const profile = profileMap.get(contactId) || null;
-    const brandId = String(row.brand_id || profile?.brand || "");
+    const profile = profileMap.get(profileKey(contactId, rowBrandId)) || null;
+    const brandId = rowBrandId || profile?.brand || "";
     const reviewParams = new URLSearchParams();
     reviewParams.set("reviewId", String(row.id));
     if (brandId) reviewParams.set("brand", brandId);
