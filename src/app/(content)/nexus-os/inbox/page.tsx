@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Inbox, Loader2, MailWarning, Megaphone, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Inbox, Loader2, MailWarning, Megaphone, RefreshCw, ShieldCheck, UserRoundCheck } from "lucide-react";
 import { buildNexusInbox, summarizeNexusInbox, type NexusInboxItem, type NexusInboxSource } from "@/lib/nexus-inbox";
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 
@@ -14,6 +14,15 @@ type EmailIdentityPayload = { items?: Array<{
   reviewPriority: { priority: "high" | "medium" | "low"; reason: string };
   identityEvidence: { domain?: string | null };
   message: { id: string; subject: string; occurredAt?: string | null };
+}> };
+type BuyerCriteriaPayload = { items?: Array<{
+  id: string;
+  priority?: string | null;
+  customerName?: string | null;
+  replyPreview?: string | null;
+  nextAction?: string | null;
+  reviewHref: string;
+  updatedAt?: string | null;
 }> };
 type Filter = "all" | NexusInboxSource;
 
@@ -39,6 +48,7 @@ function sourceLabel(source: NexusInboxSource) {
   if (source === "approval") return "Approval";
   if (source === "marketing") return "Marketing";
   if (source === "email_identity") return "Email identity";
+  if (source === "buyer_criteria") return "Buyer criteria";
   return "System";
 }
 
@@ -57,13 +67,14 @@ export default function NexusInboxPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [os, approvals, marketing, emailIdentity] = await Promise.all([
+    const [os, approvals, marketing, emailIdentity, buyerCriteria] = await Promise.all([
       getJson<OsPayload>("/api/os/status"),
       getJson<ApprovalPayload>("/api/approvals"),
       getJson<MarketingPayload>("/api/marketing/readiness"),
       getJson<EmailIdentityPayload>("/api/nexus/email-link-health"),
+      getJson<BuyerCriteriaPayload>("/api/nexus/buyer-criteria-reviews"),
     ]);
-    setErrors([os.error, approvals.error, marketing.error, emailIdentity.error].filter((value): value is string => Boolean(value)));
+    setErrors([os.error, approvals.error, marketing.error, emailIdentity.error, buyerCriteria.error].filter((value): value is string => Boolean(value)));
     setItems(buildNexusInbox({
       attention: os.data?.attention ?? [],
       approvals: approvals.data?.items ?? [],
@@ -77,6 +88,7 @@ export default function NexusInboxPage() {
         domain: item.identityEvidence.domain ?? null,
         occurredAt: item.message.occurredAt ?? null,
       })),
+      buyerCriteriaReviews: buyerCriteria.data?.items ?? [],
     }));
     setLoading(false);
   }, []);
@@ -87,6 +99,7 @@ export default function NexusInboxPage() {
   const visible = useMemo(() => filter === "all" ? items : items.filter((item) => item.source === filter), [filter, items]);
   const tabs: Array<[Filter, string, number]> = [
     ["all", "Alle", summary.total],
+    ["buyer_criteria", "Kundesvar", summary.buyerCriteria],
     ["approval", "Approvals", summary.approvals],
     ["email_identity", "Email identity", summary.emailIdentity],
     ["marketing", "Marketing", summary.marketing],
@@ -99,7 +112,7 @@ export default function NexusInboxPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Inbox size={16} /> Nexus Inbox</div>
           <h1 className="mt-2 text-3xl font-black text-slate-950">Beslutninger som trenger et menneske</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én read-only triageflate over OS Attention, Approval Queue, Marketing Readiness og høyprioritert Email Link-review. Nexus Inbox flytter ikke godkjenninger, kobler ikke CRM-identiteter og utfører ingen handlinger selv.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én triageflate for det Nexus ikke bør avgjøre alene. Tvetydige kundesvar om søkekriterier vises her med selve svarutdraget, slik at du kan tolke det og korrigere kunden før matching fortsetter.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">{loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater</button>
       </div>
@@ -107,9 +120,10 @@ export default function NexusInboxPage() {
 
     {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><b>Én eller flere kilder kunne ikke leses.</b><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
 
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Inbox size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.total}</div><div className="text-sm font-semibold text-slate-500">Totalt</div></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><AlertTriangle size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.critical}</div><div className="text-sm font-semibold text-slate-500">Kritisk</div></div>
+      <button onClick={() => setFilter("buyer_criteria")} className="group rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md"><UserRoundCheck size={19} className="text-amber-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.buyerCriteria}</div><div className="flex items-center gap-1 text-sm font-semibold text-slate-600">Kundesvar å tolke <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></div></button>
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><ShieldCheck size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.approvals}</div><div className="text-sm font-semibold text-slate-500">Approvals</div></div>
       <Link href="/nexus-os/email-link-health?priority=high" className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md"><MailWarning size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.emailIdentity}</div><div className="flex items-center gap-1 text-sm font-semibold text-slate-500">Email identity <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></div></Link>
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Megaphone size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.marketing}</div><div className="text-sm font-semibold text-slate-500">Marketing</div></div>
@@ -121,7 +135,7 @@ export default function NexusInboxPage() {
 
     <section className="space-y-3">
       {visible.map((item) => {
-        const occurredAt = item.source === "email_identity" ? timeLabel(item.occurredAt) : null;
+        const occurredAt = ["email_identity", "buyer_criteria"].includes(item.source) ? timeLabel(item.occurredAt) : null;
         return <Link key={item.id} href={item.href} className={`block rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${tone(item)}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -137,6 +151,6 @@ export default function NexusInboxPage() {
       {!loading && visible.length === 0 && errors.length === 0 && <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><CheckCircle2 size={20} className="mt-0.5" /><div><div className="font-black">Ingen beslutninger i denne køen</div><div className="mt-1 text-sm text-emerald-800">Det finnes ingen elementer fra de valgte kildene som trenger menneskelig oppmerksomhet nå.</div></div></div>}
     </section>
 
-    <div className="text-xs leading-5 text-slate-500">Email identity-elementer er kun read-only review-signaler. AI-intent kan prioritere en melding, men er aldri koblingsevidens. Snooze, dismiss og direkte execute legges først til når vi har eksplisitt, auditerbar action-state.</div>
+    <div className="text-xs leading-5 text-slate-500">Tvetydige kriteriesvar er stoppet før Buyer Profile eller matching endres. Du ser kundens svar her og åpner Customer 360 for å tolke og korrigere. Email identity-elementer forblir read-only identitetsreview.</div>
   </main>;
 }
