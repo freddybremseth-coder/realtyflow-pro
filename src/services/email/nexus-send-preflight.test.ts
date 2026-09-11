@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { assessNexusSendPreflight } from "./nexus-send-preflight";
 
-function baseInput() {
+function baseInput(): any {
   return {
     brandId: "zeneco",
     profile: { status: "approved" },
