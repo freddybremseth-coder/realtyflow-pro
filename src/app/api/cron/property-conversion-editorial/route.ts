@@ -81,9 +81,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: claimError.message }, { status: 500 });
   }
 
-  const properties = (claimedRows ?? [])
-    .map(claimedProperty)
-    .filter((property): property is Record<string, unknown> => Boolean(property));
+  const mappedProperties: Array<Record<string, unknown> | null> = (
+    Array.isArray(claimedRows) ? claimedRows : []
+  ).map((row: unknown) => claimedProperty(row));
+  const properties = mappedProperties.filter(
+    (property): property is Record<string, unknown> => property !== null,
+  );
 
   const claimedRefs = properties
     .map((property) => String(property.ref || "").trim())
