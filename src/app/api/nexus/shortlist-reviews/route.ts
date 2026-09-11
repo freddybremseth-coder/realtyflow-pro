@@ -8,6 +8,12 @@ export const revalidate = 0;
 const OPEN_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
 const REVIEW_STATUSES = new Set(["client_ready", "needs_review", "rejected", "ask_agent", "verify_price_availability"]);
 
+type ShortlistReviewDecision = {
+  itemId: string;
+  status: string;
+  note: string | null;
+};
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -129,7 +135,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const workItemId = typeof body?.workItemId === "string" ? body.workItemId.trim() : "";
-  const reviews = Array.isArray(body?.reviews) ? body.reviews : [];
+  const reviews: unknown[] = Array.isArray(body?.reviews) ? body.reviews : [];
   if (!workItemId || reviews.length === 0 || reviews.length > 10) {
     return NextResponse.json({ error: "Invalid shortlist review request" }, { status: 400 });
   }
@@ -160,7 +166,7 @@ export async function POST(request: NextRequest) {
   if (existing.error) return NextResponse.json({ error: existing.error.message }, { status: 500 });
   const allowedIds = new Set((existing.data || []).map((item) => String(item.id)));
 
-  const normalized = reviews.map((review: unknown) => {
+  const normalized: ShortlistReviewDecision[] = reviews.map((review: unknown): ShortlistReviewDecision => {
     const value = record(review);
     return {
       itemId: String(value.itemId || ""),
@@ -168,9 +174,9 @@ export async function POST(request: NextRequest) {
       note: typeof value.note === "string" ? value.note.trim().slice(0, 1000) : null,
     };
   });
-  const submittedIds = new Set(normalized.map((review) => review.itemId));
+  const submittedIds = new Set(normalized.map((review: ShortlistReviewDecision) => review.itemId));
   if (
-    normalized.some((review) => !allowedIds.has(review.itemId) || !REVIEW_STATUSES.has(review.status)) ||
+    normalized.some((review: ShortlistReviewDecision) => !allowedIds.has(review.itemId) || !REVIEW_STATUSES.has(review.status)) ||
     submittedIds.size !== normalized.length ||
     submittedIds.size !== allowedIds.size
   ) {
