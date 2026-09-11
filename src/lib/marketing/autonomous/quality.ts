@@ -66,6 +66,26 @@ const INVENTORY_QUALITY_MARKERS: Array<{ label: string; re: RegExp }> = [
     label: "subjective opportunity",
     re: /\b(?:spennende|attraktiv|lovende|exciting|attractive|promising)\s+(?:mulighet|opportunity)\b/i,
   },
+  {
+    label: "subjective property praise",
+    re: /\b(?:nydelig(?:e|t)?|vakker|vakre|beautiful|lovely)\s+(?:bungalow(?:en)?|bolig(?:en)?|villa(?:en)?|leilighet(?:en)?|eiendom(?:men)?|home|property|villa|apartment)\b/i,
+  },
+  {
+    label: "spacious design",
+    re: /\b(?:romslig(?:e|t)?|spacious)\s+(?:design|planløsning|layout)\b/i,
+  },
+  {
+    label: "modern amenities",
+    re: /\b(?:moderne|modern)\s+(?:fasiliteter|amenities|features)\b/i,
+  },
+  {
+    label: "holiday and permanent suitability",
+    re: /\b(?:ideelt?|perfekt|suitable|ideal|perfect)[^.!?]{0,80}(?:ferie|holiday)[^.!?]{0,80}(?:permanent|helår|year[-\s]?round)|\b(?:ferie|holiday)[^.!?]{0,80}(?:og|and)[^.!?]{0,40}(?:permanent|helår|year[-\s]?round)/i,
+  },
+  {
+    label: "dream-home fulfillment",
+    re: /(?:gjøre|realisere|make|turn)[^.!?]{0,80}(?:drømmen|dream)[^.!?]{0,80}(?:hjem\s+i\s+solen|home\s+in\s+the\s+sun)[^.!?]{0,40}(?:virkelighet|reality)/i,
+  },
 ];
 
 function inventoryQualityViolations(
@@ -110,11 +130,14 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
 
   // Utfalls-/rollegatene gjelder KUN generert copy. Legacy/menneske-forfattet
   // self-sources (factSources = body) → utfallspåstander blir automatisk dekket.
-  // En konkret Inventory-bolig (propertyId i genome) får streng source-bound
-  // narrativkontroll: livsstil, klima og egnethet kan ikke fylles inn fra modellens
-  // allmennkunnskap når de ikke finnes i factSources.
+  // En konkret Inventory-bolig får streng source-bound narrativkontroll.
+  // Primært identifiseres den via propertyId i genome, men enkelte runtime-paths
+  // har historisk mistet propertyId selv om factSources fortsatt entydig viser
+  // RealtyFlow Inventory. Fallbacken under gjør quality-gaten fail-closed også da.
   const generated = opts.generated ?? true;
-  const inventoryBound = typeof (g as { propertyId?: unknown }).propertyId === "string";
+  const hasGenomePropertyId = typeof (g as { propertyId?: unknown }).propertyId === "string";
+  const hasInventoryFactSource = asset.factSources.some((f) => /RealtyFlow\s+Inventory/i.test(f.source ?? ""));
+  const inventoryBound = hasGenomePropertyId || hasInventoryFactSource;
   const baseOutcomeViolations = generated
     ? unsupportedOutcomeClaims(caption, asset.factSources, { inventoryBound })
     : [];
