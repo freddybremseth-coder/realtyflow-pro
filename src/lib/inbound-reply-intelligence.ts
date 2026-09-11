@@ -106,6 +106,11 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   const purchasedElsewhere = /\b(already bought|already purchased|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|allerede kjøpt)\b/i.test(text);
   if (purchasedElsewhere) return result("purchased_elsewhere", 0.98, "mark_lost_purchased_elsewhere", ["Customer states that a property has already been purchased."], { shouldStopNurture: true });
 
+  // Explicit temporary negatives must be evaluated before terminal phrases such
+  // as "ikke aktuelt for oss", otherwise "... med det første" becomes LOST.
+  const temporaryPause = /\b(not now|not at the moment|not for now|not anytime soon|not in the near future|ikke nå|ikke aktuelt(?: for (?:oss|meg|dem|ham|henne))? (?:nå|akkurat nå|med det første)|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund)\b/i.test(text);
+  if (temporaryPause) return result("follow_up_later", 0.94, "schedule_followup", ["Customer indicates that buying is not current but may be relevant later."], { shouldPauseNurture: true });
+
   const noLongerBuying = /\b(no longer looking|not looking anymore|not buying anymore|not going to buy|decided not to buy|we are not buying|i am not buying|no longer interested in buying|not interested anymore|not relevant anymore|decided to rent|rent instead|ikke lenger på utkikk|ser ikke lenger etter bolig|skal ikke kjøpe|kommer ikke til å kjøpe|har bestemt oss for ikke å kjøpe|har bestemt meg for ikke å kjøpe|ikke aktuelt å kjøpe|ikke aktuelt lenger|ikke lenger aktuelt|ikke aktuelt for oss|ikke aktuelt for meg|ikke interessert lenger|har bestemt oss for å leie|har bestemt meg for å leie|skal leie i fremtiden)\b/i.test(text);
   if (noLongerBuying) return result("no_longer_buying", 0.97, "mark_lost_no_longer_buying", ["Customer explicitly states that the buying journey has ended."], { shouldStopNurture: true });
 
@@ -118,10 +123,8 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   const changed = /\b(changed|different area|different budget|new budget|other area|other location|requirements changed|endret|andre ønsker|annet område|nytt budsjett|annet budsjett|ser etter noe annet)\b/i.test(text);
   if (changed) return result("update_preferences", 0.91, "refresh_buyer_profile", ["Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
-  // Temporary negative answers must win before the broad active keyword "aktuelt".
-  // This prevents phrases such as "ikke aktuelt for oss med det første" from becoming HOT LEAD.
-  const later = /\b(later|next year|in a few months|not now|not at the moment|not for now|not anytime soon|not in the near future|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|ikke nå|ikke aktuelt(?: for (?:oss|meg|dem|ham|henne))? (?:nå|akkurat nå|med det første)|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund|etter sommeren|etter jul)\b/i.test(text);
-  if (later) return result("follow_up_later", 0.94, "schedule_followup", ["Customer indicates that buying is not current but may be relevant later."], { shouldPauseNurture: true });
+  const later = /\b(later|next year|in a few months|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|etter sommeren|etter jul)\b/i.test(text);
+  if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], { shouldPauseNurture: true });
 
   const active = /\b(still interested|still looking|interested|yes we are|yes i am|ready to buy|ready to move forward|fortsatt interessert|fortsatt aktuelt|vi ser fortsatt|jeg ser fortsatt|interessert|klar til å kjøpe|aktuelt)\b/i.test(text);
   if (active) return result("active_interest", 0.91, "move_to_contact", ["Customer confirms active buying interest."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
