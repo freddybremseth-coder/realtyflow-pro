@@ -233,9 +233,13 @@ export async function applyInboundCrmActions(
   };
 
   const previousPipelineStatus = String(contact.pipeline_status || "") || null;
+  const normalizedPreviousPipelineStatus = String(previousPipelineStatus || "").toUpperCase();
   let nextPipelineStatus = previousPipelineStatus;
   let suppressed = Boolean(contact.email_suppressed || contact.do_not_contact);
   const terminalAutoClose = isTerminalSalesOutcome(classification.intent) && governance.canApplyAutomatically;
+  const activeInterestAutoAdvance = classification.intent === "active_interest"
+    && governance.canApplyAutomatically
+    && (normalizedPreviousPipelineStatus === "NEW" || normalizedPreviousPipelineStatus === "");
 
   if (classification.intent === "do_not_contact") {
     update.do_not_contact = true;
@@ -262,6 +266,10 @@ export async function applyInboundCrmActions(
     update.nurture_status = "stopped";
     update.next_followup = null;
     suppressed = true;
+  } else if (activeInterestAutoAdvance) {
+    update.pipeline_status = "CONTACT";
+    update.nurture_status = "paused";
+    nextPipelineStatus = "CONTACT";
   } else if (classification.shouldPauseNurture) {
     // A customer reply pauses nurture. Real-time urgency is represented by the
     // governed work item / response_due_at SLA below, not by abusing the CRM
@@ -290,6 +298,17 @@ export async function applyInboundCrmActions(
       actorType: "customer",
       actorId: fromAddress || null,
       createdBy: "email-crm-sync:terminal-reply",
+    }).catch(() => undefined);
+  } else if (activeInterestAutoAdvance) {
+    await recordPipelineTransition(supabase, {
+      contactId: String(contact.id),
+      brandId: params.brandId,
+      previousStatus: previousPipelineStatus,
+      nextStatus: "CONTACT",
+      occurredAt: now,
+      actorType: "automation",
+      actorId: "Nexus Email Autopilot",
+      createdBy: "email-crm-sync:active-interest",
     }).catch(() => undefined);
   }
 
