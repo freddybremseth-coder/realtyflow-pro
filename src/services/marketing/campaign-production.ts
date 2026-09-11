@@ -28,6 +28,7 @@ import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 const PREAPPROVED_REUSABLE_SOURCES = new Set(["ad_creative", "content_hub_approved"]);
+const ZENECO_PROPERTY_BASE = "https://www.zenecohomes.com/eiendommer";
 const DETERMINISTIC_INVENTORY_FACT_PREFIXES = [
   "Tittel:",
   "Sted:",
@@ -121,6 +122,10 @@ export function makeDeterministicInventoryCreative(brief: any, property: Invento
     .map(({ claim }) => claim.trim())
     .filter(Boolean);
   const body = bodyFacts.length ? bodyFacts.join("\n") : (property.ref ? `Referanse: ${property.ref}` : "Verifisert Inventory-bolig");
+  const propertyUrl = property.ref ? `${ZENECO_PROPERTY_BASE}/${encodeURIComponent(property.ref)}` : null;
+  const cta = propertyUrl
+    ? `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`
+    : undefined;
 
   return {
     asset: {
@@ -135,7 +140,7 @@ export function makeDeterministicInventoryCreative(brief: any, property: Invento
       } as any,
       headline,
       body,
-      cta: undefined,
+      cta,
       media: { imageUrl: property.primaryImage, mediaType: "image" },
       factSources: safeFacts,
       generator: { mode: "deterministic_inventory_fallback" },
