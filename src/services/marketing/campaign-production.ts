@@ -21,13 +21,27 @@ import { runApprovedPublication } from "@/services/marketing/publish-executor";
 import { resolveMarketingContent, type ResolverSourceMap } from "@/services/marketing/content-resolver-adapter";
 import { loadLegacyPublicationCandidate } from "@/services/marketing/legacy-content-adapter";
 import { resolvePublishingAccount } from "@/services/marketing/account-resolver";
-import { resolveInventoryMarketingProperty } from "@/services/marketing/inventory-property-adapter";
+import { resolveInventoryMarketingProperty, type InventoryMarketingProperty } from "@/services/marketing/inventory-property-adapter";
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 const PREAPPROVED_REUSABLE_SOURCES = new Set(["ad_creative", "content_hub_approved"]);
+const DETERMINISTIC_INVENTORY_FACT_PREFIXES = [
+  "Tittel:",
+  "Sted:",
+  "Region:",
+  "Pris:",
+  "Soverom:",
+  "Bad:",
+  "Boligareal:",
+  "Tomt:",
+  "Boligtype:",
+  "Privat/felles basseng:",
+  "Garasje/parkering oppgitt:",
+  "Energimerking:",
+] as const;
 
 type CampaignAutonomy = {
   level: "copilot" | "guarded";
@@ -95,6 +109,51 @@ function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
   return creative;
 }
 
+export function makeDeterministicInventoryCreative(brief: any, property: InventoryMarketingProperty): CreativeResult {
+  const safeFacts = property.factSources.filter(({ claim }) =>
+    DETERMINISTIC_INVENTORY_FACT_PREFIXES.some((prefix) => claim.startsWith(prefix)),
+  );
+  const titleFact = safeFacts.find(({ claim }) => claim.startsWith("Tittel:"));
+  const headline = titleFact?.claim.replace(/^Tittel:\s*/, "").trim()
+    || (property.ref ? `Bolig ${property.ref}` : "Bolig fra RealtyFlow Inventory");
+  const bodyFacts = safeFacts
+    .filter(({ claim }) => !claim.startsWith("Tittel:"))
+    .map(({ claim }) => claim.trim())
+    .filter(Boolean);
+  const body = bodyFacts.length ? bodyFacts.join("\n") : (property.ref ? `Referanse: ${property.ref}` : "Verifisert Inventory-bolig");
+
+  return {
+    asset: {
+      contentId: brief.contentId,
+      creativeVariantId: `${brief.contentId}_deterministic_v1`,
+      campaignId: brief.campaignId,
+      channel: brief.channel,
+      genome: {
+        ...brief.genome,
+        propertyId: property.id,
+        propertyType: property.propertyType ?? undefined,
+      } as any,
+      headline,
+      body,
+      cta: undefined,
+      media: { imageUrl: property.primaryImage, mediaType: "image" },
+      factSources: safeFacts,
+      generator: { mode: "deterministic_inventory_fallback" },
+    },
+    provenance: {
+      generatedBy: "deterministic-inventory-fallback",
+      model: "none",
+      promptVersion: "inventory-fallback-1.0",
+      learningRulesUsed: [],
+      factSources: safeFacts,
+      propertyIds: [property.id],
+      createdAt: new Date().toISOString(),
+      approvedBy: null,
+      approvedAt: null,
+    },
+  };
+}
+
 export interface CreateCampaignDraftInput {
   brandId: string;
   goal: CommercialGoal;
@@ -110,6 +169,8 @@ export interface CreateCampaignDraftInput {
   mediaUrl?: string;
   useInventoryProperty?: boolean;
   propertyId?: string;
+  /** Manual-review recovery only: bypass AI prose and compose only from whitelisted Inventory facts. */
+  deterministicInventoryCopy?: boolean;
   /** Autopilot-only: an exact reusable source cannot be selected inside this window. */
   reuseCooldownDays?: number;
   /** Fail closed if recent publication history cannot be loaded. */
@@ -232,6 +293,9 @@ export async function createCampaignDraft(
   const inventoryProperty = !input.legacyPublicationId && input.useInventoryProperty
     ? await resolveInventoryMarketingProperty(supabase, { brandId: input.brandId, propertyId: input.propertyId ?? null })
     : null;
+  if (input.deterministicInventoryCopy && !inventoryProperty) {
+    throw new Error("DETERMINISTIC_INVENTORY_FALLBACK_REQUIRES_PROPERTY");
+  }
   const effectiveMediaUrl = inventoryProperty?.primaryImage ?? input.mediaUrl;
   const effectiveFocus = input.focus || inventoryProperty?.location || undefined;
   const locationInstruction = inventoryProperty
@@ -310,11 +374,13 @@ export async function createCampaignDraft(
         reuseMode = "reuse_exact";
         sourceHumanApproved = !!candidate.humanApproved;
       } else if (inventoryProperty) {
-        creative = await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
+        creative = input.deterministicInventoryCopy
+          ? makeDeterministicInventoryCreative(brief, inventoryProperty)
+          : await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
         creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
         sourceType = "generated";
         sourceId = `property:${inventoryProperty.id}`;
-        reuseMode = "inventory_grounded";
+        reuseMode = input.deterministicInventoryCopy ? "inventory_deterministic_fallback" : "inventory_grounded";
       } else {
         let decision = null;
         try {
@@ -354,7 +420,7 @@ export async function createCampaignDraft(
       language: input.language ?? brief.genome.language ?? null, publishingAccountId: input.publishingAccountId ?? null,
     }).catch(() => null);
 
-    const approvedGenerated = sourceType === "generated" && (!inventoryProperty || reuseMode === "inventory_grounded");
+    const approvedGenerated = sourceType === "generated" && (!inventoryProperty || reuseMode === "inventory_grounded" || reuseMode === "inventory_deterministic_fallback");
     const approvedReusable = sourceHumanApproved
       && PREAPPROVED_REUSABLE_SOURCES.has(sourceType)
       && reuseMode === "reuse_exact"
