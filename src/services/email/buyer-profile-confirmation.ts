@@ -142,7 +142,7 @@ export function isAffirmativeCriteriaConfirmation(value: string | null | undefin
   if (/\b(nei|ikke|men|bortsett|endre|endring|feil|instead|except|not correct|no|wrong|pero|cambiar|incorrecto)\b/i.test(normalized)) return false;
   if (/\d/.test(normalized)) return false;
 
-  return /^(ja|ja[, ]+(det )?(stemmer|er riktig)|det stemmer|stemmer|riktig|bekrefter|bekreftet|yes|yes[, ]+(that is )?correct|correct|confirmed|si|sí|sí[, ]+correcto|correcto)([.! ]*(takk|thanks|gracias))?[.! ]*$/i.test(normalized);
+  return /^(ja|ja[, ]+(det )?(stemmer|er riktig)|det stemmer|stemmer|riktig|bekrefter|bekreftet|yes|yes[, ]+(that is )?correct|correct|confirmed|si|sí|sí[, ]+correcto|correcto)([,.! ]*(takk|thanks|gracias))?[.! ]*$/i.test(normalized);
 }
 
 export async function sendBuyerCriteriaConfirmation(
