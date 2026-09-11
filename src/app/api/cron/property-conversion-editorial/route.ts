@@ -62,10 +62,8 @@ export async function GET(request: NextRequest) {
       "id,ref,title,title_no,property_type,type,bedrooms,bathrooms,town,location,built_area,area_m2,plot_size,price,pool,garage,energy_rating,amenities_no,source_description,description,description_no,conversion_no,show_on_website,website_visible,status",
     )
     .is("conversion_no", null)
-    .or("show_on_website.is.null,show_on_website.eq.true")
-    .or("website_visible.is.null,website_visible.eq.true")
     .order("created_at", { ascending: false })
-    .limit(BATCH_LIMIT);
+    .limit(BATCH_LIMIT * 4);
 
   if (error) {
     await writeRunLog(supabase, "error", {
@@ -77,21 +75,40 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!data || data.length === 0) {
+  const rawCandidateCount = data?.length ?? 0;
+  const eligibleProperties = (data ?? [])
+    .filter(
+      (property) =>
+        property.show_on_website !== false &&
+        property.website_visible !== false,
+    )
+    .slice(0, BATCH_LIMIT);
+
+  if (eligibleProperties.length === 0) {
     await writeRunLog(supabase, "success", {
       stage: "complete",
       processed: 0,
       generated: 0,
       ai: 0,
       template: 0,
+      raw_candidates: rawCandidateCount,
+      visible_candidates: 0,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
     });
-    return NextResponse.json({ success: true, processed: 0, generated: 0, ai: 0, template: 0 });
+    return NextResponse.json({
+      success: true,
+      processed: 0,
+      generated: 0,
+      ai: 0,
+      template: 0,
+      raw_candidates: rawCandidateCount,
+      visible_candidates: 0,
+    });
   }
 
   const results = await Promise.all(
-    data.map(async (property) => {
+    eligibleProperties.map(async (property) => {
       try {
         const conversion = await generatePropertyConversionNo(property as Record<string, unknown>);
         const { error: updateError } = await supabase
@@ -119,6 +136,8 @@ export async function GET(request: NextRequest) {
     ai: successful.filter((result) => result.mode === "ai").length,
     template: successful.filter((result) => result.mode === "template").length,
     failed: results.length - successful.length,
+    raw_candidates: rawCandidateCount,
+    visible_candidates: eligibleProperties.length,
     refs: successful.map((result) => result.ref).filter(Boolean),
     failures: results.filter((result) => !result.ok),
   };
