@@ -4,12 +4,17 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
+  pull-requests: read
+  statuses: write
 
 jobs:
   require-current-main:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -56,3 +61,39 @@ jobs:
           echo
           echo "ERROR: This PR head does not contain the latest main. Rebase or merge current main into the branch, rerun CI, and only then merge."
           exit 1
+
+  refresh-open-pr-statuses:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Mark every open main PR fresh or stale
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO="$GITHUB_REPOSITORY"
+          CURRENT_MAIN="$GITHUB_SHA"
+
+          gh api --paginate "repos/$REPO/pulls?state=open&base=main&per_page=100" \
+            --jq '.[] | [.number, .head.sha] | @tsv' |
+          while IFS=$'\t' read -r PR_NUMBER HEAD_SHA; do
+            [ -n "$HEAD_SHA" ] || continue
+
+            COMPARE_STATUS="$(gh api "repos/$REPO/compare/$CURRENT_MAIN...$HEAD_SHA" --jq '.status')"
+            if [ "$COMPARE_STATUS" = "ahead" ] || [ "$COMPARE_STATUS" = "identical" ]; then
+              STATE="success"
+              DESCRIPTION="PR contains current main $CURRENT_MAIN"
+            else
+              STATE="failure"
+              DESCRIPTION="PR is stale after main advanced; refresh before merge"
+            fi
+
+            echo "PR #$PR_NUMBER $HEAD_SHA -> $STATE ($COMPARE_STATUS)"
+            gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+              -f state="$STATE" \
+              -f context="Main Freshness / current-main" \
+              -f description="$DESCRIPTION" \
+              >/dev/null
+          done
