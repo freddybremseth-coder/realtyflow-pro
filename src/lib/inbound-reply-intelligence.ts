@@ -119,8 +119,8 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   if (changed) return result("update_preferences", 0.91, "refresh_buyer_profile", ["Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
   // Temporary negative answers must win before the broad active keyword "aktuelt".
-  // This prevents phrases such as "ikke aktuelt med det første" from becoming HOT LEAD.
-  const later = /\b(later|next year|in a few months|not now|not at the moment|not for now|not anytime soon|not in the near future|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|ikke nå|ikke aktuelt nå|ikke aktuelt akkurat nå|ikke aktuelt med det første|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund|etter sommeren|etter jul)\b/i.test(text);
+  // This prevents phrases such as "ikke aktuelt for oss med det første" from becoming HOT LEAD.
+  const later = /\b(later|next year|in a few months|not now|not at the moment|not for now|not anytime soon|not in the near future|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|ikke nå|ikke aktuelt(?: for (?:oss|meg|dem|ham|henne))? (?:nå|akkurat nå|med det første)|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund|etter sommeren|etter jul)\b/i.test(text);
   if (later) return result("follow_up_later", 0.94, "schedule_followup", ["Customer indicates that buying is not current but may be relevant later."], { shouldPauseNurture: true });
 
   const active = /\b(still interested|still looking|interested|yes we are|yes i am|ready to buy|ready to move forward|fortsatt interessert|fortsatt aktuelt|vi ser fortsatt|jeg ser fortsatt|interessert|klar til å kjøpe|aktuelt)\b/i.test(text);
