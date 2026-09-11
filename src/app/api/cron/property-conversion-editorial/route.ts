@@ -11,11 +11,24 @@ const BATCH_LIMIT = 6;
 const ACTION = "property_conversion_editorial";
 const AGENT = "zeneco_property_conversion_cron";
 
+function noStoreFetch(input: RequestInfo | URL, init?: RequestInit) {
+  return fetch(input, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      ...(init?.headers || {}),
+      "cache-control": "no-cache, no-store, max-age=0",
+    },
+  });
+}
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return createClient(url, key);
+  return createClient(url, key, {
+    global: { fetch: noStoreFetch },
+  });
 }
 
 async function writeRunLog(
@@ -59,7 +72,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("properties")
     .select(
-      "id,ref,title,title_no,property_type,type,bedrooms,bathrooms,town,location,built_area,area_m2,plot_size,price,pool,garage,energy_rating,amenities_no,source_description,description,description_no,conversion_no,show_on_website,website_visible,status",
+      "id,ref,title,title_no,property_type,type,bedrooms,bathrooms,town,location,built_area,area_m2,plot_size,price,pool,garage,energy_rating,amenities_no,source_description,description,description_no,conversion_no,show_on_website,website_visible,status,created_at",
     )
     .is("conversion_no", null)
     .order("created_at", { ascending: false })
@@ -76,6 +89,8 @@ export async function GET(request: NextRequest) {
   }
 
   const rawCandidateCount = data?.length ?? 0;
+  const rawCandidateRefs = (data ?? []).map((property) => property.ref).filter(Boolean);
+  const rawCandidateIds = (data ?? []).map((property) => property.id).filter(Boolean);
   const eligibleProperties = (data ?? [])
     .filter(
       (property) =>
@@ -92,6 +107,8 @@ export async function GET(request: NextRequest) {
       ai: 0,
       template: 0,
       raw_candidates: rawCandidateCount,
+      raw_candidate_refs: rawCandidateRefs,
+      raw_candidate_ids: rawCandidateIds,
       visible_candidates: 0,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
@@ -103,6 +120,7 @@ export async function GET(request: NextRequest) {
       ai: 0,
       template: 0,
       raw_candidates: rawCandidateCount,
+      raw_candidate_refs: rawCandidateRefs,
       visible_candidates: 0,
     });
   }
@@ -137,6 +155,8 @@ export async function GET(request: NextRequest) {
     template: successful.filter((result) => result.mode === "template").length,
     failed: results.length - successful.length,
     raw_candidates: rawCandidateCount,
+    raw_candidate_refs: rawCandidateRefs,
+    raw_candidate_ids: rawCandidateIds,
     visible_candidates: eligibleProperties.length,
     refs: successful.map((result) => result.ref).filter(Boolean),
     failures: results.filter((result) => !result.ok),
