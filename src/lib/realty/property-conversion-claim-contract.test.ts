@@ -11,6 +11,14 @@ const migration = fs.readFileSync(
   "utf8",
 );
 
+const migrationV2 = fs.readFileSync(
+  path.join(
+    process.cwd(),
+    "supabase/migrations/20260911201500_property_conversion_atomic_claim_v2.sql",
+  ),
+  "utf8",
+);
+
 const route = fs.readFileSync(
   path.join(
     process.cwd(),
@@ -24,23 +32,31 @@ test("conversion candidates are claimed atomically and cannot be double-claimed"
   assert.match(migration, /conversion_no is null/i);
   assert.match(migration, /'status',\s*'processing'/i);
   assert.match(migration, /'claimed_at',\s*now\(\)/i);
-  assert.match(migration, /update public\.properties[\s\S]*returning to_jsonb\(p\.\*\)/i);
+});
+
+test("v2 claim RPC preserves atomic locking and returns ordinary property rows", () => {
+  assert.match(migrationV2, /returns setof public\.properties/i);
+  assert.match(migrationV2, /for update skip locked/i);
+  assert.match(migrationV2, /conversion_no is null/i);
+  assert.match(migrationV2, /returning p\.\*/i);
 });
 
 test("stale processing leases recover without allowing immediate duplicate work", () => {
-  assert.match(migration, /p_stale_minutes integer default 20/i);
-  assert.match(migration, /conversion_no ->> 'status' = 'processing'/i);
-  assert.match(migration, /make_interval\(mins => greatest\(p_stale_minutes, 1\)\)/i);
+  assert.match(migrationV2, /p_stale_minutes integer default 20/i);
+  assert.match(migrationV2, /conversion_no ->> 'status' = 'processing'/i);
+  assert.match(migrationV2, /make_interval\(mins => greatest\(p_stale_minutes, 1\)\)/i);
 });
 
-test("claim function is service-role only", () => {
-  assert.match(migration, /revoke all on function[\s\S]*from public, anon, authenticated/i);
-  assert.match(migration, /grant execute on function[\s\S]*to service_role/i);
+test("v2 claim function is service-role only", () => {
+  assert.match(migrationV2, /revoke all on function[\s\S]*from public, anon, authenticated/i);
+  assert.match(migrationV2, /grant execute on function[\s\S]*to service_role/i);
 });
 
-test("conversion cron uses atomic claim RPC instead of nullable PostgREST selection", () => {
-  assert.match(route, /\.rpc\(\s*"claim_property_conversion_candidates"/i);
+test("conversion cron uses v2 atomic claim RPC and consumes rows directly", () => {
+  assert.match(route, /\.rpc\(\s*"claim_property_conversion_candidates_v2"/i);
   assert.doesNotMatch(route, /\.is\(\s*"conversion_no"\s*,\s*null\s*\)/i);
+  assert.doesNotMatch(route, /claimedProperty\(/i);
+  assert.match(route, /rpc_version:\s*"v2"/i);
   assert.match(route, /claimed_refs/i);
   assert.match(route, /claimed_ids/i);
 });
