@@ -60,11 +60,12 @@ async function validateChannel(channel: ChannelRow): Promise<IntegrationCheck> {
 
   if (channel.platform === "youtube") {
     const health = await checkYouTubeChannelHealth(channel.id);
+    const verifiedTitle = "channel" in health ? health.channel?.title : undefined;
     return {
       ...base,
       status: health.connected ? "ok" : health.configured ? "error" : "warning",
       message: health.connected
-        ? `Canonical YouTube-token er gyldig for ${health.channel?.title || channel.display_name}; refresh-token brukes automatisk når access-tokenet er utløpt.`
+        ? `Canonical YouTube-token er gyldig for ${verifiedTitle || channel.display_name}; refresh-token brukes automatisk når access-tokenet er utløpt.`
         : health.message || "YouTube-tilkoblingen kunne ikke verifiseres.",
     };
   }
