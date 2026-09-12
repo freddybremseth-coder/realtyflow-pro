@@ -14,7 +14,11 @@ on:
       - "src/lib/nexus/communication-learning.ts"
       - "src/lib/nexus/communication-learning.test.ts"
       - "src/lib/nexus/communication-learning.contract.test.ts"
+      - "src/lib/nexus/next-best-action-communication.ts"
+      - "src/lib/nexus/next-best-action-communication.test.ts"
+      - "src/lib/nexus/next-best-action-communication.contract.test.ts"
       - "src/app/api/revenue/executive-briefing/route.ts"
+      - "src/app/api/nexus/next-best-action/route.ts"
       - "src/app/api/nexus/outcome-measurement/route.ts"
       - "src/app/api/nexus/communications/learning/route.ts"
       - "src/app/api/cron/nexus-outcome-snapshot/route.ts"
@@ -26,6 +30,7 @@ on:
       - "docs/nexus/NEXUS_OUTCOME_MEASUREMENT_V1.md"
       - "docs/nexus/NEXUS_REVENUE_LEARNING_V1.md"
       - "docs/nexus/NEXUS_COMMUNICATION_LEARNING_V1.md"
+      - "docs/nexus/NEXUS_NEXT_BEST_ACTION_V1.md"
       - ".github/workflows/nexus-revenue-brain.yml"
   push:
     branches:
@@ -42,7 +47,11 @@ on:
       - "src/lib/nexus/communication-learning.ts"
       - "src/lib/nexus/communication-learning.test.ts"
       - "src/lib/nexus/communication-learning.contract.test.ts"
+      - "src/lib/nexus/next-best-action-communication.ts"
+      - "src/lib/nexus/next-best-action-communication.test.ts"
+      - "src/lib/nexus/next-best-action-communication.contract.test.ts"
       - "src/app/api/revenue/executive-briefing/route.ts"
+      - "src/app/api/nexus/next-best-action/route.ts"
       - "src/app/api/nexus/outcome-measurement/route.ts"
       - "src/app/api/nexus/communications/learning/route.ts"
       - "src/app/api/cron/nexus-outcome-snapshot/route.ts"
@@ -54,6 +63,7 @@ on:
       - "docs/nexus/NEXUS_OUTCOME_MEASUREMENT_V1.md"
       - "docs/nexus/NEXUS_REVENUE_LEARNING_V1.md"
       - "docs/nexus/NEXUS_COMMUNICATION_LEARNING_V1.md"
+      - "docs/nexus/NEXUS_NEXT_BEST_ACTION_V1.md"
 
 jobs:
   test:
@@ -69,5 +79,5 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --silent
-      - name: Revenue Brain, policy, outcome, revenue and communication learning tests
-        run: npx tsx --test src/lib/nexus/action-policy-registry.test.ts src/lib/nexus/revenue-brain.test.ts src/lib/nexus/outcome-measurement.test.ts src/lib/nexus/revenue-learning.test.ts src/lib/nexus/communication-learning.test.ts src/lib/nexus/communication-learning.contract.test.ts
+      - name: Revenue Brain, policy, outcome, revenue, communication and next-best-action learning tests
+        run: npx tsx --test src/lib/nexus/action-policy-registry.test.ts src/lib/nexus/revenue-brain.test.ts src/lib/nexus/outcome-measurement.test.ts src/lib/nexus/revenue-learning.test.ts src/lib/nexus/communication-learning.test.ts src/lib/nexus/communication-learning.contract.test.ts src/lib/nexus/next-best-action-communication.test.ts src/lib/nexus/next-best-action-communication.contract.test.ts
