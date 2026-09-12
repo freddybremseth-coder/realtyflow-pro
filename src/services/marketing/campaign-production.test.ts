@@ -98,7 +98,7 @@ function seedBrand(db: any) {
 test("FIXTURE: hele kjeden plan → approval → published (dry-run)", async () => {
   const db = makeDb();
   seedBrand(db);
-  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa i Finestrat", goal: { kind: "qualified_leads", target: 10, horizonDays: 30 }, focus: "Finestrat" });
+  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa i Finestrat", goal: { kind: "qualified_leads", target: 10, horizonDays: 30 }, focus: "Finestrat", mediaUrl: "https://x/i.jpg" });
 
   assert.equal(draft.results.length, 2); // instagram + facebook
   for (const r of draft.results) {
@@ -323,7 +323,7 @@ test("CANARY fail-closed: legacy-rad med meta-tekst avvises (rejected, ingen app
 test("duplicate retry: gjentatt run av samme approval publiserer ikke på nytt", async () => {
   const db = makeDb();
   seedBrand(db);
-  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa", goal: { kind: "leads", target: 5, horizonDays: 30 } });
+  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa", goal: { kind: "leads", target: 5, horizonDays: 30 }, mediaUrl: "https://x/i.jpg" });
   const approvalId = draft.results[0].approvalId!;
   db.tables["agentic_approvals"].find((a: any) => a.id === approvalId).status = "approved";
   await runApprovedPublicationProd(db, { approvalId, executedBy: "x" });
@@ -340,7 +340,7 @@ test("FAIL-CLOSED: manglende brand context stopper kampanjen", async () => {
 test("rejected/ikke-godkjent approval kan ikke publiseres", async () => {
   const db = makeDb();
   seedBrand(db);
-  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa", goal: { kind: "leads", target: 5, horizonDays: 30 } });
+  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa", goal: { kind: "leads", target: 5, horizonDays: 30 }, mediaUrl: "https://x/i.jpg" });
   const approvalId = draft.results[0].approvalId!; // fortsatt pending
   const exec = await runApprovedPublicationProd(db, { approvalId, executedBy: "x" });
   assert.equal(exec.ok, false);
@@ -351,7 +351,7 @@ test("rejected/ikke-godkjent approval kan ikke publiseres", async () => {
 test("FACT_NOT_VERIFIED: sensitive fakta uten kilde blokkeres ved execution", async () => {
   const db = makeDb();
   seedBrand(db);
-  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa", goal: { kind: "leads", target: 5, horizonDays: 30 } });
+  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "Villa", goal: { kind: "leads", target: 5, horizonDays: 30 }, mediaUrl: "https://x/i.jpg" });
   const approvalId = draft.results[0].approvalId!;
   db.tables["agentic_approvals"].find((a: any) => a.id === approvalId).status = "approved";
   // Injiser sensitivt tall uten kilde i asset-en.

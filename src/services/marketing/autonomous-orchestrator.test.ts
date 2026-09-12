@@ -29,7 +29,8 @@ const brief: ContentBrief = {
 };
 const asset: GeneratedAsset = {
   contentId: "c1", creativeVariantId: "v1", campaignId: "camp1", channel: "instagram",
-  genome: brief.genome, body: "Bli med på visning av denne villaen i Finestrat, book i dag.", cta: "Book visning", factSources: [], generator: {},
+  genome: brief.genome, body: "Bli med på visning av denne villaen i Finestrat, book i dag.", cta: "Book visning", factSources: [],
+  media: { imageUrl: "https://example.com/realtyflow-test.jpg", mediaType: "image" }, generator: {},
 };
 const guardState = (over: Partial<GuardState> = {}): GuardState => ({ autopilotEnabled: true, ...over });
 
@@ -58,6 +59,22 @@ test("FAIL-CLOSED: copilot-publisering uten approval-tjeneste blir paused, ikke 
   assert.equal(res.mode, "manual-review");
   assert.equal(res.state, "paused");
   assert.equal(res.error, "APPROVAL_SERVICE_UNAVAILABLE");
+});
+
+test("FAIL-CLOSED: Instagram uten bilde/video blokkeres før live publisher", async () => {
+  const fake = makeFake({});
+  let publisherCalled = false;
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "guarded" }), marketingRunId: "mr1" };
+  const missingMedia: GeneratedAsset = { ...asset, media: undefined };
+  const res = await dispatchGeneratedAsset(
+    deps(fake, { publisher: { publish: async () => { publisherCalled = true; return { state: "published" }; } } }),
+    { asset: missingMedia, brief, run, preapprovedFormat: true },
+  );
+  assert.equal(res.state, "paused");
+  assert.equal(res.mode, "blocked");
+  assert.match(res.error ?? "", /MEDIA_ASSET_MISSING/);
+  assert.equal(res.published, false);
+  assert.equal(publisherCalled, false);
 });
 
 test("Brand Brain: forbudt påstand tvinger godkjenning selv på guarded+preapproved", async () => {
