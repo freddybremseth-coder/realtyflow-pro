@@ -21,12 +21,31 @@ test("understands separate feedback for numbered properties", () => {
   assert.equal(result.requiresBuyerProfileReview, true);
 });
 
-test("maps explicit property references and viewing intent", () => {
+test("maps explicit property references and carries follow-up viewing intent", () => {
   const result = analyzePropertyRecommendationReply({
     body: "N1002 ser bra ut. Kan vi se boligen på torsdag?",
     properties,
   });
   assert.equal(result.signals.some((item) => item.reference === "N1002" && item.sentiment === "positive"), true);
+  assert.equal(result.signals.some((item) => item.reference === "N1002" && item.sentiment === "viewing"), true);
+  assert.equal(result.highIntent, true);
+});
+
+test("carries an availability question only when one prior property is unambiguous", () => {
+  const result = analyzePropertyRecommendationReply({
+    body: "Jeg liker N1002. Er den ledig fortsatt?",
+    properties,
+  });
+  assert.equal(result.signals.some((item) => item.reference === "N1002" && item.sentiment === "question"), true);
+});
+
+test("does not carry follow-up intent after multiple explicit properties", () => {
+  const result = analyzePropertyRecommendationReply({
+    body: "Nr 1 og nr 2 ser interessante ut. Kan vi se boligen på torsdag?",
+    properties,
+  });
+  assert.equal(result.signals.filter((item) => item.sentiment === "positive").length, 2);
+  assert.equal(result.signals.some((item) => item.sentiment === "viewing"), false);
 });
 
 test("extracts explicit new criteria without silently applying them", () => {
