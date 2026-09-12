@@ -473,7 +473,25 @@ function assetFromCandidate(brief: any, brand: any, chosen: any): CreativeResult
 }
 
 export async function runApprovedPublicationProd(supabase: MarketingSupabaseLike, args: { approvalId: string; executedBy: string }) {
-  const publisher = makeConfiguredMetaPublisher(supabase);
+  // The approval executor loads the canonical publication before calling the
+  // publisher, but the publisher also needs its brand in order to select the
+  // matching OAuth connection.  Do not fall back to the legacy global Meta
+  // token for brand-scoped publications: it can belong to another Page or be
+  // older than the active connection.
+  const publisher: ChannelPublisher = {
+    async publish(asset, opts) {
+      if (!opts.publicationId) throw new Error("PUBLICATION_REF_MISSING: kan ikke velge brand-scoped Meta OAuth");
+      const { data: publication, error } = await supabase
+        .from("marketing_publications")
+        .select("brand_id")
+        .eq("publication_id", opts.publicationId)
+        .maybeSingle();
+      if (error) throw new Error(`PUBLICATION_BRAND_LOOKUP_FAILED: ${error.message}`);
+      const brandId = String(publication?.brand_id ?? "").trim();
+      if (!brandId) throw new Error("BRAND_UNRESOLVED: publikasjonen mangler brand_id for Meta OAuth");
+      return makeConfiguredMetaPublisher(supabase, brandId).publish(asset, opts);
+    },
+  };
   const live = process.env.MARKETING_META_LIVE === "true";
   const resolveAccount = live ? (a: { brandId: string; channel: string }) => resolvePublishingAccount(supabase, a) : undefined;
   return runApprovedPublication(supabase, { approvalId: args.approvalId, executedBy: args.executedBy, publisher, resolveAccount });
