@@ -91,8 +91,8 @@ function sentimentForChunk(chunk: string): { sentiment: PropertyFeedbackSentimen
   const reasons: PropertyFeedbackReason[] = [];
   if (/\b(for dyr|for kostbar|over budsjett|too expensive|too pricey|above budget)\b/i.test(text)) reasons.push("price_high");
   if (/\b(god pris|fin pris|innenfor budsjett|good price|within budget)\b/i.test(text)) reasons.push("price_good");
-  if (/\b(liker ikke omrad|ikke omrad|feil omrad|wrong area|don't like the area|do not like the area|location is not for us)\b/i.test(text)) reasons.push("location_dislike");
-  if (/\b(liker omrad|bra omrad|riktig omrad|like the area|good location|great location)\b/i.test(text)) reasons.push("location_like");
+  if (/\b(liker ikke omrad(?:e|et)?|ikke omrad(?:e|et)?|feil omrad(?:e|et)?|wrong area|don't like the area|do not like the area|location is not for us)\b/i.test(text)) reasons.push("location_dislike");
+  if (/\b(liker omrad(?:e|et)?|bra omrad(?:e|et)?|riktig omrad(?:e|et)?|like the area|good location|great location)\b/i.test(text)) reasons.push("location_like");
   if (/\b(for liten|for sma|too small|not enough space)\b/i.test(text)) reasons.push("too_small");
   if (/\b(for stor|too large|too big)\b/i.test(text)) reasons.push("too_large");
   if (/\b(liker ikke stilen|ikke min stil|for moderne|for tradisjonell|don't like the style|not my style)\b/i.test(text)) reasons.push("style_dislike");
