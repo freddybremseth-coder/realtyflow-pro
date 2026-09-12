@@ -21,6 +21,7 @@ import type {
   ExecutiveDecision,
   ExecutiveDecisionSeverity,
 } from "@/lib/revenue/executive-briefing";
+import { NextBestActionPanel } from "@/components/nexus/next-best-action-panel";
 
 const stateText = {
   CRITICAL: "Kritisk oppmerksomhet",
@@ -166,6 +167,8 @@ export default function ExecutiveBriefingPage() {
                 </Link>
               )}
             </section>
+
+            <NextBestActionPanel />
 
             <section className="space-y-3">
               <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Dagens beslutninger</h2><span className="text-xs text-slate-500">Maksimalt åtte, sortert etter konsekvens</span></div>

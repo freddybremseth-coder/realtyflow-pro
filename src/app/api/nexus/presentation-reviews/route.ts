@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
+import { buildPropertyRecommendationTemplate } from "@/services/email/property-recommendation-template";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -69,6 +70,10 @@ export async function GET(request: NextRequest) {
     const presentation = presentationMap.get(presentationId) || null;
     const draft = draftMap.get(messageDraftId) || null;
     const contact = contactMap.get(contactId) || null;
+    const template = presentation
+      ? buildPropertyRecommendationTemplate({ brandId: String(row.brand_id || ""), customerName: contact?.name || null, presentationJson: presentation.presentation_json })
+      : null;
+    const hasCustomerTemplate = Boolean(template && template.propertyCount > 0);
     return {
       id: String(row.id),
       priority: String(row.priority || "HIGH").toUpperCase(),
@@ -87,13 +92,15 @@ export async function GET(request: NextRequest) {
       } : null,
       messageDraft: draft ? {
         status: draft.status,
-        subject: draft.subject,
-        bodyText: draft.body_text,
-        bodyHtml: draft.body_html,
+        subject: hasCustomerTemplate ? template!.subject : draft.subject,
+        bodyText: hasCustomerTemplate ? template!.bodyText : draft.body_text,
+        bodyHtml: hasCustomerTemplate ? template!.bodyHtml : draft.body_html,
         language: draft.language,
         approvedBy: draft.approved_by,
         approvedAt: draft.approved_at,
       } : null,
+      customerTemplatePropertyCount: hasCustomerTemplate ? template!.propertyCount : 0,
+      customerTemplateAreas: hasCustomerTemplate ? template!.areas : [],
       nextAction: String(row.next_action || "Kontroller sluttresultatet før eventuell utsending."),
       reviewHref: `/nexus-os/presentation-review?workItemId=${encodeURIComponent(String(row.id))}`,
       updatedAt: row.updated_at,
@@ -104,7 +111,7 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date().toISOString(),
     summary: { total: items.length },
     items,
-    safety: { customerMessageSent: false, presentationPublished: false, explicitApprovalRequired: true },
+    safety: { customerMessageSent: false, presentationPublished: false, explicitApprovalRequired: true, approvedRecommendationsAutoSendAfterFreshPreflight: true },
   });
 }
 
@@ -152,8 +159,8 @@ export async function POST(request: NextRequest) {
   const [profile, shortlist, presentation, draft, shortlistItems] = await Promise.all([
     supabase.from("buyer_profiles").select("id,brand,status,contact_id").eq("id", buyerProfileId).eq("brand", brandId).maybeSingle(),
     supabase.from("lead_property_shortlists").select("id,brand,buyer_profile_id,status,approved_by,approved_at").eq("id", shortlistId).eq("brand", brandId).maybeSingle(),
-    supabase.from("lead_customer_presentations").select("id,brand,buyer_profile_id,shortlist_id,status,approved_by,approved_at").eq("id", presentationId).eq("brand", brandId).maybeSingle(),
-    supabase.from("lead_customer_message_drafts").select("id,brand,presentation_id,buyer_profile_id,shortlist_id,status,approved_by,approved_at,sent_at,cancelled_at").eq("id", messageDraftId).eq("brand", brandId).maybeSingle(),
+    supabase.from("lead_customer_presentations").select("id,brand,buyer_profile_id,shortlist_id,status,approved_by,approved_at,presentation_json").eq("id", presentationId).eq("brand", brandId).maybeSingle(),
+    supabase.from("lead_customer_message_drafts").select("id,brand,presentation_id,buyer_profile_id,shortlist_id,status,subject,body_text,body_html,approved_by,approved_at,sent_at,cancelled_at").eq("id", messageDraftId).eq("brand", brandId).maybeSingle(),
     supabase.from("lead_property_shortlist_items").select("id,quality_review_status").eq("shortlist_id", shortlistId).eq("brand", brandId),
   ]);
   const firstError = profile.error || shortlist.error || presentation.error || draft.error || shortlistItems.error;
@@ -172,13 +179,28 @@ export async function POST(request: NextRequest) {
     || String(draft.data.presentation_id) !== presentationId) {
     return NextResponse.json({ error: "Final-review dependency mismatch" }, { status: 409 });
   }
-  if (draft.data.sent_at || draft.data.cancelled_at || String(draft.data.status).toLowerCase() === "cancelled") {
+  if (draft.data.sent_at || draft.data.cancelled_at || String(draft.data.status).toLowerCase() === "cancelled" || String(draft.data.status).toLowerCase() === "sent") {
     return NextResponse.json({ error: "Message draft is no longer eligible for approval" }, { status: 409 });
   }
 
   const reviewStates = (shortlistItems.data || []).map((item) => String(item.quality_review_status || "needs_review"));
   if (!reviewStates.length || reviewStates.some((status) => status === "needs_review") || !reviewStates.includes("client_ready")) {
     return NextResponse.json({ error: "Every shortlist candidate must have a final review decision and at least one must be client-ready" }, { status: 409 });
+  }
+
+  const contactResult = profile.data.contact_id
+    ? await supabase.from("contacts").select("id,name,email").eq("id", profile.data.contact_id).maybeSingle()
+    : { data: null, error: null };
+  if (contactResult.error) return NextResponse.json({ error: contactResult.error.message }, { status: 500 });
+  if (!contactResult.data?.email) return NextResponse.json({ error: "Customer email is missing" }, { status: 409 });
+
+  const template = buildPropertyRecommendationTemplate({
+    brandId,
+    customerName: contactResult.data.name,
+    presentationJson: presentation.data.presentation_json,
+  });
+  if (template.propertyCount < 1) {
+    return NextResponse.json({ error: "No customer-safe property with a verified public link is available" }, { status: 409 });
   }
 
   const approvedAt = new Date().toISOString();
@@ -204,10 +226,14 @@ export async function POST(request: NextRequest) {
 
   if (String(draft.data.status).toLowerCase() === "draft") {
     const update = await supabase.from("lead_customer_message_drafts")
-      .update({ status: "approved", approved_by: actor, approved_at: approvedAt, sent_at: null, cancelled_at: null, updated_at: approvedAt })
+      .update({ status: "approved", subject: template.subject, body_text: template.bodyText, body_html: template.bodyHtml, approved_by: actor, approved_at: approvedAt, sent_at: null, cancelled_at: null, updated_at: approvedAt })
       .eq("id", messageDraftId).eq("brand", brandId).eq("status", "draft");
     if (update.error) return NextResponse.json({ error: update.error.message }, { status: 500 });
-  } else if (String(draft.data.status).toLowerCase() !== "approved") {
+  } else if (String(draft.data.status).toLowerCase() === "approved") {
+    if (String(draft.data.subject || "") !== template.subject || String(draft.data.body_text || "") !== template.bodyText) {
+      return NextResponse.json({ error: "Approved message draft no longer matches the current customer template; manual review is required" }, { status: 409 });
+    }
+  } else {
     return NextResponse.json({ error: "Message draft is not approvable" }, { status: 409 });
   }
 
@@ -218,12 +244,18 @@ export async function POST(request: NextRequest) {
     presentation_human_approved_by: actor,
     presentation_send_preflight_required: true,
     presentation_customer_send_allowed: false,
+    property_recommendation_auto_send_authorized: true,
+    property_recommendation_auto_send_authorized_at: approvedAt,
+    property_recommendation_auto_send_authorized_by: actor,
+    property_recommendation_template_version: "matched-property-rich-v1",
+    property_recommendation_property_count: template.propertyCount,
+    property_recommendation_areas: template.areas,
     presentation_final_review_status: "APPROVED_FOR_PREFLIGHT",
   };
   const workUpdate = await supabase.from("work_items")
     .update({
       metadata: nextMetadata,
-      next_action: "Sluttresultatet er godkjent. Kjør send-preflight før eventuell kundeutsending. Ingen melding er sendt.",
+      next_action: "Sluttresultatet er godkjent. Send-preflight kjøres automatisk; når den er grønn sendes de godkjente boligforslagene til kunden automatisk.",
       updated_at: approvedAt,
     })
     .eq("id", workItemId);
@@ -236,6 +268,8 @@ export async function POST(request: NextRequest) {
     presentationId,
     messageDraftId,
     status: "APPROVED_FOR_PREFLIGHT",
-    safety: { customerMessageSent: false, presentationPublished: false, automaticSend: false },
+    propertyCount: template.propertyCount,
+    areas: template.areas,
+    safety: { customerMessageSent: false, presentationPublished: false, automaticSendAfterFreshPreflight: true },
   });
 }

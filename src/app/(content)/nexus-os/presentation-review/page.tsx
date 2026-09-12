@@ -76,15 +76,15 @@ export default function NexusPresentationReviewPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><FileCheck2 size={16} /> Nexus sluttkontroll</div>
-          <h1 className="mt-2 text-3xl font-black text-slate-950">Presentasjon og e-postutkast</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Kontroller sluttresultatet. Godkjenning her gjør innholdet klart for send-preflight, men sender ingenting til kunden.</p>
+          <h1 className="mt-2 text-3xl font-black text-slate-950">Presentasjon og boligforslag</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Kontroller boligene og kundeinnholdet. Når du godkjenner, kjører Nexus send-preflight. Hvis alle sikkerhetssjekker er grønne, sendes de godkjente boligforslagene automatisk til kunden.</p>
         </div>
         <button onClick={() => void load()} disabled={saving} className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700"><RefreshCw size={17} /></button>
       </div>
     </header>
 
     {error && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><div className="flex gap-2"><AlertTriangle size={18} />{error}</div></section>}
-    {done && <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><div className="flex gap-3"><CheckCircle2 size={20} /><div><b>Sluttresultatet er godkjent.</b><div className="mt-1 text-sm">Shortlist, presentasjon og e-postutkast er godkjent for neste preflight-steg. Ingen kundeutsending er utført.</div></div></div></section>}
+    {done && <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><div className="flex gap-3"><CheckCircle2 size={20} /><div><b>Sluttresultatet er godkjent og autorisert for utsending.</b><div className="mt-1 text-sm">Nexus kjører ny send-preflight. Ved grønt resultat sendes boligforslagene automatisk; ved blokkering sendes ingenting.</div></div></div></section>}
 
     {!done && !item && !error && <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Denne saken venter ikke lenger på sluttkontroll.</section>}
 
@@ -92,7 +92,7 @@ export default function NexusPresentationReviewPage() {
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Kunde</div><div className="mt-2 font-black text-slate-950">{item.customerName || "Ukjent kunde"}</div><div className="mt-1 text-sm text-slate-600">{item.customerEmail || "Ingen e-post"}</div></div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Brand</div><div className="mt-2 font-black text-slate-950">{item.brandId}</div></div>
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><ShieldCheck size={18} className="text-emerald-700" /><div className="mt-2 text-sm font-bold text-emerald-950">Ingen automatisk utsending</div><div className="mt-1 text-xs leading-5 text-emerald-800">Knappen under godkjenner bare sluttresultatet og åpner for send-preflight.</div></div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><ShieldCheck size={18} className="text-emerald-700" /><div className="mt-2 text-sm font-bold text-emerald-950">Automatisk først etter grønn preflight</div><div className="mt-1 text-xs leading-5 text-emerald-800">DNC/suppression, avsender, brand, godkjente boliger og offentlige boliglenker kontrolleres på nytt rett før utsending. En varig send-receipt hindrer dobbeltsending.</div></div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -110,9 +110,9 @@ export default function NexusPresentationReviewPage() {
       </section>
 
       <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-6">
-        <div className="text-sm leading-6 text-cyan-950">{item.nextAction || "Kontroller sluttresultatet før eventuell utsending."}</div>
+        <div className="text-sm leading-6 text-cyan-950">{item.nextAction || "Kontroller sluttresultatet før utsending."}</div>
         <div className="mt-4 flex flex-wrap gap-3">
-          <button onClick={() => void approve()} disabled={saving} className="inline-flex items-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-black text-white disabled:opacity-60">{saving && <Loader2 size={16} className="mr-2 animate-spin" />}Godkjenn sluttresultat – sender ikke</button>
+          <button onClick={() => void approve()} disabled={saving} className="inline-flex items-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-black text-white disabled:opacity-60">{saving && <Loader2 size={16} className="mr-2 animate-spin" />}Godkjenn og autoriser utsending</button>
           {item.contactId && <Link href={`/customers/${encodeURIComponent(item.contactId)}`} className="rounded-xl border border-cyan-300 bg-white px-5 py-3 text-sm font-black text-cyan-900">Åpne Customer 360</Link>}
         </div>
       </section>

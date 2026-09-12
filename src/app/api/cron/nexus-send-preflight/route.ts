@@ -37,8 +37,13 @@ export async function GET(request: NextRequest) {
     try {
       const assessment = await runNexusSendPreflight({ supabase, brandId, buyerProfileId, shortlistId, presentationId, messageDraftId });
       const now = new Date().toISOString();
+      const autoSendAuthorized = metadata.property_recommendation_auto_send_authorized === true || String(metadata.property_recommendation_auto_send_authorized) === "true";
       const nextMetadata = { ...metadata, send_preflight_status: assessment.status, send_preflight_ready: assessment.ready, send_preflight_checked_at: now, send_preflight_checked_by: ACTOR, send_preflight_blockers: assessment.blockers.slice(0, 20), send_preflight_warnings: assessment.warnings.slice(0, 30), send_preflight_checks: assessment.checks, send_preflight_revalidate_at_send: true, presentation_customer_send_allowed: false, presentation_send_preflight_required: assessment.ready ? false : true };
-      const nextAction = assessment.ready ? "Send-preflight er grønn. Ingen melding er sendt. Neste steg krever eksplisitt send-godkjenning, og alle sikkerhetssjekker skal kjøres på nytt rett før utsending." : `Send-preflight er blokkert: ${assessment.blockers.slice(0, 3).join(" ")}`;
+      const nextAction = assessment.ready
+        ? autoSendAuthorized
+          ? "Send-preflight er grønn. De godkjente boligforslagene står nå i kø for automatisk utsending med en ny sikkerhetssjekk rett før provider-send."
+          : "Send-preflight er grønn. Ingen melding er sendt. Eksplisitt send-godkjenning mangler, og alle sikkerhetssjekker skal kjøres på nytt rett før eventuell utsending."
+        : `Send-preflight er blokkert: ${assessment.blockers.slice(0, 3).join(" ")}`;
       const update = await supabase.from("work_items").update({ metadata: nextMetadata, next_action: nextAction, updated_at: now }).eq("id", row.id);
       if (update.error) throw update.error;
       if (assessment.ready) ready += 1; else blocked += 1;
@@ -47,6 +52,6 @@ export async function GET(request: NextRequest) {
       console.warn("[nexus-send-preflight] work item failed", { workItemId: row.id, error: error instanceof Error ? error.message : String(error) });
     }
   }
-  await supabase.from("automation_logs").insert({ action: "nexus_send_preflight", agent_name: "nexus_send_preflight", status: failed ? (ready || blocked ? "partial" : "failed") : "success", details: { considered, ready, blocked, failed, runtime_control: `cron:${PATH}`, provider_send: false, customer_send_allowed: false, revalidate_at_send: true } }).then(() => {}).then(undefined, () => {});
+  await supabase.from("automation_logs").insert({ action: "nexus_send_preflight", agent_name: "nexus_send_preflight", status: failed ? (ready || blocked ? "partial" : "failed") : "success", details: { considered, ready, blocked, failed, runtime_control: `cron:${PATH}`, provider_send: false, customer_send_allowed: false, preapproved_auto_send_queues_after_ready: true, revalidate_at_send: true } }).then(() => {}).then(undefined, () => {});
   return NextResponse.json({ success: true, considered, ready, blocked, failed, providerSend: false });
 }
