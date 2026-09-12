@@ -14,7 +14,9 @@ import {
   shouldRunAutopilotSlot,
 } from "@/lib/marketing/autopilot-safety";
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
+import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { createCampaignDraft, getServiceSupabase } from "@/services/marketing/campaign-production";
+import { generateAutopilotInstagramImage } from "@/services/marketing/autopilot-media";
 import {
   loadRemasterPromotionSource,
   markRemasterPromotionSourcePlanned,
@@ -172,12 +174,50 @@ export async function GET(request: NextRequest) {
 
           const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
           const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance);
+          let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
+          let generatedMedia: Record<string, unknown> | null = null;
+
+          // Instagram cannot publish text-only content. SaaS brands historically
+          // reached this point with mode=live but media=null, leaving hundreds of
+          // dead drafts. Use RealtyFlow's existing Media Studio before campaign
+          // generation so the normal claim/quality/publisher gates still apply.
+          if (!mediaUrl && channel === "instagram" && role === "saas_b2b") {
+            const brandContext = await loadBrandContext(supabase as any, brandId).catch(() => null);
+            const contentKey = runIdentity?.marketingRunId ?? `manual:${runRequest?.id ?? localDate}:${brandId}:${channel}`;
+            try {
+              const media = await generateAutopilotInstagramImage(supabase as any, {
+                brandId,
+                contentKey,
+                theme: masterIdea,
+                audience: brandContext?.audience,
+                visualDirection: brandContext?.visualDirection,
+              });
+              mediaUrl = media.imageUrl;
+              generatedMedia = {
+                generated: true,
+                jobId: media.jobId,
+                assetId: media.assetId,
+                provider: media.provider,
+                reused: media.existing,
+              };
+            } catch (mediaError) {
+              results.push({
+                brandId,
+                channel,
+                skipped: true,
+                reason: "instagram_media_generation_failed",
+                error: mediaError instanceof Error ? mediaError.message : String(mediaError),
+              });
+              continue;
+            }
+          }
+
           const baseInput = {
             brandId,
             channel,
             useInventoryProperty: role === "real_estate",
             masterIdea,
-            mediaUrl: remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined,
+            mediaUrl,
             goal: { kind: role === "real_estate" ? "qualified_leads" as const : "awareness" as const, target: 10, horizonDays: 30 },
             publishingCapacityPerWeek: 4,
             reuseCooldownDays: 14,
@@ -239,6 +279,7 @@ export async function GET(request: NextRequest) {
             learnedHour,
             targetHour,
             recommendation: recommendation?.favor ?? {},
+            generatedMedia,
             recovery,
             failureState,
             source: remasterSource ? {
