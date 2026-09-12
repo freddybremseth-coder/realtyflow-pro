@@ -35,7 +35,7 @@ function unique(values: string[]) { return [...new Set(values.filter(Boolean))];
 
 function sentimentFor(text: string) {
   const normalized = normalize(text);
-  const viewing = /\b(visning|se boligen|se denne|kan vi se|booke|book a viewing|viewing|see this|see the property)\b/i.test(normalized);
+  const viewing = /\b(visning|se boligen|se denne|kan vi se|vil vi gjerne se|vil jeg gjerne se|gjerne se|booke|book a viewing|viewing|see this|see the property|want to see|would like to see)\b/i.test(normalized);
   if (viewing) return { sentiment: "viewing" as const, confidence: 0.98, signal: "viewing_intent" };
   const negative = /\b(for dyr|for expensive|too expensive|dyrere enn|liker ikke|ikke interessert|not interested|dont like|don't like|passer ikke|doesn't fit|does not fit|feil omrade|wrong area|for langt|too far|for liten|too small|for stor|too big)\b/i.test(normalized);
   if (negative) return { sentiment: "negative" as const, confidence: 0.94, signal: "explicit_negative" };
