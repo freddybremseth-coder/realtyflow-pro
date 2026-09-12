@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date().toISOString(),
     summary: { total: items.length },
     items,
-    safety: { customerMessageSent: false, presentationPublished: false, explicitApprovalRequired: true },
+    safety: { customerMessageSent: false, presentationPublished: false, explicitApprovalRequired: true, approvedRecommendationsAutoSendAfterFreshPreflight: true },
   });
 }
 
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
     || String(draft.data.presentation_id) !== presentationId) {
     return NextResponse.json({ error: "Final-review dependency mismatch" }, { status: 409 });
   }
-  if (draft.data.sent_at || draft.data.cancelled_at || String(draft.data.status).toLowerCase() === "cancelled") {
+  if (draft.data.sent_at || draft.data.cancelled_at || String(draft.data.status).toLowerCase() === "cancelled" || String(draft.data.status).toLowerCase() === "sent") {
     return NextResponse.json({ error: "Message draft is no longer eligible for approval" }, { status: 409 });
   }
 
@@ -218,12 +218,15 @@ export async function POST(request: NextRequest) {
     presentation_human_approved_by: actor,
     presentation_send_preflight_required: true,
     presentation_customer_send_allowed: false,
+    property_recommendation_auto_send_authorized: true,
+    property_recommendation_auto_send_authorized_at: approvedAt,
+    property_recommendation_auto_send_authorized_by: actor,
     presentation_final_review_status: "APPROVED_FOR_PREFLIGHT",
   };
   const workUpdate = await supabase.from("work_items")
     .update({
       metadata: nextMetadata,
-      next_action: "Sluttresultatet er godkjent. Kjør send-preflight før eventuell kundeutsending. Ingen melding er sendt.",
+      next_action: "Sluttresultatet er godkjent. Send-preflight kjøres automatisk; når den er grønn sendes de godkjente boligforslagene til kunden automatisk.",
       updated_at: approvedAt,
     })
     .eq("id", workItemId);
@@ -236,6 +239,6 @@ export async function POST(request: NextRequest) {
     presentationId,
     messageDraftId,
     status: "APPROVED_FOR_PREFLIGHT",
-    safety: { customerMessageSent: false, presentationPublished: false, automaticSend: false },
+    safety: { customerMessageSent: false, presentationPublished: false, automaticSendAfterFreshPreflight: true },
   });
 }
