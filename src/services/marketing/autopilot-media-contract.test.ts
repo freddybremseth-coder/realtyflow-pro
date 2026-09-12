@@ -10,6 +10,10 @@ const organization = fs.readFileSync(
   path.join(process.cwd(), "src/services/media/organization.ts"),
   "utf8",
 );
+const orchestrator = fs.readFileSync(
+  path.join(process.cwd(), "src/services/marketing/autonomous-orchestrator.ts"),
+  "utf8",
+);
 
 describe("Growth OS Instagram Media Studio bridge", () => {
   it("uses the canonical RealtyFlow Media Studio tenant instead of a hard-coded UUID", () => {
@@ -42,5 +46,16 @@ describe("Growth OS Instagram Media Studio bridge", () => {
     expect(media).toContain("/^https:\\/\\//i");
     expect(media).toContain("Do not invent a product interface");
     expect(media).toContain("Do not include readable text");
+  });
+
+  it("fails closed before policy/live persistence when any Instagram asset lacks media", () => {
+    const mediaGate = orchestrator.indexOf('asset.channel === "instagram"');
+    const policy = orchestrator.indexOf("// 4) Policy Engine");
+    const liveDraftPersist = orchestrator.indexOf('await persist({ state: "draft"');
+    expect(mediaGate).toBeGreaterThan(0);
+    expect(mediaGate).toBeLessThan(policy);
+    expect(mediaGate).toBeLessThan(liveDraftPersist);
+    expect(orchestrator).toContain("MEDIA_ASSET_MISSING");
+    expect(orchestrator).toContain('autonomy_mode: "blocked"');
   });
 });
