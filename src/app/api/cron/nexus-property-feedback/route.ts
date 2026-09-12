@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
+import { buildRevenueEventDedupeKey, insertRevenueEvent } from "@/lib/revenue/events";
 import { buildLeadCustomerPresentationPreview } from "@/services/lead-intelligence/presentation-preview";
 import { analyzePropertyRecommendationReply } from "@/services/email/property-recommendation-reply";
 
@@ -21,6 +22,65 @@ function getSupabase() {
 
 function text(value: unknown) { return String(value || "").trim(); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+
+async function recordPropertyFeedbackRevenueEvents(supabase: any, input: {
+  emailMessageId: string;
+  brandId: string;
+  contactId: string;
+  presentationId: string;
+  receivedAt: string | null;
+  analysis: ReturnType<typeof analyzePropertyRecommendationReply>;
+}) {
+  let recorded = 0;
+  for (const signal of input.analysis.signals) {
+    if (signal.sentiment === "question") continue;
+    const interested = signal.sentiment === "positive" || signal.sentiment === "viewing";
+    const eventType = interested ? "property_interested" : "property_not_for_me";
+    const propertyKey = signal.propertyId || signal.reference || `${signal.ordinal}-${signal.title}`;
+    const result = await insertRevenueEvent(supabase, {
+      eventType,
+      title: interested ? "Bolig markert interessant i e-postsvar" : "Bolig markert ikke for meg i e-postsvar",
+      description: signal.evidence.slice(0, 800),
+      contactId: input.contactId,
+      brandId: input.brandId,
+      sourceSystem: "nexus_property_feedback",
+      sourceType: "property_feedback",
+      sourceId: propertyKey,
+      actorType: "customer",
+      confidenceScore: Math.round(Math.max(0, Math.min(1, signal.confidence)) * 100),
+      occurredAt: input.receivedAt || new Date().toISOString(),
+      dedupeKey: buildRevenueEventDedupeKey([
+        "nexus_property_feedback",
+        input.emailMessageId,
+        propertyKey,
+        eventType,
+      ]),
+      metadata: {
+        property_id: signal.propertyId,
+        property_reference: signal.reference,
+        property_title: signal.title,
+        property_location: signal.location,
+        property_ordinal: signal.ordinal,
+        sentiment: signal.sentiment,
+        reasons: signal.reasons,
+        presentation_id: input.presentationId,
+        email_message_id: input.emailMessageId,
+        channel: "email",
+      },
+      createdBy: "cron/nexus-property-feedback",
+    });
+    if (result.ok) recorded += 1;
+    else if (!result.tableNotReady) {
+      console.warn("[nexus-property-feedback] revenue event failed", {
+        emailMessageId: input.emailMessageId,
+        propertyKey,
+        eventType,
+        error: result.error,
+      });
+    }
+  }
+  return recorded;
+}
 
 async function ensureFeedbackWorkItem(supabase: any, input: {
   emailMessageId: string;
@@ -45,7 +105,6 @@ async function ensureFeedbackWorkItem(supabase: any, input: {
 
   const viewing = input.analysis.signals.some((signal) => signal.sentiment === "viewing");
   const positive = input.analysis.signals.filter((signal) => signal.sentiment === "positive");
-  const negative = input.analysis.signals.filter((signal) => signal.sentiment === "negative");
   const now = new Date().toISOString();
   const profileNeedsReview = input.analysis.requiresBuyerProfileReview;
   const classification = viewing ? "viewing_request" : profileNeedsReview ? "update_preferences" : "property_interest";
@@ -114,7 +173,7 @@ export async function GET(request: NextRequest) {
     .limit(150);
   if (inbound.error) return NextResponse.json({ error: inbound.error.message }, { status: 500 });
 
-  let considered = 0, analyzed = 0, signaled = 0, workCreated = 0, failed = 0;
+  let considered = 0, analyzed = 0, signaled = 0, workCreated = 0, revenueEventsRecorded = 0, failed = 0;
 
   for (const message of inbound.data || []) {
     const brandId = text(message.brand_id);
@@ -206,6 +265,15 @@ export async function GET(request: NextRequest) {
       }).eq("id", contact.id);
       if (contactUpdate.error) throw new Error(contactUpdate.error.message);
 
+      revenueEventsRecorded += await recordPropertyFeedbackRevenueEvents(supabase, {
+        emailMessageId: String(message.id),
+        brandId,
+        contactId: String(contact.id),
+        presentationId: String(presentation.data.id),
+        receivedAt: message.received_at ? String(message.received_at) : null,
+        analysis,
+      });
+
       const created = await ensureFeedbackWorkItem(supabase, {
         emailMessageId: String(message.id),
         brandId,
@@ -227,8 +295,8 @@ export async function GET(request: NextRequest) {
     action: "nexus_property_feedback",
     agent_name: "nexus_property_feedback",
     status: failed ? (signaled ? "partial" : "failed") : "success",
-    details: { considered, analyzed, signaled, work_created: workCreated, failed, runtime_control: `cron:${PATH}`, buyer_profile_auto_mutation: false },
+    details: { considered, analyzed, signaled, work_created: workCreated, revenue_events_recorded: revenueEventsRecorded, failed, runtime_control: `cron:${PATH}`, buyer_profile_auto_mutation: false },
   }).then(() => {}).then(undefined, () => {});
 
-  return NextResponse.json({ success: true, considered, analyzed, signaled, workCreated, failed });
+  return NextResponse.json({ success: true, considered, analyzed, signaled, workCreated, revenueEventsRecorded, failed });
 }
