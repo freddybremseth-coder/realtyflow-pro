@@ -79,7 +79,7 @@ export function NextBestActionPanel() {
           <h2 className="text-xl font-semibold text-slate-100">Hva bør gjøres nå – og hvordan bør kunden kontaktes?</h2>
           <p className="mt-1 max-w-3xl text-sm text-slate-400">Revenue Brain prioriterer handlingene. Kommunikasjonslæringen foreslår timing og budskap bare når det finnes nok evidens.</p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200"><ShieldCheck size={15}/> Rådgivning בלבד · ingen automatisk utsending</div>
+        <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200"><ShieldCheck size={15}/> Rådgivning · policy styrer utførelse</div>
       </div>
 
       {loading && <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">Henter prioriteringer og læringssignaler…</div>}
