@@ -161,6 +161,16 @@ export function scoreCandidate(candidate: ContentCandidate, input: ResolverInput
   if (candidate.brandId !== input.brandId) {
     return { ...candidate, score: -Infinity, disqualified: "BRAND_MISMATCH", reuseMode: mode, needsReapproval, breakdown: {} };
   }
+
+  // Autopilot may reuse only content that has already been explicitly human-approved.
+  // If the dedicated autopilot path just generated new media, that asset is still
+  // unapproved in media_assets; rejecting it here lets campaign-production keep the
+  // explicit mediaUrl while generating fresh copy, instead of misclassifying the
+  // new asset as legacy property_media/reuse_exact and forcing manual review.
+  if (input.minimumReuseIntervalDays != null && !candidate.humanApproved) {
+    return { ...candidate, score: -Infinity, disqualified: "AUTOPILOT_UNAPPROVED_REUSE_SOURCE", reuseMode: mode, needsReapproval, breakdown: {} };
+  }
+
   const reuseAgeDays = candidate.lastUsedAt ? daysBetween(now, candidate.lastUsedAt) : null;
   if (reuseAgeDays != null && input.minimumReuseIntervalDays != null && reuseAgeDays < input.minimumReuseIntervalDays) {
     return { ...candidate, score: -Infinity, disqualified: "RECENT_REUSE_COOLDOWN", reuseMode: mode, needsReapproval, breakdown: { reuseAgeDays } };
