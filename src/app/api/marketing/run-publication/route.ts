@@ -23,7 +23,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const execution = await runApprovedPublicationProd(supabase, { approvalId: body.approvalId, executedBy: ctx?.email ?? "system" });
-    return NextResponse.json({ execution }, { status: execution.ok ? 200 : 400 });
+    if (!execution.ok) {
+      return NextResponse.json({
+        error: execution.error ?? "Publiseringen ble avvist av executor",
+        execution,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ execution });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "run-publication feilet" }, { status: 500 });
   }

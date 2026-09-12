@@ -379,7 +379,13 @@ function fakeGraph(over: any = {}) {
     getContainerStatus: async () => { calls.getStatus++; return { status: statuses.length > 1 ? statuses.shift()! : statuses[0] }; },
     publishIgMedia: async () => { calls.publishIg++; if (over.publishThrows) throw new Error("timeout-publish"); return { id: "ig_media_1" }; },
     createFbPost: async () => { calls.fbPost++; return { id: "fb_post_1" }; },
-    createFbPhoto: async () => { calls.fbPhoto++; return { id: "fb_photo_1" }; },
+    createFbPhoto: async () => {
+      calls.fbPhoto++;
+      if (over.fbPhotoRejects && calls.fbPhoto <= over.fbPhotoRejects) {
+        throw new Error("Meta Graph feilet (/PAGE1/photos): Invalid OAuth access token, type=OAuthException, code=190");
+      }
+      return { id: "fb_photo_1" };
+    },
     reconcile: over.reconcile,
   };
   return { g: g2, calls };
@@ -444,6 +450,18 @@ test("FB bilde-post via /photos", async () => {
   const res = await fbPub(db, graph).publish(fbImage, { idempotencyKey: "k7" });
   assert.equal(res.externalId, "fb_photo_1");
   assert.equal(calls.fbPhoto, 1);
+});
+
+test("FB bekreftet Graph-avvisning lagres som failed og kan prøves igjen etter token-retting", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph({ fbPhotoRejects: 1 });
+  const pub = fbPub(db, graph);
+  await assert.rejects(() => pub.publish(fbImage, { idempotencyKey: "k7-retry" }), /code=190/);
+  assert.equal(db.tables["marketing_publish_attempts"][0].status, "failed");
+
+  const res = await pub.publish(fbImage, { idempotencyKey: "k7-retry" });
+  assert.equal(res.externalId, "fb_photo_1");
+  assert.equal(calls.fbPhoto, 2);
+  assert.equal(db.tables["marketing_publish_attempts"][0].status, "posted");
 });
 
 test("Instagram uten media → MEDIA_ASSET_MISSING (fail-closed)", async () => {

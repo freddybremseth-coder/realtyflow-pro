@@ -42,6 +42,10 @@ function caption(asset: GeneratedAsset): string {
   return [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n\n");
 }
 
+function isConfirmedMetaRejection(error: unknown): boolean {
+  return typeof error === "string" && error.startsWith("Meta Graph feilet (");
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
@@ -118,7 +122,11 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
   }
 
   async function publishFacebook(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
-    if (attempt?.status === "publishing") {
+    // A network timeout after POST is ambiguous and must be reconciled before
+    // retry. A parsed non-2xx Graph response is different: Meta confirmed that
+    // no post was created, so it is safe to retry after credentials/payload are
+    // corrected. This also recovers attempts stored by earlier releases.
+    if (attempt?.status === "publishing" && !isConfirmedMetaRejection(attempt?.error)) {
       const found = graph.reconcile ? await graph.reconcile(key) : null;
       if (found?.externalId) {
         await writeAttempt(key, base, { status: "posted", external_id: found.externalId, external_media_id: found.externalId });
@@ -136,7 +144,11 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       await writeAttempt(key, base, { status: "posted", external_id: id, external_media_id: id });
       return { state: "published", externalId: id };
     } catch (err) {
-      await writeAttempt(key, base, { error: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      await writeAttempt(key, base, {
+        status: isConfirmedMetaRejection(message) ? "failed" : "publishing",
+        error: message,
+      });
       throw err;
     }
   }
@@ -174,12 +186,25 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
   };
 }
 
-export function makeGraphApi(token: string, apiVersion = "v21.0"): MetaGraph {
+export function makeGraphApi(token: string, apiVersion = "v25.0"): MetaGraph {
   const base = `https://graph.facebook.com/${apiVersion}`;
   const post = async (path: string, body: Record<string, unknown>) => {
     const res = await fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, access_token: token }) });
-    const json = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
-    if (!res.ok || !json.id) throw new Error(`Meta Graph feilet (${path}): ${json.error?.message ?? res.status}`);
+    const json = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      error?: { message?: string; type?: string; code?: number; error_subcode?: number; fbtrace_id?: string };
+    };
+    if (!res.ok || !json.id) {
+      const meta = json.error;
+      const details = [
+        meta?.message ?? `HTTP ${res.status}`,
+        meta?.type ? `type=${meta.type}` : null,
+        typeof meta?.code === "number" ? `code=${meta.code}` : null,
+        typeof meta?.error_subcode === "number" ? `subcode=${meta.error_subcode}` : null,
+        meta?.fbtrace_id ? `trace=${meta.fbtrace_id}` : null,
+      ].filter(Boolean).join(", ");
+      throw new Error(`Meta Graph feilet (${path}): ${details}`);
+    }
     return { id: json.id };
   };
   return {

@@ -131,7 +131,7 @@ export default function FacebookCanaryPage() {
   const doPublish = () => run("publish", async () => {
     if (!approvalId) throw new Error("Mangler approval-id");
     const r = await post<any>("/api/marketing/run-publication", { approvalId });
-    if (!r.ok) throw new Error(r.data?.error || `publisering feilet (${r.status})`);
+    if (!r.ok) throw new Error(r.data?.error || r.data?.execution?.error || `publisering feilet (${r.status})`);
     setPublishRes(r.data);
   });
 
