@@ -102,6 +102,12 @@ jobs:
         run: npx tsx --test src/services/marketing/autopilot-media-contract.test.ts
       - name: Growth OS Instagram media gate runtime tests
         run: npx tsx --test src/services/marketing/autonomous-orchestrator.test.ts
+      - name: Marketing core library tests
+        run: node --import tsx --test src/lib/marketing/*.test.ts
+      - name: Marketing autonomous library tests
+        run: node --import tsx --test src/lib/marketing/autonomous/*.test.ts
+      - name: Marketing service tests
+        run: node --import tsx --test src/services/marketing/*.test.ts
       - name: Marketing production, publishing and learning tests
         run: npm run test:marketing
       - name: Instagram Growth learning tests
