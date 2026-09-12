@@ -11,6 +11,9 @@ const claimGuard = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/a
 const channelFormat = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/channel-format.ts"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/inventory-property-adapter.ts"), "utf8");
 const quality = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/quality.ts"), "utf8");
+const campaignProduction = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/campaign-production.ts"), "utf8");
+const metaPublisher = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/publishers/meta-publisher.ts"), "utf8");
+const publicationRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/marketing/run-publication/route.ts"), "utf8");
 
 test("ZenEco Facebook Canary locks the draft to the property selected by preflight", () => {
   assert.match(page, /const propertyId = preflight\?\.inventoryProperty\?\.id/);
@@ -28,6 +31,21 @@ test("ZenEco Facebook Canary keeps readable foregrounds on light card surfaces",
   assert.match(page, /const pre: React\.CSSProperties = \{[^\n]*background: "#f8fafc"[^\n]*color: "#111827"/);
   assert.match(page, /border: "1px solid #9ca3af", background: "#ffffff", color: "#111827"/);
   assert.match(page, /color: enabled \? "#ffffff" : "#374151"/);
+});
+
+test("approved Facebook publication uses the publication brand OAuth connection", () => {
+  assert.match(campaignProduction, /select\("brand_id"\)/);
+  assert.match(campaignProduction, /makeConfiguredMetaPublisher\(supabase, brandId\)\.publish\(asset, opts\)/);
+  assert.match(campaignProduction, /BRAND_UNRESOLVED: publikasjonen mangler brand_id for Meta OAuth/);
+});
+
+test("Facebook Canary exposes the executor and Meta error instead of only HTTP 400", () => {
+  assert.match(publicationRoute, /error: execution\.error/);
+  assert.match(page, /r\.data\?\.execution\?\.error/);
+});
+
+test("configured Meta publisher uses the current Graph API version used by the rest of RealtyFlow", () => {
+  assert.match(metaPublisher, /apiVersion = "v25\.0"/);
 });
 
 test("campaign draft route rejects manual-review requests for channels already enabled in controlled-auto", () => {
