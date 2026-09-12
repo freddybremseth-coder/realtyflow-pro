@@ -19,21 +19,23 @@ test("final review only advances after completed shortlist review and at least o
   assert.match(source, /reviewStates\.includes\("client_ready"\)/);
 });
 
-test("final review approves canonical parent records but never sends customer communication", () => {
+test("final review authorizes only the governed matched-property send path", () => {
   assert.match(source, /lead_property_shortlists/);
   assert.match(source, /lead_customer_presentations/);
   assert.match(source, /lead_customer_message_drafts/);
   assert.match(source, /status: "approved"/);
-  assert.match(source, /presentation_customer_send_allowed: false/);
   assert.match(source, /presentation_send_preflight_required: true/);
-  assert.match(source, /customerMessageSent: false/);
+  assert.match(source, /property_recommendation_auto_send_authorized: true/);
+  assert.match(source, /presentation_customer_send_allowed: false/);
+  assert.match(source, /automaticSendAfterFreshPreflight: true/);
   assert.doesNotMatch(source, /sendBrandEmail/);
   assert.doesNotMatch(source, /sendEmail\(/);
 });
 
-test("focused review UI tells Freddy that approval does not send", () => {
-  assert.match(page, /Godkjenn sluttresultat – sender ikke/);
-  assert.match(page, /Ingen automatisk utsending/);
-  assert.match(page, /send-preflight/);
+test("focused review UI makes the automatic post-preflight send consequence explicit", () => {
+  assert.match(page, /Godkjenn og autoriser utsending/);
+  assert.match(page, /Automatisk først etter grønn preflight/);
+  assert.match(page, /sendes boligforslagene automatisk/);
+  assert.match(page, /varig send-receipt hindrer dobbeltsending/);
   assert.match(page, /\/api\/nexus\/presentation-reviews/);
 });
