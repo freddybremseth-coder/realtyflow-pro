@@ -46,6 +46,13 @@ async function resolveTenantId(supabase: SupabaseClient) {
   return String(tenant.id);
 }
 
+/** Server-side jobs (cron/Nexus) use the same canonical RealtyFlow tenant as
+ * authenticated Media Studio requests. Keeping this resolver here avoids
+ * hard-coding the generated tenant UUID in automation code. */
+export async function getDefaultMediaOrganizationId(supabase: SupabaseClient) {
+  return resolveTenantId(supabase);
+}
+
 export async function getMediaAccessScope(
   supabase: SupabaseClient,
   context: RequestAccessContext,
