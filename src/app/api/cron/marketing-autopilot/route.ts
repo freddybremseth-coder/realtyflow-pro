@@ -24,12 +24,32 @@ import {
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
+const RECOVERABLE_PROPERTY_COPY_ERRORS = [
+  "FACT_NOT_VERIFIED",
+  "CLAIM_NOT_VERIFIED",
+  "BRAND_ROLE_MISMATCH",
+  "CHANNEL_FORMAT_MISMATCH",
+] as const;
 type RunRequest = { id: string; brand_ids: string[] | null; channels: string[] | null };
+type CampaignRun = Awaited<ReturnType<typeof createCampaignDraft>>;
 
 function configuredChannels(metadata: Record<string, unknown> | null | undefined): Array<"instagram" | "facebook"> {
   const raw = metadata?.autopilot_channels ?? metadata?.autopilot_scope;
   const values = Array.isArray(raw) ? raw.map(String) : typeof raw === "string" ? raw.split(",") : [];
   return Array.from(new Set(values.map((v) => v.trim().toLowerCase()).filter((v): v is "instagram" | "facebook" => SUPPORTED_CHANNELS.has(v))));
+}
+
+function isRecoverablePropertyCopyError(error: string | null | undefined): boolean {
+  if (!error) return false;
+  return RECOVERABLE_PROPERTY_COPY_ERRORS.some((prefix) => error.includes(prefix));
+}
+
+function safeFallbackIdentity(identity: ReturnType<typeof autopilotRunIdentity> | undefined) {
+  if (!identity) return undefined;
+  return {
+    marketingRunId: `${identity.marketingRunId}_safe`,
+    correlationId: `${identity.correlationId}_safe`,
+  };
 }
 
 async function hasRecentAutoPublication(supabase: any, brandId: string, channel: string) {
@@ -46,18 +66,29 @@ async function hasRecentAutoPublication(supabase: any, brandId: string, channel:
   return !!data?.length;
 }
 
-async function markFailedControlledAutoPublications(supabase: any, brandId: string, run: { results: Array<{ publicationId: string; error?: string }> }) {
-  const failedIds = Array.from(new Set(run.results
-    .filter((item) => Boolean(item.error) && item.publicationId && item.publicationId !== "-")
+async function markFailedControlledAutoPublications(
+  supabase: any,
+  brandId: string,
+  run: { results: Array<{ publicationId: string; state?: string; mode?: string; error?: string }> },
+) {
+  const blockedIds = Array.from(new Set(run.results
+    .filter((item) => Boolean(item.error) && item.mode === "blocked" && item.publicationId && item.publicationId !== "-")
     .map((item) => item.publicationId)));
-  if (!failedIds.length) return { failedIds: [] as string[], error: null as string | null };
+  const failedIds = Array.from(new Set(run.results
+    .filter((item) => item.state === "failed" && item.publicationId && item.publicationId !== "-")
+    .map((item) => item.publicationId)));
+
+  // A quality/policy block is not a provider failure. dispatchGeneratedAsset
+  // already persists it as paused; keep that canonical state for Attention and
+  // audit instead of rewriting it to failed and making Instagram look broken.
+  if (!failedIds.length) return { failedIds: [] as string[], blockedIds, error: null as string | null };
   const now = new Date().toISOString();
   const { error } = await supabase
     .from("marketing_publications")
     .update({ state: "failed", updated_at: now })
     .eq("brand_id", brandId)
     .in("publication_id", failedIds);
-  return { failedIds, error: error ? `FAILED_PUBLICATION_STATE_UPDATE: ${error.message}` : null };
+  return { failedIds, blockedIds, error: error ? `FAILED_PUBLICATION_STATE_UPDATE: ${error.message}` : null };
 }
 
 async function recordAutopilotHeartbeat(supabase: any, status: string, details: Record<string, unknown>) {
@@ -140,17 +171,51 @@ export async function GET(request: NextRequest) {
           }
 
           const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
-          const run = await createCampaignDraft(supabase as any, {
+          const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance);
+          const baseInput = {
             brandId,
             channel,
             useInventoryProperty: role === "real_estate",
-            masterIdea: remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance),
+            masterIdea,
             mediaUrl: remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined,
-            goal: { kind: role === "real_estate" ? "qualified_leads" : "awareness", target: 10, horizonDays: 30 },
+            goal: { kind: role === "real_estate" ? "qualified_leads" as const : "awareness" as const, target: 10, horizonDays: 30 },
             publishingCapacityPerWeek: 4,
             reuseCooldownDays: 14,
             requirePublicationHistory: true,
-          }, runIdentity);
+          };
+
+          const initialRun = await createCampaignDraft(supabase as any, baseInput, runIdentity);
+          let run: CampaignRun = initialRun;
+          let recovery: Record<string, unknown> | null = null;
+
+          // Controlled-auto real estate gets one deterministic recovery path:
+          // keep the hard claim/role/format gates intact, but if AI prose is
+          // rejected by one of them, recompose from the SAME Inventory property
+          // using whitelisted facts only. Use a distinct stable run identity so
+          // failed AI copy remains auditable and the safe asset has one canonical row.
+          const recoverable = role === "real_estate"
+            ? initialRun.results.find((item) =>
+                !!item.propertyId
+                && item.mode === "blocked"
+                && isRecoverablePropertyCopyError(item.error),
+              )
+            : undefined;
+          if (recoverable?.propertyId) {
+            const fallbackIdentity = safeFallbackIdentity(runIdentity);
+            run = await createCampaignDraft(supabase as any, {
+              ...baseInput,
+              propertyId: recoverable.propertyId,
+              deterministicInventoryCopy: true,
+            }, fallbackIdentity);
+            recovery = {
+              triggered: true,
+              reason: recoverable.error ?? "blocked_generated_copy",
+              propertyId: recoverable.propertyId,
+              propertyRef: recoverable.propertyRef ?? null,
+              initialMarketingRunId: initialRun.marketingRunId,
+              fallbackMarketingRunId: run.marketingRunId,
+            };
+          }
 
           const failureState = await markFailedControlledAutoPublications(supabase, brandId, run);
           const generated = run.results.some((item) => !item.error);
@@ -174,6 +239,7 @@ export async function GET(request: NextRequest) {
             learnedHour,
             targetHour,
             recommendation: recommendation?.favor ?? {},
+            recovery,
             failureState,
             source: remasterSource ? {
               sourceQueueId: remasterSource.id,
