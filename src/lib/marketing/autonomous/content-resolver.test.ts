@@ -34,6 +34,27 @@ test("2: feil-brand-asset velges ALDRI (BRAND_MISMATCH, fail closed)", () => {
   assert.throws(() => assertBrandMatch({ brandId: "b2" }, { brandId: "b1" }), /BRAND_MISMATCH/);
 });
 
+test("3: autopilot gjenbruker ikke ikke-godkjente eksisterende assets", () => {
+  const media = cand({
+    source: "property_media",
+    contentId: "media_asset:new",
+    humanApproved: false,
+    media: { imageUrl: "https://cdn.example/new.png", mediaType: "image" },
+  });
+
+  const autopilotInput = input({ minimumReuseIntervalDays: 14 });
+  const scored = scoreCandidate(media, autopilotInput);
+  assert.equal(scored.disqualified, "AUTOPILOT_UNAPPROVED_REUSE_SOURCE");
+
+  const autoDecision = resolveContent([media], autopilotInput);
+  assert.equal(autoDecision.decision, "generate");
+  assert.equal(autoDecision.ranked.length, 0);
+
+  const manualDecision = resolveContent([media], input());
+  assert.equal(manualDecision.decision, "reuse");
+  assert.equal(manualDecision.chosen?.source, "property_media");
+});
+
 test("4: godkjent Content Hub-asset slår unødvendig AI-generering", () => {
   const d = resolveContent([cand({ source: "content_hub_approved", humanApproved: true })], input());
   assert.equal(d.decision, "reuse");
