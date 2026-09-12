@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { OWNED_GROWTH_BRAND_IDS, OWNED_GROWTH_BRANDS, growthBrandDefinition, isPilotChannel } from "@/lib/marketing/brand-registry";
+import { OWNED_GROWTH_BRAND_IDS, OWNED_GROWTH_BRANDS, growthBrandDefinition, isMetaGrowthChannel, isPilotChannel } from "@/lib/marketing/brand-registry";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import type { MarketingChannel } from "@/lib/marketing/genome";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
@@ -35,7 +35,7 @@ function blocker(params: { connected: boolean; brandBrainReady: boolean; planned
   if (!params.connected) return "Konto er ikke koblet.";
   if (!params.brandBrainReady) return "Brand Brain mangler.";
   if (!params.planned) return "Kanalen er koblet, men er ikke del av Growth OS-utvidelsesplanen.";
-  if (params.platform === "youtube" || params.platform === "linkedin") {
+  if (params.planned && params.platform && !isMetaGrowthChannel(params.platform)) {
     return "Kanal koblet og planlagt, men brand-scopet write-governance + approval-publisher er ikke pilotklar ennå.";
   }
   return "Kanalen er ikke godkjent som Growth OS-pilot ennå.";

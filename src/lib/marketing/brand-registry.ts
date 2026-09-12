@@ -44,7 +44,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Pinoso EcoLife",
     kind: "real_estate",
     website: "https://pinosoecolife.com",
-    pilotChannels: ["facebook"],
+    pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["instagram", "facebook", "website", "email"],
     contentPillars: ["rural_property", "new_build", "land_and_plot", "inland_lifestyle", "sustainable_living"],
     conversionGoals: ["property_lead", "viewing_request", "plot_enquiry", "website_visit"],
@@ -80,7 +80,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Freddy Bremseth",
     kind: "personal",
     website: "https://freddybremseth.com",
-    pilotChannels: [],
+    pilotChannels: ["instagram"],
     plannedChannels: ["instagram", "facebook", "linkedin", "youtube", "website", "email"],
     contentPillars: [
       "expertise_and_analysis",
@@ -99,7 +99,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Freddy Publishing",
     kind: "publishing",
     website: "https://books.freddybremseth.com",
-    pilotChannels: [],
+    pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["facebook", "instagram", "youtube", "website", "email"],
     contentPillars: ["book_launches", "book_series", "sample_chapters", "author_catalog", "reading_and_ideas", "publishing_news"],
     conversionGoals: ["book_sale", "sample_read", "book_page_visit", "newsletter", "catalog_discovery"],
@@ -111,7 +111,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Freddy AI Products",
     kind: "saas",
     website: "https://freddybremseth.com",
-    pilotChannels: [],
+    pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["facebook", "instagram", "linkedin", "youtube", "website", "email"],
     contentPillars: ["ai_products", "product_demos", "nexus_os", "realtyflow", "automation_workflows", "business_ai_education", "build_in_public"],
     conversionGoals: ["product_interest", "demo_request", "website_lead", "consultation", "product_waitlist"],
@@ -123,7 +123,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Re-Master Freddy",
     kind: "creator_media",
     website: "https://freddybremseth.com",
-    pilotChannels: [],
+    pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["youtube", "instagram", "facebook", "website"],
     contentPillars: ["song_release", "music_video", "youtube_catalog", "creative_process", "short_form_music", "website_discovery"],
     conversionGoals: ["youtube_view", "subscriber", "website_visit", "social_follow"],
@@ -136,6 +136,10 @@ export const OWNED_GROWTH_BRAND_IDS = OWNED_GROWTH_BRANDS.map((brand) => brand.i
 
 export function growthBrandDefinition(brandId: string): GrowthBrandDefinition | null {
   return OWNED_GROWTH_BRANDS.find((brand) => brand.id === brandId) ?? null;
+}
+
+export function isMetaGrowthChannel(channel: string): channel is Extract<MarketingChannel, "instagram" | "facebook"> {
+  return channel === "instagram" || channel === "facebook";
 }
 
 export function isPilotChannel(brandId: string, channel: string): boolean {
