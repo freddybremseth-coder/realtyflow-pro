@@ -100,13 +100,20 @@ function sentimentForChunk(chunk: string): { sentiment: PropertyFeedbackSentimen
   if (/\b(mer info|mer informasjon|flere bilder|more info|more information|more photos|details)\b/i.test(text)) reasons.push("more_information");
 
   const negative = /\b(ikke interess|ikke aktuell|liker ikke|passer ikke|nei|for dyr|for liten|for stor|not interested|don't like|do not like|not for us|too expensive|too small|too big)\b/i.test(text);
-  const positive = /\b(interessant|interessert|liker|aktuell|ser bra ut|denne liker|favoritt|interesting|interested|like this|looks good|favourite|favorite)\b/i.test(text);
+  const positive = /\b(interessant(?:e)?|interessert(?:e)?|liker|aktuell(?:e)?|ser bra ut|denne liker|favoritt(?:er)?|interesting|interested|like this|looks good|favourite|favorite)\b/i.test(text);
   const question = /\?|\b(kan du sende|kan du sjekke|hva koster|er den ledig|is it available|can you send|can you check)\b/i.test(text);
 
   if (negative) return { sentiment: "negative", reasons: reasons.length ? reasons : ["other"], confidence: reasons.length ? 0.97 : 0.91 };
   if (positive) return { sentiment: "positive", reasons: reasons.length ? reasons : ["other"], confidence: reasons.length ? 0.96 : 0.92 };
   if (question || reasons.includes("more_information")) return { sentiment: "question", reasons: reasons.length ? reasons : ["more_information"], confidence: 0.9 };
   return { sentiment: null, reasons: [], confidence: 0 };
+}
+
+function canCarryForwardReference(chunk: string, sentiment: PropertyFeedbackSentiment | null) {
+  if (sentiment !== "viewing" && sentiment !== "question") return false;
+  const text = normalize(chunk);
+  return /\b(den|denne|boligen|eiendommen|property|it|this one|that one)\b/i.test(text)
+    || /\b(kan vi se|se boligen|se denne|view it|see the property|see this one)\b/i.test(text);
 }
 
 function explicitCriteriaEvidence(text: string) {
@@ -131,12 +138,24 @@ export function analyzePropertyRecommendationReply(input: {
   const latestReply = extractLatestReplyText(input.body) || String(input.subject || "").trim();
   const properties = input.properties || [];
   const signals: PropertyFeedbackSignal[] = [];
+  let lastExplicitRefs: number[] = [];
 
   for (const chunk of chunks(latestReply)) {
-    const refs = referencesForChunk(chunk, properties);
-    if (!refs.length) continue;
+    const explicitRefs = referencesForChunk(chunk, properties);
     const assessment = sentimentForChunk(chunk);
-    if (!assessment.sentiment) continue;
+    if (!assessment.sentiment) {
+      if (explicitRefs.length) lastExplicitRefs = explicitRefs;
+      continue;
+    }
+
+    const refs = explicitRefs.length
+      ? explicitRefs
+      : lastExplicitRefs.length === 1 && canCarryForwardReference(chunk, assessment.sentiment)
+        ? lastExplicitRefs
+        : [];
+    if (!refs.length) continue;
+    if (explicitRefs.length) lastExplicitRefs = explicitRefs;
+
     for (const ordinal of refs) {
       const property = properties[ordinal - 1];
       if (!property) continue;
@@ -149,7 +168,7 @@ export function analyzePropertyRecommendationReply(input: {
         sentiment: assessment.sentiment,
         reasons: assessment.reasons,
         evidence: chunk.slice(0, 500),
-        confidence: assessment.confidence,
+        confidence: explicitRefs.length ? assessment.confidence : Math.min(0.95, assessment.confidence),
       });
     }
   }
