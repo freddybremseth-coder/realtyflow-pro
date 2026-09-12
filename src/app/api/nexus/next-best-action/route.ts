@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildRevenueCommandCenter } from "@/lib/revenue/command";
 import { buildRevenueBrain } from "@/lib/nexus/revenue-brain";
+import { NEXUS_REVENUE_LEARNING_SETTINGS_KEY, parseRevenueLearningProfile } from "@/lib/nexus/revenue-learning";
 import { attachCommunicationLearningToRevenueBrain } from "@/lib/nexus/next-best-action-communication";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,10 @@ export async function GET(request: NextRequest) {
       .gte("sample", 10)
       .order("updated_at", { ascending: false })
       .limit(1000),
+    supabase.from("brand_settings")
+      .select("settings,updated_at")
+      .eq("brand_id", NEXUS_REVENUE_LEARNING_SETTINGS_KEY)
+      .maybeSingle(),
   ]);
 
   const contactsResult = results[0];
@@ -70,6 +75,17 @@ export async function GET(request: NextRequest) {
   const messageDrafts = rows(results[4], "lead_customer_message_drafts");
   const communicationRules = rows(results[5], "nexus_communication_learning_rules");
 
+  const learningResult = results[6];
+  let learningProfile = null;
+  if (learningResult.status === "rejected") {
+    warnings.push(`revenue-learning: ${learningResult.reason instanceof Error ? learningResult.reason.message : "ukjent feil"}`);
+  } else if (learningResult.value?.error) {
+    const message = String(learningResult.value.error.message || "");
+    if (!optionalTableError(message)) warnings.push(`revenue-learning: ${message}`);
+  } else {
+    learningProfile = parseRevenueLearningProfile(learningResult.value?.data?.settings);
+  }
+
   const command = buildRevenueCommandCenter({
     contacts,
     profiles,
@@ -78,7 +94,7 @@ export async function GET(request: NextRequest) {
     messageDrafts,
     warnings: [],
   }, new Date());
-  const brain = buildRevenueBrain(command, 25);
+  const brain = buildRevenueBrain(command, 25, learningProfile);
   const nextBestAction = attachCommunicationLearningToRevenueBrain({
     brain,
     contacts,
@@ -88,11 +104,17 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     nextBestAction,
     warnings,
+    learning: {
+      revenueProfileLoaded: Boolean(learningProfile),
+      revenueActionsAdjusted: brain.summary.learningAdjusted,
+      communicationRulesLoaded: communicationRules.length,
+    },
     safety: {
       recommendationOnly: true,
       automaticSending: false,
       automaticApproval: false,
       policyRegistryStillAuthoritative: true,
+      revenueLearningCanChangePolicy: false,
       communicationLearningCanChangePolicy: false,
     },
   });
