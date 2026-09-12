@@ -100,7 +100,7 @@ function sentimentForChunk(chunk: string): { sentiment: PropertyFeedbackSentimen
   if (/\b(mer info|mer informasjon|flere bilder|more info|more information|more photos|details)\b/i.test(text)) reasons.push("more_information");
 
   const negative = /\b(ikke interess|ikke aktuell|liker ikke|passer ikke|nei|for dyr|for liten|for stor|not interested|don't like|do not like|not for us|too expensive|too small|too big)\b/i.test(text);
-  const positive = /\b(interessant|interessert|liker|aktuell|ser bra ut|denne liker|favoritt|interesting|interested|like this|looks good|favourite|favorite)\b/i.test(text);
+  const positive = /\b(interessant(?:e)?|interessert(?:e)?|liker|aktuell(?:e)?|ser bra ut|denne liker|favoritt(?:er)?|interesting|interested|like this|looks good|favourite|favorite)\b/i.test(text);
   const question = /\?|\b(kan du sende|kan du sjekke|hva koster|er den ledig|is it available|can you send|can you check)\b/i.test(text);
 
   if (negative) return { sentiment: "negative", reasons: reasons.length ? reasons : ["other"], confidence: reasons.length ? 0.97 : 0.91 };
