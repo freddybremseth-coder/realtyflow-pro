@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
+import { buildCustomerTasteProfile } from "@/lib/nexus/customer-taste-profile";
 import { prepareInboundPropertyMatches } from "@/services/email/inbound-property-match";
 
 export const maxDuration = 300;
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
   let considered = 0;
   let prepared = 0;
   let noMatches = 0;
+  let tasteApplied = 0;
   let skipped = 0;
   let failed = 0;
 
@@ -59,14 +61,31 @@ export async function GET(request: NextRequest) {
 
     considered += 1;
     try {
+      const contactId = metadata.contact_id ? String(metadata.contact_id) : null;
+      let customerTaste = null;
+      if (contactId) {
+        const contactResult = await supabase
+          .from("contacts")
+          .select("interactions")
+          .eq("id", contactId)
+          .limit(1)
+          .maybeSingle();
+        if (!contactResult.error && contactResult.data) {
+          const interactions = Array.isArray(contactResult.data.interactions) ? contactResult.data.interactions : [];
+          customerTaste = buildCustomerTasteProfile(interactions);
+        }
+      }
+
       const result = await prepareInboundPropertyMatches({
         brandId: String(row.brand_id || ""),
         buyerProfileId,
         buyerProfileStatus,
+        tasteProfile: customerTaste,
       });
       const now = new Date().toISOString();
       const hasMatches = result.prepared && result.properties.length > 0;
       const noMatch = result.prepared && result.properties.length === 0;
+      if (result.tasteApplied) tasteApplied += 1;
       const nextMetadata = {
         ...metadata,
         property_match_prepared_at: now,
@@ -75,6 +94,10 @@ export async function GET(request: NextRequest) {
         property_match_analyzed: result.analyzed,
         property_match_count: result.properties.length,
         property_match_candidates: result.properties,
+        customer_taste_profile_version: customerTaste?.version || null,
+        customer_taste_feedback_events: customerTaste?.feedbackEvents || 0,
+        customer_taste_ranking_applied: result.tasteApplied,
+        customer_taste_safety: customerTaste?.safety || null,
         ...(noMatch ? {
           no_match_followup_required: true,
           no_match_followup_status: null,
@@ -82,7 +105,9 @@ export async function GET(request: NextRequest) {
         } : {}),
       };
       const nextAction = hasMatches
-        ? `Nexus har kjørt matching og klargjort ${result.properties.length} kandidat${result.properties.length === 1 ? "" : "er"}. Kontroller shortlist og send bare relevante boliger til kunden.`
+        ? result.tasteApplied
+          ? `Nexus har kjørt matching og klargjort ${result.properties.length} kandidater. Godkjente Buyer Profile-kriterier styrer utvalget; observerte kundesignaler er kun brukt til sekundær rangering. Kontroller shortlist før utsending.`
+          : `Nexus har kjørt matching og klargjort ${result.properties.length} kandidat${result.properties.length === 1 ? "" : "er"}. Kontroller shortlist og send bare relevante boliger til kunden.`
         : noMatch
           ? `Nexus analyserte ${result.analyzed} boliger, men fant ingen gode nok treff. Nexus avklarer nå om søkekriteriene mangler nødvendig presisjon; kriteriene endres ikke automatisk.`
           : row.next_action;
@@ -109,8 +134,8 @@ export async function GET(request: NextRequest) {
     action: "nexus_property_match_prep",
     agent_name: "nexus_property_match_autopilot",
     status: failed ? (prepared || noMatches ? "partial" : "failed") : "success",
-    details: { considered, prepared, no_matches: noMatches, skipped, failed, runtime_control: `cron:${PATH}` },
+    details: { considered, prepared, no_matches: noMatches, taste_applied: tasteApplied, skipped, failed, runtime_control: `cron:${PATH}` },
   }).then(() => {}).then(undefined, () => {});
 
-  return NextResponse.json({ success: true, considered, prepared, noMatches, skipped, failed });
+  return NextResponse.json({ success: true, considered, prepared, noMatches, tasteApplied, skipped, failed });
 }
