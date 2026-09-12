@@ -15,7 +15,7 @@ test("customer taste is derived from CRM feedback and used only for ranking", ()
   assert.match(source, /\.select\("interactions"\)/);
   assert.match(source, /tasteProfile: customerTaste/);
   assert.match(source, /customer_taste_ranking_applied/);
-  assert.match(source, /secondary rangering/);
+  assert.match(source, /sekundær rangering/);
 });
 
 test("taste layer does not mutate buyer profiles or send customer communication", () => {
