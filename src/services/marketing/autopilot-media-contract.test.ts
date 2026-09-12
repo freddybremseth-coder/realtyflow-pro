@@ -27,6 +27,15 @@ describe("Growth OS Instagram Media Studio bridge", () => {
     expect(media).toContain("growth-instagram-media:");
   });
 
+  it("recovers the same idempotent job instead of creating duplicate media", () => {
+    expect(media).toContain("retryMediaJob");
+    expect(media).toContain("refreshMediaJob");
+    expect(media).toContain('["failed", "expired", "cancelled"]');
+    expect(media).toContain('["submitted", "processing"]');
+    expect(media).toContain("if (result.existing)");
+    expect(media).toContain("recoverExistingMediaJob");
+  });
+
   it("requires a completed public HTTPS asset and keeps visual claims conservative", () => {
     expect(media).toContain('String(job.status) !== "completed"');
     expect(media).toContain("public_url");
