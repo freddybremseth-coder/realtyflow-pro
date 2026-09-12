@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getServiceSupabase, createCampaignDraft } from "@/services/marketing/campaign-production";
-import { isPilotChannel } from "@/lib/marketing/brand-registry";
+import { isMetaGrowthChannel, isPilotChannel } from "@/lib/marketing/brand-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +66,12 @@ export async function POST(request: NextRequest) {
   const sourceQueueId = String(body?.sourceQueueId ?? "").trim();
   const requestedChannel = String(body?.channel ?? "").trim().toLowerCase();
   if (!sourceQueueId) return NextResponse.json({ error: "sourceQueueId er påkrevd" }, { status: 400 });
-  if (!["instagram", "facebook"].includes(requestedChannel)) return NextResponse.json({ error: "channel må være instagram eller facebook for denne kontrollerte draft-pathen" }, { status: 400 });
+  if (!isMetaGrowthChannel(requestedChannel)) {
+    return NextResponse.json({
+      error: "CHANNEL_PUBLISHER_NOT_READY",
+      note: "Denne kontrollerte draft-pathen støtter foreløpig Instagram og Facebook. YouTube, LinkedIn, website og email må ha egen brand-scopet approval-publisher før de kan kjøres her.",
+    }, { status: 409 });
+  }
 
   const { data: source, error: sourceError } = await supabase.from("marketing_source_queue").select("*").eq("id", sourceQueueId).single();
   if (sourceError || !source) return NextResponse.json({ error: sourceError?.message || "Source not found" }, { status: 404 });
@@ -99,7 +104,7 @@ export async function POST(request: NextRequest) {
       brandId: String(source.brand_id),
       masterIdea: masterIdea(source),
       goal: { kind: goalFor(String(source.source_type)), target: 10, horizonDays: 30 },
-      channel: requestedChannel as "instagram" | "facebook",
+      channel: requestedChannel,
       language: source.payload?.language || undefined,
       mediaUrl,
       useInventoryProperty: source.source_type === "property",
