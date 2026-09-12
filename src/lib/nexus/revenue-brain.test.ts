@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRevenueBrain } from "./revenue-brain";
 import type { RevenueCommandCenter } from "@/lib/revenue/command";
+import type { NexusRevenueLearningProfile } from "./revenue-learning";
 
 function command(actions: RevenueCommandCenter["topActions"]): RevenueCommandCenter {
   return {
@@ -10,6 +11,28 @@ function command(actions: RevenueCommandCenter["topActions"]): RevenueCommandCen
     summary: { criticalActions: 0, highActions: 0, activeDeals: 0, forecast30Commission: 0, forecast90Commission: 0, overdueCommission: 0, readyToInvoiceCommission: 0, monthlyRecurringRevenue: 0, annualRecurringRevenue: 0, potentialAnnualRecurringRevenue: 0, recoverNow: 0, recoveryValue: 0, approvalReady: 0, closingHighRisk: 0, afterSalesDue: 0, dataQualityScore: 100 },
     workstreams: [], topActions: actions, warnings: [],
     safety: { readOnly: true, automaticSending: false, automaticApproval: false, automaticPipelineChanges: false },
+  };
+}
+
+function learningProfile(adjustment = 5): NexusRevenueLearningProfile {
+  return {
+    version: 1,
+    generatedAt: "2026-09-12T08:00:00.000Z",
+    lookbackDays: 90,
+    attributionWindowDays: 30,
+    minSamples: 8,
+    baselineOutcomeRate: 30,
+    signals: [{
+      actionType: "general_customer_message",
+      sampleSize: 30,
+      outcomeRate: 50,
+      winRate: 5,
+      revenueImpactEur: 20000,
+      scoreAdjustment: adjustment,
+      evidenceStrength: "established",
+      reason: "Historisk bedre outcome-rate enn baseline.",
+    }],
+    safety: { rankingOnly: true, maxAbsoluteScoreAdjustment: 8, policyMutationAllowed: false, autonomyExpansionAllowed: false },
   };
 }
 
@@ -25,7 +48,17 @@ test("Revenue Brain ranks commercial urgency and delegates policy to the registr
   assert.equal(brain.actions[1]?.policyClass, "DRAFT_ONLY");
   assert.equal(brain.actions[1]?.policyActionType, "general_customer_message");
   assert.equal(brain.actions.every((item) => item.automaticExecutionAllowed === false), true);
-  assert.deepEqual(brain.safety, { readOnly: true, automaticExecution: false, automaticSending: false, automaticApproval: false, automaticCriteriaChanges: false, explicitPolicyRequiredForFutureAutonomy: true, policyRegistryEnforced: true });
+  assert.deepEqual(brain.safety, {
+    readOnly: true,
+    automaticExecution: false,
+    automaticSending: false,
+    automaticApproval: false,
+    automaticCriteriaChanges: false,
+    explicitPolicyRequiredForFutureAutonomy: true,
+    policyRegistryEnforced: true,
+    outcomeLearningRankingOnly: true,
+    outcomeLearningCanChangePolicy: false,
+  });
 });
 
 test("Revenue Brain deduplicates multiple opportunities for the same contact", () => {
@@ -49,4 +82,20 @@ test("Revenue Brain limits output and includes explainable policy rationale", ()
   assert.equal(brain.actions.every((item) => item.rationale.some((line) => line.startsWith("Policy:"))), true);
   assert.equal(brain.summary.autoSafe, 0);
   assert.equal(brain.summary.forbidden, 0);
+  assert.equal(brain.summary.learningAdjusted, 0);
+});
+
+test("outcome learning adjusts ranking score but never changes action policy", () => {
+  const brain = buildRevenueBrain(command([
+    { id: "followup-1", source: "today", priority: "HIGH", score: 82, title: "Follow-up", subject: "Kari", description: "Draft follow-up.", value: 0, href: "/customers/kari", contactId: "kari" },
+  ]), 10, learningProfile(5));
+
+  const action = brain.actions[0]!;
+  assert.equal(action.learningAdjustment, 5);
+  assert.equal(action.opportunityScore, Math.min(100, action.baseOpportunityScore + 5));
+  assert.equal(action.policyClass, "DRAFT_ONLY");
+  assert.equal(action.policyActionType, "general_customer_message");
+  assert.equal(action.automaticExecutionAllowed, false);
+  assert.equal(brain.summary.learningAdjusted, 1);
+  assert.equal(action.rationale.some((line) => line.includes("Outcome-læring justerte rankingen")), true);
 });

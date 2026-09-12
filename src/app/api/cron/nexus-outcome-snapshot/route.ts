@@ -7,6 +7,7 @@ import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { buildRevenueCommandCenter } from "@/lib/revenue/command";
 import { buildRevenueBrain } from "@/lib/nexus/revenue-brain";
 import { recordRevenueBrainSnapshot } from "@/lib/nexus/outcome-measurement";
+import { NEXUS_REVENUE_LEARNING_SETTINGS_KEY, parseRevenueLearningProfile } from "@/lib/nexus/revenue-learning";
 
 export const maxDuration = 300;
 const PATH = "/api/cron/nexus-outcome-snapshot";
@@ -27,18 +28,21 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
-  const [contactsResult, profilesResult, shortlistsResult, presentationsResult, draftsResult] = await Promise.all([
+  const [contactsResult, profilesResult, shortlistsResult, presentationsResult, draftsResult, learningResult] = await Promise.all([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(3000),
     supabase.from("buyer_profiles").select("id,brand,contact_id,status,purchase_readiness,budget_amount,budget_currency,summary,created_at,updated_at").limit(1000),
     supabase.from("lead_property_shortlists").select("id,brand,buyer_profile_id,status,title,created_at,updated_at").limit(1000),
     supabase.from("lead_customer_presentations").select("id,brand,buyer_profile_id,shortlist_id,status,title,created_at,updated_at").limit(1000),
     supabase.from("lead_customer_message_drafts").select("id,brand,buyer_profile_id,shortlist_id,presentation_id,status,subject,language,created_at,updated_at").limit(1000),
+    supabase.from("brand_settings").select("settings,updated_at").eq("brand_id", NEXUS_REVENUE_LEARNING_SETTINGS_KEY).maybeSingle(),
   ]);
 
   if (contactsResult.error) return NextResponse.json({ error: contactsResult.error.message }, { status: 500 });
   const warnings = [profilesResult, shortlistsResult, presentationsResult, draftsResult]
     .map((result) => result.error?.message)
     .filter(Boolean) as string[];
+  if (learningResult.error) warnings.push(`revenue-learning: ${learningResult.error.message}`);
+  const learningProfile = parseRevenueLearningProfile(learningResult.data?.settings);
 
   const command = buildRevenueCommandCenter({
     contacts: contactsResult.data || [],
@@ -48,7 +52,7 @@ export async function GET(request: NextRequest) {
     messageDrafts: draftsResult.data || [],
     warnings,
   }, new Date());
-  const brain = buildRevenueBrain(command, 10);
+  const brain = buildRevenueBrain(command, 10, learningProfile);
   const snapshot = await recordRevenueBrainSnapshot(supabase, brain, { createdBy: "nexus-outcome-snapshot" });
 
   await supabase.from("automation_logs").insert({
@@ -60,6 +64,8 @@ export async function GET(request: NextRequest) {
       recorded: snapshot.recorded,
       duplicates: snapshot.duplicates,
       failed: snapshot.failed,
+      learning_profile_loaded: Boolean(learningProfile),
+      learning_adjusted: brain.summary.learningAdjusted,
       warnings,
       policy_mutation_allowed: false,
       autonomy_expansion_allowed: false,
@@ -73,9 +79,12 @@ export async function GET(request: NextRequest) {
     recorded: snapshot.recorded,
     duplicates: snapshot.duplicates,
     failed: snapshot.failed,
+    learningProfileLoaded: Boolean(learningProfile),
+    learningAdjusted: brain.summary.learningAdjusted,
     warnings,
     safety: {
       measurementOnly: true,
+      learningRankingOnly: true,
       policyMutationAllowed: false,
       autonomyExpansionAllowed: false,
     },
