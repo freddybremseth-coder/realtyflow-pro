@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runNexusSendPreflight } from "@/services/email/nexus-send-preflight";
-import { buildPropertyRecommendationTemplate } from "@/services/email/property-recommendation-template";
+import { buildLeadCustomerPresentationPreview } from "@/services/lead-intelligence/presentation-preview";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
 
 export type PropertyRecommendationSendResult =
@@ -50,13 +50,14 @@ export async function sendApprovedPropertyRecommendation(input: {
   const presentationId = text(metadata.presentation_id);
   const messageDraftId = text(metadata.presentation_message_draft_id);
   const humanApproved = Boolean(metadata.presentation_human_approved_at) && Boolean(metadata.presentation_human_approved_by);
-  if (!brandId || !buyerProfileId || !shortlistId || !presentationId || !messageDraftId || !humanApproved) {
-    return { sent: false, duplicate: false, blocked: true, reason: "Property recommendation is missing final approved send context." };
+  const autoSendAuthorized = metadata.property_recommendation_auto_send_authorized === true || text(metadata.property_recommendation_auto_send_authorized) === "true";
+  if (!brandId || !buyerProfileId || !shortlistId || !presentationId || !messageDraftId || !humanApproved || !autoSendAuthorized) {
+    return { sent: false, duplicate: false, blocked: true, reason: "Property recommendation is missing final approved auto-send context." };
   }
 
   const priorReceipt = await existingReceipt(supabase, messageDraftId);
   if (priorReceipt?.status === "sent") {
-    return { sent: true, duplicate: true, messageId: priorReceipt.provider_message_id || null, receiptId: priorReceipt.id, propertyCount: Number(metadata.presentation_property_count || 0) };
+    return { sent: true, duplicate: true, messageId: priorReceipt.provider_message_id || null, receiptId: priorReceipt.id, propertyCount: Number(metadata.property_recommendation_property_count || 0) };
   }
   if (priorReceipt && ["sending", "ambiguous"].includes(String(priorReceipt.status))) {
     return { sent: false, duplicate: true, blocked: true, reason: "A provider send is already in progress or has an ambiguous outcome. Automatic retry is blocked.", receiptId: priorReceipt.id };
@@ -82,13 +83,16 @@ export async function sendApprovedPropertyRecommendation(input: {
       .select("id,contact_id,status")
       .eq("id", buyerProfileId).eq("brand", brandId).maybeSingle(),
     supabase.from("lead_customer_message_drafts")
-      .select("id,status,sent_at,cancelled_at")
+      .select("id,status,subject,body_text,body_html,sent_at,cancelled_at")
       .eq("id", messageDraftId).eq("brand", brandId).maybeSingle(),
   ]);
   const firstError = presentationResult.error || profileResult.error || draftResult.error;
   if (firstError) throw new Error(firstError.message);
   if (!presentationResult.data || !profileResult.data || !draftResult.data || !profileResult.data.contact_id) {
     return { sent: false, duplicate: false, blocked: true, reason: "Approved recommendation dependencies are missing." };
+  }
+  if (text(draftResult.data.status).toLowerCase() !== "approved" || draftResult.data.sent_at || draftResult.data.cancelled_at) {
+    return { sent: false, duplicate: false, blocked: true, reason: "Approved message draft is no longer eligible for send." };
   }
 
   const contactResult = await supabase.from("contacts")
@@ -99,16 +103,23 @@ export async function sendApprovedPropertyRecommendation(input: {
   const recipient = text(contact?.email).toLowerCase();
   if (!contact?.id || !recipient) return { sent: false, duplicate: false, blocked: true, reason: "Customer email is missing." };
 
-  const template = buildPropertyRecommendationTemplate({
-    brandId,
-    customerName: contact.name,
-    presentationJson: presentationResult.data.presentation_json,
-  });
-  if (template.propertyCount < 1) {
-    return { sent: false, duplicate: false, blocked: true, reason: "No customer-safe property with a verified public URL is available." };
+  const preview = buildLeadCustomerPresentationPreview(presentationResult.data.presentation_json);
+  const propertyCount = preview.properties.length;
+  if (propertyCount < 1 || preview.properties.some((property) => !property.publicUrl)) {
+    return { sent: false, duplicate: false, blocked: true, reason: "No complete customer-safe property set with verified public links is available." };
+  }
+  if (text(metadata.property_recommendation_template_version) !== "matched-property-rich-v1") {
+    return { sent: false, duplicate: false, blocked: true, reason: "Property recommendation was not approved with the current rich customer template." };
   }
 
-  const hash = payloadHash({ brandId, recipient, subject: template.subject, bodyText: template.bodyText, bodyHtml: template.bodyHtml, presentationId, messageDraftId });
+  const approvedSubject = text(draftResult.data.subject);
+  const approvedBodyText = text(draftResult.data.body_text);
+  const approvedBodyHtml = text(draftResult.data.body_html);
+  if (!approvedSubject || !approvedBodyText || !approvedBodyHtml) {
+    return { sent: false, duplicate: false, blocked: true, reason: "Approved rich property recommendation content is incomplete." };
+  }
+
+  const hash = payloadHash({ brandId, recipient, subject: approvedSubject, bodyText: approvedBodyText, bodyHtml: approvedBodyHtml, presentationId, messageDraftId });
   let receiptId: string | null = null;
 
   if (priorReceipt?.status === "failed") {
@@ -134,7 +145,7 @@ export async function sendApprovedPropertyRecommendation(input: {
     if (claim.error) {
       if (String(claim.error.code || "") === "23505") {
         const raced = await existingReceipt(supabase, messageDraftId);
-        if (raced?.status === "sent") return { sent: true, duplicate: true, messageId: raced.provider_message_id || null, receiptId: raced.id, propertyCount: template.propertyCount };
+        if (raced?.status === "sent") return { sent: true, duplicate: true, messageId: raced.provider_message_id || null, receiptId: raced.id, propertyCount };
         return { sent: false, duplicate: true, blocked: true, reason: "Another recommendation send already owns this draft.", receiptId: raced?.id || null };
       }
       throw new Error(claim.error.message);
@@ -146,9 +157,9 @@ export async function sendApprovedPropertyRecommendation(input: {
     const send = await sendBrandEmail(supabase, {
       brandId,
       to: [recipient],
-      subject: template.subject,
-      bodyText: template.bodyText,
-      bodyHtml: template.bodyHtml,
+      subject: approvedSubject,
+      bodyText: approvedBodyText,
+      bodyHtml: approvedBodyHtml,
     });
 
     if (!send.success) {
@@ -170,7 +181,6 @@ export async function sendApprovedPropertyRecommendation(input: {
       updated_at: sentAt,
     }).eq("id", receiptId).eq("status", "sending");
     if (receiptUpdate.error) {
-      // Provider may already have accepted the email. Never auto-retry this draft.
       await supabase.from("nexus_property_recommendation_send_receipts").update({
         status: "ambiguous",
         provider_message_id: send.messageId || null,
@@ -183,7 +193,7 @@ export async function sendApprovedPropertyRecommendation(input: {
     const draftUpdate = await supabase.from("lead_customer_message_drafts").update({ status: "sent", sent_at: sentAt, updated_at: sentAt })
       .eq("id", messageDraftId).eq("brand", brandId).eq("status", "approved").is("sent_at", null);
     if (draftUpdate.error) {
-      return { sent: true, duplicate: false, messageId: send.messageId || null, receiptId, propertyCount: template.propertyCount };
+      return { sent: true, duplicate: false, messageId: send.messageId || null, receiptId, propertyCount };
     }
 
     const nextMetadata = {
@@ -193,7 +203,7 @@ export async function sendApprovedPropertyRecommendation(input: {
       property_recommendation_sent_by: input.actor,
       property_recommendation_receipt_id: receiptId,
       property_recommendation_provider_message_id: send.messageId || null,
-      property_recommendation_property_count: template.propertyCount,
+      property_recommendation_property_count: propertyCount,
       presentation_customer_send_allowed: false,
       send_preflight_ready: false,
       send_preflight_revalidate_at_send: true,
@@ -205,7 +215,7 @@ export async function sendApprovedPropertyRecommendation(input: {
       updated_at: sentAt,
     }).eq("id", input.workItemId);
 
-    return { sent: true, duplicate: false, messageId: send.messageId || null, receiptId, propertyCount: template.propertyCount };
+    return { sent: true, duplicate: false, messageId: send.messageId || null, receiptId, propertyCount };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await supabase.from("nexus_property_recommendation_send_receipts").update({
