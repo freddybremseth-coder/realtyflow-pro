@@ -27,6 +27,22 @@ test("property feedback pauses nurture and creates governed sales work", () => {
   assert.match(source, /property_match_prepared_at: null/);
 });
 
+test("property feedback creates idempotent property-level revenue outcomes", () => {
+  assert.match(source, /insertRevenueEvent/);
+  assert.match(source, /buildRevenueEventDedupeKey/);
+  assert.match(source, /property_interested/);
+  assert.match(source, /property_not_for_me/);
+  assert.match(source, /sourceSystem: "nexus_property_feedback"/);
+  assert.match(source, /actorType: "customer"/);
+  assert.match(source, /emailMessageId/);
+  assert.match(source, /propertyKey/);
+  assert.match(source, /revenue_events_recorded/);
+});
+
+test("questions are not falsely recorded as positive or negative revenue outcomes", () => {
+  assert.match(source, /if \(signal\.sentiment === "question"\) continue/);
+});
+
 test("property feedback processor never sends customer communication", () => {
   assert.doesNotMatch(source, /sendBrandEmail/);
   assert.doesNotMatch(source, /sendEmail\(/);
