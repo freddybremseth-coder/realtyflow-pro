@@ -225,7 +225,6 @@ export async function recordRevenueBrainSnapshot(
       sourceId: action.id,
       actorType: "ai",
       confidenceScore: action.opportunityScore,
-      revenueImpactEur: action.expectedValueEur || null,
       occurredAt: capturedAt,
       dedupeKey: buildRevenueEventDedupeKey(["nexus-revenue-brain", day, action.id]),
       metadata: {
