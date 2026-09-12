@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { createMediaJob } from "@/services/media/job-service";
+import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media/job-service";
 import { getDefaultMediaOrganizationId } from "@/services/media/organization";
 import { createMediaPromptPlan } from "@/services/media/prompt-director";
 
@@ -47,10 +47,36 @@ function completedPublicAsset(job: Record<string, any>) {
   };
 }
 
+async function recoverExistingMediaJob(
+  supabase: SupabaseClient,
+  organizationId: string,
+  job: Record<string, any>,
+) {
+  const status = String(job.status ?? "");
+  if (["failed", "expired", "cancelled"].includes(status)) {
+    return retryMediaJob(supabase, {
+      organizationId,
+      actorEmail: SYSTEM_ACTOR,
+      jobId: String(job.id),
+    }) as Promise<Record<string, any>>;
+  }
+  if (["submitted", "processing"].includes(status)) {
+    return refreshMediaJob(supabase, {
+      organizationId,
+      actorEmail: SYSTEM_ACTOR,
+      jobId: String(job.id),
+      autoExportToContentHub: false,
+    }) as Promise<Record<string, any>>;
+  }
+  return job;
+}
+
 /**
  * Generate one canonical Instagram image through the existing Media Studio
  * stack. The job is idempotent per content slot, so retries reuse the same
  * generated asset instead of spending again or creating duplicate visuals.
+ * Failed/expired jobs are retried in place and asynchronous jobs get one
+ * refresh pass before the autopilot fails closed for this run.
  *
  * This helper intentionally does not invent product screenshots or visible
  * UI/text. The image is a brand-compatible conceptual visual; factual product
@@ -102,7 +128,11 @@ export async function generateAutopilotInstagramImage(
     },
   });
 
-  const job = result.job as Record<string, any>;
+  let job = result.job as Record<string, any>;
+  if (result.existing) {
+    job = await recoverExistingMediaJob(supabase, organizationId, job);
+  }
+
   const asset = completedPublicAsset(job);
   if (!asset) {
     const detail = job.error_message ? `: ${String(job.error_message).slice(0, 300)}` : "";
