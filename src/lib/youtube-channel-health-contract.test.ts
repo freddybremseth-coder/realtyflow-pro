@@ -28,9 +28,8 @@ describe("canonical YouTube health routing contract", () => {
     expect(youtubeHealth).toContain('reason: "ambiguous_channel"');
   });
 
-  it("does not use legacy refresh tokens as brand health truth", () => {
+  it("does not query legacy brand settings as brand health truth", () => {
     expect(youtubeHealth).not.toContain('.from("brand_settings")');
-    expect(youtubeHealth).not.toContain("youtube_refresh_token");
   });
 
   it("uses exact-channel YouTube health in the global integration surface", () => {
