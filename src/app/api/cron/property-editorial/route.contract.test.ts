@@ -42,13 +42,16 @@ test("diagnosed generator uses the canonical repaired parser", () => {
   assert.match(diagnostics, /"provider_chain_unavailable"/);
   assert.match(diagnostics, /"invalid_output"/);
   assert.match(diagnostics, /parsePropertyEditorialAiResponse/);
+  assert.match(diagnostics, /parsePropertyEditorialAiResponseWithFallbackIntro/);
+  assert.match(diagnostics, /validateResponse: \(text\) => \{/);
   assert.match(
     diagnostics,
-    /validateResponse: \(text\) => parsePropertyEditorialAiResponse\(text\) !== null/,
+    /const candidate = parsePropertyEditorialAiResponseWithFallbackIntro\(text, fallback\.intro_no\)/,
   );
-  assert.match(diagnostics, /const parsed = parsePropertyEditorialAiResponse\(raw\)/);
+  assert.match(diagnostics, /return candidate !== null && isPropertyEditorialPublicCopySafe\(candidate\)/);
+  assert.match(diagnostics, /const parsed = parsePropertyEditorialAiResponseWithFallbackIntro\(raw, fallback\.intro_no\)/);
   assert.doesNotMatch(diagnostics, /function parseEditorial\(/);
-  assert.doesNotMatch(diagnostics, /function stripJsonFence\(/);
+  assert.match(diagnostics, /function stripJsonFence\(/);
   assert.match(diagnostics, /fallbackOnInvalidResponse: true/);
 });
 
