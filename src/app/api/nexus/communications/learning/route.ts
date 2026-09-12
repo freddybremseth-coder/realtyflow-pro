@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { COMMUNICATION_LEARNING_SAFETY } from "@/lib/nexus/communication-learning";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
+
+const TIMING_DIMENSIONS = new Set(["send_hour_utc", "weekday_utc"]);
+const CONTENT_DIMENSIONS = new Set(["tone", "language", "intent", "message_length"]);
 
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
@@ -49,6 +53,13 @@ export async function GET(request: NextRequest) {
     ...rule,
     appliedDrafts: appliedRuleCounts.get(String(rule.id)) || 0,
   }));
+  const actionable = activeRules.filter((r)=>["prefer","avoid"].includes(String(r.verdict)) && ["moderate","strong"].includes(String(r.evidence)) && Number(r.sample||0)>=10);
+  const timingRecommendations = actionable
+    .filter((r)=>TIMING_DIMENSIONS.has(String(r.dimension)))
+    .sort((a,b)=>Number(b.reply_rate||0)-Number(a.reply_rate||0) || Number(b.sample||0)-Number(a.sample||0));
+  const contentRecommendations = actionable
+    .filter((r)=>CONTENT_DIMENSIONS.has(String(r.dimension)))
+    .sort((a,b)=>Number(b.reply_rate||0)-Number(a.reply_rate||0) || Number(b.sample||0)-Number(a.sample||0));
 
   return NextResponse.json({
     generatedAt:new Date().toISOString(),
@@ -57,17 +68,22 @@ export async function GET(request: NextRequest) {
       brands:Object.keys(byBrand).length,
       observations:obs.length,
       rules:activeRules.length,
-      actionable:activeRules.filter(r=>["prefer","avoid"].includes(r.verdict) && ["moderate","strong"].includes(r.evidence)).length,
+      actionable:actionable.length,
       strong:activeRules.filter(r=>r.evidence==="strong").length,
+      timingRecommendations:timingRecommendations.length,
+      contentRecommendations:contentRecommendations.length,
       draftsWithLearning,
     },
     byBrand,
     rules:activeRules,
+    timingRecommendations,
+    contentRecommendations,
+    safety:COMMUNICATION_LEARNING_SAFETY,
     policy:{
       minimumForLimited:5,
       minimumForModerate:10,
       minimumForStrong:25,
-      note:"Prefer/avoid påvirker bare draft-formulering som en svak preferanse. Brand-policy, fakta, sikkerhet og original e-post har alltid høyere prioritet."
+      note:"Læring er evidensstyrt og rådgivende. Timing kan anbefales, men kan ikke sende eller planlegge utsending autonomt. Brand-policy, fakta, sikkerhet og Action Policy Registry har alltid høyere prioritet."
     }
   });
 }
