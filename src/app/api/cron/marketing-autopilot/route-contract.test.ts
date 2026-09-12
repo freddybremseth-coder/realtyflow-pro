@@ -20,6 +20,15 @@ test("scheduled autopilot uses stable daily identity, history, and source cooldo
   assert.match(route, /shouldRunAutopilotSlot\(localHour, targetHour\)/);
 });
 
+test("SaaS Instagram controlled-auto generates required media before campaign publishing", () => {
+  assert.match(route, /channel === "instagram" && role === "saas_b2b"/);
+  assert.match(route, /generateAutopilotInstagramImage\(/);
+  assert.match(route, /mediaUrl = media\.imageUrl/);
+  assert.match(route, /reason: "instagram_media_generation_failed"/);
+  assert.match(route, /continue;/);
+  assert.match(route, /generatedMedia/);
+});
+
 test("blocked real-estate AI copy recovers with same property and deterministic Inventory facts", () => {
   assert.match(route, /RECOVERABLE_PROPERTY_COPY_ERRORS/);
   assert.match(route, /item\.mode === "blocked"/);
