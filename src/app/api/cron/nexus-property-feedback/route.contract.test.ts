@@ -27,6 +27,27 @@ test("property feedback pauses nurture and creates governed sales work", () => {
   assert.match(source, /property_match_prepared_at: null/);
 });
 
+test("feedback work is idempotent even after the original work item is completed", () => {
+  assert.match(source, /\.eq\("source_id", sourceId\)/);
+  assert.doesNotMatch(source, /\.in\("status", OPEN_STATUSES\)/);
+  assert.doesNotMatch(source, /const OPEN_STATUSES/);
+});
+
+test("reprocessing does not rewrite the same CRM interaction but still permits downstream retry", () => {
+  assert.match(source, /alreadyRecorded = existingInteractions\.some/);
+  assert.match(source, /if \(!alreadyRecorded\)/);
+  assert.match(source, /repeated \+= 1/);
+  assert.match(source, /recordPropertyFeedbackRevenueEvents/);
+  assert.match(source, /ensureFeedbackWorkItem/);
+});
+
+test("CRM reply classification uses the same governed feedback classification as work metadata", () => {
+  assert.match(source, /function feedbackClassification/);
+  assert.match(source, /analysis\.requiresBuyerProfileReview\) return "update_preferences"/);
+  assert.match(source, /last_reply_classification: classification/);
+  assert.match(source, /const classification = feedbackClassification\(input\.analysis\)/);
+});
+
 test("property feedback creates idempotent property-level revenue outcomes", () => {
   assert.match(source, /insertRevenueEvent/);
   assert.match(source, /buildRevenueEventDedupeKey/);
