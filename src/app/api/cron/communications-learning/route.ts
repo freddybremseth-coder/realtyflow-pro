@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
+import {
+  COMMUNICATION_LEARNING_SAFETY,
+  deriveCommunicationLearningDimensions,
+  evaluateCommunicationRule,
+} from "@/lib/nexus/communication-learning";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 function normalizeEmail(v: unknown) { return String(v || "").trim().toLowerCase(); }
 function normalizeSubject(v: unknown) {
   return String(v || "").toLowerCase().replace(/^\s*((re|fw|fwd)\s*:\s*)+/g, "").replace(/\s+/g, " ").trim();
 }
-function evidence(sample: number) { return sample >= 25 ? "strong" : sample >= 10 ? "moderate" : sample >= 5 ? "limited" : "insufficient"; }
 
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronApi(request);
@@ -74,28 +78,39 @@ export async function GET(request: NextRequest) {
     const edit = obs.filter((o:any)=>o.event_type==="user_edit").map((o:any)=>Number(o.edit_ratio||0)).sort((a:number,b:number)=>b-a)[0] || 0;
     const b=baseline.get(draft.brand_id)||{sent:0,replies:0}; b.sent++; if(replied)b.replies++; baseline.set(draft.brand_id,b);
     const original:any = draft.ai_context?.original_draft || {};
-    const dims:[string,string][] = [["tone",String(original.tone||draft.tone||"unknown")],["language",String(original.language||draft.language||"unknown")],["intent",String(draft.ai_context?.analysis?.intent||"unknown")]];
+    const dims = deriveCommunicationLearningDimensions({
+      sentAt: draft.sent_at,
+      bodyText: draft.body_text,
+      tone: original.tone || draft.tone || "unknown",
+      language: original.language || draft.language || "unknown",
+      intent: draft.ai_context?.analysis?.intent || "unknown",
+    });
     for (const [dimension,value] of dims) {
-      const key=`${draft.brand_id}|${dimension}|${value}`; const g=groups.get(key)||{brand:draft.brand_id,dimension,value,sent:0,replies:0,editSum:0};
+      if (!value || value === "unknown") continue;
+      const key=`${draft.brand_id}|${dimension}|${value}`;
+      const g=groups.get(key)||{brand:draft.brand_id,dimension,value,sent:0,replies:0,editSum:0};
       g.sent++; if(replied)g.replies++; g.editSum+=edit; groups.set(key,g);
     }
   }
 
   let rulesUpserted=0;
   for (const g of groups.values()) {
-    const base=baseline.get(g.brand)||{sent:0,replies:0}; const replyRate=g.sent?g.replies/g.sent:0; const baseRate=base.sent?base.replies/base.sent:0; const avgEdit=g.sent?g.editSum/g.sent:0;
-    const ev=evidence(g.sent); let verdict="observe";
-    if (ev === "moderate" || ev === "strong") {
-      if (replyRate >= baseRate + 0.10 && avgEdit <= 0.25) verdict="prefer";
-      else if (replyRate <= Math.max(0,baseRate - 0.10) && avgEdit >= 0.35) verdict="avoid";
-      else if (replyRate > baseRate && avgEdit < 0.30) verdict="promising";
-    }
-    const finding=`${g.dimension}=${g.value}: ${g.sent} sent, ${Math.round(replyRate*100)}% reply, ${Math.round(avgEdit*100)}% avg edit; brand baseline ${Math.round(baseRate*100)}%.`;
+    const base=baseline.get(g.brand)||{sent:0,replies:0};
+    const evaluated = evaluateCommunicationRule({ sent:g.sent, replies:g.replies, editSum:g.editSum, baselineSent:base.sent, baselineReplies:base.replies });
+    const finding=`${g.dimension}=${g.value}: ${g.sent} sent, ${Math.round(evaluated.replyRate*100)}% reply, ${Math.round(evaluated.avgEditRatio*100)}% avg edit; brand baseline ${Math.round(evaluated.baselineReplyRate*100)}%.`;
     const { error } = await supabase.from("nexus_communication_learning_rules").upsert({
-      brand_id:g.brand,dimension:g.dimension,value:g.value,sample:g.sent,avg_edit_ratio:avgEdit,reply_rate:replyRate,evidence:ev,verdict,finding,updated_at:new Date().toISOString(),
+      brand_id:g.brand,dimension:g.dimension,value:g.value,sample:g.sent,avg_edit_ratio:evaluated.avgEditRatio,reply_rate:evaluated.replyRate,evidence:evaluated.evidence,verdict:evaluated.verdict,finding,updated_at:new Date().toISOString(),
     }, { onConflict:"brand_id,dimension,value" });
     if (!error) rulesUpserted++;
   }
 
-  return NextResponse.json({ success:true, drafts:(drafts||[]).length, repliesInserted, rulesUpserted, windowDays:90 });
+  return NextResponse.json({
+    success:true,
+    drafts:(drafts||[]).length,
+    repliesInserted,
+    rulesUpserted,
+    windowDays:90,
+    dimensions:["tone","language","intent","send_hour_utc","weekday_utc","message_length"],
+    safety:COMMUNICATION_LEARNING_SAFETY,
+  });
 }

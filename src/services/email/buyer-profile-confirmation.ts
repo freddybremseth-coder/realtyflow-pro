@@ -18,10 +18,42 @@ const KEY_LABELS: Record<string, string> = {
   distance_to_beach: "Avstand til strand",
 };
 
+const BROAD_LOCATION_VALUES = new Set([
+  "spain",
+  "spania",
+  "espana",
+  "españa",
+  "costa blanca",
+  "alicante",
+  "valencia",
+  "comunidad valenciana",
+  "valencian community",
+]);
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function normalizeLocation(value: unknown) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+export function isBroadBuyerLocation(value: unknown) {
+  return BROAD_LOCATION_VALUES.has(normalizeLocation(value));
+}
+
+function preferredLocations(analysis: unknown): string[] {
+  const root = record(analysis);
+  const locations = record(root.locations);
+  return Array.isArray(locations.preferred)
+    ? locations.preferred.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
 }
 
 function formatNumber(value: number) {
@@ -63,9 +95,9 @@ export function buildBuyerCriteriaLines(analysis: unknown): string[] {
     addLine(lines, seen, "Budsjett", `${currency} ${formatNumber(budget.amount)}`);
   }
 
-  const locations = record(root.locations);
-  if (Array.isArray(locations.preferred) && locations.preferred.length > 0) {
-    addLine(lines, seen, "Område", locations.preferred.map(String).filter(Boolean).join(", "));
+  const locations = preferredLocations(root);
+  if (locations.length > 0) {
+    addLine(lines, seen, "Område", locations.join(", "));
   }
 
   if (Array.isArray(root.propertyTypes) && root.propertyTypes.length > 0) {
@@ -97,6 +129,38 @@ export function buildCriteriaConfirmationEmail(input: {
   const firstName = String(input.customerName || "").trim().split(/\s+/)[0] || "";
   const greeting = firstName ? `Hei ${firstName},` : "Hei,";
   const criteriaLines = buildBuyerCriteriaLines(input.analysis);
+  const locations = preferredLocations(input.analysis);
+  const hasOnlyBroadLocations = locations.length > 0 && locations.every(isBroadBuyerLocation);
+
+  if (hasOnlyBroadLocations) {
+    const nonLocationCriteria = criteriaLines.filter((line) => !line.startsWith("Område:"));
+    const knownBlock = nonLocationCriteria.length
+      ? ["Så langt har jeg notert:", ...nonLocationCriteria.map((line) => `– ${line}`), ""]
+      : [];
+
+    return {
+      mode: "location_clarification" as const,
+      requiresConfirmation: false,
+      subject: "Hvilket område i Spania er mest aktuelt?",
+      bodyText: [
+        greeting,
+        "",
+        "Takk for informasjonen. Jeg har notert at du ser etter bolig i Spania.",
+        "",
+        "For at jeg skal kunne finne boliger som faktisk er relevante for deg, trenger jeg å snevre inn søket litt.",
+        "",
+        ...knownBlock,
+        "Hvilke områder eller byer er mest aktuelle for deg? Du kan gjerne svare med ett eller flere steder.",
+        "",
+        "Hvis du ikke har bestemt deg ennå, kan du også skrive hva som er viktigst for deg – for eksempel strand, rolig område, byliv, utsikt eller avstand til flyplass. Da kan jeg foreslå områder som passer bedre.",
+        "",
+        "Vennlig hilsen",
+        "Freddy",
+      ].join("\n"),
+      criteriaLines,
+      confirmationContextText: "",
+    };
+  }
 
   const criteriaBlock = criteriaLines.length > 0
     ? criteriaLines.map((line) => `– ${line}`).join("\n")
@@ -118,6 +182,8 @@ export function buildCriteriaConfirmationEmail(input: {
   ].join("\n");
 
   return {
+    mode: "confirmation" as const,
+    requiresConfirmation: true,
     subject: "Kan du bekrefte søkekriteriene dine?",
     bodyText,
     criteriaLines,
@@ -187,14 +253,16 @@ export async function sendBuyerCriteriaConfirmation(
   const currentMetadata = record(reviewLookup.data?.metadata);
   const nextMetadata = {
     ...currentMetadata,
-    confirmation_pending: sent.success,
-    confirmation_requested_at: sent.success ? now : null,
+    confirmation_pending: sent.success && email.requiresConfirmation,
+    confirmation_requested_at: sent.success && email.requiresConfirmation ? now : null,
+    criteria_clarification_requested_at: sent.success && !email.requiresConfirmation ? now : null,
     confirmation_message_id: sent.messageId || null,
     confirmation_recipient: recipient,
     confirmation_source_email_message_id: input.sourceEmailMessageId,
     confirmation_source_work_item_id: input.sourceWorkItemId,
     confirmation_criteria_lines: email.criteriaLines,
     confirmation_context_text: email.confirmationContextText,
+    confirmation_message_mode: email.mode,
     confirmation_send_status: sent.success ? "sent" : (sent.skipped ? "skipped" : "failed"),
     confirmation_send_error: sent.success ? null : sent.error || null,
     performed_by: "Nexus Criteria Confirmation Autopilot",
@@ -207,6 +275,13 @@ export async function sendBuyerCriteriaConfirmation(
   if (update.error) throw update.error;
 
   return sent.success
-    ? { sent: true as const, skipped: false as const, messageId: sent.messageId || null, criteriaLines: email.criteriaLines }
+    ? {
+        sent: true as const,
+        skipped: false as const,
+        messageId: sent.messageId || null,
+        criteriaLines: email.criteriaLines,
+        mode: email.mode,
+        requiresConfirmation: email.requiresConfirmation,
+      }
     : { sent: false as const, skipped: Boolean(sent.skipped), reason: sent.error || "send_failed" };
 }
