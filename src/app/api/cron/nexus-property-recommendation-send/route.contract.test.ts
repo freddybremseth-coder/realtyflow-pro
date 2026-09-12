@@ -23,10 +23,14 @@ test("sender re-runs fresh preflight and uses durable exactly-once receipts", ()
   assert.match(sender, /Automatic retry is blocked/i);
 });
 
-test("sender uses CRM-aware brand mailer and the rich property template", () => {
-  assert.match(sender, /buildPropertyRecommendationTemplate/);
+test("sender sends the exact approved rich draft through the CRM-aware brand mailer", () => {
+  assert.match(sender, /buildLeadCustomerPresentationPreview/);
+  assert.match(sender, /property_recommendation_template_version/);
+  assert.match(sender, /matched-property-rich-v1/);
+  assert.match(sender, /approvedSubject/);
+  assert.match(sender, /approvedBodyText/);
+  assert.match(sender, /approvedBodyHtml/);
   assert.match(sender, /sendBrandEmail/);
-  assert.match(sender, /propertyCount < 1/);
   assert.match(template, /Se bilder og alle boligdetaljer/);
   assert.match(template, /Hvorfor den matcher/);
   assert.match(template, /Området|Om /);
