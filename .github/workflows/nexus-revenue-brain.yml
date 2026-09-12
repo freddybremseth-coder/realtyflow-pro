@@ -5,8 +5,11 @@ on:
     paths:
       - "src/lib/nexus/revenue-brain.ts"
       - "src/lib/nexus/revenue-brain.test.ts"
+      - "src/lib/nexus/action-policy-registry.ts"
+      - "src/lib/nexus/action-policy-registry.test.ts"
       - "src/app/api/revenue/executive-briefing/route.ts"
       - "docs/nexus-ai-operating-system-roadmap.md"
+      - "docs/nexus/NEXUS_ACTION_POLICY_REGISTRY_V1.md"
       - ".github/workflows/nexus-revenue-brain.yml"
   push:
     branches:
@@ -14,8 +17,11 @@ on:
     paths:
       - "src/lib/nexus/revenue-brain.ts"
       - "src/lib/nexus/revenue-brain.test.ts"
+      - "src/lib/nexus/action-policy-registry.ts"
+      - "src/lib/nexus/action-policy-registry.test.ts"
       - "src/app/api/revenue/executive-briefing/route.ts"
       - "docs/nexus-ai-operating-system-roadmap.md"
+      - "docs/nexus/NEXUS_ACTION_POLICY_REGISTRY_V1.md"
 
 jobs:
   test:
@@ -31,5 +37,5 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --silent
-      - name: Revenue Brain tests
-        run: npx tsx --test src/lib/nexus/revenue-brain.test.ts
+      - name: Revenue Brain and policy registry tests
+        run: npx tsx --test src/lib/nexus/action-policy-registry.test.ts src/lib/nexus/revenue-brain.test.ts
