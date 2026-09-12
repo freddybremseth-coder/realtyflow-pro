@@ -11,12 +11,17 @@ import {
 } from "@/services/lead-intelligence/feature-flags";
 import { isLeadIntelligenceRealEstateBrand } from "@/services/lead-intelligence/brand-allowlist";
 import { withLeadIntelligenceQuery } from "@/services/lead-intelligence/server-runtime";
+import {
+  rankMatchesWithCustomerTaste,
+  type CustomerTasteProfileV1,
+} from "@/lib/nexus/customer-taste-profile";
 
 export type InboundPreparedPropertyMatch = {
   prepared: boolean;
   reason: string;
   analyzed: number;
   matched: number;
+  tasteApplied: boolean;
   properties: Array<{
     id: string;
     reference: string | null;
@@ -25,6 +30,10 @@ export type InboundPreparedPropertyMatch = {
     propertyType: string | null;
     price: number | null;
     publicUrl: string | null;
+    baseScore: number;
+    tasteAdjustment: number;
+    tasteAdjustedScore: number;
+    tasteReasons: string[];
   }>;
 };
 
@@ -33,6 +42,7 @@ const skipped = (reason: string): InboundPreparedPropertyMatch => ({
   reason,
   analyzed: 0,
   matched: 0,
+  tasteApplied: false,
   properties: [],
 });
 
@@ -40,6 +50,7 @@ export async function prepareInboundPropertyMatches(input: {
   brandId: string;
   buyerProfileId: string | null;
   buyerProfileStatus: string | null;
+  tasteProfile?: CustomerTasteProfileV1 | null;
 }): Promise<InboundPreparedPropertyMatch> {
   if (!input.buyerProfileId || input.buyerProfileStatus !== "APPROVED") return skipped("BUYER_PROFILE_NOT_APPROVED");
   if (!isLeadIntelligenceRealEstateBrand(input.brandId)) return skipped("BRAND_NOT_SUPPORTED");
@@ -63,19 +74,26 @@ export async function prepareInboundPropertyMatches(input: {
         propertyReferences: [],
         autoDiscover: true,
         candidateLimit: 120,
-        maxResults: 5,
+        maxResults: 20,
       },
       profile,
       (brand, _refs) => loadCandidatePropertiesFromSupabase(brand, profile, 120),
     );
     const guarded = applyLeadPropertyLocationGuard(result, profile);
+    const ranked = rankMatchesWithCustomerTaste(
+      guarded.matches,
+      input.tasteProfile,
+      { budgetAmount: profile.budget.amount },
+    );
+    const tasteApplied = ranked.some((match) => match.tasteAdjustment !== 0);
 
     return {
       prepared: true,
-      reason: guarded.matches.length > 0 ? "MATCHES_READY" : "NO_MATCHES_FOUND",
+      reason: ranked.length > 0 ? "MATCHES_READY" : "NO_MATCHES_FOUND",
       analyzed: guarded.analyzed,
       matched: guarded.matched,
-      properties: guarded.matches.slice(0, 5).map((match) => ({
+      tasteApplied,
+      properties: ranked.slice(0, 5).map((match) => ({
         id: match.property.id,
         reference: match.property.reference,
         title: match.property.title,
@@ -83,6 +101,10 @@ export async function prepareInboundPropertyMatches(input: {
         propertyType: match.property.propertyType,
         price: match.property.price,
         publicUrl: match.property.publicUrl,
+        baseScore: match.score,
+        tasteAdjustment: match.tasteAdjustment,
+        tasteAdjustedScore: match.tasteAdjustedScore,
+        tasteReasons: match.tasteReasons,
       })),
     };
   } catch (error) {
