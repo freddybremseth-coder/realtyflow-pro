@@ -5,7 +5,7 @@ import { buildLeadCustomerPresentationPreview } from "@/services/lead-intelligen
 import { sendBrandEmail } from "@/services/email/send-brand-email";
 
 export type PropertyRecommendationSendResult =
-  | { sent: true; duplicate: boolean; messageId: string | null; receiptId: string; propertyCount: number }
+  | { sent: true; duplicate: boolean; messageId: string | null; receiptId: string | null; propertyCount: number }
   | { sent: false; duplicate: boolean; blocked: boolean; reason: string; blockers?: string[]; receiptId?: string | null };
 
 function record(value: unknown): Record<string, unknown> {
