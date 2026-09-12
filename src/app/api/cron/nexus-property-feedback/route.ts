@@ -11,7 +11,6 @@ import { analyzePropertyRecommendationReply } from "@/services/email/property-re
 export const maxDuration = 300;
 const PATH = "/api/cron/nexus-property-feedback";
 const ACTOR = "Nexus Property Feedback";
-const OPEN_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,7 +20,12 @@ function getSupabase() {
 }
 
 function text(value: unknown) { return String(value || "").trim(); }
-function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+
+function feedbackClassification(analysis: ReturnType<typeof analyzePropertyRecommendationReply>) {
+  if (analysis.signals.some((signal) => signal.sentiment === "viewing")) return "viewing_request";
+  if (analysis.requiresBuyerProfileReview) return "update_preferences";
+  return "property_interest";
+}
 
 async function recordPropertyFeedbackRevenueEvents(supabase: any, input: {
   emailMessageId: string;
@@ -94,10 +98,9 @@ async function ensureFeedbackWorkItem(supabase: any, input: {
 }) {
   const sourceId = `${input.emailMessageId}:property-feedback`;
   const existing = await supabase.from("work_items")
-    .select("id")
+    .select("id,status")
     .eq("source_type", "crm")
     .eq("source_id", sourceId)
-    .in("status", OPEN_STATUSES)
     .limit(1)
     .maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
@@ -107,7 +110,7 @@ async function ensureFeedbackWorkItem(supabase: any, input: {
   const positive = input.analysis.signals.filter((signal) => signal.sentiment === "positive");
   const now = new Date().toISOString();
   const profileNeedsReview = input.analysis.requiresBuyerProfileReview;
-  const classification = viewing ? "viewing_request" : profileNeedsReview ? "update_preferences" : "property_interest";
+  const classification = feedbackClassification(input.analysis);
   const safeProfileStatus = profileNeedsReview ? "REVIEW_REQUIRED" : input.buyerProfileStatus;
   const nextAction = viewing
     ? "Kunden ønsker visning på en konkret bolig. Verifiser tilgjengelighet og avtal visning raskt."
@@ -173,7 +176,7 @@ export async function GET(request: NextRequest) {
     .limit(150);
   if (inbound.error) return NextResponse.json({ error: inbound.error.message }, { status: 500 });
 
-  let considered = 0, analyzed = 0, signaled = 0, workCreated = 0, revenueEventsRecorded = 0, failed = 0;
+  let considered = 0, analyzed = 0, signaled = 0, workCreated = 0, revenueEventsRecorded = 0, repeated = 0, failed = 0;
 
   for (const message of inbound.data || []) {
     const brandId = text(message.brand_id);
@@ -233,37 +236,43 @@ export async function GET(request: NextRequest) {
 
       const interactionId = `property-feedback-${message.id}`;
       const existingInteractions = Array.isArray(contact.interactions) ? contact.interactions : [];
-      const interaction = {
-        id: interactionId,
-        type: "property_feedback",
-        content: [
-          `Kundefeedback på boligforslag: ${analysis.latestReply.slice(0, 800)}`,
-          ...analysis.signals.map((signal) => `#${signal.ordinal} ${signal.reference || signal.title}: ${signal.sentiment}${signal.reasons.length ? ` (${signal.reasons.join(", ")})` : ""}`),
-          analysis.explicitCriteriaEvidence.length ? `Eksplisitte kriteriesignaler: ${analysis.explicitCriteriaEvidence.join(" | ")}` : "",
-        ].filter(Boolean).join("\n"),
-        date: new Date().toISOString(),
-        direction: "in",
-        brand_id: brandId,
-        metadata: {
-          source: "nexus-property-feedback",
-          performed_by: ACTOR,
-          actor_type: "automation",
-          email_message_id: message.id,
-          presentation_id: presentation.data.id,
-          signals: analysis.signals,
-          requires_buyer_profile_review: analysis.requiresBuyerProfileReview,
-          should_rematch: analysis.shouldRematch,
-        },
-      };
-      const deduped = existingInteractions.filter((item: any) => text(item?.id) !== interactionId);
-      const contactUpdate = await supabase.from("contacts").update({
-        interactions: [interaction, ...deduped].slice(0, 250),
-        nurture_status: "paused",
-        last_inbound_reply_at: message.received_at || new Date().toISOString(),
-        last_reply_classification: analysis.signals.some((signal) => signal.sentiment === "viewing") ? "viewing_request" : "property_interest",
-        updated_at: new Date().toISOString(),
-      }).eq("id", contact.id);
-      if (contactUpdate.error) throw new Error(contactUpdate.error.message);
+      const alreadyRecorded = existingInteractions.some((item: any) => text(item?.id) === interactionId);
+      const classification = feedbackClassification(analysis);
+
+      if (!alreadyRecorded) {
+        const interaction = {
+          id: interactionId,
+          type: "property_feedback",
+          content: [
+            `Kundefeedback på boligforslag: ${analysis.latestReply.slice(0, 800)}`,
+            ...analysis.signals.map((signal) => `#${signal.ordinal} ${signal.reference || signal.title}: ${signal.sentiment}${signal.reasons.length ? ` (${signal.reasons.join(", ")})` : ""}`),
+            analysis.explicitCriteriaEvidence.length ? `Eksplisitte kriteriesignaler: ${analysis.explicitCriteriaEvidence.join(" | ")}` : "",
+          ].filter(Boolean).join("\n"),
+          date: new Date().toISOString(),
+          direction: "in",
+          brand_id: brandId,
+          metadata: {
+            source: "nexus-property-feedback",
+            performed_by: ACTOR,
+            actor_type: "automation",
+            email_message_id: message.id,
+            presentation_id: presentation.data.id,
+            signals: analysis.signals,
+            requires_buyer_profile_review: analysis.requiresBuyerProfileReview,
+            should_rematch: analysis.shouldRematch,
+          },
+        };
+        const contactUpdate = await supabase.from("contacts").update({
+          interactions: [interaction, ...existingInteractions].slice(0, 250),
+          nurture_status: "paused",
+          last_inbound_reply_at: message.received_at || new Date().toISOString(),
+          last_reply_classification: classification,
+          updated_at: new Date().toISOString(),
+        }).eq("id", contact.id);
+        if (contactUpdate.error) throw new Error(contactUpdate.error.message);
+      } else {
+        repeated += 1;
+      }
 
       revenueEventsRecorded += await recordPropertyFeedbackRevenueEvents(supabase, {
         emailMessageId: String(message.id),
@@ -295,8 +304,8 @@ export async function GET(request: NextRequest) {
     action: "nexus_property_feedback",
     agent_name: "nexus_property_feedback",
     status: failed ? (signaled ? "partial" : "failed") : "success",
-    details: { considered, analyzed, signaled, work_created: workCreated, revenue_events_recorded: revenueEventsRecorded, failed, runtime_control: `cron:${PATH}`, buyer_profile_auto_mutation: false },
+    details: { considered, analyzed, signaled, work_created: workCreated, revenue_events_recorded: revenueEventsRecorded, repeated, failed, runtime_control: `cron:${PATH}`, buyer_profile_auto_mutation: false },
   }).then(() => {}).then(undefined, () => {});
 
-  return NextResponse.json({ success: true, considered, analyzed, signaled, workCreated, revenueEventsRecorded, failed });
+  return NextResponse.json({ success: true, considered, analyzed, signaled, workCreated, revenueEventsRecorded, repeated, failed });
 }
