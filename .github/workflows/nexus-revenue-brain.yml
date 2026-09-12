@@ -7,9 +7,15 @@ on:
       - "src/lib/nexus/revenue-brain.test.ts"
       - "src/lib/nexus/action-policy-registry.ts"
       - "src/lib/nexus/action-policy-registry.test.ts"
+      - "src/lib/nexus/outcome-measurement.ts"
+      - "src/lib/nexus/outcome-measurement.test.ts"
       - "src/app/api/revenue/executive-briefing/route.ts"
+      - "src/app/api/nexus/outcome-measurement/route.ts"
+      - "src/app/api/cron/nexus-outcome-snapshot/route.ts"
+      - "vercel.json"
       - "docs/nexus-ai-operating-system-roadmap.md"
       - "docs/nexus/NEXUS_ACTION_POLICY_REGISTRY_V1.md"
+      - "docs/nexus/NEXUS_OUTCOME_MEASUREMENT_V1.md"
       - ".github/workflows/nexus-revenue-brain.yml"
   push:
     branches:
@@ -19,9 +25,15 @@ on:
       - "src/lib/nexus/revenue-brain.test.ts"
       - "src/lib/nexus/action-policy-registry.ts"
       - "src/lib/nexus/action-policy-registry.test.ts"
+      - "src/lib/nexus/outcome-measurement.ts"
+      - "src/lib/nexus/outcome-measurement.test.ts"
       - "src/app/api/revenue/executive-briefing/route.ts"
+      - "src/app/api/nexus/outcome-measurement/route.ts"
+      - "src/app/api/cron/nexus-outcome-snapshot/route.ts"
+      - "vercel.json"
       - "docs/nexus-ai-operating-system-roadmap.md"
       - "docs/nexus/NEXUS_ACTION_POLICY_REGISTRY_V1.md"
+      - "docs/nexus/NEXUS_OUTCOME_MEASUREMENT_V1.md"
 
 jobs:
   test:
@@ -37,5 +49,5 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --silent
-      - name: Revenue Brain and policy registry tests
-        run: npx tsx --test src/lib/nexus/action-policy-registry.test.ts src/lib/nexus/revenue-brain.test.ts
+      - name: Revenue Brain, policy registry and outcome measurement tests
+        run: npx tsx --test src/lib/nexus/action-policy-registry.test.ts src/lib/nexus/revenue-brain.test.ts src/lib/nexus/outcome-measurement.test.ts
