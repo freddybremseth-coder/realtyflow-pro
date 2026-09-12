@@ -11,6 +11,7 @@ export type NexusActionType =
   | "criteria_clarification_email"
   | "general_customer_message"
   | "property_recommendation_send"
+  | "property_recommendation_send_preapproved"
   | "viewing_booking"
   | "ambiguous_criteria_change"
   | "closing_decision"
@@ -38,7 +39,8 @@ const POLICIES: Record<NexusActionType, NexusActionPolicy> = {
   presentation_draft_prepare: { actionType: "presentation_draft_prepare", policyClass: "AUTO_SAFE", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "Presentation and message drafts may be prepared automatically but are not customer sends." },
   criteria_clarification_email: { actionType: "criteria_clarification_email", policyClass: "AUTO_SAFE", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "This narrowly authorized customer email may ask only for missing buyer criteria and must pass suppression, brand and send-safety checks." },
   general_customer_message: { actionType: "general_customer_message", policyClass: "DRAFT_ONLY", reversible: true, customerFacing: true, sideEffect: false, requiresFreshSafetyCheck: true, reason: "Nexus may draft general customer communication, but sending requires a separate explicit policy or human approval." },
-  property_recommendation_send: { actionType: "property_recommendation_send", policyClass: "HUMAN_REQUIRED", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "Sending property recommendations is commercially meaningful and remains behind explicit human send approval." },
+  property_recommendation_send: { actionType: "property_recommendation_send", policyClass: "HUMAN_REQUIRED", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "A generic property recommendation send remains human-required unless the exact preapproved matched-property flow is used." },
+  property_recommendation_send_preapproved: { actionType: "property_recommendation_send_preapproved", policyClass: "AUTO_SAFE", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "A matched-property recommendation may send automatically only after explicit final presentation approval, client-ready property review, fresh send-preflight, CRM suppression checks, verified public links and an exactly-once durable send receipt." },
   viewing_booking: { actionType: "viewing_booking", policyClass: "HUMAN_REQUIRED", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "Viewing bookings create external commitments and require explicit human confirmation under the current policy." },
   ambiguous_criteria_change: { actionType: "ambiguous_criteria_change", policyClass: "HUMAN_REQUIRED", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "Ambiguous customer language must be interpreted by a human rather than guessed by Nexus." },
   closing_decision: { actionType: "closing_decision", policyClass: "HUMAN_REQUIRED", reversible: false, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: true, reason: "Closing decisions can affect contracts, money and legal obligations." },
