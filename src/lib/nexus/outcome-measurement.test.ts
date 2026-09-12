@@ -28,25 +28,9 @@ function recommendation(overrides: Record<string, unknown> = {}) {
 test("attributes later outcomes to the same contact within the configured window", () => {
   const result = measureRevenueBrainOutcomes([
     recommendation(),
-    {
-      id: "reply",
-      event_type: "email_received",
-      contact_id: "contact-1",
-      occurred_at: "2026-09-01T10:00:00.000Z",
-    },
-    {
-      id: "viewing",
-      event_type: "viewing_scheduled",
-      contact_id: "contact-1",
-      occurred_at: "2026-09-02T08:00:00.000Z",
-    },
-    {
-      id: "offer",
-      event_type: "offer_made",
-      contact_id: "contact-1",
-      occurred_at: "2026-09-05T08:00:00.000Z",
-      revenue_impact_eur: 2500,
-    },
+    { id: "reply", event_type: "email_received", contact_id: "contact-1", occurred_at: "2026-09-01T10:00:00.000Z" },
+    { id: "viewing", event_type: "viewing_scheduled", contact_id: "contact-1", occurred_at: "2026-09-02T08:00:00.000Z" },
+    { id: "offer", event_type: "offer_made", contact_id: "contact-1", occurred_at: "2026-09-05T08:00:00.000Z", revenue_impact_eur: 2500 },
   ], { now });
 
   assert.equal(result.summary.recommendations, 1);
@@ -63,16 +47,8 @@ test("attributes later outcomes to the same contact within the configured window
 test("does not attribute another contact or an outcome outside the time window", () => {
   const result = measureRevenueBrainOutcomes([
     recommendation(),
-    {
-      event_type: "deal_won",
-      contact_id: "contact-2",
-      occurred_at: "2026-09-02T08:00:00.000Z",
-    },
-    {
-      event_type: "deal_won",
-      contact_id: "contact-1",
-      occurred_at: "2026-10-15T08:00:00.000Z",
-    },
+    { event_type: "deal_won", contact_id: "contact-2", occurred_at: "2026-09-02T08:00:00.000Z" },
+    { event_type: "deal_won", contact_id: "contact-1", occurred_at: "2026-10-15T08:00:00.000Z" },
   ], { now, attributionWindowDays: 30 });
 
   assert.equal(result.summary.withOutcome, 0);
@@ -130,6 +106,8 @@ test("records Revenue Brain recommendations as idempotent measurement events", a
     actions: [{
       id: "action-1",
       rank: 1,
+      baseOpportunityScore: 83,
+      learningAdjustment: 5,
       opportunityScore: 88,
       priority: "HIGH",
       source: "today",
@@ -154,6 +132,7 @@ test("records Revenue Brain recommendations as idempotent measurement events", a
       autoSafe: 0,
       wait: 0,
       forbidden: 0,
+      learningAdjusted: 1,
       representedValueEur: 12000,
     },
     safety: {
@@ -164,6 +143,8 @@ test("records Revenue Brain recommendations as idempotent measurement events", a
       automaticCriteriaChanges: false,
       explicitPolicyRequiredForFutureAutonomy: true,
       policyRegistryEnforced: true,
+      outcomeLearningRankingOnly: true,
+      outcomeLearningCanChangePolicy: false,
     },
   };
 
