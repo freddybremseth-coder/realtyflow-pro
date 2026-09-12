@@ -1,0 +1,1 @@
+Communication Learning v1 adds bounded learning for send-hour, weekday and message length on top of the existing tone/language/intent loop. Timing evidence is exposed as recommendation-only and cannot trigger customer sends or policy changes.
