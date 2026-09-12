@@ -109,6 +109,13 @@ function sentimentForChunk(chunk: string): { sentiment: PropertyFeedbackSentimen
   return { sentiment: null, reasons: [], confidence: 0 };
 }
 
+function canCarryForwardReference(chunk: string, sentiment: PropertyFeedbackSentiment | null) {
+  if (sentiment !== "viewing" && sentiment !== "question") return false;
+  const text = normalize(chunk);
+  return /\b(den|denne|boligen|eiendommen|property|it|this one|that one)\b/i.test(text)
+    || /\b(kan vi se|se boligen|se denne|view it|see the property|see this one)\b/i.test(text);
+}
+
 function explicitCriteriaEvidence(text: string) {
   const evidence: string[] = [];
   const patterns = [
@@ -131,12 +138,24 @@ export function analyzePropertyRecommendationReply(input: {
   const latestReply = extractLatestReplyText(input.body) || String(input.subject || "").trim();
   const properties = input.properties || [];
   const signals: PropertyFeedbackSignal[] = [];
+  let lastExplicitRefs: number[] = [];
 
   for (const chunk of chunks(latestReply)) {
-    const refs = referencesForChunk(chunk, properties);
-    if (!refs.length) continue;
+    const explicitRefs = referencesForChunk(chunk, properties);
     const assessment = sentimentForChunk(chunk);
-    if (!assessment.sentiment) continue;
+    if (!assessment.sentiment) {
+      if (explicitRefs.length) lastExplicitRefs = explicitRefs;
+      continue;
+    }
+
+    const refs = explicitRefs.length
+      ? explicitRefs
+      : lastExplicitRefs.length === 1 && canCarryForwardReference(chunk, assessment.sentiment)
+        ? lastExplicitRefs
+        : [];
+    if (!refs.length) continue;
+    if (explicitRefs.length) lastExplicitRefs = explicitRefs;
+
     for (const ordinal of refs) {
       const property = properties[ordinal - 1];
       if (!property) continue;
@@ -149,7 +168,7 @@ export function analyzePropertyRecommendationReply(input: {
         sentiment: assessment.sentiment,
         reasons: assessment.reasons,
         evidence: chunk.slice(0, 500),
-        confidence: assessment.confidence,
+        confidence: explicitRefs.length ? assessment.confidence : Math.min(0.95, assessment.confidence),
       });
     }
   }
