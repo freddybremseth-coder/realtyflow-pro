@@ -6,7 +6,6 @@
  */
 
 import { saveTokens, upsertChannel } from "./channels";
-import { createServerClient } from "@/lib/supabase/server";
 
 export interface YouTubeChannelInfo {
   id: string;
@@ -93,11 +92,11 @@ export async function listYouTubeChannels(accessToken: string): Promise<YouTubeC
 }
 
 /**
- * Finalize a single Google channel: upsert the social_channels row, save
- * encrypted tokens, and (legacy compat) mirror the refresh token into
- * brand_settings.settings.youtube_refresh_token so the existing token-walker
- * in src/services/integrations/youtube-client.ts keeps finding it during
- * the Phase 4 transition.
+ * Finalize one Google channel into the canonical connection store only.
+ * `social_channels + oauth_tokens` is the source of truth for YouTube and
+ * Google Drive. We intentionally no longer mirror refresh tokens into
+ * `brand_settings`; dual-write allowed stale or cross-brand legacy tokens to
+ * survive after the canonical channel binding had changed.
  */
 export async function finalizeGoogleChannel(input: {
   brandId: string;
@@ -127,34 +126,4 @@ export async function finalizeGoogleChannel(input: {
     expiresAt: input.expiresAt,
     scopes: input.scopes,
   });
-
-  if (input.platform === "youtube") {
-    await mirrorYoutubeRefreshTokenToBrandSettings(input.brandId, input.refreshToken);
-  }
-}
-
-async function mirrorYoutubeRefreshTokenToBrandSettings(
-  brandId: string,
-  refreshToken: string,
-): Promise<void> {
-  try {
-    const supabase = createServerClient();
-    const { data: existing } = await supabase
-      .from("brand_settings")
-      .select("settings")
-      .eq("brand_id", brandId)
-      .maybeSingle();
-    const merged = {
-      ...((existing?.settings as Record<string, unknown> | undefined) || {}),
-      youtube_refresh_token: refreshToken,
-    };
-    await supabase.from("brand_settings").upsert(
-      { brand_id: brandId, settings: merged, updated_at: new Date().toISOString() },
-      { onConflict: "brand_id" },
-    );
-  } catch (err) {
-    // Non-fatal — the new oauth_tokens row is the source of truth. The
-    // legacy mirror is purely a transition aid.
-    console.warn("[Google OAuth] Legacy brand_settings mirror failed (non-fatal):", err);
-  }
 }
