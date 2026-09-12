@@ -9,6 +9,7 @@ on:
       - "src/app/api/cron/nexus-no-match-followup/**"
       - "src/app/api/cron/nexus-send-preflight/**"
       - "src/app/api/cron/nexus-property-recommendation-send/**"
+      - "src/app/api/cron/nexus-property-feedback/**"
       - "src/app/api/nexus/shortlist-reviews/**"
       - "src/app/api/nexus/no-match-reviews/**"
       - "src/app/api/nexus/presentation-reviews/**"
@@ -27,6 +28,8 @@ on:
       - "src/services/email/property-recommendation-template.ts"
       - "src/services/email/property-recommendation-template.test.ts"
       - "src/services/email/property-recommendation-send.ts"
+      - "src/services/email/property-recommendation-reply.ts"
+      - "src/services/email/property-recommendation-reply.test.ts"
       - "src/services/lead-intelligence/presentation.ts"
       - "supabase/migrations/*property_recommendation_send_receipts*.sql"
       - "vercel.json"
@@ -41,6 +44,7 @@ on:
       - "src/app/api/cron/nexus-no-match-followup/**"
       - "src/app/api/cron/nexus-send-preflight/**"
       - "src/app/api/cron/nexus-property-recommendation-send/**"
+      - "src/app/api/cron/nexus-property-feedback/**"
       - "src/app/api/nexus/shortlist-reviews/**"
       - "src/app/api/nexus/no-match-reviews/**"
       - "src/app/api/nexus/presentation-reviews/**"
@@ -59,6 +63,8 @@ on:
       - "src/services/email/property-recommendation-template.ts"
       - "src/services/email/property-recommendation-template.test.ts"
       - "src/services/email/property-recommendation-send.ts"
+      - "src/services/email/property-recommendation-reply.ts"
+      - "src/services/email/property-recommendation-reply.test.ts"
       - "src/services/lead-intelligence/presentation.ts"
       - "supabase/migrations/*property_recommendation_send_receipts*.sql"
       - "vercel.json"
@@ -78,4 +84,4 @@ jobs:
       - name: Install dependencies
         run: npm ci --silent
       - name: Nexus sales autopilot tests
-        run: npx tsx --test src/app/api/cron/nexus-shortlist-prep/route.contract.test.ts src/app/api/cron/nexus-presentation-prep/route.contract.test.ts src/app/api/cron/nexus-no-match-followup/route.contract.test.ts src/app/api/cron/nexus-send-preflight/route.contract.test.ts src/app/api/cron/nexus-property-recommendation-send/route.contract.test.ts src/app/api/nexus/shortlist-reviews/route.contract.test.ts src/app/api/nexus/no-match-reviews/route.contract.test.ts src/app/api/nexus/presentation-reviews/route.contract.test.ts src/lib/nexus/action-policy-registry.test.ts src/lib/nexus-inbox.test.ts src/services/email/inbound-buyer-profile-autopilot.test.ts src/services/email/no-match-clarification.test.ts src/services/email/nexus-send-preflight.test.ts src/services/email/property-recommendation-template.test.ts src/services/lead-intelligence/presentation.test.ts
+        run: npx tsx --test src/app/api/cron/nexus-shortlist-prep/route.contract.test.ts src/app/api/cron/nexus-presentation-prep/route.contract.test.ts src/app/api/cron/nexus-no-match-followup/route.contract.test.ts src/app/api/cron/nexus-send-preflight/route.contract.test.ts src/app/api/cron/nexus-property-recommendation-send/route.contract.test.ts src/app/api/cron/nexus-property-feedback/route.contract.test.ts src/app/api/nexus/shortlist-reviews/route.contract.test.ts src/app/api/nexus/no-match-reviews/route.contract.test.ts src/app/api/nexus/presentation-reviews/route.contract.test.ts src/lib/nexus/action-policy-registry.test.ts src/lib/nexus-inbox.test.ts src/services/email/inbound-buyer-profile-autopilot.test.ts src/services/email/no-match-clarification.test.ts src/services/email/nexus-send-preflight.test.ts src/services/email/property-recommendation-template.test.ts src/services/email/property-recommendation-reply.test.ts src/services/lead-intelligence/presentation.test.ts
