@@ -37,7 +37,7 @@ function command(actions: RevenueCommandCenter["topActions"]): RevenueCommandCen
   };
 }
 
-test("Revenue Brain ranks commercial urgency but remains read-only", () => {
+test("Revenue Brain ranks commercial urgency and delegates policy to the registry", () => {
   const brain = buildRevenueBrain(command([
     {
       id: "followup-1",
@@ -68,7 +68,9 @@ test("Revenue Brain ranks commercial urgency but remains read-only", () => {
   assert.equal(brain.mode, "READ_ONLY_V1");
   assert.equal(brain.actions[0]?.id, "closing-1");
   assert.equal(brain.actions[0]?.policyClass, "HUMAN_REQUIRED");
+  assert.equal(brain.actions[0]?.policyActionType, "closing_decision");
   assert.equal(brain.actions[1]?.policyClass, "DRAFT_ONLY");
+  assert.equal(brain.actions[1]?.policyActionType, "general_customer_message");
   assert.equal(brain.actions.every((item) => item.automaticExecutionAllowed === false), true);
   assert.deepEqual(brain.safety, {
     readOnly: true,
@@ -77,6 +79,7 @@ test("Revenue Brain ranks commercial urgency but remains read-only", () => {
     automaticApproval: false,
     automaticCriteriaChanges: false,
     explicitPolicyRequiredForFutureAutonomy: true,
+    policyRegistryEnforced: true,
   });
 });
 
@@ -114,7 +117,7 @@ test("Revenue Brain deduplicates multiple opportunities for the same contact", (
   assert.equal(brain.summary.ranked, 1);
 });
 
-test("Revenue Brain limits output and includes explainable rationale", () => {
+test("Revenue Brain limits output and includes explainable policy rationale", () => {
   const actions = Array.from({ length: 15 }, (_, index) => ({
     id: `recovery-${index}`,
     source: "recovery" as const,
@@ -133,5 +136,7 @@ test("Revenue Brain limits output and includes explainable rationale", () => {
   assert.equal(brain.actions[0]?.rank, 1);
   assert.equal(brain.actions[4]?.rank, 5);
   assert.equal(brain.actions.every((item) => item.rationale.some((line) => line.includes("Revenue Brain-score"))), true);
+  assert.equal(brain.actions.every((item) => item.rationale.some((line) => line.startsWith("Policy:"))), true);
   assert.equal(brain.summary.autoSafe, 0);
+  assert.equal(brain.summary.forbidden, 0);
 });
