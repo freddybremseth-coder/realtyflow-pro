@@ -1,6 +1,11 @@
 import type { CommandAction, RevenueCommandCenter } from "@/lib/revenue/command";
+import {
+  policyForRevenueAction,
+  type NexusActionPolicyClass,
+  type NexusActionType,
+} from "@/lib/nexus/action-policy-registry";
 
-export type RevenueBrainPolicyClass = "HUMAN_REQUIRED" | "DRAFT_ONLY" | "AUTO_SAFE" | "WAIT";
+export type RevenueBrainPolicyClass = NexusActionPolicyClass;
 
 export interface RevenueBrainAction {
   id: string;
@@ -15,6 +20,8 @@ export interface RevenueBrainAction {
   contactId: string | null;
   expectedValueEur: number;
   policyClass: RevenueBrainPolicyClass;
+  policyActionType: NexusActionType;
+  policyReason: string;
   rationale: string[];
   automaticExecutionAllowed: false;
 }
@@ -31,6 +38,7 @@ export interface RevenueBrainSnapshot {
     draftOnly: number;
     autoSafe: number;
     wait: number;
+    forbidden: number;
     representedValueEur: number;
   };
   safety: {
@@ -40,6 +48,7 @@ export interface RevenueBrainSnapshot {
     automaticApproval: false;
     automaticCriteriaChanges: false;
     explicitPolicyRequiredForFutureAutonomy: true;
+    policyRegistryEnforced: true;
   };
 }
 
@@ -59,7 +68,6 @@ function clamp(value: number, min = 0, max = 100) {
 
 function valueSignal(value: number) {
   if (!Number.isFinite(value) || value <= 0) return 0;
-  // Logarithmic so a large deal matters without completely drowning urgency and intent.
   return clamp(Math.log10(value + 1) * 6, 0, 28);
 }
 
@@ -69,28 +77,23 @@ function prioritySignal(priority: CommandAction["priority"]) {
   return 7;
 }
 
-function policyFor(action: CommandAction): RevenueBrainPolicyClass {
-  // V1 deliberately fails closed. These categories often involve customer contact,
-  // money, commercial judgment or approval. Future autonomy must be granted by a
-  // separate explicit policy registry, never inferred from model confidence.
-  if (action.source === "approvals" || action.source === "closing" || action.source === "commissions") {
-    return "HUMAN_REQUIRED";
-  }
-  if (action.source === "today" || action.source === "recovery" || action.source === "service-revenue" || action.source === "after-sales") {
-    return "DRAFT_ONLY";
-  }
-  return "WAIT";
-}
-
-function rationaleFor(action: CommandAction, opportunityScore: number, policyClass: RevenueBrainPolicyClass) {
+function rationaleFor(
+  action: CommandAction,
+  opportunityScore: number,
+  policyClass: RevenueBrainPolicyClass,
+  policyReason: string,
+) {
   const rationale: string[] = [];
   if (action.priority === "CRITICAL") rationale.push("Kilden har klassifisert saken som kritisk.");
   else if (action.priority === "HIGH") rationale.push("Kilden har klassifisert saken som høyt prioritert.");
   if (action.value > 0) rationale.push(`Registrert kommersiell verdi: ca. €${Math.round(action.value).toLocaleString("nb-NO")}.`);
   if (SOURCE_WEIGHT[action.source] >= 10) rationale.push("Arbeidsstrømmen har høy kommersiell eller tidsmessig konsekvens.");
   rationale.push(`Samlet Revenue Brain-score: ${opportunityScore}/100.`);
+  rationale.push(`Policy: ${policyReason}`);
   if (policyClass === "HUMAN_REQUIRED") rationale.push("Handling krever menneskelig beslutning etter gjeldende sikkerhetspolicy.");
-  if (policyClass === "DRAFT_ONLY") rationale.push("Nexus kan senere forberede arbeidet, men V1 utfører ingen kunde- eller CRM-sideeffekt automatisk.");
+  if (policyClass === "DRAFT_ONLY") rationale.push("Nexus kan forberede arbeidet, men utfører ikke kunde- eller kommersiell sideeffekt automatisk.");
+  if (policyClass === "FORBIDDEN") rationale.push("Handlingen er eksplisitt forbudt for autonom utførelse.");
+  if (policyClass === "WAIT") rationale.push("Nexus skal vente på nytt signal eller planlagt tidspunkt.");
   return rationale;
 }
 
@@ -118,12 +121,12 @@ export function buildRevenueBrain(command: RevenueCommandCenter, limit = 10): Re
   const ranked = [...deduped.values()]
     .map((action) => {
       const opportunityScore = scoreAction(action);
-      const policyClass = policyFor(action);
-      return { action, opportunityScore, policyClass };
+      const policy = policyForRevenueAction(action);
+      return { action, opportunityScore, policy };
     })
     .sort((a, b) => b.opportunityScore - a.opportunityScore || b.action.value - a.action.value || a.action.subject.localeCompare(b.action.subject, "nb"))
     .slice(0, Math.max(1, Math.min(25, limit)))
-    .map(({ action, opportunityScore, policyClass }, index): RevenueBrainAction => ({
+    .map(({ action, opportunityScore, policy }, index): RevenueBrainAction => ({
       id: action.id,
       rank: index + 1,
       opportunityScore,
@@ -135,8 +138,10 @@ export function buildRevenueBrain(command: RevenueCommandCenter, limit = 10): Re
       href: action.href,
       contactId: action.contactId,
       expectedValueEur: Number.isFinite(action.value) ? Math.max(0, action.value) : 0,
-      policyClass,
-      rationale: rationaleFor(action, opportunityScore, policyClass),
+      policyClass: policy.policyClass,
+      policyActionType: policy.actionType,
+      policyReason: policy.reason,
+      rationale: rationaleFor(action, opportunityScore, policy.policyClass, policy.reason),
       automaticExecutionAllowed: false,
     }));
 
@@ -150,8 +155,9 @@ export function buildRevenueBrain(command: RevenueCommandCenter, limit = 10): Re
       critical: ranked.filter((item) => item.priority === "CRITICAL").length,
       humanRequired: ranked.filter((item) => item.policyClass === "HUMAN_REQUIRED").length,
       draftOnly: ranked.filter((item) => item.policyClass === "DRAFT_ONLY").length,
-      autoSafe: 0,
+      autoSafe: ranked.filter((item) => item.policyClass === "AUTO_SAFE").length,
       wait: ranked.filter((item) => item.policyClass === "WAIT").length,
+      forbidden: ranked.filter((item) => item.policyClass === "FORBIDDEN").length,
       representedValueEur: Math.round(ranked.reduce((sum, item) => sum + item.expectedValueEur, 0)),
     },
     safety: {
@@ -161,6 +167,7 @@ export function buildRevenueBrain(command: RevenueCommandCenter, limit = 10): Re
       automaticApproval: false,
       automaticCriteriaChanges: false,
       explicitPolicyRequiredForFutureAutonomy: true,
+      policyRegistryEnforced: true,
     },
   };
 }
