@@ -19,6 +19,14 @@ const migrationV2 = fs.readFileSync(
   "utf8",
 );
 
+const migrationV2Upgrade = fs.readFileSync(
+  path.join(
+    process.cwd(),
+    "supabase/migrations/20260912173500_claim_outdated_property_conversions.sql",
+  ),
+  "utf8",
+);
+
 const route = fs.readFileSync(
   path.join(
     process.cwd(),
@@ -39,6 +47,16 @@ test("v2 claim RPC preserves atomic locking and returns ordinary property rows",
   assert.match(migrationV2, /for update skip locked/i);
   assert.match(migrationV2, /conversion_no is null/i);
   assert.match(migrationV2, /returning p\.\*/i);
+});
+
+test("v2 claim RPC also upgrades outdated non-V6 conversion JSON", () => {
+  assert.match(migrationV2Upgrade, /returns setof public\.properties/i);
+  assert.match(migrationV2Upgrade, /for update skip locked/i);
+  assert.match(migrationV2Upgrade, /p\.conversion_no is null/i);
+  assert.match(migrationV2Upgrade, /conversion_no ->> 'version'[\s\S]*<> 'conversion-v6'/i);
+  assert.match(migrationV2Upgrade, /not in \('processing', 'failed'\)/i);
+  assert.match(migrationV2Upgrade, /'status',\s*'processing'/i);
+  assert.match(migrationV2Upgrade, /returning p\.\*/i);
 });
 
 test("stale processing leases recover without allowing immediate duplicate work", () => {
