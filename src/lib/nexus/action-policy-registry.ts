@@ -31,6 +31,21 @@ export interface NexusActionPolicy {
   reason: string;
 }
 
+export interface NexusActionPolicyEvaluation {
+  actionType: string;
+  policyClass: NexusActionPolicyClass;
+  knownAction: boolean;
+  automaticExecutionAllowed: boolean;
+  blockers: string[];
+  reason: string;
+}
+
+export interface NexusActionExecutionContext {
+  executorEnabled?: boolean;
+  evidenceSatisfied?: boolean;
+  freshSafetyCheckPassed?: boolean;
+}
+
 const POLICIES: Record<NexusActionType, NexusActionPolicy> = {
   crm_note_update: { actionType: "crm_note_update", policyClass: "AUTO_SAFE", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "Internal CRM note updates are reversible, auditable and do not contact the customer." },
   buyer_profile_exact_evidence_update: { actionType: "buyer_profile_exact_evidence_update", policyClass: "AUTO_SAFE", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "Only exact, high-confidence customer evidence may update an approved Buyer Profile through the governed versioned flow." },
@@ -53,6 +68,36 @@ const POLICIES: Record<NexusActionType, NexusActionPolicy> = {
 
 export function getNexusActionPolicy(actionType: NexusActionType): NexusActionPolicy { return POLICIES[actionType]; }
 export function listNexusActionPolicies(): NexusActionPolicy[] { return Object.values(POLICIES); }
+
+export function evaluateNexusActionPolicy(actionType: string, context: NexusActionExecutionContext = {}): NexusActionPolicyEvaluation {
+  const policy = (POLICIES as Record<string, NexusActionPolicy | undefined>)[actionType];
+  if (!policy) {
+    return {
+      actionType,
+      policyClass: "FORBIDDEN",
+      knownAction: false,
+      automaticExecutionAllowed: false,
+      blockers: ["unknown_action"],
+      reason: "Unknown Nexus action types fail closed and cannot execute automatically.",
+    };
+  }
+
+  const blockers: string[] = [];
+  if (policy.policyClass !== "AUTO_SAFE") blockers.push(`policy_class:${policy.policyClass.toLowerCase()}`);
+  if (context.executorEnabled === false) blockers.push("executor_disabled");
+  if (context.evidenceSatisfied === false) blockers.push("evidence_not_satisfied");
+  if (policy.requiresFreshSafetyCheck && context.freshSafetyCheckPassed !== true) blockers.push("fresh_safety_check_required");
+
+  return {
+    actionType,
+    policyClass: policy.policyClass,
+    knownAction: true,
+    automaticExecutionAllowed: blockers.length === 0,
+    blockers,
+    reason: policy.reason,
+  };
+}
+
 export function policyForRevenueAction(action: Pick<CommandAction, "source">): NexusActionPolicy {
   if (action.source === "closing") return POLICIES.closing_decision;
   if (action.source === "commissions") return POLICIES.commission_decision;
