@@ -163,7 +163,11 @@ export function buildPipelineHealthSnapshot(input: PipelineHealthInput): Pipelin
   const receipts = input.sendReceipts || [];
 
   const profilesByContact = groupLatest(profiles, (row) => text(row.contact_id));
-  const profileContactById = new Map<string, string>(\n    profiles\n      .map((row): [string, string] => [text(row.id), text(row.contact_id)])\n      .filter(([id, contactId]) => Boolean(id && contactId)),\n  );
+  const profileContactById = new Map<string, string>(
+    profiles
+      .map((row): [string, string] => [text(row.id), text(row.contact_id)])
+      .filter(([id, contactId]) => Boolean(id && contactId)),
+  );
   const shortlistsByProfile = groupLatest(shortlists.filter((row) => !row.archived_at), (row) => text(row.buyer_profile_id));
   const presentationsByProfile = groupLatest(presentations.filter((row) => !row.archived_at), (row) => text(row.buyer_profile_id));
   const draftsByPresentation = groupLatest(drafts, (row) => text(row.presentation_id));
