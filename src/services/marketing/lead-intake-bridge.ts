@@ -130,6 +130,7 @@ export async function submitLeadForm(
       touchType: "form_submit", occurredAt, contentId: submission.contentId, publicationId: submission.publicationId ?? null,
       campaignId: submission.campaignId, creativeVariantId, channel: submission.channel ?? null,
       visitorId: submission.visitorId ?? null, contactId: canonicalContactId,
+      sessionId: submission.sessionId ?? null,
       metadata: { ...sharedMetadata, formId: submission.formId },
     });
     await recordTouchpoint(supabase, {
@@ -137,6 +138,7 @@ export async function submitLeadForm(
       touchType: "lead_created", occurredAt, contentId: submission.contentId, publicationId: submission.publicationId ?? null,
       campaignId: submission.campaignId, creativeVariantId, channel: submission.channel ?? null,
       visitorId: submission.visitorId ?? null, contactId: canonicalContactId,
+      sessionId: submission.sessionId ?? null,
       metadata: { ...sharedMetadata, source: "marketing_lead_form" },
     });
     touchpointsRecorded = 2;

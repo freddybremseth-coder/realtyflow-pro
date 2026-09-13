@@ -197,8 +197,11 @@ async function resolveContactUtmContext(
   for (const interaction of interactions) {
     if (clean(interaction?.brand_id) !== brandId) continue;
     const metadata = interaction?.metadata && typeof interaction.metadata === "object" ? interaction.metadata : {};
-    const utmContent = clean((metadata as any).utm_content);
-    if (utmContent) return metadata as Record<string, unknown>;
+    const hasAcquisitionContext = [
+      "utm_source", "utm_medium", "utm_campaign", "utm_content",
+      "content_id", "publication_id", "campaign_id", "visitor_id", "session_id", "channel",
+    ].some((key) => clean((metadata as any)[key]));
+    if (hasAcquisitionContext) return metadata as Record<string, unknown>;
   }
   return null;
 }
@@ -216,13 +219,44 @@ async function mirrorRevenueEventToMarketingTouchpoint(
   if (!touchType || !brandId || !contactId) return;
 
   const eventMetadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
-  const contactUtm = clean((eventMetadata as any).utm_content)
+  const explicitAcquisition = [
+    "utm_source", "utm_medium", "utm_campaign", "utm_content",
+    "content_id", "publication_id", "campaign_id", "visitor_id", "session_id", "channel",
+  ].some((key) => clean((eventMetadata as any)[key]));
+  const contactUtm = explicitAcquisition
     ? null
     : await resolveContactUtmContext(supabase, contactId, brandId).catch(() => null);
   const metadata = { ...(contactUtm ?? {}), ...eventMetadata } as Record<string, unknown>;
   const utmContent = clean((metadata as any).utm_content) || clean((metadata as any).content_id);
+  const requestedPublicationId = clean((metadata as any).publication_id);
+  const explicitCampaignId = clean((metadata as any).utm_campaign) || clean((metadata as any).campaign_id);
+  const explicitChannel = clean((metadata as any).utm_source) || clean((metadata as any).channel)
+    || (clean(event?.source_system) === "public_leads" ? "website" : null);
 
   let context: any = null;
+  let verifiedPublicationId: string | null = null;
+  if (requestedPublicationId) {
+    const { data: publication } = await supabase
+      .from("marketing_publications")
+      .select("publication_id,brand_id,content_id,campaign_id,channel")
+      .eq("publication_id", requestedPublicationId)
+      .eq("brand_id", brandId)
+      .maybeSingle();
+    if (publication?.publication_id) {
+      verifiedPublicationId = String(publication.publication_id);
+      context = {
+        publication_id: verifiedPublicationId,
+        content_id: clean(publication.content_id),
+        campaign_id: explicitCampaignId || clean(publication.campaign_id),
+        creative_variant_id: null,
+        visitor_id: clean((metadata as any).visitor_id),
+        session_id: clean((metadata as any).session_id),
+        channel: explicitChannel || clean(publication.channel),
+        confidence: "exact",
+        attribution_context: "verified_publication",
+      };
+    }
+  }
   if (utmContent) {
     const { data: verified } = await supabase
       .from("marketing_content")
@@ -233,26 +267,51 @@ async function mirrorRevenueEventToMarketingTouchpoint(
     if (verified?.content_id) {
       context = {
         content_id: String(verified.content_id),
-        publication_id: clean((metadata as any).publication_id),
-        campaign_id: clean((metadata as any).utm_campaign) || clean((metadata as any).campaign_id),
+        publication_id: verifiedPublicationId,
+        campaign_id: explicitCampaignId,
         creative_variant_id: null,
         visitor_id: clean((metadata as any).visitor_id),
-        channel: clean((metadata as any).utm_source) || clean((metadata as any).channel),
+        session_id: clean((metadata as any).session_id),
+        channel: explicitChannel,
+        confidence: "exact",
+        attribution_context: "verified_utm_content",
       };
     }
+  }
+
+  // Source/campaign are valid deterministic evidence even when there is no
+  // content asset. Keep unknown fields explicit; never manufacture content.
+  if (!context && (explicitCampaignId || explicitChannel)) {
+    context = {
+      content_id: null,
+      publication_id: null,
+      campaign_id: explicitCampaignId,
+      creative_variant_id: null,
+      visitor_id: clean((metadata as any).visitor_id),
+      session_id: clean((metadata as any).session_id),
+      channel: explicitChannel,
+      confidence: "strong",
+      attribution_context: explicitAcquisition ? "explicit_acquisition" : "public_website",
+    };
   }
 
   if (!context) {
     const { data: prior } = await supabase
       .from("marketing_touchpoints")
-      .select("content_id, publication_id, campaign_id, creative_variant_id, visitor_id, channel, occurred_at")
+      .select("content_id, publication_id, campaign_id, creative_variant_id, visitor_id, channel, occurred_at, metadata")
       .eq("brand_id", brandId)
       .eq("contact_id", contactId)
       .order("occurred_at", { ascending: false })
       .limit(20);
-    context = (prior ?? []).find((row: any) => row?.content_id) ?? null;
+    context = (prior ?? []).find((row: any) => row?.content_id || row?.publication_id || row?.campaign_id || row?.channel) ?? null;
+    if (context) context = {
+      ...context,
+      session_id: clean(context?.metadata?.session_id),
+      confidence: "exact",
+      attribution_context: "prior_touchpoint",
+    };
   }
-  if (!context?.content_id) return;
+  if (!context || (!context.content_id && !context.publication_id && !context.campaign_id && !context.channel)) return;
 
   const explicitCommission = eventType === "deal_won" ? numberOrNull((metadata as any).commission_eur) : null;
   const revenueEventId = clean(event?.id) || clean(event?.dedupe_key) || `${eventType}:${event?.occurred_at}`;
@@ -270,14 +329,19 @@ async function mirrorRevenueEventToMarketingTouchpoint(
     channel: context.channel ?? null,
     touch_type: touchType,
     occurred_at: event?.occurred_at ?? new Date().toISOString(),
-    confidence: "exact",
+    confidence: context.confidence ?? "strong",
     commission_eur: explicitCommission,
     metadata: {
       source: "revenue_events",
       revenue_event_id: clean(event?.id),
       revenue_event_type: eventType,
       revenue_source_system: clean(event?.source_system),
-      attribution_context: utmContent && context?.content_id === utmContent ? "verified_utm_content" : "prior_touchpoint",
+      attribution_context: context.attribution_context,
+      session_id: context.session_id ?? clean((metadata as any).session_id),
+      utm_source: clean((metadata as any).utm_source),
+      utm_medium: clean((metadata as any).utm_medium),
+      utm_campaign: clean((metadata as any).utm_campaign),
+      utm_content: clean((metadata as any).utm_content),
     },
   }, { onConflict: "dedupe_key", ignoreDuplicates: true });
   if (error) throw new Error(`MARKETING_REVENUE_BRIDGE_FAILED: ${error.message}`);

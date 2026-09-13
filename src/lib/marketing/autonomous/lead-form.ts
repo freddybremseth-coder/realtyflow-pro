@@ -72,6 +72,7 @@ export const LeadFormSubmissionSchema = z.object({
   answers: z.record(z.string(), z.string()).default({}),
   contact: z.object({ name: z.string().optional(), email: z.string().optional(), phone: z.string().optional() }).default({}),
   visitorId: z.string().optional(),
+  sessionId: z.string().optional(),
   submittedAt: z.string().optional(),
 });
 export type LeadFormSubmission = z.infer<typeof LeadFormSubmissionSchema>;
@@ -105,7 +106,7 @@ export function leadFormToInquiry(sub: LeadFormSubmission): MappedInquiry {
   ].filter(Boolean);
   const message = `Lead fra skjema (${s.channel ?? "web"}).\n${parts.join("\n")}`;
   return {
-    externalId: `leadform:${s.formId}:${s.contact.email ?? s.contact.phone ?? s.visitorId ?? s.submittedAt ?? "anon"}`,
+    externalId: `leadform:${s.formId}:${s.contact.email ?? s.contact.phone ?? s.visitorId ?? s.sessionId ?? s.submittedAt ?? "anon"}`,
     source: `marketing_lead_form:${s.channel ?? "web"}`,
     brandId: s.brandId,
     message,

@@ -95,6 +95,13 @@ export async function POST(request: NextRequest) {
   const requestType = cleanText(body.request_type || body.requestType, 120);
   const message = cleanText(body.message, 3000);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
+  const visitorId = cleanText(body.visitor_id || body.visitorId, 160);
+  const sessionId = cleanText(body.session_id || body.sessionId, 160);
+  const publicationId = cleanText(body.publication_id || body.publicationId, 160);
+  const utmSource = cleanText(body.utm_source || body.utmSource, 80);
+  const utmMedium = cleanText(body.utm_medium || body.utmMedium, 80);
+  const utmCampaign = cleanText(body.utm_campaign || body.utmCampaign, 120);
+  const utmContent = cleanText(body.utm_content || body.utmContent, 160);
   const rawNotes = cleanText(body.notes, 5000);
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
@@ -111,8 +118,8 @@ export async function POST(request: NextRequest) {
     body.property_type ? `Boligtype: ${cleanText(body.property_type, 120)}` : "",
     body.bedrooms ? `Soverom: ${cleanText(body.bedrooms, 40)}` : "",
     timeline ? `Tidslinje: ${timeline}` : "",
-    body.utm_source || body.utm_campaign || body.utm_content
-      ? `UTM: ${cleanText(body.utm_source, 80)} / ${cleanText(body.utm_campaign, 120)} / ${cleanText(body.utm_content, 160)}`
+    utmSource || utmCampaign || utmContent
+      ? `UTM: ${utmSource} / ${utmCampaign} / ${utmContent}`
       : "",
     message,
     rawNotes,
@@ -128,17 +135,20 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   const incomingInteraction = {
-    id: `website-${Date.now()}`,
+    id: submissionId ? `website-${submissionId}` : `website-${Date.now()}`,
     type: "note",
     content: interactionSummary({ source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle, message }),
     date: now,
     direction: "in",
     brand_id: brandId,
     metadata: {
-      utm_source: cleanText(body.utm_source, 80) || null,
-      utm_medium: cleanText(body.utm_medium, 80) || null,
-      utm_campaign: cleanText(body.utm_campaign, 120) || null,
-      utm_content: cleanText(body.utm_content, 160) || null,
+      utm_source: utmSource || null,
+      utm_medium: utmMedium || null,
+      utm_campaign: utmCampaign || null,
+      utm_content: utmContent || null,
+      publication_id: publicationId || null,
+      visitor_id: visitorId || null,
+      session_id: sessionId || null,
       page_url: pageUrl || null,
     },
   };
@@ -202,6 +212,14 @@ export async function POST(request: NextRequest) {
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
       created_from_public_endpoint: true,
+      submission_id: submissionId || null,
+      publication_id: publicationId || null,
+      visitor_id: visitorId || null,
+      session_id: sessionId || null,
+      utm_source: utmSource || null,
+      utm_medium: utmMedium || null,
+      utm_campaign: utmCampaign || null,
+      utm_content: utmContent || null,
     },
     created_at: now,
     updated_at: now,
@@ -233,6 +251,14 @@ export async function POST(request: NextRequest) {
       request_type: requestType,
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
+      submission_id: submissionId || null,
+      publication_id: publicationId || null,
+      visitor_id: visitorId || null,
+      session_id: sessionId || null,
+      utm_source: utmSource || null,
+      utm_medium: utmMedium || null,
+      utm_campaign: utmCampaign || null,
+      utm_content: utmContent || null,
     },
     createdBy: "api/public/leads",
   });

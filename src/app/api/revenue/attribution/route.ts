@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { buildCanonicalLeadAttribution } from "@/lib/marketing/attribution";
+import { marketingTouchpointFromRow } from "@/services/marketing/attribution-adapter";
 import {
   ATTRIBUTION_SCOPES,
   ATTRIBUTION_SOURCE_IDS,
@@ -89,9 +91,12 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured", workspace: null }, { status: 500 });
 
   const storageKey = attributionSpendStorageKey(scope, `${month}-01`);
-  const [contactsResult, settingsResult] = await Promise.allSettled([
+  let touchpointsQuery: any = supabase.from("marketing_touchpoints").select("*").order("occurred_at", { ascending: true }).limit(10000);
+  if (scope !== "all") touchpointsQuery = touchpointsQuery.eq("brand_id", scope);
+  const [contactsResult, settingsResult, touchpointsResult] = await Promise.allSettled([
     supabase.from("contacts").select("*").order("created_at", { ascending: true }).limit(5000),
     supabase.from("brand_settings").select("settings,updated_at").eq("brand_id", storageKey).maybeSingle(),
+    touchpointsQuery,
   ]);
 
   if (contactsResult.status === "rejected" || contactsResult.value?.error) {
@@ -113,6 +118,15 @@ export async function GET(request: NextRequest) {
     updatedAt = settingsResult.value?.data?.updated_at || null;
   }
 
+  let canonicalTouches: ReturnType<typeof marketingTouchpointFromRow>[] = [];
+  if (touchpointsResult.status === "rejected") {
+    warnings.push(`Canonical touchpoints kunne ikke hentes: ${touchpointsResult.reason instanceof Error ? touchpointsResult.reason.message : "ukjent feil"}`);
+  } else if (touchpointsResult.value?.error) {
+    warnings.push(`Canonical touchpoints kunne ikke hentes: ${touchpointsResult.value.error.message}`);
+  } else {
+    canonicalTouches = (touchpointsResult.value?.data || []).map(marketingTouchpointFromRow);
+  }
+
   const workspace = buildAttributionWorkspace({
     contacts: contactsResult.value?.data || [],
     scope,
@@ -123,6 +137,12 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     workspace,
+    canonical: buildCanonicalLeadAttribution({
+      touches: canonicalTouches,
+      periodStart: `${month}-01`,
+      scope,
+      model: "last_touch",
+    }),
     config: {
       spend: parseSpend(settings),
       notes: String(settings.notes || ""),
