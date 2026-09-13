@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, BrainCircuit, Clock3, Languages, MessageSquareText, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, BrainCircuit, CheckCircle2, Clock3, Languages, MessageSquareText, ShieldCheck, Sparkles } from "lucide-react";
 import type { RevenueBrainWithCommunication, RevenueBrainActionWithCommunication } from "@/lib/nexus/next-best-action-communication";
 
 type NextBestActionResponse = {
   nextBestAction?: RevenueBrainWithCommunication | null;
   warnings?: string[];
   error?: string;
+  executionFeedback?: { executedRecommendationIds?: string[] };
 };
 
 function localHourFromUtc(hourUtc: number | null) {
@@ -46,6 +47,8 @@ export function NextBestActionPanel() {
   const [data, setData] = useState<RevenueBrainWithCommunication | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [executed, setExecuted] = useState<Set<string>>(new Set());
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -59,6 +62,7 @@ export function NextBestActionPanel() {
           return;
         }
         setData(body.nextBestAction || null);
+        setExecuted(new Set(body.executionFeedback?.executedRecommendationIds || []));
       } catch {
         if (alive) setError("Kunne ikke hente Nexus-anbefalinger.");
       } finally {
@@ -70,6 +74,25 @@ export function NextBestActionPanel() {
   }, []);
 
   const top = useMemo(() => (data?.actions || []).slice(0, 5), [data]);
+
+  const confirmExecution = async (recommendationId: string) => {
+    setConfirming(recommendationId);
+    setError("");
+    try {
+      const response = await fetch("/api/nexus/next-best-action/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ recommendationId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Kunne ikke registrere utførelse.");
+      setExecuted((current) => new Set(current).add(recommendationId));
+    } catch (feedbackError) {
+      setError(feedbackError instanceof Error ? feedbackError.message : "Kunne ikke registrere utførelse.");
+    } finally {
+      setConfirming(null);
+    }
+  };
 
   return (
     <section className="rounded-2xl border border-primary-900/70 bg-primary-950/15 p-5">
@@ -118,7 +141,17 @@ export function NextBestActionPanel() {
                       <div className="mt-3 text-xs text-slate-500">{item.communicationAdvice.reasons.slice(0, 2).join(" · ")}</div>
                     )}
                   </div>
-                  <Link href={item.href} className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-500">Åpne arbeidsflate <ArrowRight size={15}/></Link>
+                  <div className="flex shrink-0 flex-col gap-2">
+                    <Link href={item.href} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-500">Åpne arbeidsflate <ArrowRight size={15}/></Link>
+                    <button
+                      type="button"
+                      disabled={executed.has(item.id) || confirming === item.id || item.policyClass === "FORBIDDEN" || item.policyClass === "WAIT"}
+                      onClick={() => void confirmExecution(item.id)}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <CheckCircle2 size={14}/>{executed.has(item.id) ? "Utførelse registrert" : confirming === item.id ? "Registrerer…" : "Bekreft utført"}
+                    </button>
+                  </div>
                 </div>
               </article>
             );

@@ -23,6 +23,7 @@ export interface NexusRevenueLearningProfile {
   signals: NexusRevenueLearningActionSignal[];
   safety: {
     rankingOnly: true;
+    feedbackContract: "executed_action_v1";
     maxAbsoluteScoreAdjustment: 8;
     policyMutationAllowed: false;
     autonomyExpansionAllowed: false;
@@ -52,7 +53,7 @@ export function buildRevenueLearningProfile(
   const baseline = finite(measurement.summary.outcomeRate);
   const generatedAt = options.generatedAt ?? new Date();
   const signals = measurement.byActionType.map((row): NexusRevenueLearningActionSignal => {
-    const sampleSize = Math.max(0, Math.round(finite(row.recommendations)));
+    const sampleSize = Math.max(0, Math.round(finite(row.executed)));
     const strength = evidenceStrength(sampleSize, minSamples);
     if (strength === "insufficient") {
       return {
@@ -94,6 +95,7 @@ export function buildRevenueLearningProfile(
     signals,
     safety: {
       rankingOnly: true,
+      feedbackContract: "executed_action_v1",
       maxAbsoluteScoreAdjustment: 8,
       policyMutationAllowed: false,
       autonomyExpansionAllowed: false,
@@ -130,7 +132,7 @@ export function parseRevenueLearningProfile(value: unknown): NexusRevenueLearnin
     .filter(Boolean) as NexusRevenueLearningActionSignal[];
 
   const safety = row.safety as Record<string, unknown>;
-  if (safety.policyMutationAllowed !== false || safety.autonomyExpansionAllowed !== false) return null;
+  if (safety.feedbackContract !== "executed_action_v1" || safety.policyMutationAllowed !== false || safety.autonomyExpansionAllowed !== false) return null;
   return {
     version: 1,
     generatedAt: String(row.generatedAt || new Date(0).toISOString()),
@@ -141,6 +143,7 @@ export function parseRevenueLearningProfile(value: unknown): NexusRevenueLearnin
     signals,
     safety: {
       rankingOnly: true,
+      feedbackContract: "executed_action_v1",
       maxAbsoluteScoreAdjustment: 8,
       policyMutationAllowed: false,
       autonomyExpansionAllowed: false,

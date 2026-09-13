@@ -8,13 +8,13 @@ The learning plane may influence which governed opportunity Nexus ranks first. I
 
 ## Daily learning profile
 
-`/api/cron/nexus-revenue-learning` runs once per day and reads the previous 90 days of Nexus recommendation and outcome events.
+`/api/cron/nexus-revenue-learning` runs once per day and reads the previous 90 days of Nexus recommendation, explicitly linked execution and outcome events.
 
 It builds a versioned learning profile in `brand_settings` under `nexus-revenue-learning:v1`.
 
 For every governed action type it records:
 
-- number of measured recommendations;
+- number of executed recommendations eligible as learning evidence;
 - outcome rate;
 - win rate;
 - realized downstream revenue impact;
@@ -24,7 +24,7 @@ For every governed action type it records:
 
 ## Evidence floor
 
-V1 requires at least 8 observations for an action type before learning may affect ranking.
+V1 requires at least 8 executed actions for an action type before learning may affect ranking. Surfaced but unexecuted recommendations neither increase the sample nor count as negative outcomes.
 
 Evidence is classified as:
 
@@ -56,7 +56,7 @@ It cannot:
 - book a viewing;
 - make a legal, contractual or financial commitment.
 
-A stored learning profile that claims policy mutation or autonomy expansion is allowed is rejected by the parser and ignored.
+A stored learning profile that claims policy mutation or autonomy expansion is allowed is rejected by the parser and ignored. Profiles without `feedbackContract=executed_action_v1` are also rejected, which prevents legacy same-contact/time correlations from steering ranking.
 
 ## Runtime use
 
