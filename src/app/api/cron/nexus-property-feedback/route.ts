@@ -35,7 +35,8 @@ async function recordPropertyFeedbackRevenueEvents(supabase: any, input: {
   receivedAt: string | null;
   analysis: ReturnType<typeof analyzePropertyRecommendationReply>;
 }) {
-  let recorded = 0;
+  let inserted = 0;
+  let duplicates = 0;
   for (const signal of input.analysis.signals) {
     if (signal.sentiment === "question") continue;
     const interested = signal.sentiment === "positive" || signal.sentiment === "viewing";
@@ -73,7 +74,8 @@ async function recordPropertyFeedbackRevenueEvents(supabase: any, input: {
       },
       createdBy: "cron/nexus-property-feedback",
     });
-    if (result.ok) recorded += 1;
+    if (result.ok && result.duplicate) duplicates += 1;
+    else if (result.ok) inserted += 1;
     else if (!result.tableNotReady) {
       console.warn("[nexus-property-feedback] revenue event failed", {
         emailMessageId: input.emailMessageId,
@@ -83,7 +85,7 @@ async function recordPropertyFeedbackRevenueEvents(supabase: any, input: {
       });
     }
   }
-  return recorded;
+  return { inserted, duplicates };
 }
 
 async function ensureFeedbackWorkItem(supabase: any, input: {
@@ -176,7 +178,7 @@ export async function GET(request: NextRequest) {
     .limit(150);
   if (inbound.error) return NextResponse.json({ error: inbound.error.message }, { status: 500 });
 
-  let considered = 0, analyzed = 0, signaled = 0, workCreated = 0, revenueEventsRecorded = 0, repeated = 0, failed = 0;
+  let considered = 0, analyzed = 0, signaled = 0, workCreated = 0, revenueEventsInserted = 0, revenueEventsDuplicate = 0, repeated = 0, failed = 0;
 
   for (const message of inbound.data || []) {
     const brandId = text(message.brand_id);
@@ -274,7 +276,7 @@ export async function GET(request: NextRequest) {
         repeated += 1;
       }
 
-      revenueEventsRecorded += await recordPropertyFeedbackRevenueEvents(supabase, {
+      const revenueEventResult = await recordPropertyFeedbackRevenueEvents(supabase, {
         emailMessageId: String(message.id),
         brandId,
         contactId: String(contact.id),
@@ -282,6 +284,8 @@ export async function GET(request: NextRequest) {
         receivedAt: message.received_at ? String(message.received_at) : null,
         analysis,
       });
+      revenueEventsInserted += revenueEventResult.inserted;
+      revenueEventsDuplicate += revenueEventResult.duplicates;
 
       const created = await ensureFeedbackWorkItem(supabase, {
         emailMessageId: String(message.id),
@@ -300,12 +304,37 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const revenueEventsRecorded = revenueEventsInserted + revenueEventsDuplicate;
+
   await supabase.from("automation_logs").insert({
     action: "nexus_property_feedback",
     agent_name: "nexus_property_feedback",
     status: failed ? (signaled ? "partial" : "failed") : "success",
-    details: { considered, analyzed, signaled, work_created: workCreated, revenue_events_recorded: revenueEventsRecorded, repeated, failed, runtime_control: `cron:${PATH}`, buyer_profile_auto_mutation: false },
+    details: {
+      considered,
+      analyzed,
+      signaled,
+      work_created: workCreated,
+      revenue_events_recorded: revenueEventsRecorded,
+      revenue_events_inserted: revenueEventsInserted,
+      revenue_events_duplicate: revenueEventsDuplicate,
+      repeated,
+      failed,
+      runtime_control: `cron:${PATH}`,
+      buyer_profile_auto_mutation: false,
+    },
   }).then(() => {}).then(undefined, () => {});
 
-  return NextResponse.json({ success: true, considered, analyzed, signaled, workCreated, revenueEventsRecorded, repeated, failed });
+  return NextResponse.json({
+    success: true,
+    considered,
+    analyzed,
+    signaled,
+    workCreated,
+    revenueEventsRecorded,
+    revenueEventsInserted,
+    revenueEventsDuplicate,
+    repeated,
+    failed,
+  });
 }
