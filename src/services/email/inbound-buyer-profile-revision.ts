@@ -1,5 +1,6 @@
 import type { ExtractedLead } from "@/services/lead-intelligence/contracts";
 import { withLeadIntelligenceTransaction } from "@/services/lead-intelligence/server-runtime";
+import { evaluateNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
 
 const ACTOR = "nexus-email-autopilot@system";
 const MIN_REVISION_CONFIDENCE = 0.92;
@@ -129,6 +130,19 @@ export async function autoReviseBuyerProfileFromInboundEvidence(input: {
   const approvedAt = new Date().toISOString();
   const budgetAmount = explicitBudget(verified);
   const locationChanged = changedKeys.includes("location");
+  const executionBoundary = evaluateNexusExecutionBoundary("buyer_profile_exact_evidence_update", {
+    executorEnabled: true,
+    evidenceSatisfied: verified.length === candidates.length && changedKeys.length > 0,
+    auditTrailReady: Boolean(revisionActor && ACTOR && approvedAt),
+    idempotencyKey: revisionActor,
+  });
+  if (!executionBoundary.automaticExecutionAllowed) {
+    return {
+      status: "review_required",
+      reason: `execution_boundary:${executionBoundary.blockers.join(",")}`,
+      changedKeys,
+    };
+  }
 
   return withLeadIntelligenceTransaction(input.brandId, async (client) => {
     const currentResult = await client.query<{

@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runNexusSendPreflight } from "@/services/email/nexus-send-preflight";
 import { buildLeadCustomerPresentationPreview } from "@/services/lead-intelligence/presentation-preview";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
+import { evaluateNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
 
 export type PropertyRecommendationSendResult =
   | { sent: true; duplicate: boolean; messageId: string | null; receiptId: string | null; propertyCount: number }
@@ -74,6 +75,7 @@ export async function sendApprovedPropertyRecommendation(input: {
   if (!assessment.ready) {
     return { sent: false, duplicate: false, blocked: true, reason: "Fresh send-preflight is blocked.", blockers: assessment.blockers };
   }
+  const preflightCheckedAt = new Date().toISOString();
 
   const [presentationResult, profileResult, draftResult] = await Promise.all([
     supabase.from("lead_customer_presentations")
@@ -151,6 +153,32 @@ export async function sendApprovedPropertyRecommendation(input: {
       throw new Error(claim.error.message);
     }
     receiptId = claim.data.id;
+  }
+
+  const executionBoundary = evaluateNexusExecutionBoundary("property_recommendation_send_preapproved", {
+    executorEnabled: true,
+    evidenceSatisfied: Boolean(
+      humanApproved
+      && autoSendAuthorized
+      && propertyCount > 0
+      && approvedSubject
+      && approvedBodyText
+      && approvedBodyHtml,
+    ),
+    auditTrailReady: Boolean(receiptId),
+    idempotencyKey: `${messageDraftId}:${hash}`,
+    freshPreflight: { passed: assessment.ready, checkedAt: preflightCheckedAt },
+    explicitApprovalSatisfied: humanApproved,
+  });
+  if (!executionBoundary.automaticExecutionAllowed) {
+    const reason = `Execution boundary blocked recommendation send: ${executionBoundary.blockers.join(", ")}`;
+    await supabase.from("nexus_property_recommendation_send_receipts").update({
+      status: "failed",
+      last_error: reason,
+      failed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", receiptId).eq("status", "sending");
+    return { sent: false, duplicate: false, blocked: true, reason, blockers: executionBoundary.blockers, receiptId };
   }
 
   try {

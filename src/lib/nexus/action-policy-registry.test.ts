@@ -3,7 +3,7 @@ import test from "node:test";
 import { canExecuteAutomatically, evaluateNexusActionPolicy, getNexusActionPolicy, listNexusActionPolicies, policyForRevenueAction } from "./action-policy-registry";
 
 test("only explicitly safe actions may execute automatically", () => {
-  const safe = ["crm_note_update","buyer_profile_exact_evidence_update","property_match_prepare","shortlist_draft_prepare","presentation_draft_prepare","criteria_clarification_email","property_recommendation_send_preapproved"] as const;
+  const safe = ["crm_note_update","crm_inbound_reply_update","buyer_profile_exact_evidence_update","property_match_prepare","shortlist_draft_prepare","presentation_draft_prepare","criteria_clarification_email","property_recommendation_send_preapproved","social_publish_approved","marketing_autopilot_publish_preapproved"] as const;
   for (const actionType of safe) {
     const policy = getNexusActionPolicy(actionType);
     assert.equal(policy.policyClass, "AUTO_SAFE");

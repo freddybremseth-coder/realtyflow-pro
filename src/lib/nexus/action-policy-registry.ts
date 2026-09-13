@@ -9,9 +9,13 @@ export type NexusActionType =
   | "shortlist_draft_prepare"
   | "presentation_draft_prepare"
   | "criteria_clarification_email"
+  | "crm_inbound_reply_update"
   | "general_customer_message"
+  | "lead_follow_up_send"
   | "property_recommendation_send"
   | "property_recommendation_send_preapproved"
+  | "social_publish_approved"
+  | "marketing_autopilot_publish_preapproved"
   | "viewing_booking"
   | "ambiguous_criteria_change"
   | "closing_decision"
@@ -53,9 +57,13 @@ const POLICIES: Record<NexusActionType, NexusActionPolicy> = {
   shortlist_draft_prepare: { actionType: "shortlist_draft_prepare", policyClass: "AUTO_SAFE", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "A review-only shortlist draft is internal and remains subject to human quality review." },
   presentation_draft_prepare: { actionType: "presentation_draft_prepare", policyClass: "AUTO_SAFE", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "Presentation and message drafts may be prepared automatically but are not customer sends." },
   criteria_clarification_email: { actionType: "criteria_clarification_email", policyClass: "AUTO_SAFE", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "This narrowly authorized customer email may ask only for missing buyer criteria and must pass suppression, brand and send-safety checks." },
+  crm_inbound_reply_update: { actionType: "crm_inbound_reply_update", policyClass: "AUTO_SAFE", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "Governed inbound-reply handling may append an idempotent CRM interaction, apply explicit suppression, pause nurture or advance a new lead to CONTACT without contacting the customer." },
   general_customer_message: { actionType: "general_customer_message", policyClass: "DRAFT_ONLY", reversible: true, customerFacing: true, sideEffect: false, requiresFreshSafetyCheck: true, reason: "Nexus may draft general customer communication, but sending requires a separate explicit policy or human approval." },
+  lead_follow_up_send: { actionType: "lead_follow_up_send", policyClass: "DRAFT_ONLY", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "Future lead follow-up senders may prepare drafts only until an exact, separately tested send policy is approved." },
   property_recommendation_send: { actionType: "property_recommendation_send", policyClass: "HUMAN_REQUIRED", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "A generic property recommendation send remains human-required unless the exact preapproved matched-property flow is used." },
   property_recommendation_send_preapproved: { actionType: "property_recommendation_send_preapproved", policyClass: "AUTO_SAFE", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "A matched-property recommendation may send automatically only after explicit final presentation approval, client-ready property review, fresh send-preflight, CRM suppression checks, verified public links and an exactly-once durable send receipt." },
+  social_publish_approved: { actionType: "social_publish_approved", policyClass: "AUTO_SAFE", reversible: false, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: true, reason: "An exact social asset may publish only through the approved executor after current provenance, content, brand, account and asset-integrity checks." },
+  marketing_autopilot_publish_preapproved: { actionType: "marketing_autopilot_publish_preapproved", policyClass: "AUTO_SAFE", reversible: false, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: true, reason: "Marketing autopilot may publish only a preapproved low-risk format after current quality, provenance, brand, account and runaway-guard checks." },
   viewing_booking: { actionType: "viewing_booking", policyClass: "HUMAN_REQUIRED", reversible: false, customerFacing: true, sideEffect: true, requiresFreshSafetyCheck: true, reason: "Viewing bookings create external commitments and require explicit human confirmation under the current policy." },
   ambiguous_criteria_change: { actionType: "ambiguous_criteria_change", policyClass: "HUMAN_REQUIRED", reversible: true, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: false, reason: "Ambiguous customer language must be interpreted by a human rather than guessed by Nexus." },
   closing_decision: { actionType: "closing_decision", policyClass: "HUMAN_REQUIRED", reversible: false, customerFacing: false, sideEffect: true, requiresFreshSafetyCheck: true, reason: "Closing decisions can affect contracts, money and legal obligations." },

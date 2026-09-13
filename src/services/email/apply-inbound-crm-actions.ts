@@ -6,6 +6,7 @@ import {
 } from "@/lib/inbound-reply-intelligence";
 import { decideHotLeadSla, responseDueAt } from "@/lib/nexus/hot-lead-sla";
 import { recordPipelineTransition } from "@/lib/revenue/pipeline-transition";
+import { requireNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
 
 export interface InboundCrmActionResult {
   contactId: string | null;
@@ -276,6 +277,13 @@ export async function applyInboundCrmActions(
     // next_followup field as an immediate timestamp.
     update.nurture_status = "paused";
   }
+
+  requireNexusExecutionBoundary("crm_inbound_reply_update", {
+    executorEnabled: true,
+    evidenceSatisfied: Boolean(params.emailMessageId && fromAddress && contact.id),
+    auditTrailReady: Array.isArray(update.interactions),
+    idempotencyKey: interactionId,
+  });
 
   const { error: updateError } = await supabase.from("contacts").update(update).eq("id", contact.id);
   if (updateError) throw new Error(`CRM reply update failed: ${updateError.message}`);
