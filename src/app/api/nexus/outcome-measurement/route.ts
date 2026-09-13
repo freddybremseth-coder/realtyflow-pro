@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   const attributionRaw = Number(request.nextUrl.searchParams.get("attributionDays") || 30);
   const attributionDays = Math.max(1, Math.min(90, Number.isFinite(attributionRaw) ? Math.round(attributionRaw) : 30));
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
-  const eventTypes = ["automation_recommended", ...NEXUS_OUTCOME_EVENT_TYPES];
+  const eventTypes = ["automation_recommended", "automation_executed", ...NEXUS_OUTCOME_EVENT_TYPES];
 
   const { data, error } = await supabase
     .from("revenue_events")

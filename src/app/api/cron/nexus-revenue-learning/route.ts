@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
   const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000).toISOString();
-  const eventTypes = ["automation_recommended", ...NEXUS_OUTCOME_EVENT_TYPES];
+  const eventTypes = ["automation_recommended", "automation_executed", ...NEXUS_OUTCOME_EVENT_TYPES];
   const { data, error } = await supabase
     .from("revenue_events")
     .select("id,event_type,contact_id,brand_id,source_system,source_type,source_id,revenue_impact_eur,occurred_at,created_at,metadata")
@@ -63,6 +63,8 @@ export async function GET(request: NextRequest) {
     status: "success",
     details: {
       recommendations: measurement.summary.recommendations,
+      executed_recommendations: measurement.summary.executed,
+      execution_rate: measurement.summary.executionRate,
       measured_outcomes: measurement.summary.withOutcome,
       baseline_outcome_rate: profile.baselineOutcomeRate,
       signals: profile.signals.length,

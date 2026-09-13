@@ -10,6 +10,8 @@ function measurement(): NexusOutcomeMeasurement {
     recommendations: [],
     summary: {
       recommendations: 40,
+      executed: 30,
+      executionRate: 75,
       withOutcome: 12,
       outcomeRate: 30,
       replyRate: 20,
@@ -23,6 +25,8 @@ function measurement(): NexusOutcomeMeasurement {
       {
         actionType: "general_customer_message",
         recommendations: 25,
+        executed: 25,
+        executionRate: 100,
         withOutcome: 12,
         outcomeRate: 48,
         replyRate: 40,
@@ -34,6 +38,8 @@ function measurement(): NexusOutcomeMeasurement {
       {
         actionType: "closing_decision",
         recommendations: 5,
+        executed: 5,
+        executionRate: 100,
         withOutcome: 1,
         outcomeRate: 20,
         replyRate: 0,
@@ -45,6 +51,8 @@ function measurement(): NexusOutcomeMeasurement {
     ],
     safety: {
       observationalOnly: true,
+      executedActionEvidenceRequired: true,
+      singleRecommendationOutcomeOwnership: true,
       policyMutationAllowed: false,
       autonomyExpansionAllowed: false,
     },
@@ -57,6 +65,7 @@ test("builds bounded ranking signals only when evidence clears the sample floor"
   const weak = profile.signals.find((item) => item.actionType === "closing_decision");
 
   assert.equal(profile.safety.rankingOnly, true);
+  assert.equal(profile.safety.feedbackContract, "executed_action_v1");
   assert.equal(profile.safety.policyMutationAllowed, false);
   assert.equal(profile.safety.autonomyExpansionAllowed, false);
   assert.equal(strong?.evidenceStrength, "established");
@@ -80,6 +89,17 @@ test("parser fails closed when saved learning would allow policy or autonomy mut
   assert.ok(parseRevenueLearningProfile(profile));
   assert.equal(parseRevenueLearningProfile({ ...profile, safety: { ...profile.safety, policyMutationAllowed: true } }), null);
   assert.equal(parseRevenueLearningProfile({ ...profile, safety: { ...profile.safety, autonomyExpansionAllowed: true } }), null);
+  assert.equal(parseRevenueLearningProfile({ ...profile, safety: { ...profile.safety, feedbackContract: "legacy" } }), null);
+});
+
+test("uses executed actions, not surfaced recommendations, as learning evidence", () => {
+  const value = measurement();
+  value.byActionType[0] = { ...value.byActionType[0], recommendations: 100, executed: 7 };
+  const profile = buildRevenueLearningProfile(value, { minSamples: 8 });
+  const signal = profile.signals.find((item) => item.actionType === "general_customer_message");
+  assert.equal(signal?.sampleSize, 7);
+  assert.equal(signal?.evidenceStrength, "insufficient");
+  assert.equal(signal?.scoreAdjustment, 0);
 });
 
 test("insufficient evidence never changes ranking", () => {

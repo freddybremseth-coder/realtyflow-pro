@@ -6,7 +6,7 @@ Outcome Measurement gives Nexus a factual learning loop from commercial recommen
 
 The loop is:
 
-`recommendation -> observed customer/business event -> attribution -> aggregate learning`
+`recommendation -> human-confirmed execution -> observed customer/business event -> attribution -> aggregate learning`
 
 ## Recommendation snapshots
 
@@ -22,11 +22,24 @@ Each ranked recommendation is written idempotently to `revenue_events` as `autom
 - Revenue Brain source and target link;
 - explicit `measurement_only=true` marker.
 
-The daily dedupe key prevents an unchanged recommendation from being counted repeatedly while still allowing new recommendations to enter the measurement set during the day.
+The daily write dedupe key prevents duplicate snapshots during a day. Measurement also collapses recurring snapshots by stable recommendation id, so an unchanged open action is one recommendation rather than a new sample every day.
+
+## Execution evidence
+
+Opening a work surface is not treated as execution. An administrator must explicitly use **Bekreft utført** after completing the recommended work. The admin-only feedback endpoint writes an idempotent `automation_executed` event containing:
+
+- stable `recommendation_id` and source id;
+- the originating recommendation event id;
+- governed action type and policy class;
+- `execution_evidence=human_confirmed`;
+- `feedback_contract=executed_action_v1`;
+- an explicit marker that this was not automatic execution.
+
+`FORBIDDEN` and `WAIT` recommendations cannot receive execution feedback. The feedback endpoint records evidence only; it never performs the recommended customer, pipeline, publishing or financial side effect.
 
 ## Outcomes
 
-V1 attributes already-observed `revenue_events` to a recommendation when they belong to the same contact, happen after the recommendation and fall inside the configured attribution window.
+V1 attributes already-observed `revenue_events` only after linked execution evidence. Explicit `metadata.recommendation_id` linkage wins. Otherwise an outcome is owned by the most recently executed eligible recommendation for the same contact and brand inside the configured window. One outcome can never be credited to more than one recommendation.
 
 Measured signals include:
 
@@ -43,7 +56,8 @@ The engine records the first observable outcome, strongest downstream outcome, t
 
 `GET /api/nexus/outcome-measurement` is admin-only and returns:
 
-- recommendation count and overall outcome rate;
+- recommendation count, execution count and execution rate;
+- outcome rate among executed recommendations;
 - reply, viewing, offer and win rates;
 - realized revenue impact;
 - median time to first outcome;
@@ -59,6 +73,8 @@ Query parameters:
 
 Outcome Measurement is observational only.
 
+Unexecuted recommendations remain visible for execution-rate measurement, but they do not enter the learning sample and are not treated as failures.
+
 It may later influence ranking, timing, wording, channel choice and which governed action Nexus recommends. It must never:
 
 - convert `HUMAN_REQUIRED` to `AUTO_SAFE`;
@@ -67,7 +83,3 @@ It may later influence ranking, timing, wording, channel choice and which govern
 - loosen the Action Policy Registry because a historically risky action had strong conversion.
 
 Policy is the control plane. Outcome data is the learning plane.
-
-## Next step
-
-Add a learning-policy layer that uses statistically meaningful outcome history to adjust Revenue Brain ranking and timing while preserving the Action Policy Registry unchanged. Then expose the strongest evidence in the Executive Briefing so Freddy can see what Nexus changed and why.

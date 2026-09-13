@@ -100,9 +100,26 @@ export async function GET(request: NextRequest) {
     contacts,
     rules: communicationRules,
   });
+  const recommendationIds = brain.actions.map((action) => action.id);
+  let executedRecommendationIds: string[] = [];
+  if (recommendationIds.length > 0) {
+    const executionResult = await supabase
+      .from("revenue_events")
+      .select("source_id")
+      .eq("event_type", "automation_executed")
+      .eq("source_system", "nexus_revenue_brain")
+      .in("source_id", recommendationIds)
+      .limit(1000);
+    if (executionResult.error) {
+      if (!optionalTableError(executionResult.error.message || "")) warnings.push(`execution-feedback: ${executionResult.error.message}`);
+    } else {
+      executedRecommendationIds = [...new Set((executionResult.data || []).map((row: any) => String(row.source_id || "").trim()).filter(Boolean))];
+    }
+  }
 
   return NextResponse.json({
     nextBestAction,
+    executionFeedback: { executedRecommendationIds },
     warnings,
     learning: {
       revenueProfileLoaded: Boolean(learningProfile),
