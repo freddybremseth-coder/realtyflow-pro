@@ -80,6 +80,7 @@ export interface RevenueEventInsertResult {
   event?: Record<string, unknown> | null;
   duplicate?: boolean;
   tableNotReady?: boolean;
+  semanticInvalid?: boolean;
   error?: string;
 }
 
@@ -138,6 +139,60 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+export const CANONICAL_REVENUE_OUTCOME_TYPES = [
+  "lead_created",
+  "qualified",
+  "viewing_completed",
+  "offer_made",
+  "deal_won",
+  "commission_invoiced",
+  "commission_paid",
+] as const satisfies readonly RevenueEventType[];
+
+export type CanonicalRevenueOutcomeType = (typeof CANONICAL_REVENUE_OUTCOME_TYPES)[number];
+
+export interface RevenueEventSemanticAssessment {
+  version: 1;
+  canonicalOutcome: boolean;
+  valid: boolean;
+  blockers: string[];
+}
+
+/**
+ * Measurement contract for commercial outcomes. Operational events remain
+ * append-first, while canonical outcomes require stable identity, provenance
+ * and idempotency before they may enter the revenue ledger.
+ */
+export function assessRevenueEventSemantics(payload: RevenueEventPayload): RevenueEventSemanticAssessment {
+  const canonicalOutcome = CANONICAL_REVENUE_OUTCOME_TYPES.includes(payload.event_type as CanonicalRevenueOutcomeType);
+  if (!canonicalOutcome) return { version: 1, canonicalOutcome: false, valid: true, blockers: [] };
+
+  const blockers: string[] = [];
+  if (!payload.contact_id) blockers.push("contact_id_required");
+  if (!payload.brand_id) blockers.push("brand_id_required");
+  if (!clean(payload.source_system)) blockers.push("source_system_required");
+  if (!payload.source_type) blockers.push("source_type_required");
+  if (!payload.source_id) blockers.push("source_id_required");
+  if (!payload.dedupe_key) blockers.push("dedupe_key_required");
+
+  const metadata = payload.metadata || {};
+  const nextStatus = String((metadata as any).next_status || "").toUpperCase();
+  if (payload.event_type === "qualified" && nextStatus !== "QUALIFIED" && !clean((metadata as any).qualification_basis)) {
+    blockers.push("qualification_evidence_required");
+  }
+  if (payload.event_type === "deal_won" && nextStatus !== "WON" && !clean((metadata as any).deal_id) && !clean((metadata as any).transaction_ref)) {
+    blockers.push("won_evidence_required");
+  }
+  if (payload.event_type === "commission_invoiced" || payload.event_type === "commission_paid") {
+    const commission = numberOrNull((metadata as any).commission_eur) ?? numberOrNull(payload.revenue_impact_eur);
+    if (commission === null || commission <= 0) blockers.push("positive_commission_required");
+    if (!clean((metadata as any).invoice_number)) blockers.push("invoice_number_required");
+    if (payload.event_type === "commission_paid" && !clean((metadata as any).paid_at)) blockers.push("paid_at_required");
+  }
+
+  return { version: 1, canonicalOutcome: true, valid: blockers.length === 0, blockers };
+}
+
 export function isRevenueEventType(value: unknown): value is RevenueEventType {
   return REVENUE_EVENT_TYPES.includes(value as RevenueEventType);
 }
@@ -148,16 +203,17 @@ export function isRevenueActorType(value: unknown): value is RevenueActorType {
 
 export function normalizeRevenueEvent(input: RevenueEventInput): RevenueEventPayload {
   if (!isRevenueEventType(input.eventType)) throw new Error(`Unsupported revenue event type: ${String(input.eventType)}`);
+  const canonicalOutcome = CANONICAL_REVENUE_OUTCOME_TYPES.includes(input.eventType as CanonicalRevenueOutcomeType);
   const actorType = input.actorType && isRevenueActorType(input.actorType) ? input.actorType : "system";
   const confidence = numberOrNull(input.confidenceScore);
   const revenueImpact = numberOrNull(input.revenueImpactEur);
-  return {
+  const payload: RevenueEventPayload = {
     event_type: input.eventType,
     title: clean(input.title) || REVENUE_EVENT_LABELS[input.eventType],
     description: clean(input.description),
     contact_id: clean(input.contactId),
     brand_id: clean(input.brandId),
-    source_system: clean(input.sourceSystem) || "manual",
+    source_system: clean(input.sourceSystem) || (canonicalOutcome ? "" : "manual"),
     source_type: clean(input.sourceType),
     source_id: clean(input.sourceId),
     actor_type: actorType,
@@ -166,9 +222,15 @@ export function normalizeRevenueEvent(input: RevenueEventInput): RevenueEventPay
     revenue_impact_eur: revenueImpact,
     occurred_at: iso(input.occurredAt),
     dedupe_key: clean(input.dedupeKey),
-    metadata: input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata) ? input.metadata : {},
+    metadata: input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata) ? { ...input.metadata } : {},
     created_by: clean(input.createdBy),
   };
+  const semantics = assessRevenueEventSemantics(payload);
+  if (!semantics.valid) {
+    throw new Error(`REVENUE_EVENT_SEMANTICS_INVALID:${payload.event_type}:${semantics.blockers.join(",")}`);
+  }
+  payload.metadata.revenue_event_semantics = semantics;
+  return payload;
 }
 
 export function isRevenueEventsTableMissing(message?: string | null) {
@@ -351,7 +413,13 @@ export async function insertRevenueEvent(
   supabase: RevenueEventsSupabaseLike,
   input: RevenueEventInput,
 ): Promise<RevenueEventInsertResult> {
-  const payload = normalizeRevenueEvent(input);
+  let payload: RevenueEventPayload;
+  try {
+    payload = normalizeRevenueEvent(input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not normalize revenue event";
+    return { ok: false, semanticInvalid: message.startsWith("REVENUE_EVENT_SEMANTICS_INVALID:"), error: message };
+  }
   try {
     const { data, error } = await supabase.from("revenue_events").insert(payload).select("*").single();
     if (!error) {

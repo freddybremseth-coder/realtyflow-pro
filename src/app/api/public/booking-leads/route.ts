@@ -222,6 +222,29 @@ export async function POST(request: NextRequest) {
     updated_at: now,
   }).then(() => null);
 
+  const revenueSourceId = payload.id || String(lead?.id || contact.id);
+  const leadEventResult = existing?.id ? null : await insertRevenueEvent(supabase, {
+    eventType: "lead_created",
+    title: `Ny booking-lead: ${name}`,
+    contactId: contact.id,
+    brandId,
+    sourceSystem: "booking_leads",
+    sourceType: "appointment_app",
+    sourceId: revenueSourceId,
+    actorType: "customer",
+    confidenceScore: 95,
+    revenueImpactEur: value || null,
+    occurredAt: payload.createdAt || now,
+    dedupeKey: buildRevenueEventDedupeKey(["booking-lead", brandId, revenueSourceId]),
+    metadata: {
+      email,
+      service_id: payload.serviceId,
+      booking_id: payload.id || null,
+      lead_id: lead?.id || null,
+    },
+    createdBy: "api/public/booking-leads",
+  });
+
   const eventResult = await insertRevenueEvent(supabase, {
     eventType: "meeting_booked",
     title: `Ny booking: ${name}`,
@@ -230,12 +253,12 @@ export async function POST(request: NextRequest) {
     brandId,
     sourceSystem: "booking_leads",
     sourceType: "appointment_app",
-    sourceId: payload.id || lead?.id || contact.id,
+    sourceId: revenueSourceId,
     actorType: "customer",
     confidenceScore: 95,
     revenueImpactEur: value || null,
     occurredAt: payload.createdAt || now,
-    dedupeKey: payload.id ? buildRevenueEventDedupeKey(["booking_leads", brandId, payload.id]) : null,
+    dedupeKey: buildRevenueEventDedupeKey(["booking_meeting", brandId, revenueSourceId]),
     metadata: {
       email,
       phone,
@@ -253,6 +276,9 @@ export async function POST(request: NextRequest) {
     createdBy: "api/public/booking-leads",
   });
 
+  if (leadEventResult && !leadEventResult.ok && !leadEventResult.tableNotReady) {
+    console.warn("[booking-leads] canonical lead event insert failed", leadEventResult.error);
+  }
   if (!eventResult.ok && !eventResult.tableNotReady) {
     console.warn("[booking-leads] revenue event insert failed", eventResult.error);
   }

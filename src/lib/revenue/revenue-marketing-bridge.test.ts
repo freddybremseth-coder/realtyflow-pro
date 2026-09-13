@@ -82,13 +82,21 @@ function makeClient(opts: {
 
 async function mirror(eventType: RevenueEventType, opts: { explicitCommission?: number; sourceSystem?: string; metadata?: Record<string, unknown>; verifiedPublication?: boolean } = {}) {
   const mock = makeClient({ eventType, ...opts });
+  const outcomeEvidence = eventType === "qualified"
+    ? { next_status: "QUALIFIED" }
+    : eventType === "deal_won"
+      ? { next_status: "WON" }
+      : {};
   const result = await insertRevenueEvent(mock.client, {
     eventType,
     brandId: "zeneco",
     contactId: "contact-1",
-    sourceSystem: opts.sourceSystem,
+    sourceSystem: opts.sourceSystem ?? "crm",
+    sourceType: "test_outcome",
+    sourceId: `source-${eventType}`,
+    dedupeKey: `test:${eventType}`,
     revenueImpactEur: eventType === "deal_won" ? 750000 : null,
-    metadata: { ...(opts.metadata ?? {}), ...(opts.explicitCommission == null ? {} : { commission_eur: opts.explicitCommission }) },
+    metadata: { ...outcomeEvidence, ...(opts.metadata ?? {}), ...(opts.explicitCommission == null ? {} : { commission_eur: opts.explicitCommission }) },
   });
   assert.equal(result.ok, true);
   return mock.upserts;

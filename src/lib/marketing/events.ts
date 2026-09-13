@@ -79,7 +79,9 @@ export function normalizeMarketingEvent(input: MarketingEventInput): MarketingEv
 
 /** Revenue-relevante marketing-events som skal speiles til revenue_events. */
 const REVENUE_BRIDGE: Partial<Record<MarketingEventType, { eventType: RevenueEventInput["eventType"]; actorType: RevenueEventInput["actorType"] }>> = {
-  lead_attributed: { eventType: "lead_created", actorType: "external" },
+  // Attribution is a marketing signal, not proof that CRM created a new lead.
+  // The canonical lead_created event is emitted by the CRM ingestion boundary.
+  lead_attributed: { eventType: "note", actorType: "external" },
   qualified_lead: { eventType: "note", actorType: "automation" },
 };
 
@@ -101,6 +103,7 @@ export function revenueEventForMarketing(input: MarketingEventInput): RevenueEve
     metadata: {
       marketing_source: true,
       marketing_event: input.eventType,
+      proposed_revenue_event_type: input.eventType === "lead_attributed" ? "lead_created" : null,
       channel: input.channel ?? g?.channel ?? null,
       content_id: input.contentId ?? null,
       genome_signature: g ? `${g.channel}|${g.format}|${g.hookType ?? "?"}|${g.area ?? "?"}` : null,

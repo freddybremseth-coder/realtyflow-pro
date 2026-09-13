@@ -60,12 +60,13 @@ test("event: ukjent type kaster", () => {
   assert.throws(() => normalizeMarketingEvent({ eventType: "bogus" as any, brandId: "x" }));
 });
 
-test("bridge: lead_attributed → revenue_events lead_created; publisert → null", () => {
+test("bridge: lead_attributed remains an operational note; publisert → null", () => {
   const bridged = revenueEventForMarketing({ eventType: "lead_attributed", brandId: "zenecohomes", revenueImpactEur: 14000, channel: "instagram", contentId: "ig_483" });
   assert.ok(bridged);
-  assert.equal(bridged!.eventType, "lead_created");
+  assert.equal(bridged!.eventType, "note");
   assert.equal(bridged!.actorType, "external");
   assert.equal((bridged!.metadata as any).marketing_source, true);
+  assert.equal((bridged!.metadata as any).proposed_revenue_event_type, "lead_created");
 
   const none = revenueEventForMarketing({ eventType: "content_published", brandId: "x" });
   assert.equal(none, null);

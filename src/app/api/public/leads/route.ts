@@ -225,6 +225,7 @@ export async function POST(request: NextRequest) {
     updated_at: now,
   }).then(() => null);
 
+  const revenueSourceId = submissionId || propertyRef || pageUrl || String(incomingInteraction.id);
   const eventResult = await insertRevenueEvent(supabase, {
     eventType: existing?.id ? "contact_updated" : "lead_created",
     title: existing?.id ? `Ny public aktivitet: ${name}` : `Ny public lead: ${name}`,
@@ -233,12 +234,12 @@ export async function POST(request: NextRequest) {
     brandId,
     sourceSystem: "public_leads",
     sourceType: "website_form",
-    sourceId: submissionId || propertyRef || pageUrl || null,
+    sourceId: revenueSourceId,
     actorType: "customer",
     confidenceScore: pipelineValue >= 500000 || propertyRef ? 86 : 68,
     revenueImpactEur: pipelineValue || null,
     occurredAt: now,
-    dedupeKey: submissionId ? buildRevenueEventDedupeKey(["public_leads", brandId, submissionId]) : null,
+    dedupeKey: buildRevenueEventDedupeKey(["public_leads", brandId, revenueSourceId]),
     metadata: {
       email,
       source,

@@ -3,7 +3,6 @@ import { getRequestAccessContext } from '@/lib/api-admin';
 import { hasPermission } from '@/lib/access-control';
 import { normalizeCustomerPipelineStatus } from '@/lib/customer-updates';
 import { buildCustomerCommunicationState, summarizeNurtureEvents } from '@/lib/customers/communication-status';
-import { buildRevenueEventDedupeKey, insertRevenueEvent } from '@/lib/revenue/events';
 import { recordPipelineTransition } from '@/lib/revenue/pipeline-transition';
 import { filterContactsByView, normalizeContactForClient, normalizeIncomingContact } from './lifecycle';
 import { getContactsSupabase } from './supabase-client';
@@ -258,6 +257,8 @@ export async function PATCH(request: NextRequest) {
   const occurredAt = new Date().toISOString();
 
   if (previousStatus !== nextStatus) {
+    const salePrice = numericOrNull(data?.sale_price ?? updates.sale_price ?? data?.pipeline_value ?? updates.pipeline_value);
+    const commissionEur = numericOrNull(data?.commission_amount ?? updates.commission_amount);
     await recordPipelineTransition(supabase, {
       contactId,
       brandId,
@@ -265,48 +266,8 @@ export async function PATCH(request: NextRequest) {
       nextStatus,
       occurredAt,
       actorType: 'human',
-      createdBy: 'api/contacts',
-    }).catch(() => undefined);
-  }
-
-  if (brandId && previousStatus !== 'QUALIFIED' && nextStatus === 'QUALIFIED') {
-    await insertRevenueEvent(supabase, {
-      eventType: 'qualified',
-      title: 'Lead kvalifisert i CRM',
-      contactId,
-      brandId,
-      sourceSystem: 'crm_pipeline',
-      sourceType: 'pipeline_status',
-      sourceId: contactId,
-      actorType: 'human',
-      occurredAt,
-      dedupeKey: buildRevenueEventDedupeKey(['crm-qualified', brandId, contactId]),
-      metadata: { previous_status: previousStatus, next_status: nextStatus },
-      createdBy: 'api/contacts',
-    }).catch(() => undefined);
-  }
-
-  if (brandId && previousStatus !== 'WON' && nextStatus === 'WON') {
-    const salePrice = numericOrNull(data?.sale_price ?? updates.sale_price ?? data?.pipeline_value ?? updates.pipeline_value);
-    const commissionEur = numericOrNull(data?.commission_amount ?? updates.commission_amount);
-    await insertRevenueEvent(supabase, {
-      eventType: 'deal_won',
-      title: 'Salg vunnet i CRM',
-      contactId,
-      brandId,
-      sourceSystem: 'crm_pipeline',
-      sourceType: 'pipeline_status',
-      sourceId: contactId,
-      actorType: 'human',
-      revenueImpactEur: salePrice,
-      occurredAt,
-      dedupeKey: buildRevenueEventDedupeKey(['crm-won', brandId, contactId]),
-      metadata: {
-        previous_status: previousStatus,
-        next_status: nextStatus,
-        sale_price_eur: salePrice,
-        commission_eur: commissionEur,
-      },
+      salePriceEur: salePrice,
+      commissionEur,
       createdBy: 'api/contacts',
     }).catch(() => undefined);
   }
