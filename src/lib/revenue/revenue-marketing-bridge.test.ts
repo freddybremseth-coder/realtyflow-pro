@@ -6,6 +6,8 @@ function makeClient(opts: {
   eventType?: RevenueEventType;
   explicitCommission?: number;
   sourceSystem?: string;
+  metadata?: Record<string, unknown>;
+  verifiedPublication?: boolean;
 } = {}) {
   const upserts: any[] = [];
   const eventType = opts.eventType ?? "deal_won";
@@ -24,7 +26,7 @@ function makeClient(opts: {
               revenue_impact_eur: eventType === "deal_won" ? 750000 : null,
               occurred_at: "2026-08-25T10:00:00Z",
               source_system: opts.sourceSystem ?? "crm",
-              metadata: opts.explicitCommission == null ? {} : { commission_eur: opts.explicitCommission },
+              metadata: { ...(opts.metadata ?? {}), ...(opts.explicitCommission == null ? {} : { commission_eur: opts.explicitCommission }) },
             },
             error: null,
           }),
@@ -55,13 +57,30 @@ function makeClient(opts: {
         };
         return q;
       }
+      if (table === "marketing_publications") {
+        const q: any = {
+          select: (_cols: string) => q,
+          eq: (_col: string, _value: unknown) => q,
+          maybeSingle: async () => ({
+            data: opts.verifiedPublication ? {
+              publication_id: "pub-verified",
+              brand_id: "zeneco",
+              content_id: "ig-content-verified",
+              campaign_id: "camp-verified",
+              channel: "instagram",
+            } : null,
+            error: null,
+          }),
+        };
+        return q;
+      }
       throw new Error(`unexpected table ${table}`);
     },
   };
   return { client, upserts };
 }
 
-async function mirror(eventType: RevenueEventType, opts: { explicitCommission?: number; sourceSystem?: string } = {}) {
+async function mirror(eventType: RevenueEventType, opts: { explicitCommission?: number; sourceSystem?: string; metadata?: Record<string, unknown>; verifiedPublication?: boolean } = {}) {
   const mock = makeClient({ eventType, ...opts });
   const result = await insertRevenueEvent(mock.client, {
     eventType,
@@ -69,7 +88,7 @@ async function mirror(eventType: RevenueEventType, opts: { explicitCommission?: 
     contactId: "contact-1",
     sourceSystem: opts.sourceSystem,
     revenueImpactEur: eventType === "deal_won" ? 750000 : null,
-    metadata: opts.explicitCommission == null ? undefined : { commission_eur: opts.explicitCommission },
+    metadata: { ...(opts.metadata ?? {}), ...(opts.explicitCommission == null ? {} : { commission_eur: opts.explicitCommission }) },
   });
   assert.equal(result.ok, true);
   return mock.upserts;
@@ -116,4 +135,38 @@ test("deal_won uses only explicit commission_eur provenance", async () => {
 test("generic contact_updated does not invent a funnel outcome", async () => {
   const upserts = await mirror("contact_updated", { sourceSystem: "crm_pipeline" });
   assert.equal(upserts.length, 0);
+});
+
+test("public lead preserves explicit UTM and visitor/session without requiring content", async () => {
+  const upserts = await mirror("lead_created", {
+    sourceSystem: "public_leads",
+    metadata: {
+      utm_source: "facebook",
+      utm_medium: "social",
+      utm_campaign: "autumn-villas",
+      visitor_id: "visitor-1",
+      session_id: "session-1",
+    },
+  });
+  assert.equal(upserts.length, 1);
+  assert.equal(upserts[0].touch_type, "lead_created");
+  assert.equal(upserts[0].content_id, null);
+  assert.equal(upserts[0].campaign_id, "autumn-villas");
+  assert.equal(upserts[0].channel, "facebook");
+  assert.equal(upserts[0].visitor_id, "visitor-1");
+  assert.equal(upserts[0].metadata.session_id, "session-1");
+  assert.equal(upserts[0].confidence, "strong");
+});
+
+test("publication attribution is accepted only through a same-brand publication lookup", async () => {
+  const upserts = await mirror("lead_created", {
+    verifiedPublication: true,
+    metadata: { publication_id: "pub-verified", visitor_id: "visitor-1" },
+  });
+  assert.equal(upserts.length, 1);
+  assert.equal(upserts[0].publication_id, "pub-verified");
+  assert.equal(upserts[0].content_id, "ig-content-verified");
+  assert.equal(upserts[0].campaign_id, "camp-verified");
+  assert.equal(upserts[0].metadata.attribution_context, "verified_publication");
+  assert.equal(upserts[0].confidence, "exact");
 });

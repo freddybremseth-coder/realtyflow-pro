@@ -8,6 +8,7 @@
 import {
   canonicalMetricsForContent,
   rollupContentOutcomes,
+  stitchAttributionJourneys,
   touchpointDedupeKey,
   type Journey,
   type MarketingTouchpoint,
@@ -15,22 +16,25 @@ import {
 } from "@/lib/marketing/attribution";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
-function rowToTouch(r: any): MarketingTouchpoint {
+export function marketingTouchpointFromRow(r: any): MarketingTouchpoint {
+  const metadata = r.metadata && typeof r.metadata === "object" ? r.metadata : {};
   return {
     touchpointId: r.id ? String(r.id) : undefined,
+    dedupeKey: r.dedupe_key ?? null,
     brandId: String(r.brand_id),
     contentId: r.content_id ?? null,
     publicationId: r.publication_id ?? null,
     campaignId: r.campaign_id ?? null,
     creativeVariantId: r.creative_variant_id ?? null,
     visitorId: r.visitor_id ?? null,
+    sessionId: r.session_id ?? metadata.session_id ?? null,
     contactId: r.contact_id ?? null,
     channel: r.channel ?? null,
     touchType: r.touch_type,
     occurredAt: r.occurred_at,
     confidence: r.confidence ?? undefined,
     commissionEur: r.commission_eur ?? null,
-    metadata: r.metadata ?? undefined,
+    metadata,
   };
 }
 
@@ -53,7 +57,10 @@ export async function recordTouchpoint(supabase: MarketingSupabaseLike, t: Marke
       occurred_at: t.occurredAt,
       confidence: t.confidence ?? null,
       commission_eur: t.commissionEur ?? null,
-      metadata: t.metadata ?? {},
+      metadata: {
+        ...(t.metadata ?? {}),
+        ...(t.sessionId ? { session_id: t.sessionId } : {}),
+      },
     },
     { onConflict: "dedupe_key", ignoreDuplicates: true },
   );
@@ -69,14 +76,7 @@ async function loadJourneys(supabase: MarketingSupabaseLike, opts: { brandId: st
     .eq("brand_id", opts.brandId)
     .order("occurred_at", { ascending: true })
     .limit(10000);
-  const byContact = new Map<string, MarketingTouchpoint[]>();
-  for (const r of data ?? []) {
-    const t = rowToTouch(r);
-    const key = t.contactId || t.visitorId;
-    if (!key) continue;
-    (byContact.get(key) ?? byContact.set(key, []).get(key)!).push(t);
-  }
-  return Array.from(byContact.values()).map((touches) => ({ touches }));
+  return stitchAttributionJourneys((data ?? []).map(marketingTouchpointFromRow));
 }
 
 export async function attributeContent(supabase: MarketingSupabaseLike, contentId: string, opts: { brandId: string; model?: AttributionModel }) {
