@@ -37,6 +37,7 @@ import {
 } from "@/lib/marketing/autonomous";
 import type { MarketingChannel } from "@/lib/marketing/genome";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
+import { evaluateNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
 
 export interface ActionTraceEntry {
   step: string;
@@ -292,12 +293,30 @@ export async function dispatchGeneratedAsset(
   if (mode === "live") {
     const verdict = evaluateGuards(deps.guardConfig ?? DEFAULT_GUARD_CONFIG, guardState, { kind: "publish", channel: asset.channel, brandId: run.brandId, campaignId: brief.campaignId });
     trace.push({ step: "guard", actor: "guard", summary: verdict.allowed ? "OK" : verdict.reason, detail: { tripBreaker: verdict.tripBreaker ?? false } });
-    if (verdict.allowed && deps.publisher) {
+    const boundaryCheckedAt = nowIso();
+    const accountRequired = asset.channel === "instagram" || asset.channel === "facebook";
+    const executionBoundary = evaluateNexusExecutionBoundary("marketing_autopilot_publish_preapproved", {
+      executorEnabled: Boolean(deps.publisher),
+      evidenceSatisfied: Boolean(args.preapprovedFormat && (!accountRequired || args.account?.accountId)),
+      auditTrailReady: true,
+      idempotencyKey,
+      freshPreflight: { passed: verdict.allowed, checkedAt: boundaryCheckedAt },
+      explicitApprovalSatisfied: args.preapprovedFormat === true,
+      now: boundaryCheckedAt,
+    });
+    trace.push({
+      step: "execution-boundary",
+      actor: "policy",
+      summary: executionBoundary.automaticExecutionAllowed ? "OK" : executionBoundary.blockers.join(", "),
+      detail: { actionType: executionBoundary.actionType, evaluatedAt: executionBoundary.evaluatedAt },
+    });
+    if (verdict.allowed && deps.publisher && executionBoundary.automaticExecutionAllowed) {
       const res = await deps.publisher.publish(asset, { idempotencyKey, publicationId, contentId: asset.contentId, campaignId: brief.campaignId, marketingRunId: run.marketingRunId, channel: asset.channel, accountId: args.account?.accountId });
       state = res.state; published = res.state === "published" || res.state === "scheduled";
       trace.push({ step: "publish", actor: "publisher", summary: `publisert (${res.state})` });
     } else {
       state = "paused";
+      if (!executionBoundary.automaticExecutionAllowed) error = `NEXUS_EXECUTION_BOUNDARY_BLOCKED:${executionBoundary.blockers.join(",")}`;
     }
     await persist({ state, asset_hash: assetHash, quality_score: quality.score, autonomy_mode: mode, approval_id: null });
   } else if (mode === "manual-review" || mode === "human-required") {

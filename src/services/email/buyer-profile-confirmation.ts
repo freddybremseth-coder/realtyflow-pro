@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
+import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
 import { extractLatestReplyText } from "@/services/email/latest-reply-text";
+import { evaluateNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
 
 const KEY_LABELS: Record<string, string> = {
   location: "Område",
@@ -237,6 +240,82 @@ export async function sendBuyerCriteriaConfirmation(
     return { sent: false as const, skipped: true as const, reason: "no_customer_readable_criteria" };
   }
 
+  const now = new Date().toISOString();
+  const idempotencyKey = `sha256:v1:${createHash("sha256").update([
+    "criteria-confirmation-v1",
+    input.brandId,
+    input.contactId,
+    input.reviewWorkItemId,
+    input.sourceEmailMessageId,
+    input.sourceWorkItemId,
+    email.mode,
+    recipient,
+  ].join(":"), "utf8").digest("hex")}`;
+
+  const reviewLookup = await supabase
+    .from("work_items")
+    .select("metadata")
+    .eq("id", input.reviewWorkItemId)
+    .maybeSingle();
+  if (reviewLookup.error) throw reviewLookup.error;
+  const currentMetadata = record(reviewLookup.data?.metadata);
+  const priorExecutionKey = String(currentMetadata.confirmation_execution_idempotency_key || "");
+  const priorExecutionStatus = String(currentMetadata.confirmation_execution_status || "").toLowerCase();
+  if (priorExecutionKey === idempotencyKey && ["sending", "sent", "ambiguous"].includes(priorExecutionStatus)) {
+    return { sent: false as const, skipped: true as const, duplicate: true as const, reason: `duplicate_${priorExecutionStatus}` };
+  }
+
+  const [suppression, sender] = await Promise.all([
+    checkCrmEmailSuppression(supabase, [recipient]),
+    supabase.from("brand_email_configs")
+      .select("id")
+      .eq("brand_id", input.brandId)
+      .eq("is_active", true)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+  ]);
+  const preflightPassed = !suppression.error && !suppression.blocked && Boolean(sender.data?.length) && !sender.error;
+  if (!preflightPassed) {
+    const reason = suppression.error
+      ? `suppression_check_failed:${suppression.error}`
+      : suppression.blocked
+        ? "recipient_suppressed"
+        : sender.error
+          ? `sender_check_failed:${sender.error.message}`
+          : "sender_not_configured";
+    return { sent: false as const, skipped: true as const, reason };
+  }
+
+  const claimedMetadata = {
+    ...currentMetadata,
+    confirmation_execution_action: "criteria_clarification_email",
+    confirmation_execution_idempotency_key: idempotencyKey,
+    confirmation_execution_status: "sending",
+    confirmation_execution_claimed_at: now,
+    confirmation_execution_audit: "work_items.metadata",
+  };
+  const claim = await supabase
+    .from("work_items")
+    .update({ metadata: claimedMetadata, updated_at: now })
+    .eq("id", input.reviewWorkItemId);
+  if (claim.error) throw claim.error;
+
+  const executionBoundary = evaluateNexusExecutionBoundary("criteria_clarification_email", {
+    executorEnabled: true,
+    evidenceSatisfied: Boolean(email.criteriaLines.length && input.sourceEmailMessageId && input.sourceWorkItemId),
+    auditTrailReady: true,
+    idempotencyKey,
+    freshPreflight: { passed: preflightPassed, checkedAt: now },
+  });
+  if (!executionBoundary.automaticExecutionAllowed) {
+    const reason = `execution_boundary:${executionBoundary.blockers.join(",")}`;
+    await supabase.from("work_items").update({
+      metadata: { ...claimedMetadata, confirmation_execution_status: "blocked", confirmation_execution_error: reason },
+      updated_at: new Date().toISOString(),
+    }).eq("id", input.reviewWorkItemId);
+    return { sent: false as const, skipped: true as const, reason };
+  }
+
   const sent = await sendBrandEmail(supabase, {
     brandId: input.brandId,
     to: [recipient],
@@ -244,15 +323,9 @@ export async function sendBuyerCriteriaConfirmation(
     bodyText: email.bodyText,
   });
 
-  const now = new Date().toISOString();
-  const reviewLookup = await supabase
-    .from("work_items")
-    .select("metadata")
-    .eq("id", input.reviewWorkItemId)
-    .maybeSingle();
-  const currentMetadata = record(reviewLookup.data?.metadata);
+  const completedAt = new Date().toISOString();
   const nextMetadata = {
-    ...currentMetadata,
+    ...claimedMetadata,
     confirmation_pending: sent.success && email.requiresConfirmation,
     confirmation_requested_at: sent.success && email.requiresConfirmation ? now : null,
     criteria_clarification_requested_at: sent.success && !email.requiresConfirmation ? now : null,
@@ -265,12 +338,15 @@ export async function sendBuyerCriteriaConfirmation(
     confirmation_message_mode: email.mode,
     confirmation_send_status: sent.success ? "sent" : (sent.skipped ? "skipped" : "failed"),
     confirmation_send_error: sent.success ? null : sent.error || null,
+    confirmation_execution_status: sent.success ? "sent" : (sent.skipped ? "blocked" : "failed"),
+    confirmation_execution_completed_at: completedAt,
+    confirmation_execution_error: sent.success ? null : sent.error || null,
     performed_by: "Nexus Criteria Confirmation Autopilot",
   };
 
   const update = await supabase
     .from("work_items")
-    .update({ metadata: nextMetadata, updated_at: now })
+    .update({ metadata: nextMetadata, updated_at: completedAt })
     .eq("id", input.reviewWorkItemId);
   if (update.error) throw update.error;
 

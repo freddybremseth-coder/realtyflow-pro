@@ -141,12 +141,13 @@ test("guarded + preapproved + publisher → publisert, guard-sjekk kjørt", asyn
   const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "guarded" }), marketingRunId: "mr1" };
   const res = await dispatchGeneratedAsset(
     deps(fake, { publisher: { publish: async (_a, o) => { publishedWith = o; return { state: "scheduled" }; } } }),
-    { asset, brief, run, preapprovedFormat: true },
+    { asset, brief, run, preapprovedFormat: true, account: { accountId: "ig-b1" } },
   );
   assert.equal(res.mode, "live");
   assert.equal(res.published, true);
   assert.equal(res.state, "scheduled");
   assert.ok(publishedWith.idempotencyKey);
+  assert.equal(res.trace.some((entry) => entry.step === "execution-boundary" && entry.summary === "OK"), true);
 });
 
 test("guarded live men circuit breaker aktiv → ikke publisert (paused)", async () => {

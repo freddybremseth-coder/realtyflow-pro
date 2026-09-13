@@ -13,6 +13,7 @@ import { approvedAssetHash, contentPublishabilityGate, contentQualityGate, type 
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import type { ChannelPublisher } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
+import { requireNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
 
 function rowToAsset(row: any): GeneratedAsset {
   return {
@@ -193,6 +194,17 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
       });
       if (recomputed !== pub.asset_hash) throw new Error("ASSET_MODIFIED: innhold/konto endret etter godkjenning — publiserer ikke.");
     }
+
+    const boundaryCheckedAt = (cfg.now?.() ?? new Date()).toISOString();
+    requireNexusExecutionBoundary("social_publish_approved", {
+      executorEnabled: true,
+      evidenceSatisfied: Boolean(pub && assetRow.provenance && pub.asset_hash && (!cfg.resolveAccount || accountId)),
+      auditTrailReady: Boolean(item.id && item.status === "approved" && pub.publication_id),
+      idempotencyKey: pub.idempotency_key,
+      freshPreflight: { passed: true, checkedAt: boundaryCheckedAt },
+      explicitApprovalSatisfied: item.status === "approved",
+      now: boundaryCheckedAt,
+    });
 
     const res = await cfg.publisher.publish(asset, {
       idempotencyKey: pub.idempotency_key,
