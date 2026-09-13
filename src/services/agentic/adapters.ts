@@ -233,13 +233,18 @@ export function makeGatewayPublishEvent(supabase: RevenueEventsSupabaseLike) {
 /** publishEvent → revenue_events (bevarer agentic_outcome i metadata, punkt 5). */
 export function makePublishEvent(supabase: RevenueEventsSupabaseLike) {
   return async (event: WorkflowEvent): Promise<void> => {
+    const operationalEventType = event.eventType === "lead_created" ? "note" : event.eventType;
     await insertRevenueEvent(supabase, {
-      eventType: event.eventType,
+      eventType: operationalEventType,
       title: event.title,
       actorType: "ai",
       confidenceScore: event.confidence != null ? Math.round(event.confidence * 100) : null,
       revenueImpactEur: event.revenueImpactEur ?? null,
-      metadata: { ...(event.metadata ?? {}), agentic_outcome: event.outcome },
+      metadata: {
+        ...(event.metadata ?? {}),
+        agentic_outcome: event.outcome,
+        proposed_revenue_event_type: operationalEventType === event.eventType ? null : event.eventType,
+      },
     } as RevenueEventInput);
   };
 }

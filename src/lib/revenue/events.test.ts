@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  assessRevenueEventSemantics,
   buildRevenueEventDedupeKey,
   insertRevenueEvent,
   normalizeRevenueEvent,
@@ -71,7 +72,66 @@ test("normalizeRevenueEvent creates a safe database payload", () => {
   assert.equal(payload.confidence_score, 100);
   assert.equal(payload.revenue_impact_eur, 250000);
   assert.equal(payload.dedupe_key, "public-leads:lead-123");
-  assert.deepEqual(payload.metadata, { source: "zeneco-public" });
+  assert.equal(payload.metadata.source, "zeneco-public");
+  assert.deepEqual(payload.metadata.revenue_event_semantics, {
+    version: 1,
+    canonicalOutcome: true,
+    valid: true,
+    blockers: [],
+  });
+});
+
+test("canonical revenue outcomes reject missing identity, provenance and idempotency", () => {
+  assert.throws(
+    () => normalizeRevenueEvent({ eventType: "lead_created", contactId: "contact-1" }),
+    /brand_id_required.*source_system_required.*source_type_required.*source_id_required.*dedupe_key_required/,
+  );
+});
+
+test("qualified and deal won require explicit CRM evidence", () => {
+  const base = {
+    contactId: "contact-1",
+    brandId: "zeneco",
+    sourceSystem: "crm_pipeline",
+    sourceType: "pipeline_status",
+    sourceId: "contact-1",
+    dedupeKey: "outcome:contact-1",
+  };
+  assert.throws(() => normalizeRevenueEvent({ ...base, eventType: "qualified" }), /qualification_evidence_required/);
+  assert.throws(() => normalizeRevenueEvent({ ...base, eventType: "deal_won" }), /won_evidence_required/);
+
+  const payload = normalizeRevenueEvent({
+    ...base,
+    eventType: "qualified",
+    metadata: { previous_status: "CONTACT", next_status: "QUALIFIED" },
+  });
+  assert.equal(payload.event_type, "qualified");
+});
+
+test("commission paid requires positive amount, invoice and payment timestamp", () => {
+  const input = {
+    eventType: "commission_paid",
+    contactId: "contact-1",
+    brandId: "zeneco",
+    sourceSystem: "commission_workspace",
+    sourceType: "commission_payment",
+    sourceId: "invoice-1",
+    dedupeKey: "commission-paid:invoice-1",
+    revenueImpactEur: 12_000,
+    metadata: { invoice_number: "INV-1", paid_at: "2026-07-12T10:00:00.000Z" },
+  } as const;
+  const payload = normalizeRevenueEvent(input);
+  assert.equal(assessRevenueEventSemantics(payload).valid, true);
+
+  assert.throws(
+    () => normalizeRevenueEvent({ ...input, metadata: {} }),
+    /invoice_number_required.*paid_at_required/,
+  );
+});
+
+test("operational events remain valid without commercial provenance", () => {
+  const payload = normalizeRevenueEvent({ eventType: "note", title: "Operational signal" });
+  assert.equal((payload.metadata.revenue_event_semantics as any).canonicalOutcome, false);
 });
 
 test("normalizeRevenueEvent rejects unsupported event types", () => {
@@ -124,6 +184,10 @@ test("insertRevenueEvent inserts normalized payloads", async () => {
   const result = await insertRevenueEvent(mock.client, {
     eventType: "lead_created",
     contactId: "11111111-1111-1111-1111-111111111111",
+    brandId: "zeneco",
+    sourceSystem: "public_leads",
+    sourceType: "website_form",
+    sourceId: "lead-1",
     dedupeKey: "lead-1",
   });
 
@@ -159,9 +223,20 @@ test("insertRevenueEvent reports tableNotReady without throwing", async () => {
   });
 
   const result = await insertRevenueEvent(mock.client, {
-    eventType: "lead_created",
+    eventType: "note",
   });
 
   assert.equal(result.ok, false);
   assert.equal(result.tableNotReady, true);
+});
+
+test("insertRevenueEvent refuses semantically invalid canonical outcomes before database access", async () => {
+  let called = false;
+  const result = await insertRevenueEvent({ from() { called = true; throw new Error("not expected"); } }, {
+    eventType: "lead_created",
+    contactId: "contact-1",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.semanticInvalid, true);
+  assert.equal(called, false);
 });

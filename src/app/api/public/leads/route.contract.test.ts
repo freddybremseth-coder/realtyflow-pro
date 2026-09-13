@@ -15,5 +15,6 @@ test("public lead preserves deterministic acquisition identity through CRM and r
 
 test("submission id makes CRM interaction and revenue event idempotent", () => {
   assert.match(source, /submissionId \? `website-\$\{submissionId\}`/);
-  assert.match(source, /buildRevenueEventDedupeKey\(\["public_leads", brandId, submissionId\]\)/);
+  assert.match(source, /const revenueSourceId = submissionId \|\| propertyRef \|\| pageUrl \|\| String\(incomingInteraction\.id\)/);
+  assert.match(source, /buildRevenueEventDedupeKey\(\["public_leads", brandId, revenueSourceId\]\)/);
 });

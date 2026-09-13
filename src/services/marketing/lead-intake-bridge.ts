@@ -1,7 +1,7 @@
 /**
  * Phase 7.1 — broen mellom Marketing OS og Revenue OS. En lead-form-innsending:
  *  1) resolver/oppretter canonical CRM-kontakt når identitet finnes,
- *  2) fanges som attribution-touchpoints (form_submit + lead_created),
+ *  2) fanger form_submit direkte, mens canonical lead_created går via revenue_events,
  *  3) rutes inn i eksisterende Agentic Lead Intake (buyer profile → find_properties
  *     → draft → approval) — ingen parallell lead-flyt.
  */
@@ -12,6 +12,7 @@ import { recordTouchpoint } from "@/services/marketing/attribution-adapter";
 import { runLeadIntakeProduction } from "@/services/agentic/lead-intake-runtime";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import type { SupabaseLike } from "@/services/agentic/adapters";
+import { buildRevenueEventDedupeKey, insertRevenueEvent } from "@/lib/revenue/events";
 
 export interface SubmitLeadFormResult {
   inquiryExternalId: string;
@@ -25,7 +26,7 @@ async function resolveCanonicalContactId(
   supabase: MarketingSupabaseLike & SupabaseLike,
   submission: LeadFormSubmission,
   occurredAt: string,
-): Promise<string | null> {
+): Promise<{ contactId: string | null; created: boolean }> {
   const email = submission.contact.email?.trim().toLowerCase() || null;
   const phone = submission.contact.phone?.trim() || null;
 
@@ -50,8 +51,8 @@ async function resolveCanonicalContactId(
       .maybeSingle();
     existing = data;
   }
-  if (existing?.id) return String(existing.id);
-  if (!email && !phone) return null;
+  if (existing?.id) return { contactId: String(existing.id), created: false };
+  if (!email && !phone) return { contactId: null, created: false };
 
   const { data, error } = await supabase
     .from("contacts")
@@ -70,7 +71,7 @@ async function resolveCanonicalContactId(
     .select("id")
     .single();
   if (error) throw new Error(`MARKETING_CONTACT_RESOLVE_FAILED: ${error.message}`);
-  return data?.id ? String(data.id) : null;
+  return { contactId: data?.id ? String(data.id) : null, created: Boolean(data?.id) };
 }
 
 async function resolveCreativeVariantId(
@@ -101,8 +102,11 @@ export async function submitLeadForm(
   const occurredAt = inquiry.receivedAt;
 
   let canonicalContactId: string | null = null;
+  let contactCreated = false;
   try {
-    canonicalContactId = await resolveCanonicalContactId(supabase, submission, occurredAt);
+    const resolved = await resolveCanonicalContactId(supabase, submission, occurredAt);
+    canonicalContactId = resolved.contactId;
+    contactCreated = resolved.created;
   } catch {
     // CRM-identitetsfeil skal ikke blokkere selve lead-intaket. visitorId kan
     // fortsatt bevare pre-CRM-reisen, men vi later aldri som e-post er contact UUID.
@@ -133,17 +137,35 @@ export async function submitLeadForm(
       sessionId: submission.sessionId ?? null,
       metadata: { ...sharedMetadata, formId: submission.formId },
     });
-    await recordTouchpoint(supabase, {
-      brandId: submission.brandId,
-      touchType: "lead_created", occurredAt, contentId: submission.contentId, publicationId: submission.publicationId ?? null,
-      campaignId: submission.campaignId, creativeVariantId, channel: submission.channel ?? null,
-      visitorId: submission.visitorId ?? null, contactId: canonicalContactId,
-      sessionId: submission.sessionId ?? null,
-      metadata: { ...sharedMetadata, source: "marketing_lead_form" },
-    });
-    touchpointsRecorded = 2;
+    touchpointsRecorded = 1;
   } catch {
     /* touchpoint-feil skal ikke blokkere selve lead-intaket */
+  }
+
+  if (contactCreated && canonicalContactId) {
+    const sourceId = inquiry.externalId;
+    await insertRevenueEvent(supabase, {
+      eventType: "lead_created",
+      title: "Lead opprettet fra marketing-skjema",
+      contactId: canonicalContactId,
+      brandId: submission.brandId,
+      sourceSystem: "marketing_lead_form",
+      sourceType: "website_form",
+      sourceId,
+      actorType: "customer",
+      occurredAt,
+      dedupeKey: buildRevenueEventDedupeKey(["marketing-lead-form", submission.brandId, sourceId]),
+      metadata: {
+        content_id: submission.contentId ?? null,
+        publication_id: submission.publicationId ?? null,
+        campaign_id: submission.campaignId,
+        creative_variant_id: creativeVariantId,
+        visitor_id: submission.visitorId ?? null,
+        session_id: submission.sessionId ?? null,
+        channel: submission.channel ?? null,
+      },
+      createdBy: "marketing/lead-intake-bridge",
+    });
   }
 
   const intake = await runLeadIntakeProduction(supabase, inquiry, role);

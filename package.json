@@ -35,7 +35,7 @@
     "test:recovery": "tsx --test src/lib/revenue/recovery.test.ts",
     "test:service-revenue": "tsx --test src/lib/revenue/service-revenue.test.ts",
     "test:revenue-command": "tsx --test src/lib/revenue/command.test.ts",
-    "test:revenue-events": "tsx --test src/lib/revenue/events.test.ts",
+    "test:revenue-events": "node --import tsx --test src/lib/revenue/events.test.ts src/lib/revenue/pipeline-transition.test.ts src/lib/revenue/revenue-event-semantics.contract.test.ts",
     "test:nurture-engine": "tsx --test src/services/growth/nurture-engine.test.ts",
     "test:email-events": "tsx --test src/lib/revenue/email-events.test.ts",
     "test:revenue-goals": "tsx --test src/lib/revenue/goals.test.ts",

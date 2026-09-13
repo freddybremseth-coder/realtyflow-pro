@@ -5,6 +5,11 @@ import {
   buildCommissionCase,
   buildCommissionCollection,
 } from "@/lib/revenue/commissions";
+import {
+  buildRevenueEventDedupeKey,
+  insertRevenueEvent,
+  type RevenueEventInput,
+} from "@/lib/revenue/events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -142,6 +147,7 @@ export async function POST(request: NextRequest) {
   const interactions = Array.isArray(contact.interactions) ? contact.interactions : [];
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   let interaction: ReturnType<typeof internalInteraction> | null = null;
+  let revenueOutcome: RevenueEventInput | null = null;
 
   if (action === "set_terms") {
     const commissionAmount = numberValue(body.commissionAmount);
@@ -183,6 +189,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "dueDays must be an integer between 1 and 90" }, { status: 400 });
     }
     const invoiceNumber = safeText(body.invoiceNumber, 80) || commissionCase.invoiceNumber || null;
+    if (!invoiceNumber) return NextResponse.json({ error: "Fakturanummer er påkrevd før faktura registreres sendt" }, { status: 409 });
     const dueDate = dueDateIso(dueDays);
     interaction = internalInteraction(
       "commission_invoice_sent",
@@ -190,6 +197,25 @@ export async function POST(request: NextRequest) {
       { invoice_number: invoiceNumber, due_date: dueDate, due_days: dueDays, commission_amount: commissionCase.commissionAmount },
     );
     updates.next_followup = nextFollowupIso(Math.min(dueDays + 1, 90));
+    revenueOutcome = {
+      eventType: "commission_invoiced",
+      title: "Provisjon fakturert",
+      contactId,
+      brandId: commissionCase.brandId,
+      sourceSystem: "commission_workspace",
+      sourceType: "commission_invoice",
+      sourceId: invoiceNumber,
+      actorType: "human",
+      revenueImpactEur: commissionCase.commissionAmount,
+      occurredAt: interaction.date,
+      dedupeKey: buildRevenueEventDedupeKey(["commission-invoiced", commissionCase.brandId, contactId, invoiceNumber]),
+      metadata: {
+        invoice_number: invoiceNumber,
+        commission_eur: commissionCase.commissionAmount,
+        due_date: dueDate,
+      },
+      createdBy: "api/revenue/commissions",
+    };
   }
 
   if (action === "log_payment_followup") {
@@ -206,7 +232,43 @@ export async function POST(request: NextRequest) {
 
   if (action === "mark_paid") {
     if (!commissionCase.commissionConfirmed) return NextResponse.json({ error: "Provisjonsgrunnlaget må være bekreftet før betaling registreres" }, { status: 409 });
-    if (commissionCase.status === "PAID") return NextResponse.json({ error: "Provisjonen er allerede registrert betalt" }, { status: 409 });
+    if (!commissionCase.invoiceNumber) return NextResponse.json({ error: "Fakturanummer mangler; registrer sendt faktura før betaling" }, { status: 409 });
+    if (commissionCase.status === "PAID") {
+      const paidAt = commissionCase.paidAt;
+      if (!paidAt) return NextResponse.json({ error: "Betalingsdato mangler på betalt provisjon" }, { status: 409 });
+      const reconciliation = await insertRevenueEvent(supabase, {
+        eventType: "commission_paid",
+        title: "Provisjon betalt",
+        contactId,
+        brandId: commissionCase.brandId,
+        sourceSystem: "commission_workspace",
+        sourceType: "commission_payment",
+        sourceId: commissionCase.invoiceNumber,
+        actorType: "human",
+        revenueImpactEur: commissionCase.commissionAmount,
+        occurredAt: paidAt,
+        dedupeKey: buildRevenueEventDedupeKey(["commission-paid", commissionCase.brandId, contactId, commissionCase.invoiceNumber]),
+        metadata: {
+          invoice_number: commissionCase.invoiceNumber,
+          commission_eur: commissionCase.commissionAmount,
+          paid_at: paidAt,
+          reconciled_from_contact: true,
+        },
+        createdBy: "api/revenue/commissions",
+      });
+      if (!reconciliation.ok) {
+        return NextResponse.json({ error: reconciliation.error, code: "REVENUE_EVENT_RECONCILIATION_FAILED" }, { status: 500 });
+      }
+      return NextResponse.json({
+        ok: true,
+        contact,
+        action,
+        alreadyPaid: true,
+        customerContactSent: false,
+        revenueEvent: reconciliation.event || null,
+        revenueEventDuplicate: Boolean(reconciliation.duplicate),
+      });
+    }
     const requestedPaidAt = body.paidAt ? new Date(String(body.paidAt)) : new Date();
     if (Number.isNaN(requestedPaidAt.getTime()) || requestedPaidAt.getTime() > Date.now() + 86_400_000) {
       return NextResponse.json({ error: "paidAt must be a valid date that is not in the future" }, { status: 400 });
@@ -217,6 +279,25 @@ export async function POST(request: NextRequest) {
       "Provisjonsbetalingen er markert som mottatt internt.",
       { paid_at: requestedPaidAt.toISOString(), invoice_number: commissionCase.invoiceNumber, commission_amount: commissionCase.commissionAmount },
     );
+    revenueOutcome = {
+      eventType: "commission_paid",
+      title: "Provisjon betalt",
+      contactId,
+      brandId: commissionCase.brandId,
+      sourceSystem: "commission_workspace",
+      sourceType: "commission_payment",
+      sourceId: commissionCase.invoiceNumber,
+      actorType: "human",
+      revenueImpactEur: commissionCase.commissionAmount,
+      occurredAt: requestedPaidAt,
+      dedupeKey: buildRevenueEventDedupeKey(["commission-paid", commissionCase.brandId, contactId, commissionCase.invoiceNumber]),
+      metadata: {
+        invoice_number: commissionCase.invoiceNumber,
+        commission_eur: commissionCase.commissionAmount,
+        paid_at: requestedPaidAt.toISOString(),
+      },
+      createdBy: "api/revenue/commissions",
+    };
   }
 
   if (action === "schedule_followup") {
@@ -232,6 +313,18 @@ export async function POST(request: NextRequest) {
   const { data: updated, error: updateError, removedColumns } = await updateWithFallbacks(supabase, contactId, updates);
   if (updateError) return NextResponse.json({ error: updateError.message, removedColumns }, { status: 500 });
 
+  const revenueEventResult = revenueOutcome
+    ? await insertRevenueEvent(supabase, revenueOutcome)
+    : null;
+  if (revenueEventResult && !revenueEventResult.ok) {
+    return NextResponse.json({
+      error: revenueEventResult.error || "Provisjonsutfallet kunne ikke registreres",
+      code: revenueEventResult.semanticInvalid ? "REVENUE_EVENT_SEMANTICS_INVALID" : "REVENUE_EVENT_WRITE_FAILED",
+      contact: updated,
+      action,
+    }, { status: 500 });
+  }
+
   return NextResponse.json({
     ok: true,
     contact: updated,
@@ -239,5 +332,7 @@ export async function POST(request: NextRequest) {
     customerContactSent: false,
     removedColumns,
     warning: removedColumns.length ? `Databasen manglet feltene: ${removedColumns.join(", ")}` : null,
+    revenueEvent: revenueEventResult?.event || null,
+    revenueEventDuplicate: Boolean(revenueEventResult?.duplicate),
   });
 }
