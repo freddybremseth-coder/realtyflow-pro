@@ -60,6 +60,17 @@ test("property feedback creates idempotent property-level revenue outcomes", () 
   assert.match(source, /revenue_events_recorded/);
 });
 
+test("property feedback telemetry separates inserted revenue events from idempotent duplicates", () => {
+  assert.match(source, /let inserted = 0/);
+  assert.match(source, /let duplicates = 0/);
+  assert.match(source, /result\.ok && result\.duplicate/);
+  assert.match(source, /revenueEventsInserted \+= revenueEventResult\.inserted/);
+  assert.match(source, /revenueEventsDuplicate \+= revenueEventResult\.duplicates/);
+  assert.match(source, /const revenueEventsRecorded = revenueEventsInserted \+ revenueEventsDuplicate/);
+  assert.match(source, /revenue_events_inserted: revenueEventsInserted/);
+  assert.match(source, /revenue_events_duplicate: revenueEventsDuplicate/);
+});
+
 test("questions are not falsely recorded as positive or negative revenue outcomes", () => {
   assert.match(source, /if \(signal\.sentiment === "question"\) continue/);
 });
