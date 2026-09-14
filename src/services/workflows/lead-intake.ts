@@ -77,6 +77,41 @@ export interface LeadIntakeDeps {
 const norm01 = (v: number) => (v > 1 ? v / 100 : v);
 const defaultEstimate = (profile: ExtractedProfile) => Math.round((profile.budgetMaxEur ?? 0) * 0.03);
 
+export const DELFIN_NATURA_RESPONSE_RULE = "delfin_natura_albir";
+
+export function isDelfinNaturaInquiry(inquiry: Pick<RawInquiry, "message">): boolean {
+  const normalized = String(inquiry.message ?? "")
+    .toLocaleLowerCase("nb-NO")
+    .replace(/[-_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /\bdelfin(?:a)?\s+natura\b/.test(normalized);
+}
+
+export function composeDelfinNaturaDraft(): { subject: string; body: string } {
+  return {
+    subject: "Delfin Natura i Albir – tilgjengelighet og alternativer",
+    body: `Takk for hyggelig henvendelse vedrørende Delfin Natura i Albir.
+
+Det er dessverre relativt lite som er tilgjengelig for salg i Delfin Natura akkurat nå, men jeg kan selvfølgelig undersøke hva som faktisk er ledig per i dag og sende deg en oppdatert oversikt.
+
+Det er samtidig én ting jeg synes er viktig å gjøre oppmerksom på når det gjelder Delfin Natura: deler av prosjektet har ganske strenge bestemmelser knyttet til turistutleie og hvor mye boligen skal være tilgjengelig for utleie gjennom året. Dette er ikke alltid like tydelig for kjøpere i utgangspunktet. Dersom ønsket er å bruke boligen mye selv, er det derfor viktig at vi ser nøye på hvilken type enhet og hvilke vilkår som gjelder før man går videre.
+
+Jeg vil derfor gjerne vise deg noen alternativer i tillegg til Delfin Natura. Et aktuelt eksempel er Paradis Suites i Villajoyosa, et lite prosjekt med kun 10 leiligheter, alle med 3 soverom og 2 bad. Prosjektet er lagt opp for turistutleie med profesjonell administrasjon av blant annet booking, innsjekk, rengjøring og vedlikehold, samtidig som eier kan benytte boligen selv. Leilighetene leveres møblert og utstyrt. Her er lenke: https://www.soleada.no/eiendom/nye-utleieleiligheter-i-villajoyosa/
+
+Akkurat nå ligger de aktuelle 3-roms/enhetene jeg har fått informasjon om omtrent fra €500.000 til €550.000, avhengig av etasje og terrasse. Jeg har også andre alternativer i Albir, Altea, Villajoyosa og området rundt som kan være interessante dersom kombinasjonen av egen bruk og utleie er viktig.
+
+For at jeg skal kunne sende deg de mest relevante alternativene, kan du gjerne svare meg på et par ting:
+
+- Omtrent hvilket budsjett ser du for deg?
+- Hvor mange soverom ønsker du – 2 eller 3, eventuelt mer?
+- Er hovedformålet egen feriebolig, investering/utleie eller en kombinasjon?
+- Hvor mye av året ser du for deg å bruke boligen selv?
+
+Når jeg vet dette, kan jeg sende deg en kort og konkret oversikt over de beste alternativene, inkludert hva man realistisk kan forvente av utleie og hvordan administrasjonen fungerer i de forskjellige prosjektene.`,
+  };
+}
+
 function composeDraftBody(profile: ExtractedProfile, top: RankedProperty[], inquiry: RawInquiry): { subject: string; body: string } {
   const name = profile.name || inquiry.contactName || "der";
   const lines = top.map(
@@ -208,6 +243,116 @@ export async function runLeadIntake(inquiry: RawInquiry, deps: LeadIntakeDeps): 
     outputSummary: `profil ${profileRes.data.id} v${profileRes.data.version} (${profileRes.data.status})`,
     data: { profile_id: profileRes.data.id, status: profileRes.data.status },
   });
+
+  // Låst salgsregel: eksplisitte Delfin Natura-henvendelser får en godkjent,
+  // deterministisk svarmal før generell budsjett-/matchlogikk. Dette sikrer at
+  // kunden får viktig informasjon om utleievilkår og relevante alternativer,
+  // også når første henvendelse ikke inneholder budsjett.
+  if (isDelfinNaturaInquiry(inquiry)) {
+    const { subject, body } = composeDelfinNaturaDraft();
+    const draftKey = operationIdempotencyKey(runId, "create_draft", DELFIN_NATURA_RESPONSE_RULE);
+    const draftRes = await deps.registry.run<unknown, { id: string; created: boolean }>("create_draft", {
+      correlationId,
+      idempotencyKey: draftKey,
+      contactRef: inquiry.contactEmail ?? inquiry.contactPhone,
+      channel: "email",
+      subject,
+      body,
+      propertyIds: [],
+    }, opCtx("create_draft", DELFIN_NATURA_RESPONSE_RULE));
+    if (!draftRes.ok || !draftRes.data) return fail("CREATE_DELFIN_NATURA_DRAFT_FAILED", draftRes.error ?? "no data");
+
+    step("tool_result", "TOOL create_draft DELFIN_NATURA", {
+      tool: "create_draft",
+      decisionMode: draftRes.decision?.mode,
+      risk: draftRes.decision?.risk,
+      outcome: "executed",
+      outputSummary: `draft ${draftRes.data.id}${draftRes.data.created ? "" : " (eksisterende)"}`,
+      data: { response_rule: DELFIN_NATURA_RESPONSE_RULE },
+    });
+    await deps.publishEvent(
+      {
+        eventType: "draft_created",
+        outcome: "executed",
+        title: "Delfin Natura-svar opprettet",
+        confidence: 1,
+        metadata: {
+          run_id: runId,
+          correlation_id: correlationId,
+          agentic_outcome: "executed",
+          draft_id: draftRes.data.id,
+          response_rule: DELFIN_NATURA_RESPONSE_RULE,
+        },
+      },
+      baseCtx,
+    );
+
+    const opportunity = estimate(profile, []);
+    const sendDecision = decideAutonomy({
+      actionClass: "send_personal",
+      agentId: "lead-intake",
+      channel: "email",
+      involvesPersonalData: true,
+      recipients: 1,
+      reversibility: "partial",
+      financialImpactEur: opportunity,
+      agentConfidence: 1,
+      historicalAccuracy: 1,
+      dataQuality: 1,
+      permission: "requires-approval",
+    });
+    step("decision", "POLICY send_personal DELFIN_NATURA", {
+      decisionMode: sendDecision.mode,
+      risk: sendDecision.risk,
+      confidence: 1,
+      revenueImpactEur: opportunity,
+      data: { response_rule: DELFIN_NATURA_RESPONSE_RULE },
+    });
+
+    const apprId = await requestApproval(
+      deps,
+      opCtx("request_approval", `send:${DELFIN_NATURA_RESPONSE_RULE}:${draftRes.data.id}`),
+      correlationId,
+      runId,
+      {
+        title: `Send Delfin Natura-svar til ${profile.name || inquiry.contactName || "kunde"}`,
+        gatedActionClass: "send_personal",
+        subjectType: "message_draft",
+        subjectRef: draftRes.data.id,
+        draftId: draftRes.data.id,
+        customerRef: inquiry.contactEmail ?? inquiry.contactPhone,
+        reason: "Kunden spør eksplisitt om Delfin Natura i Albir. Bruk låst svarmal med utleieinformasjon, Paradis Suites og kvalifiseringsspørsmål.",
+        risk: sendDecision.risk,
+        decisionMode: sendDecision.mode,
+        confidence: 1,
+        estimatedOpportunityEur: opportunity,
+      },
+      step,
+    );
+    if (!apprId) return fail("REQUEST_DELFIN_NATURA_APPROVAL_FAILED", "approval not created");
+
+    await deps.publishEvent(
+      {
+        eventType: "automation_recommended",
+        outcome: "recommended",
+        title: "Delfin Natura-oppfølging klar for godkjenning",
+        confidence: 1,
+        revenueImpactEur: opportunity,
+        metadata: {
+          run_id: runId,
+          correlation_id: correlationId,
+          agentic_outcome: "recommended",
+          draft_id: draftRes.data.id,
+          response_rule: DELFIN_NATURA_RESPONSE_RULE,
+          autonomy_mode: sendDecision.mode,
+          risk: sendDecision.risk,
+        },
+      },
+      baseCtx,
+    );
+
+    return finish("waiting_approval", "recommended");
+  }
 
   // Feilscenario: mangler budsjett → avklaring, ingen auto-draft.
   if (profile.budgetMaxEur == null) {

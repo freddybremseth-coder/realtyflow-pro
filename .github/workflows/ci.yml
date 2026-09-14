@@ -36,6 +36,8 @@ jobs:
         run: npm run test:customer-crm
       - name: Approval Center tests
         run: npm run test:approvals
+      - name: Lead intake workflow tests
+        run: npx tsx --test src/services/workflows/lead-intake.test.ts
       - name: After-sales tests
         run: npm run test:after-sales
       - name: Revenue Forecast tests
