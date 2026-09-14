@@ -268,7 +268,7 @@ export default function NexusCockpitPage() {
       .catch(() => {});
   }, []);
 
-  const openJarvis = () => window.dispatchEvent(new Event("jarvis:open"));
+  const openExecutionConsole = () => window.dispatchEvent(new Event("jarvis:open"));
 
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoMsg, setDemoMsg] = useState<string | null>(null);
@@ -434,10 +434,11 @@ export default function NexusCockpitPage() {
                 </span>
               </div>
               <button
-                onClick={openJarvis}
+                onClick={openExecutionConsole}
+                title="Åpne avansert Nexus Execution Console"
                 className="flex h-[42px] items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20"
               >
-                <Sparkles className="h-4 w-4" /> Jarvis
+                <Sparkles className="h-4 w-4" /> Execution Console
               </button>
               <button
                 onClick={runDemoLead}
