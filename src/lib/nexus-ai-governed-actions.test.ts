@@ -164,10 +164,15 @@ test("terminal customers and unresolved explicit targets do not get scheduled", 
     }).length, 0);
   }
 
-  assert.equal(buildNexusActionProposals({
-    message: "Planlegg oppfølging til Knut i morgen",
-    currentContact: LENE,
-    contacts: [HARALD, LENE],
-    now: NOW,
-  }).length, 0);
+  for (const message of [
+    "Planlegg oppfølging til Knut i morgen",
+    "Planlegg oppfølging med Knut i morgen",
+  ]) {
+    assert.equal(buildNexusActionProposals({
+      message,
+      currentContact: LENE,
+      contacts: [HARALD, LENE],
+      now: NOW,
+    }).length, 0);
+  }
 });
