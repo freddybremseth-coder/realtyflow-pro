@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { CheckCircle2, ExternalLink, ListPlus, Loader2, Search, ShieldCheck } from "lucide-react";
+import { CheckCircle2, ExternalLink, FileText, ListPlus, Loader2, Mail, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,22 @@ type ShortlistSaveResult = {
   shortlistId: string;
   duplicate: boolean;
   itemCount: number;
+};
+
+type PresentationDraftResult = {
+  presentationId: string;
+  messageDraftId: string;
+  duplicate: boolean;
+  itemCount: number;
+  title: string;
+  subject: string;
+  status: string;
+  messageStatus: string;
+  messageDraft: {
+    subject: string;
+    bodyText: string;
+    bodyHtml: string | null;
+  };
 };
 
 interface Props {
@@ -85,15 +102,25 @@ export function CustomerInlinePropertyMatches({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveResult, setSaveResult] = useState<ShortlistSaveResult | null>(null);
+  const [presentationLoading, setPresentationLoading] = useState(false);
+  const [presentationError, setPresentationError] = useState("");
+  const [presentationResult, setPresentationResult] = useState<PresentationDraftResult | null>(null);
 
   const selectedMatches = useMemo(
     () => matches.filter((match) => Boolean(decisions[match.propertyId]) && match.eligibility !== "rejected"),
     [decisions, matches],
   );
 
+  const clientReadySelectedCount = useMemo(
+    () => selectedMatches.filter((match) => qualityReviews[match.propertyId]?.status === "client_ready").length,
+    [qualityReviews, selectedMatches],
+  );
+
   function invalidateSavedState() {
     setSaveError("");
     setSaveResult(null);
+    setPresentationError("");
+    setPresentationResult(null);
   }
 
   function updateDecision(propertyId: string, decision: ShortlistDecision) {
@@ -139,6 +166,8 @@ export function CustomerInlinePropertyMatches({
     setSaving(true);
     setSaveError("");
     setSaveResult(null);
+    setPresentationError("");
+    setPresentationResult(null);
     try {
       const response = await fetch("/api/lead-intelligence/shortlists", {
         method: "POST",
@@ -180,6 +209,55 @@ export function CustomerInlinePropertyMatches({
       setSaveError(error instanceof Error ? error.message : "Kunne ikke lagre shortlist-utkastet.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createPresentationDraft() {
+    if (!saveResult?.shortlistId || clientReadySelectedCount === 0) return;
+    setPresentationLoading(true);
+    setPresentationError("");
+    setPresentationResult(null);
+    try {
+      const response = await fetch("/api/lead-intelligence/presentations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-correlation-id": correlationId,
+        },
+        body: JSON.stringify({
+          brand,
+          buyerProfileId,
+          shortlistId: saveResult.shortlistId,
+          title: `Boligforslag ${new Date().toLocaleDateString("nb-NO")}`,
+          language: "nb",
+          idempotencySeed: `crm-presentation-${saveResult.shortlistId}`,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.ok) {
+        throw new Error(body?.error?.message || body?.error || "Kunne ikke lage presentasjon og e-postutkast.");
+      }
+      const result = body.result || {};
+      setPresentationResult({
+        presentationId: String(result.presentationId || ""),
+        messageDraftId: String(result.messageDraftId || ""),
+        duplicate: Boolean(result.duplicate),
+        itemCount: Number(result.itemCount || clientReadySelectedCount),
+        title: String(result.title || "Boligforslag"),
+        subject: String(result.subject || result.messageDraft?.subject || "Boligforslag"),
+        status: String(result.status || "draft"),
+        messageStatus: String(result.messageStatus || "draft"),
+        messageDraft: {
+          subject: String(result.messageDraft?.subject || result.subject || "Boligforslag"),
+          bodyText: String(result.messageDraft?.bodyText || ""),
+          bodyHtml: result.messageDraft?.bodyHtml ? String(result.messageDraft.bodyHtml) : null,
+        },
+      });
+      onSaved?.();
+    } catch (error) {
+      setPresentationError(error instanceof Error ? error.message : "Kunne ikke lage presentasjon og e-postutkast.");
+    } finally {
+      setPresentationLoading(false);
     }
   }
 
@@ -301,6 +379,71 @@ export function CustomerInlinePropertyMatches({
           <p className="mt-1 text-xs text-emerald-100/80">
             {saveResult.itemCount} bolig{saveResult.itemCount === 1 ? "" : "er"} er lagt i shortlist. {saveResult.duplicate ? "Eksisterende identisk utkast ble gjenbrukt." : "Ingen kundeinformasjon er sendt."}
           </p>
+        </div>
+      )}
+
+      {saveResult && !presentationResult && (
+        <div className="mt-3 rounded-lg border border-violet-500/25 bg-violet-500/5 p-3">
+          <div className="flex items-start gap-2">
+            <FileText size={16} className="mt-0.5 text-violet-200" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-violet-100">Neste steg: presentasjon og e-postutkast</p>
+              {clientReadySelectedCount > 0 ? (
+                <p className="mt-1 text-xs text-slate-400">
+                  {clientReadySelectedCount} av {selectedMatches.length} valgte bolig{selectedMatches.length === 1 ? "" : "er"} er merket «Klar for kunde». Bare disse tas med i presentasjonen.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-amber-200">
+                  Ingen valgte boliger er merket «Klar for kunde». Endre kvaliteten, lagre shortlisten på nytt og opprett deretter presentasjonen.
+                </p>
+              )}
+            </div>
+          </div>
+          {clientReadySelectedCount > 0 && (
+            <div className="mt-3 flex justify-end">
+              <Button type="button" size="sm" onClick={createPresentationDraft} disabled={presentationLoading}>
+                {presentationLoading ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Mail size={14} className="mr-2" />}
+                Lag presentasjon og e-postutkast
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {presentationError && (
+        <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{presentationError}</div>
+      )}
+
+      {presentationResult && (
+        <div className="mt-3 rounded-xl border border-violet-500/30 bg-violet-500/10 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-violet-100"><Mail size={16} />Presentasjon og e-postutkast klart</div>
+              <p className="mt-1 text-xs text-slate-400">
+                {presentationResult.itemCount} bolig{presentationResult.itemCount === 1 ? "" : "er"} er med. Utkastet er opprettet for godkjenning; ingen e-post er sendt og presentasjonen er ikke publisert.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">Presentasjon: {presentationResult.status}</Badge>
+              <Badge variant="secondary">E-post: {presentationResult.messageStatus}</Badge>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Emne</p>
+            <p className="mt-1 text-sm font-medium text-white">{presentationResult.messageDraft.subject || presentationResult.subject}</p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">E-postutkast</p>
+            <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap font-sans text-xs leading-5 text-slate-300">{presentationResult.messageDraft.bodyText}</pre>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 border-t border-violet-500/20 pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-400">
+              {presentationResult.duplicate ? "Et identisk eksisterende utkast ble gjenbrukt." : "Neste steg krever eksplisitt godkjenning i Approval Center."}
+            </p>
+            <Button asChild size="sm">
+              <Link href="/approvals"><ShieldCheck size={14} className="mr-2" />Åpne Approval Center</Link>
+            </Button>
+          </div>
         </div>
       )}
 
