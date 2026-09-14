@@ -19,6 +19,14 @@ const clientSource = fs.readFileSync(
   path.join(process.cwd(), "src/services/ai/nexus-ai-client.ts"),
   "utf8",
 );
+const commandSource = fs.readFileSync(
+  path.join(process.cwd(), "src/components/layout/universal-nexus-command.tsx"),
+  "utf8",
+);
+const executionConsoleSource = fs.readFileSync(
+  path.join(process.cwd(), "src/components/agentic/jarvis-overlay.tsx"),
+  "utf8",
+);
 
 test("Nexus AI uses live page context and current customer context", () => {
   assert.match(routeSource, /body\?\.visitorInfo\?\.page/);
@@ -53,7 +61,22 @@ test("chat persists recent history and renders navigation shortcuts", () => {
   assert.match(widgetSource, /href=\{action\.href\}/);
 });
 
-test("global shell presents Nexus AI as the cross-system advisor", () => {
+test("global shell presents Nexus AI as the single conversational advisor", () => {
   assert.match(layoutSource, /title="Nexus AI"/);
   assert.match(layoutSource, /Din rådgiver på tvers av RealtyFlow/);
+});
+
+test("Cmd-K is navigation-only and does not create a second AI conversation", () => {
+  assert.match(commandSource, /Søk i RealtyFlow/);
+  assert.match(commandSource, /Dette vinduet er kun for navigasjon/);
+  assert.doesNotMatch(commandSource, /askNexus/);
+  assert.doesNotMatch(commandSource, /\/api\/nexus\/victoria/);
+});
+
+test("legacy Jarvis is an advanced execution console without a global launcher or Cmd-K conflict", () => {
+  assert.match(executionConsoleSource, /Nexus Execution Console/);
+  assert.match(executionConsoleSource, /ikke en separat chat-assistent/);
+  assert.match(executionConsoleSource, /jarvis:open/);
+  assert.doesNotMatch(executionConsoleSource, /aria-label="Åpne Jarvis/);
+  assert.doesNotMatch(executionConsoleSource, /metaKey|ctrlKey/);
 });
