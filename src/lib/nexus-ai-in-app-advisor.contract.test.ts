@@ -7,6 +7,14 @@ const routeSource = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/nexus/victoria/route.ts"),
   "utf8",
 );
+const actionRouteSource = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/nexus/actions/route.ts"),
+  "utf8",
+);
+const governedActionsSource = fs.readFileSync(
+  path.join(process.cwd(), "src/lib/nexus-ai-governed-actions.ts"),
+  "utf8",
+);
 const widgetSource = fs.readFileSync(
   path.join(process.cwd(), "src/components/chatbot/chat-widget.tsx"),
   "utf8",
@@ -31,6 +39,14 @@ const cockpitSource = fs.readFileSync(
   path.join(process.cwd(), "src/app/(tools)/nexus/page.tsx"),
   "utf8",
 );
+const draftToolSource = fs.readFileSync(
+  path.join(process.cwd(), "src/services/tools/communications/create-draft.ts"),
+  "utf8",
+);
+const adapterSource = fs.readFileSync(
+  path.join(process.cwd(), "src/services/agentic/adapters.ts"),
+  "utf8",
+);
 
 test("Nexus AI uses live page context and current customer context", () => {
   assert.match(routeSource, /body\?\.visitorInfo\?\.page/);
@@ -45,9 +61,41 @@ test("Nexus AI reuses existing pipeline movement and deterministic navigation", 
   assert.match(routeSource, /actions: navigationCandidates/);
 });
 
-test("Nexus AI remains read-only in v1", () => {
-  assert.match(routeSource, /Denne chatten er read-only i v1/);
-  assert.match(routeSource, /skal ikke påstå at den har sendt e-post/);
+test("Nexus AI v2 keeps advice read-only and exposes governed action cards separately", () => {
+  assert.match(routeSource, /Selve rådgivningskallet er read-only også i v2/);
+  assert.match(routeSource, /buildNexusActionProposals/);
+  assert.match(routeSource, /proposedActions/);
+  assert.match(widgetSource, /executeGovernedAction/);
+  assert.match(widgetSource, /\/api\/nexus\/actions/);
+});
+
+test("governed actions are allowlisted and server-reverified before any write", () => {
+  assert.match(governedActionsSource, /NEXUS_GOVERNED_ACTION_TYPES = \["prepare_customer_email"\]/);
+  assert.match(governedActionsSource, /email_suppressed/);
+  assert.match(governedActionsSource, /do_not_contact/);
+  assert.match(actionRouteSource, /requireAdminApi/);
+  assert.match(actionRouteSource, /getRequestAccessContext/);
+  assert.match(actionRouteSource, /buildNexusActionProposals/);
+  assert.match(actionRouteSource, /verifiedProposal\.id !== proposalId/);
+  assert.doesNotMatch(actionRouteSource, /raw\s*sql|execute\s*sql/i);
+});
+
+test("first v2 action creates draft plus pending approval and never sends directly", () => {
+  assert.match(actionRouteSource, /buildCreateDraftTool/);
+  assert.match(actionRouteSource, /buildRequestApprovalTool/);
+  assert.match(actionRouteSource, /gatedActionClass: "send_personal"/);
+  assert.match(actionRouteSource, /decisionMode: "human-required"/);
+  assert.match(actionRouteSource, /state: "waiting_approval"/);
+  assert.match(actionRouteSource, /Ingenting er sendt ennå/);
+  assert.doesNotMatch(actionRouteSource, /executeApproval/);
+  assert.doesNotMatch(actionRouteSource, /sendBrandEmail/);
+});
+
+test("Nexus AI customer drafts preserve brand through the existing executor path", () => {
+  assert.match(draftToolSource, /brandId: z\.string/);
+  assert.match(adapterSource, /brand_id: input\.brandId/);
+  assert.match(adapterSource, /brandId: data\.brand_id/);
+  assert.match(actionRouteSource, /brandId: contact\.brand_id \|\| contact\.brand/);
 });
 
 test("Nexus AI is OpenAI-primary with a configured reserve provider chain", () => {
@@ -58,11 +106,13 @@ test("Nexus AI is OpenAI-primary with a configured reserve provider chain", () =
   assert.match(clientSource, /provider: "fallback"/);
 });
 
-test("chat persists recent history and renders navigation shortcuts", () => {
+test("chat persists recent history and renders navigation plus governed action shortcuts", () => {
   assert.match(widgetSource, /window\.localStorage\.getItem/);
   assert.match(widgetSource, /window\.localStorage\.setItem/);
   assert.match(widgetSource, /msg\.actions/);
   assert.match(widgetSource, /href=\{action\.href\}/);
+  assert.match(widgetSource, /msg\.proposedActions/);
+  assert.match(widgetSource, /Krever godkjenning før sending/);
 });
 
 test("global shell presents Nexus AI as the single conversational advisor", () => {

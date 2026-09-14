@@ -13,6 +13,7 @@ export const createDraftInput = z.object({
   correlationId: z.string().min(1), // sporing
   idempotencyKey: z.string().min(1), // operasjons-scoped dedupe (punkt 4)
   contactRef: z.string().optional(),
+  brandId: z.string().min(1).optional(),
   channel: z.enum(["email", "whatsapp", "sms"]).default("email"),
   subject: z.string().optional(),
   body: z.string().min(1),
