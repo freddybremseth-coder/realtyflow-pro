@@ -30,7 +30,7 @@ test("review handoff is idempotent across source id and presentation id", () => 
   assert.match(source, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
   assert.match(source, /metadata->>'presentation_id' = \$2/);
   assert.match(source, /alreadyQueued: true/);
-  assert.match(source, /REVIEW_CONFLICT/);
+  assert.match(source, /LeadIntelligenceError\("INVALID_REQUEST", "An existing final-review work item points to different presentation dependencies", 409\)/);
 });
 
 test("queued review work is visible to final review but never pre-authorizes customer sending", () => {
