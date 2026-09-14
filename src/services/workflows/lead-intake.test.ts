@@ -7,10 +7,13 @@ import {
   buildFindPropertiesTool,
   type PropertyCandidate,
 } from "@/services/tools/property/find-properties";
-import { buildCreateDraftTool } from "@/services/tools/communications/create-draft";
+import { buildCreateDraftTool, type CreateDraftInput } from "@/services/tools/communications/create-draft";
 import { buildRequestApprovalTool, type RequestApprovalInput } from "@/services/tools/crm/request-approval";
 import { buildSaveBuyerProfileTool } from "@/services/tools/crm/save-buyer-profile";
 import {
+  composeDelfinNaturaDraft,
+  DELFIN_NATURA_RESPONSE_RULE,
+  isDelfinNaturaInquiry,
   recordApprovalOutcome,
   runLeadIntake,
   type ExtractionResult,
@@ -32,7 +35,7 @@ const INQUIRY: RawInquiry = { externalId: "abc123", source: "website", message: 
 
 function harness(overrides: Partial<{
   extractProfile: LeadIntakeDeps["extractProfile"];
-  saveDraft: () => Promise<{ id: string }>;
+  saveDraft: (input: CreateDraftInput) => Promise<{ id: string }>;
   inventory: PropertyCandidate[];
   role: LeadIntakeDeps["role"];
 }> = {}) {
@@ -41,13 +44,20 @@ function harness(overrides: Partial<{
   const approvals = new Map<string, string>();
   const profiles = new Map<string, { id: string; version: number; status: string }>();
   const savedApprovals: RequestApprovalInput[] = [];
+  const savedDraftInputs: CreateDraftInput[] = [];
   let seq = 0;
 
   const registry = new ToolRegistry();
   registry.register(buildFindPropertiesTool({ queryInventory: async () => overrides.inventory ?? INVENTORY }));
   registry.register(buildCreateDraftTool({
     findExisting: async (k) => (drafts.has(k) ? { id: drafts.get(k)! } : null),
-    saveDraft: overrides.saveDraft ? overrides.saveDraft : async (input) => { const id = `draft-${seq++}`; drafts.set(input.idempotencyKey, id); return { id }; },
+    saveDraft: async (input) => {
+      savedDraftInputs.push(input);
+      if (overrides.saveDraft) return overrides.saveDraft(input);
+      const id = `draft-${seq++}`;
+      drafts.set(input.idempotencyKey, id);
+      return { id };
+    },
   }));
   registry.register(buildRequestApprovalTool({
     findExisting: async (k) => (approvals.has(k) ? { id: approvals.get(k)! } : null),
@@ -67,7 +77,7 @@ function harness(overrides: Partial<{
     publishEvent: async (e) => { events.push(e); },
     now: () => new Date("2026-08-23T20:00:00Z"),
   };
-  return { deps, registry, runStore, events, drafts, approvals, profiles, savedApprovals };
+  return { deps, registry, runStore, events, drafts, approvals, profiles, savedApprovals, savedDraftInputs };
 }
 
 const outcomes = (events: WorkflowEvent[]) => events.map((e) => `${e.eventType}:${e.outcome}`);
@@ -78,6 +88,61 @@ const draftInput = (over: Record<string, unknown> = {}) => ({ correlationId: "rf
 test("hard filters: €450k utelukker €595k og manglende pris", () => {
   const eligible = applyHardFilters(INVENTORY, { budgetMaxEur: 450_000, areas: ["Albir", "Finestrat"], exclusions: [], bedroomsMin: 2, limit: 5 });
   assert.deepEqual(eligible.map((p) => p.id).sort(), ["p1", "p2", "p4"]);
+});
+
+/* -------- låst Delfin Natura-respons -------- */
+test("Delfin Natura-regelen gjenkjenner navn, variant og Soleada-URL", () => {
+  assert.equal(isDelfinNaturaInquiry({ message: "Jeg er interessert i Delfin Natura i Albir" }), true);
+  assert.equal(isDelfinNaturaInquiry({ message: "Kan jeg få info om Delfina Natura?" }), true);
+  assert.equal(isDelfinNaturaInquiry({ message: "https://www.soleada.no/eiendom/delfin-natura-albir/" }), true);
+  assert.equal(isDelfinNaturaInquiry({ message: "Jeg ønsker bolig i Albir" }), false);
+});
+
+test("Delfin Natura-malen inneholder låst rådgivning, Paradis Suites, pris og kvalifiseringsspørsmål", () => {
+  const draft = composeDelfinNaturaDraft();
+  assert.equal(draft.subject, "Delfin Natura i Albir – tilgjengelighet og alternativer");
+  assert.match(draft.body, /relativt lite som er tilgjengelig for salg i Delfin Natura akkurat nå/);
+  assert.match(draft.body, /strenge bestemmelser knyttet til turistutleie/);
+  assert.match(draft.body, /Paradis Suites i Villajoyosa/);
+  assert.match(draft.body, /https:\/\/www\.soleada\.no\/eiendom\/nye-utleieleiligheter-i-villajoyosa\//);
+  assert.match(draft.body, /€500\.000 til €550\.000/);
+  assert.match(draft.body, /Omtrent hvilket budsjett ser du for deg\?/);
+  assert.match(draft.body, /Hvor mange soverom ønsker du/);
+  assert.match(draft.body, /egen feriebolig, investering\/utleie eller en kombinasjon/);
+  assert.match(draft.body, /Hvor mye av året ser du for deg å bruke boligen selv\?/);
+});
+
+test("Delfin Natura-henvendelse lager låst draft selv uten budsjett og gates fortsatt før sending", async () => {
+  const inquiry: RawInquiry = {
+    externalId: "delfin-1",
+    source: "website",
+    message: "Jeg ønsker informasjon om Delfin Natura, Albir",
+    contactName: "Lene",
+    contactEmail: "lene@example.com",
+  };
+  const { deps, drafts, savedApprovals, savedDraftInputs, events } = harness({
+    inventory: [],
+    extractProfile: async () => ({
+      profile: { budgetMaxEur: undefined, areas: ["Albir"], mustHaves: [], exclusions: [] },
+      confidence: 0.35,
+    }),
+  });
+
+  const run = await runLeadIntake(inquiry, deps);
+  assert.equal(run.status, "waiting_approval");
+  assert.equal(run.outcome, "recommended");
+  assert.equal(drafts.size, 1, "Delfin-regelen skal lage draft selv uten budsjett");
+  assert.equal(savedDraftInputs.length, 1);
+  assert.equal(savedDraftInputs[0].propertyIds.length, 0, "låst svar er ikke avhengig av inventory-match");
+  assert.match(savedDraftInputs[0].body, /Paradis Suites i Villajoyosa/);
+  assert.match(savedDraftInputs[0].body, /€500\.000 til €550\.000/);
+
+  const sendApproval = savedApprovals.find((a) => a.gatedActionClass === "send_personal");
+  assert.ok(sendApproval, "sending skal fortsatt gå gjennom Approval Gateway");
+  assert.equal(sendApproval!.subjectType, "message_draft");
+  assert.equal(sendApproval!.draftId, [...drafts.values()][0]);
+  assert.equal(savedApprovals.some((a) => a.title.includes("Mangler budsjett")), false);
+  assert.ok(events.some((e) => e.metadata?.response_rule === DELFIN_NATURA_RESPONSE_RULE));
 });
 
 /* -------- 1. happy path -------- */
