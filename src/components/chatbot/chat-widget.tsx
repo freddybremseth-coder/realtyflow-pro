@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { MessageSquare, X, Send, Loader2, User, Bot, Minimize2, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { MessageSquare, X, Send, Loader2, User, Bot, Minimize2, Mic, MicOff, Volume2, VolumeX, ShieldCheck } from "lucide-react";
 import { useLongformSpeech } from "@/hooks/use-longform-speech";
 
 interface MessageAction {
@@ -10,11 +10,25 @@ interface MessageAction {
   description?: string;
 }
 
+interface GovernedAction {
+  id: string;
+  type: "prepare_customer_email";
+  label: string;
+  description: string;
+  endpoint: "/api/nexus/actions";
+  method: "POST";
+  contactId: string;
+  contactName: string;
+  requestText: string;
+  requiresApproval: true;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
   actions?: MessageAction[];
+  proposedActions?: GovernedAction[];
 }
 
 interface ChatWidgetProps {
@@ -53,6 +67,7 @@ export function ChatWidget({
   const [unread, setUnread] = useState(0);
   const [speakReplies, setSpeakReplies] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef("");
@@ -115,6 +130,43 @@ export function ChatWidget({
     window.speechSynthesis.speak(utterance);
   }, [speakReplies]);
 
+  const executeGovernedAction = useCallback(async (action: GovernedAction) => {
+    if (actionBusy[action.id] || action.endpoint !== "/api/nexus/actions" || action.method !== "POST") return;
+    setActionBusy((current) => ({ ...current, [action.id]: true }));
+    try {
+      const res = await fetch("/api/nexus/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: action.type,
+          proposalId: action.id,
+          contactId: action.contactId,
+          requestText: action.requestText,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Handlingen kunne ikke forberedes.");
+
+      const text = String(data.message || "Handlingen er forberedt og venter på godkjenning.");
+      const navigation = data.navigation && typeof data.navigation.label === "string" && typeof data.navigation.href === "string"
+        ? [{ label: String(data.navigation.label), href: String(data.navigation.href), description: "Kontroller utkastet før eventuell sending." }]
+        : [];
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: text,
+        timestamp: new Date().toISOString(),
+        actions: navigation,
+      }]);
+      speak(text);
+    } catch (error) {
+      const text = `Jeg kunne ikke forberede handlingen: ${error instanceof Error ? error.message : "ukjent feil"}`;
+      setMessages((prev) => [...prev, { role: "assistant", content: text, timestamp: new Date().toISOString() }]);
+      speak(text);
+    } finally {
+      setActionBusy((current) => ({ ...current, [action.id]: false }));
+    }
+  }, [actionBusy, speak]);
+
   const sendText = useCallback(async (rawText: string) => {
     const userMessage = rawText.trim();
     if (!userMessage || loading) return;
@@ -158,11 +210,30 @@ export function ChatWidget({
               description: typeof action.description === "string" ? action.description : undefined,
             }))
         : [];
+      const proposedActions: GovernedAction[] = Array.isArray(data.proposedActions)
+        ? data.proposedActions
+            .filter((action: unknown) => {
+              if (!action || typeof action !== "object") return false;
+              const candidate = action as Record<string, unknown>;
+              return candidate.type === "prepare_customer_email"
+                && candidate.endpoint === "/api/nexus/actions"
+                && candidate.method === "POST"
+                && candidate.requiresApproval === true
+                && typeof candidate.id === "string"
+                && typeof candidate.label === "string"
+                && typeof candidate.description === "string"
+                && typeof candidate.contactId === "string"
+                && typeof candidate.contactName === "string"
+                && typeof candidate.requestText === "string";
+            })
+            .slice(0, 3) as GovernedAction[]
+        : [];
       const assistantMsg: Message = {
         role: "assistant",
         content: responseText,
         timestamp: new Date().toISOString(),
         actions,
+        proposedActions,
       };
       setMessages((prev) => [...prev, assistantMsg]);
       speak(responseText);
@@ -245,6 +316,23 @@ export function ChatWidget({
                   </div>
                   <div className="max-w-[80%]">
                     <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${msg.role === "user" ? "rounded-tr-sm bg-slate-700 text-white" : "rounded-tl-sm border border-slate-700/50 bg-slate-800 text-slate-200"}`}>{msg.content}</div>
+                    {msg.role === "assistant" && msg.proposedActions && msg.proposedActions.length > 0 && (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {msg.proposedActions.map((action) => (
+                          <button
+                            key={action.id}
+                            type="button"
+                            disabled={Boolean(actionBusy[action.id])}
+                            onClick={() => void executeGovernedAction(action)}
+                            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-left text-xs text-emerald-100 transition-colors hover:border-emerald-400/60 hover:bg-emerald-500/15 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <span className="flex items-center gap-1.5 font-semibold"><ShieldCheck size={13} />{actionBusy[action.id] ? "Forbereder…" : action.label}</span>
+                            <span className="mt-1 block text-[10px] leading-4 text-slate-400">{action.description}</span>
+                            <span className="mt-1 block text-[9px] font-semibold uppercase tracking-wide text-emerald-300/80">Krever godkjenning før sending</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {msg.role === "assistant" && msg.actions && msg.actions.length > 0 && (
                       <div className="mt-2 flex flex-col gap-1.5">
                         {msg.actions.map((action) => (

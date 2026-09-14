@@ -103,7 +103,7 @@ export function makeDraftStore(supabase: SupabaseLike, table = "agentic_drafts")
     saveDraft: async (input: CreateDraftInput) => {
       const { data, error } = await supabase.from(table).insert({
         idempotency_key: input.idempotencyKey, correlation_id: input.correlationId,
-        contact_ref: input.contactRef ?? null, channel: input.channel,
+        contact_ref: input.contactRef ?? null, brand_id: input.brandId ?? null, channel: input.channel,
         subject: input.subject ?? null, body: input.body, property_ids: input.propertyIds,
         status: "draft", created_at: new Date().toISOString(),
       }).select("id").single();
@@ -211,7 +211,7 @@ export function makeExecutorStore(supabase: SupabaseLike): ExecutorStore {
     getDraft: async (draftId): Promise<DraftRef | null> => {
       const { data } = await supabase.from("agentic_drafts").select("*").eq("id", draftId).maybeSingle();
       if (!data) return null;
-      return { id: String(data.id), contactRef: data.contact_ref ?? null, channel: data.channel ?? null, subject: data.subject ?? null, body: data.body, brandId: null };
+      return { id: String(data.id), contactRef: data.contact_ref ?? null, channel: data.channel ?? null, subject: data.subject ?? null, body: data.body, brandId: data.brand_id ?? null };
     },
     markExecuted: async (id, at, detail, executedBy) => {
       await supabase.from("agentic_approvals").update({ status: "executed", executed_at: at, executed_by: executedBy, execution_detail: detail, updated_at: new Date().toISOString() }).eq("id", id);
@@ -236,8 +236,7 @@ export function makePublishEvent(supabase: RevenueEventsSupabaseLike) {
     const operationalEventType = event.eventType === "lead_created" ? "note" : event.eventType;
     await insertRevenueEvent(supabase, {
       eventType: operationalEventType,
-      title: event.title,
-      actorType: "ai",
+      title: event.title, actorType: "ai",
       confidenceScore: event.confidence != null ? Math.round(event.confidence * 100) : null,
       revenueImpactEur: event.revenueImpactEur ?? null,
       metadata: {
