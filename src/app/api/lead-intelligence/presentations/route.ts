@@ -153,7 +153,7 @@ async function ensureManualPresentationReviewWorkItem(input: {
       || String(metadata.shortlist_id || "") !== input.shortlistId
       || String(metadata.buyer_profile_id || "") !== input.buyerProfileId
     ) {
-      throw new LeadIntelligenceError("REVIEW_CONFLICT", "An existing final-review work item points to different presentation dependencies", 409);
+      throw new LeadIntelligenceError("INVALID_REQUEST", "An existing final-review work item points to different presentation dependencies", 409);
     }
     return {
       workItemId: existing.id,
