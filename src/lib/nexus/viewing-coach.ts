@@ -99,7 +99,7 @@ export function buildViewingCoachPlan(input: {
   const negative = /\b(likte ikke|liker ikke|ikke for oss|passer ikke|skuffet|nei|not for us|didn't like|did not like|don't like|do not like|disappointed)\b/i.test(normalized)
     || reasons.some((reason) => ["price_high", "location_dislike", "too_small", "too_large", "style_dislike"].includes(reason));
   const sentiment: ViewingCoachSentiment = positive && negative ? "mixed" : positive ? "positive" : negative ? "negative" : "neutral";
-  const highIntent = /\b(vil kjope|ønsker å kjøpe|ga videre|gå videre|legge inn bud|gi bud|kjøpe denne|ready to buy|want to buy|make an offer|move forward|proceed)\b/i.test(normalized);
+  const highIntent = /\b(vil kjøpe|vil kjope|ønsker a kjøpe|ønsker å kjøpe|ga videre|gå videre|legge inn bud|gi bud|kjøpe denne|ready to buy|want to buy|make an offer|move forward|proceed)\b/i.test(normalized);
   const explicitCriteria = explicitCriteriaEvidence(note);
   const requiresBuyerProfileReview = explicitCriteria.length > 0;
   const shouldRematch = !highIntent && (sentiment === "negative" || sentiment === "mixed");
