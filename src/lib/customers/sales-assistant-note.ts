@@ -3,7 +3,7 @@ import type { ResponseSchema } from "@google/generative-ai";
 import { askClaude } from "@/services/ai/claude-client";
 
 export const SalesAssistantNoteInputSchema = z.object({
-  note: z.string().trim().min(3).max(8000),
+  note: z.string().trim().min(3).max(30000),
   nowIso: z.string().datetime(),
   timezone: z.string().min(1).max(80).default("Europe/Madrid"),
   customerName: z.string().max(180).nullable().optional(),
@@ -21,7 +21,7 @@ export const SalesAssistantNoteAnalysisSchema = z.object({
   calendarTitle: z.string().trim().max(180).nullable(),
   calendarDurationMinutes: z.number().int().min(10).max(180).nullable(),
   propertyReference: z.string().trim().max(300).nullable(),
-  explicitFacts: z.array(z.string().trim().min(1).max(300)).max(20),
+  explicitFacts: z.array(z.string().trim().min(1).max(300)).max(40),
 }).strict();
 
 export type SalesAssistantNoteAnalysis = z.infer<typeof SalesAssistantNoteAnalysisSchema>;
@@ -45,12 +45,16 @@ const responseSchema = {
   },
 } as unknown as ResponseSchema;
 
+export function buildSalesAssistantPrompt(input: z.infer<typeof SalesAssistantNoteInputSchema>) {
+  const parsed = SalesAssistantNoteInputSchema.parse(input);
+  return `Current time: ${parsed.nowIso}\nTimezone: ${parsed.timezone}\nCustomer: ${parsed.customerName || "unknown"}\n\nRaw CRM source:\n${parsed.note}\n\nReturn JSON only. Rewrite the source into a concise professional CRM note while preserving meaning and chronology. Extract only facts explicitly stated.\n\nThe source may be a pasted email thread, forwarded message, WhatsApp conversation, SMS, meeting note, OCR text from an image/PDF, or a mixture of these. Apply these rules strictly:\n- Distinguish the customer's own statements from internal colleague notes and messages sent by the advisor. Never attribute an internal or outbound statement to the customer.\n- Ignore signatures, contact cards, legal footers, tracking notices, Gmail/Outlook/HubSpot UI text, image placeholders, quoted duplicates and repeated message chains when they add no new fact.\n- Preserve useful chronology when dates/times are present. A visit window or availability date that is already in the past relative to Current time is historical context only and must not become nextFollowup or a calendar event.\n- Infer a follow-up timestamp only when the source clearly requests or implies a future follow-up. Resolve relative expressions such as "in two weeks" from Current time in the given timezone. If timing is vague, historical, conflicting or uncertain, use null or confidence below 0.90.\n- Calendar is recommended only when nextFollowup is non-null and the source intends a future call, meeting or follow-up.\n- Do not invent budget, property criteria, outcome, urgency, commitments or customer preferences.\n- If the thread contains both customer requirements and later advisor/internal coordination, explicitFacts should identify the customer-backed facts separately from internal process notes.\n- If the source mentions a property/project name, keep it in propertyReference when appropriate.\n\nUse updateType=email for an email thread, whatsapp for WhatsApp, phone_call for a call note, and general_note when the source type cannot be determined reliably.`;
+}
+
 export async function analyzeSalesAssistantNote(input: z.infer<typeof SalesAssistantNoteInputSchema>): Promise<SalesAssistantNoteAnalysis> {
   const parsed = SalesAssistantNoteInputSchema.parse(input);
-  const prompt = `Current time: ${parsed.nowIso}\nTimezone: ${parsed.timezone}\nCustomer: ${parsed.customerName || "unknown"}\n\nRaw CRM note:\n${parsed.note}\n\nReturn JSON only. Rewrite the note professionally but preserve meaning. Extract only facts explicitly stated. Infer a follow-up timestamp only when the note clearly requests or implies follow-up (including relative expressions such as "in two weeks"); resolve relative time from Current time in the given timezone. If timing is vague or uncertain, use null or confidence below 0.90. Calendar is recommended only when nextFollowup is non-null and the note intends a call/meeting/follow-up. Do not invent budget, property criteria, outcome, or commitments.`;
-  const raw = await askClaude(prompt, {
+  const raw = await askClaude(buildSalesAssistantPrompt(parsed), {
     temperature: 0.1,
-    maxTokens: 1800,
+    maxTokens: 2200,
     responseMimeType: "application/json",
     responseSchema,
     fallbackOnInvalidResponse: true,
