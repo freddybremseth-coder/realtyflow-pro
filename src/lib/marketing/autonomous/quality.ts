@@ -20,24 +20,19 @@ export interface QualityChecks {
   hasCta: boolean;
   channelFit: boolean;
   languageQuality: boolean;
-  genomeCompleteness: number; // 0..1
+  genomeCompleteness: number;
   attributionReady: boolean;
   duplicateFree: boolean;
-  /** Captionen er ren kundevendt kanaltekst (ingen manus/Markdown/CTA-duplikat). */
   formatClean: boolean;
-  /** Ingen udekket målbar/komparativ/subjektiv property-påstand. */
   claimsVerified: boolean;
-  /** Ingen eierskaps-/rollepåstand i strid med Brand Brain. */
   roleConsistent: boolean;
 }
 
 export interface QualityResult {
-  score: number; // 0..100
+  score: number;
   checks: QualityChecks;
   sensitiveClaimsWithoutSource: string[];
-  /** Målbare/komparative/subjektive property-påstander uten uavhengig factSource. */
   unsupportedOutcomeClaims: string[];
-  /** Eierskaps-/rollepåstander i strid med Brand Brain. */
   roleViolations: string[];
   requiresApproval: boolean;
   reasons: string[];
@@ -45,15 +40,8 @@ export interface QualityResult {
 
 export interface QualityOptions {
   brandTerms?: string[];
-  /** Fra novelty-motoren: er innholdet tilstrekkelig unikt? */
   duplicateFree?: boolean;
-  /** Brand Context — brukes for rolle-/eierskapsgaten (advisor vs eier). */
   brand?: Pick<BrandContext, "allowedClaims" | "services"> & { ownsInventory?: boolean };
-  /**
-   * Er innholdet AI-generert? Utfalls-/rollegatene gjelder KUN generert copy —
-   * menneske-/legacy-forfattet innhold self-sources og er allerede review-et.
-   * Default true (default source_type er «generated»).
-   */
   generated?: boolean;
 }
 
@@ -84,7 +72,7 @@ const INVENTORY_QUALITY_MARKERS: Array<{ label: string; re: RegExp }> = [
   },
   {
     label: "vacation-and-permanent-stay suitability",
-    re: /(?:ideell(?:t|e)?|perfekt|egnet|suitable|ideal|perfect)[^.!?]{0,60}(?:ferie|holiday|vacation)[^.!?]{0,60}(?:permanent\s+opphold|fast\s+bosted|permanent\s+stay|permanent\s+residence|year[-\s]?round)/i,
+    re: /(?:ideell(?:e)?|ideelt|perfekt|egnet|suitable|ideal|perfect)[^.!?]{0,60}(?:ferie|holiday|vacation)[^.!?]{0,60}(?:permanent\s+opphold|fast\s+bosted|permanent\s+stay|permanent\s+residence|year[-\s]?round)/i,
   },
   {
     label: "full-process guidance promise",
