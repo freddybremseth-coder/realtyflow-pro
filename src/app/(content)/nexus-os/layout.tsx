@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/nexus-os/morning-brief", label: "Morning Brief" },
   { href: "/nexus-os/today", label: "Today" },
   { href: "/nexus-os/review-console", label: "Freddy Review" },
+  { href: "/nexus-os/buyer-profile-health", label: "Profile Health" },
   { href: "/personal-intelligence", label: "Mentor" },
   { href: "/nexus-os/revenue-command", label: "Revenue Command" },
   { href: "/nexus-os/commercial-targets", label: "Targets" },
