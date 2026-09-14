@@ -85,7 +85,6 @@ async function searchContentHub(supabase: MarketingSupabaseLike, input: Resolver
     .in("status", ["approved", "review", "draft"])
     .limit(50);
   return (data ?? [])
-    // P0: aldri gjenbruk intern/meta-tekst eller innhold merket ikke-publishable.
     .filter((r: any) => {
       const kind = r.content_kind ?? r.metadata?.content_kind;
       if (kind && kind !== "publishable") return false;
@@ -112,26 +111,30 @@ async function searchContentHub(supabase: MarketingSupabaseLike, input: Resolver
 async function searchMedia(supabase: MarketingSupabaseLike, input: ResolverInput): Promise<ContentCandidate[]> {
   const { data } = await supabase
     .from("media_assets")
-    .select("id, brand_id, property_id, media_type, public_url, thumbnail_url, aspect_ratio, status, is_favorite, exported_to_content_hub_at, tags, created_at")
+    .select("id, brand_id, property_id, media_type, public_url, thumbnail_url, aspect_ratio, status, is_favorite, exported_to_content_hub_at, ai_generated, metadata_json, tags, created_at")
     .eq("brand_id", input.brandId)
     .eq("status", "active")
     .in("media_type", ["image", "video"])
     .limit(50);
   return (data ?? [])
     .filter((r: any) => !input.propertyIds?.length || (r.property_id && input.propertyIds.includes(r.property_id)))
-    .map((r: any) => ({
-      source: "property_media" as const,
-      contentId: `media_asset:${r.id}`,
-      brandId: r.brand_id,
-      channels: [input.channel],
-      media: r.media_type === "video"
-        ? { videoUrl: r.public_url ?? undefined, mediaType: "video" as const, aspectRatio: r.aspect_ratio ?? undefined }
-        : { imageUrl: r.public_url ?? undefined, mediaType: "image" as const, aspectRatio: r.aspect_ratio ?? undefined },
-      humanApproved: !!r.is_favorite || !!r.exported_to_content_hub_at,
-      propertyIds: r.property_id ? [r.property_id] : [],
-      createdAt: r.created_at ?? null,
-      factCheckedAt: r.created_at ?? null,
-    }));
+    .map((r: any) => {
+      const autopilotGenerated = r.ai_generated === true
+        && r.metadata_json?.actorEmail === "nexus-marketing-autopilot@system.local";
+      return {
+        source: autopilotGenerated ? "generated" as const : "property_media" as const,
+        contentId: `media_asset:${r.id}`,
+        brandId: r.brand_id,
+        channels: [input.channel],
+        media: r.media_type === "video"
+          ? { videoUrl: r.public_url ?? undefined, mediaType: "video" as const, aspectRatio: r.aspect_ratio ?? undefined }
+          : { imageUrl: r.public_url ?? undefined, mediaType: "image" as const, aspectRatio: r.aspect_ratio ?? undefined },
+        humanApproved: !!r.is_favorite || !!r.exported_to_content_hub_at,
+        propertyIds: r.property_id ? [r.property_id] : [],
+        createdAt: r.created_at ?? null,
+        factCheckedAt: r.created_at ?? null,
+      };
+    });
 }
 
 async function verifiedCampaignIds(
@@ -145,7 +148,6 @@ async function verifiedCampaignIds(
     .select("id,brand_id")
     .in("id", campaignIds)
     .eq("brand_id", brandId);
-  // Fail closed: if ownership cannot be verified, no ad creative is reusable.
   if (error) return [];
   return (data ?? []).map((row: any) => String(row.id)).filter(Boolean);
 }
@@ -190,8 +192,6 @@ export async function resolveMarketingContent(
   try {
     rankedCandidates = await attachPublicationUsage(supabase, input, candidates);
   } catch (error) {
-    // Autopilot requires authoritative history. Manual/copy workflows may
-    // still produce a reviewable draft if the optional history read fails.
     if (input.minimumReuseIntervalDays != null) throw error;
   }
   return resolveContent(rankedCandidates, input);
