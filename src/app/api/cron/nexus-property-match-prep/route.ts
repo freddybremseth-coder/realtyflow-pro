@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
         property_match_status: noDelta ? "NO_MEANINGFUL_DELTA" : result.reason,
         property_match_analyzed: result.analyzed,
         property_match_raw_count: result.properties.length,
-        property_match_count: deltaProperties.length,
+        property_match_count: noDelta ? null : deltaProperties.length,
         property_match_candidates: deltaProperties,
         property_match_delta_applied: delta.historyApplied,
         property_match_delta_history_count: delta.historicalProperties,
