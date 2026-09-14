@@ -1,8 +1,10 @@
 "use client";
 
 import { type ClipboardEvent, type ChangeEvent, useRef, useState } from "react";
-import { AlertTriangle, Bot, CalendarClock, CheckCircle2, ImagePlus, Loader2, Paperclip, Search, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, CalendarClock, CheckCircle2, ImagePlus, Loader2, Paperclip, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CustomerInlinePropertyMatches } from "@/components/customers/customer-inline-property-matches";
+import type { LeadIntelligencePropertyMatch } from "@/components/lead-intelligence/property-match-display";
 
 type EvidenceCandidate = {
   criterionType: "hard_requirement" | "preference" | "exclusion";
@@ -40,10 +42,13 @@ type SalesAssistantResult = {
   };
 };
 
-type MatchSummary = {
+type MatchPreview = {
+  brand: string;
   buyerProfileId: string;
+  correlationId: string;
   matched: number;
-  shown: number;
+  bestEffort: boolean;
+  matches: LeadIntelligencePropertyMatch[];
 };
 
 const EVIDENCE_LABELS: Record<string, string> = {
@@ -141,7 +146,7 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
   const [importError, setImportError] = useState("");
   const [evidenceMessage, setEvidenceMessage] = useState("");
   const [evidenceError, setEvidenceError] = useState("");
-  const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
+  const [matchPreview, setMatchPreview] = useState<MatchPreview | null>(null);
   const [result, setResult] = useState<SalesAssistantResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -162,7 +167,7 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     setError("");
     setEvidenceMessage("");
     setEvidenceError("");
-    setMatchSummary(null);
+    setMatchPreview(null);
     setSelectedEvidence([]);
     setResult(null);
     try {
@@ -215,7 +220,7 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     setMessage("");
     setEvidenceMessage("");
     setEvidenceError("");
-    setMatchSummary(null);
+    setMatchPreview(null);
     setSelectedEvidence([]);
     setResult(null);
     try {
@@ -263,7 +268,7 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     setApplyingEvidence(true);
     setEvidenceMessage("");
     setEvidenceError("");
-    setMatchSummary(null);
+    setMatchPreview(null);
     try {
       const applyResponse = await fetch(`/api/customers/${encodeURIComponent(contactId)}/buyer-profile-evidence`, {
         method: "POST",
@@ -305,11 +310,14 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
         setEvidenceError(`Buyer Profile er oppdatert, men ${message}`);
         return;
       }
-      const matches = Array.isArray(matchBody.result?.matches) ? matchBody.result.matches : [];
-      setMatchSummary({
+      const matches = Array.isArray(matchBody.result?.matches) ? matchBody.result.matches as LeadIntelligencePropertyMatch[] : [];
+      setMatchPreview({
+        brand,
         buyerProfileId,
+        correlationId: String(matchBody.correlationId || matchResponse.headers.get("x-correlation-id") || crypto.randomUUID()),
         matched: Number(matchBody.result?.matched || 0),
-        shown: matches.length,
+        bestEffort: Boolean(matchBody.result?.bestEffort),
+        matches,
       });
     } catch (applyError) {
       setEvidenceError(applyError instanceof Error ? applyError.message : "Kunne ikke godkjenne Buyer Profile-opplysningene.");
@@ -447,12 +455,16 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
           {evidenceMessage && <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-200">{evidenceMessage}</div>}
           {evidenceError && <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">{evidenceError}</div>}
 
-          {matchSummary && (
-            <div className="mt-3 rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-cyan-200"><Search size={16} />Matching er kjørt</div>
-              <p className="mt-1 text-sm text-slate-200">{matchSummary.matched} aktuelle boliger passerte kriteriene. De {matchSummary.shown} beste er klare i matching-preview.</p>
-              <p className="mt-1 text-xs text-slate-500">Ingen shortlist er opprettet og ingenting er sendt til kunden.</p>
-            </div>
+          {matchPreview && (
+            <CustomerInlinePropertyMatches
+              brand={matchPreview.brand}
+              buyerProfileId={matchPreview.buyerProfileId}
+              correlationId={matchPreview.correlationId}
+              matched={matchPreview.matched}
+              bestEffort={matchPreview.bestEffort}
+              matches={matchPreview.matches}
+              onSaved={onSaved}
+            />
           )}
 
           {canApprove && (
