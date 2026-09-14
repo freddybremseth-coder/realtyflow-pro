@@ -9,6 +9,7 @@ on:
       - "src/lib/nexus/buyer-profile-evidence.ts"
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
+      - "src/app/api/customers/**/buyer-profile-evidence/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
       - "src/components/customers/customer-sales-assistant-note.contract.test.ts"
       - "src/components/crm/crm-customer-card.tsx"
@@ -17,13 +18,16 @@ on:
     branches: [main]
     paths:
       - "src/lib/customers/sales-assistant-note.ts"
+      - "src/lib/customers/sales-assistant-note.test.ts"
       - "src/lib/customers/sales-assistant-buyer-evidence.test.ts"
       - "src/lib/nexus/buyer-profile-evidence.ts"
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
+      - "src/app/api/customers/**/buyer-profile-evidence/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
       - "src/components/customers/customer-sales-assistant-note.contract.test.ts"
       - "src/components/crm/crm-customer-card.tsx"
+      - ".github/workflows/sales-assistant-ci.yml"
 
 jobs:
   test:
@@ -37,4 +41,4 @@ jobs:
           cache: npm
       - run: npm ci --silent
       - name: Sales assistant policy, evidence, route and UI tests
-        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/lib/customers/sales-assistant-buyer-evidence.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts src/components/customers/customer-sales-assistant-note.contract.test.ts
+        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/lib/customers/sales-assistant-buyer-evidence.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts src/app/api/customers/[contactId]/buyer-profile-evidence/route.contract.test.ts src/components/customers/customer-sales-assistant-note.contract.test.ts

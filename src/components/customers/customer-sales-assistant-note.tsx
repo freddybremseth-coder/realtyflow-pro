@@ -1,35 +1,49 @@
 "use client";
 
-import Link from "next/link";
 import { type ClipboardEvent, type ChangeEvent, useRef, useState } from "react";
-import { AlertTriangle, Bot, CalendarClock, CheckCircle2, FilePlus2, ImagePlus, Loader2, Paperclip, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, CalendarClock, CheckCircle2, ImagePlus, Loader2, Paperclip, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type EvidenceCandidate = {
+  criterionType: "hard_requirement" | "preference" | "exclusion";
   key: string;
   otherKey?: string | null;
   operator: string;
-  value: string | number;
+  value: string | number | boolean;
+  weight?: number | null;
+  severity?: "reject" | "major_penalty" | "minor_penalty" | null;
+  appliesToPropertyTypes?: string[];
   confidence: number;
-  sourceText?: string | null;
+  sourceText: string;
+  conflict?: boolean;
+  existingValues?: Array<{ operator: string; value: unknown }>;
 };
 
 type EvidenceConflict = {
   field: string;
-  values: Array<string | number>;
+  values: Array<unknown>;
   reason: string;
 };
 
 type SalesAssistantResult = {
+  interactionId?: string;
   followupBrief?: string | null;
   buyerProfileEvidence?: {
+    brand?: string | null;
     candidates?: EvidenceCandidate[];
     conflicts?: EvidenceConflict[];
+    alreadyKnownCount?: number;
     reviewRecommended?: boolean;
     href?: string;
     persisted?: boolean;
-    draftRequest?: { contactId: string; brand: string } | null;
+    activeProfile?: { buyerProfileId: string; status: string; version: number } | null;
   };
+};
+
+type MatchSummary = {
+  buyerProfileId: string;
+  matched: number;
+  shown: number;
 };
 
 const EVIDENCE_LABELS: Record<string, string> = {
@@ -38,9 +52,16 @@ const EVIDENCE_LABELS: Record<string, string> = {
   bathrooms: "Bad",
   location: "Område",
   living_area_m2: "Boligareal",
+  plot_area_m2: "Tomteareal",
   floor_position: "Etasje",
   purchase_price: "Kjøpspris",
   total_budget: "Totalbudsjett",
+  estimated_total_cost: "Estimert totalkostnad",
+  distance_to_beach: "Avstand til strand",
+  has_lift: "Heis",
+  terrace_area_m2: "Terrasse",
+  parking: "Parkering",
+  pool: "Basseng",
   other: "Annet",
 };
 
@@ -49,6 +70,35 @@ const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
 function evidenceLabel(candidate: EvidenceCandidate) {
   return candidate.otherKey || EVIDENCE_LABELS[candidate.key] || candidate.key;
+}
+
+function evidenceId(candidate: EvidenceCandidate, index: number) {
+  return `${index}:${candidate.criterionType}:${candidate.key}:${candidate.otherKey || ""}:${candidate.operator}:${String(candidate.value)}`;
+}
+
+function evidenceValue(candidate: EvidenceCandidate) {
+  if (candidate.key === "living_area_m2" || candidate.key === "plot_area_m2" || candidate.key === "terrace_area_m2") {
+    return `${String(candidate.value)} m²`;
+  }
+  if (["total_budget", "purchase_price", "estimated_total_cost"].includes(candidate.key) && typeof candidate.value === "number") {
+    return new Intl.NumberFormat("nb-NO", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(candidate.value);
+  }
+  if (candidate.value === true) return "Ja";
+  if (candidate.value === false) return "Nei";
+  return String(candidate.value);
+}
+
+function operatorLabel(operator: string) {
+  const labels: Record<string, string> = {
+    eq: "=",
+    neq: "ikke",
+    gt: ">",
+    gte: "min.",
+    lt: "<",
+    lte: "maks.",
+    contains: "inneholder",
+  };
+  return labels[operator] || operator;
 }
 
 function attachmentFallback(body: any) {
@@ -64,17 +114,34 @@ function attachmentFallback(body: any) {
   ].filter(Boolean).join("\n")).filter(Boolean).join("\n\n");
 }
 
+function criterionPayload(candidate: EvidenceCandidate) {
+  return {
+    criterionType: candidate.criterionType,
+    key: candidate.key,
+    otherKey: candidate.otherKey || null,
+    operator: candidate.operator,
+    value: candidate.value,
+    weight: candidate.criterionType === "preference" ? candidate.weight ?? 0.7 : null,
+    severity: candidate.criterionType === "exclusion" ? candidate.severity || "major_penalty" : null,
+    appliesToPropertyTypes: candidate.appliesToPropertyTypes || [],
+    sourceText: candidate.sourceText,
+    confidence: candidate.confidence,
+  };
+}
+
 export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: string; onSaved?: () => void }) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [creatingDraft, setCreatingDraft] = useState(false);
+  const [applyingEvidence, setApplyingEvidence] = useState(false);
+  const [selectedEvidence, setSelectedEvidence] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [importMessage, setImportMessage] = useState("");
   const [importError, setImportError] = useState("");
-  const [draftMessage, setDraftMessage] = useState("");
-  const [draftError, setDraftError] = useState("");
+  const [evidenceMessage, setEvidenceMessage] = useState("");
+  const [evidenceError, setEvidenceError] = useState("");
+  const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
   const [result, setResult] = useState<SalesAssistantResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +160,10 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     setImportMessage("");
     setMessage("");
     setError("");
+    setEvidenceMessage("");
+    setEvidenceError("");
+    setMatchSummary(null);
+    setSelectedEvidence([]);
     setResult(null);
     try {
       const form = new FormData();
@@ -142,8 +213,10 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     setSaving(true);
     setError("");
     setMessage("");
-    setDraftMessage("");
-    setDraftError("");
+    setEvidenceMessage("");
+    setEvidenceError("");
+    setMatchSummary(null);
+    setSelectedEvidence([]);
     setResult(null);
     try {
       const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/sales-assistant-note`, {
@@ -157,6 +230,8 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
       const calendar = body.calendar?.created ? " Kalenderavtale opprettet." : body.calendar?.error && body.followupApplied ? " Oppfølgingen er lagret i CRM, men kalenderavtalen ble ikke opprettet." : "";
       setMessage(`AI har strukturert og lagret kundeinformasjonen.${followup}${calendar}`);
       setResult(body);
+      const found = Array.isArray(body?.buyerProfileEvidence?.candidates) ? body.buyerProfileEvidence.candidates as EvidenceCandidate[] : [];
+      setSelectedEvidence(found.map((candidate, index) => ({ candidate, id: evidenceId(candidate, index) })).filter(({ candidate }) => !candidate.conflict).map(({ id }) => id));
       setNote("");
       setImportMessage("");
       onSaved?.();
@@ -167,39 +242,91 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
     }
   }
 
-  async function createReviewDraft() {
-    const draftRequest = result?.buyerProfileEvidence?.draftRequest;
-    if (!draftRequest) return;
-    setCreatingDraft(true);
-    setDraftMessage("");
-    setDraftError("");
+  function toggleEvidence(id: string) {
+    setSelectedEvidence((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function selectAllSafe() {
+    setSelectedEvidence(candidates
+      .map((candidate, index) => ({ candidate, id: evidenceId(candidate, index) }))
+      .filter(({ candidate }) => !candidate.conflict)
+      .map(({ id }) => id));
+  }
+
+  async function approveSelectedAndMatch() {
+    const brand = result?.buyerProfileEvidence?.brand;
+    const interactionId = result?.interactionId;
+    if (!brand || !interactionId) return;
+    const selected = candidates.filter((candidate, index) => selectedEvidence.includes(evidenceId(candidate, index)));
+    if (selected.length === 0) return;
+
+    setApplyingEvidence(true);
+    setEvidenceMessage("");
+    setEvidenceError("");
+    setMatchSummary(null);
     try {
-      const response = await fetch("/api/nexus/profile-activation-priority/evidence-draft", {
+      const applyResponse = await fetch(`/api/customers/${encodeURIComponent(contactId)}/buyer-profile-evidence`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draftRequest),
+        body: JSON.stringify({
+          brand,
+          interactionId,
+          criteria: selected.map(criterionPayload),
+        }),
       });
-      const body = await response.json().catch(() => null);
-      if (!response.ok || !body?.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke opprette Buyer Profile review-utkast.");
-      const existing = Boolean(body.result?.existingDraft || body.result?.duplicate);
-      setDraftMessage(existing ? "Eksisterende Buyer Profile-utkast er klart for review." : "Buyer Profile review-utkast er opprettet med pending kriterier.");
+      const applyBody = await applyResponse.json().catch(() => null);
+      if (!applyResponse.ok || !applyBody?.ok) {
+        throw new Error(applyBody?.error || "Kunne ikke godkjenne Buyer Profile-opplysningene.");
+      }
+
+      const buyerProfileId = String(applyBody.result?.buyerProfileId || "");
+      setEvidenceMessage(`${selected.length} opplysning${selected.length === 1 ? "" : "er"} er godkjent i Buyer Profile v${applyBody.result?.version || "?"}.`);
       setResult((current) => current ? {
         ...current,
         buyerProfileEvidence: current.buyerProfileEvidence ? { ...current.buyerProfileEvidence, persisted: true } : current.buyerProfileEvidence,
       } : current);
-    } catch (draftFailure) {
-      setDraftError(draftFailure instanceof Error ? draftFailure.message : "Kunne ikke opprette Buyer Profile review-utkast.");
+      onSaved?.();
+
+      if (!buyerProfileId) return;
+      const matchResponse = await fetch("/api/lead-intelligence/property-matches/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand,
+          buyerProfileId,
+          autoDiscover: true,
+          candidateLimit: 120,
+          maxResults: 10,
+        }),
+      });
+      const matchBody = await matchResponse.json().catch(() => null);
+      if (!matchResponse.ok || !matchBody?.ok) {
+        const message = matchBody?.error?.message || matchBody?.error || "Matching-preview er ikke tilgjengelig akkurat nå.";
+        setEvidenceError(`Buyer Profile er oppdatert, men ${message}`);
+        return;
+      }
+      const matches = Array.isArray(matchBody.result?.matches) ? matchBody.result.matches : [];
+      setMatchSummary({
+        buyerProfileId,
+        matched: Number(matchBody.result?.matched || 0),
+        shown: matches.length,
+      });
+    } catch (applyError) {
+      setEvidenceError(applyError instanceof Error ? applyError.message : "Kunne ikke godkjenne Buyer Profile-opplysningene.");
     } finally {
-      setCreatingDraft(false);
+      setApplyingEvidence(false);
     }
   }
 
   const candidates = result?.buyerProfileEvidence?.candidates || [];
   const conflicts = result?.buyerProfileEvidence?.conflicts || [];
-  const canCreateDraft = Boolean(
+  const alreadyKnownCount = result?.buyerProfileEvidence?.alreadyKnownCount || 0;
+  const selectedCount = candidates.filter((candidate, index) => selectedEvidence.includes(evidenceId(candidate, index))).length;
+  const canApprove = Boolean(
     result?.buyerProfileEvidence?.reviewRecommended
-      && result?.buyerProfileEvidence?.draftRequest
-      && conflicts.length === 0
+      && result?.buyerProfileEvidence?.brand
+      && result?.interactionId
+      && selectedCount > 0
       && !result?.buyerProfileEvidence?.persisted,
   );
 
@@ -231,7 +358,7 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
 
       <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-1 text-xs text-slate-500">
-          <div className="flex items-center gap-2"><Paperclip size={14} />Originalteksten beholdes i kundehistorikken. Ingen kundedata blir gjort til hardt kriterium uten review.</div>
+          <div className="flex items-center gap-2"><Paperclip size={14} />Originalteksten beholdes i kundehistorikken. Nye Buyer Profile-fakta krever din godkjenning.</div>
           <div>{note.length.toLocaleString("nb-NO")} / {MAX_SOURCE_LENGTH.toLocaleString("nb-NO")} tegn</div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -257,39 +384,52 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
         </div>
       )}
 
-      {(candidates.length > 0 || conflicts.length > 0) && (
+      {(candidates.length > 0 || conflicts.length > 0 || alreadyKnownCount > 0) && (
         <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/45 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-white">Buyer Profile-forslag</p>
-              <p className="text-xs text-slate-500">AI kan foreslå eksplisitte fakta, men ingenting blir gjort til hardt kriterium uten review.</p>
+              <p className="text-sm font-semibold text-white">AI fant Buyer Profile-fakta</p>
+              <p className="text-xs text-slate-500">Velg opplysningene du vil gjøre autoritative. Ingenting godkjennes før du trykker knappen.</p>
+              {alreadyKnownCount > 0 && <p className="mt-1 text-xs text-emerald-300">{alreadyKnownCount} opplysning{alreadyKnownCount === 1 ? "" : "er"} var allerede korrekt i aktiv profil.</p>}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {canCreateDraft && (
-                <Button type="button" size="sm" onClick={createReviewDraft} disabled={creatingDraft}>
-                  {creatingDraft ? <Loader2 size={14} className="mr-2 animate-spin" /> : <FilePlus2 size={14} className="mr-2" />}Lag review-utkast
-                </Button>
-              )}
-              {result?.buyerProfileEvidence?.href && (
-                <Button asChild size="sm" variant="outline">
-                  <Link href={result.buyerProfileEvidence.href}>Åpne review</Link>
-                </Button>
-              )}
-            </div>
+            {candidates.length > 0 && !result?.buyerProfileEvidence?.persisted && (
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={selectAllSafe}>Velg alle uten konflikt</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setSelectedEvidence([])}>Fjern alle</Button>
+              </div>
+            )}
           </div>
-
-          {draftMessage && <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-200">{draftMessage}</div>}
-          {draftError && <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">{draftError}</div>}
 
           {candidates.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {candidates.map((candidate, index) => (
-                <div key={`${candidate.key}-${candidate.otherKey || ""}-${index}`} className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-                  <div className="flex items-center gap-2 text-xs text-emerald-300"><CheckCircle2 size={14} />{Math.round(candidate.confidence * 100)}% confidence</div>
-                  <p className="mt-1 text-sm font-medium text-white">{evidenceLabel(candidate)}: {String(candidate.value)}</p>
-                  {candidate.sourceText && <p className="mt-1 line-clamp-2 text-xs text-slate-500">{candidate.sourceText}</p>}
-                </div>
-              ))}
+              {candidates.map((candidate, index) => {
+                const id = evidenceId(candidate, index);
+                const selected = selectedEvidence.includes(id);
+                return (
+                  <label key={id} className={`cursor-pointer rounded-lg border p-3 transition ${candidate.conflict ? "border-amber-500/30 bg-amber-500/5" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4 accent-emerald-500"
+                        checked={selected}
+                        disabled={Boolean(result?.buyerProfileEvidence?.persisted)}
+                        onChange={() => toggleEvidence(id)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className={`flex items-center gap-2 text-xs ${candidate.conflict ? "text-amber-300" : "text-emerald-300"}`}>
+                          {candidate.conflict ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+                          {Math.round(candidate.confidence * 100)}% sikker
+                        </div>
+                        <p className="mt-1 text-sm font-medium text-white">{evidenceLabel(candidate)}: {operatorLabel(candidate.operator)} {evidenceValue(candidate)}</p>
+                        {candidate.conflict && (
+                          <p className="mt-1 text-xs text-amber-200/80">Konflikt med aktiv profil. Hvis du velger denne, erstatter den gammel verdi for dette kriteriet i en ny profilversjon.</p>
+                        )}
+                        <p className="mt-1 line-clamp-3 text-xs text-slate-500">Kilde: «{candidate.sourceText}»</p>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           )}
 
@@ -298,9 +438,30 @@ export function CustomerSalesAssistantNote({ contactId, onSaved }: { contactId: 
               {conflicts.map((conflict, index) => (
                 <div key={`${conflict.field}-${index}`} className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">
                   <div className="flex items-center gap-2 font-medium"><AlertTriangle size={15} />Konflikt: {conflict.field}</div>
-                  <p className="mt-1 text-xs text-amber-200/80">{conflict.reason} Verdier: {conflict.values.join(", ")}</p>
+                  <p className="mt-1 text-xs text-amber-200/80">{conflict.reason}</p>
                 </div>
               ))}
+            </div>
+          )}
+
+          {evidenceMessage && <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-200">{evidenceMessage}</div>}
+          {evidenceError && <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">{evidenceError}</div>}
+
+          {matchSummary && (
+            <div className="mt-3 rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-cyan-200"><Search size={16} />Matching er kjørt</div>
+              <p className="mt-1 text-sm text-slate-200">{matchSummary.matched} aktuelle boliger passerte kriteriene. De {matchSummary.shown} beste er klare i matching-preview.</p>
+              <p className="mt-1 text-xs text-slate-500">Ingen shortlist er opprettet og ingenting er sendt til kunden.</p>
+            </div>
+          )}
+
+          {canApprove && (
+            <div className="mt-3 flex flex-col gap-2 border-t border-slate-800 pt-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-500">{selectedCount} av {candidates.length} nye opplysninger valgt. Konflikter er ikke valgt som standard.</p>
+              <Button type="button" size="sm" onClick={approveSelectedAndMatch} disabled={applyingEvidence || selectedCount === 0}>
+                {applyingEvidence ? <Loader2 size={14} className="mr-2 animate-spin" /> : <CheckCircle2 size={14} className="mr-2" />}
+                Godkjenn valgte og match
+              </Button>
             </div>
           )}
         </div>

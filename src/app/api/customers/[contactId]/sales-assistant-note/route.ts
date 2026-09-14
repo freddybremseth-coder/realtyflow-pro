@@ -8,9 +8,10 @@ import {
   analyzeSalesAssistantNote,
   SalesAssistantNoteInputSchema,
   shouldCreateFollowupCalendarEvent,
+  verifiedBuyerCriteria,
+  type VerifiedBuyerCriterion,
 } from "@/lib/customers/sales-assistant-note";
 import { createGoogleFollowupEvent } from "@/lib/calendar/google-followup";
-import { buildBuyerProfileEvidencePreview } from "@/lib/nexus/buyer-profile-evidence";
 import { isLeadIntelligenceRealEstateBrand } from "@/services/lead-intelligence/brand-allowlist";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,43 @@ export const revalidate = 0;
 const ContactIdSchema = z.string().uuid();
 const BodySchema = z.object({ note: z.string().trim().min(3).max(30000) }).strict();
 const OPEN_WORK_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
+
+function criterionSlot(criterion: { key?: unknown; otherKey?: unknown; other_key?: unknown }) {
+  const key = String(criterion.key || "").trim();
+  const otherKey = String(criterion.otherKey ?? criterion.other_key ?? "").trim().toLowerCase();
+  return `${key}::${otherKey}`;
+}
+
+function comparableValue(value: unknown) {
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+  try { return JSON.stringify(value ?? null); } catch { return String(value ?? ""); }
+}
+
+function candidateWithExistingState(candidate: VerifiedBuyerCriterion, activeCriteria: Array<Record<string, any>>) {
+  const sameSlot = activeCriteria.filter((criterion) => criterionSlot(criterion) === criterionSlot(candidate));
+  const alreadyKnown = sameSlot.some((criterion) =>
+    String(criterion.operator || "") === candidate.operator
+      && comparableValue(criterion.value) === comparableValue(candidate.value));
+  if (alreadyKnown) return { candidate: null, conflict: null, alreadyKnown: true };
+
+  const conflict = sameSlot.length > 0
+    ? {
+        field: candidate.otherKey ? `${candidate.key}:${candidate.otherKey}` : candidate.key,
+        values: [...sameSlot.map((criterion) => criterion.value), candidate.value],
+        reason: "Ny kundedokumentert verdi avviker fra aktiv Buyer Profile. Velg den eksplisitt dersom den skal erstatte gammel verdi.",
+      }
+    : null;
+
+  return {
+    candidate: {
+      ...candidate,
+      conflict: Boolean(conflict),
+      existingValues: sameSlot.map((criterion) => ({ operator: criterion.operator, value: criterion.value })),
+    },
+    conflict,
+    alreadyKnown: false,
+  };
+}
 
 export async function POST(request: NextRequest, { params }: { params: { contactId: string } }) {
   const context = await getRequestAccessContext(request);
@@ -55,25 +93,62 @@ export async function POST(request: NextRequest, { params }: { params: { contact
   }
 
   const followupAt = analysis.nextFollowup && analysis.followupConfidence >= 0.9 ? analysis.nextFollowup : null;
-  const buyerProfilePreview = buildBuyerProfileEvidencePreview({
-    email: contact.email,
-    phone: contact.phone,
-    pipeline_value: contact.pipeline_value,
-    property_interest: contact.property_interest,
-    next_followup: followupAt || contact.next_followup,
-    notes: body.data.note,
-    interactions: [],
-  });
   const contactBrand = String(contact.brand_id || contact.brand || "").trim().toLowerCase();
-  const draftBrand = isLeadIntelligenceRealEstateBrand(contactBrand) ? contactBrand : null;
-  const reviewRecommended = buyerProfilePreview.candidates.length > 0 && buyerProfilePreview.conflicts.length === 0;
+  const evidenceBrand = isLeadIntelligenceRealEstateBrand(contactBrand) ? contactBrand : null;
+  const verifiedCriteria = verifiedBuyerCriteria(analysis, body.data.note);
+
+  let activeProfile: Record<string, any> | null = null;
+  let activeCriteria: Array<Record<string, any>> = [];
+  if (evidenceBrand) {
+    const profileResult = await supabase
+      .from("buyer_profiles")
+      .select("id,status,version,summary,purchase_readiness,budget_amount,budget_currency,budget_includes_costs,budget_approximate,location_flexible,updated_at")
+      .eq("contact_id", contact.id)
+      .eq("brand", evidenceBrand)
+      .in("status", ["approved", "draft"])
+      .order("version", { ascending: false })
+      .limit(10);
+    if (!profileResult.error) {
+      const profiles = (profileResult.data || []) as Array<Record<string, any>>;
+      activeProfile = profiles.find((profile) => profile.status === "approved") || profiles.find((profile) => profile.status === "draft") || null;
+    }
+    if (activeProfile?.id) {
+      const criteriaResult = await supabase
+        .from("buyer_profile_criteria")
+        .select("id,criterion_type,key,other_key,operator,value,weight,severity,applies_to_property_types,source_text,confidence,customer_confirmed,approval_status,active")
+        .eq("buyer_profile_id", activeProfile.id)
+        .eq("active", true)
+        .eq("approval_status", "approved");
+      if (!criteriaResult.error) activeCriteria = (criteriaResult.data || []) as Array<Record<string, any>>;
+    }
+  }
+
+  const candidates: Array<Record<string, any>> = [];
+  const conflicts: Array<Record<string, any>> = [];
+  let alreadyKnownCount = 0;
+  for (const criterion of verifiedCriteria) {
+    const compared = candidateWithExistingState(criterion, activeCriteria);
+    if (compared.alreadyKnown) {
+      alreadyKnownCount += 1;
+      continue;
+    }
+    if (compared.candidate) candidates.push(compared.candidate);
+    if (compared.conflict) conflicts.push(compared.conflict);
+  }
+
+  const reviewRecommended = Boolean(evidenceBrand && candidates.length > 0);
   const buyerProfileEvidence = {
-    candidates: buyerProfilePreview.candidates,
-    conflicts: buyerProfilePreview.conflicts,
+    brand: evidenceBrand,
+    candidates,
+    conflicts,
+    alreadyKnownCount,
     reviewRecommended,
-    projectedCompleteness: buyerProfilePreview.projectedCompleteness,
+    activeProfile: activeProfile ? {
+      buyerProfileId: activeProfile.id,
+      status: activeProfile.status,
+      version: activeProfile.version,
+    } : null,
     href: "/nexus-os/profile-activation-priority",
-    draftRequest: reviewRecommended && draftBrand ? { contactId: contact.id, brand: draftBrand } : null,
     persisted: false as const,
   };
 
@@ -104,9 +179,13 @@ export async function POST(request: NextRequest, { params }: { params: { contact
       followup_confidence: analysis.followupConfidence,
       property_reference: analysis.propertyReference,
       explicit_facts: analysis.explicitFacts,
+      buyer_profile_evidence_brand: evidenceBrand,
       buyer_profile_evidence_candidates: buyerProfileEvidence.candidates,
       buyer_profile_evidence_conflicts: buyerProfileEvidence.conflicts,
+      buyer_profile_evidence_already_known_count: alreadyKnownCount,
       buyer_profile_evidence_review_recommended: buyerProfileEvidence.reviewRecommended,
+      active_buyer_profile_id: activeProfile?.id || null,
+      active_buyer_profile_version: activeProfile?.version || null,
       ai_structured: true,
       actor_email: context.email.toLowerCase(),
       no_customer_contact: true,
