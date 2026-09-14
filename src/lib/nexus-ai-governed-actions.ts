@@ -100,7 +100,9 @@ function atFollowupHour(year: number, month: number, day: number) {
 }
 
 function addUtcDays(date: Date, days: number) {
-  return atFollowupHour(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days);
+  const candidate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 9, 0, 0, 0));
+  candidate.setUTCDate(candidate.getUTCDate() + days);
+  return Number.isFinite(candidate.getTime()) ? candidate : null;
 }
 
 /**
