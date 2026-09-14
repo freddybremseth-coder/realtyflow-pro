@@ -28,9 +28,9 @@ test("Delta Matching compares against approved shortlist history across Buyer Pr
   assert.match(source, /property_match_repeat_suppressed/);
 });
 
-test("unchanged reviewed homes do not become a fresh shortlist or false no-match follow-up", () => {
+test("unchanged reviewed homes do not become a fresh shortlist, false no-match follow-up or false no-match health state", () => {
   assert.match(source, /NO_MEANINGFUL_DELTA/);
-  assert.match(source, /property_match_count: deltaProperties\.length/);
+  assert.match(source, /property_match_count: noDelta \? null : deltaProperties\.length/);
   assert.match(source, /no_match_followup_required: false/);
   assert.match(source, /Ingen ny shortlist eller kundekontakt er nødvendig/);
 });
