@@ -25,35 +25,40 @@ test("attachment intake remains review-first before CRM analysis is saved", () =
   assert.match(source, /note\.trim\(\)\.length < 3/);
 });
 
-test("sales assistant UI shows Buyer Profile proposals without claiming hard persistence", () => {
-  assert.match(source, /Buyer Profile-forslag/);
-  assert.match(source, /ingenting blir gjort til hardt kriterium uten review/);
-  assert.match(source, /buyerProfileEvidence/);
-  assert.match(source, /Åpne review/);
+test("inline Buyer Profile facts are individually selectable and safe facts are selected by default", () => {
+  assert.match(source, /AI fant Buyer Profile-fakta/);
+  assert.match(source, /type="checkbox"/);
+  assert.match(source, /checked=\{selected\}/);
+  assert.match(source, /!candidate\.conflict/);
+  assert.match(source, /Velg alle uten konflikt/);
+  assert.match(source, /Fjern alle/);
 });
 
-test("sales assistant UI surfaces evidence conflicts", () => {
-  assert.match(source, /Konflikt:/);
-  assert.match(source, /conflict\.reason/);
-  assert.match(source, /conflict\.values\.join/);
+test("conflicting Buyer Profile evidence requires explicit selection and explains replacement", () => {
+  assert.match(source, /Konflikt med aktiv profil/);
+  assert.match(source, /erstatter den gammel verdi/);
+  assert.match(source, /Konflikter er ikke valgt som standard/);
 });
 
-test("review draft action uses only the server-issued draft request", () => {
-  assert.match(source, /const draftRequest = result\?\.buyerProfileEvidence\?\.draftRequest/);
-  assert.match(source, /body: JSON\.stringify\(draftRequest\)/);
-  assert.match(source, /\/api\/nexus\/profile-activation-priority\/evidence-draft/);
-  assert.match(source, /Lag review-utkast/);
+test("human approval calls source-verified CRM evidence route", () => {
+  assert.match(source, /Godkjenn valgte og match/);
+  assert.match(source, /\/api\/customers\/\$\{encodeURIComponent\(contactId\)\}\/buyer-profile-evidence/);
+  assert.match(source, /interactionId/);
+  assert.match(source, /criteria: selected\.map\(criterionPayload\)/);
 });
 
-test("review draft button is hidden for conflicts, missing draft request or already persisted evidence", () => {
-  assert.match(source, /reviewRecommended/);
-  assert.match(source, /draftRequest/);
-  assert.match(source, /conflicts\.length === 0/);
-  assert.match(source, /!result\?\.buyerProfileEvidence\?\.persisted/);
+test("successful approval runs preview-only auto-discovery matching", () => {
+  assert.match(source, /\/api\/lead-intelligence\/property-matches\/preview/);
+  assert.match(source, /autoDiscover: true/);
+  assert.match(source, /candidateLimit: 120/);
+  assert.match(source, /maxResults: 10/);
+  assert.match(source, /Ingen shortlist er opprettet og ingenting er sendt til kunden/);
 });
 
-test("draft success is described as pending review, not approved matching", () => {
-  assert.match(source, /pending kriterier/);
-  assert.doesNotMatch(source, /automatisk godkjent/);
-  assert.doesNotMatch(source, /matching startet/);
+test("matching failure never rolls back a successfully approved Buyer Profile", () => {
+  const profileMessageIndex = source.indexOf("opplysninger er godkjent i Buyer Profile");
+  const matchRequestIndex = source.indexOf('/api/lead-intelligence/property-matches/preview');
+  assert.ok(profileMessageIndex > 0);
+  assert.ok(matchRequestIndex > profileMessageIndex);
+  assert.match(source, /Buyer Profile er oppdatert, men/);
 });
