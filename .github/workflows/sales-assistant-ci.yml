@@ -10,6 +10,7 @@ on:
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
       - "src/app/api/customers/**/buyer-profile-evidence/**"
+      - "src/app/api/lead-intelligence/presentations/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
       - "src/components/customers/customer-sales-assistant-note.contract.test.ts"
       - "src/components/customers/customer-inline-property-matches.tsx"
@@ -26,6 +27,7 @@ on:
       - "src/lib/calendar/google-followup.ts"
       - "src/app/api/customers/**/sales-assistant-note/**"
       - "src/app/api/customers/**/buyer-profile-evidence/**"
+      - "src/app/api/lead-intelligence/presentations/**"
       - "src/components/customers/customer-sales-assistant-note.tsx"
       - "src/components/customers/customer-sales-assistant-note.contract.test.ts"
       - "src/components/customers/customer-inline-property-matches.tsx"
@@ -45,4 +47,4 @@ jobs:
           cache: npm
       - run: npm ci --silent
       - name: Sales assistant policy, evidence, route and UI tests
-        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/lib/customers/sales-assistant-buyer-evidence.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts src/app/api/customers/[contactId]/buyer-profile-evidence/route.contract.test.ts src/components/customers/customer-sales-assistant-note.contract.test.ts src/components/customers/customer-inline-property-matches.contract.test.ts
+        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/lib/customers/sales-assistant-note.test.ts src/lib/customers/sales-assistant-buyer-evidence.test.ts src/app/api/customers/[contactId]/sales-assistant-note/route.contract.test.ts src/app/api/customers/[contactId]/buyer-profile-evidence/route.contract.test.ts src/app/api/lead-intelligence/presentations/route.contract.test.ts src/components/customers/customer-sales-assistant-note.contract.test.ts src/components/customers/customer-inline-property-matches.contract.test.ts
