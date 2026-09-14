@@ -45,8 +45,12 @@ on:
       - "src/lib/nexus-real-estate-matching-preparer.test.ts"
       - "src/lib/nexus-real-estate-priority.ts"
       - "src/lib/nexus-real-estate-priority.test.ts"
+      - "src/lib/nexus-property-delta.ts"
+      - "src/lib/nexus-property-delta.test.ts"
       - "src/lib/nexus-opportunity-adapters.ts"
       - "src/lib/nexus-opportunity-direct-readers.ts"
+      - "src/lib/revenue/command.ts"
+      - "src/lib/revenue/command.test.ts"
       - "src/services/email/inbound-property-match.ts"
       - "src/services/email/apply-inbound-crm-actions.ts"
       - "src/services/email/apply-inbound-crm-actions-governance.test.ts"
@@ -116,8 +120,12 @@ on:
       - "src/lib/nexus-real-estate-matching-preparer.test.ts"
       - "src/lib/nexus-real-estate-priority.ts"
       - "src/lib/nexus-real-estate-priority.test.ts"
+      - "src/lib/nexus-property-delta.ts"
+      - "src/lib/nexus-property-delta.test.ts"
       - "src/lib/nexus-opportunity-adapters.ts"
       - "src/lib/nexus-opportunity-direct-readers.ts"
+      - "src/lib/revenue/command.ts"
+      - "src/lib/revenue/command.test.ts"
       - "src/services/email/inbound-property-match.ts"
       - "src/services/email/apply-inbound-crm-actions.ts"
       - "src/services/email/apply-inbound-crm-actions-governance.test.ts"
@@ -156,4 +164,4 @@ jobs:
       - name: Install dependencies
         run: npm ci --silent
       - name: Nexus sales autopilot tests
-        run: npx tsx --test src/app/api/cron/nexus-shortlist-prep/route.contract.test.ts src/app/api/cron/nexus-property-match-prep/route.contract.test.ts src/app/api/cron/nexus-presentation-prep/route.contract.test.ts src/app/api/cron/nexus-no-match-followup/route.contract.test.ts src/app/api/cron/nexus-send-preflight/route.contract.test.ts src/app/api/cron/nexus-property-recommendation-send/route.contract.test.ts src/app/api/cron/nexus-property-feedback/route.contract.test.ts src/app/api/nexus/revenue-command/missions/prepare/real-estate-matching/route.contract.test.ts src/app/api/nexus/shortlist-reviews/route.contract.test.ts src/app/api/nexus/no-match-reviews/route.contract.test.ts src/app/api/nexus/presentation-reviews/route.contract.test.ts src/app/api/nexus/pipeline-health/route.contract.test.ts src/app/api/nexus/buyer-profile-health/route.contract.test.ts 'src/app/(content)/nexus-os/buyer-profile-health/page.contract.test.ts' src/lib/nexus/buyer-profile-health.test.ts src/lib/nexus/action-policy-registry.test.ts src/lib/nexus/execution-boundary.test.ts src/lib/nexus/execution-boundary.contract.test.ts src/lib/nexus/customer-taste-profile.test.ts src/lib/nexus/pipeline-health.test.ts src/lib/nexus-inbox.test.ts src/lib/nexus-mission-agentic.test.ts src/lib/nexus-mission-autopilot.test.ts src/lib/nexus-real-estate-matching-preparer.test.ts src/lib/nexus-real-estate-priority.test.ts src/services/email/apply-inbound-crm-actions-governance.test.ts src/services/email/inbound-buyer-profile-autopilot.test.ts src/services/email/inbound-buyer-profile-revision.test.ts src/services/email/no-match-clarification.test.ts src/services/email/nexus-send-preflight.test.ts src/services/email/property-recommendation-template.test.ts src/services/email/property-recommendation-reply.test.ts src/services/lead-intelligence/presentation.test.ts src/services/marketing/autonomous-orchestrator.test.ts src/services/marketing/publish-executor.claim-guard.test.ts
+        run: npx tsx --test src/app/api/cron/nexus-shortlist-prep/route.contract.test.ts src/app/api/cron/nexus-property-match-prep/route.contract.test.ts src/app/api/cron/nexus-presentation-prep/route.contract.test.ts src/app/api/cron/nexus-no-match-followup/route.contract.test.ts src/app/api/cron/nexus-send-preflight/route.contract.test.ts src/app/api/cron/nexus-property-recommendation-send/route.contract.test.ts src/app/api/cron/nexus-property-feedback/route.contract.test.ts src/app/api/nexus/revenue-command/missions/prepare/real-estate-matching/route.contract.test.ts src/app/api/nexus/shortlist-reviews/route.contract.test.ts src/app/api/nexus/no-match-reviews/route.contract.test.ts src/app/api/nexus/presentation-reviews/route.contract.test.ts src/app/api/nexus/pipeline-health/route.contract.test.ts src/app/api/nexus/buyer-profile-health/route.contract.test.ts 'src/app/(content)/nexus-os/buyer-profile-health/page.contract.test.ts' src/lib/nexus/buyer-profile-health.test.ts src/lib/nexus/action-policy-registry.test.ts src/lib/nexus/execution-boundary.test.ts src/lib/nexus/execution-boundary.contract.test.ts src/lib/nexus/customer-taste-profile.test.ts src/lib/nexus/pipeline-health.test.ts src/lib/nexus-inbox.test.ts src/lib/nexus-mission-agentic.test.ts src/lib/nexus-mission-autopilot.test.ts src/lib/nexus-real-estate-matching-preparer.test.ts src/lib/nexus-real-estate-priority.test.ts src/lib/nexus-property-delta.test.ts src/lib/revenue/command.test.ts src/services/email/apply-inbound-crm-actions-governance.test.ts src/services/email/inbound-buyer-profile-autopilot.test.ts src/services/email/inbound-buyer-profile-revision.test.ts src/services/email/no-match-clarification.test.ts src/services/email/nexus-send-preflight.test.ts src/services/email/property-recommendation-template.test.ts src/services/email/property-recommendation-reply.test.ts src/services/lead-intelligence/presentation.test.ts src/services/marketing/autonomous-orchestrator.test.ts src/services/marketing/publish-executor.claim-guard.test.ts
