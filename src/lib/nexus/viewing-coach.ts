@@ -75,8 +75,8 @@ function reasonsFor(note: string): ViewingCoachReason[] {
   const reasons: ViewingCoachReason[] = [];
   if (/\b(for dyr|for kostbar|over budsjett|too expensive|too pricey|above budget)\b/i.test(normalized)) reasons.push("price_high");
   if (/\b(god pris|fin pris|innenfor budsjett|good price|within budget)\b/i.test(normalized)) reasons.push("price_good");
-  if (/\b(liker ikke omrad|feil omrad|wrong area|don't like the area|do not like the area|location is not for us)\b/i.test(normalized)) reasons.push("location_dislike");
-  if (/\b(liker omrad|bra omrad|riktig omrad|like the area|good location|great location)\b/i.test(normalized)) reasons.push("location_like");
+  if (/\b(liker ikke omrad(?:e|et)?|feil omrad(?:e|et)?|wrong area|don't like the area|do not like the area|location is not for us)\b/i.test(normalized)) reasons.push("location_dislike");
+  if (/\b(liker omrad(?:e|et)?|bra omrad(?:e|et)?|riktig omrad(?:e|et)?|like the area|good location|great location)\b/i.test(normalized)) reasons.push("location_like");
   if (/\b(for liten|for sma|too small|not enough space)\b/i.test(normalized)) reasons.push("too_small");
   if (/\b(for stor|too large|too big)\b/i.test(normalized)) reasons.push("too_large");
   if (/\b(liker ikke stilen|ikke min stil|for moderne|for tradisjonell|don't like the style|not my style)\b/i.test(normalized)) reasons.push("style_dislike");
@@ -94,9 +94,11 @@ export function buildViewingCoachPlan(input: {
   const note = text(input.note);
   const normalized = fold(note);
   const reasons = reasonsFor(note);
-  const positive = /\b(likte|liker|elsket|elsker|veldig bra|perfekt|favoritt|interessert|ser bra ut|liked|love|loved|great|perfect|favourite|favorite|interested)\b/i.test(normalized)
+  const negativePhrase = /\b(likte ikke|liker ikke|ikke for oss|passer ikke|skuffet|nei|not for us|didn't like|did not like|don't like|do not like|disappointed)\b/i.test(normalized);
+  const positiveText = normalized.replace(/\b(likte ikke|liker ikke|didn't like|did not like|don't like|do not like)\b/gi, "");
+  const positive = /\b(likte|liker|elsket|elsker|veldig bra|perfekt|favoritt|interessert|ser bra ut|liked|love|loved|great|perfect|favourite|favorite|interested)\b/i.test(positiveText)
     || reasons.some((reason) => ["price_good", "location_like", "style_like"].includes(reason));
-  const negative = /\b(likte ikke|liker ikke|ikke for oss|passer ikke|skuffet|nei|not for us|didn't like|did not like|don't like|do not like|disappointed)\b/i.test(normalized)
+  const negative = negativePhrase
     || reasons.some((reason) => ["price_high", "location_dislike", "too_small", "too_large", "style_dislike"].includes(reason));
   const sentiment: ViewingCoachSentiment = positive && negative ? "mixed" : positive ? "positive" : negative ? "negative" : "neutral";
   const highIntent = /\b(vil kjøpe|vil kjope|ønsker a kjøpe|ønsker å kjøpe|ga videre|gå videre|legge inn bud|gi bud|kjøpe denne|ready to buy|want to buy|make an offer|move forward|proceed)\b/i.test(normalized);
