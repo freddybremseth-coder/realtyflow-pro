@@ -10,6 +10,21 @@ test("sales assistant UI shows Nexus conversation brief", () => {
   assert.match(source, /result\.followupBrief/);
 });
 
+test("sales assistant UI accepts pasted correspondence plus image or PDF context", () => {
+  assert.match(source, /AI kundeinformasjon/);
+  assert.match(source, /Bilde \/ PDF/);
+  assert.match(source, /accept="application\/pdf,image\/\*"/);
+  assert.match(source, /onPaste=\{onSourcePaste\}/);
+  assert.match(source, /\/api\/contacts\/import-document/);
+  assert.match(source, /customer_context/);
+});
+
+test("attachment intake remains review-first before CRM analysis is saved", () => {
+  assert.match(source, /Kontroller teksten og trykk «Tolk og lagre»/);
+  assert.match(source, /Originalteksten beholdes i kundehistorikken/);
+  assert.match(source, /note\.trim\(\)\.length < 3/);
+});
+
 test("sales assistant UI shows Buyer Profile proposals without claiming hard persistence", () => {
   assert.match(source, /Buyer Profile-forslag/);
   assert.match(source, /ingenting blir gjort til hardt kriterium uten review/);
