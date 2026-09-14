@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/nexus-os/growth-scaling", label: "Growth Scaling" },
   { href: "/personal-intelligence", label: "Mentor" },
   { href: "/nexus-os/revenue-command", label: "Revenue Command" },
+  { href: "/nexus-os/revenue-brain", label: "Revenue Brain v2" },
   { href: "/nexus-os/commercial-targets", label: "Targets" },
   { href: "/nexus-os/reactivation", label: "Reactivation" },
   { href: "/nexus-os/reactivation/replies", label: "Reply Review" },
