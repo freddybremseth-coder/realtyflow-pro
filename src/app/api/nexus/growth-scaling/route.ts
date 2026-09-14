@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
       actions: {
         readinessHref: "/marketing-readiness",
         publishingHref: "/posts",
-        attributionHref: `/revenue/attribution?scope=${encodeURIComponent(brandId)}`,
+        attributionHref: `/attribution?scope=${encodeURIComponent(brandId)}`,
       },
     };
   }).sort((a, b) => {
