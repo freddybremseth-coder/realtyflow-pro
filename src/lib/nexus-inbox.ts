@@ -72,6 +72,9 @@ type NoMatchReviewItem = {
   customerName?: string | null;
   analyzed?: number | null;
   criteria?: string[] | null;
+  question?: string | null;
+  constraintFocus?: string | null;
+  draft?: { subject?: string | null; bodyText?: string | null } | null;
   nextAction?: string | null;
   reviewHref: string;
   updatedAt?: string | null;
@@ -88,6 +91,16 @@ function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
 function timestamp(value: string | null | undefined) {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function noMatchConstraintLabel(value: string | null | undefined) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "location") return "område";
+  if (key === "budget") return "budsjett";
+  if (key === "property_type") return "boligtype";
+  if (key === "bedrooms") return "soverom";
+  if (key === "market_fit") return "markedsfit";
+  return null;
 }
 
 export function buildNexusInbox(input: {
@@ -203,15 +216,20 @@ export function buildNexusInbox(input: {
     const analyzed = Math.max(0, Number(row.analyzed || 0));
     const criteria = Array.isArray(row.criteria) ? row.criteria.filter(Boolean).slice(0, 4) : [];
     const context = criteria.length ? ` Registrert: ${criteria.join(" · ")}.` : "";
-    const nextAction = String(row.nextAction || "Vurder om kunden bør spørres om fleksibilitet før kriteriene endres.").trim();
+    const question = String(row.question || "").trim();
+    const constraint = noMatchConstraintLabel(row.constraintFocus);
+    const coach = question
+      ? ` Nexus vurderer ${constraint ? `${constraint} som mulig flaskehals og ` : ""}foreslår ett spørsmål: «${question}»`
+      : "";
+    const nextAction = String(row.nextAction || "Gjennomgå Nexus sitt ene avklaringsspørsmål før eventuell kundekontakt.").trim();
     items.push({
       id: `no-match:${row.id}`,
       source: "no_match",
       priority: String(row.priority || "HIGH").toUpperCase() === "CRITICAL" ? "critical" : "high",
-      title: "Ingen gode boligtreff – trenger vurdering",
-      reason: `${analyzed > 0 ? `Nexus analyserte ${analyzed} boliger uten å finne et godt nok treff.` : "Nexus fant ingen gode nok boligtreff."}${context} ${nextAction}`.trim(),
+      title: "Ingen gode boligtreff – Nexus Coach",
+      reason: `${analyzed > 0 ? `Nexus analyserte ${analyzed} boliger uten å finne et godt nok treff.` : "Nexus fant ingen gode nok boligtreff."}${context}${coach} ${nextAction}`.trim(),
       href: row.reviewHref,
-      actionLabel: "Vurder søk",
+      actionLabel: question ? "Review spørsmål" : "Vurder søk",
       customerName: row.customerName ?? null,
       occurredAt: row.updatedAt ?? null,
     });

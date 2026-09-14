@@ -51,6 +51,13 @@ export async function GET(request: NextRequest) {
     const criteria = Array.isArray(metadata.no_match_current_criteria)
       ? metadata.no_match_current_criteria.map(String).filter(Boolean).slice(0, 8)
       : [];
+    const question = String(metadata.no_match_coach_question || "").trim() || null;
+    const draftSubject = String(metadata.no_match_draft_subject || "").trim() || null;
+    const draftBody = String(metadata.no_match_draft_body || "").trim() || null;
+    const constraintFocus = String(metadata.no_match_constraint_focus || "").trim() || null;
+    const defaultAction = question
+      ? `Nexus foreslår ett avklaringsspørsmål: «${question}» Gjennomgå før eventuell kundekontakt.`
+      : "Vurder hvilket kriterium kunden faktisk er fleksibel på før søket endres.";
     return {
       id: String(row.id),
       priority: String(row.priority || "HIGH").toUpperCase(),
@@ -60,7 +67,10 @@ export async function GET(request: NextRequest) {
       analyzed: Number(metadata.property_match_analyzed || 0),
       criteria,
       reason: String(metadata.no_match_followup_reason || "NO_MATCHES_WITH_SPECIFIC_PROFILE"),
-      nextAction: String(row.next_action || "Vurder om kunden bør spørres om fleksibilitet før kriteriene endres."),
+      question,
+      constraintFocus,
+      draft: draftSubject || draftBody ? { subject: draftSubject, bodyText: draftBody } : null,
+      nextAction: String(row.next_action || defaultAction),
       reviewHref: contactId ? `/customers?contactId=${encodeURIComponent(contactId)}` : "/lead-intelligence",
       updatedAt: row.updated_at,
     };
@@ -70,6 +80,6 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date().toISOString(),
     summary: { total: items.length },
     items,
-    safety: { criteriaMutated: false, customerMessageSent: false },
+    safety: { criteriaMutated: false, customerMessageSent: false, reviewRequiredBeforeCustomerContact: true },
   });
 }
