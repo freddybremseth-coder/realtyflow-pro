@@ -50,3 +50,30 @@ test("shortlist creation remains a draft and does not claim customer delivery", 
   assert.match(source, /Ingen kundeinformasjon er sendt/);
   assert.doesNotMatch(source, /sendEmail|sendMail|email\.send/);
 });
+
+test("saved shortlist can create a presentation and email draft through the canonical Lead Intelligence endpoint", () => {
+  assert.match(source, /fetch\("\/api\/lead-intelligence\/presentations"/);
+  assert.match(source, /shortlistId: saveResult\.shortlistId/);
+  assert.match(source, /language: "nb"/);
+  assert.match(source, /crm-presentation-\$\{saveResult\.shortlistId\}/);
+  assert.match(source, /Lag presentasjon og e-postutkast/);
+});
+
+test("presentation creation only proceeds when at least one selected property is explicitly client ready", () => {
+  assert.match(source, /clientReadySelectedCount/);
+  assert.match(source, /qualityReviews\[match\.propertyId\]\?\.status === "client_ready"/);
+  assert.match(source, /clientReadySelectedCount === 0/);
+  assert.match(source, /Bare disse tas med i presentasjonen/);
+  assert.match(source, /Ingen valgte boliger er merket «Klar for kunde»/);
+});
+
+test("customer card previews the generated email draft but never approves or sends it", () => {
+  assert.match(source, /Presentasjon og e-postutkast klart/);
+  assert.match(source, /presentationResult\.messageDraft\.subject/);
+  assert.match(source, /presentationResult\.messageDraft\.bodyText/);
+  assert.match(source, /ingen e-post er sendt og presentasjonen er ikke publisert/);
+  assert.match(source, /href="\/approvals"/);
+  assert.match(source, /Åpne Approval Center/);
+  assert.doesNotMatch(source, /message-drafts\/.*approval/);
+  assert.doesNotMatch(source, /explicitApproval/);
+});
