@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/book-os-schema-contract-production.yml"
       - "scripts/check-book-os-schema-contract.mjs"
+      - "scripts/check-book-os-learning-origin-guard-contract.mjs"
       - "supabase/migrations/**"
 
 permissions:
@@ -54,3 +55,5 @@ jobs:
         run: npm ci --silent
       - name: Run Book OS production schema contract
         run: npm run schema:contract:book-os
+      - name: Audit Learning-origin production guard
+        run: node scripts/check-book-os-learning-origin-guard-contract.mjs
