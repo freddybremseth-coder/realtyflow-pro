@@ -125,8 +125,10 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const workItemId = typeof body?.workItemId === "string" ? body.workItemId.trim() : "";
-  if (!workItemId || body?.explicitApproval !== true) {
-    return NextResponse.json({ error: "Explicit final-review approval is required" }, { status: 400 });
+  const decision = body?.decision === "reject" ? "reject" : "approve";
+  const rejectionReason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 500) : "";
+  if (!workItemId || (decision === "approve" && body?.explicitApproval !== true) || (decision === "reject" && rejectionReason.length < 3)) {
+    return NextResponse.json({ error: decision === "reject" ? "A rejection reason is required" : "Explicit final-review approval is required" }, { status: 400 });
   }
 
   const work = await supabase
@@ -154,6 +156,44 @@ export async function POST(request: NextRequest) {
   const messageDraftId = String(metadata.presentation_message_draft_id || "");
   if (!brandId || !buyerProfileId || !shortlistId || !presentationId || !messageDraftId) {
     return NextResponse.json({ error: "Presentation review context is incomplete" }, { status: 409 });
+  }
+
+  if (decision === "reject") {
+    const rejectedAt = new Date().toISOString();
+    const draftUpdate = await supabase.from("lead_customer_message_drafts")
+      .update({ status: "cancelled", cancelled_at: rejectedAt, updated_at: rejectedAt })
+      .eq("id", messageDraftId)
+      .eq("brand", brandId)
+      .in("status", ["draft", "approved"])
+      .is("sent_at", null);
+    if (draftUpdate.error) return NextResponse.json({ error: draftUpdate.error.message }, { status: 500 });
+
+    const nextMetadata = {
+      ...metadata,
+      presentation_review_required: false,
+      presentation_final_review_status: "REJECTED",
+      presentation_human_rejected_at: rejectedAt,
+      presentation_human_rejected_by: context.email,
+      presentation_human_rejection_reason: rejectionReason,
+      presentation_send_preflight_required: false,
+      presentation_customer_send_allowed: false,
+      property_recommendation_auto_send_authorized: false,
+      send_preflight_ready: false,
+    };
+    const workUpdate = await supabase.from("work_items").update({
+      status: "DONE",
+      metadata: nextMetadata,
+      next_action: `Sluttresultatet ble avvist av ${context.email}. Ingen utsending er autorisert. Begrunnelse: ${rejectionReason}`,
+      updated_at: rejectedAt,
+    }).eq("id", workItemId);
+    if (workUpdate.error) return NextResponse.json({ error: workUpdate.error.message }, { status: 500 });
+
+    return NextResponse.json({
+      ok: true,
+      workItemId,
+      status: "REJECTED",
+      safety: { customerMessageSent: false, presentationPublished: false, automaticSendAuthorized: false },
+    });
   }
 
   const [profile, shortlist, presentation, draft, shortlistItems] = await Promise.all([
