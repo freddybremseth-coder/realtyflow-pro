@@ -107,6 +107,10 @@ test("follow-up date parser handles deterministic relative and absolute dates", 
   assert.equal(parseFollowupDate("Planlegg oppfølging 20.09.2026", NOW), "2026-09-20T09:00:00.000Z");
   assert.equal(parseFollowupDate("Planlegg oppfølging 20 september", NOW), "2026-09-20T09:00:00.000Z");
   assert.equal(parseFollowupDate("Planlegg oppfølging senere", NOW), null);
+  assert.equal(
+    parseFollowupDate("Planlegg oppfølging om 3 dager", new Date("2026-09-29T12:00:00.000Z")),
+    "2026-10-02T09:00:00.000Z",
+  );
 });
 
 test("explicit schedule request creates a no-send internal CRM action", () => {
