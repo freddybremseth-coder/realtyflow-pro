@@ -200,9 +200,9 @@ export function resolveNexusActionContact(args: {
     return scored[0].contact;
   }
 
-  // "til Knut" is an explicit target. If Knut could not be resolved above,
-  // never silently substitute the customer whose page happens to be open.
-  const explicitUnresolvedTarget = /\btil\s+(?!denne\b|kunden\b|kunde\b)([a-z0-9]{3,})\b/.test(normalized);
+  // An explicit named target must resolve above. Never silently substitute the
+  // customer whose page happens to be open when "til/med/for Knut" is unknown.
+  const explicitUnresolvedTarget = /\b(?:til|med|for)\s+(?!denne\b|kunden\b|kunde\b)([a-z0-9]{3,})\b/.test(normalized);
   if (explicitUnresolvedTarget) return null;
 
   if (eligible(args.currentContact)) return args.currentContact;
