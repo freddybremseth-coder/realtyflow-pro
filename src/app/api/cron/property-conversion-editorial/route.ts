@@ -39,6 +39,15 @@ async function writeRunLog(
   }
 }
 
+function hasVerifiedClaim(row: Record<string, unknown>, claimToken: string) {
+  const conversion = row.conversion_no;
+  if (!conversion || typeof conversion !== "object" || Array.isArray(conversion)) return false;
+  const state = conversion as Record<string, unknown>;
+  return state.status === "processing"
+    && state.version === "conversion-v6"
+    && state.claim_token === claimToken;
+}
+
 export async function GET(request: NextRequest) {
   const startedAt = new Date().toISOString();
   const supabase = getSupabase();
@@ -57,35 +66,39 @@ export async function GET(request: NextRequest) {
     return unauthorized;
   }
 
-  // Claim in Postgres and return normal property rows. The v2 RPC name plus
-  // SETOF return avoids the stale/wrapped PostgREST result observed in production.
+  const claimToken = crypto.randomUUID();
   const { data: claimedRows, error: claimError } = await supabase.rpc(
-    "claim_property_conversion_candidates_v2",
-    { p_limit: BATCH_LIMIT, p_stale_minutes: CLAIM_STALE_MINUTES },
+    "claim_property_conversion_candidates_v3",
+    {
+      p_limit: BATCH_LIMIT,
+      p_stale_minutes: CLAIM_STALE_MINUTES,
+      p_claim_token: claimToken,
+    },
   );
 
   if (claimError) {
     await writeRunLog(supabase, "error", {
       stage: "claim",
       error: claimError.message,
+      claim_token: claimToken,
+      rpc_version: "v3",
       started_at: startedAt,
       finished_at: new Date().toISOString(),
     });
     return NextResponse.json({ error: claimError.message }, { status: 500 });
   }
 
-  const properties = (Array.isArray(claimedRows) ? claimedRows : []).filter(
-    (row): row is Record<string, unknown> => Boolean(row && typeof row === "object"),
+  const claimed = (Array.isArray(claimedRows) ? claimedRows : []).filter(
+    (row): row is { id: string; ref: string; claim_token: string } => Boolean(
+      row
+      && typeof row === "object"
+      && typeof row.id === "string"
+      && row.id
+      && row.claim_token === claimToken,
+    ),
   );
 
-  const claimedRefs = properties
-    .map((property) => String(property.ref || "").trim())
-    .filter(Boolean);
-  const claimedIds = properties
-    .map((property) => String(property.id || "").trim())
-    .filter(Boolean);
-
-  if (properties.length === 0) {
+  if (claimed.length === 0) {
     await writeRunLog(supabase, "success", {
       stage: "complete",
       processed: 0,
@@ -94,7 +107,7 @@ export async function GET(request: NextRequest) {
       template: 0,
       claimed: 0,
       claimed_refs: [],
-      rpc_version: "v2",
+      rpc_version: "v3",
       started_at: startedAt,
       finished_at: new Date().toISOString(),
     });
@@ -106,9 +119,58 @@ export async function GET(request: NextRequest) {
       template: 0,
       claimed: 0,
       claimed_refs: [],
-      rpc_version: "v2",
+      rpc_version: "v3",
     });
   }
+
+  const candidateIds = claimed.map((row) => row.id);
+  const { data: liveRows, error: verificationError } = await supabase
+    .from("properties")
+    .select("*")
+    .in("id", candidateIds);
+
+  if (verificationError) {
+    await writeRunLog(supabase, "error", {
+      stage: "claim_verification",
+      error: verificationError.message,
+      claim_token: claimToken,
+      rpc_returned: claimed.length,
+      rpc_version: "v3",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+    });
+    return NextResponse.json({ error: verificationError.message }, { status: 500 });
+  }
+
+  const properties = (liveRows ?? []).filter(
+    (row): row is Record<string, unknown> => Boolean(row && typeof row === "object" && hasVerifiedClaim(row, claimToken)),
+  );
+
+  if (properties.length !== claimed.length) {
+    const verifiedIds = new Set(properties.map((row) => String(row.id || "")));
+    const rejectedRefs = claimed.filter((row) => !verifiedIds.has(row.id)).map((row) => row.ref).filter(Boolean);
+    await writeRunLog(supabase, "error", {
+      stage: "claim_verification",
+      error: "PROPERTY_CONVERSION_CLAIM_NOT_DURABLE",
+      claim_token: claimToken,
+      rpc_returned: claimed.length,
+      verified: properties.length,
+      rejected_refs: rejectedRefs,
+      rpc_version: "v3",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+    });
+    return NextResponse.json({
+      error: "PROPERTY_CONVERSION_CLAIM_NOT_DURABLE",
+      claimed: claimed.length,
+      verified: properties.length,
+      rejected_refs: rejectedRefs,
+      rpc_version: "v3",
+    }, { status: 409 });
+  }
+
+  const claimedRefs = properties.map((property) => String(property.ref || "").trim()).filter(Boolean);
+  const claimedIds = properties.map((property) => String(property.id || "").trim()).filter(Boolean);
 
   const results = await Promise.all(
     properties.map(async (property) => {
@@ -116,11 +178,15 @@ export async function GET(request: NextRequest) {
       const ref = String(property.ref || "");
       try {
         const conversion = await generatePropertyConversionNo(property);
-        const { error: updateError } = await supabase
+        const { data: persisted, error: updateError } = await supabase
           .from("properties")
           .update({ conversion_no: conversion })
-          .eq("id", id);
+          .eq("id", id)
+          .eq("conversion_no->>claim_token", claimToken)
+          .select("id")
+          .maybeSingle();
         if (updateError) throw updateError;
+        if (!persisted) throw new Error("PROPERTY_CONVERSION_CLAIM_LOST");
         return { ok: true, mode: conversion.generation_mode, ref } as const;
       } catch (generationError) {
         const message = generationError instanceof Error ? generationError.message : String(generationError);
@@ -134,7 +200,8 @@ export async function GET(request: NextRequest) {
               error: message.slice(0, 1000),
             },
           })
-          .eq("id", id);
+          .eq("id", id)
+          .eq("conversion_no->>claim_token", claimToken);
         return {
           ok: false,
           mode: "failed",
@@ -158,7 +225,8 @@ export async function GET(request: NextRequest) {
     claimed: properties.length,
     claimed_refs: claimedRefs,
     claimed_ids: claimedIds,
-    rpc_version: "v2",
+    claim_token: claimToken,
+    rpc_version: "v3",
     refs: successful.map((result) => result.ref).filter(Boolean),
     failures: results.filter((result) => !result.ok),
   };
