@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
 import { isLeadIntelligencePropertyMatchingEnabled } from "@/services/lead-intelligence/feature-flags";
+import { LeadIntelligenceReviewError } from "@/services/lead-intelligence/review";
 import {
   LeadCustomerPresentationDraftHistoryQuerySchema,
   LeadCustomerPresentationDraftRequestSchema,
@@ -153,7 +154,7 @@ async function ensureManualPresentationReviewWorkItem(input: {
       || String(metadata.shortlist_id || "") !== input.shortlistId
       || String(metadata.buyer_profile_id || "") !== input.buyerProfileId
     ) {
-      throw new LeadIntelligenceError("INVALID_REQUEST", "An existing final-review work item points to different presentation dependencies", 409);
+      throw new LeadIntelligenceReviewError("REVIEW_CONFLICT", "An existing final-review work item points to different presentation dependencies", 409);
     }
     return {
       workItemId: existing.id,
@@ -212,7 +213,7 @@ async function ensureManualPresentationReviewWorkItem(input: {
   );
   const row = created.rows[0];
   if (!row) {
-    throw new LeadIntelligenceError("PERSISTENCE_WRITE_FAILED", "Could not create final-review work item", 500);
+    throw new LeadIntelligenceReviewError("DATABASE_ERROR", "Could not create final-review work item", 500);
   }
 
   return {
