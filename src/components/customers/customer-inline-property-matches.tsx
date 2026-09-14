@@ -30,6 +30,14 @@ type ShortlistSaveResult = {
   itemCount: number;
 };
 
+type PresentationReviewResult = {
+  workItemId: string;
+  status: string;
+  alreadyQueued: boolean;
+  reviewHref: string;
+  approvalCenterHref: string;
+};
+
 type PresentationDraftResult = {
   presentationId: string;
   messageDraftId: string;
@@ -44,6 +52,7 @@ type PresentationDraftResult = {
     bodyText: string;
     bodyHtml: string | null;
   };
+  review: PresentationReviewResult;
 };
 
 interface Props {
@@ -86,6 +95,11 @@ function eligibilityText(match: LeadIntelligencePropertyMatch) {
 
 function qualityLabel(status: QualityReviewStatus) {
   return qualityOptions.find((option) => option.value === status)?.label || status;
+}
+
+function safeInternalHref(value: unknown, fallback: string) {
+  const href = typeof value === "string" ? value.trim() : "";
+  return href.startsWith("/") && !href.startsWith("//") ? href : fallback;
 }
 
 export function CustomerInlinePropertyMatches({
@@ -238,6 +252,7 @@ export function CustomerInlinePropertyMatches({
         throw new Error(body?.error?.message || body?.error || "Kunne ikke lage presentasjon og e-postutkast.");
       }
       const result = body.result || {};
+      const review = result.review || {};
       setPresentationResult({
         presentationId: String(result.presentationId || ""),
         messageDraftId: String(result.messageDraftId || ""),
@@ -251,6 +266,13 @@ export function CustomerInlinePropertyMatches({
           subject: String(result.messageDraft?.subject || result.subject || "Boligforslag"),
           bodyText: String(result.messageDraft?.bodyText || ""),
           bodyHtml: result.messageDraft?.bodyHtml ? String(result.messageDraft.bodyHtml) : null,
+        },
+        review: {
+          workItemId: String(review.workItemId || ""),
+          status: String(review.status || "REVIEW"),
+          alreadyQueued: Boolean(review.alreadyQueued),
+          reviewHref: safeInternalHref(review.reviewHref, "/approvals"),
+          approvalCenterHref: safeInternalHref(review.approvalCenterHref, "/approvals"),
         },
       });
       onSaved?.();
@@ -426,6 +448,7 @@ export function CustomerInlinePropertyMatches({
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">Presentasjon: {presentationResult.status}</Badge>
               <Badge variant="secondary">E-post: {presentationResult.messageStatus}</Badge>
+              <Badge variant="secondary">Sluttkontroll: {presentationResult.review.status}</Badge>
             </div>
           </div>
 
@@ -437,12 +460,22 @@ export function CustomerInlinePropertyMatches({
           </div>
 
           <div className="mt-3 flex flex-col gap-2 border-t border-violet-500/20 pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-slate-400">
-              {presentationResult.duplicate ? "Et identisk eksisterende utkast ble gjenbrukt." : "Neste steg krever eksplisitt godkjenning i Approval Center."}
-            </p>
-            <Button asChild size="sm">
-              <Link href="/approvals"><ShieldCheck size={14} className="mr-2" />Åpne Approval Center</Link>
-            </Button>
+            <div className="text-xs text-slate-400">
+              <div className="flex items-center gap-2 font-medium text-violet-100"><ShieldCheck size={13} />Sluttkontroll køet</div>
+              <p className="mt-1">
+                {presentationResult.review.alreadyQueued
+                  ? "Det eksisterende review-arbeidet ble gjenbrukt. Ingen ny utsending er startet."
+                  : "Review-arbeidet er opprettet. Neste steg krever eksplisitt godkjenning før send-preflight."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm">
+                <Link href={presentationResult.review.reviewHref}><ShieldCheck size={14} className="mr-2" />Åpne sluttkontroll</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href={presentationResult.review.approvalCenterHref}>Approval Center</Link>
+              </Button>
+            </div>
           </div>
         </div>
       )}
