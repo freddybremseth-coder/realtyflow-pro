@@ -27,6 +27,10 @@ const executionConsoleSource = fs.readFileSync(
   path.join(process.cwd(), "src/components/agentic/jarvis-overlay.tsx"),
   "utf8",
 );
+const cockpitSource = fs.readFileSync(
+  path.join(process.cwd(), "src/app/(tools)/nexus/page.tsx"),
+  "utf8",
+);
 
 test("Nexus AI uses live page context and current customer context", () => {
   assert.match(routeSource, /body\?\.visitorInfo\?\.page/);
@@ -79,4 +83,10 @@ test("legacy Jarvis is an advanced execution console without a global launcher o
   assert.match(executionConsoleSource, /jarvis:open/);
   assert.doesNotMatch(executionConsoleSource, /aria-label="Åpne Jarvis/);
   assert.doesNotMatch(executionConsoleSource, /metaKey|ctrlKey/);
+});
+
+test("Nexus cockpit exposes execution as a tool, not Jarvis as another assistant", () => {
+  assert.match(cockpitSource, /Execution Console/);
+  assert.match(cockpitSource, /openExecutionConsole/);
+  assert.doesNotMatch(cockpitSource, />\s*Jarvis\s*</);
 });
