@@ -17,14 +17,14 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const ContactIdSchema = z.string().uuid();
-const BodySchema = z.object({ note: z.string().trim().min(3).max(8000) }).strict();
+const BodySchema = z.object({ note: z.string().trim().min(3).max(30000) }).strict();
 const OPEN_WORK_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
 
 export async function POST(request: NextRequest, { params }: { params: { contactId: string } }) {
   const context = await getRequestAccessContext(request);
   if (!context) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   if (context.role !== "OWNER" && !hasPermission(context.role, "customers.write")) {
-    return NextResponse.json({ ok: false, error: "Access permission required" }, { status: 403 });
+    return NextResponse.json({ ok: false, error: "Access permission required", requiredPermission: "customers.write" }, { status: 403 });
   }
 
   const contactId = ContactIdSchema.safeParse(params.contactId);
