@@ -67,13 +67,31 @@ test("presentation creation only proceeds when at least one selected property is
   assert.match(source, /Ingen valgte boliger er merket «Klar for kunde»/);
 });
 
+test("customer card consumes the server-created review work item and links directly to final review", () => {
+  assert.match(source, /const review = result\.review \|\| \{\}/);
+  assert.match(source, /workItemId: String\(review\.workItemId \|\| ""\)/);
+  assert.match(source, /reviewHref: safeInternalHref\(review\.reviewHref, "\/approvals"\)/);
+  assert.match(source, /approvalCenterHref: safeInternalHref\(review\.approvalCenterHref, "\/approvals"\)/);
+  assert.match(source, /Sluttkontroll køet/);
+  assert.match(source, /href=\{presentationResult\.review\.reviewHref\}/);
+  assert.match(source, /Åpne sluttkontroll/);
+  assert.match(source, /href=\{presentationResult\.review\.approvalCenterHref\}/);
+  assert.match(source, /Approval Center/);
+});
+
+test("review destinations are restricted to internal paths", () => {
+  assert.match(source, /function safeInternalHref/);
+  assert.match(source, /href\.startsWith\("\/"\)/);
+  assert.match(source, /!href\.startsWith\("\/\/"\)/);
+});
+
 test("customer card previews the generated email draft but never approves or sends it", () => {
   assert.match(source, /Presentasjon og e-postutkast klart/);
   assert.match(source, /presentationResult\.messageDraft\.subject/);
   assert.match(source, /presentationResult\.messageDraft\.bodyText/);
   assert.match(source, /ingen e-post er sendt og presentasjonen er ikke publisert/);
-  assert.match(source, /href="\/approvals"/);
-  assert.match(source, /Åpne Approval Center/);
+  assert.match(source, /eksplisitt godkjenning før send-preflight/);
   assert.doesNotMatch(source, /message-drafts\/.*approval/);
   assert.doesNotMatch(source, /explicitApproval/);
+  assert.doesNotMatch(source, /sendEmail|sendMail|email\.send/);
 });
