@@ -5,7 +5,6 @@ export interface NexusPropertyDeltaCandidate {
   price?: number | null;
   baseScore?: number | null;
   tasteAdjustedScore?: number | null;
-  [key: string]: unknown;
 }
 
 export interface NexusPropertyHistoryItem {
