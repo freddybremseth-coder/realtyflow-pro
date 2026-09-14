@@ -29,7 +29,7 @@ test("3: riktig publiseringskonto (external_id) resolves for brand+kanal", async
     { brand_id: "b2", platform: "instagram", external_id: "IG_ACC_2", display_name: "Soleada IG", is_active: true },
   ] });
   const acc = await resolvePublishingAccount(db, { brandId: "b1", channel: "instagram" });
-  assert.equal(acc.accountId, "IG_ACC_1"); // aldri b2 sin konto
+  assert.equal(acc.accountId, "IG_ACC_1");
 });
 
 test("3b: ingen aktiv konto → ACCOUNT_NOT_FOUND (fail closed)", async () => {
@@ -60,7 +60,6 @@ test("media_assets fra feil brand hentes ikke (brand-scopet spørring)", async (
     ],
   });
   const d = await resolveMarketingContent(db, { brandId: "b1", channel: "instagram", now: "2026-08-23T00:00:00Z" });
-  // Kun b1-media i ranked; ingen b2.
   assert.ok(d.ranked.every((c) => c.brandId === "b1"));
   assert.ok(!d.ranked.some((c) => c.contentId === "media_asset:m2"));
 });
@@ -73,19 +72,60 @@ test("godkjent, men intern/meta-tekst gjenbrukes ALDRI (publishability-filter)",
     media_assets: [],
   });
   const d = await resolveMarketingContent(db, { brandId: "b1", channel: "instagram", now: "2026-08-23T00:00:00Z" }, { organizationId: "org1" });
-  assert.equal(d.decision, "generate"); // meta-tekst filtrert bort → ingen gjenbruk
+  assert.equal(d.decision, "generate");
   assert.ok(!d.ranked.some((c) => c.contentId === "social_post:bad"));
 });
 
 test("ingen org-mapping → hopper over org-scopede kilder (fail-safe, ingen fuzzy-match)", async () => {
   const db = makeDb({ social_posts: [{ id: "p1", organization_id: "orgX", platform: "instagram", content: "x", status: "approved", created_at: "2026-08-20T00:00:00Z" }], media_assets: [] });
-  const d = await resolveMarketingContent(db, { brandId: "b1", channel: "instagram", now: "2026-08-23T00:00:00Z" }); // ingen organizationId
-  assert.equal(d.decision, "generate"); // rørte aldri orgX sitt innhold
+  const d = await resolveMarketingContent(db, { brandId: "b1", channel: "instagram", now: "2026-08-23T00:00:00Z" });
+  assert.equal(d.decision, "generate");
 });
 
-test("publiseringsledger gir nylig brukt ad creative en autopilot-cooldown", async () => {
+test("ad creative kan bare gjenbrukes når campaign-eierskap matcher brand", async () => {
   const db = makeDb({
     media_assets: [],
+    ad_campaigns: [
+      { id: "campaign-owned", brand_id: "zeneco" },
+      { id: "campaign-other", brand_id: "donaanna" },
+    ],
+    ad_creatives: [
+      { id: "owned", campaign_id: "campaign-owned", image_url: "https://cdn.example/house.jpg", caption_primary: "Verified property campaign", status: "completed", is_top_pick: true, created_at: "2026-09-01T10:00:00Z" },
+      { id: "foreign", campaign_id: "campaign-other", image_url: "https://cdn.example/olive.jpg", caption_primary: "Olive campaign", status: "completed", is_top_pick: true, created_at: "2026-09-01T10:00:00Z" },
+    ],
+  });
+
+  const decision = await resolveMarketingContent(db, {
+    brandId: "zeneco", channel: "instagram", now: "2026-09-02T10:00:00Z",
+  }, { adCampaignIds: ["campaign-owned", "campaign-other"] });
+
+  assert.ok(decision.ranked.some((c) => c.contentId === "ad_creative:owned"));
+  assert.ok(!decision.ranked.some((c) => c.contentId === "ad_creative:foreign"));
+  assert.ok(decision.ranked.every((c) => c.brandId === "zeneco"));
+});
+
+test("uverifiserbar campaign mapping feiler lukket og gjenbruker ingen ad creatives", async () => {
+  const db = makeDb({
+    media_assets: [],
+    ad_campaigns: [{ id: "campaign-other", brand_id: "donaanna" }],
+    ad_creatives: [{
+      id: "foreign", campaign_id: "campaign-other", image_url: "https://cdn.example/olive.jpg",
+      caption_primary: "Olive campaign", status: "completed", is_top_pick: true, created_at: "2026-09-01T10:00:00Z",
+    }],
+  });
+
+  const decision = await resolveMarketingContent(db, {
+    brandId: "zeneco", channel: "instagram", now: "2026-09-02T10:00:00Z",
+  }, { adCampaignIds: ["campaign-other"] });
+
+  assert.equal(decision.decision, "generate");
+  assert.ok(!decision.ranked.some((c) => c.source === "ad_creative"));
+});
+
+test("publiseringsledger gir nylig brukt, eid ad creative en autopilot-cooldown", async () => {
+  const db = makeDb({
+    media_assets: [],
+    ad_campaigns: [{ id: "campaign-1", brand_id: "donaanna" }],
     ad_creatives: [{
       id: "creative-1", campaign_id: "campaign-1", aspect_ratio: "1:1",
       image_url: "https://cdn.example/olive.jpg", caption_primary: "Chefs choose terroir.",
