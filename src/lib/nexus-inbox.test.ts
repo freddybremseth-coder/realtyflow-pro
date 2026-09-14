@@ -18,7 +18,7 @@ test("Nexus Inbox combines system, approval, marketing and high email identity a
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.priority, "critical");
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.href, "/nexus-os/email-link-health?messageId=mail-conflict");
   const summary = summarizeNexusInbox(items);
-  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, shortlistReview: 0, noMatch: 0, system: 1 });
+  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, shortlistReview: 0, noMatch: 0, viewingCoach: 0, system: 1 });
 });
 
 test("ambiguous buyer criteria reply becomes a high-priority human interpretation item", () => {
@@ -73,6 +73,65 @@ test("prepared property shortlist becomes a focused high-priority review item", 
   assert.equal(items[0]?.actionLabel, "Review boliger");
   assert.equal(items[0]?.href, "/nexus-os/shortlist-review?workItemId=crm-work-1");
   assert.equal(summarizeNexusInbox(items).shortlistReview, 1);
+});
+
+test("Viewing Coach elevates high-intent completed viewings without moving pipeline", () => {
+  const items = buildNexusInbox({
+    attention: [],
+    approvals: [],
+    marketingRows: [],
+    viewingCoachReviews: [{
+      id: "viewing-work-1",
+      priority: "HIGH",
+      customerName: "Kari Kjøper",
+      sentiment: "positive",
+      reasons: ["location_like", "style_like"],
+      explicitCriteria: [],
+      highIntent: true,
+      shouldRematch: false,
+      note: "Dette er favoritten vår. Vi ønsker å kjøpe og gå videre med bud.",
+      property: { reference: "N-123", title: "Villa Sol", location: "Altea" },
+      nextAction: "Gjennomgå feedback og vurder neste steg mot NEGOTIATION; Nexus flytter ikke pipeline automatisk.",
+      reviewHref: "/customers?contactId=contact-1",
+      updatedAt: "2026-09-11T15:30:00Z",
+    }],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.source, "viewing_coach");
+  assert.equal(items[0]?.priority, "critical");
+  assert.equal(items[0]?.customerName, "Kari Kjøper");
+  assert.match(items[0]?.reason || "", /N-123/);
+  assert.match(items[0]?.reason || "", /Altea/);
+  assert.match(items[0]?.reason || "", /NEGOTIATION/);
+  assert.equal(items[0]?.actionLabel, "Review neste steg");
+  assert.equal(summarizeNexusInbox(items).viewingCoach, 1);
+});
+
+test("Viewing Coach makes criteria-changing viewing feedback an explicit Buyer Profile review", () => {
+  const items = buildNexusInbox({
+    attention: [],
+    approvals: [],
+    marketingRows: [],
+    viewingCoachReviews: [{
+      id: "viewing-work-2",
+      priority: "HIGH",
+      customerName: "Anne Kunde",
+      sentiment: "mixed",
+      reasons: ["too_small"],
+      explicitCriteria: ["må ha minst 3 soverom"],
+      highIntent: false,
+      shouldRematch: false,
+      note: "Fin bolig, men vi må ha minst 3 soverom.",
+      property: { title: "Casa Mar" },
+      nextAction: "Gjennomgå Buyer Profile før ny matching.",
+      reviewHref: "/customers?contactId=contact-2",
+      updatedAt: "2026-09-11T15:40:00Z",
+    }],
+  });
+
+  assert.equal(items[0]?.actionLabel, "Review Buyer Profile");
+  assert.equal(items[0]?.source, "viewing_coach");
 });
 
 test("No-Match Coach surfaces one constraint and one question for human review", () => {
