@@ -36,8 +36,7 @@ export interface NurtureSequence {
    *  ikke kan sende fra merkets eget domene (soleada.no), men fra et vi kan
    *  (freddy@zenecohomes.com). Default: kontaktens eget merke. */
   sendBrandId?: string;
-  /** Overstyr visningsnavn i Fra-feltet (f.eks. "Freddy Bremseth – Soleada.no"
-   *  selv om vi sender via zenecohomes-kontoen). */
+  /** Overstyr visningsnavn i Fra-feltet. */
   fromName?: string;
   /**
    * welcome      = ferske leads, tidsregning fra created_at (lead nettopp inn).
@@ -137,8 +136,10 @@ Freddy Bremseth
   ],
 };
 
-// Reaktivering av sovende Soleada-leads (kom inn ~april 2026, fikk lite oppfølging).
-// Varsom: starter tidsregning ved innmelding, maks 25 nye per dag, tydelig avmelding.
+// Reaktivering av Soleada-kunder som Freddy følger opp personlig.
+// Soleada beholder kundeforholdet og står bak et eventuelt salg. Zen Eco Homes
+// brukes som Freddys praktiske kommunikasjons- og rådgivningsplattform.
+// Varsom: maks 25 nye innmeldinger per kjøring og tydelig avmelding.
 const SOLEADA_REACTIVATION: NurtureSequence = {
   id: "soleada-reactivation-v1",
   brandId: "soleada",
@@ -146,31 +147,44 @@ const SOLEADA_REACTIVATION: NurtureSequence = {
   advisor: "Freddy Bremseth",
   bookingUrl: "https://appointment.chatgenius.pro/freddy",
   mode: "reactivation",
-  eligibleStatuses: ["NEW", ""],
+  eligibleStatuses: ["NEW", "CONTACT", "QUALIFIED", ""],
   maxNewEnrollmentsPerRun: 25,
-  // Vi kan ikke sende fra soleada.no – send via zenecohomes-kontoen, men
-  // fremstå som Soleada.no (disse kundene kjenner Freddy fra Soleada).
   sendBrandId: "zeneco",
-  fromName: "Freddy Bremseth – Soleada.no",
+  fromName: "Freddy Bremseth – Zen Eco Homes",
   steps: [
     {
       id: "reconnect",
       dayOffset: 0,
       channel: "email",
-      subject: "{name}, er du fortsatt på jakt etter bolig i Spania?",
+      subject: "Er bolig i Spania fortsatt aktuelt for deg, {name}?",
       text: `Hei {name},
 
-Vi var i kontakt via Soleada.no om bolig i Spania tidligere i år, og jeg vil bare høre: er det fortsatt aktuelt for deg? (Jeg svarer deg fra min e-post i Zen Eco Homes.)
+Vi har tidligere vært i kontakt gjennom Soleada.no om bolig i Spania, og jeg ønsker å følge deg opp personlig.
 
-Jeg er Freddy Bremseth, norsk eiendomsrådgiver på Costa Blanca. Hvis du fortsatt vurderer, hjelper jeg deg gjerne videre – helt uforpliktende. Markedet har beveget seg litt siden sist, så jeg kan gi deg et oppdatert bilde.
+Jeg heter Freddy Bremseth og jobber videre med kundene jeg har hatt kontakt med gjennom Soleada. Selve kundeforholdet og et eventuelt boligsalg ligger fortsatt hos Soleada.no.
 
-Svar gjerne kort på denne e-posten: er du fortsatt interessert, eller skal jeg legge saken til side?
+Denne e-posten kommer fra Zen Eco Homes fordi det er plattformen og e-postsystemet jeg nå bruker i mitt daglige rådgivningsarbeid på Costa Blanca. Det endrer altså ikke hvem som står bak kundeforholdet eller et eventuelt salg – Soleada er fortsatt ansvarlig part på den siden.
+
+Jeg ønsker først og fremst å høre om bolig i Spania fortsatt er aktuelt for deg.
+
+Hvis det er det, kan jeg gjerne hjelpe deg videre med blant annet:
+– hvilke områder som passer best til hvordan du ønsker å bruke boligen
+– hva budsjettet ditt realistisk gir i dagens marked
+– aktuelle boliger som passer behovene dine
+– spørsmål om kjøpsprosessen og det praktiske rundt et kjøp i Spania
+
+Svar gjerne kort på denne e-posten med hvor du står i prosessen nå. Det holder fint med for eksempel «fortsatt interessert», «kanskje senere» eller «ikke aktuelt lenger».
 
 Vennlig hilsen
-Freddy Bremseth
-{brand}
 
-PS: Er det ikke aktuelt lenger, svar "stopp", så hører du ikke mer fra meg.`,
+Freddy Bremseth
+Eiendomsrådgiver
+Zen Eco Homes
+
+Oppfølging av kundehenvendelse fra Soleada.no
+Eventuelt boligsalg håndteres gjennom Soleada.no
+
+PS: Hvis du ikke ønsker videre oppfølging, svar «stopp», så registrerer jeg det.`,
     },
     {
       id: "right-place",
@@ -179,16 +193,19 @@ PS: Er det ikke aktuelt lenger, svar "stopp", så hører du ikke mer fra meg.`,
       subject: "{name}, det de fleste glemmer før de kjøper i Spania",
       text: `Hei {name},
 
-Hvis du fortsatt går med tanken om bolig i Spania, er her det jeg skulle ønske flere tenkte på først:
+Hvis bolig i Spania fortsatt er aktuelt, er dette noe av det viktigste jeg hjelper kunder med før vi begynner å se på konkrete boliger:
 
-De fleste ser på boliger de liker før de vet HVOR de skal bo. Costa Blanca er stort, og noen steder passer bedre for noen enn for andre – det kommer an på hvem du er og hva slags hverdag du ønsker deg. Jeg er lokalkjent i de fleste områdene og har skrevet egne dokumenter om dem.
+De fleste ser først på boliger de liker, men det er ofte smartere å finne ut HVOR man faktisk vil trives. Costa Blanca er stort, og riktig område avhenger av hvordan du ønsker å leve, bruke boligen og hvor mye du vil ha i nærheten i hverdagen.
 
-Vil du at jeg ser på hva som passer for nettopp deg? Svar med litt om hva du ser for deg, så kommer jeg med forslag.
+Jeg kjenner områdene godt og kan hjelpe deg med å snevre inn valget. Hvis du svarer med noen få ord om hva du ser for deg – feriebolig eller fast bosted, ønsket område og omtrent budsjett – kan jeg komme med noen konkrete forslag.
 
-Freddy
-{brand}
+Jeg følger deg opp personlig gjennom Zen Eco Homes, mens kundeforholdet og et eventuelt boligsalg fortsatt håndteres gjennom Soleada.no.
 
-PS: Vil du ikke ha flere e-poster, svar "stopp".`,
+Vennlig hilsen
+Freddy Bremseth
+Zen Eco Homes
+
+PS: Vil du ikke ha flere e-poster, svar «stopp».`,
     },
     {
       id: "soft-call",
@@ -197,18 +214,20 @@ PS: Vil du ikke ha flere e-poster, svar "stopp".`,
       subject: "En kort prat, {name}?",
       text: `Hei {name},
 
-Jeg lover å ikke mase – dette er siste e-post fra meg hvis jeg ikke hører noe.
+Dette er siste automatiske oppfølging fra meg hvis jeg ikke hører noe.
 
-Skulle du fortsatt være nysgjerrig på bolig i Spania, tar vi gjerne en kort, uforpliktende videoprat. På 15 minutter får du et ærlig bilde av hva som er mulig for deg akkurat nå.
+Hvis bolig i Spania fortsatt er aktuelt, tar jeg gjerne en kort og uforpliktende videoprat. På 15 minutter kan vi avklare hvilke områder som passer, hva budsjettet realistisk gir og hva som er et fornuftig neste steg.
 
 Book et tidspunkt her: {booking_url}
 Eller svar på denne e-posten med et par tidspunkt som passer.
 
+Jeg følger deg opp personlig fra Zen Eco Homes. Kundeforholdet og et eventuelt boligsalg ligger fortsatt hos Soleada.no.
+
 Vennlig hilsen
 Freddy Bremseth
-{brand}
+Zen Eco Homes
 
-PS: Vil du ikke høre mer, svar "stopp" – helt greit.`,
+PS: Vil du ikke høre mer, svar «stopp».`,
     },
   ],
 };
