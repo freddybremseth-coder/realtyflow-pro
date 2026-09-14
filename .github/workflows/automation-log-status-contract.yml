@@ -1,0 +1,36 @@
+name: Automation log status contract
+
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/20260914181500_automation_logs_status_contract_v2.sql"
+      - "src/lib/automation-log-status-contract.test.ts"
+      - ".github/workflows/automation-log-status-contract.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/migrations/20260914181500_automation_logs_status_contract_v2.sql"
+      - "src/lib/automation-log-status-contract.test.ts"
+      - ".github/workflows/automation-log-status-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Automation log status contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --silent
+      - name: Test bounded status vocabulary
+        run: node --import tsx --test src/lib/automation-log-status-contract.test.ts
