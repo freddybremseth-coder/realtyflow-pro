@@ -8,6 +8,19 @@ Nexus AI is the persistent system-wide advisor inside RealtyFlow. RealtyFlow rem
 
 The product goal is not another module to manage. The assistant should reduce the need to remember where data or controls live and convert live system data into concrete next actions.
 
+## Single-assistant rule
+
+RealtyFlow must expose one conversational assistant identity to the owner: **Nexus AI**.
+
+Other interaction surfaces have narrower roles and must not compete as separate assistants:
+
+- `⌘K / Ctrl+K` is navigation/search only. It finds existing RealtyFlow modules and routes the user there; it does not run a second AI conversation.
+- The legacy Jarvis agent surface is retained only as an advanced **Nexus Execution Console** for explicit agent execution. It has no global launcher and no `⌘K` shortcut. It opens only from deliberate legacy/admin execution entry points.
+- The legacy `/api/nexus/victoria` route may remain as an implementation path for compatibility, but `Victoria` is not a separate user-facing assistant identity in v1.
+- Future assistant capabilities should be added to Nexus AI unless there is a strong reason to expose a specialist tool with a clearly different, non-chat purpose.
+
+The intent is that the user learns one habit: **ask Nexus AI**. Search and execution are tools around that conversation, not additional personalities.
+
 ## Core user experience
 
 From any authenticated RealtyFlow page, the user can open Nexus AI and ask questions such as:
@@ -97,6 +110,8 @@ For questions such as “where do I find X?” or “where should I click?”, N
 3. expose a clickable route shortcut,
 4. avoid inventing menu names or URLs.
 
+The `⌘K / Ctrl+K` palette remains a separate navigation shortcut, but it does not answer questions itself.
+
 ## Conversation behavior
 
 The assistant keeps recent conversation state and locally persists the chat history so normal navigation/reload does not immediately destroy context.
@@ -118,6 +133,7 @@ If the user asks for actual booked/paid sales numbers and the snapshot does not 
 - Missing data should be named explicitly; never filled with invented facts.
 - Legal, contractual, price and availability guarantees are never invented.
 - Cross-brand identity or sender changes remain governed by Nexus policy.
+- New assistant-like surfaces should not be introduced when Nexus AI can own the interaction.
 
 ## V1 acceptance criteria
 
@@ -131,6 +147,9 @@ V1 is acceptable when:
 6. Chat history survives a normal reload in the same browser.
 7. The assistant does not claim to perform write actions.
 8. Pipeline/opportunity value is not mislabeled as booked revenue.
+9. Nexus AI is the only global conversational assistant.
+10. `⌘K` is navigation-only and does not create a second AI response surface.
+11. Legacy Jarvis execution has no global launcher or competing keyboard shortcut.
 
 ## Next phase
 
@@ -141,5 +160,7 @@ V2 can add governed actions behind explicit policies and approvals, for example:
 - prepare a property shortlist,
 - propose a pipeline move,
 - request approval for a gated action.
+
+Those actions should be requested through Nexus AI and delegated to the existing execution/agent layer rather than exposed as a second general-purpose assistant.
 
 Actual side effects must remain idempotent, auditable and policy-controlled.
