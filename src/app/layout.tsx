@@ -61,11 +61,11 @@ export default function RootLayout({
             <ChatWidget
               brandId="freddyb"
               apiUrl="/api/nexus/victoria"
-              title="Victoria · Nexus"
-              subtitle="Live grensesnitt til Nexus Director"
-              welcomeMessage="Hei. Jeg er Victoria, grensesnittet til Nexus OS. Du kan skrive eller snakke fritt. Jeg leser live status fra brands, kanaler, e-post, CRM, approvals, learning og autonomy policy før jeg svarer."
+              title="Nexus AI"
+              subtitle="Din rådgiver på tvers av RealtyFlow"
+              welcomeMessage="Hei. Spør meg om kunder, leads, salg, prioriteringer, systemstatus eller hvor du finner noe i RealtyFlow. Når du står på en kundeside, bruker jeg den kunden som aktiv kontekst."
               primaryColor="#0891b2"
-              placeholder="Skriv eller snakk fritt til Victoria…"
+              placeholder="Spør om kunder, leads, salg eller hvor du finner noe…"
               voiceAutoSend
               voiceSilenceMs={9000}
             />
