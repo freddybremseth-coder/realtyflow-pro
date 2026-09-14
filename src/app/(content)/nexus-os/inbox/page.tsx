@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardCheck, Inbox, Loader2, MailWarning, Megaphone, RefreshCw, SearchX, ShieldCheck, UserRoundCheck } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardCheck, Eye, Inbox, Loader2, MailWarning, Megaphone, RefreshCw, SearchX, ShieldCheck, UserRoundCheck } from "lucide-react";
 import { buildNexusInbox, summarizeNexusInbox, type NexusInboxItem, type NexusInboxSource } from "@/lib/nexus-inbox";
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 
@@ -46,6 +46,21 @@ type NoMatchPayload = { items?: Array<{
   reviewHref: string;
   updatedAt?: string | null;
 }> };
+type ViewingCoachPayload = { items?: Array<{
+  id: string;
+  priority?: string | null;
+  customerName?: string | null;
+  sentiment?: string | null;
+  reasons?: string[] | null;
+  explicitCriteria?: string[] | null;
+  highIntent?: boolean | null;
+  shouldRematch?: boolean | null;
+  note?: string | null;
+  property?: { id?: string | null; reference?: string | null; title?: string | null; location?: string | null } | null;
+  nextAction?: string | null;
+  reviewHref: string;
+  updatedAt?: string | null;
+}> };
 type Filter = "all" | NexusInboxSource;
 
 async function getJson<T>(url: string): Promise<{ data: T | null; error: string | null }> {
@@ -73,6 +88,7 @@ function sourceLabel(source: NexusInboxSource) {
   if (source === "buyer_criteria") return "Buyer criteria";
   if (source === "shortlist_review") return "Boligreview";
   if (source === "no_match") return "Ingen treff";
+  if (source === "viewing_coach") return "Viewing Coach";
   return "System";
 }
 
@@ -91,7 +107,7 @@ export default function NexusInboxPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [os, approvals, marketing, emailIdentity, buyerCriteria, shortlistReviews, noMatch] = await Promise.all([
+    const [os, approvals, marketing, emailIdentity, buyerCriteria, shortlistReviews, noMatch, viewingCoach] = await Promise.all([
       getJson<OsPayload>("/api/os/status"),
       getJson<ApprovalPayload>("/api/approvals"),
       getJson<MarketingPayload>("/api/marketing/readiness"),
@@ -99,8 +115,9 @@ export default function NexusInboxPage() {
       getJson<BuyerCriteriaPayload>("/api/nexus/buyer-criteria-reviews"),
       getJson<ShortlistReviewPayload>("/api/nexus/shortlist-reviews"),
       getJson<NoMatchPayload>("/api/nexus/no-match-reviews"),
+      getJson<ViewingCoachPayload>("/api/nexus/viewing-reviews"),
     ]);
-    setErrors([os.error, approvals.error, marketing.error, emailIdentity.error, buyerCriteria.error, shortlistReviews.error, noMatch.error].filter((value): value is string => Boolean(value)));
+    setErrors([os.error, approvals.error, marketing.error, emailIdentity.error, buyerCriteria.error, shortlistReviews.error, noMatch.error, viewingCoach.error].filter((value): value is string => Boolean(value)));
     setItems(buildNexusInbox({
       attention: os.data?.attention ?? [],
       approvals: approvals.data?.items ?? [],
@@ -125,6 +142,7 @@ export default function NexusInboxPage() {
         updatedAt: item.updatedAt,
       })),
       noMatchReviews: noMatch.data?.items ?? [],
+      viewingCoachReviews: viewingCoach.data?.items ?? [],
     }));
     setLoading(false);
   }, []);
@@ -136,6 +154,7 @@ export default function NexusInboxPage() {
   const tabs: Array<[Filter, string, number]> = [
     ["all", "Alle", summary.total],
     ["shortlist_review", "Boliger", summary.shortlistReview],
+    ["viewing_coach", "Visning", summary.viewingCoach],
     ["no_match", "Ingen treff", summary.noMatch],
     ["buyer_criteria", "Kundesvar", summary.buyerCriteria],
     ["approval", "Approvals", summary.approvals],
@@ -150,7 +169,7 @@ export default function NexusInboxPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Inbox size={16} /> Nexus Inbox</div>
           <h1 className="mt-2 text-3xl font-black text-slate-950">Beslutninger som trenger et menneske</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én triageflate for det Nexus ikke bør avgjøre alene. Tvetydige kundesvar, boligforslag som trenger kvalitetssjekk og søk uten gode treff havner her. Når et søk trenger avklaring, forbereder Nexus ett konkret spørsmål og et kundetekstutkast for review – systemet sender ikke selv.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én triageflate for det Nexus ikke bør avgjøre alene. Tvetydige kundesvar, boligforslag, søk uten gode treff og feedback etter bekreftede visninger havner her. Nexus kan bruke visningsfeedback til sekundær reranking, men endrer aldri godkjente kriterier, pipeline eller kundekommunikasjon i skjul.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">{loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater</button>
       </div>
@@ -158,10 +177,11 @@ export default function NexusInboxPage() {
 
     {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><b>Én eller flere kilder kunne ikke leses.</b><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
 
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-8">
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-9">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Inbox size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.total}</div><div className="text-sm font-semibold text-slate-500">Totalt</div></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><AlertTriangle size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.critical}</div><div className="text-sm font-semibold text-slate-500">Kritisk</div></div>
       <button onClick={() => setFilter("shortlist_review")} className="group rounded-2xl border border-cyan-200 bg-cyan-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md"><ClipboardCheck size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.shortlistReview}</div><div className="flex items-center gap-1 text-sm font-semibold text-slate-600">Boliger å kontrollere <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></div></button>
+      <button onClick={() => setFilter("viewing_coach")} className="group rounded-2xl border border-violet-200 bg-violet-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md"><Eye size={19} className="text-violet-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.viewingCoach}</div><div className="flex items-center gap-1 text-sm font-semibold text-slate-600">Visninger å følge opp <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></div></button>
       <button onClick={() => setFilter("no_match")} className="group rounded-2xl border border-orange-200 bg-orange-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md"><SearchX size={19} className="text-orange-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.noMatch}</div><div className="flex items-center gap-1 text-sm font-semibold text-slate-600">Søk uten treff <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></div></button>
       <button onClick={() => setFilter("buyer_criteria")} className="group rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md"><UserRoundCheck size={19} className="text-amber-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.buyerCriteria}</div><div className="flex items-center gap-1 text-sm font-semibold text-slate-600">Kundesvar å tolke <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></div></button>
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><ShieldCheck size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.approvals}</div><div className="text-sm font-semibold text-slate-500">Approvals</div></div>
@@ -175,7 +195,7 @@ export default function NexusInboxPage() {
 
     <section className="space-y-3">
       {visible.map((item) => {
-        const occurredAt = ["email_identity", "buyer_criteria", "shortlist_review", "no_match"].includes(item.source) ? timeLabel(item.occurredAt) : null;
+        const occurredAt = ["email_identity", "buyer_criteria", "shortlist_review", "no_match", "viewing_coach"].includes(item.source) ? timeLabel(item.occurredAt) : null;
         return <Link key={item.id} href={item.href} className={`block rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${tone(item)}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -191,6 +211,6 @@ export default function NexusInboxPage() {
       {!loading && visible.length === 0 && errors.length === 0 && <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><CheckCircle2 size={20} className="mt-0.5" /><div><div className="font-black">Ingen beslutninger i denne køen</div><div className="mt-1 text-sm text-emerald-800">Det finnes ingen elementer fra de valgte kildene som trenger menneskelig oppmerksomhet nå.</div></div></div>}
     </section>
 
-    <div className="text-xs leading-5 text-slate-500">Nexus gjør forarbeidet automatisk. Ved søk uten gode treff identifiserer Nexus én mulig flaskehals og forbereder ett avklaringsspørsmål med kundetekstutkast for review. Tvetydige svar, konkrete søk uten treff og boligforslag som trenger kvalitetsvurdering stoppes hos deg. Ingen kundekriterier mykes opp og ingen kundemelding sendes automatisk.</div>
+    <div className="text-xs leading-5 text-slate-500">Nexus gjør forarbeidet automatisk. Bekreftet visningsfeedback kan bli sekundære smakssignaler og utløse trygg reranking med den allerede godkjente Buyer Profile. Nye eksplisitte kriterier stoppes til review. Nexus myker aldri opp kundekriterier, flytter aldri pipeline og sender ingen kundemelding automatisk fra denne flyten.</div>
   </main>;
 }
