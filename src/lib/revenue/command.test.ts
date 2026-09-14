@@ -149,3 +149,41 @@ test("preserves optional table warnings", () => {
   assert.equal(command.summary.activeDeals, 0);
   assert.equal(command.topActions.length, 0);
 });
+
+test("keeps MATCHING and RESERVED visible in Revenue Command with canonical sales semantics", () => {
+  const command = buildRevenueCommandCenter({
+    contacts: [
+      {
+        id: "matching-1",
+        name: "Matching Buyer",
+        email: "matching@example.com",
+        pipeline_status: "MATCHING",
+        pipeline_value: 500_000,
+        property_interest: "Altea, 3 bedrooms",
+        brand_id: "zeneco",
+        created_at: "2026-06-01T10:00:00.000Z",
+        updated_at: "2026-07-01T10:00:00.000Z",
+        next_followup: "2026-07-01T09:00:00.000Z",
+      },
+      {
+        id: "reserved-1",
+        name: "Reserved Buyer",
+        email: "reserved@example.com",
+        pipeline_status: "RESERVED",
+        pipeline_value: 650_000,
+        property_interest: "Reserved villa",
+        brand_id: "soleada",
+        created_at: "2026-05-01T10:00:00.000Z",
+        updated_at: "2026-07-01T10:00:00.000Z",
+        next_followup: "2026-07-01T09:00:00.000Z",
+      },
+    ],
+  }, now);
+
+  const today = command.workstreams.find((item) => item.id === "today");
+  assert.equal(today?.count, 2);
+  const matchingAction = command.topActions.find((item) => item.contactId === "matching-1");
+  assert.equal(matchingAction?.source, "today");
+  assert.match(matchingAction?.description || "", /property matching/i);
+  assert.ok(command.topActions.some((item) => item.contactId === "reserved-1"));
+});
