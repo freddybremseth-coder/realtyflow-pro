@@ -21,6 +21,16 @@ test("no-match review API only exposes cases explicitly escalated for human judg
   assert.match(source, /metadata->>no_match_review_required/);
   assert.match(source, /criteriaMutated:\s*false/);
   assert.match(source, /customerMessageSent:\s*false/);
+  assert.match(source, /reviewRequiredBeforeCustomerContact:\s*true/);
   assert.match(source, /property_match_analyzed/);
   assert.match(source, /no_match_current_criteria/);
+});
+
+test("review API exposes the coach question and prepared draft without executing it", () => {
+  assert.match(source, /no_match_coach_question/);
+  assert.match(source, /no_match_constraint_focus/);
+  assert.match(source, /no_match_draft_subject/);
+  assert.match(source, /no_match_draft_body/);
+  assert.match(source, /question,/);
+  assert.match(source, /draft:/);
 });
