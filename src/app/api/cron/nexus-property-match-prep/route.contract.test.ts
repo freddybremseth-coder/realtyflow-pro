@@ -18,7 +18,24 @@ test("customer taste is derived from CRM feedback and used only for ranking", ()
   assert.match(source, /sekundær rangering/);
 });
 
-test("taste layer does not mutate buyer profiles or send customer communication", () => {
+test("Delta Matching compares against approved shortlist history across Buyer Profile versions", () => {
+  assert.match(source, /selectPropertyDeltaCandidates/);
+  assert.match(source, /\.from\("buyer_profiles"\)/);
+  assert.match(source, /\.from\("lead_property_shortlists"\)/);
+  assert.match(source, /\.eq\("status", "approved"\)/);
+  assert.match(source, /\.from\("lead_property_shortlist_items"\)/);
+  assert.match(source, /property_match_raw_count/);
+  assert.match(source, /property_match_repeat_suppressed/);
+});
+
+test("unchanged reviewed homes do not become a fresh shortlist, false no-match follow-up or false no-match health state", () => {
+  assert.match(source, /NO_MEANINGFUL_DELTA/);
+  assert.match(source, /property_match_count: noDelta \? null : deltaProperties\.length/);
+  assert.match(source, /no_match_followup_required: false/);
+  assert.match(source, /Ingen ny shortlist eller kundekontakt er nødvendig/);
+});
+
+test("taste and delta layers do not mutate buyer profiles or send customer communication", () => {
   assert.doesNotMatch(source, /from\("buyer_profiles"\)\.update/);
   assert.doesNotMatch(source, /sendBrandEmail/);
   assert.doesNotMatch(source, /sendEmail\(/);

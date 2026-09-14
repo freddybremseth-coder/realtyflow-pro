@@ -57,6 +57,34 @@ test("zero property matches becomes a human-visible no-match blocker", () => {
   assert.equal(snapshot.summary.blocked, 1);
 });
 
+test("no meaningful delta stays in Nexus monitoring instead of becoming a false no-match blocker", () => {
+  const snapshot = buildPipelineHealthSnapshot({
+    contacts: [contact("c1", "MATCHING")],
+    buyerProfiles: [profile("p1", "c1")],
+    workItems: [{
+      id: "w1",
+      status: "TO_DO",
+      source_id: "c1",
+      updated_at: "2026-09-13T09:30:00.000Z",
+      metadata: {
+        contact_id: "c1",
+        buyer_profile_id: "p1",
+        property_match_prepared_at: "2026-09-13T09:20:00.000Z",
+        property_match_status: "NO_MEANINGFUL_DELTA",
+        property_match_raw_count: 5,
+        property_match_count: null,
+        property_match_repeat_suppressed: 5,
+        no_match_followup_required: false,
+      },
+    }],
+    now,
+  });
+  assert.equal(snapshot.leads[0].reasonCode, "MATCHING_PENDING");
+  assert.equal(snapshot.leads[0].owner, "NEXUS");
+  assert.equal(snapshot.summary.blocked, 0);
+  assert.equal(snapshot.summary.automationQueue, 1);
+});
+
 test("unclear customer reply takes precedence and is sent to Freddy review", () => {
   const snapshot = buildPipelineHealthSnapshot({
     contacts: [contact("c1", "CONTACT", { last_reply_classification: "unclear" })],
