@@ -189,8 +189,9 @@ async function loadFallbackVisualUrls(tracks: MixSnapshotTrack[], targetMinutes:
 }
 
 function mixPrivacy() {
-  const raw = String(process.env.REMASTER_MIX_YOUTUBE_PRIVACY || "public").toLowerCase();
-  return raw === "private" || raw === "unlisted" ? raw : "public";
+  // Production policy: autonomous Re-Master long-form mixes are always public.
+  // Environment drift must never silently create private or unlisted uploads.
+  return "public" as const;
 }
 
 async function recordMixInSongHistory(
@@ -313,7 +314,11 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       },
     });
 
-    // Persist the verified video before optional enrichment. Playlist/comment
+    if (upload.privacyStatus !== "public") {
+      throw new Error(`YOUTUBE_LONGFORM_NOT_PUBLIC: YouTube verified privacy as ${upload.privacyStatus}.`);
+    }
+
+    // Persist the verified public video before optional enrichment. Playlist/comment
     // failures must never cause a second full upload.
     await completeJob(job, upload.videoId, upload.youtubeUrl);
     jobCompleted = true;
