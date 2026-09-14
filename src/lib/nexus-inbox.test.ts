@@ -75,7 +75,7 @@ test("prepared property shortlist becomes a focused high-priority review item", 
   assert.equal(summarizeNexusInbox(items).shortlistReview, 1);
 });
 
-test("specific no-match case becomes a high-priority search review without suggesting automatic relaxation", () => {
+test("No-Match Coach surfaces one constraint and one question for human review", () => {
   const items = buildNexusInbox({
     attention: [],
     approvals: [],
@@ -86,7 +86,10 @@ test("specific no-match case becomes a high-priority search review without sugge
       customerName: "Anne Kunde",
       analyzed: 120,
       criteria: ["Område: Altea", "Budsjett: EUR 500 000", "Boligtype: villa"],
-      nextAction: "Vurder om kunden bør spørres om fleksibilitet før kriteriene endres.",
+      question: "Hvis vi fortsatt ikke finner et godt treff i Altea, skal området være helt fast, eller kan jeg også vurdere nærliggende områder?",
+      constraintFocus: "location",
+      draft: { subject: "Boligsøket – én avklaring før jeg søker videre", bodyText: "Forberedt, ikke sendt." },
+      nextAction: "Nexus har forberedt ett avklaringsspørsmål og et kundetekstutkast. Gjennomgå før eventuell kundekontakt.",
       reviewHref: "/customers?contactId=contact-1",
       updatedAt: "2026-09-11T16:00:00Z",
     }],
@@ -98,7 +101,9 @@ test("specific no-match case becomes a high-priority search review without sugge
   assert.equal(items[0]?.customerName, "Anne Kunde");
   assert.match(items[0]?.reason || "", /120 boliger/);
   assert.match(items[0]?.reason || "", /Altea/);
-  assert.equal(items[0]?.actionLabel, "Vurder søk");
+  assert.match(items[0]?.reason || "", /område som mulig flaskehals/);
+  assert.match(items[0]?.reason || "", /nærliggende områder/);
+  assert.equal(items[0]?.actionLabel, "Review spørsmål");
   assert.equal(items[0]?.href, "/customers?contactId=contact-1");
   assert.equal(summarizeNexusInbox(items).noMatch, 1);
 });
