@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
         approval_id: approvalResult.data.id,
         action_source: "nexus_ai_chat",
       },
-    }, toolContext);
+    });
 
     return NextResponse.json({
       ok: true,
