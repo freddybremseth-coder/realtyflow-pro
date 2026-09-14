@@ -6,6 +6,8 @@ export type SuppressionCheckResult = {
   error?: string;
 };
 
+const INBOUND_SUPPRESSION_CLASSIFICATIONS = ["unsubscribe", "do_not_contact"];
+
 export function normalizeRecipientEmails(values: string[]) {
   return Array.from(new Set(values.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)));
 }
@@ -18,20 +20,35 @@ export async function checkCrmEmailSuppression(
   if (!recipients.length) return { blocked: false, blockedEmails: [] };
 
   const checks = await Promise.all(recipients.map(async (email) => {
-    const { data, error } = await supabase
-      .from("contacts")
-      .select("id,email,do_not_contact,email_suppressed,suppression_reason")
-      .ilike("email", email)
-      .or("do_not_contact.eq.true,email_suppressed.eq.true")
-      .limit(5);
-    return { email, rows: data || [], error };
+    const [contactResult, inboundOptOutResult] = await Promise.all([
+      supabase
+        .from("contacts")
+        .select("id,email,do_not_contact,email_suppressed,suppression_reason")
+        .ilike("email", email)
+        .or("do_not_contact.eq.true,email_suppressed.eq.true")
+        .limit(5),
+      supabase
+        .from("email_messages")
+        .select("id")
+        .eq("direction", "inbound")
+        .ilike("from_address", email)
+        .in("crm_reply_classification", INBOUND_SUPPRESSION_CLASSIFICATIONS)
+        .limit(1),
+    ]);
+
+    return {
+      email,
+      contactRows: contactResult.data || [],
+      inboundOptOutRows: inboundOptOutResult.data || [],
+      error: contactResult.error || inboundOptOutResult.error,
+    };
   }));
 
   const failed = checks.find((check) => check.error);
   if (failed?.error) return { blocked: true, blockedEmails: [], error: failed.error.message };
 
   const blockedEmails = Array.from(new Set(checks.flatMap((check) =>
-    check.rows.length ? [check.email] : []
+    check.contactRows.length || check.inboundOptOutRows.length ? [check.email] : []
   )));
   return { blocked: blockedEmails.length > 0, blockedEmails };
 }
