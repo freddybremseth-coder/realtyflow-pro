@@ -39,6 +39,9 @@ type NoMatchPayload = { items?: Array<{
   customerName?: string | null;
   analyzed?: number | null;
   criteria?: string[] | null;
+  question?: string | null;
+  constraintFocus?: string | null;
+  draft?: { subject?: string | null; bodyText?: string | null } | null;
   nextAction?: string | null;
   reviewHref: string;
   updatedAt?: string | null;
@@ -147,7 +150,7 @@ export default function NexusInboxPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Inbox size={16} /> Nexus Inbox</div>
           <h1 className="mt-2 text-3xl font-black text-slate-950">Beslutninger som trenger et menneske</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én triageflate for det Nexus ikke bør avgjøre alene. Tvetydige kundesvar, boligforslag som trenger kvalitetssjekk og søk uten gode treff havner her. Når Nexus bare mangler konkrete fakta, spør systemet kunden selv først.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én triageflate for det Nexus ikke bør avgjøre alene. Tvetydige kundesvar, boligforslag som trenger kvalitetssjekk og søk uten gode treff havner her. Når et søk trenger avklaring, forbereder Nexus ett konkret spørsmål og et kundetekstutkast for review – systemet sender ikke selv.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">{loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater</button>
       </div>
@@ -188,6 +191,6 @@ export default function NexusInboxPage() {
       {!loading && visible.length === 0 && errors.length === 0 && <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><CheckCircle2 size={20} className="mt-0.5" /><div><div className="font-black">Ingen beslutninger i denne køen</div><div className="mt-1 text-sm text-emerald-800">Det finnes ingen elementer fra de valgte kildene som trenger menneskelig oppmerksomhet nå.</div></div></div>}
     </section>
 
-    <div className="text-xs leading-5 text-slate-500">Nexus gjør forarbeidet automatisk. Mangler søket konkrete fakta, spør Nexus kunden før ny matching. Tvetydige svar, konkrete søk uten treff og boligforslag som trenger kvalitetsvurdering stoppes hos deg. Ingen kundekriterier mykes opp automatisk.</div>
+    <div className="text-xs leading-5 text-slate-500">Nexus gjør forarbeidet automatisk. Ved søk uten gode treff identifiserer Nexus én mulig flaskehals og forbereder ett avklaringsspørsmål med kundetekstutkast for review. Tvetydige svar, konkrete søk uten treff og boligforslag som trenger kvalitetsvurdering stoppes hos deg. Ingen kundekriterier mykes opp og ingen kundemelding sendes automatisk.</div>
   </main>;
 }
