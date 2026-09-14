@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildBuyerCriteriaLines } from "@/services/email/buyer-profile-confirmation";
-import { sendBrandEmail } from "@/services/email/send-brand-email";
 
 type CriterionRow = {
   criterion_type: string | null;
@@ -21,12 +20,16 @@ type BuyerProfileRow = {
   location_flexible: boolean | null;
 };
 
+export type NoMatchConstraintFocus = "location" | "budget" | "property_type" | "bedrooms" | "market_fit";
+
 export type NoMatchClarificationPlan = {
-  action: "send_clarification" | "human_review";
+  action: "prepare_clarification" | "human_review";
   reason: string;
   currentCriteriaLines: string[];
   missingFields: Array<"location" | "budget" | "property_type" | "bedrooms">;
   questions: string[];
+  primaryQuestion: string;
+  constraintFocus: NoMatchConstraintFocus;
 };
 
 const BROAD_LOCATIONS = new Set([
@@ -58,6 +61,7 @@ function criterionValues(criteria: CriterionRow[], key: string) {
 }
 
 function finitePositive(value: unknown) {
+  if (value === null || value === undefined || value === "") return false;
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0;
 }
@@ -80,6 +84,53 @@ function analysisForCriteriaLines(profile: BuyerProfileRow, criteria: CriterionR
   };
 }
 
+function questionForMissingField(field: NoMatchClarificationPlan["missingFields"][number]) {
+  if (field === "location") return "Hvilket konkret område eller hvilke 2–3 steder skal jeg prioritere i søket?";
+  if (field === "budget") return "Hva er omtrent maksimal kjøpsramme i EUR?";
+  if (field === "property_type") return "Hvilken boligtype skal jeg prioritere: leilighet, rekkehus eller villa?";
+  return "Hvor mange soverom trenger dere minimum?";
+}
+
+function specificProfileQuestion(profile: BuyerProfileRow, criteria: CriterionRow[]) {
+  const locations = criterionValues(criteria, "location");
+  if (profile.location_flexible !== true && locations.length > 0) {
+    const locationLabel = locations.slice(0, 2).join(" / ");
+    return {
+      constraintFocus: "location" as const,
+      primaryQuestion: `Hvis vi fortsatt ikke finner et godt treff i ${locationLabel}, skal området være helt fast, eller kan jeg også vurdere nærliggende områder?`,
+    };
+  }
+
+  if (finitePositive(profile.budget_amount)) {
+    const amount = new Intl.NumberFormat("nb-NO", { maximumFractionDigits: 0 }).format(Number(profile.budget_amount));
+    return {
+      constraintFocus: "budget" as const,
+      primaryQuestion: `Er kjøpsrammen på ca. ${amount} ${profile.budget_currency || "EUR"} et absolutt tak, eller ønsker dere at jeg viser et svært godt treff litt over rammen for vurdering?`,
+    };
+  }
+
+  const propertyTypes = criterionValues(criteria, "property_type");
+  if (propertyTypes.length > 0) {
+    return {
+      constraintFocus: "property_type" as const,
+      primaryQuestion: `Skal jeg holde søket strengt til ${propertyTypes.slice(0, 2).join(" / ")}, eller kan nærliggende boligtyper vurderes hvis resten treffer svært godt?`,
+    };
+  }
+
+  const bedrooms = criterionValues(criteria, "bedrooms");
+  if (bedrooms.length > 0) {
+    return {
+      constraintFocus: "bedrooms" as const,
+      primaryQuestion: `Er minimum ${bedrooms[0]} soverom et absolutt krav, eller kan en svært god bolig med færre soverom vurderes?`,
+    };
+  }
+
+  return {
+    constraintFocus: "market_fit" as const,
+    primaryQuestion: "Hvilket enkelt kriterium er dere mest fleksible på dersom markedet ikke har et godt nok treff akkurat nå?",
+  };
+}
+
 export function buildNoMatchClarificationPlan(input: {
   profile: BuyerProfileRow;
   criteria: CriterionRow[];
@@ -94,41 +145,35 @@ export function buildNoMatchClarificationPlan(input: {
   const hasBedrooms = criterionValues(criteria, "bedrooms").length > 0;
 
   const missingFields: NoMatchClarificationPlan["missingFields"] = [];
-  const questions: string[] = [];
-  if (locationNeedsSpecificity) {
-    missingFields.push("location");
-    questions.push("Hvilke byer eller områder er mest aktuelle for dere?");
-  }
-  if (!hasBudget) {
-    missingFields.push("budget");
-    questions.push("Hva er omtrent maksimal kjøpsramme i EUR?");
-  }
-  if (!hasPropertyType) {
-    missingFields.push("property_type");
-    questions.push("Hvilke boligtyper er aktuelle, for eksempel leilighet, rekkehus eller villa?");
-  }
-  if (!hasBedrooms) {
-    missingFields.push("bedrooms");
-    questions.push("Hvor mange soverom trenger dere minimum?");
-  }
+  if (locationNeedsSpecificity) missingFields.push("location");
+  if (!hasBudget) missingFields.push("budget");
+  if (!hasPropertyType) missingFields.push("property_type");
+  if (!hasBedrooms) missingFields.push("bedrooms");
 
   const currentCriteriaLines = buildBuyerCriteriaLines(analysisForCriteriaLines(profile, criteria));
-  if (missingFields.length === 0) {
+  if (missingFields.length > 0) {
+    const primaryField = missingFields[0];
+    const primaryQuestion = questionForMissingField(primaryField);
     return {
-      action: "human_review",
-      reason: "NO_MATCHES_WITH_SPECIFIC_PROFILE",
+      action: "prepare_clarification",
+      reason: locationNeedsSpecificity ? "SEARCH_CRITERIA_TOO_BROAD_OR_INCOMPLETE" : "SEARCH_CRITERIA_INCOMPLETE",
       currentCriteriaLines,
       missingFields,
-      questions: [],
+      questions: [primaryQuestion],
+      primaryQuestion,
+      constraintFocus: primaryField,
     };
   }
 
+  const specific = specificProfileQuestion(profile, criteria);
   return {
-    action: "send_clarification",
-    reason: locationNeedsSpecificity ? "SEARCH_CRITERIA_TOO_BROAD_OR_INCOMPLETE" : "SEARCH_CRITERIA_INCOMPLETE",
+    action: "human_review",
+    reason: "NO_MATCHES_WITH_SPECIFIC_PROFILE",
     currentCriteriaLines,
-    missingFields,
-    questions,
+    missingFields: [],
+    questions: [specific.primaryQuestion],
+    primaryQuestion: specific.primaryQuestion,
+    constraintFocus: specific.constraintFocus,
   };
 }
 
@@ -141,21 +186,20 @@ export function buildNoMatchClarificationEmail(input: {
   const currentBlock = input.plan.currentCriteriaLines.length
     ? input.plan.currentCriteriaLines.map((line) => `– ${line}`).join("\n")
     : "– Vi har foreløpig for få konkrete søkekriterier registrert.";
-  const questionBlock = input.plan.questions.map((question) => `– ${question}`).join("\n");
   return {
-    subject: "Litt mer informasjon til boligsøket",
+    subject: "Boligsøket – én avklaring før jeg søker videre",
     bodyText: [
       greeting,
       "",
-      "Takk for informasjonen. Jeg har nå kjørt et nytt søk, men fant ingen boliger som jeg synes er gode nok treff med kriteriene vi har registrert.",
+      "Jeg har kjørt et nytt søk, men fant ingen boliger som jeg synes er gode nok treff med kriteriene vi har registrert.",
       "",
       "Dette har jeg registrert nå:",
       currentBlock,
       "",
-      "For å gjøre søket mer presist, kan du svare kort på følgende:",
-      questionBlock,
+      "For at jeg skal prioritere riktig videre, kan du svare kort på én ting:",
+      `– ${input.plan.primaryQuestion}`,
       "",
-      "Du kan bare svare direkte på denne e-posten. Når jeg har svaret, oppdaterer jeg søket og kjører matching på nytt.",
+      "Når jeg har svaret, kan jeg vurdere neste søk uten å endre noen av kriteriene før du har bekreftet det.",
       "",
       "Vennlig hilsen",
       "Freddy",
@@ -163,7 +207,7 @@ export function buildNoMatchClarificationEmail(input: {
   };
 }
 
-export async function handleNoMatchClarification(
+export async function prepareNoMatchCoach(
   supabase: SupabaseClient,
   input: {
     brandId: string;
@@ -186,43 +230,32 @@ export async function handleNoMatchClarification(
       .eq("active", true)
       .eq("approval_status", "approved")
       .order("created_at", { ascending: true }),
-    supabase.from("contacts").select("id,name,email").eq("id", input.contactId).maybeSingle(),
+    supabase
+      .from("contacts")
+      .select("id,name,do_not_contact,email_suppressed")
+      .eq("id", input.contactId)
+      .maybeSingle(),
   ]);
 
   if (profileResult.error) throw profileResult.error;
   if (criteriaResult.error) throw criteriaResult.error;
   if (contactResult.error) throw contactResult.error;
   if (!profileResult.data) return { status: "skipped" as const, reason: "BUYER_PROFILE_NOT_FOUND" };
+  if (!contactResult.data) return { status: "skipped" as const, reason: "CONTACT_NOT_FOUND" };
+  if (contactResult.data.do_not_contact || contactResult.data.email_suppressed) {
+    return { status: "skipped" as const, reason: "CONTACT_SUPPRESSED" };
+  }
 
   const profile = profileResult.data as BuyerProfileRow;
   const criteria = (criteriaResult.data || []) as CriterionRow[];
   const plan = buildNoMatchClarificationPlan({ profile, criteria });
-  if (plan.action === "human_review") {
-    return { status: "human_review" as const, reason: plan.reason, plan };
-  }
-
-  const recipient = String(contactResult.data?.email || "").trim().toLowerCase();
-  if (!recipient) return { status: "skipped" as const, reason: "CONTACT_MISSING_EMAIL", plan };
-  const email = buildNoMatchClarificationEmail({ customerName: contactResult.data?.name, plan });
-  const sent = await sendBrandEmail(supabase, {
-    brandId: input.brandId,
-    to: [recipient],
-    subject: email.subject,
-    bodyText: email.bodyText,
-  });
-  if (!sent.success) {
-    return {
-      status: sent.skipped ? "skipped" as const : "failed" as const,
-      reason: sent.error || "SEND_FAILED",
-      plan,
-    };
-  }
+  const draft = buildNoMatchClarificationEmail({ customerName: contactResult.data.name, plan });
 
   return {
-    status: "sent" as const,
+    status: plan.action === "human_review" ? "human_review" as const : "prepared" as const,
     reason: plan.reason,
-    messageId: sent.messageId || null,
-    recipient,
     plan,
+    draft,
+    customerMessageSent: false as const,
   };
 }
