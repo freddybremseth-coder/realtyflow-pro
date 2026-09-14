@@ -18,24 +18,6 @@ function isWebsiteVisible(property: Record<string, unknown>) {
   return property.show_on_website !== false && property.website_visible !== false;
 }
 
-function propertyDisplayTitle(property: Record<string, unknown>) {
-  const base = String(
-    property.title_no || property.title_en || property.title_es || property.title || "Bolig",
-  ).trim();
-  const modelName = String(property.model_name || "").trim();
-  if (!modelName) return base;
-  if (base.toLocaleLowerCase("nb-NO").includes(modelName.toLocaleLowerCase("nb-NO"))) return base;
-  return `${modelName} – ${base}`;
-}
-
-function withDisplayTitle(property: Record<string, unknown>) {
-  return {
-    ...property,
-    source_title: property.title || null,
-    title: propertyDisplayTitle(property),
-  };
-}
-
 async function getAllProperties(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
   const allData: Record<string, unknown>[] = [];
   const pageSize = 1000;
@@ -195,15 +177,15 @@ export async function GET(req: NextRequest) {
       .eq("id", id)
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(withDisplayTitle(data));
+    return NextResponse.json(data);
   }
 
   try {
     const allData = await getAllProperties(supabase);
-    if (!brandId) return NextResponse.json(allData.map(withDisplayTitle));
+    if (!brandId) return NextResponse.json(allData);
 
     const filteredData = await filterPropertiesForBrand(supabase, allData, brandId);
-    return NextResponse.json(filteredData.map(withDisplayTitle));
+    return NextResponse.json(filteredData);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch properties";
     return NextResponse.json({ error: message }, { status: 500 });
