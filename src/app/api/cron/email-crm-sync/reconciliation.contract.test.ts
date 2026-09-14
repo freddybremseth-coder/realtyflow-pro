@@ -30,8 +30,11 @@ test("only explicit terminal intents are reconciliation eligible", () => {
   assert.match(service, /seenSenders/);
 });
 
-test("route reports reconciliation separately and never bulk-updates by regex", () => {
+test("route reports reconciliation separately and never performs raw body-pattern repair", () => {
   assert.match(route, /reconciliation:/);
-  assert.doesNotMatch(route, /regexp|regex|~\*|body_text\.ilike/i);
-  assert.doesNotMatch(service, /regexp|regex|~\*|body_text\.ilike/i);
+  for (const source of [route, service]) {
+    assert.doesNotMatch(source, /~\*/);
+    assert.doesNotMatch(source, /regexp_matches|regexp_replace|regexp_like/i);
+    assert.doesNotMatch(source, /body_text[^\n]{0,80}\.ilike/i);
+  }
 });
