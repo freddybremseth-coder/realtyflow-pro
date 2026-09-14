@@ -39,6 +39,7 @@ const MIN_PRICE_CHANGE_EUR = 5_000;
 const PRICE_CHANGE_RATIO = 0.02;
 
 function finiteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : null;
 }
