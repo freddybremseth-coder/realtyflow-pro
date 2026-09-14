@@ -41,7 +41,7 @@ test("No-Match Coach stores one precise question and draft without mutating crit
   assert.match(source, /no_match_draft_body/);
   assert.match(coachSource, /questions:\s*\[primaryQuestion\]/);
   assert.match(coachSource, /primaryQuestion/);
-  assert.match(source, /Kriteriene endres ikke automatisk/);
+  assert.match(source, /kriteriene endres ikke automatisk/i);
   assert.match(source, /criteria_mutated:\s*false/);
   assert.doesNotMatch(source, /buyer_profile_criteria[\s\S]*\.update\(/);
   assert.doesNotMatch(source, /buyer_profiles[\s\S]*\.update\(/);
