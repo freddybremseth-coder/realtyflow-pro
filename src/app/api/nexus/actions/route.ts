@@ -4,6 +4,11 @@ import { generateCorrelationId, newRunId, operationIdempotencyKey } from "@/lib/
 import { ToolRegistry, type ToolContext } from "@/lib/agentic/tool-registry";
 import type { AgentRun, AgentTraceStep } from "@/lib/agentic/schemas";
 import { buildNexusActionProposals, isAllowedNexusActionType } from "@/lib/nexus-ai-governed-actions";
+import {
+  CustomerTimelineUpdateInputSchema,
+  appendCustomerInteraction,
+  buildCustomerTimelineInteraction,
+} from "@/lib/customer-updates";
 import { askNexusAI, isNexusAIConfigured } from "@/services/ai/nexus-ai-client";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { buildCreateDraftTool } from "@/services/tools/communications/create-draft";
@@ -18,6 +23,47 @@ const PROPOSAL_ID = /^nexus_action_[a-f0-9]{24}$/;
 
 function safeText(value: unknown, max = 8000) {
   return String(value ?? "").trim().slice(0, max);
+}
+
+function missingColumnFromError(message = "") {
+  const match = message.match(/'([^']+)' column|column "([^"]+)"|Could not find the '([^']+)' column/i);
+  return match?.[1] || match?.[2] || match?.[3] || "";
+}
+
+function formatFollowupDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return `${day}.${month}.${year}`;
+}
+
+async function persistFollowup(params: {
+  supabase: any;
+  contactId: string;
+  interactions: unknown[];
+  scheduledFor: string;
+  updatedAt: string;
+}) {
+  const attempts = ["next_followup", "next_follow_up", "follow_up_date"] as const;
+  let lastError: any = null;
+
+  for (const field of attempts) {
+    const payload: Record<string, unknown> = {
+      interactions: params.interactions,
+      updated_at: params.updatedAt,
+      [field]: params.scheduledFor,
+    };
+    const { data, error } = await params.supabase
+      .from("contacts")
+      .update(payload)
+      .eq("id", params.contactId)
+      .select("*")
+      .single();
+    if (!error) return { data, field, error: null };
+    lastError = error;
+    const missing = missingColumnFromError(error.message || "");
+    if (missing !== field) break;
+  }
+
+  return { data: null, field: null, error: lastError || { message: "Kunne ikke lagre oppfølging." } };
 }
 
 function draftSubject(contact: any) {
@@ -57,15 +103,15 @@ export async function POST(request: NextRequest) {
 
   const access = await getRequestAccessContext(request);
   if (!access) return NextResponse.json({ error: "Admin session required" }, { status: 401 });
-  if (!isNexusAIConfigured()) return NextResponse.json({ error: "Nexus AI er ikke konfigurert." }, { status: 503 });
 
   const body = await request.json().catch(() => ({}));
   const type = body?.type;
   const proposalId = safeText(body?.proposalId, 80);
   const contactId = safeText(body?.contactId, 80);
   const requestText = safeText(body?.requestText, 8000);
+  const requestedScheduledFor = safeText(body?.scheduledFor, 80);
 
-  if (!isAllowedNexusActionType(type) || type !== "prepare_customer_email") {
+  if (!isAllowedNexusActionType(type)) {
     return NextResponse.json({ error: "Denne Nexus-handlingen er ikke tillatt." }, { status: 400 });
   }
   if (!PROPOSAL_ID.test(proposalId) || !CONTACT_ID.test(contactId) || !requestText) {
@@ -83,9 +129,14 @@ export async function POST(request: NextRequest) {
 
   if (contactError) return NextResponse.json({ error: `Kunden kunne ikke leses: ${contactError.message}` }, { status: 500 });
   if (!contact) return NextResponse.json({ error: "Kunden finnes ikke." }, { status: 404 });
-  if (!contact.email) return NextResponse.json({ error: "Kunden har ingen e-postadresse i CRM." }, { status: 409 });
   if (contact.email_suppressed || contact.do_not_contact) {
-    return NextResponse.json({ error: "Kunden er sperret for e-post/kontakt. Nexus oppretter ikke utsending." }, { status: 409 });
+    return NextResponse.json({ error: "Kunden er sperret for kontakt. Nexus oppretter ikke oppfølging eller utsending." }, { status: 409 });
+  }
+  if (type === "prepare_customer_email" && !contact.email) {
+    return NextResponse.json({ error: "Kunden har ingen e-postadresse i CRM." }, { status: 409 });
+  }
+  if (type === "schedule_customer_followup" && ["WON", "LOST"].includes(String(contact.pipeline_status || "").toUpperCase())) {
+    return NextResponse.json({ error: "Kunden er avsluttet i pipeline. Nexus planlegger ikke ny oppfølging automatisk." }, { status: 409 });
   }
 
   // Recompute the proposal from server-side CRM data. The client cannot turn a
@@ -95,15 +146,38 @@ export async function POST(request: NextRequest) {
     currentContact: contact,
     contacts: [contact],
   })[0];
-  if (!verifiedProposal || verifiedProposal.id !== proposalId || verifiedProposal.contactId !== contactId) {
+  if (
+    !verifiedProposal
+    || verifiedProposal.id !== proposalId
+    || verifiedProposal.contactId !== contactId
+    || verifiedProposal.type !== type
+  ) {
     return NextResponse.json({ error: "Handlingsforslaget stemmer ikke lenger med kunde eller instruksjon." }, { status: 409 });
+  }
+  if (type === "schedule_customer_followup" && (!requestedScheduledFor || verifiedProposal.scheduledFor !== requestedScheduledFor)) {
+    return NextResponse.json({ error: "Oppfølgingsdatoen stemmer ikke lenger med handlingsforslaget." }, { status: 409 });
   }
 
   const runStore = makeSupabaseAgentRunStore(supabase);
   const runKey = `nexus_ai_action:${proposalId}`;
   let run = await runStore.findByIdempotencyKey(runKey);
 
-  if (run) {
+  if (type === "schedule_customer_followup") {
+    const existingInteraction = Array.isArray(contact.interactions)
+      ? contact.interactions.find((item: any) => item?.metadata?.nexus_action_id === proposalId)
+      : null;
+    if (existingInteraction || (run?.status === "completed" && run?.outcome === "executed")) {
+      return NextResponse.json({
+        ok: true,
+        duplicate: true,
+        state: "completed",
+        runId: run?.id || null,
+        scheduledFor: verifiedProposal.scheduledFor,
+        message: `Oppfølgingen med ${contact.name || contact.email || "kunden"} er allerede planlagt til ${formatFollowupDate(verifiedProposal.scheduledFor!)}. Ingen melding er sendt.`,
+        navigation: { label: "Åpne kundekort", href: `/customers/${encodeURIComponent(contact.id)}` },
+      });
+    }
+  } else if (run) {
     const { data: existingApproval } = await supabase
       .from("agentic_approvals")
       .select("id,draft_id,status")
@@ -128,20 +202,22 @@ export async function POST(request: NextRequest) {
   const runId = run?.id || newRunId();
   const now = new Date().toISOString();
   if (!run) {
+    const actionLabel = type === "schedule_customer_followup"
+      ? `Planlegg CRM-oppfølging med ${contact.name || contact.email || "kunden"}`
+      : `Forbered kunde-e-post til ${contact.name || contact.email}`;
     const firstStep: AgentTraceStep = {
       id: `${runId}:0`,
       ts: now,
       kind: "event",
       label: "NEXUS_AI_ACTION_CONFIRMED",
-      inputSummary: `Forbered kunde-e-post til ${contact.name || contact.email}`,
+      inputSummary: actionLabel,
       data: { action_type: type, contact_id: contact.id, proposal_id: proposalId },
     };
     run = {
       id: runId,
       agentId: "nexus-ai",
-      goal: `Forbered godkjenningspliktig kundeoppfølging til ${contact.name || contact.email}`,
+      goal: actionLabel,
       status: "running",
-      outcome: "recommended",
       correlationId,
       idempotencyKey: runKey,
       startedAt: now,
@@ -149,6 +225,105 @@ export async function POST(request: NextRequest) {
     } satisfies AgentRun;
     await runStore.save(run);
   }
+
+  if (type === "schedule_customer_followup") {
+    try {
+      const scheduledFor = verifiedProposal.scheduledFor!;
+      const parsedUpdate = CustomerTimelineUpdateInputSchema.safeParse({
+        action: "ADD_UPDATE",
+        update: {
+          updateType: "general_note",
+          occurredAt: now,
+          title: "Nexus AI: oppfølging planlagt",
+          details: `Oppfølging planlagt via Nexus AI. Instruksjon: ${requestText}`,
+          propertyReference: null,
+          outcome: null,
+          nextAction: `Følg opp ${contact.name || contact.email || "kunden"}`,
+          nextFollowup: scheduledFor,
+          direction: "internal",
+        },
+      });
+      if (!parsedUpdate.success) throw new Error("Oppfølgingsdataene besto ikke CRM-valideringen.");
+
+      const interaction = buildCustomerTimelineInteraction({
+        update: parsedUpdate.data.update,
+        actorEmail: access.email,
+      });
+      const nexusInteraction = {
+        ...interaction,
+        metadata: {
+          ...(interaction.metadata || {}),
+          source: "nexus-ai-chat",
+          nexus_action_id: proposalId,
+          nexus_run_id: runId,
+          no_customer_contact: true,
+        },
+      };
+      const interactions = appendCustomerInteraction(contact.interactions, nexusInteraction);
+      const persisted = await persistFollowup({
+        supabase,
+        contactId: contact.id,
+        interactions,
+        scheduledFor,
+        updatedAt: now,
+      });
+      if (persisted.error) throw new Error(`CRM-oppfølging kunne ikke lagres: ${persisted.error.message || persisted.error}`);
+
+      await runStore.appendStep(runId, {
+        id: `${runId}:1`,
+        ts: new Date().toISOString(),
+        kind: "tool_result",
+        label: "NEXUS_AI_FOLLOWUP_SCHEDULED",
+        tool: "crm_customer_update",
+        outcome: "executed",
+        outputSummary: `next follow-up ${scheduledFor}`,
+        data: { contact_id: contact.id, scheduled_for: scheduledFor, persisted_field: persisted.field },
+      });
+      const finishedAt = new Date().toISOString();
+      await runStore.setStatus(runId, "completed", finishedAt);
+      await runStore.setOutcome(runId, "executed");
+
+      const publishEvent = makePublishEvent(supabase);
+      await publishEvent({
+        eventType: "followup_scheduled",
+        outcome: "executed",
+        title: `Nexus AI planla oppfølging med ${contact.name || contact.email || "kunde"}`,
+        confidence: 1,
+        metadata: {
+          run_id: runId,
+          correlation_id: correlationId,
+          contact_id: contact.id,
+          brand_id: contact.brand_id || contact.brand || null,
+          scheduled_for: scheduledFor,
+          action_source: "nexus_ai_chat",
+          no_customer_contact: true,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        state: "completed",
+        runId,
+        scheduledFor,
+        message: `Oppfølging med ${contact.name || contact.email || "kunden"} er planlagt til ${formatFollowupDate(scheduledFor)}. Dette er kun lagret i CRM; ingen melding er sendt.`,
+        navigation: { label: "Åpne kundekort", href: `/customers/${encodeURIComponent(contact.id)}` },
+      });
+    } catch (error) {
+      await runStore.appendStep(runId, {
+        id: `${runId}:error`,
+        ts: new Date().toISOString(),
+        kind: "error",
+        label: "NEXUS_AI_ACTION_FAILED",
+        outcome: "failed",
+        outputSummary: error instanceof Error ? error.message : String(error),
+      }).catch(() => undefined);
+      await runStore.setStatus(runId, "failed", new Date().toISOString()).catch(() => undefined);
+      await runStore.setOutcome(runId, "failed").catch(() => undefined);
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Nexus-handlingen feilet." }, { status: 500 });
+    }
+  }
+
+  if (!isNexusAIConfigured()) return NextResponse.json({ error: "Nexus AI er ikke konfigurert." }, { status: 503 });
 
   try {
     const generated = await generateCustomerDraft(contact, requestText);
