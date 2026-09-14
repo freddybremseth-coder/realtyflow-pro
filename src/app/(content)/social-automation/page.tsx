@@ -128,12 +128,13 @@ export default function SocialAutomationPage() {
             {!gate.nextRecommendedCanary?.path && gate.nextEvaluationAt && <div className="mt-3 text-xs opacity-75">Neste evaluering: {new Date(gate.nextEvaluationAt).toLocaleString("nb-NO")}</div>}
           </section>}
 
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {[
               ["Content Studio", "/content-studio", "Lag og klargjør dagens innhold."],
               ["Posts & publishing", "/posts", "Se planlagt og publiseringsklart innhold."],
               ["Approval Center", "/approvals", "Godkjenn handlinger som krever menneskelig beslutning."],
               ["Marketing Readiness", "/marketing-readiness", "Rydd kanal- og Brand Brain-blokkeringer."],
+              ["Scaling Control", "/nexus-os/growth-scaling", "Skaler bare brands og kanaler med dokumentert læring og CRM-resultater."],
             ].map(([title, href, text]) => <Link key={href} href={href} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-fuchsia-300"><h3 className="font-black text-slate-900">{title}</h3><p className="mt-2 text-sm leading-5 text-slate-600">{text}</p></Link>)}
           </section>
         </>
