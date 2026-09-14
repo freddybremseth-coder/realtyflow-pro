@@ -10,9 +10,11 @@ interface MessageAction {
   description?: string;
 }
 
+type GovernedActionType = "prepare_customer_email" | "schedule_customer_followup";
+
 interface GovernedAction {
   id: string;
-  type: "prepare_customer_email";
+  type: GovernedActionType;
   label: string;
   description: string;
   endpoint: "/api/nexus/actions";
@@ -20,7 +22,8 @@ interface GovernedAction {
   contactId: string;
   contactName: string;
   requestText: string;
-  requiresApproval: true;
+  requiresApproval: boolean;
+  scheduledFor?: string;
 }
 
 interface Message {
@@ -42,6 +45,29 @@ interface ChatWidgetProps {
   welcomeMessage?: string;
   voiceAutoSend?: boolean;
   voiceSilenceMs?: number;
+}
+
+function isGovernedAction(value: unknown): value is GovernedAction {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  const type = candidate.type;
+  if (type !== "prepare_customer_email" && type !== "schedule_customer_followup") return false;
+  if (
+    candidate.endpoint !== "/api/nexus/actions"
+    || candidate.method !== "POST"
+    || typeof candidate.requiresApproval !== "boolean"
+    || typeof candidate.id !== "string"
+    || typeof candidate.label !== "string"
+    || typeof candidate.description !== "string"
+    || typeof candidate.contactId !== "string"
+    || typeof candidate.contactName !== "string"
+    || typeof candidate.requestText !== "string"
+  ) return false;
+  if (type === "prepare_customer_email" && candidate.requiresApproval !== true) return false;
+  if (type === "schedule_customer_followup") {
+    if (candidate.requiresApproval !== false || typeof candidate.scheduledFor !== "string") return false;
+  }
+  return true;
 }
 
 export function ChatWidget({
@@ -142,14 +168,21 @@ export function ChatWidget({
           proposalId: action.id,
           contactId: action.contactId,
           requestText: action.requestText,
+          scheduledFor: action.scheduledFor,
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Handlingen kunne ikke forberedes.");
+      if (!res.ok) throw new Error(data.error || "Handlingen kunne ikke utføres.");
 
-      const text = String(data.message || "Handlingen er forberedt og venter på godkjenning.");
+      const defaultText = action.requiresApproval
+        ? "Handlingen er forberedt og venter på godkjenning."
+        : "CRM-oppfølgingen er lagret. Ingen melding er sendt.";
+      const text = String(data.message || defaultText);
+      const navigationDescription = action.requiresApproval
+        ? "Kontroller utkastet før eventuell sending."
+        : "Åpne kundekortet og kontroller den planlagte oppfølgingen.";
       const navigation = data.navigation && typeof data.navigation.label === "string" && typeof data.navigation.href === "string"
-        ? [{ label: String(data.navigation.label), href: String(data.navigation.href), description: "Kontroller utkastet før eventuell sending." }]
+        ? [{ label: String(data.navigation.label), href: String(data.navigation.href), description: navigationDescription }]
         : [];
       setMessages((prev) => [...prev, {
         role: "assistant",
@@ -159,7 +192,7 @@ export function ChatWidget({
       }]);
       speak(text);
     } catch (error) {
-      const text = `Jeg kunne ikke forberede handlingen: ${error instanceof Error ? error.message : "ukjent feil"}`;
+      const text = `Jeg kunne ikke utføre handlingen: ${error instanceof Error ? error.message : "ukjent feil"}`;
       setMessages((prev) => [...prev, { role: "assistant", content: text, timestamp: new Date().toISOString() }]);
       speak(text);
     } finally {
@@ -211,22 +244,7 @@ export function ChatWidget({
             }))
         : [];
       const proposedActions: GovernedAction[] = Array.isArray(data.proposedActions)
-        ? data.proposedActions
-            .filter((action: unknown) => {
-              if (!action || typeof action !== "object") return false;
-              const candidate = action as Record<string, unknown>;
-              return candidate.type === "prepare_customer_email"
-                && candidate.endpoint === "/api/nexus/actions"
-                && candidate.method === "POST"
-                && candidate.requiresApproval === true
-                && typeof candidate.id === "string"
-                && typeof candidate.label === "string"
-                && typeof candidate.description === "string"
-                && typeof candidate.contactId === "string"
-                && typeof candidate.contactName === "string"
-                && typeof candidate.requestText === "string";
-            })
-            .slice(0, 3) as GovernedAction[]
+        ? data.proposedActions.filter(isGovernedAction).slice(0, 3)
         : [];
       const assistantMsg: Message = {
         role: "assistant",
@@ -326,9 +344,11 @@ export function ChatWidget({
                             onClick={() => void executeGovernedAction(action)}
                             className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-left text-xs text-emerald-100 transition-colors hover:border-emerald-400/60 hover:bg-emerald-500/15 disabled:cursor-wait disabled:opacity-60"
                           >
-                            <span className="flex items-center gap-1.5 font-semibold"><ShieldCheck size={13} />{actionBusy[action.id] ? "Forbereder…" : action.label}</span>
+                            <span className="flex items-center gap-1.5 font-semibold"><ShieldCheck size={13} />{actionBusy[action.id] ? "Utfører…" : action.label}</span>
                             <span className="mt-1 block text-[10px] leading-4 text-slate-400">{action.description}</span>
-                            <span className="mt-1 block text-[9px] font-semibold uppercase tracking-wide text-emerald-300/80">Krever godkjenning før sending</span>
+                            <span className="mt-1 block text-[9px] font-semibold uppercase tracking-wide text-emerald-300/80">
+                              {action.requiresApproval ? "Krever godkjenning før sending" : "Intern CRM-handling · sender ingenting"}
+                            </span>
                           </button>
                         ))}
                       </div>
