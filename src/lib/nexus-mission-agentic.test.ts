@@ -39,6 +39,21 @@ test("prepare mission can prepare autonomously but cannot silently become live e
   assert.equal(plan.externalSideEffectAllowed, false);
 });
 
+test("property matching mission uses internal match policy rather than customer-message drafting", () => {
+  const matching = mission({
+    stageId: "property_matching",
+    objective: "advance_stage",
+    nextAction: "Finn 3–5 kvalitetssikrede boliger",
+  });
+  const plan = buildNexusMissionAgenticPlan(matching);
+  assert.equal(missionActionClass(matching), "match");
+  assert.equal(plan.actionClass, "match");
+  assert.equal(plan.actionContext.channel, "internal");
+  assert.equal(plan.capability, "prepare_only");
+  assert.equal(plan.effectiveMode, "draft-first");
+  assert.equal(plan.externalSideEffectAllowed, false);
+});
+
 test("closing mission reuses existing hard-gated offer response policy", () => {
   const plan = buildNexusMissionAgenticPlan(mission({ role: "closer", objective: "close", autonomy: "approval", stageId: "negotiation" }));
   assert.equal(plan.actionClass, "offer_response");

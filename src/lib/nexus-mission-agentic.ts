@@ -61,6 +61,7 @@ function capabilityFor(mission: NexusGrowthMission): NexusMissionExecutionCapabi
 export function missionActionClass(mission: NexusGrowthMission): ActionClass {
   if (mission.autonomy === "suggest") return "research";
   if (mission.objective === "qualify") return "enrich";
+  if (mission.pipelineId === "real_estate_sales" && mission.stageId === "property_matching") return "match";
   if (mission.objective === "close") return "offer_response";
   if (mission.objective === "deliver") return "schedule";
   return "draft";
@@ -121,7 +122,7 @@ export function buildNexusMissionAgenticPlan(
     agentId: actionContext.agentId,
     actionClass: actionContext.actionClass,
     capability,
-    actionContext,
+    actionContext: actionContext,
     policyDecision,
     effectiveMode,
     guardrailReason,

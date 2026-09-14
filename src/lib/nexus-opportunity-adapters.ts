@@ -5,8 +5,10 @@ const REAL_ESTATE_STAGE_MAP: Record<string, string> = {
   NEW: "new_lead",
   CONTACT: "new_lead",
   QUALIFIED: "qualified_buyer",
+  MATCHING: "property_matching",
   VIEWING: "viewing",
   NEGOTIATION: "negotiation",
+  RESERVED: "reserved",
   ON_HOLD: "qualified_buyer",
 };
 
