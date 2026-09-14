@@ -22,20 +22,29 @@ test("follow-up requires at least 90 percent confidence", () => {
   assert.match(source, /updates\.next_followup = followupAt/);
 });
 
-test("Buyer Profile evidence remains review-first and does not persist hard criteria", () => {
-  assert.match(source, /buildBuyerProfileEvidencePreview/);
+test("Buyer Profile evidence is source-verified and remains human-review first", () => {
+  assert.match(source, /verifiedBuyerCriteria\(analysis, body\.data\.note\)/);
   assert.match(source, /buyer_profile_evidence_candidates/);
   assert.match(source, /buyer_profile_evidence_conflicts/);
+  assert.match(source, /buyer_profile_evidence_brand/);
   assert.match(source, /reviewRecommended/);
   assert.match(source, /persisted: false as const/);
   assert.match(source, /buyerProfileEvidencePersisted: false/);
   assert.match(source, /hardBuyerProfileFactsChanged: false/);
 });
 
-test("draft request is exposed only for conflict-free evidence and a server-validated real-estate brand", () => {
+test("Buyer Profile evidence compares against current approved profile and surfaces conflicts instead of overwriting", () => {
+  assert.match(source, /from\("buyer_profiles"\)/);
+  assert.match(source, /from\("buyer_profile_criteria"\)/);
+  assert.match(source, /alreadyKnownCount/);
+  assert.match(source, /existingValues/);
+  assert.match(source, /Ny kundedokumentert verdi avviker fra aktiv Buyer Profile/);
+});
+
+test("real-estate brand is validated before inline Buyer Profile review is offered", () => {
   assert.match(source, /isLeadIntelligenceRealEstateBrand\(contactBrand\)/);
-  assert.match(source, /reviewRecommended = buyerProfilePreview\.candidates\.length > 0 && buyerProfilePreview\.conflicts\.length === 0/);
-  assert.match(source, /draftRequest: reviewRecommended && draftBrand \? \{ contactId: contact\.id, brand: draftBrand \} : null/);
+  assert.match(source, /const evidenceBrand/);
+  assert.match(source, /reviewRecommended = Boolean\(evidenceBrand && candidates\.length > 0\)/);
 });
 
 test("explicit follow-up creates a CRM work item with the conversation brief for Nexus Today", () => {
@@ -57,9 +66,10 @@ test("calendar is best effort after CRM persistence and Nexus work item persiste
   assert.ok(calendarIndex > workItemIndex);
 });
 
-test("route does not change pipeline or send customer communication", () => {
+test("route does not change pipeline, approve criteria or send customer communication", () => {
   assert.doesNotMatch(source, /pipeline_status\s*:/);
   assert.doesNotMatch(source, /sendEmail|sendMail|email\.send/);
+  assert.doesNotMatch(source, /approval_status:\s*["']approved["']/);
   assert.match(source, /pipelineChanged: false/);
   assert.match(source, /customerContactSent: false/);
 });
