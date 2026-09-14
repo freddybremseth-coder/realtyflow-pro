@@ -61,7 +61,7 @@ test("Nexus AI reuses existing pipeline movement and deterministic navigation", 
   assert.match(routeSource, /actions: navigationCandidates/);
 });
 
-test("Nexus AI v2 keeps advice read-only and exposes governed action cards separately", () => {
+test("Nexus AI keeps advice read-only and exposes governed action cards separately", () => {
   assert.match(routeSource, /Selve rådgivningskallet er read-only også i v2/);
   assert.match(routeSource, /buildNexusActionProposals/);
   assert.match(routeSource, /proposedActions/);
@@ -70,7 +70,7 @@ test("Nexus AI v2 keeps advice read-only and exposes governed action cards separ
 });
 
 test("governed actions are allowlisted and server-reverified before any write", () => {
-  assert.match(governedActionsSource, /NEXUS_GOVERNED_ACTION_TYPES = \["prepare_customer_email"\]/);
+  assert.match(governedActionsSource, /NEXUS_GOVERNED_ACTION_TYPES = \["prepare_customer_email", "schedule_customer_followup"\]/);
   assert.match(governedActionsSource, /email_suppressed/);
   assert.match(governedActionsSource, /do_not_contact/);
   assert.match(actionRouteSource, /requireAdminApi/);
@@ -80,7 +80,7 @@ test("governed actions are allowlisted and server-reverified before any write", 
   assert.doesNotMatch(actionRouteSource, /raw\s*sql|execute\s*sql/i);
 });
 
-test("first v2 action creates draft plus pending approval and never sends directly", () => {
+test("email action creates draft plus pending approval and never sends directly", () => {
   assert.match(actionRouteSource, /buildCreateDraftTool/);
   assert.match(actionRouteSource, /buildRequestApprovalTool/);
   assert.match(actionRouteSource, /gatedActionClass: "send_personal"/);
@@ -89,6 +89,36 @@ test("first v2 action creates draft plus pending approval and never sends direct
   assert.match(actionRouteSource, /Ingenting er sendt ennå/);
   assert.doesNotMatch(actionRouteSource, /executeApproval/);
   assert.doesNotMatch(actionRouteSource, /sendBrandEmail/);
+});
+
+test("v3 follow-up action is deterministic, internal and reuses CRM timeline validation", () => {
+  assert.match(governedActionsSource, /messageRequestsFollowupSchedule/);
+  assert.match(governedActionsSource, /parseFollowupDate/);
+  assert.match(governedActionsSource, /type: "schedule_customer_followup"/);
+  assert.match(governedActionsSource, /requiresApproval: false/);
+  assert.match(actionRouteSource, /CustomerTimelineUpdateInputSchema/);
+  assert.match(actionRouteSource, /buildCustomerTimelineInteraction/);
+  assert.match(actionRouteSource, /appendCustomerInteraction/);
+  assert.match(actionRouteSource, /eventType: "followup_scheduled"/);
+  assert.match(actionRouteSource, /no_customer_contact: true/);
+  assert.match(actionRouteSource, /nexus_action_id: proposalId/);
+  assert.match(actionRouteSource, /status === "completed"/);
+  assert.match(actionRouteSource, /Ingen melding er sendt/);
+});
+
+test("v3 follow-up scheduling does not mutate pipeline or require an email address", () => {
+  assert.match(actionRouteSource, /type === "prepare_customer_email" && !contact\.email/);
+  assert.doesNotMatch(actionRouteSource, /pipeline_status:\s*"CONTACT"|pipeline_status:\s*"QUALIFIED"|pipeline_status:\s*"MATCHING"/);
+  assert.match(governedActionsSource, /requireEmail: false/);
+  assert.match(governedActionsSource, /\["WON", "LOST"\]/);
+});
+
+test("chat renders approval actions and internal CRM actions through the same Nexus surface", () => {
+  assert.match(widgetSource, /"prepare_customer_email" \| "schedule_customer_followup"/);
+  assert.match(widgetSource, /scheduledFor: action\.scheduledFor/);
+  assert.match(widgetSource, /Intern CRM-handling · sender ingenting/);
+  assert.match(widgetSource, /Krever godkjenning før sending/);
+  assert.match(widgetSource, /candidate\.scheduledFor/);
 });
 
 test("Nexus AI customer drafts preserve brand through the existing executor path", () => {
@@ -112,7 +142,6 @@ test("chat persists recent history and renders navigation plus governed action s
   assert.match(widgetSource, /msg\.actions/);
   assert.match(widgetSource, /href=\{action\.href\}/);
   assert.match(widgetSource, /msg\.proposedActions/);
-  assert.match(widgetSource, /Krever godkjenning før sending/);
 });
 
 test("global shell presents Nexus AI as the single conversational advisor", () => {
