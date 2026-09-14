@@ -6,10 +6,11 @@ import { buildRevenueForecast } from "@/lib/revenue/forecast";
 import { buildRecoveryWorkspace } from "@/lib/revenue/recovery";
 import { buildServiceRevenueWorkspace } from "@/lib/revenue/service-revenue";
 import {
-  buildRevenuePriority,
   sortRevenuePriorities,
   type RevenueMemoryEventInput,
+  type RevenuePriorityItem,
 } from "@/lib/revenue/today";
+import { buildCanonicalRealEstatePriority } from "@/lib/nexus-real-estate-priority";
 
 export type CommandPriority = "CRITICAL" | "HIGH" | "MEDIUM";
 export type CommandState = "CRITICAL" | "ATTENTION" | "HEALTHY" | "INFO";
@@ -153,8 +154,8 @@ export function buildRevenueCommandCenter(input: RevenueCommandInput, now = new 
   const eventsByContactId = input.revenueEventsByContactId || {};
   const today = sortRevenuePriorities(
     contacts
-      .map((contact) => buildRevenuePriority(contact, now, { revenueEvents: eventsByContactId[String(contact.id || "")] || [] }))
-      .filter(Boolean) as NonNullable<ReturnType<typeof buildRevenuePriority>>[],
+      .map((contact) => buildCanonicalRealEstatePriority(contact, now, { revenueEvents: eventsByContactId[String(contact.id || "")] || [] }))
+      .filter((item): item is RevenuePriorityItem => Boolean(item)),
   );
   const closing = sortClosingOpportunities(
     contacts.map((contact) => buildClosingOpportunity(contact, now)).filter(Boolean) as NonNullable<ReturnType<typeof buildClosingOpportunity>>[],
