@@ -47,12 +47,15 @@ test("human approval calls source-verified CRM evidence route", () => {
   assert.match(source, /criteria: selected\.map\(criterionPayload\)/);
 });
 
-test("successful approval runs preview-only auto-discovery matching", () => {
+test("successful approval runs preview-only auto-discovery matching and retains the returned match DTOs", () => {
   assert.match(source, /\/api\/lead-intelligence\/property-matches\/preview/);
   assert.match(source, /autoDiscover: true/);
   assert.match(source, /candidateLimit: 120/);
   assert.match(source, /maxResults: 10/);
-  assert.match(source, /Ingen shortlist er opprettet og ingenting er sendt til kunden/);
+  assert.match(source, /matchBody\.result\?\.matches/);
+  assert.match(source, /setMatchPreview/);
+  assert.match(source, /CustomerInlinePropertyMatches/);
+  assert.match(source, /matches=\{matchPreview\.matches\}/);
 });
 
 test("matching request happens only after the approved Buyer Profile response is handled", () => {
@@ -63,4 +66,11 @@ test("matching request happens only after the approved Buyer Profile response is
   assert.ok(profileMessageIndex > profileIdIndex);
   assert.ok(matchRequestIndex > profileMessageIndex);
   assert.match(source, /Buyer Profile er oppdatert, men/);
+});
+
+test("inline property matches receive the verified brand, approved Buyer Profile and preview correlation id", () => {
+  assert.match(source, /brand=\{matchPreview\.brand\}/);
+  assert.match(source, /buyerProfileId=\{matchPreview\.buyerProfileId\}/);
+  assert.match(source, /correlationId=\{matchPreview\.correlationId\}/);
+  assert.match(source, /bestEffort=\{matchPreview\.bestEffort\}/);
 });
