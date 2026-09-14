@@ -55,10 +55,12 @@ test("successful approval runs preview-only auto-discovery matching", () => {
   assert.match(source, /Ingen shortlist er opprettet og ingenting er sendt til kunden/);
 });
 
-test("matching failure never rolls back a successfully approved Buyer Profile", () => {
-  const profileMessageIndex = source.indexOf("opplysninger er godkjent i Buyer Profile");
+test("matching request happens only after the approved Buyer Profile response is handled", () => {
+  const profileIdIndex = source.indexOf('const buyerProfileId = String(applyBody.result?.buyerProfileId');
+  const profileMessageIndex = source.indexOf('setEvidenceMessage(`');
   const matchRequestIndex = source.indexOf('/api/lead-intelligence/property-matches/preview');
-  assert.ok(profileMessageIndex > 0);
+  assert.ok(profileIdIndex > 0);
+  assert.ok(profileMessageIndex > profileIdIndex);
   assert.ok(matchRequestIndex > profileMessageIndex);
   assert.match(source, /Buyer Profile er oppdatert, men/);
 });
