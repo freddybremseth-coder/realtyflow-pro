@@ -1,7 +1,7 @@
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 import { summarizeSocialAutopilot } from "@/lib/social-autopilot";
 
-export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity" | "buyer_criteria" | "shortlist_review" | "no_match";
+export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity" | "buyer_criteria" | "shortlist_review" | "no_match" | "viewing_coach";
 export type NexusInboxPriority = "critical" | "high" | "medium" | "low";
 
 export interface NexusInboxItem {
@@ -80,6 +80,22 @@ type NoMatchReviewItem = {
   updatedAt?: string | null;
 };
 
+type ViewingCoachReviewItem = {
+  id: string;
+  priority?: string | null;
+  customerName?: string | null;
+  sentiment?: string | null;
+  reasons?: string[] | null;
+  explicitCriteria?: string[] | null;
+  highIntent?: boolean | null;
+  shouldRematch?: boolean | null;
+  note?: string | null;
+  property?: { id?: string | null; reference?: string | null; title?: string | null; location?: string | null } | null;
+  nextAction?: string | null;
+  reviewHref: string;
+  updatedAt?: string | null;
+};
+
 const PRIORITY_WEIGHT: Record<NexusInboxPriority, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
 function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
@@ -103,6 +119,27 @@ function noMatchConstraintLabel(value: string | null | undefined) {
   return null;
 }
 
+function viewingSentimentLabel(value: string | null | undefined) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "positive") return "positiv";
+  if (key === "negative") return "negativ";
+  if (key === "mixed") return "blandet";
+  return "uklar";
+}
+
+function viewingReasonLabel(value: string) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "price_high") return "pris oppleves høy";
+  if (key === "price_good") return "pris oppleves god";
+  if (key === "location_dislike") return "området passer dårligere";
+  if (key === "location_like") return "området passer godt";
+  if (key === "too_small") return "for liten";
+  if (key === "too_large") return "for stor";
+  if (key === "style_dislike") return "stil passer dårligere";
+  if (key === "style_like") return "stil passer godt";
+  return key.replaceAll("_", " ");
+}
+
 export function buildNexusInbox(input: {
   attention: OsAttentionItem[];
   approvals: ApprovalItem[];
@@ -111,6 +148,7 @@ export function buildNexusInbox(input: {
   buyerCriteriaReviews?: BuyerCriteriaReviewItem[];
   shortlistReviews?: ShortlistReviewItem[];
   noMatchReviews?: NoMatchReviewItem[];
+  viewingCoachReviews?: ViewingCoachReviewItem[];
 }): NexusInboxItem[] {
   const items: NexusInboxItem[] = [];
 
@@ -212,6 +250,33 @@ export function buildNexusInbox(input: {
     });
   }
 
+  for (const row of input.viewingCoachReviews ?? []) {
+    const property = row.property || {};
+    const propertyLabel = String(property.reference || property.title || "").trim();
+    const location = String(property.location || "").trim();
+    const sentiment = viewingSentimentLabel(row.sentiment);
+    const reasons = Array.isArray(row.reasons) ? row.reasons.filter(Boolean).slice(0, 4).map(viewingReasonLabel) : [];
+    const evidence = reasons.length ? ` Signal: ${reasons.join(" · ")}.` : "";
+    const context = propertyLabel || location
+      ? ` ${propertyLabel ? `Bolig: ${propertyLabel}.` : ""}${location ? ` Område: ${location}.` : ""}`
+      : "";
+    const note = String(row.note || "").trim();
+    const notePreview = note ? ` Feedback: «${note.slice(0, 220)}${note.length > 220 ? "…" : ""}»` : "";
+    const nextAction = String(row.nextAction || "Gjennomgå visningsfeedback og velg neste steg.").trim();
+    const criteriaReview = Array.isArray(row.explicitCriteria) && row.explicitCriteria.length > 0;
+    items.push({
+      id: `viewing-coach:${row.id}`,
+      source: "viewing_coach",
+      priority: row.highIntent ? "critical" : String(row.priority || "MEDIUM").toUpperCase() === "HIGH" ? "high" : "medium",
+      title: row.highIntent ? "HOT LEAD etter visning – Nexus Coach" : "Visningsfeedback – Nexus Coach",
+      reason: `Bekreftet visning med ${sentiment} feedback.${context}${evidence}${notePreview} ${nextAction}`.trim(),
+      href: row.reviewHref,
+      actionLabel: row.highIntent ? "Review neste steg" : criteriaReview ? "Review Buyer Profile" : row.shouldRematch ? "Review reranking" : "Review visning",
+      customerName: row.customerName ?? null,
+      occurredAt: row.updatedAt ?? null,
+    });
+  }
+
   for (const row of input.noMatchReviews ?? []) {
     const analyzed = Math.max(0, Number(row.analyzed || 0));
     const criteria = Array.isArray(row.criteria) ? row.criteria.filter(Boolean).slice(0, 4) : [];
@@ -238,7 +303,7 @@ export function buildNexusInbox(input: {
   return items.sort((a, b) => {
     const priorityDifference = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
     if (priorityDifference) return priorityDifference;
-    if (a.source === b.source && ["email_identity", "buyer_criteria", "shortlist_review", "no_match"].includes(a.source)) {
+    if (a.source === b.source && ["email_identity", "buyer_criteria", "shortlist_review", "no_match", "viewing_coach"].includes(a.source)) {
       const recencyDifference = timestamp(b.occurredAt) - timestamp(a.occurredAt);
       if (recencyDifference) return recencyDifference;
     }
@@ -256,6 +321,7 @@ export function summarizeNexusInbox(items: NexusInboxItem[]) {
     buyerCriteria: items.filter((item) => item.source === "buyer_criteria").length,
     shortlistReview: items.filter((item) => item.source === "shortlist_review").length,
     noMatch: items.filter((item) => item.source === "no_match").length,
+    viewingCoach: items.filter((item) => item.source === "viewing_coach").length,
     system: items.filter((item) => item.source === "system").length,
   };
 }
