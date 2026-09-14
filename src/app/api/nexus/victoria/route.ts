@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { filterNexusCommands } from "@/lib/nexus-command";
 import { assessPipelineMovement } from "@/lib/nexus-pipeline-movement";
+import { askNexusAI, isNexusAIConfigured } from "@/services/ai/nexus-ai-client";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
-import { askClaude, isConfigured } from "@/services/ai/claude-client";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -68,7 +68,7 @@ function compactContact(row: any) {
 export async function POST(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
-  if (!isConfigured()) return NextResponse.json({ response: "AI-modellen er ikke konfigurert." }, { status: 503 });
+  if (!isNexusAIConfigured()) return NextResponse.json({ response: "AI-modellen er ikke konfigurert." }, { status: 503 });
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ response: "Nexus-databasen er ikke tilgjengelig." }, { status: 503 });
 
@@ -229,11 +229,13 @@ STIL:
 - Når brukeren kommer med mange ideer samtidig, organiser dem i beslutning / oppgave / forslag / måling uten å miste intensjonen.`;
 
   try {
-    const response = await askClaude(prompt, { systemPrompt, maxTokens: 1900, model: "sonnet" });
+    const ai = await askNexusAI(prompt, { systemPrompt, maxTokens: 1900 });
     return NextResponse.json({
-      response,
+      response: ai.text,
       actions: navigationCandidates,
       pageContext,
+      aiProvider: ai.provider,
+      aiModel: ai.model,
       snapshotGeneratedAt: snapshot.generated_at,
       activeOwnerFocus: ownerFocus.length,
     });
