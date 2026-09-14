@@ -189,6 +189,46 @@ export async function uploadRemasterLongFormFile(input: {
   };
 }
 
+export async function ensureRemasterLongFormPublic(videoId: string) {
+  const id = String(videoId || "").trim();
+  if (!id) throw new Error("Re-Master YouTube video id is required.");
+
+  const { client, channelId, channelTitle } = await getVerifiedLongFormClient();
+  const currentResponse = await client.videos.list({ part: ["snippet", "status"], id: [id] });
+  const current = currentResponse.data.items?.[0];
+  if (!current?.id || current.snippet?.channelId !== channelId) {
+    throw new Error(`Video ${id} does not belong to the verified Re-Master Freddy channel (${channelTitle}).`);
+  }
+
+  const before = String(current.status?.privacyStatus || "unknown");
+  if (before === "public") {
+    return { videoId: id, before, after: "public", changed: false, channelId, channelTitle };
+  }
+
+  await client.videos.update({
+    part: ["status"],
+    requestBody: {
+      id,
+      status: {
+        privacyStatus: "public",
+        selfDeclaredMadeForKids: current.status?.selfDeclaredMadeForKids ?? false,
+      },
+    },
+  });
+
+  const verifyResponse = await client.videos.list({ part: ["snippet", "status"], id: [id] });
+  const verified = verifyResponse.data.items?.[0];
+  if (!verified?.id || verified.snippet?.channelId !== channelId) {
+    throw new Error(`Could not verify Re-Master video ${id} after privacy update.`);
+  }
+  const after = String(verified.status?.privacyStatus || "unknown");
+  if (after !== "public") {
+    throw new Error(`YOUTUBE_LONGFORM_NOT_PUBLIC: ${id} verified as ${after}.`);
+  }
+
+  return { videoId: id, before, after, changed: true, channelId, channelTitle };
+}
+
 export async function ensureRemasterLongFormPlaylist(title: string, description: string) {
   const { client, channelId } = await getVerifiedLongFormClient();
   let pageToken: string | undefined;
