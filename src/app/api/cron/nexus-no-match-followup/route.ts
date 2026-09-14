@@ -4,13 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
-import { handleNoMatchClarification } from "@/services/email/no-match-clarification";
+import { prepareNoMatchCoach } from "@/services/email/no-match-clarification";
 import { isLeadIntelligenceRealEstateBrand } from "@/services/lead-intelligence/brand-allowlist";
 
 export const maxDuration = 300;
 const PATH = "/api/cron/nexus-no-match-followup";
 const OPEN_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
-const ACTOR = "Nexus No-Match Autopilot";
+const ACTOR = "Nexus No-Match Coach";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   let considered = 0;
-  let sent = 0;
+  let prepared = 0;
   let humanReview = 0;
   let skipped = 0;
   let failed = 0;
@@ -67,13 +67,15 @@ export async function GET(request: NextRequest) {
 
     considered += 1;
     try {
-      const result = await handleNoMatchClarification(supabase, {
+      const result = await prepareNoMatchCoach(supabase, {
         brandId,
         contactId,
         buyerProfileId,
       });
       const now = new Date().toISOString();
       const plan = "plan" in result ? result.plan : undefined;
+      const draft = "draft" in result ? result.draft : undefined;
+      const reviewRequired = result.status === "prepared" || result.status === "human_review";
       const nextMetadata = {
         ...metadata,
         no_match_followup_at: now,
@@ -82,24 +84,29 @@ export async function GET(request: NextRequest) {
         no_match_followup_reason: result.reason,
         no_match_missing_fields: plan?.missingFields || [],
         no_match_questions: plan?.questions || [],
+        no_match_coach_question: plan?.primaryQuestion || null,
+        no_match_constraint_focus: plan?.constraintFocus || null,
         no_match_current_criteria: plan?.currentCriteriaLines || [],
-        no_match_clarification_pending: result.status === "sent",
-        no_match_clarification_message_id: result.status === "sent" ? result.messageId : null,
-        no_match_review_required: result.status !== "sent",
+        no_match_draft_subject: draft?.subject || null,
+        no_match_draft_body: draft?.bodyText || null,
+        no_match_clarification_pending: false,
+        no_match_clarification_message_id: null,
+        no_match_review_required: reviewRequired,
+        no_match_customer_send: false,
       };
 
       let nextAction: string;
-      if (result.status === "sent") {
-        nextAction = "Nexus fant ingen gode treff med dagens kriterier og har bedt kunden om de manglende opplysningene. Vent på svar; nytt kundesvar oppdaterer Buyer Profile før ny matching.";
-        sent += 1;
+      if (result.status === "prepared") {
+        nextAction = `Nexus fant ingen gode treff og har forberedt ett presist avklaringsspørsmål: «${plan?.primaryQuestion || "Kontroller manglende søkekriterium."}» Gjennomgå utkastet før eventuell kundekontakt; kriteriene endres ikke automatisk.`;
+        prepared += 1;
       } else if (result.status === "human_review") {
-        nextAction = "Nexus fant ingen treff selv om Buyer Profile er konkret. Vurder om kunden bør spørres om fleksibilitet i område, budsjett eller boligtype. Kriteriene endres ikke automatisk.";
+        nextAction = `Nexus fant ingen treff selv om Buyer Profile er konkret. Foreslått avklaring: «${plan?.primaryQuestion || "Vurder hvilket kriterium kunden faktisk er fleksibel på."}» Gjennomgå før eventuell kundekontakt; kriteriene endres ikke automatisk.`;
         humanReview += 1;
       } else if (result.status === "skipped") {
-        nextAction = `Ingen automatisk avklaringsmail ble sendt (${result.reason}). Kontroller kunden manuelt før kriterier eller matching endres.`;
+        nextAction = `Ingen No-Match Coach ble klargjort (${result.reason}). Kontroller kunden manuelt før kriterier eller matching endres.`;
         skipped += 1;
       } else {
-        nextAction = `Avklaringsmail etter null treff feilet (${result.reason}). Saken er stoppet for menneskelig kontroll; Nexus endrer ingen kriterier automatisk.`;
+        nextAction = `No-Match Coach feilet (${result.reason}). Saken er stoppet for menneskelig kontroll; Nexus endrer ingen kriterier og sender ingen kundemelding automatisk.`;
         failed += 1;
       }
 
@@ -119,18 +126,19 @@ export async function GET(request: NextRequest) {
 
   await supabase.from("automation_logs").insert({
     action: "nexus_no_match_followup",
-    agent_name: "nexus_no_match_autopilot",
-    status: failed ? (sent || humanReview ? "partial" : "failed") : "success",
+    agent_name: "nexus_no_match_coach",
+    status: failed ? (prepared || humanReview ? "partial" : "failed") : "success",
     details: {
       considered,
-      sent,
+      prepared,
       human_review: humanReview,
       skipped,
       failed,
       runtime_control: `cron:${PATH}`,
       criteria_mutated: false,
+      customer_send: false,
     },
   }).then(() => {}).then(undefined, () => {});
 
-  return NextResponse.json({ success: true, considered, sent, humanReview, skipped, failed });
+  return NextResponse.json({ success: true, considered, prepared, humanReview, skipped, failed, customerSend: false });
 }
