@@ -26,7 +26,10 @@ export async function fetchFacebookPostEngagement(
   if (!postId) throw new Error("FACEBOOK_POST_ID_MISSING");
   if (!accessToken) throw new Error("FACEBOOK_ACCESS_TOKEN_MISSING");
 
-  const fields = "reactions.summary(true),comments.summary(true),shares";
+  // `shares` is not exposed for every Facebook object type. Keep the canonical
+  // engagement fetch limited to fields that are consistently available, then
+  // fetch shares separately as a best-effort enrichment.
+  const fields = "reactions.summary(true),comments.summary(true)";
   const objectUrl = new URL(`https://graph.facebook.com/v25.0/${encodeURIComponent(postId)}`);
   objectUrl.searchParams.set("fields", fields);
   objectUrl.searchParams.set("access_token", accessToken);
@@ -35,6 +38,19 @@ export async function fetchFacebookPostEngagement(
   const objectRaw = await objectRes.json().catch(() => ({}));
   if (!objectRes.ok) {
     throw new Error(`FACEBOOK_ENGAGEMENT_FETCH_FAILED: ${JSON.stringify(objectRaw)}`);
+  }
+
+  let sharesRaw: Record<string, unknown> = {};
+  let shares = 0;
+  try {
+    const sharesUrl = new URL(`https://graph.facebook.com/v25.0/${encodeURIComponent(postId)}`);
+    sharesUrl.searchParams.set("fields", "shares");
+    sharesUrl.searchParams.set("access_token", accessToken);
+    const sharesRes = await fetch(sharesUrl.toString());
+    sharesRaw = await sharesRes.json().catch(() => ({}));
+    if (sharesRes.ok) shares = n((sharesRaw as any)?.shares?.count);
+  } catch {
+    // Reactions/comments remain valid even when this post type has no shares field.
   }
 
   let insightsRaw: Record<string, unknown> = {};
@@ -60,9 +76,10 @@ export async function fetchFacebookPostEngagement(
     reach,
     reactions: n((objectRaw as any)?.reactions?.summary?.total_count),
     comments: n((objectRaw as any)?.comments?.summary?.total_count),
-    shares: n((objectRaw as any)?.shares?.count),
+    shares,
     raw: {
       post: objectRaw,
+      shares: sharesRaw,
       insights: insightsRaw,
     },
   };
