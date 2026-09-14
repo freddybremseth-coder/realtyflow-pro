@@ -68,7 +68,7 @@ test("when location is flexible a specific profile asks about the next most usef
     ],
   });
   assert.equal(plan.constraintFocus, "budget");
-  assert.match(plan.primaryQuestion, /450[ .]?000/);
+  assert.match(plan.primaryQuestion, /450\s000/);
   assert.match(plan.primaryQuestion, /absolutt tak/i);
 });
 
