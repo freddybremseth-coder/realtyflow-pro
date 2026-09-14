@@ -25,6 +25,7 @@ const endpointForAction: Record<MissionAutopilotAction, string> = {
   advance: "/api/nexus/revenue-command/missions/advance",
   prepare_real_estate: "/api/nexus/revenue-command/missions/prepare/real-estate",
   prepare_real_estate_qualification: "/api/nexus/revenue-command/missions/prepare/real-estate-qualification",
+  prepare_real_estate_matching: "/api/nexus/revenue-command/missions/prepare/real-estate-matching",
   prepare_ai: "/api/nexus/revenue-command/missions/prepare/ai",
   prepare_publishing: "/api/nexus/revenue-command/missions/prepare/publishing",
   request_send_approval: "/api/nexus/revenue-command/missions/approve-send",
@@ -165,7 +166,7 @@ export async function GET(request: NextRequest) {
       externalActionExecuted: false,
       humanApprovalStillRequiredForCustomerSend: true,
       closingAutopilot: false,
-      note: "Autopilot uses the same Agentic action class as Revenue Command. Enrichment creates internal qualification work; customer-message drafts remain separately approval-gated.",
+      note: "Autopilot uses the same Agentic action class as Revenue Command. Enrichment creates internal qualification work; matching seeds the governed property-match/shortlist chain from an approved Buyer Profile; customer-message drafts remain separately approval-gated.",
     },
   };
 

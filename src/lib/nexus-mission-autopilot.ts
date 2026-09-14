@@ -2,6 +2,7 @@ export type MissionAutopilotAction =
   | "advance"
   | "prepare_real_estate"
   | "prepare_real_estate_qualification"
+  | "prepare_real_estate_matching"
   | "prepare_ai"
   | "prepare_publishing"
   | "request_send_approval";
@@ -52,6 +53,13 @@ export function nextMissionAutopilotAction(
           missionId: mission.id,
           action: "prepare_real_estate_qualification",
           reason: "Real-estate qualification mission needs an internal Buyer Intelligence brief, not a customer email draft.",
+        };
+      }
+      if (mission.actionClass === "match") {
+        return {
+          missionId: mission.id,
+          action: "prepare_real_estate_matching",
+          reason: "Real-estate matching mission should seed the governed matching/shortlist pipeline from the approved Buyer Profile, not draft a customer email.",
         };
       }
       if (mission.actionClass === "draft") {

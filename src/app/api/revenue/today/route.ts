@@ -6,16 +6,16 @@ import { readHotLeadSla } from "@/lib/revenue/hot-lead-work-item";
 import { applyPortalRecencyBoost } from "@/lib/revenue/portal-recency";
 import {
   buildRecommendedRevenuePlay,
-  buildRevenuePriority,
   sortRevenuePriorities,
   type RevenueMemoryEventInput,
   type RevenuePriorityItem,
 } from "@/lib/revenue/today";
+import { buildCanonicalRealEstatePriority } from "@/lib/nexus-real-estate-priority";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const ACTIVE_STAGES = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD"];
+const ACTIVE_STAGES = ["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "ON_HOLD"];
 const REAL_ESTATE_BRANDS = new Set(["zeneco", "soleada", "pinosoecolife"]);
 const REVENUE_WORK_SOURCES = new Set(["crm", "website_lead", "chatbot", "property", "lead_intelligence"]);
 
@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
     contacts
       .map((contact) => {
         const contactEvents = eventsByContact.get(String(contact.id || "")) || [];
-        const priority = buildRevenuePriority(contact, now, { revenueEvents: contactEvents });
+        const priority = buildCanonicalRealEstatePriority(contact, now, { revenueEvents: contactEvents });
         return priority ? applyPortalRecencyBoost(priority, contactEvents, now) : null;
       })
       .filter((item): item is RevenuePriorityItem & { portalActiveNow: boolean; portalLastActiveAt: string | null } => Boolean(item)),

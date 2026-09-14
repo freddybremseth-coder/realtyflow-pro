@@ -1,13 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  buildRevenuePriority,
   sortRevenuePriorities,
   type RevenueContactInput,
   type RevenueMemoryEventInput,
 } from "@/lib/revenue/today";
+import { buildCanonicalRealEstatePriority } from "@/lib/nexus-real-estate-priority";
 import type { DemoSiteEventInput, DemoSiteOrderInput } from "@/lib/nexus-ai-demosites-adapter";
 
-const ACTIVE_REAL_ESTATE_STAGES = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD"];
+const ACTIVE_REAL_ESTATE_STAGES = ["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "ON_HOLD"];
 
 type RevenueEventRow = RevenueMemoryEventInput & { contact_id?: string | null };
 
@@ -28,10 +28,10 @@ export function realEstateOpportunityPayloadFromRows(
   return {
     priorities: sortRevenuePriorities(
       contacts
-        .map((contact) => buildRevenuePriority(contact, now, {
+        .map((contact) => buildCanonicalRealEstatePriority(contact, now, {
           revenueEvents: eventsByContact.get(String(contact.id || "")) || [],
         }))
-        .filter((item): item is NonNullable<ReturnType<typeof buildRevenuePriority>> => Boolean(item)),
+        .filter((item): item is NonNullable<ReturnType<typeof buildCanonicalRealEstatePriority>> => Boolean(item)),
     ),
   };
 }
