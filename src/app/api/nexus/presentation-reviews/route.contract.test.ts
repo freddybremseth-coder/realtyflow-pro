@@ -39,3 +39,11 @@ test("focused review UI makes the automatic post-preflight send consequence expl
   assert.match(page, /varig send-receipt hindrer dobbeltsending/);
   assert.match(page, /\/api\/nexus\/presentation-reviews/);
 });
+
+test("final presentation rejection cancels the draft and removes every send authorization", () => {
+  assert.match(source, /decision === "reject"/);
+  assert.match(source, /status: "cancelled"/);
+  assert.match(source, /presentation_final_review_status: "REJECTED"/);
+  assert.match(source, /property_recommendation_auto_send_authorized: false/);
+  assert.match(source, /customerMessageSent: false/);
+});
