@@ -26,6 +26,12 @@ export async function POST(request: NextRequest) {
   if (!emailAddress || !emailAddress.includes("@")) {
     return NextResponse.json({ error: "Gyldig e-postadresse kreves" }, { status: 400 });
   }
+  if (provider === "gmail") {
+    return NextResponse.json(
+      { error: "Gmail / Google Workspace skal kobles med «Logg inn med Google», ikke passord eller app-passord." },
+      { status: 409 },
+    );
+  }
   if (!password || password.length < 4) {
     return NextResponse.json({ error: "Passord/app-passord kreves" }, { status: 400 });
   }
