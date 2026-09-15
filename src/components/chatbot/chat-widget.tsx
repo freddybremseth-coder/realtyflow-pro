@@ -16,9 +16,13 @@ type GovernedActionType =
   | "add_customer_note"
   | "create_customer_task"
   | "update_customer_email"
-  | "update_customer_phone";
+  | "update_customer_phone"
+  | "prepare_marketing_campaign";
 
-type GovernedActionEndpoint = "/api/nexus/actions" | "/api/nexus/contact-field-action";
+type GovernedActionEndpoint =
+  | "/api/nexus/actions"
+  | "/api/nexus/contact-field-action"
+  | "/api/nexus/marketing-actions";
 
 interface GovernedAction {
   id: string;
@@ -27,8 +31,12 @@ interface GovernedAction {
   description: string;
   endpoint: GovernedActionEndpoint;
   method: "POST";
-  contactId: string;
-  contactName: string;
+  contactId?: string;
+  contactName?: string;
+  brandId?: string;
+  brandName?: string;
+  focus?: string;
+  channels?: Array<"instagram" | "facebook">;
   requestText: string;
   requiresApproval: boolean;
   scheduledFor?: string;
@@ -68,6 +76,7 @@ function isGovernedAction(value: unknown): value is GovernedAction {
     && type !== "create_customer_task"
     && type !== "update_customer_email"
     && type !== "update_customer_phone"
+    && type !== "prepare_marketing_campaign"
   ) return false;
   if (
     candidate.method !== "POST"
@@ -75,10 +84,20 @@ function isGovernedAction(value: unknown): value is GovernedAction {
     || typeof candidate.id !== "string"
     || typeof candidate.label !== "string"
     || typeof candidate.description !== "string"
-    || typeof candidate.contactId !== "string"
-    || typeof candidate.contactName !== "string"
     || typeof candidate.requestText !== "string"
   ) return false;
+
+  if (type === "prepare_marketing_campaign") {
+    if (candidate.endpoint !== "/api/nexus/marketing-actions" || candidate.requiresApproval !== true) return false;
+    if (typeof candidate.brandId !== "string" || !candidate.brandId.trim()) return false;
+    if (typeof candidate.brandName !== "string" || !candidate.brandName.trim()) return false;
+    if (typeof candidate.focus !== "string" || !candidate.focus.trim()) return false;
+    if (!Array.isArray(candidate.channels) || candidate.channels.length === 0) return false;
+    if (!candidate.channels.every((channel) => channel === "instagram" || channel === "facebook")) return false;
+    return true;
+  }
+
+  if (typeof candidate.contactId !== "string" || typeof candidate.contactName !== "string") return false;
 
   const contactFieldAction = type === "update_customer_email" || type === "update_customer_phone";
   if (contactFieldAction) {
@@ -104,6 +123,12 @@ function governedActionSuccessCopy(action: GovernedAction) {
     return {
       text: "Handlingen er forberedt og venter på godkjenning.",
       navigation: "Kontroller utkastet før eventuell sending.",
+    };
+  }
+  if (action.type === "prepare_marketing_campaign") {
+    return {
+      text: "SoMe-utkastene er forberedt og venter på godkjenning.",
+      navigation: "Kontroller kampanjen i Approval Center før eventuell publisering.",
     };
   }
   if (action.type === "schedule_customer_followup") {
@@ -218,7 +243,11 @@ export function ChatWidget({
 
   const executeGovernedAction = useCallback(async (action: GovernedAction) => {
     if (actionBusy[action.id] || action.method !== "POST") return;
-    if (action.endpoint !== "/api/nexus/actions" && action.endpoint !== "/api/nexus/contact-field-action") return;
+    if (
+      action.endpoint !== "/api/nexus/actions"
+      && action.endpoint !== "/api/nexus/contact-field-action"
+      && action.endpoint !== "/api/nexus/marketing-actions"
+    ) return;
     setActionBusy((current) => ({ ...current, [action.id]: true }));
     try {
       const res = await fetch(action.endpoint, {
@@ -228,6 +257,9 @@ export function ChatWidget({
           type: action.type,
           proposalId: action.id,
           contactId: action.contactId,
+          brandId: action.brandId,
+          focus: action.focus,
+          channels: action.channels,
           requestText: action.requestText,
           scheduledFor: action.scheduledFor,
           field: action.field,
@@ -405,7 +437,11 @@ export function ChatWidget({
                             <span className="flex items-center gap-1.5 font-semibold"><ShieldCheck size={13} />{actionBusy[action.id] ? "Utfører…" : action.label}</span>
                             <span className="mt-1 block text-[10px] leading-4 text-slate-400">{action.description}</span>
                             <span className="mt-1 block text-[9px] font-semibold uppercase tracking-wide text-emerald-300/80">
-                              {action.requiresApproval ? "Krever godkjenning før sending" : "Intern CRM-handling · sender ingenting"}
+                              {action.type === "prepare_marketing_campaign"
+                                ? "Krever godkjenning før publisering"
+                                : action.requiresApproval
+                                  ? "Krever godkjenning før sending"
+                                  : "Intern CRM-handling · sender ingenting"}
                             </span>
                           </button>
                         ))}
