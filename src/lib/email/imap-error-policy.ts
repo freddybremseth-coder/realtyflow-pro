@@ -59,5 +59,5 @@ export function isTransientImapError(error: unknown) {
   if (isPermanentImapError(error)) return false;
 
   const details = describeImapError(error);
-  return /command failed|connection not available|not connected|connection closed|socket.*closed|econnreset|etimedout|econnrefused|timeout|temporar|upstream|server busy|try again|rate limit|too many connections|unavailable/i.test(details);
+  return /connection not available|not connected|connection closed|socket.*closed|econnreset|etimedout|econnrefused|timeout|temporar|upstream|server busy|try again|rate limit|too many connections|unavailable/i.test(details);
 }
