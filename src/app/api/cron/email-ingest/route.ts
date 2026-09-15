@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
+import { describeImapError, isTransientImapError } from "@/lib/email/imap-error-policy";
 import { fetchRecentEmails, type ImapConfig } from "@/services/email/imap-reader";
 import { decryptPassword } from "@/services/email/crypto";
 import { insertRevenueEvent } from "@/lib/revenue/events";
@@ -17,11 +18,6 @@ function getSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
-}
-
-function isTransientImapError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || "");
-  return /connection not available|not connected|connection closed|socket.*closed|econnreset|etimedout|econnrefused|timeout|temporar|upstream/i.test(message);
 }
 
 async function fetchRecentEmailsWithRetry(imap: ImapConfig, maxCount: number, sinceDays: number) {
@@ -130,7 +126,7 @@ export async function GET(request: NextRequest) {
       }).eq("id", config.id);
       results.push({ brand: config.brand_id, email: config.email_address, fetched: fetched.length, inserted: insertedCount, health: "healthy" });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = describeImapError(e);
       const transient = isTransientImapError(e);
       const failures = Number(config.consecutive_failures || 0) + 1;
       const pause = !transient && failures >= FAILURE_PAUSE_THRESHOLD;

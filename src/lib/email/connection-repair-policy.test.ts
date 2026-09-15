@@ -29,7 +29,7 @@ test("health repair patch clears only health/pause state and records verified su
   });
 });
 
-test("health repair patch cannot enable ingest or rotate credentials", () => {
+test("manual auto-fetch state remains untouched by an ordinary health repair", () => {
   const patch = buildEmailConnectionHealthRepairPatch("2026-08-31T15:00:00.000Z") as Record<string, unknown>;
   for (const forbidden of [
     "auto_fetch",
@@ -43,6 +43,15 @@ test("health repair patch cannot enable ingest or rotate credentials", () => {
     "smtp_port",
     "smtp_secure",
   ]) {
-    assert.equal(Object.hasOwn(patch, forbidden), false, `${forbidden} must not be changed by health repair`);
+    assert.equal(Object.hasOwn(patch, forbidden), false, `${forbidden} must not be changed by ordinary health repair`);
   }
+});
+
+test("verified repair can restore auto-fetch when Nexus itself system-paused the account", () => {
+  const now = "2026-08-31T15:00:00.000Z";
+  const patch = buildEmailConnectionHealthRepairPatch(now, { restoreAutoFetch: true });
+  assert.equal(patch.auto_fetch, true);
+  assert.equal(patch.auto_fetch_paused_by_system, false);
+  assert.equal(patch.health_status, "healthy");
+  assert.equal(patch.consecutive_failures, 0);
 });

@@ -17,8 +17,11 @@ export function resolveEmailConnectionRepairRequest(body: Record<string, unknown
   return { ok: true, request: { accountId } };
 }
 
-export function buildEmailConnectionHealthRepairPatch(now: string) {
-  return {
+export function buildEmailConnectionHealthRepairPatch(
+  now: string,
+  options: { restoreAutoFetch?: boolean } = {}
+) {
+  const patch = {
     auto_fetch_paused_by_system: false,
     health_status: "healthy",
     health_message: null,
@@ -27,4 +30,10 @@ export function buildEmailConnectionHealthRepairPatch(now: string) {
     last_success_at: now,
     updated_at: now,
   } as const;
+
+  if (options.restoreAutoFetch === true) {
+    return { ...patch, auto_fetch: true } as const;
+  }
+
+  return patch;
 }
