@@ -1,124 +1,115 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { createServerClient } from "@/lib/supabase/server";
+import { resolveEmailAccountAuth } from "@/services/email/account-auth";
 
 export const dynamic = "force-dynamic";
 
-async function getGmailAccessToken(): Promise<string | null> {
-  const clientId = process.env.YOUTUBE_CLIENT_ID;
-  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+async function getGmailAccessToken(brandId: string): Promise<string | null> {
+  const supabase = createServerClient();
+  const { data: configs, error } = await supabase
+    .from("brand_email_configs")
+    .select("*")
+    .eq("brand_id", brandId)
+    .eq("is_active", true)
+    .eq("imap_host", "imap.gmail.com")
+    .order("updated_at", { ascending: false })
+    .limit(1);
 
-  // Get Gmail refresh token from Supabase
-  const { createClient } = await import("@supabase/supabase-js");
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-
-  const supabase = createClient(url, key);
-  const { data } = await supabase.from("brand_settings").select("settings").eq("brand_id", "_system").single();
-  const refreshToken = data?.settings?.gmail_refresh_token || process.env.GMAIL_REFRESH_TOKEN;
-  if (!refreshToken) return null;
-
-  // Exchange for access token
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
-  const data2 = await res.json();
-  return data2.access_token || null;
+  if (error || !configs?.[0]) return null;
+  const auth = await resolveEmailAccountAuth(configs[0]);
+  return auth.method === "google_oauth" ? auth.accessToken : null;
 }
 
 /**
- * GET /api/gmail/sync?contactEmail=EMAIL
- * Fetches Gmail threads to/from the given email address.
- * Returns them as interaction objects for the CRM.
+ * GET /api/gmail/sync?brand_id=BRAND&contactEmail=EMAIL
+ * Fetches Gmail thread metadata using the canonical encrypted brand-scoped
+ * OAuth connection. The former global plaintext refresh-token path is retired.
  */
 export async function GET(req: NextRequest) {
   const adminError = await requireAdminApi(req);
   if (adminError) return adminError;
 
-  const contactEmail = req.nextUrl.searchParams.get("contactEmail");
-  if (!contactEmail) {
-    return NextResponse.json({ error: "contactEmail required" }, { status: 400 });
-  }
+  const brandId = String(req.nextUrl.searchParams.get("brand_id") || "").trim();
+  const contactEmail = String(req.nextUrl.searchParams.get("contactEmail") || "").trim();
+  if (!brandId) return NextResponse.json({ error: "brand_id required" }, { status: 400 });
+  if (!contactEmail) return NextResponse.json({ error: "contactEmail required" }, { status: 400 });
 
-  const accessToken = await getGmailAccessToken();
+  let accessToken: string | null = null;
+  try {
+    accessToken = await getGmailAccessToken(brandId);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Gmail OAuth failed" }, { status: 401 });
+  }
   if (!accessToken) {
-    return NextResponse.json({ error: "Gmail not authorized. Go to Settings → Tilkoblinger → Koble til Gmail." }, { status: 401 });
+    return NextResponse.json({ error: "Gmail er ikke koblet med Google OAuth for dette brandet." }, { status: 401 });
   }
 
   try {
-    // Search for threads with this contact
     const query = encodeURIComponent(`to:${contactEmail} OR from:${contactEmail}`);
     const threadsRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/threads?q=${query}&maxResults=20`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     const threadsData = await threadsRes.json();
+    if (!threadsRes.ok) {
+      return NextResponse.json({ error: threadsData?.error?.message || `Gmail API ${threadsRes.status}` }, { status: 502 });
+    }
 
     if (!threadsData.threads || threadsData.threads.length === 0) {
       return NextResponse.json({ interactions: [], total: 0 });
     }
 
-    // Fetch each thread's details (limited to 10 to avoid rate limits)
-    const interactions = [];
-    const threadsToFetch = threadsData.threads.slice(0, 10);
+    const interactions: Array<{
+      id: string;
+      type: "email";
+      content: string;
+      date: string;
+      direction: "out" | "in";
+      source: "gmail";
+      threadId: string;
+    }> = [];
 
-    for (const thread of threadsToFetch) {
+    for (const thread of threadsData.threads.slice(0, 10)) {
       try {
         const threadRes = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/threads/${thread.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
+          { headers: { Authorization: `Bearer ${accessToken}` } },
         );
+        if (!threadRes.ok) continue;
         const threadData = await threadRes.json();
-
         const messages = threadData.messages || [];
         if (messages.length === 0) continue;
 
-        // Get the first message for thread summary
-        const firstMsg = messages[0];
-        const headers = firstMsg.payload?.headers || [];
-        const getHeader = (name: string) => headers.find((h: { name: string; value: string }) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
-
+        const headers = messages[0].payload?.headers || [];
+        const getHeader = (name: string) => headers.find((header: { name: string; value: string }) => header.name.toLowerCase() === name.toLowerCase())?.value || "";
         const subject = getHeader("Subject") || "(ingen emne)";
         const from = getHeader("From");
         const to = getHeader("To");
         const dateStr = getHeader("Date");
-        const date = dateStr ? new Date(dateStr).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
-
-        // Determine direction
+        const parsedDate = dateStr ? new Date(dateStr) : new Date();
+        const date = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().split("T")[0];
         const fromEmail = from.match(/<(.+?)>|(.+)/)?.[1] || from;
         const isOutgoing = !fromEmail.toLowerCase().includes(contactEmail.toLowerCase());
-
         const msgCount = messages.length;
-        const content = `${subject}${msgCount > 1 ? ` (${msgCount} meldinger)` : ""} — ${isOutgoing ? "Til" : "Fra"}: ${isOutgoing ? to : from}`;
 
         interactions.push({
           id: `gmail_${thread.id}`,
-          type: "email" as const,
-          content,
+          type: "email",
+          content: `${subject}${msgCount > 1 ? ` (${msgCount} meldinger)` : ""} — ${isOutgoing ? "Til" : "Fra"}: ${isOutgoing ? to : from}`,
           date,
-          direction: isOutgoing ? "out" as const : "in" as const,
+          direction: isOutgoing ? "out" : "in",
           source: "gmail",
           threadId: thread.id,
         });
       } catch {
-        // Skip failed threads
+        // Skip one broken thread without failing the whole CRM view.
       }
     }
 
-    // Sort by date descending
     interactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
     return NextResponse.json({ interactions, total: threadsData.resultSizeEstimate || interactions.length });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }
