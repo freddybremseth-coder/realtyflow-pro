@@ -29,7 +29,7 @@ const normalize = (value: unknown) => String(value ?? "")
   .trim();
 
 const MARKETING_BRANDS = [
-  { id: "zeneco", name: "Zen Eco Homes", aliases: ["zen eco homes", "zeneco", "zen eco"] },
+  { id: "zeneco", name: "Zen Eco Homes", aliases: ["zen eco homes", "zenecohomes", "zeneco", "zen eco"] },
   { id: "pinosoecolife", name: "Pinoso EcoLife", aliases: ["pinoso ecolife", "pinoso eco life", "pinosoecolife"] },
   { id: "donaanna", name: "Doña Anna", aliases: ["dona anna", "doña anna"] },
 ] as const;
@@ -56,7 +56,7 @@ export function resolveNexusMarketingBrand(message: string): { id: string; name:
 function trimMarketingFocus(value: string) {
   return value
     .replace(/\s+(?:i|på)\s+(?:some|sosiale\s+medier)\b.*$/i, "")
-    .replace(/\s+(?:for|med|og|som)\b.*$/i, "")
+    .replace(/\s+(?:for|med|og|som|der|hvor)\b.*$/i, "")
     .replace(/[,.!?:;]+.*$/, "")
     .trim();
 }
@@ -66,6 +66,11 @@ export function resolveNexusMarketingFocus(message: string): string | null {
   if (!raw) return null;
   const word = "[A-Za-zÀ-ÖØ-öø-ÿ0-9'’\\-]";
   const patterns = [
+    // Broad geographic themes are valid campaign focuses too. Keep these
+    // before generic campaign patterns so "innlandet i Spania" is preserved
+    // instead of falling through to navigation-only advice.
+    new RegExp(`\\b((?:innlandet|inlandet)\\s+i\\s+${word}+)\\b`, "i"),
+    new RegExp(`\\b((?:Costa\\s+Blanca|Alicante)\\s+(?:inland|innland(?:et)?))\\b`, "i"),
     new RegExp(`\\blivet\\s+i\\s+(${word}+(?:\\s+${word}+){0,2})`, "i"),
     new RegExp(`\\bmarkedsf(?:ø|o)r(?:e)?\\s+(${word}+(?:\\s+${word}+){0,2})`, "i"),
     new RegExp(`\\b(?:kampanje|innlegg)\\s+(?:for|om)\\s+(${word}+(?:\\s+${word}+){0,2})`, "i"),
@@ -99,13 +104,13 @@ export function resolveNexusMarketingChannels(message: string): NexusMarketingCh
 export function messageRequestsMarketingCampaign(message: string): boolean {
   const text = normalize(message);
   if (!text || /^(hvordan|hvor|hva er|forklar)\b/.test(text)) return false;
-  const directVerb = /\b(markedsfor|markedsfore|lag|forbered|opprett|sett opp|publiser)\b/.test(text);
+  const directVerb = /\b(start|start opp|kjor|markedsfor|markedsfore|lag|forbered|opprett|sett opp|publiser)\b/.test(text);
   const marketingTarget = /\b(some|sosiale medier|kampanje|innlegg|instagram|facebook|markedsforing)\b/.test(text);
   if (directVerb && marketingTarget) return true;
 
   const brand = resolveNexusMarketingBrand(message);
   const focus = resolveNexusMarketingFocus(message);
-  const continuation = /\b(fokuser|livet i|sett inn bolig|kan bygges|hvem det passer|vinkling)\b/.test(text);
+  const continuation = /\b(fokuser|livet i|sett inn bolig|kan bygges|kan leveres|hvem det passer|vinkling|store tomter)\b/.test(text);
   return Boolean(brand && focus && continuation);
 }
 
