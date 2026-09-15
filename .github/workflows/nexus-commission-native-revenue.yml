@@ -8,6 +8,8 @@ on:
       - "src/lib/nexus-real-estate-priority.ts"
       - "src/lib/nexus-real-estate-priority.test.ts"
       - "src/lib/nexus-opportunity-direct-readers.ts"
+      - "src/lib/revenue/command.ts"
+      - "src/lib/revenue/command.test.ts"
       - "src/app/api/revenue/today/route.ts"
       - "src/app/api/revenue/today/commission-truth.contract.test.ts"
       - ".github/workflows/nexus-commission-native-revenue.yml"
@@ -20,6 +22,8 @@ on:
       - "src/lib/nexus-real-estate-priority.ts"
       - "src/lib/nexus-real-estate-priority.test.ts"
       - "src/lib/nexus-opportunity-direct-readers.ts"
+      - "src/lib/revenue/command.ts"
+      - "src/lib/revenue/command.test.ts"
       - "src/app/api/revenue/today/route.ts"
       - "src/app/api/revenue/today/commission-truth.contract.test.ts"
       - ".github/workflows/nexus-commission-native-revenue.yml"
@@ -43,5 +47,6 @@ jobs:
           npx tsx --test
           src/lib/revenue/commission-truth.test.ts
           src/lib/nexus-real-estate-priority.test.ts
+          src/lib/revenue/command.test.ts
           src/app/api/revenue/today/commission-truth.contract.test.ts
           src/lib/revenue/today.test.ts
