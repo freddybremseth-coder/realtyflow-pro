@@ -7,13 +7,16 @@ import {
   type AccessRole,
 } from "@/lib/access-control";
 
+const PUBLIC_EXACT_PATHS = new Set([
+  "/api/properties",
+]);
+
 const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/reset-password",
   "/reset-password",
-  "/api/properties",
   "/api/plots",
   "/api/area-profiles",
   "/api/public/version",
@@ -81,7 +84,7 @@ const ROLE_HOME: Record<AccessRole, string> = {
 };
 
 function isPublicPath(pathname: string) {
-  return pathname.startsWith("/_next") || pathname === "/favicon.ico" || pathname === "/robots.txt" || PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  return pathname.startsWith("/_next") || pathname === "/favicon.ico" || pathname === "/robots.txt" || PUBLIC_EXACT_PATHS.has(pathname) || PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 function isRemasterProxyPath(pathname: string) {
