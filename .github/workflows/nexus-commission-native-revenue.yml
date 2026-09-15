@@ -12,6 +12,8 @@ on:
       - "src/lib/revenue/command.test.ts"
       - "src/app/api/revenue/today/route.ts"
       - "src/app/api/revenue/today/commission-truth.contract.test.ts"
+      - "src/app/(realty)/today/page.tsx"
+      - "src/app/(realty)/today/commission-native-ui.contract.test.ts"
       - ".github/workflows/nexus-commission-native-revenue.yml"
   push:
     branches:
@@ -26,6 +28,8 @@ on:
       - "src/lib/revenue/command.test.ts"
       - "src/app/api/revenue/today/route.ts"
       - "src/app/api/revenue/today/commission-truth.contract.test.ts"
+      - "src/app/(realty)/today/page.tsx"
+      - "src/app/(realty)/today/commission-native-ui.contract.test.ts"
       - ".github/workflows/nexus-commission-native-revenue.yml"
 
 jobs:
@@ -49,4 +53,5 @@ jobs:
           src/lib/nexus-real-estate-priority.test.ts
           src/lib/revenue/command.test.ts
           src/app/api/revenue/today/commission-truth.contract.test.ts
+          src/app/(realty)/today/commission-native-ui.contract.test.ts
           src/lib/revenue/today.test.ts
