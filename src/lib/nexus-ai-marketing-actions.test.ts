@@ -31,6 +31,27 @@ test("direct SoMe request resolves Zen Eco Homes, Biar and both Meta channels", 
   assert.match(proposals[0].description, /Ingenting publiseres/);
 });
 
+test("operator's broad inland Spain prompt creates a governed Zen Eco Homes campaign action", () => {
+  const message = "Start SoMe kampanje med å fortelle om innlandet i Spania og om mulighetene for å bygge bolig der. Legg ved eksempel v boliger som kan leveres der på store tomter. Zenecohomes";
+  assert.equal(messageRequestsMarketingCampaign(message), true);
+  assert.deepEqual(resolveNexusMarketingBrand(message), { id: "zeneco", name: "Zen Eco Homes" });
+  assert.equal(resolveNexusMarketingFocus(message), "innlandet i Spania");
+  assert.deepEqual(resolveNexusMarketingChannels(message), ["instagram", "facebook"]);
+
+  const proposals = buildNexusMarketingActionProposals({ message });
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].type, "prepare_marketing_campaign");
+  assert.equal(proposals[0].brandId, "zeneco");
+  assert.equal(proposals[0].focus, "innlandet i Spania");
+  assert.match(proposals[0].label, /innlandet i Spania/);
+  assert.match(proposals[0].requestText, /store tomter/);
+});
+
+test("broad inland aliases remain geographic focuses", () => {
+  assert.equal(resolveNexusMarketingFocus("Lag SoMe-kampanje om Costa Blanca inland for Zen Eco Homes"), "Costa Blanca inland");
+  assert.equal(resolveNexusMarketingFocus("Start kampanje om Alicante innland for Zen Eco Homes"), "Alicante innland");
+});
+
 test("multi-turn marketing continuation combines earlier request with operator detail", () => {
   const current = "zen eco homes, og sett inn bolig som kan bygges der, men fokuser på livet i Biar, hva det kan bygges, hvem det passer for";
   const context = ["kan du markedsføre Biar i SoME", current].join("\n");
