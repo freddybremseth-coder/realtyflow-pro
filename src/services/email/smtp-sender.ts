@@ -7,7 +7,8 @@ export interface SmtpConfig {
   port: number;
   secure: boolean;
   email: string;
-  password: string;
+  password?: string;
+  accessToken?: string;
   displayName?: string;
 }
 
@@ -46,10 +47,27 @@ export interface SendResult {
   error?: string;
 }
 
-// ─── SMTP Sender ─────────────────────────────────────────────────────
+function smtpAuth(config: SmtpConfig) {
+  if (config.accessToken) {
+    return {
+      type: "OAuth2" as const,
+      user: config.email,
+      accessToken: config.accessToken,
+    };
+  }
+  if (config.password) {
+    return {
+      user: config.email,
+      pass: config.password,
+    };
+  }
+  throw new Error(`SMTP credential missing for ${config.email}`);
+}
+
+// ─── SMTP Sender ──────────────────────────────────────────────────────
 
 /**
- * Send an email via SMTP using nodemailer.
+ * Send an email via SMTP using password auth or Gmail XOAUTH2.
  * Supports reply threading via In-Reply-To and References headers.
  */
 export async function sendEmail(
@@ -61,10 +79,7 @@ export async function sendEmail(
       host: config.host,
       port: config.port,
       secure: config.secure,
-      auth: {
-        user: config.email,
-        pass: config.password,
-      },
+      auth: smtpAuth(config),
       // Timeout settings for serverless
       connectionTimeout: 10000,
       greetingTimeout: 5000,
@@ -133,10 +148,7 @@ export async function verifySmtpConnection(
       host: config.host,
       port: config.port,
       secure: config.secure,
-      auth: {
-        user: config.email,
-        pass: config.password,
-      },
+      auth: smtpAuth(config),
       connectionTimeout: 10000,
     });
 

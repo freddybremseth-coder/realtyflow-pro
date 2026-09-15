@@ -8,7 +8,8 @@ export interface ImapConfig {
   port: number;
   secure: boolean;
   email: string;
-  password: string;
+  password?: string;
+  accessToken?: string;
 }
 
 export interface EmailAddress {
@@ -35,6 +36,12 @@ export type HistoricalMailboxRole = "inbox" | "sent";
 export interface HistoricalFetchedEmail extends FetchedEmail {
   mailboxRole: HistoricalMailboxRole;
   mailboxPath: string;
+}
+
+function imapAuth(config: ImapConfig) {
+  if (config.accessToken) return { user: config.email, accessToken: config.accessToken };
+  if (config.password) return { user: config.email, pass: config.password };
+  throw new Error(`IMAP credential missing for ${config.email}`);
 }
 
 async function parsedContent(source: Buffer | undefined) {
@@ -66,7 +73,7 @@ async function safeLogout(client: ImapFlow) {
   }
 }
 
-// ─── IMAP Reader ─────────────────────────────────────────────────────
+// ─── IMAP Reader ──────────────────────────────────────────────────────
 
 /**
  * Fetch recent emails from an IMAP mailbox.
@@ -81,10 +88,7 @@ export async function fetchRecentEmails(
     host: config.host,
     port: config.port,
     secure: config.secure,
-    auth: {
-      user: config.email,
-      pass: config.password,
-    },
+    auth: imapAuth(config),
     logger: false,
   });
 
@@ -172,10 +176,7 @@ export async function fetchHistoricalMailboxEmails(
     host: config.host,
     port: config.port,
     secure: config.secure,
-    auth: {
-      user: config.email,
-      pass: config.password,
-    },
+    auth: imapAuth(config),
     logger: false,
   });
 

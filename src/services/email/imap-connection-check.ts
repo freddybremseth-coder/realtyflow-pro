@@ -9,6 +9,12 @@ export interface ImapConnectionCheckResult {
   sentPath: string | null;
 }
 
+function imapAuth(config: ImapConfig) {
+  if (config.accessToken) return { user: config.email, accessToken: config.accessToken };
+  if (config.password) return { user: config.email, pass: config.password };
+  throw new Error(`IMAP credential missing for ${config.email}`);
+}
+
 /**
  * Authenticate and inspect mailbox metadata only.
  * Does not fetch message envelopes/bodies and does not mutate the mailbox.
@@ -20,10 +26,7 @@ export async function checkImapConnection(
     host: config.host,
     port: config.port,
     secure: config.secure,
-    auth: {
-      user: config.email,
-      pass: config.password,
-    },
+    auth: imapAuth(config),
     logger: false,
   });
 

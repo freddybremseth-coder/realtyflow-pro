@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { decryptPassword } from "@/services/email/crypto";
+import { buildSmtpConfigFromAccount } from "@/services/email/account-auth";
 import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
-import { sendEmail, type OutgoingAttachment, type SmtpConfig } from "@/services/email/smtp-sender";
+import { sendEmail, type OutgoingAttachment } from "@/services/email/smtp-sender";
 
 /**
  * Send a one-off email from a brand's configured SMTP account.
@@ -44,15 +44,10 @@ export async function sendBrandEmail(
 
   if (!config) return { success: false, skipped: true, error: "No active email config for brand" };
 
-  const password = decryptPassword(config.encrypted_password, config.encryption_iv);
-  const smtpConfig: SmtpConfig = {
-    host: config.smtp_host,
-    port: config.smtp_port,
-    secure: config.smtp_secure,
-    email: config.email_address,
-    password,
-    displayName: params.fromName || config.display_name || undefined,
-  };
+  const smtpConfig = await buildSmtpConfigFromAccount(
+    config,
+    params.fromName || config.display_name || undefined,
+  );
 
   const result = await sendEmail(smtpConfig, {
     to: params.to,

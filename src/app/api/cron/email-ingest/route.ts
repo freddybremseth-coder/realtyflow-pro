@@ -4,8 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { describeImapError, isTransientImapError } from "@/lib/email/imap-error-policy";
+import { buildImapConfigFromAccount } from "@/services/email/account-auth";
 import { fetchRecentEmails, type ImapConfig } from "@/services/email/imap-reader";
-import { decryptPassword } from "@/services/email/crypto";
 import { insertRevenueEvent } from "@/lib/revenue/events";
 import { buildEmailReceivedRevenueEventInput, normalizeEmailAddresses } from "@/lib/revenue/email-events";
 
@@ -61,8 +61,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const password = decryptPassword(config.encrypted_password, config.encryption_iv);
-      const imap: ImapConfig = { host: config.imap_host, port: config.imap_port, secure: config.imap_secure, email: config.email_address, password };
+      const imap = await buildImapConfigFromAccount(config);
       const sinceDays = config.last_fetched_at ? Math.max(1, Math.min(30, Math.ceil((now - new Date(config.last_fetched_at).getTime()) / 86_400_000))) : 7;
       const fetched = await fetchRecentEmailsWithRetry(imap, 100, sinceDays);
       totalFetched += fetched.length;

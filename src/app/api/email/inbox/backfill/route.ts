@@ -13,12 +13,11 @@ import {
   buildEmailHistoryBackfillPreviewCookieValue,
   readEmailHistoryBackfillPreviewCookieValue,
 } from "@/lib/email/history-backfill-preview-cookie";
-import { decryptPassword } from "@/services/email/crypto";
+import { buildImapConfigFromAccount } from "@/services/email/account-auth";
 import {
   fetchHistoricalMailboxEmails,
   type HistoricalFetchedEmail,
   type HistoricalMailboxRole,
-  type ImapConfig,
 } from "@/services/email/imap-reader";
 
 export const dynamic = "force-dynamic";
@@ -38,12 +37,8 @@ function clearPreviewCookie(response: NextResponse) {
 }
 
 /**
- * POST /api/email/inbox/backfill
  * Controlled historical mailbox import. Preview is the default and performs no writes.
  * Apply requires the explicit confirmation phrase and a fingerprint from a matching preview.
- * Historical messages are stored read + archived so they can be reviewed by Nexus
- * without flooding the operational unread inbox. This route never sends email and
- * never advances brand_email_configs.last_fetched_at.
  */
 export async function POST(req: NextRequest) {
   const adminError = await requireAdminApi(req);
@@ -56,7 +51,7 @@ export async function POST(req: NextRequest) {
     if (body.mode === "apply" && !body.preview_fingerprint && requestedBrandId) {
       const cookieFingerprint = readEmailHistoryBackfillPreviewCookieValue(
         req.cookies.get(EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE)?.value,
-        requestedBrandId
+        requestedBrandId,
       );
       if (cookieFingerprint) body.preview_fingerprint = cookieFingerprint;
     }
@@ -75,26 +70,21 @@ export async function POST(req: NextRequest) {
       .eq("is_active", true);
 
     if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
-    if (!configs?.length) {
-      return NextResponse.json({ error: "No active email config found for this brand" }, { status: 404 });
-    }
+    if (!configs?.length) return NextResponse.json({ error: "No active email config found for this brand" }, { status: 404 });
 
     const readinessGate = evaluateEmailHistoryBackfillReadiness(configs);
     if (!readinessGate.ok) {
-      return NextResponse.json(
-        {
-          error: "Email history backfill is blocked until every active email account is ready",
-          blocked_accounts: readinessGate.blockedAccounts,
-          safety: {
-            readinessRequiredServerSide: true,
-            imapAttempted: false,
-            databaseMessagesRead: false,
-            databaseMessagesWritten: false,
-            emailSent: false,
-          },
+      return NextResponse.json({
+        error: "Email history backfill is blocked until every active email account is ready",
+        blocked_accounts: readinessGate.blockedAccounts,
+        safety: {
+          readinessRequiredServerSide: true,
+          imapAttempted: false,
+          databaseMessagesRead: false,
+          databaseMessagesWritten: false,
+          emailSent: false,
         },
-        { status: 409 }
-      );
+      }, { status: 409 });
     }
 
     const { data: existingMessages, error: existingError } = await supabase
@@ -124,20 +114,13 @@ export async function POST(req: NextRequest) {
 
     for (const config of configs) {
       try {
-        const password = decryptPassword(config.encrypted_password, config.encryption_iv);
-        const imapConfig: ImapConfig = {
-          host: config.imap_host,
-          port: config.imap_port,
-          secure: config.imap_secure,
-          email: config.email_address,
-          password,
-        };
+        const imapConfig = await buildImapConfigFromAccount(config);
         const roles: HistoricalMailboxRole[] = request.includeSent ? ["inbox", "sent"] : ["inbox"];
         const mailboxResults = await Promise.all(
           roles.map(async (role) => ({
             role,
             messages: await fetchHistoricalMailboxEmails(imapConfig, role, request.maxMessages, request.sinceDays),
-          }))
+          })),
         );
 
         const mailboxes: Partial<Record<HistoricalMailboxRole, number>> = {};
@@ -170,8 +153,7 @@ export async function POST(req: NextRequest) {
 
         const accountIndex = accountResults.length;
         for (const message of newMessages) {
-          const messageId = stableMessageId(message)!;
-          candidateMessageIds.push(messageId);
+          candidateMessageIds.push(stableMessageId(message)!);
           pendingMessages.push({ message, accountIndex });
         }
 
@@ -204,10 +186,7 @@ export async function POST(req: NextRequest) {
     }
 
     const accountGate = evaluateEmailHistoryBackfillAccountGate(accountResults);
-    const writeApplyAudit = async (
-      status: "success" | "blocked" | "failed",
-      reason?: string
-    ) => {
+    const writeApplyAudit = async (status: "success" | "blocked" | "failed", reason?: string) => {
       if (request.mode !== "apply") return;
       const details = buildEmailHistoryBackfillAuditDetails({
         brandId: request.brandId,
@@ -237,20 +216,17 @@ export async function POST(req: NextRequest) {
     if (request.mode === "apply" && !accountGate.ok) {
       const reason = "One or more active email accounts failed during historical fetch";
       await writeApplyAudit("blocked", reason);
-      const response = NextResponse.json(
-        {
-          error: "Backfill apply is blocked because one or more active email accounts failed during historical fetch. Run preview again after every account succeeds.",
-          account_fetch_complete: false,
-          failed_accounts: accountGate.failedAccounts,
-          candidates,
-          safety: {
-            allActiveAccountFetchesRequiredForApply: true,
-            databaseMessagesWritten: false,
-            emailSent: false,
-          },
+      const response = NextResponse.json({
+        error: "Backfill apply is blocked because one or more active email accounts failed during historical fetch. Run preview again after every account succeeds.",
+        account_fetch_complete: false,
+        failed_accounts: accountGate.failedAccounts,
+        candidates,
+        safety: {
+          allActiveAccountFetchesRequiredForApply: true,
+          databaseMessagesWritten: false,
+          emailSent: false,
         },
-        { status: 409 }
-      );
+      }, { status: 409 });
       clearPreviewCookie(response);
       return response;
     }
@@ -266,19 +242,16 @@ export async function POST(req: NextRequest) {
     if (request.mode === "apply" && request.previewFingerprint !== previewFingerprint) {
       const reason = "Preview fingerprint no longer matches the current candidate set";
       await writeApplyAudit("blocked", reason);
-      const response = NextResponse.json(
-        {
-          error: "Backfill preview is stale or no longer matches the current candidate set. Run preview again before apply.",
-          preview_fingerprint_matches: false,
-          candidates,
-          safety: {
-            previewFingerprintRequired: true,
-            databaseMessagesWritten: false,
-            emailSent: false,
-          },
+      const response = NextResponse.json({
+        error: "Backfill preview is stale or no longer matches the current candidate set. Run preview again before apply.",
+        preview_fingerprint_matches: false,
+        candidates,
+        safety: {
+          previewFingerprintRequired: true,
+          databaseMessagesWritten: false,
+          emailSent: false,
         },
-        { status: 409 }
-      );
+      }, { status: 409 });
       clearPreviewCookie(response);
       return response;
     }
@@ -326,8 +299,7 @@ export async function POST(req: NextRequest) {
       failed_accounts: accountGate.failedAccounts,
       preview_fingerprint: previewFingerprint,
       preview_fingerprint_matches: request.mode === "apply" ? true : null,
-      preview_token_expires_in_seconds:
-        request.mode === "preview" ? EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS : 0,
+      preview_token_expires_in_seconds: request.mode === "preview" ? EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS : 0,
       fetched,
       candidates,
       duplicates,
@@ -363,7 +335,7 @@ export async function POST(req: NextRequest) {
           secure: process.env.NODE_ENV === "production",
           maxAge: EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
           path: "/api/email/inbox/backfill",
-        }
+        },
       );
     } else {
       clearPreviewCookie(response);
@@ -372,9 +344,6 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (error) {
     console.error("[Email History Backfill]", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Internal error" }, { status: 500 });
   }
 }

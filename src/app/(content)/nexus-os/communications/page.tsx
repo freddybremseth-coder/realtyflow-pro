@@ -119,11 +119,25 @@ function inferProvider(account: EmailAccount): Provider {
   return "custom";
 }
 
+function oauthErrorLabel(code: string) {
+  const labels: Record<string, string> = {
+    gmail_account_mismatch: "Du valgte en annen Google-konto enn e-postadressen som skulle kobles. Velg riktig Google Workspace-konto.",
+    gmail_imap_oauth_test_failed: "Google ga tilgang, men Gmail IMAP kunne ikke verifiseres. Kontroller at IMAP er tillatt i Google Workspace.",
+    no_refresh_token: "Google returnerte ikke varig tilgang. Prøv Logg inn med Google på nytt og godkjenn tilgangen.",
+    state_invalid_or_expired: "Google-innloggingen utløp eller ble allerede brukt. Start tilkoblingen på nytt.",
+    gmail_token_persist_failed: "Google-tilgangen ble godkjent, men kunne ikke lagres sikkert. Kontroller OAuth-konfigurasjonen.",
+    gmail_email_account_not_found: "E-postkontoen finnes ikke lenger i RealtyFlow.",
+    gmail_email_account_binding_mismatch: "Google-kontoen matcher ikke RealtyFlow-kontoen som startet tilkoblingen.",
+  };
+  return labels[code] || `Google-tilkoblingen feilet: ${code}`;
+}
+
 export default function NexusCommunicationsPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [brand, setBrand] = useState("all");
   const [repair, setRepair] = useState<EmailAccount | null>(null);
   const [provider, setProvider] = useState<Provider>("hostinger");
@@ -156,6 +170,12 @@ export default function NexusCommunicationsPage() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthSuccess = params.get("oauth_success") === "true" && params.get("platform") === "gmail";
+    const oauthError = params.get("oauth_error");
+    if (oauthSuccess) setNotice("Google Workspace er koblet til. Nexus har verifisert Gmail og aktivert automatisk e-posthenting.");
+    if (oauthError) setError(oauthErrorLabel(oauthError));
+
     void load();
     const timer = window.setInterval(() => void load({ quiet: true }), 30_000);
     const onFocus = () => void load({ quiet: true });
@@ -204,6 +224,8 @@ export default function NexusCommunicationsPage() {
 
   function chooseProvider(nextProvider: Provider) {
     setProvider(nextProvider);
+    setRepairPassword("");
+    setRepairMessage("");
     if (nextProvider === "hostinger") {
       setImapHost("imap.hostinger.com");
       setImapPort("993");
@@ -221,8 +243,20 @@ export default function NexusCommunicationsPage() {
     }
   }
 
+  function connectGoogle() {
+    if (!repair || !repairEmail.trim()) return;
+    const params = new URLSearchParams({
+      brand_id: repair.brand_id,
+      service: "gmail",
+      account_id: repair.id,
+      email: repairEmail.trim().toLowerCase(),
+      return_to: "/nexus-os/communications",
+    });
+    window.location.assign(`/api/oauth/google?${params.toString()}`);
+  }
+
   async function reconnect() {
-    if (!repair) return;
+    if (!repair || provider === "gmail") return;
     setRepairBusy(true);
     setRepairMessage("");
     try {
@@ -275,10 +309,10 @@ export default function NexusCommunicationsPage() {
   return (
     <div className="mx-auto max-w-[1500px] space-y-6 p-4 text-slate-950 sm:p-6">
       <header className="rounded-3xl border border-cyan-800 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-6 text-white shadow-xl">
-        <div className="text-xs font-black uppercase tracking-[.22em] text-cyan-200">Nexus OS · Communications</div>
+        <div className="text-xs font-black uppercase tracking-[.22em] text-cyan-200">Nexus OS · E-post & kommunikasjon</div>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-black text-white">Communications Director</h1>
+            <h1 className="text-3xl font-black text-white">E-post & kommunikasjon</h1>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-200">Prioritert innboks, AI-analyse, svarutkast, nurture og kontohelse. Nexus forbereder arbeidet 24/7; sending styres separat av Runtime og Autonomy.</p>
             <p className="mt-2 text-xs text-cyan-100">Status sist hentet: {fmtDate(lastLoadedAt)}</p>
           </div>
@@ -289,6 +323,7 @@ export default function NexusCommunicationsPage() {
         </div>
       </header>
 
+      {notice && <div className="rounded-xl border border-emerald-400 bg-emerald-50 p-4 text-sm font-semibold text-emerald-950"><CheckCircle2 className="mr-2 inline h-4 w-4" />{notice}</div>}
       {error && <div className="rounded-xl border border-rose-400 bg-rose-50 p-4 text-sm font-semibold text-rose-950"><AlertTriangle className="mr-2 inline h-4 w-4" />{error}</div>}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -313,7 +348,7 @@ export default function NexusCommunicationsPage() {
 
       <section className="rounded-2xl border border-slate-300 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-black">E-postkontoer</h2>
-        <p className="mt-1 text-sm text-slate-600">Reparer kontoer her. Nexus tester IMAP før credential lagres. Bruk Custom / Other når domenet ikke ligger hos Hostinger eller Gmail.</p>
+        <p className="mt-1 text-sm text-slate-600">Gmail og Google Workspace kobles sikkert med Google OAuth. Hostinger og andre mailservere kan fortsatt bruke lagrede credentials.</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {(data?.emailAccounts || []).map((account) => <div key={account.id} className={`rounded-xl border p-4 ${healthStyle(account.health_status)}`}><div className="flex items-start justify-between gap-3"><div><div className="font-black">{BRAND_LABELS[account.brand_id] || account.brand_id}</div><div className="mt-1 text-xs opacity-80">{account.email_address}</div>{account.imap_host && <div className="mt-1 text-[11px] opacity-70">IMAP: {account.imap_host}</div>}</div><span className="rounded-full border border-current/20 bg-white/70 px-2 py-1 text-[10px] font-black uppercase">{healthLabel(account.health_status)}</span></div><div className="mt-3 text-xs opacity-80">Sist hentet: {fmtDate(account.last_fetched_at)}</div>{account.health_message && <div className="mt-3 rounded-lg border border-current/20 bg-white/70 p-2 text-xs font-semibold">{account.health_message}</div>}<div className="mt-2 text-xs opacity-80">Feil på rad: {Number(account.consecutive_failures || 0)}</div>{(account.needsReconnect || account.health_status !== "healthy") && <button onClick={() => openRepair(account)} className="mt-3 inline-flex items-center gap-1 rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white"><Wrench className="h-3.5 w-3.5" />Koble/reparer</button>}{account.auto_fetch_paused_by_system && <div className="mt-2 flex items-center gap-1 text-xs font-black"><PauseCircle className="h-3.5 w-3.5" />Auto-fetch stoppet av Nexus</div>}</div>)}
         </div>
@@ -326,7 +361,7 @@ export default function NexusCommunicationsPage() {
 
       <div className="flex gap-3 rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" /><div><b>Standard:</b> Nexus kan forberede og lære 24/7. Autonom sending krever separat policy og skal ikke aktiveres av reconnect.</div></div>
 
-      {repair && <div className="fixed inset-0 z-[90] flex items-end bg-slate-950/70 p-3 sm:items-center sm:justify-center"><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-950 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black uppercase text-cyan-800">Nexus e-post reconnect</div><h3 className="mt-1 text-xl font-black">{BRAND_LABELS[repair.brand_id] || repair.brand_id}</h3><div className="text-sm text-slate-600">Eksisterende passord vises aldri. Kontoen lagres først etter vellykket IMAP-test.</div></div><button onClick={() => setRepair(null)} className="rounded-lg border border-slate-300 p-2"><X className="h-4 w-4" /></button></div><div className="mt-5 space-y-4"><label className="block"><span className="text-xs font-black uppercase text-slate-600">Provider</span><select value={provider} onChange={(event) => chooseProvider(event.target.value as Provider)} className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2.5"><option value="hostinger">Hostinger</option><option value="gmail">Gmail / Google Workspace</option><option value="custom">Custom / Other</option></select></label><label className="block"><span className="text-xs font-black uppercase text-slate-600">E-postadresse</span><input value={repairEmail} onChange={(event) => setRepairEmail(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 px-3 py-2.5" /></label>{provider === "custom" && <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4"><div className="mb-3 text-sm font-black text-cyan-950">Egen mailserver</div><div className="grid gap-3 sm:grid-cols-2"><label className="block sm:col-span-2"><span className="text-xs font-black uppercase text-slate-600">IMAP host</span><input value={imapHost} onChange={(event) => setImapHost(event.target.value)} placeholder="imap.example.com" className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="block"><span className="text-xs font-black uppercase text-slate-600">IMAP port</span><input type="number" value={imapPort} onChange={(event) => setImapPort(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="flex items-end gap-2 pb-2"><input type="checkbox" checked={imapSecure} onChange={(event) => setImapSecure(event.target.checked)} /><span className="text-sm font-semibold">IMAP SSL/TLS</span></label><label className="block sm:col-span-2"><span className="text-xs font-black uppercase text-slate-600">SMTP host</span><input value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} placeholder="smtp.example.com" className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="block"><span className="text-xs font-black uppercase text-slate-600">SMTP port</span><input type="number" value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="flex items-end gap-2 pb-2"><input type="checkbox" checked={smtpSecure} onChange={(event) => setSmtpSecure(event.target.checked)} /><span className="text-sm font-semibold">SMTP SSL/TLS</span></label></div></div>}<label className="block"><span className="text-xs font-black uppercase text-slate-600">Passord / app-passord</span><input type="password" autoComplete="new-password" value={repairPassword} onChange={(event) => setRepairPassword(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 px-3 py-2.5" /></label>{repair.brand_id === "soleada" && provider === "hostinger" && <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950">Soleada-adressen finnes ikke i Hostinger-mailkontoen Nexus er koblet til. Velg Custom / Other hvis Soleada bruker en annen leverandør.</div>}{repairMessage && <div className={`rounded-xl border p-3 text-sm font-semibold ${repairMessage.startsWith("Tilkoblingen er") ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-rose-300 bg-rose-50 text-rose-950"}`}>{repairMessage}</div>}<button onClick={() => void reconnect()} disabled={repairBusy || !repairPassword || !repairEmail || (provider === "custom" && (!imapHost || !smtpHost))} className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white disabled:opacity-50">{repairBusy ? <><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Tester tilkobling…</> : "Test og aktiver"}</button></div></div></div>}
+      {repair && <div className="fixed inset-0 z-[90] flex items-end bg-slate-950/70 p-3 sm:items-center sm:justify-center"><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-950 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black uppercase text-cyan-800">E-posttilkobling</div><h3 className="mt-1 text-xl font-black">{BRAND_LABELS[repair.brand_id] || repair.brand_id}</h3><div className="text-sm text-slate-600">{provider === "gmail" ? "Google-passordet ditt skal aldri legges inn i RealtyFlow." : "Eksisterende passord vises aldri. Kontoen lagres først etter vellykket IMAP-test."}</div></div><button onClick={() => setRepair(null)} className="rounded-lg border border-slate-300 p-2"><X className="h-4 w-4" /></button></div><div className="mt-5 space-y-4"><label className="block"><span className="text-xs font-black uppercase text-slate-600">Provider</span><select value={provider} onChange={(event) => chooseProvider(event.target.value as Provider)} className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2.5"><option value="hostinger">Hostinger</option><option value="gmail">Gmail / Google Workspace</option><option value="custom">Custom / Other</option></select></label><label className="block"><span className="text-xs font-black uppercase text-slate-600">E-postadresse</span><input value={repairEmail} onChange={(event) => setRepairEmail(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 px-3 py-2.5" /></label>{provider === "gmail" ? <><div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><div className="font-black">Sikker Google-tilkobling</div><p className="mt-2 leading-6">Du sendes til Google for å velge kontoen og godkjenne e-posttilgang. RealtyFlow lagrer et kryptert OAuth refresh-token, ikke Google-passordet. Nexus bruker dette til IMAP og SMTP også når du ikke er innlogget.</p></div><button onClick={connectGoogle} disabled={!repairEmail.trim()} className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ShieldCheck className="mr-2 inline h-4 w-4" />Logg inn med Google</button></> : <>{provider === "custom" && <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4"><div className="mb-3 text-sm font-black text-cyan-950">Egen mailserver</div><div className="grid gap-3 sm:grid-cols-2"><label className="block sm:col-span-2"><span className="text-xs font-black uppercase text-slate-600">IMAP host</span><input value={imapHost} onChange={(event) => setImapHost(event.target.value)} placeholder="imap.example.com" className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="block"><span className="text-xs font-black uppercase text-slate-600">IMAP port</span><input type="number" value={imapPort} onChange={(event) => setImapPort(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="flex items-end gap-2 pb-2"><input type="checkbox" checked={imapSecure} onChange={(event) => setImapSecure(event.target.checked)} /><span className="text-sm font-semibold">IMAP SSL/TLS</span></label><label className="block sm:col-span-2"><span className="text-xs font-black uppercase text-slate-600">SMTP host</span><input value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} placeholder="smtp.example.com" className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="block"><span className="text-xs font-black uppercase text-slate-600">SMTP port</span><input type="number" value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 bg-white px-3 py-2" /></label><label className="flex items-end gap-2 pb-2"><input type="checkbox" checked={smtpSecure} onChange={(event) => setSmtpSecure(event.target.checked)} /><span className="text-sm font-semibold">SMTP SSL/TLS</span></label></div></div>}<label className="block"><span className="text-xs font-black uppercase text-slate-600">Passord / app-passord</span><input type="password" autoComplete="new-password" value={repairPassword} onChange={(event) => setRepairPassword(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-400 px-3 py-2.5" /></label>{repair.brand_id === "soleada" && provider === "hostinger" && <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950">Soleada er konfigurert som Google Workspace. Velg Gmail / Google Workspace og bruk «Logg inn med Google».</div>}{repairMessage && <div className={`rounded-xl border p-3 text-sm font-semibold ${repairMessage.startsWith("Tilkoblingen er") ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-rose-300 bg-rose-50 text-rose-950"}`}>{repairMessage}</div>}<button onClick={() => void reconnect()} disabled={repairBusy || !repairPassword || !repairEmail || (provider === "custom" && (!imapHost || !smtpHost))} className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white disabled:opacity-50">{repairBusy ? <><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Tester tilkobling…</> : "Test og aktiver"}</button></>}</div></div></div>}
     </div>
   );
 }

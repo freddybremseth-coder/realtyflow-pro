@@ -3,8 +3,11 @@ name: Email Provider Config
 on:
   pull_request:
     paths:
-      - "src/services/email/provider-config.ts"
-      - "src/services/email/provider-config.test.ts"
+      - "src/services/email/**"
+      - "src/app/api/email/**"
+      - "src/app/api/gmail/**"
+      - "src/app/api/oauth/gmail/**"
+      - "src/app/api/oauth/google/**"
       - "src/app/api/nexus/communications/email-account/route.ts"
       - "src/app/(content)/nexus-os/communications/page.tsx"
       - ".github/workflows/email-provider-config.yml"
@@ -19,4 +22,4 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx tsx src/services/email/provider-config.test.ts
+      - run: node --import tsx --test src/services/email/provider-config.test.ts src/services/email/google-mail-oauth.contract.test.ts
