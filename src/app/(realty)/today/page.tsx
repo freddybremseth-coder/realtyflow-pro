@@ -29,7 +29,11 @@ interface RevenuePriority {
   brandId: string;
   source: string | null;
   stage: string;
-  value: number;
+  transactionValue: number;
+  commissionRevenue: number | null;
+  commissionPercent: number | null;
+  commissionKnown: boolean;
+  commissionSource: "explicit_amount" | "explicit_rate" | "unknown";
   propertyInterest: string | null;
   kind: "new" | "overdue" | "hot" | "closing" | "followup";
   priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -79,6 +83,10 @@ interface RevenueInboxData {
     closingOpportunities: number;
     missingNextAction: number;
     totalPipelineValue: number;
+    knownCommissionRevenue: number;
+    commissionKnownCount: number;
+    commissionUnknownCount: number;
+    commissionCoveragePct: number;
     openWorkItems: number;
   };
   priorities: RevenuePriority[];
@@ -108,8 +116,10 @@ const STAGE_LABELS: Record<string, string> = {
   NEW: "Ny",
   CONTACT: "Kontaktet",
   QUALIFIED: "Kvalifisert",
+  MATCHING: "Matching",
   VIEWING: "Visning",
   NEGOTIATION: "Forhandling",
+  RESERVED: "Reservert",
   ON_HOLD: "På vent",
 };
 
@@ -232,7 +242,9 @@ export default function RevenueTodayPage() {
         { label: "Forsinket", value: data.summary.overdueFollowups, icon: Clock3, tone: "text-red-300" },
         { label: "Varme signaler", value: data.summary.hotSignals, icon: Flame, tone: "text-orange-300" },
         { label: "Mot closing", value: data.summary.closingOpportunities, icon: Target, tone: "text-emerald-300" },
-        { label: "Pipeline-verdi", value: formatCurrency(data.summary.totalPipelineValue), icon: CircleDollarSign, tone: "text-amber-300" },
+        { label: "Kjent provisjon", value: formatCurrency(data.summary.knownCommissionRevenue), icon: CircleDollarSign, tone: "text-emerald-300" },
+        { label: "Provisjonsdekning", value: `${data.summary.commissionCoveragePct}%`, icon: CheckCircle2, tone: "text-cyan-300" },
+        { label: "Transaksjonsverdi", value: formatCurrency(data.summary.totalPipelineValue), icon: Building2, tone: "text-slate-300" },
       ]
     : [];
 
@@ -245,7 +257,7 @@ export default function RevenueTodayPage() {
           </div>
           <h1 className="text-3xl font-bold text-white">I dag</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
-            Kundene som trenger handling nå, rangert etter kjøpssignal, forsinkelse, pipeline-stadium og potensiell verdi.
+            Kundene som trenger handling nå, rangert etter kjøpssignal, forsinkelse, pipeline-stadium og dokumentert provisjon. Transaksjonsverdi vises kun som kontekst.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -282,7 +294,7 @@ export default function RevenueTodayPage() {
         </div>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         {summaryCards.map((card) => {
           const Icon = card.icon;
           return (
@@ -374,9 +386,18 @@ export default function RevenueTodayPage() {
                       </span>
                       <span className="text-xs font-semibold text-emerald-300">Score {item.score}/100</span>
                     </div>
-                    <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                    <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
                       <h3 className="truncate text-lg font-semibold text-white">{item.contactName}</h3>
-                      {item.value > 0 && <span className="text-sm font-semibold text-amber-300">{formatCurrency(item.value)}</span>}
+                      {item.commissionKnown && item.commissionRevenue ? (
+                        <span className="text-sm font-semibold text-emerald-300">
+                          Provisjon {formatCurrency(item.commissionRevenue)}{item.commissionPercent ? ` · ${item.commissionPercent}%` : ""}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-medium text-slate-500">Provisjon ikke registrert</span>
+                      )}
+                      {item.transactionValue > 0 && (
+                        <span className="text-xs text-slate-500">Transaksjonsverdi {formatCurrency(item.transactionValue)}</span>
+                      )}
                     </div>
                     <p className="mt-1 text-sm text-slate-400">{item.propertyInterest || "Boliginteresse er ikke registrert"}</p>
                     <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
