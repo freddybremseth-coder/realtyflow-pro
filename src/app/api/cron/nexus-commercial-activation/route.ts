@@ -78,11 +78,38 @@ function evidenceRank(contact: ContactRow) {
   return preview.candidates.length;
 }
 
+function safeFailureCode(error: unknown) {
+  const raw = error && typeof error === "object" && "code" in error
+    ? String((error as { code?: unknown }).code || "")
+    : error instanceof Error
+      ? error.name
+      : "UNKNOWN_ERROR";
+  const normalized = raw.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_").slice(0, 80);
+  return normalized || "UNKNOWN_ERROR";
+}
+
+async function contactSnapshotCurrent(
+  client: { query: <T = Record<string, unknown>>(sql: string, values?: readonly unknown[]) => Promise<{ rows: T[] }> },
+  contact: ContactRow,
+  brand: string,
+) {
+  const checked = await client.query<{ eligible: boolean }>(
+    `select public.nexus_commercial_activation_contact_guard(
+       $1::uuid,
+       $2::text,
+       $3::timestamptz
+     ) as eligible`,
+    [contact.id, brand, contact.updated_at || null],
+  );
+  return Boolean(checked.rows[0]?.eligible);
+}
+
 async function ensureWorkItem(
-  client: { query: (sql: string, values?: readonly unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  client: { query: <T = Record<string, unknown>>(sql: string, values?: readonly unknown[]) => Promise<{ rows: T[] }> },
   input: {
     contactId: string;
     brandId: string;
+    expectedUpdatedAt: string | null;
     sourceId: string;
     title: string;
     description: string;
@@ -92,29 +119,36 @@ async function ensureWorkItem(
     metadata: Record<string, unknown>;
   },
 ) {
-  const existing = await client.query(
-    `select id::text from public.work_items where source_type='ai_agent' and source_id=$1 limit 1`,
-    [input.sourceId],
-  );
-  if (existing.rows[0]?.id) return { id: String(existing.rows[0].id), duplicate: true };
-
-  const inserted = await client.query(
-    `insert into public.work_items
-      (title,description,status,priority,brand_id,source_type,source_id,assigned_agent,next_action,ai_score,metadata)
-     values ($1,$2,'TO_DO',$3,$4,'ai_agent',$5,'nexus_buyer_intelligence',$6,$7,$8::jsonb)
-     returning id::text`,
+  const result = await client.query<{ id: string; inserted: boolean }>(
+    `select id::text, inserted
+       from public.ensure_nexus_commercial_activation_work_item(
+         $1::uuid,
+         $2::text,
+         $3::timestamptz,
+         $4::text,
+         $5::text,
+         $6::text,
+         $7::text,
+         $8::text,
+         $9::integer,
+         $10::jsonb
+       )`,
     [
+      input.contactId,
+      input.brandId,
+      input.expectedUpdatedAt,
+      input.sourceId,
       input.title,
       input.description,
-      input.priority,
-      input.brandId,
-      input.sourceId,
       input.nextAction,
+      input.priority,
       input.aiScore,
       JSON.stringify(input.metadata),
     ],
   );
-  return { id: String(inserted.rows[0]?.id || ""), duplicate: false };
+  const row = result.rows[0];
+  if (!row?.id) throw new Error("COMMERCIAL_ACTIVATION_WORK_ITEM_NOT_DURABLE");
+  return { id: String(row.id), duplicate: !row.inserted };
 }
 
 async function activateContact(contact: ContactRow) {
@@ -122,24 +156,16 @@ async function activateContact(contact: ContactRow) {
   if (!brand) return { status: "skipped_brand" as const };
 
   return withLeadIntelligenceTransaction(brand, async (client) => {
-    const locked = await client.query<ContactRow>(
-      `select id::text,name,email,phone,notes,property_interest,next_followup,pipeline_status,pipeline_value,
-              source,brand_id,brand,interactions,email_suppressed,do_not_contact,updated_at
-         from public.contacts
-        where id=$1::uuid
-        for update`,
-      [contact.id],
-    );
-    const current = locked.rows[0];
-    if (!current) return { status: "skipped_missing" as const };
-
-    const currentStage = String(current.pipeline_status || "").trim().toUpperCase();
-    const currentBrand = normalizedBrand(current);
-    if (!ACTIVE_STAGES.has(currentStage) || currentBrand !== brand) {
+    // The dedicated Lead Intelligence runtime role intentionally has no direct
+    // contacts/work_items privileges. Revalidate the service-role CRM snapshot
+    // through a narrow SECURITY DEFINER guard instead of widening that role.
+    if (!await contactSnapshotCurrent(client, contact, brand)) {
       return { status: "skipped_stale" as const };
     }
-    if (current.do_not_contact || current.email_suppressed) {
-      return { status: "skipped_suppressed" as const };
+
+    const currentStage = String(contact.pipeline_status || "").trim().toUpperCase();
+    if (!ACTIVE_STAGES.has(currentStage)) {
+      return { status: "skipped_stale" as const };
     }
 
     const existing = await client.query<{ id: string; status: string }>(
@@ -148,7 +174,7 @@ async function activateContact(contact: ContactRow) {
         where contact_id=$1::uuid and status in ('approved','draft')
         order by case when status='approved' then 0 else 1 end, version desc, created_at desc
         limit 1`,
-      [current.id],
+      [contact.id],
     );
     if (existing.rows[0]) {
       return {
@@ -157,13 +183,14 @@ async function activateContact(contact: ContactRow) {
       };
     }
 
-    const { preview, decision } = evidenceDecision(current);
+    const { preview, decision } = evidenceDecision(contact);
     if (!decision.eligible) {
       const hasConflict = preview.conflicts.length > 0;
       const work = await ensureWorkItem(client, {
-        contactId: current.id,
+        contactId: contact.id,
         brandId: brand,
-        sourceId: `commercial-activation:${current.id}:discovery-v1`,
+        expectedUpdatedAt: contact.updated_at || null,
+        sourceId: `commercial-activation:${contact.id}:discovery-v1`,
         title: hasConflict ? "Avklar motstridende kjøperkriterier" : "Kompletter Buyer Profile-grunnlag",
         description: hasConflict
           ? "Nexus fant motstridende eksplisitt CRM-evidens. Ingen Buyer Profile er opprettet eller endret."
@@ -176,7 +203,7 @@ async function activateContact(contact: ContactRow) {
         metadata: {
           kind: hasConflict ? "buyer_profile_evidence_conflict" : "buyer_profile_discovery",
           domain: "real_estate",
-          contact_id: current.id,
+          contact_id: contact.id,
           pipeline_stage: currentStage,
           evidence_candidate_count: preview.candidates.length,
           evidence_conflict_count: preview.conflicts.length,
@@ -194,7 +221,7 @@ async function activateContact(contact: ContactRow) {
 
     const repository = createLeadIntelligenceRepository(client, { email: SYSTEM_ACTOR });
     const idempotencyKey = stableLeadIntelligenceIdempotencyKey("buyer-profile-commercial-activation-v1", {
-      contactId: current.id,
+      contactId: contact.id,
       brand,
       criteria: decision.criteria.map((criterion) => ({
         key: criterion.key,
@@ -212,12 +239,12 @@ async function activateContact(contact: ContactRow) {
       language: null,
       status: "analyzed",
       createdBy: SYSTEM_ACTOR,
-      correlationId: `commercial-activation:${current.id}`,
+      correlationId: `commercial-activation:${contact.id}`,
       idempotencyKey,
     });
     const profile = await repository.createBuyerProfile({
       brand,
-      contactId: current.id,
+      contactId: contact.id,
       intakeId: intake.id,
       version: 1,
       status: "draft",
@@ -235,9 +262,10 @@ async function activateContact(contact: ContactRow) {
     });
 
     await ensureWorkItem(client, {
-      contactId: current.id,
+      contactId: contact.id,
       brandId: brand,
-      sourceId: `commercial-activation:${current.id}:profile:${profile.id}`,
+      expectedUpdatedAt: contact.updated_at || null,
+      sourceId: `commercial-activation:${contact.id}:profile:${profile.id}`,
       title: "Review Buyer Profile-utkast",
       description: "Nexus har forberedt et Buyer Profile-utkast kun fra eksplisitt CRM-evidens. Alle kriterier er pending og må kvalitetssikres før matching.",
       nextAction: "Kontroller de foreslåtte kriteriene og godkjenn bare dokumentert kundeevidens før matching aktiveres.",
@@ -246,7 +274,7 @@ async function activateContact(contact: ContactRow) {
       metadata: {
         kind: "buyer_profile_commercial_activation_review",
         domain: "real_estate",
-        contact_id: current.id,
+        contact_id: contact.id,
         buyer_profile_id: profile.id,
         pipeline_stage: currentStage,
         evidence_criteria_count: decision.criteria.length,
@@ -320,6 +348,7 @@ export async function GET(request: NextRequest) {
     skipped: 0,
     failed: 0,
   };
+  const failureCodes: Record<string, number> = {};
 
   for (const contact of batch) {
     try {
@@ -331,9 +360,11 @@ export async function GET(request: NextRequest) {
       else counts.skipped += 1;
     } catch (error) {
       counts.failed += 1;
+      const code = safeFailureCode(error);
+      failureCodes[code] = (failureCodes[code] || 0) + 1;
       console.warn("[nexus-commercial-activation] contact activation failed", {
         contactId: contact.id,
-        error: error instanceof Error ? error.message : String(error),
+        code,
       });
     }
   }
@@ -350,6 +381,8 @@ export async function GET(request: NextRequest) {
       scanned: eligibleContacts.length,
       missing_profile: missing.length,
       ...counts,
+      failure_codes: failureCodes,
+      runtime_boundary: "narrow_security_definer_v1",
       max_per_run: MAX_PER_RUN,
       stages: ["VIEWING", "QUALIFIED"],
       auto_approved: false,
@@ -367,6 +400,7 @@ export async function GET(request: NextRequest) {
     scanned: eligibleContacts.length,
     missingProfile: missing.length,
     ...counts,
+    failureCodes,
     safety: {
       maxPerRun: MAX_PER_RUN,
       autoApproved: false,
@@ -374,6 +408,7 @@ export async function GET(request: NextRequest) {
       customerSend: false,
       pipelineMutation: false,
       pipelineValueUsedAsCriterion: false,
+      runtimeBoundary: "narrow_security_definer_v1",
     },
   }, { status: counts.failed > 0 ? 207 : 200 });
 }

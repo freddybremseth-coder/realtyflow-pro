@@ -3,6 +3,10 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync("src/app/api/cron/nexus-commercial-activation/route.ts", "utf8");
+const migration = readFileSync(
+  "supabase/migrations/20260915071000_nexus_commercial_activation_runtime_boundary.sql",
+  "utf8",
+);
 
 test("commercial activation is scheduler-authenticated, safe-mode governed and bounded", () => {
   assert.match(source, /requireNexusSchedulerApi\(request\)/);
@@ -42,4 +46,33 @@ test("commercial activation never sends to customers or advances the sales pipel
   assert.match(source, /pipelineMutation: false/);
   assert.doesNotMatch(source, /sendEmail\(/);
   assert.doesNotMatch(source, /pipeline_status\s*:/);
+});
+
+test("restricted Lead Intelligence runtime never queries contacts or work_items directly", () => {
+  assert.match(source, /nexus_commercial_activation_contact_guard/);
+  assert.match(source, /ensure_nexus_commercial_activation_work_item/);
+  assert.doesNotMatch(source, /from public\.contacts/i);
+  assert.doesNotMatch(source, /insert into public\.work_items/i);
+  assert.doesNotMatch(source, /from public\.work_items/i);
+  assert.match(source, /runtime_boundary: "narrow_security_definer_v1"/);
+});
+
+test("runtime bridge is narrowly scoped, idempotent and keeps broad table grants closed", () => {
+  assert.match(migration, /security definer/i);
+  assert.match(migration, /revoke all on function public\.nexus_commercial_activation_contact_guard/i);
+  assert.match(migration, /grant execute on function public\.nexus_commercial_activation_contact_guard[\s\S]*realtyflow_lead_intelligence_runtime/i);
+  assert.match(migration, /revoke all on function public\.ensure_nexus_commercial_activation_work_item/i);
+  assert.match(migration, /grant execute on function public\.ensure_nexus_commercial_activation_work_item[\s\S]*realtyflow_lead_intelligence_runtime/i);
+  assert.match(migration, /pg_advisory_xact_lock\(hashtextextended\(p_source_id, 0\)\)/);
+  assert.match(migration, /work_items_commercial_activation_source_unique/);
+  assert.match(migration, /source_id like 'commercial-activation:%'/);
+  assert.match(migration, /COMMERCIAL_ACTIVATION_STALE_CONTACT/);
+  assert.doesNotMatch(migration, /grant\s+(select|insert|update|delete)[\s\S]*public\.(contacts|work_items)/i);
+});
+
+test("failure telemetry is bounded to safe codes instead of raw database messages", () => {
+  assert.match(source, /safeFailureCode/);
+  assert.match(source, /failure_codes: failureCodes/);
+  assert.match(source, /contactId: contact\.id,\s*code,/);
+  assert.doesNotMatch(source, /error: error instanceof Error \? error\.message/);
 });

@@ -7,6 +7,7 @@ on:
       - "src/lib/nexus/buyer-profile-evidence.ts"
       - "src/lib/nexus/buyer-profile-evidence-draft.ts"
       - "src/services/lead-intelligence/server-runtime.ts"
+      - "supabase/migrations/20260915071000_nexus_commercial_activation_runtime_boundary.sql"
       - ".github/workflows/nexus-commercial-activation.yml"
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - "src/lib/nexus/buyer-profile-evidence.ts"
       - "src/lib/nexus/buyer-profile-evidence-draft.ts"
       - "src/services/lead-intelligence/server-runtime.ts"
+      - "supabase/migrations/20260915071000_nexus_commercial_activation_runtime_boundary.sql"
       - ".github/workflows/nexus-commercial-activation.yml"
 
 jobs:
