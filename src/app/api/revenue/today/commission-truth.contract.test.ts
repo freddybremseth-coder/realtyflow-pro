@@ -6,6 +6,7 @@ const route = readFileSync("src/app/api/revenue/today/route.ts", "utf8");
 const priority = readFileSync("src/lib/nexus-real-estate-priority.ts", "utf8");
 const truth = readFileSync("src/lib/revenue/commission-truth.ts", "utf8");
 const directReaders = readFileSync("src/lib/nexus-opportunity-direct-readers.ts", "utf8");
+const command = readFileSync("src/lib/revenue/command.ts", "utf8");
 
 test("Revenue Today exposes transaction value and commission truth separately", () => {
   assert.match(route, /totalPipelineValue/);
@@ -33,4 +34,11 @@ test("unknown commission remains unknown with no forecast fallback", () => {
 test("Nexus direct opportunity reader uses canonical commission-aware sorting", () => {
   assert.match(directReaders, /sortCanonicalRealEstatePriorities/);
   assert.doesNotMatch(directReaders, /sortRevenuePriorities/);
+});
+
+test("Revenue Command cannot use property price as its economic tie-break", () => {
+  assert.match(command, /sortCanonicalRealEstatePriorities/);
+  assert.doesNotMatch(command, /sortRevenuePriorities/);
+  assert.match(command, /value:\s*item\.commissionRevenue\s*\|\|\s*0/);
+  assert.doesNotMatch(command, /b\.value\s*-\s*a\.value/);
 });
