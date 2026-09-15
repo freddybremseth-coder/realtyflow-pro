@@ -2,15 +2,48 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import {
+  describeImapError,
+  isPermanentImapError,
+  isTransientImapError,
+} from "./imap-error-policy";
 
 const ingest = fs.readFileSync(path.join(process.cwd(), "src/app/api/cron/email-ingest/route.ts"), "utf8");
 const reader = fs.readFileSync(path.join(process.cwd(), "src/services/email/imap-reader.ts"), "utf8");
 
 test("email ingest retries transient IMAP connection failures", () => {
-  assert.match(ingest, /function isTransientImapError/);
-  assert.match(ingest, /connection not available/);
+  assert.match(ingest, /isTransientImapError/);
   assert.match(ingest, /fetchRecentEmailsWithRetry/);
   assert.match(ingest, /TRANSIENT_RETRY_DELAY_MS/);
+});
+
+test("generic IMAP command failures are retryable and cannot trigger a system pause", () => {
+  const error = new Error("Command failed");
+  assert.equal(isTransientImapError(error), true);
+  assert.equal(isPermanentImapError(error), false);
+});
+
+test("authentication failures remain permanent even when ImapFlow says Command failed", () => {
+  const error = {
+    message: "Command failed",
+    responseStatus: "NO",
+    responseText: "Authentication failed: invalid credentials",
+    authenticationFailed: true,
+  };
+  assert.equal(isPermanentImapError(error), true);
+  assert.equal(isTransientImapError(error), false);
+});
+
+test("structured IMAP diagnostics preserve server details instead of only Command failed", () => {
+  const detail = describeImapError({
+    message: "Command failed",
+    responseStatus: "NO",
+    responseText: "Server busy, try again",
+    executedCommand: "UID FETCH 1:*",
+  });
+  assert.match(detail, /Command failed/);
+  assert.match(detail, /Server busy, try again/);
+  assert.match(detail, /UID FETCH 1:\*/);
 });
 
 test("transient connection failures cannot system-pause auto fetch", () => {
