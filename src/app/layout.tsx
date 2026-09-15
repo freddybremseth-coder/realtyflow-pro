@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import "./light-surface-contrast.css";
 import "./navigation-shell.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNexusBar } from "@/components/layout/mobile-nexus-bar";

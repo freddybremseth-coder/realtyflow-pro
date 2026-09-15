@@ -1,0 +1,112 @@
+/*
+ * Light-surface contrast safety net.
+ *
+ * RealtyFlow uses a dark application shell, so body text defaults to a light
+ * foreground. Light cards/panels that do not declare their own foreground can
+ * therefore inherit near-white text and become unreadable. Keep the dark shell
+ * default, but give known light surfaces a dark inherited foreground.
+ *
+ * :where() intentionally contributes zero specificity so explicit Tailwind
+ * text utilities and inline colors still win.
+ */
+
+:where(
+  .bg-white,
+  .bg-slate-50,
+  .bg-gray-50,
+  .bg-zinc-50,
+  .bg-neutral-50,
+  .bg-stone-50,
+  .bg-red-50,
+  .bg-orange-50,
+  .bg-amber-50,
+  .bg-yellow-50,
+  .bg-lime-50,
+  .bg-green-50,
+  .bg-emerald-50,
+  .bg-teal-50,
+  .bg-cyan-50,
+  .bg-sky-50,
+  .bg-blue-50,
+  .bg-indigo-50,
+  .bg-violet-50,
+  .bg-purple-50,
+  .bg-fuchsia-50,
+  .bg-pink-50,
+  .bg-rose-50
+) {
+  color: #0f172a;
+}
+
+/* Legacy/inline-styled light panels used by the marketing canary screens. */
+:where(
+  [style*="background: white"],
+  [style*="background-color: white"],
+  [style*="background: #fff"],
+  [style*="background-color: #fff"],
+  [style*="background: rgb(255, 255, 255)"],
+  [style*="background-color: rgb(255, 255, 255)"]
+) {
+  color: #0f172a;
+}
+
+/* Inline readiness recommendation panels. Cover both source hex and browser-normalized RGB. */
+:where(
+  [style*="background: #f0fdf4"],
+  [style*="background-color: #f0fdf4"],
+  [style*="background: rgb(240, 253, 244)"],
+  [style*="background-color: rgb(240, 253, 244)"]
+) {
+  color: #14532d;
+}
+
+:where(
+  [style*="background: #fffbeb"],
+  [style*="background-color: #fffbeb"],
+  [style*="background: rgb(255, 251, 235)"],
+  [style*="background-color: rgb(255, 251, 235)"]
+) {
+  color: #78350f;
+}
+
+/* Small slate metadata was below accessible contrast on white/pastel cards. */
+:where(
+  .bg-white,
+  .bg-slate-50,
+  .bg-gray-50,
+  .bg-zinc-50,
+  .bg-neutral-50,
+  .bg-stone-50,
+  .bg-emerald-50,
+  .bg-green-50,
+  .bg-teal-50,
+  .bg-cyan-50,
+  .bg-sky-50,
+  .bg-blue-50,
+  .bg-indigo-50,
+  .bg-violet-50,
+  .bg-purple-50,
+  .bg-fuchsia-50,
+  .bg-pink-50,
+  .bg-rose-50,
+  .bg-amber-50,
+  .bg-yellow-50,
+  .bg-orange-50,
+  .bg-red-50
+) :is(.text-slate-300, .text-slate-400) {
+  color: #475569;
+}
+
+/* Tailwind form preflight uses color: inherit; reinforce readable controls on light panels. */
+:where(
+  .bg-white,
+  .bg-slate-50,
+  [style*="background: white"],
+  [style*="background-color: white"],
+  [style*="background: #fff"],
+  [style*="background-color: #fff"],
+  [style*="background: rgb(255, 255, 255)"],
+  [style*="background-color: rgb(255, 255, 255)"]
+) :where(input, textarea, select) {
+  color: #0f172a;
+}
