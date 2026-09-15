@@ -4,7 +4,8 @@ import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { resolveApproval } from "@/lib/agentic/approval-gateway";
 import { executeApproval } from "@/lib/agentic/executor";
 import { reconcileNexusMissionRunFromApproval } from "@/lib/nexus-mission-outcome-reconcile";
-import { makeApprovalGatewayStore, makeGatewayPublishEvent } from "@/services/agentic/adapters";
+import { makeApprovalGatewayStore } from "@/services/agentic/adapters";
+import { makeApprovalDecisionPublisher } from "@/services/agentic/approval-event-runtime";
 import { buildExecutorDeps } from "@/services/agentic/executor-runtime";
 
 export const dynamic = "force-dynamic";
@@ -30,20 +31,18 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
 
   const res = await resolveApproval(
-    { store: makeApprovalGatewayStore(supabase), publishEvent: makeGatewayPublishEvent(supabase) },
+    { store: makeApprovalGatewayStore(supabase), publishEvent: makeApprovalDecisionPublisher(supabase) },
     { id: params.id, decision: body.decision, resolvedBy: ctx?.email ?? "unknown" },
   );
   if (!res.ok) return NextResponse.json(res, { status: res.error === "NOT_FOUND" ? 404 : 400 });
 
-  // Godkjent → utfør handlingen (executor, dry-run som default). Feilet
-  // utførelse lar elementet stå approved for retry — approval reverseres ikke.
+  // Approval and execution are deliberately separate facts. Only the executor
+  // below may emit automation_executed after the underlying action runs.
   let execution: Awaited<ReturnType<typeof executeApproval>> | null = null;
   if (res.status === "approved" && !res.alreadyResolved) {
     execution = await executeApproval(buildExecutorDeps(supabase), { id: params.id, executedBy: ctx?.email ?? "system" });
   }
 
-  // Nexus-run-state harmoniseres ETTER eksisterende gateway/executor. Denne
-  // funksjonen publiserer ingen nye revenue events og ignorerer non-Nexus runs.
   const nexusRun = await reconcileNexusMissionRunFromApproval(supabase, params.id);
   return NextResponse.json({ ...res, ...(execution ? { execution } : {}), nexusRun });
 }
