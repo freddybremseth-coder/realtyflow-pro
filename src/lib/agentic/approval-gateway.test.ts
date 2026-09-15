@@ -22,8 +22,8 @@ function makeStore(items: ApprovalItem[]) {
 }
 
 const item = (over: Partial<ApprovalItem> = {}): ApprovalItem => ({
-  id: "a1", runId: "run_1", title: "Send oppfølging", gatedActionClass: "send_personal",
-  subjectType: "message_draft", subjectRef: "draft-1", status: "pending",
+  id: "a1", runId: "run_1", correlationId: "corr_1", title: "Send oppfølging", gatedActionClass: "send_personal",
+  subjectType: "message_draft", subjectRef: "draft-1", customerRef: "kunde@example.com", status: "pending",
   risk: "high", estimatedOpportunityEur: 14000, ...over,
 });
 
@@ -38,7 +38,7 @@ test("kø sorteres etter risiko, deretter opportunity", async () => {
   assert.deepEqual(q.map((i) => i.id), ["crit", "high2", "high1", "low"]);
 });
 
-test("approve: markeres approved + publiserer approved-utfall", async () => {
+test("approve records a decision event with durable identity, not execution", async () => {
   const events: GatewayOutcomeEvent[] = [];
   const { store, map } = makeStore([item()]);
   const res = await resolveApproval({ store, publishEvent: async (e) => { events.push(e); }, now: () => new Date("2026-08-23T21:00:00Z") }, { id: "a1", decision: "approve", resolvedBy: "freddy" });
@@ -46,6 +46,11 @@ test("approve: markeres approved + publiserer approved-utfall", async () => {
   assert.equal(res.status, "approved");
   assert.equal(map.get("a1")!.status, "approved");
   assert.equal(events[0].outcome, "approved");
+  assert.equal(events[0].approvalId, "a1");
+  assert.equal(events[0].runId, "run_1");
+  assert.equal(events[0].correlationId, "corr_1");
+  assert.equal(events[0].gatedActionClass, "send_personal");
+  assert.equal(events[0].customerRef, "kunde@example.com");
   assert.equal(events[0].subjectType, "message_draft");
   assert.equal(events[0].subjectRef, "draft-1");
 });

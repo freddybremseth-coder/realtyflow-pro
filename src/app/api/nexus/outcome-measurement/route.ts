@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { measureRevenueBrainOutcomes, NEXUS_OUTCOME_EVENT_TYPES } from "@/lib/nexus/outcome-measurement";
+import { measureExecutionThroughputHealth } from "@/lib/nexus/execution-throughput-health";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,9 +37,12 @@ export async function GET(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message, measurement: null }, { status: 500 });
 
-  const measurement = measureRevenueBrainOutcomes(data || [], { attributionWindowDays: attributionDays });
+  const rows = data || [];
+  const measurement = measureRevenueBrainOutcomes(rows, { attributionWindowDays: attributionDays });
+  const throughputHealth = measureExecutionThroughputHealth(rows);
   return NextResponse.json({
     measurement,
-    query: { days, attributionDays, eventCount: (data || []).length },
+    throughputHealth,
+    query: { days, attributionDays, eventCount: rows.length },
   });
 }

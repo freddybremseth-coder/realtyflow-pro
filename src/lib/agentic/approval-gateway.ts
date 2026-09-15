@@ -1,16 +1,8 @@
 /**
  * General Agentic Approval Gateway.
  *
- * ÉN kø + ett audit trail for alle menneskelige godkjenninger (punkt 6 fra
- * hardeningen). Elementene i `agentic_approvals` REFERERER eksisterende
- * RealtyFlow-objekter via (subjectType, subjectRef) — buyer_profile, shortlist,
- * presentation, message_draft — samt generic_agent_action. Jarvis, lead-intake
- * og framtidige agenter møtes her.
- *
- * Godkjenning REGISTRERER menneskets beslutning og publiserer utfallet til
- * revenue_events. Selve utførelsen av den underliggende handlingen (f.eks.
- * sending) skjer via en dedikert executor-hook — aldri automatisk her.
- * DI-vennlig: rene porter, testet med stubs, Supabase-adapter i produksjon.
+ * ÉN kø + ett audit trail for alle menneskelige godkjenninger. Approval is a
+ * decision, never proof that the underlying action was executed.
  */
 
 import type { ApprovalSubjectType, RiskLevel, RunOutcome } from "./schemas";
@@ -43,11 +35,15 @@ export interface ApprovalGatewayStore {
 }
 
 export interface GatewayOutcomeEvent {
+  approvalId: string;
   runId?: string;
+  correlationId?: string;
   outcome: Extract<RunOutcome, "approved" | "rejected">;
   title: string;
+  gatedActionClass: string;
   subjectType: string;
   subjectRef?: string;
+  customerRef?: string;
   revenueImpactEur?: number;
 }
 
@@ -66,7 +62,6 @@ export interface ResolveResult {
 
 export async function listApprovalQueue(deps: Pick<ApprovalGatewayDeps, "store">): Promise<ApprovalItem[]> {
   const items = await deps.store.listPending();
-  // Mest kritiske/verdifulle øverst.
   const riskRank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
   return items
     .slice()
@@ -79,7 +74,6 @@ export async function resolveApproval(
 ): Promise<ResolveResult> {
   const item = await deps.store.get(args.id);
   if (!item) return { ok: false, error: "NOT_FOUND" };
-  // Idempotent: allerede behandlet → ingen dobbel-effekt / dobbelt-event.
   if (item.status !== "pending") return { ok: true, status: item.status, alreadyResolved: true };
 
   const status = args.decision === "approve" ? "approved" : "rejected";
@@ -87,15 +81,19 @@ export async function resolveApproval(
   await deps.store.markResolved(args.id, status, args.resolvedBy, at);
 
   await deps.publishEvent({
+    approvalId: item.id,
     runId: item.runId ?? undefined,
+    correlationId: item.correlationId ?? undefined,
     outcome: status,
     title: `${status === "approved" ? "GODKJENT" : "AVVIST"}: ${item.title}`,
+    gatedActionClass: item.gatedActionClass,
     subjectType: String(item.subjectType),
     subjectRef: item.subjectRef ?? undefined,
+    customerRef: item.customerRef ?? undefined,
     revenueImpactEur: item.estimatedOpportunityEur ?? undefined,
   });
 
-  // NB: på approve utføres IKKE handlingen automatisk her. En dedikert executor
-  // (f.eks. send_personal-sender) plukker opp godkjente elementer separat.
+  // Approval does not execute the action. A dedicated executor handles that
+  // separately and is the only component allowed to emit an execution receipt.
   return { ok: true, status };
 }

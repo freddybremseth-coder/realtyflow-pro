@@ -5,8 +5,8 @@ import type { ApprovalItem } from "@/lib/agentic/approval-gateway";
 
 function setup(itemOver: Partial<ApprovalItem> = {}, opts: { sendFails?: boolean; dryRun?: boolean; hasDraft?: boolean } = {}) {
   const item: ApprovalItem = {
-    id: "a1", runId: "run_1", title: "Send oppfølging", gatedActionClass: "send_personal",
-    subjectType: "message_draft", subjectRef: "d1", draftId: "d1", status: "approved",
+    id: "a1", runId: "run_1", correlationId: "corr_1", title: "Send oppfølging", gatedActionClass: "send_personal",
+    subjectType: "message_draft", subjectRef: "d1", customerRef: "kunde@example.com", draftId: "d1", status: "approved",
     risk: "high", estimatedOpportunityEur: 14000, ...itemOver,
   };
   const events: GatewayExecutedEvent[] = [];
@@ -25,7 +25,7 @@ function setup(itemOver: Partial<ApprovalItem> = {}, opts: { sendFails?: boolean
   return { deps, events, getExecuted: () => executed };
 }
 
-test("approved → executed (dry-run), publiserer executed-utfall", async () => {
+test("approved → executed (dry-run), publishes durable execution identity", async () => {
   const { deps, events, getExecuted } = setup();
   const res = await executeApproval(deps, { id: "a1", executedBy: "system" });
   assert.equal(res.ok, true);
@@ -33,6 +33,11 @@ test("approved → executed (dry-run), publiserer executed-utfall", async () => 
   assert.match(res.detail ?? "", /DRY-RUN/);
   assert.ok(getExecuted());
   assert.equal(events[0].outcome, "executed");
+  assert.equal(events[0].approvalId, "a1");
+  assert.equal(events[0].runId, "run_1");
+  assert.equal(events[0].correlationId, "corr_1");
+  assert.equal(events[0].gatedActionClass, "send_personal");
+  assert.equal(events[0].customerRef, "kunde@example.com");
 });
 
 test("live-modus (dryRun=false) gir ekte send-detalj", async () => {
