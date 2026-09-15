@@ -1,11 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdminApi } from "@/lib/api-admin";
+import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import {
   classifyPropertyForBrands,
   normalizeBrandId,
   propertyMatchesBrand,
 } from "@/lib/realty/brand-rules";
+
+const PUBLIC_PROPERTY_SELECT = [
+  "id",
+  "title",
+  "title_no",
+  "location",
+  "town",
+  "price",
+  "bedrooms",
+  "bathrooms",
+  "area_m2",
+  "built_area",
+  "plot_size",
+  "status",
+  "images",
+  "description",
+  "description_no",
+  "featured",
+  "image_color",
+  "year_built",
+  "garage",
+  "pool",
+  "energy_rating",
+  "ref",
+  "primary_image",
+  "property_type",
+  "type",
+  "external_url",
+  "gallery",
+  "floorplans",
+  "marketing_description",
+  "show_on_website",
+  "website_visible",
+  "brand_id",
+  "region_bucket",
+  "is_inland",
+  "amenities_no",
+  "meta_title_no",
+  "meta_description_no",
+  "model_name",
+  "floor_label",
+  "created_at",
+].join(",");
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,7 +61,10 @@ function isWebsiteVisible(property: Record<string, unknown>) {
   return property.show_on_website !== false && property.website_visible !== false;
 }
 
-async function getAllProperties(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
+async function getAllProperties(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  columns = "*",
+) {
   const allData: Record<string, unknown>[] = [];
   const pageSize = 1000;
   let from = 0;
@@ -26,15 +72,16 @@ async function getAllProperties(supabase: NonNullable<ReturnType<typeof getSupab
   while (true) {
     const { data, error } = await supabase
       .from("properties")
-      .select("*")
+      .select(columns)
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
-    if (!data || data.length === 0) break;
+    const rows = (data || []) as unknown as Record<string, unknown>[];
+    if (rows.length === 0) break;
 
-    allData.push(...data);
-    if (data.length < pageSize) break;
+    allData.push(...rows);
+    if (rows.length < pageSize) break;
     from += pageSize;
   }
 
@@ -166,6 +213,9 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
+  const accessContext = await getRequestAccessContext(req);
+  const authenticated = Boolean(accessContext);
+  const selectColumns = authenticated ? "*" : PUBLIC_PROPERTY_SELECT;
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const brandId = searchParams.get("brandId") || searchParams.get("brand_id");
@@ -173,18 +223,23 @@ export async function GET(req: NextRequest) {
   if (id) {
     const { data, error } = await supabase
       .from("properties")
-      .select("*")
+      .select(selectColumns)
       .eq("id", id)
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(data);
+    const property = data as unknown as Record<string, unknown> | null;
+    if (!authenticated && (!property || !isWebsiteVisible(property))) {
+      return NextResponse.json({ error: "Property not found" }, { status: 404 });
+    }
+    return NextResponse.json(property);
   }
 
   try {
-    const allData = await getAllProperties(supabase);
-    if (!brandId) return NextResponse.json(allData);
+    const allData = await getAllProperties(supabase, selectColumns);
+    const scopedData = authenticated ? allData : allData.filter(isWebsiteVisible);
+    if (!brandId) return NextResponse.json(scopedData);
 
-    const filteredData = await filterPropertiesForBrand(supabase, allData, brandId);
+    const filteredData = await filterPropertiesForBrand(supabase, scopedData, brandId);
     return NextResponse.json(filteredData);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch properties";
