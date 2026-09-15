@@ -5,12 +5,11 @@ import { buildCommissionCollection } from "@/lib/revenue/commissions";
 import { buildRevenueForecast } from "@/lib/revenue/forecast";
 import { buildRecoveryWorkspace } from "@/lib/revenue/recovery";
 import { buildServiceRevenueWorkspace } from "@/lib/revenue/service-revenue";
+import { type RevenueMemoryEventInput } from "@/lib/revenue/today";
 import {
-  sortRevenuePriorities,
-  type RevenueMemoryEventInput,
-  type RevenuePriorityItem,
-} from "@/lib/revenue/today";
-import { buildCanonicalRealEstatePriority } from "@/lib/nexus-real-estate-priority";
+  buildCanonicalRealEstatePriority,
+  sortCanonicalRealEstatePriorities,
+} from "@/lib/nexus-real-estate-priority";
 
 export type CommandPriority = "CRITICAL" | "HIGH" | "MEDIUM";
 export type CommandState = "CRITICAL" | "ATTENTION" | "HEALTHY" | "INFO";
@@ -124,11 +123,11 @@ function serviceEligible(contact: Record<string, unknown>) {
 
 function dedupeActions(actions: CommandAction[]) {
   const selected = new Map<string, CommandAction>();
-  for (const action of [...actions].sort((a, b) => b.score - a.score || b.value - a.value)) {
+  for (const action of [...actions].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))) {
     const key = action.contactId ? `contact:${action.contactId}` : `${action.source}:${action.id}`;
     if (!selected.has(key)) selected.set(key, action);
   }
-  return [...selected.values()].sort((a, b) => b.score - a.score || b.value - a.value).slice(0, 12);
+  return [...selected.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, 12);
 }
 
 function approvalActions(items: ApprovalItem[]): CommandAction[] {
@@ -152,10 +151,10 @@ function approvalActions(items: ApprovalItem[]): CommandAction[] {
 export function buildRevenueCommandCenter(input: RevenueCommandInput, now = new Date()): RevenueCommandCenter {
   const contacts = input.contacts || [];
   const eventsByContactId = input.revenueEventsByContactId || {};
-  const today = sortRevenuePriorities(
+  const today = sortCanonicalRealEstatePriorities(
     contacts
       .map((contact) => buildCanonicalRealEstatePriority(contact, now, { revenueEvents: eventsByContactId[String(contact.id || "")] || [] }))
-      .filter((item): item is RevenuePriorityItem => Boolean(item)),
+      .filter((item): item is NonNullable<ReturnType<typeof buildCanonicalRealEstatePriority>> => Boolean(item)),
   );
   const closing = sortClosingOpportunities(
     contacts.map((contact) => buildClosingOpportunity(contact, now)).filter(Boolean) as NonNullable<ReturnType<typeof buildClosingOpportunity>>[],
@@ -189,7 +188,7 @@ export function buildRevenueCommandCenter(input: RevenueCommandInput, now = new 
       title: item.priority === "CRITICAL" ? "Kritisk salgsoppfølging" : "Prioritert salgsoppfølging",
       subject: item.contactName,
       description: item.recommendedAction,
-      value: item.value,
+      value: item.commissionRevenue || 0,
       href: item.href,
       contactId: item.id,
     });

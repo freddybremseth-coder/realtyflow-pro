@@ -1,0 +1,52 @@
+name: Nexus Commission-Native Revenue
+
+on:
+  pull_request:
+    paths:
+      - "src/lib/revenue/commission-truth.ts"
+      - "src/lib/revenue/commission-truth.test.ts"
+      - "src/lib/nexus-real-estate-priority.ts"
+      - "src/lib/nexus-real-estate-priority.test.ts"
+      - "src/lib/nexus-opportunity-direct-readers.ts"
+      - "src/lib/revenue/command.ts"
+      - "src/lib/revenue/command.test.ts"
+      - "src/app/api/revenue/today/route.ts"
+      - "src/app/api/revenue/today/commission-truth.contract.test.ts"
+      - ".github/workflows/nexus-commission-native-revenue.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/lib/revenue/commission-truth.ts"
+      - "src/lib/revenue/commission-truth.test.ts"
+      - "src/lib/nexus-real-estate-priority.ts"
+      - "src/lib/nexus-real-estate-priority.test.ts"
+      - "src/lib/nexus-opportunity-direct-readers.ts"
+      - "src/lib/revenue/command.ts"
+      - "src/lib/revenue/command.test.ts"
+      - "src/app/api/revenue/today/route.ts"
+      - "src/app/api/revenue/today/commission-truth.contract.test.ts"
+      - ".github/workflows/nexus-commission-native-revenue.yml"
+
+jobs:
+  commission-truth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --silent
+      - name: Commission-native revenue tests
+        run: >-
+          npx tsx --test
+          src/lib/revenue/commission-truth.test.ts
+          src/lib/nexus-real-estate-priority.test.ts
+          src/lib/revenue/command.test.ts
+          src/app/api/revenue/today/commission-truth.contract.test.ts
+          src/lib/revenue/today.test.ts

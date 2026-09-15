@@ -6,11 +6,14 @@ import { readHotLeadSla } from "@/lib/revenue/hot-lead-work-item";
 import { applyPortalRecencyBoost } from "@/lib/revenue/portal-recency";
 import {
   buildRecommendedRevenuePlay,
-  sortRevenuePriorities,
   type RevenueMemoryEventInput,
   type RevenuePriorityItem,
 } from "@/lib/revenue/today";
-import { buildCanonicalRealEstatePriority } from "@/lib/nexus-real-estate-priority";
+import {
+  buildCanonicalRealEstatePriority,
+  sortCanonicalRealEstatePriorities,
+  type CanonicalRealEstatePriority,
+} from "@/lib/nexus-real-estate-priority";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,6 +42,10 @@ function emptyPayload() {
       closingOpportunities: 0,
       missingNextAction: 0,
       totalPipelineValue: 0,
+      knownCommissionRevenue: 0,
+      commissionKnownCount: 0,
+      commissionUnknownCount: 0,
+      commissionCoveragePct: 0,
       openWorkItems: 0,
     },
     priorities: [] as RevenuePriorityItem[],
@@ -162,14 +169,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const priorities = sortRevenuePriorities(
+  const priorities = sortCanonicalRealEstatePriorities(
     contacts
       .map((contact) => {
         const contactEvents = eventsByContact.get(String(contact.id || "")) || [];
         const priority = buildCanonicalRealEstatePriority(contact, now, { revenueEvents: contactEvents });
         return priority ? applyPortalRecencyBoost(priority, contactEvents, now) : null;
       })
-      .filter((item): item is RevenuePriorityItem & { portalActiveNow: boolean; portalLastActiveAt: string | null } => Boolean(item)),
+      .filter((item): item is CanonicalRealEstatePriority & { portalActiveNow: boolean; portalLastActiveAt: string | null } => Boolean(item)),
   );
 
   const workItems = (workItemsResult.data || [])
@@ -192,6 +199,8 @@ export async function GET(request: NextRequest) {
   const overdueHotLeadWorkItems = hotLeadWorkItems.filter((item) => item.isSlaOverdue);
   const priorityHotSignals = priorities.filter((item) => item.score >= 75).length;
   const priorityOverdue = priorities.filter((item) => item.isOverdue).length;
+  const commissionKnown = priorities.filter((item) => item.commissionKnown);
+  const commissionUnknown = priorities.length - commissionKnown.length;
 
   const summary = {
     activeLeads: priorities.length,
@@ -202,7 +211,11 @@ export async function GET(request: NextRequest) {
     hotLeadSlaOverdue: overdueHotLeadWorkItems.length,
     closingOpportunities: priorities.filter((item) => item.kind === "closing").length,
     missingNextAction: priorities.filter((item) => item.isMissingNextAction).length,
-    totalPipelineValue: priorities.reduce((sum, item) => sum + item.value, 0),
+    totalPipelineValue: priorities.reduce((sum, item) => sum + item.transactionValue, 0),
+    knownCommissionRevenue: commissionKnown.reduce((sum, item) => sum + (item.commissionRevenue || 0), 0),
+    commissionKnownCount: commissionKnown.length,
+    commissionUnknownCount: commissionUnknown,
+    commissionCoveragePct: priorities.length ? Math.round((commissionKnown.length / priorities.length) * 100) : 0,
     openWorkItems: workItems.length,
   };
 
