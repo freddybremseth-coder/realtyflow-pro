@@ -17,14 +17,17 @@ export function makeManualReviewMarketingSupabase(
     from(table: string) {
       if (table !== "marketing_brand_growth_plans") return supabase.from(table);
 
-      const query = supabase.from(table);
+      // Supabase/PostgREST query builders return the next builder in the chain.
+      // Keep forwarding that returned builder instead of assuming select()/eq()
+      // mutate the original object in place.
+      let query: any = supabase.from(table);
       const facade: any = {
         select(...args: any[]) {
-          query.select(...args);
+          query = query.select(...args);
           return facade;
         },
         eq(...args: any[]) {
-          query.eq(...args);
+          query = query.eq(...args);
           return facade;
         },
         async maybeSingle() {
