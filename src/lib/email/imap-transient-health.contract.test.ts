@@ -27,7 +27,8 @@ test("authentication failures remain permanent even when ImapFlow says Command f
   const error = {
     message: "Command failed",
     responseStatus: "NO",
-    responseText: "Authentication failed: invalid credentials",
+    serverResponseCode: "AUTHENTICATIONFAILED",
+    response: "Authentication failed: invalid credentials",
     authenticationFailed: true,
   };
   assert.equal(isPermanentImapError(error), true);
@@ -39,7 +40,7 @@ test("structured IMAP diagnostics preserve server details instead of only Comman
     message: "Command failed",
     responseStatus: "NO",
     responseText: "Server busy, try again",
-    executedCommand: "UID FETCH 1:*",
+    command: "UID FETCH 1:*",
   });
   assert.match(detail, /Command failed/);
   assert.match(detail, /Server busy, try again/);
