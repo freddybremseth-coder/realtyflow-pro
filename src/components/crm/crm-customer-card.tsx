@@ -15,6 +15,7 @@ import {
   Loader2,
   Mail,
   MessageSquare,
+  Pencil,
   Phone,
   RefreshCw,
   Target,
@@ -64,6 +65,7 @@ interface Customer360Payload {
 }
 
 type CustomerCardTab = "overview" | "update" | "timeline" | "property";
+type CustomerUpdateTab = "details" | "update";
 
 const STAGE_LABELS: Record<string, string> = {
   NEW: "Ny",
@@ -158,6 +160,7 @@ function actionUsesCustomerUpdateTab(href?: string) {
 export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onClose: () => void }) {
   const [data, setData] = useState<Customer360Payload | null>(null);
   const [tab, setTab] = useState<CustomerCardTab>("overview");
+  const [updateDefaultTab, setUpdateDefaultTab] = useState<CustomerUpdateTab>("update");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -178,8 +181,19 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
 
   useEffect(() => {
     setTab("overview");
+    setUpdateDefaultTab("update");
     void load();
   }, [contactId]);
+
+  function openCustomerUpdate() {
+    setUpdateDefaultTab("update");
+    setTab("update");
+  }
+
+  function openContactDetails() {
+    setUpdateDefaultTab("details");
+    setTab("update");
+  }
 
   const groupedCriteria = useMemo(() => {
     const groups: Record<string, Array<Record<string, any>>> = {
@@ -210,14 +224,17 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
               </h2>
               {data?.contact && (
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-400">
-                  {data.contact.email && <a href={`mailto:${data.contact.email}`} className="inline-flex items-center gap-1.5 hover:text-white"><Mail size={15} />{data.contact.email}</a>}
-                  {data.contact.phone && <a href={`tel:${data.contact.phone}`} className="inline-flex items-center gap-1.5 hover:text-white"><Phone size={15} />{data.contact.phone}</a>}
+                  {data.contact.email ? <a href={`mailto:${data.contact.email}`} className="inline-flex items-center gap-1.5 hover:text-white"><Mail size={15} />{data.contact.email}</a> : <button type="button" onClick={openContactDetails} className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200"><Mail size={15} />Legg til e-post</button>}
+                  {data.contact.phone ? <a href={`tel:${data.contact.phone}`} className="inline-flex items-center gap-1.5 hover:text-white"><Phone size={15} />{data.contact.phone}</a> : <button type="button" onClick={openContactDetails} className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200"><Phone size={15} />Legg til telefon</button>}
                   <span className="inline-flex items-center gap-1.5"><CircleDollarSign size={15} />{money(data.contact.pipeline_value)}</span>
                   <span className="inline-flex items-center gap-1.5"><Building2 size={15} />{data.contact.property_interest || "Boliginteresse ikke satt"}</span>
                 </div>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={openContactDetails} disabled={!data?.contact}>
+                <Pencil size={15} className="mr-2" />Rediger kontaktinfo
+              </Button>
               <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
                 {loading ? <Loader2 size={15} className="mr-2 animate-spin" /> : <RefreshCw size={15} className="mr-2" />}Oppdater
               </Button>
@@ -245,7 +262,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
               ["timeline", "Historikk"],
               ["property", "Kjøperprofil, boliger & oppgaver"],
             ] as Array<[CustomerCardTab, string]>).map(([id, label]) => (
-              <button key={id} onClick={() => setTab(id)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm transition ${tab === id ? "bg-cyan-500/15 text-cyan-100" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+              <button key={id} onClick={() => id === "update" ? openCustomerUpdate() : setTab(id)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm transition ${tab === id ? "bg-cyan-500/15 text-cyan-100" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                 {label}
               </button>
             ))}
@@ -274,15 +291,15 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                       <p className="mt-1 text-xs text-slate-500">Oppfølging: {dateLabel(data.contact.next_followup)}</p>
                       <div className="mt-4 flex flex-wrap gap-2">
                         {actionUsesCustomerUpdateTab(data.nextAction?.primaryHref) ? (
-                          <Button size="sm" onClick={() => setTab("update")}>{data.nextAction?.primaryLabel || "Registrer oppdatering"}</Button>
+                          <Button size="sm" onClick={openCustomerUpdate}>{data.nextAction?.primaryLabel || "Registrer oppdatering"}</Button>
                         ) : data.nextAction?.primaryHref ? (
                           <Button asChild size="sm"><Link href={data.nextAction.primaryHref}>{data.nextAction.primaryLabel || "Åpne handling"}<ArrowRight size={14} className="ml-1" /></Link></Button>
                         ) : (
-                          <Button size="sm" onClick={() => setTab("update")}>Registrer oppdatering</Button>
+                          <Button size="sm" onClick={openCustomerUpdate}>Registrer oppdatering</Button>
                         )}
                         {data.nextAction?.secondaryHref && (
                           actionUsesCustomerUpdateTab(data.nextAction.secondaryHref)
-                            ? <Button size="sm" variant="outline" onClick={() => setTab("update")}>{data.nextAction.secondaryLabel || "Registrer oppdatering"}</Button>
+                            ? <Button size="sm" variant="outline" onClick={openCustomerUpdate}>{data.nextAction.secondaryLabel || "Registrer oppdatering"}</Button>
                             : <Button asChild size="sm" variant="outline"><Link href={data.nextAction.secondaryHref}>{data.nextAction.secondaryLabel || "Åpne"}</Link></Button>
                         )}
                       </div>
@@ -310,7 +327,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                           ["Pipeline-verdi", money(data.contact.pipeline_value)],
                         ].map(([label, value]) => <div key={String(label)}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-slate-200">{String(value || "Ikke satt")}</dd></div>)}
                       </dl>
-                      <Button className="mt-5" size="sm" onClick={() => setTab("update")}>Rediger detaljer</Button>
+                      <Button className="mt-5" size="sm" onClick={openContactDetails}><Pencil size={14} className="mr-2" />Rediger detaljer</Button>
                     </article>
                     <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
                       <h3 className="text-lg font-semibold text-white">Kjøperprofil</h3>
@@ -330,7 +347,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                     <p className="mt-1 text-sm text-slate-400">Rediger kundedata eller registrer samtale, WhatsApp, e-post, møte, visning, tilbud, økonomi eller closing direkte her.</p>
                   </div>
                   <CustomerSalesAssistantNote contactId={contactId} onSaved={() => void load()} />
-                  <CustomerUpdatePanel contactId={contactId} defaultExpanded defaultTab="update" onSaved={() => void load()} />
+                  <CustomerUpdatePanel contactId={contactId} defaultExpanded defaultTab={updateDefaultTab} onSaved={() => void load()} />
                 </div>
               )}
 

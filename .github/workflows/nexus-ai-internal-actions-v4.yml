@@ -1,0 +1,66 @@
+name: Nexus AI Internal Actions v4
+
+on:
+  pull_request:
+    paths:
+      - "src/lib/nexus-ai-governed-actions.ts"
+      - "src/lib/nexus-ai-governed-actions.test.ts"
+      - "src/lib/nexus-ai-in-app-advisor.contract.test.ts"
+      - "src/lib/customers/crm-contact-quick-edit.contract.test.ts"
+      - "src/app/api/nexus/actions/route.ts"
+      - "src/app/api/nexus/contact-field-action/route.ts"
+      - "src/app/api/nexus/victoria/route.ts"
+      - "src/components/chatbot/chat-widget.tsx"
+      - "src/components/crm/crm-customer-card.tsx"
+      - "src/components/customers/customer-update-panel.tsx"
+      - "src/lib/revenue/events.ts"
+      - "src/lib/revenue/events.test.ts"
+      - "src/lib/revenue/revenue-event-semantics.contract.test.ts"
+      - "docs/nexus/NEXUS_AI_INTERNAL_ACTIONS_V4.md"
+      - ".github/workflows/nexus-ai-internal-actions-v4.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/lib/nexus-ai-governed-actions.ts"
+      - "src/lib/nexus-ai-governed-actions.test.ts"
+      - "src/lib/nexus-ai-in-app-advisor.contract.test.ts"
+      - "src/lib/customers/crm-contact-quick-edit.contract.test.ts"
+      - "src/app/api/nexus/actions/route.ts"
+      - "src/app/api/nexus/contact-field-action/route.ts"
+      - "src/app/api/nexus/victoria/route.ts"
+      - "src/components/chatbot/chat-widget.tsx"
+      - "src/components/crm/crm-customer-card.tsx"
+      - "src/components/customers/customer-update-panel.tsx"
+      - "src/lib/revenue/events.ts"
+      - "src/lib/revenue/events.test.ts"
+      - "src/lib/revenue/revenue-event-semantics.contract.test.ts"
+      - "docs/nexus/NEXUS_AI_INTERNAL_ACTIONS_V4.md"
+      - ".github/workflows/nexus-ai-internal-actions-v4.yml"
+
+jobs:
+  internal-actions-v4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --silent
+      - name: Governed action and single-advisor contracts
+        run: >-
+          npx tsx --test
+          src/lib/nexus-ai-governed-actions.test.ts
+          src/lib/nexus-ai-in-app-advisor.contract.test.ts
+      - name: CRM quick contact editing contract
+        run: npx tsx --test src/lib/customers/crm-contact-quick-edit.contract.test.ts
+      - name: Revenue event receipt semantics
+        run: >-
+          node --import tsx --test
+          src/lib/revenue/events.test.ts
+          src/lib/revenue/revenue-event-semantics.contract.test.ts

@@ -10,20 +10,30 @@ interface MessageAction {
   description?: string;
 }
 
-type GovernedActionType = "prepare_customer_email" | "schedule_customer_followup";
+type GovernedActionType =
+  | "prepare_customer_email"
+  | "schedule_customer_followup"
+  | "add_customer_note"
+  | "create_customer_task"
+  | "update_customer_email"
+  | "update_customer_phone";
+
+type GovernedActionEndpoint = "/api/nexus/actions" | "/api/nexus/contact-field-action";
 
 interface GovernedAction {
   id: string;
   type: GovernedActionType;
   label: string;
   description: string;
-  endpoint: "/api/nexus/actions";
+  endpoint: GovernedActionEndpoint;
   method: "POST";
   contactId: string;
   contactName: string;
   requestText: string;
   requiresApproval: boolean;
   scheduledFor?: string;
+  field?: "email" | "phone";
+  fieldValue?: string;
 }
 
 interface Message {
@@ -51,10 +61,16 @@ function isGovernedAction(value: unknown): value is GovernedAction {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   const type = candidate.type;
-  if (type !== "prepare_customer_email" && type !== "schedule_customer_followup") return false;
   if (
-    candidate.endpoint !== "/api/nexus/actions"
-    || candidate.method !== "POST"
+    type !== "prepare_customer_email"
+    && type !== "schedule_customer_followup"
+    && type !== "add_customer_note"
+    && type !== "create_customer_task"
+    && type !== "update_customer_email"
+    && type !== "update_customer_phone"
+  ) return false;
+  if (
+    candidate.method !== "POST"
     || typeof candidate.requiresApproval !== "boolean"
     || typeof candidate.id !== "string"
     || typeof candidate.label !== "string"
@@ -63,11 +79,55 @@ function isGovernedAction(value: unknown): value is GovernedAction {
     || typeof candidate.contactName !== "string"
     || typeof candidate.requestText !== "string"
   ) return false;
+
+  const contactFieldAction = type === "update_customer_email" || type === "update_customer_phone";
+  if (contactFieldAction) {
+    if (candidate.endpoint !== "/api/nexus/contact-field-action") return false;
+    if (candidate.requiresApproval !== false) return false;
+    if (candidate.field !== (type === "update_customer_email" ? "email" : "phone")) return false;
+    if (typeof candidate.fieldValue !== "string" || !candidate.fieldValue.trim()) return false;
+  } else if (candidate.endpoint !== "/api/nexus/actions") {
+    return false;
+  }
+
   if (type === "prepare_customer_email" && candidate.requiresApproval !== true) return false;
   if (type === "schedule_customer_followup") {
     if (candidate.requiresApproval !== false || typeof candidate.scheduledFor !== "string") return false;
   }
+  if ((type === "add_customer_note" || type === "create_customer_task") && candidate.requiresApproval !== false) return false;
+  if (type === "create_customer_task" && candidate.scheduledFor !== undefined && typeof candidate.scheduledFor !== "string") return false;
   return true;
+}
+
+function governedActionSuccessCopy(action: GovernedAction) {
+  if (action.type === "prepare_customer_email") {
+    return {
+      text: "Handlingen er forberedt og venter på godkjenning.",
+      navigation: "Kontroller utkastet før eventuell sending.",
+    };
+  }
+  if (action.type === "schedule_customer_followup") {
+    return {
+      text: "CRM-oppfølgingen er lagret. Ingen melding er sendt.",
+      navigation: "Åpne kundekortet og kontroller den planlagte oppfølgingen.",
+    };
+  }
+  if (action.type === "add_customer_note") {
+    return {
+      text: "Det interne CRM-notatet er lagret. Ingen melding er sendt.",
+      navigation: "Åpne kundekortet og kontroller notatet.",
+    };
+  }
+  if (action.type === "create_customer_task") {
+    return {
+      text: "Den interne kundeoppgaven er opprettet. Ingen melding er sendt.",
+      navigation: "Åpne dagens arbeid og kontroller oppgaven.",
+    };
+  }
+  return {
+    text: "Kontaktinformasjonen er oppdatert. Ingen melding er sendt.",
+    navigation: "Åpne kundekortet og kontroller kontaktinformasjonen.",
+  };
 }
 
 export function ChatWidget({
@@ -157,10 +217,11 @@ export function ChatWidget({
   }, [speakReplies]);
 
   const executeGovernedAction = useCallback(async (action: GovernedAction) => {
-    if (actionBusy[action.id] || action.endpoint !== "/api/nexus/actions" || action.method !== "POST") return;
+    if (actionBusy[action.id] || action.method !== "POST") return;
+    if (action.endpoint !== "/api/nexus/actions" && action.endpoint !== "/api/nexus/contact-field-action") return;
     setActionBusy((current) => ({ ...current, [action.id]: true }));
     try {
-      const res = await fetch("/api/nexus/actions", {
+      const res = await fetch(action.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -169,20 +230,17 @@ export function ChatWidget({
           contactId: action.contactId,
           requestText: action.requestText,
           scheduledFor: action.scheduledFor,
+          field: action.field,
+          fieldValue: action.fieldValue,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Handlingen kunne ikke utføres.");
 
-      const defaultText = action.requiresApproval
-        ? "Handlingen er forberedt og venter på godkjenning."
-        : "CRM-oppfølgingen er lagret. Ingen melding er sendt.";
-      const text = String(data.message || defaultText);
-      const navigationDescription = action.requiresApproval
-        ? "Kontroller utkastet før eventuell sending."
-        : "Åpne kundekortet og kontroller den planlagte oppfølgingen.";
+      const copy = governedActionSuccessCopy(action);
+      const text = String(data.message || copy.text);
       const navigation = data.navigation && typeof data.navigation.label === "string" && typeof data.navigation.href === "string"
-        ? [{ label: String(data.navigation.label), href: String(data.navigation.href), description: navigationDescription }]
+        ? [{ label: String(data.navigation.label), href: String(data.navigation.href), description: copy.navigation }]
         : [];
       setMessages((prev) => [...prev, {
         role: "assistant",

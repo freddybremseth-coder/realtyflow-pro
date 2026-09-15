@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildNexusActionProposals,
+  extractCustomerEmailUpdate,
+  extractCustomerPhoneUpdate,
   messageRequestsCustomerEmail,
+  messageRequestsCustomerNote,
+  messageRequestsCustomerTask,
   messageRequestsFollowupSchedule,
   parseFollowupDate,
   resolveNexusActionContact,
@@ -12,6 +16,7 @@ const HARALD = {
   id: "11111111-1111-4111-8111-111111111111",
   name: "Harald Flagtvedt",
   email: "harald@example.com",
+  phone: "+4790000000",
   brand_id: "soleada",
   pipeline_status: "QUALIFIED",
 };
@@ -19,6 +24,7 @@ const LENE = {
   id: "22222222-2222-4222-8222-222222222222",
   name: "Lene Hansen",
   email: "lene@example.com",
+  phone: "+4791111111",
   brand_id: "soleada",
   pipeline_status: "NEW",
 };
@@ -78,10 +84,72 @@ test("advice questions do not silently become write actions", () => {
   assert.equal(messageRequestsCustomerEmail("Hvordan bør jeg følge opp denne kunden?"), false);
   assert.equal(messageRequestsCustomerEmail("Hvor finner jeg e-posthistorikken?"), false);
   assert.equal(messageRequestsFollowupSchedule("Hvordan bør jeg planlegge oppfølging?"), false);
+  assert.equal(messageRequestsCustomerNote("Hvordan bør jeg skrive notat på kunden?"), false);
+  assert.equal(messageRequestsCustomerTask("Hvordan bør jeg lage en oppgave for kunden?"), false);
+  assert.equal(extractCustomerEmailUpdate("Hvordan endrer jeg e-post på kunden?"), null);
+  assert.equal(extractCustomerPhoneUpdate("Hvordan legger jeg til telefonnummer?"), null);
   assert.equal(buildNexusActionProposals({
     message: "Hvordan bør jeg følge opp denne kunden?",
     currentContact: HARALD,
     contacts: [HARALD],
+    now: NOW,
+  }).length, 0);
+});
+
+test("explicit email change produces one narrow no-send contact-field action", () => {
+  const proposals = buildNexusActionProposals({
+    message: "Endre e-post på Harald til harald.ny@example.com",
+    currentContact: LENE,
+    contacts: [HARALD, LENE],
+    now: NOW,
+  });
+  assert.equal(extractCustomerEmailUpdate("Endre e-post på Harald til HARALD.NY@example.com"), "harald.ny@example.com");
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].type, "update_customer_email");
+  assert.equal(proposals[0].contactId, HARALD.id);
+  assert.equal(proposals[0].endpoint, "/api/nexus/contact-field-action");
+  assert.equal(proposals[0].field, "email");
+  assert.equal(proposals[0].fieldValue, "harald.ny@example.com");
+  assert.equal(proposals[0].requiresApproval, false);
+  assert.match(proposals[0].description, /pipeline endres ikke/i);
+});
+
+test("missing email can be added even when customer is DNC because it is data maintenance only", () => {
+  const customer = { ...HARALD, email: null, email_suppressed: true, do_not_contact: true };
+  const proposals = buildNexusActionProposals({
+    message: "Legg til e-post på Harald: harald@example.es",
+    currentContact: customer,
+    contacts: [customer],
+    now: NOW,
+  });
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].type, "update_customer_email");
+  assert.equal(proposals[0].fieldValue, "harald@example.es");
+});
+
+test("explicit phone change normalizes the number and creates a narrow field action", () => {
+  const proposals = buildNexusActionProposals({
+    message: "Oppdater telefon på Harald til +34 600 123 456",
+    currentContact: LENE,
+    contacts: [HARALD, LENE],
+    now: NOW,
+  });
+  assert.equal(extractCustomerPhoneUpdate("Oppdater telefon på Harald til +34 600 123 456"), "+34600123456");
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].type, "update_customer_phone");
+  assert.equal(proposals[0].endpoint, "/api/nexus/contact-field-action");
+  assert.equal(proposals[0].field, "phone");
+  assert.equal(proposals[0].fieldValue, "+34600123456");
+});
+
+test("contact field updates fail closed on missing, multiple or unresolved values", () => {
+  assert.equal(extractCustomerEmailUpdate("Endre e-post på Harald"), null);
+  assert.equal(extractCustomerEmailUpdate("Endre e-post fra old@example.com til new@example.com"), null);
+  assert.equal(extractCustomerPhoneUpdate("Endre telefon på Harald til 123"), null);
+  assert.equal(buildNexusActionProposals({
+    message: "Endre e-post på Knut til knut@example.com",
+    currentContact: LENE,
+    contacts: [HARALD, LENE],
     now: NOW,
   }).length, 0);
 });
@@ -172,6 +240,63 @@ test("terminal customers and unresolved explicit targets do not get scheduled", 
       message,
       currentContact: LENE,
       contacts: [HARALD, LENE],
+      now: NOW,
+    }).length, 0);
+  }
+});
+
+test("explicit internal note action is no-send and may document a suppressed customer", () => {
+  const suppressed = { ...HARALD, email_suppressed: true, do_not_contact: true };
+  const proposals = buildNexusActionProposals({
+    message: "Legg inn notat på Harald: ønsker ikke telefonkontakt",
+    currentContact: LENE,
+    contacts: [suppressed, LENE],
+    now: NOW,
+  });
+  assert.equal(messageRequestsCustomerNote("Legg inn notat på Harald: ønsker ikke telefonkontakt"), true);
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].type, "add_customer_note");
+  assert.equal(proposals[0].contactId, HARALD.id);
+  assert.equal(proposals[0].requiresApproval, false);
+  assert.match(proposals[0].description, /internt CRM-notat/i);
+});
+
+test("internal note with unresolved explicit target fails closed", () => {
+  assert.equal(buildNexusActionProposals({
+    message: "Legg inn notat på Knut: ringte oss i dag",
+    currentContact: LENE,
+    contacts: [HARALD, LENE],
+    now: NOW,
+  }).length, 0);
+});
+
+test("explicit customer task creates internal work item proposal with optional deterministic due date", () => {
+  const proposals = buildNexusActionProposals({
+    message: "Lag oppgave for Harald om å sjekke finansiering i morgen",
+    currentContact: LENE,
+    contacts: [HARALD, LENE],
+    now: NOW,
+  });
+  assert.equal(messageRequestsCustomerTask("Lag oppgave for Harald om å sjekke finansiering i morgen"), true);
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].type, "create_customer_task");
+  assert.equal(proposals[0].contactId, HARALD.id);
+  assert.equal(proposals[0].requiresApproval, false);
+  assert.equal(proposals[0].scheduledFor, "2026-09-15T09:00:00.000Z");
+  assert.match(proposals[0].description, /Ingen melding sendes/);
+});
+
+test("customer task is blocked for suppressed and terminal customers", () => {
+  for (const blocked of [
+    { ...HARALD, email_suppressed: true },
+    { ...HARALD, do_not_contact: true },
+    { ...HARALD, pipeline_status: "WON" },
+    { ...HARALD, pipeline_status: "LOST" },
+  ]) {
+    assert.equal(buildNexusActionProposals({
+      message: "Opprett oppgave for Harald om å sjekke dokumentene",
+      currentContact: blocked,
+      contacts: [blocked],
       now: NOW,
     }).length, 0);
   }
