@@ -1,8 +1,13 @@
 type ImapErrorLike = {
   message?: unknown;
   code?: unknown;
+  response?: unknown;
   responseText?: unknown;
   responseStatus?: unknown;
+  serverResponseCode?: unknown;
+  command?: unknown;
+  path?: unknown;
+  // Legacy ImapFlow fields kept for older runtime errors.
   responseCode?: unknown;
   executedCommand?: unknown;
   authenticationFailed?: unknown;
@@ -27,9 +32,13 @@ export function describeImapError(error: unknown) {
     text(source.message),
     text(source.code),
     text(source.responseStatus),
+    text(source.serverResponseCode),
     text(source.responseCode),
     text(source.responseText),
+    text(source.response),
+    text(source.command),
     text(source.executedCommand),
+    text(source.path),
     text(cause.message),
     text(cause.code),
   ].filter(Boolean);
@@ -43,7 +52,7 @@ export function isPermanentImapError(error: unknown) {
   if (source.authenticationFailed === true) return true;
 
   const details = describeImapError(error);
-  return /authentication failed|invalid (?:credentials|password)|bad credentials|wrong password|login failed|not authenticated|account (?:disabled|suspended|locked)|mailbox (?:disabled|suspended)|user(?:name)? .*not found/i.test(details);
+  return /authenticationfailed|authentication failed|invalid (?:credentials|password)|bad credentials|wrong password|login failed|not authenticated|account (?:disabled|suspended|locked)|mailbox (?:disabled|suspended)|user(?:name)? .*not found/i.test(details);
 }
 
 export function isTransientImapError(error: unknown) {
