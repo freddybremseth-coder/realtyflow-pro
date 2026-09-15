@@ -11,6 +11,10 @@ const actionRouteSource = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/nexus/actions/route.ts"),
   "utf8",
 );
+const contactFieldActionRouteSource = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/nexus/contact-field-action/route.ts"),
+  "utf8",
+);
 const governedActionsSource = fs.readFileSync(
   path.join(process.cwd(), "src/lib/nexus-ai-governed-actions.ts"),
   "utf8",
@@ -62,15 +66,21 @@ test("Nexus AI reuses existing pipeline movement and deterministic navigation", 
 });
 
 test("Nexus AI keeps advice read-only and exposes governed action cards separately", () => {
-  assert.match(routeSource, /Selve rådgivningskallet er read-only også i v2/);
+  assert.match(routeSource, /Selve rådgivningskallet er read-only/);
   assert.match(routeSource, /buildNexusActionProposals/);
   assert.match(routeSource, /proposedActions/);
   assert.match(widgetSource, /executeGovernedAction/);
   assert.match(widgetSource, /\/api\/nexus\/actions/);
+  assert.match(widgetSource, /\/api\/nexus\/contact-field-action/);
 });
 
 test("governed actions are allowlisted and server-reverified before any write", () => {
-  assert.match(governedActionsSource, /NEXUS_GOVERNED_ACTION_TYPES = \["prepare_customer_email", "schedule_customer_followup"\]/);
+  assert.match(governedActionsSource, /"prepare_customer_email"/);
+  assert.match(governedActionsSource, /"schedule_customer_followup"/);
+  assert.match(governedActionsSource, /"add_customer_note"/);
+  assert.match(governedActionsSource, /"create_customer_task"/);
+  assert.match(governedActionsSource, /"update_customer_email"/);
+  assert.match(governedActionsSource, /"update_customer_phone"/);
   assert.match(governedActionsSource, /email_suppressed/);
   assert.match(governedActionsSource, /do_not_contact/);
   assert.match(actionRouteSource, /requireAdminApi/);
@@ -113,12 +123,93 @@ test("v3 follow-up scheduling does not mutate pipeline or require an email addre
   assert.match(governedActionsSource, /\["WON", "LOST"\]/);
 });
 
-test("chat renders approval actions and internal CRM actions through the same Nexus surface", () => {
-  assert.match(widgetSource, /"prepare_customer_email" \| "schedule_customer_followup"/);
+test("v4 internal CRM note is explicit, no-send and allowed for documentation-only DNC cases", () => {
+  assert.match(governedActionsSource, /messageRequestsCustomerNote/);
+  assert.match(governedActionsSource, /type: "add_customer_note"/);
+  assert.match(governedActionsSource, /requireContactable: false/);
+  assert.match(actionRouteSource, /type !== "add_customer_note"/);
+  assert.match(actionRouteSource, /NEXUS_AI_CUSTOMER_NOTE_ADDED/);
+  assert.match(actionRouteSource, /eventType: "note"/);
+  assert.match(actionRouteSource, /internal_note: true/);
+  assert.match(actionRouteSource, /no_customer_contact: true/);
+});
+
+test("v4 customer task is internal, idempotent and blocked for active-contact safety boundaries", () => {
+  assert.match(governedActionsSource, /messageRequestsCustomerTask/);
+  assert.match(governedActionsSource, /type: "create_customer_task"/);
+  assert.match(actionRouteSource, /from\("work_items"\)/);
+  assert.match(actionRouteSource, /source_id: `nexus-ai-action:\$\{proposalId\}`/);
+  assert.match(actionRouteSource, /NEXUS_AI_CUSTOMER_TASK_CREATED/);
+  assert.match(actionRouteSource, /eventType: "work_item_created"/);
+  assert.match(actionRouteSource, /\["schedule_customer_followup", "create_customer_task"\]/);
+  assert.match(actionRouteSource, /\["WON", "LOST"\]/);
+});
+
+test("v4 governed action receipts carry stable contact and source identity without revenue inflation", () => {
+  assert.match(actionRouteSource, /insertRevenueEvent/);
+  assert.match(actionRouteSource, /contactId: String\(params\.contact\.id\)/);
+  assert.match(actionRouteSource, /sourceSystem: "nexus_ai_chat"/);
+  assert.match(actionRouteSource, /sourceType: "governed_action"/);
+  assert.match(actionRouteSource, /sourceId: params\.proposalId/);
+  assert.match(actionRouteSource, /buildRevenueEventDedupeKey/);
+  assert.doesNotMatch(actionRouteSource, /revenueImpactEur:/);
+});
+
+test("v4 partial-write retries repair receipts without repeating the CRM action", () => {
+  assert.match(actionRouteSource, /const existingInteraction =/);
+  assert.match(actionRouteSource, /let existingTask:/);
+  assert.match(actionRouteSource, /NEXUS_AI_ACTION_RECEIPT_RECOVERED/);
+  assert.match(actionRouteSource, /receipt_recovered: true/);
+  assert.match(actionRouteSource, /existing internal artifact verified; receipt repaired/);
+  assert.match(actionRouteSource, /await finishRun\(runStore, runId\)/);
+  assert.match(actionRouteSource, /if \(completedRun\(run\)/);
+  assert.doesNotMatch(actionRouteSource, /if \(existingInteraction \|\| \(run\?\.status === "completed"/);
+});
+
+test("v4 CRM contact field updates are narrow, deterministic and duplicate-safe", () => {
+  assert.match(governedActionsSource, /extractCustomerEmailUpdate/);
+  assert.match(governedActionsSource, /extractCustomerPhoneUpdate/);
+  assert.match(governedActionsSource, /type: "update_customer_email"/);
+  assert.match(governedActionsSource, /type: "update_customer_phone"/);
+  assert.match(governedActionsSource, /endpoint: "\/api\/nexus\/contact-field-action"/);
+  assert.match(contactFieldActionRouteSource, /\["update_customer_email", "update_customer_phone"\]/);
+  assert.match(contactFieldActionRouteSource, /expectedField/);
+  assert.match(contactFieldActionRouteSource, /buildNexusActionProposals/);
+  assert.match(contactFieldActionRouteSource, /verifiedProposal\.field !== field/);
+  assert.match(contactFieldActionRouteSource, /from\("contacts"\)\.select\("id,email,phone"\)\.limit\(5000\)/);
+  assert.match(contactFieldActionRouteSource, /CONTACT_FIELD_CONFLICT/);
+  assert.match(contactFieldActionRouteSource, /\.update\(\{ \[field\]: value, interactions, updated_at: now \}\)/);
+  assert.match(contactFieldActionRouteSource, /eventType: "contact_updated"/);
+  assert.match(contactFieldActionRouteSource, /no_customer_contact: true/);
+  assert.match(contactFieldActionRouteSource, /customer_message_sent: false/);
+  assert.doesNotMatch(contactFieldActionRouteSource, /pipeline_status\s*:/);
+  assert.doesNotMatch(contactFieldActionRouteSource, /commission_amount|commission_percent|pipeline_value/);
+  assert.doesNotMatch(contactFieldActionRouteSource, /sendBrandEmail|executeApproval/);
+});
+
+test("chat renders approval and all safe internal CRM actions through one Nexus surface", () => {
+  assert.match(widgetSource, /"prepare_customer_email"/);
+  assert.match(widgetSource, /"schedule_customer_followup"/);
+  assert.match(widgetSource, /"add_customer_note"/);
+  assert.match(widgetSource, /"create_customer_task"/);
+  assert.match(widgetSource, /"update_customer_email"/);
+  assert.match(widgetSource, /"update_customer_phone"/);
   assert.match(widgetSource, /scheduledFor: action\.scheduledFor/);
+  assert.match(widgetSource, /field: action\.field/);
+  assert.match(widgetSource, /fieldValue: action\.fieldValue/);
+  assert.match(widgetSource, /fetch\(action\.endpoint/);
   assert.match(widgetSource, /Intern CRM-handling · sender ingenting/);
   assert.match(widgetSource, /Krever godkjenning før sending/);
-  assert.match(widgetSource, /candidate\.scheduledFor/);
+  assert.match(widgetSource, /governedActionSuccessCopy/);
+});
+
+test("Nexus AI system prompt describes the v4 write boundary without claiming direct execution", () => {
+  assert.match(routeSource, /planlegge CRM-oppfølging/);
+  assert.match(routeSource, /lagre et internt CRM-notat/);
+  assert.match(routeSource, /opprette en intern kundeoppgave/);
+  assert.match(routeSource, /E-posthandlingen kan bare opprette et utkast/);
+  assert.match(routeSource, /endrer aldri pipeline-status/);
+  assert.match(routeSource, /Dokumentert provisjon er den kanoniske revenue truth/);
 });
 
 test("Nexus AI customer drafts preserve brand through the existing executor path", () => {

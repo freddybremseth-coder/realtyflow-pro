@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
   const topActions = activeContacts
     .map((row) => compactContact(row))
     .filter((row) => row.movement?.needs_action)
-    .sort((a, b) => Number(b.movement?.score || 0) - Number(a.movement?.score || 0) || b.pipeline_value - a.pipeline_value)
+    .sort((a, b) => Number(b.movement?.score || 0) - Number(a.movement?.score || 0) || String(a.id).localeCompare(String(b.id)))
     .slice(0, 15);
 
   const currentContact = currentContactR.data
@@ -212,19 +212,21 @@ HOVEDOPPGAVE:
 - Når brukeren spør «hva bør jeg gjøre i dag?», bruk crm.top_actions, opportunities, owner_focus, approvals og runtime-status til å prioritere et lite antall konkrete handlinger med begrunnelse.
 - Når brukeren spør «hvor finner jeg …?» eller «hvor skal jeg trykke?», bruk navigation_candidates og oppgi riktig modul/side. Ikke finn på menyer eller ruter.
 - Når page_context/current_customer finnes og brukeren sier «denne kunden», «her», «denne siden» eller lignende, behandle current_customer som aktiv kontekst uten å be brukeren gjenta hvem det gjelder.
-- Når brukeren ber Nexus om å forberede en kundeoppfølging og proposed_actions inneholder en handling, forklar kort at et eget handlingskort kan opprette utkastet. Ikke påstå at utkastet allerede finnes før brukeren faktisk har trykket på kortet og action-endepunktet har svart.
+- Når proposed_actions inneholder en handling, forklar kort hva handlingskortet faktisk vil gjøre. Ikke påstå at noe er lagret, planlagt, opprettet eller sendt før brukeren har trykket på kortet og action-endepunktet har bekreftet utførelse.
 - Når brukeren spør hvordan systemet kan gjøre noe, forklar først hva RealtyFlow allerede kan gjøre, hvilken modul som eier funksjonen, og hva som eventuelt mangler. Skill tydelig mellom eksisterende funksjon, anbefalt konfigurasjon og ny utvikling.
 - Bruk konkrete kundenavn fra crm.top_actions når spørsmålet gjelder hvem som bør kontaktes. Ikke begrens deg til summeringer når konkrete rader finnes.
 
 SIKKERHET OG SANNHET:
-- Selve rådgivningskallet er read-only også i v2. Det kan analysere, prioritere, forklare, navigere og foreslå allowlistede handlingskort, men ingen sideeffekt skjer uten et eksplisitt brukerklikk mot det separate governed-actions-endepunktet.
-- Et handlingsklikk kan i første v2-trinn bare opprette et internt e-postutkast og en pending Approval Center-post. Det sender ikke e-post direkte.
+- Selve rådgivningskallet er read-only. Det kan analysere, prioritere, forklare, navigere og foreslå allowlistede handlingskort, men ingen sideeffekt skjer uten et eksplisitt brukerklikk mot det separate governed-actions-endepunktet.
+- Allowlistede interne handlinger kan planlegge CRM-oppfølging, lagre et internt CRM-notat eller opprette en intern kundeoppgave. Disse handlingene sender aldri e-post, SMS, WhatsApp eller annen kundekommunikasjon.
+- E-posthandlingen kan bare opprette et utkast og en pending Approval Center-post. Den sender ikke e-post direkte.
+- Governed actions endrer aldri pipeline-status, Buyer Profile-kriterier, provisjon eller revenue truth.
 - Ikke late som en handling er utført hvis snapshot eller execution-logg ikke viser det.
 - Skill tydelig mellom proposed/draft/pending approval/approved/executed/published/measured.
 - Respekter runtime_controls og autonomy-policy. En funksjon som er AV eller BLOCKED skal ikke omtales som aktiv.
 - Kunde-bekreftede fakta skal veie tyngre enn modellens antakelser. Ikke oppfinn pris, tilgjengelighet, avtalevilkår eller juridiske/økonomiske fakta.
 - Hvis snapshot mangler data som kreves for et eksakt svar, si presist hva som mangler i stedet for å gjette.
-- Pipeline- og opportunity-value er beslutningsstøtte, ikke automatisk det samme som bokført omsetning. Forklar dette hvis brukeren spør om faktisk omsetning.
+- Pipeline- og opportunity-value er transaksjons-/beslutningskontekst, ikke automatisk vår inntekt. Dokumentert provisjon er den kanoniske revenue truth når den finnes.
 
 OWNER FOCUS:
 - owner_focus er eksplisitte prioriteringer fra eier og skal veie tyngre enn normal porteføljebalanse.

@@ -1,12 +1,20 @@
 import { sha256 } from "@/lib/agentic/ids";
 
-export const NEXUS_GOVERNED_ACTION_TYPES = ["prepare_customer_email", "schedule_customer_followup"] as const;
+export const NEXUS_GOVERNED_ACTION_TYPES = [
+  "prepare_customer_email",
+  "schedule_customer_followup",
+  "add_customer_note",
+  "create_customer_task",
+  "update_customer_email",
+  "update_customer_phone",
+] as const;
 export type NexusGovernedActionType = (typeof NEXUS_GOVERNED_ACTION_TYPES)[number];
 
 export interface NexusActionContact {
   id: string;
   name?: string | null;
   email?: string | null;
+  phone?: string | null;
   brand_id?: string | null;
   brand?: string | null;
   email_suppressed?: boolean | null;
@@ -19,13 +27,15 @@ export interface NexusActionProposal {
   type: NexusGovernedActionType;
   label: string;
   description: string;
-  endpoint: "/api/nexus/actions";
+  endpoint: "/api/nexus/actions" | "/api/nexus/contact-field-action";
   method: "POST";
   contactId: string;
   contactName: string;
   requestText: string;
   requiresApproval: boolean;
   scheduledFor?: string;
+  field?: "email" | "phone";
+  fieldValue?: string;
 }
 
 const normalize = (value: unknown) => String(value ?? "")
@@ -39,9 +49,13 @@ const normalize = (value: unknown) => String(value ?? "")
   .replace(/\s+/g, " ")
   .trim();
 
+function eligibleInternalContact(contact: NexusActionContact | null | undefined): contact is NexusActionContact {
+  return Boolean(contact?.id);
+}
+
 function eligibleBaseContact(contact: NexusActionContact | null | undefined): contact is NexusActionContact {
   return Boolean(
-    contact?.id
+    eligibleInternalContact(contact)
     && !contact.email_suppressed
     && !contact.do_not_contact,
   );
@@ -51,9 +65,44 @@ function eligibleEmailContact(contact: NexusActionContact | null | undefined): c
   return Boolean(eligibleBaseContact(contact) && contact.email);
 }
 
+function isAdviceQuestion(text: string) {
+  return !text || /^(hvordan|hvor|hva er|forklar)\b/.test(text);
+}
+
+function hasContactFieldUpdateVerb(text: string) {
+  return /\b(endre|oppdater|bytt|sett|legg inn|legg til|registrer|korriger|replace|update)\b/.test(text);
+}
+
+export function extractCustomerEmailUpdate(message: string): string | null {
+  const text = normalize(message);
+  if (isAdviceQuestion(text) || !hasContactFieldUpdateVerb(text)) return null;
+  if (!/\b(e post|epost|email|mailadresse|epostadresse|e postadresse)\b/.test(text)) return null;
+  const matches = String(message || "").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+  const unique = [...new Set(matches.map((value) => value.trim().toLowerCase()))];
+  return unique.length === 1 ? unique[0] : null;
+}
+
+export function normalizeCustomerPhone(value: unknown): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const hasPlus = raw.startsWith("+");
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 7 || digits.length > 15) return null;
+  return `${hasPlus ? "+" : ""}${digits}`;
+}
+
+export function extractCustomerPhoneUpdate(message: string): string | null {
+  const text = normalize(message);
+  if (isAdviceQuestion(text) || !hasContactFieldUpdateVerb(text)) return null;
+  if (!/\b(telefon|telefonnummer|mobil|mobilnummer|phone)\b/.test(text)) return null;
+  const candidates = String(message || "").match(/(?:\+\d[\d\s().-]{5,}\d|\b\d[\d\s().-]{5,}\d\b)/g) || [];
+  const normalized = [...new Set(candidates.map(normalizeCustomerPhone).filter((value): value is string => Boolean(value)))];
+  return normalized.length === 1 ? normalized[0] : null;
+}
+
 export function messageRequestsCustomerEmail(message: string): boolean {
   const text = normalize(message);
-  if (!text || /^(hvordan|hvor|hva er|forklar)\b/.test(text)) return false;
+  if (isAdviceQuestion(text)) return false;
 
   const directVerb = /\b(lag|skriv|forbered|klargjor|utarbeid|send|svar|folg opp|kontakte|kontakt)\b/.test(text);
   const communicationTarget = /\b(e post|epost|email|mail|melding|oppfolging|svar|kunden|kunde)\b/.test(text);
@@ -62,10 +111,26 @@ export function messageRequestsCustomerEmail(message: string): boolean {
 
 export function messageRequestsFollowupSchedule(message: string): boolean {
   const text = normalize(message);
-  if (!text || /^(hvordan|hvor|hva er|forklar)\b/.test(text)) return false;
+  if (isAdviceQuestion(text)) return false;
   const scheduleVerb = /\b(planlegg|sett|legg inn|minn meg|schedule|plan)\b/.test(text);
   const target = /\b(oppfolging|follow up|kontakt|ringe|ring|kunde|kunden)\b/.test(text);
   return scheduleVerb && target;
+}
+
+export function messageRequestsCustomerNote(message: string): boolean {
+  const text = normalize(message);
+  if (isAdviceQuestion(text)) return false;
+  const directVerb = /\b(legg inn|registrer|noter|skriv|lag|opprett|add)\b/.test(text);
+  const target = /\b(notat|note|merknad|crm notat)\b/.test(text);
+  return directVerb && target;
+}
+
+export function messageRequestsCustomerTask(message: string): boolean {
+  const text = normalize(message);
+  if (isAdviceQuestion(text)) return false;
+  const directVerb = /\b(lag|opprett|legg inn|registrer|sett opp|add)\b/.test(text);
+  const target = /\b(oppgave|task|todo|to do)\b/.test(text);
+  return directVerb && target;
 }
 
 const MONTHS: Record<string, number> = {
@@ -185,10 +250,15 @@ export function resolveNexusActionContact(args: {
   currentContact?: NexusActionContact | null;
   contacts: NexusActionContact[];
   requireEmail?: boolean;
+  requireContactable?: boolean;
 }): NexusActionContact | null {
   const normalized = normalize(args.message);
   const text = ` ${normalized} `;
-  const eligible = args.requireEmail === false ? eligibleBaseContact : eligibleEmailContact;
+  const eligible = args.requireContactable === false
+    ? eligibleInternalContact
+    : args.requireEmail === false
+      ? eligibleBaseContact
+      : eligibleEmailContact;
   const scored = args.contacts
     .filter(eligible)
     .map((contact) => ({ contact, score: contactMatchScore(text, contact) }))
@@ -201,8 +271,8 @@ export function resolveNexusActionContact(args: {
   }
 
   // An explicit named target must resolve above. Never silently substitute the
-  // customer whose page happens to be open when "til/med/for Knut" is unknown.
-  const explicitUnresolvedTarget = /\b(?:til|med|for)\s+(?!denne\b|kunden\b|kunde\b)([a-z0-9]{3,})\b/.test(normalized);
+  // customer whose page happens to be open when "til/med/for/på Knut" is unknown.
+  const explicitUnresolvedTarget = /\b(?:til|med|for|pa)\s+(?!denne\b|kunden\b|kunde\b)([a-z0-9]{3,})\b/.test(normalized);
   if (explicitUnresolvedTarget) return null;
 
   if (eligible(args.currentContact)) return args.currentContact;
@@ -216,6 +286,50 @@ export function buildNexusActionProposals(args: {
   now?: Date;
 }): NexusActionProposal[] {
   const requestText = args.message.trim();
+
+  const emailUpdate = extractCustomerEmailUpdate(requestText);
+  if (emailUpdate) {
+    const contact = resolveNexusActionContact({ ...args, requireEmail: false, requireContactable: false });
+    if (!contact) return [];
+    const contactName = String(contact.name || contact.email || "kunden");
+    const id = `nexus_action_${sha256(`update_customer_email:${contact.id}:${emailUpdate}:${normalize(requestText)}`).slice(0, 24)}`;
+    return [{
+      id,
+      type: "update_customer_email",
+      label: `${contact.email ? "Endre" : "Legg til"} e-post for ${contactName}`,
+      description: `Oppdaterer kun kundens e-postadresse til ${emailUpdate}. Ingen melding sendes, og pipeline endres ikke.`,
+      endpoint: "/api/nexus/contact-field-action",
+      method: "POST",
+      contactId: contact.id,
+      contactName,
+      requestText,
+      requiresApproval: false,
+      field: "email",
+      fieldValue: emailUpdate,
+    }];
+  }
+
+  const phoneUpdate = extractCustomerPhoneUpdate(requestText);
+  if (phoneUpdate) {
+    const contact = resolveNexusActionContact({ ...args, requireEmail: false, requireContactable: false });
+    if (!contact) return [];
+    const contactName = String(contact.name || contact.email || "kunden");
+    const id = `nexus_action_${sha256(`update_customer_phone:${contact.id}:${phoneUpdate}:${normalize(requestText)}`).slice(0, 24)}`;
+    return [{
+      id,
+      type: "update_customer_phone",
+      label: `${contact.phone ? "Endre" : "Legg til"} telefon for ${contactName}`,
+      description: `Oppdaterer kun kundens telefonnummer til ${phoneUpdate}. Ingen melding sendes, og pipeline endres ikke.`,
+      endpoint: "/api/nexus/contact-field-action",
+      method: "POST",
+      contactId: contact.id,
+      contactName,
+      requestText,
+      requiresApproval: false,
+      field: "phone",
+      fieldValue: phoneUpdate,
+    }];
+  }
 
   if (messageRequestsFollowupSchedule(requestText)) {
     const scheduledFor = parseFollowupDate(requestText, args.now);
@@ -239,6 +353,49 @@ export function buildNexusActionProposals(args: {
       requestText,
       requiresApproval: false,
       scheduledFor,
+    }];
+  }
+
+  if (messageRequestsCustomerNote(requestText)) {
+    const contact = resolveNexusActionContact({ ...args, requireEmail: false, requireContactable: false });
+    if (!contact) return [];
+    const contactName = String(contact.name || contact.email || "kunden");
+    const id = `nexus_action_${sha256(`add_customer_note:${contact.id}:${normalize(requestText)}`).slice(0, 24)}`;
+    return [{
+      id,
+      type: "add_customer_note",
+      label: `Legg inn CRM-notat på ${contactName}`,
+      description: "Lagrer brukerens instruksjon som et internt CRM-notat. Ingen melding sendes til kunden.",
+      endpoint: "/api/nexus/actions",
+      method: "POST",
+      contactId: contact.id,
+      contactName,
+      requestText,
+      requiresApproval: false,
+    }];
+  }
+
+  if (messageRequestsCustomerTask(requestText)) {
+    const contact = resolveNexusActionContact({ ...args, requireEmail: false });
+    if (!contact) return [];
+    if (["WON", "LOST"].includes(String(contact.pipeline_status || "").toUpperCase())) return [];
+    const contactName = String(contact.name || contact.email || "kunden");
+    const scheduledFor = parseFollowupDate(requestText, args.now) || undefined;
+    const id = `nexus_action_${sha256(`create_customer_task:${contact.id}:${scheduledFor || "undated"}:${normalize(requestText)}`).slice(0, 24)}`;
+    return [{
+      id,
+      type: "create_customer_task",
+      label: `Opprett intern oppgave for ${contactName}`,
+      description: scheduledFor
+        ? `Oppretter en intern kundeoppgave med forfall ${scheduledFor.slice(0, 10)}. Ingen melding sendes til kunden.`
+        : "Oppretter en intern kundeoppgave uten å kontakte kunden.",
+      endpoint: "/api/nexus/actions",
+      method: "POST",
+      contactId: contact.id,
+      contactName,
+      requestText,
+      requiresApproval: false,
+      ...(scheduledFor ? { scheduledFor } : {}),
     }];
   }
 
