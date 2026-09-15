@@ -1,28 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireAdminApi } from "@/lib/api-admin";
 import { buildRedirectUri, getGoogleCredentials } from "@/lib/oauth/providers";
 import { createState } from "@/lib/oauth/state";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
+import { GOOGLE_MAIL_SCOPE } from "@/services/email/account-auth";
 
 /**
- * GET /api/oauth/google?brand_id=<id>&service=<youtube|drive>&return_to=<path>
+ * GET /api/oauth/google?brand_id=<id>&service=<youtube|drive|gmail>&return_to=<path>
  *
- * Phase 3 refactor of the YouTube OAuth start route. Differences from the old
- * version:
- *   - `brand_id` is REQUIRED. We refuse to start a flow that doesn't know
- *     which brand the resulting tokens belong to. The legacy `_system` /
- *     fuzzy fallback was the source of cross-brand contamination.
- *   - `state` is now a 32-byte hex nonce persisted in `oauth_states`. The
- *     callback verifies + consumes it (CSRF) and pulls the brand_id /
- *     return_to back out of the row instead of trusting an unsigned
- *     base64-JSON blob in the URL.
- *   - Backwards compatible with the old query name `?brand=...` so existing
- *     bookmarks and the current settings UI keep working through the
- *     transition.
- *
- * After consent, the callback fetches `youtube.channels.list({mine: true})`
- * and either auto-finalizes (when there's exactly one channel) or sends the
- * user to /oauth/select to pick which channel goes to which brand.
+ * Multi-brand Google OAuth entry point. Gmail additionally requires the
+ * concrete brand_email_configs account id + expected email address so the
+ * callback cannot bind the wrong Google account to a mailbox.
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -37,7 +26,25 @@ export async function GET(req: NextRequest) {
   }
 
   const service = (params.get("service") || "youtube").trim();
+  if (!["youtube", "drive", "gmail"].includes(service)) {
+    return NextResponse.json({ error: "service must be youtube, drive or gmail" }, { status: 400 });
+  }
+
+  if (service === "gmail") {
+    const denied = await requireAdminApi(req);
+    if (denied) return denied;
+  }
+
   const returnTo = params.get("return_to") || "/settings?tab=sosiale-medier";
+  const accountId = (params.get("account_id") || "").trim();
+  const expectedEmail = (params.get("email") || "").trim().toLowerCase();
+
+  if (service === "gmail" && (!accountId || !expectedEmail || !expectedEmail.includes("@"))) {
+    return NextResponse.json(
+      { error: "Gmail OAuth requires account_id and a valid email address" },
+      { status: 400 },
+    );
+  }
 
   let credentials;
   try {
@@ -51,23 +58,27 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = buildRedirectUri("google", req.nextUrl.origin);
 
-  const youtubeOnly = service === "youtube";
-  const scopes = [
-    "https://www.googleapis.com/auth/youtube",
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/youtube.force-ssl",
-    "https://www.googleapis.com/auth/yt-analytics.readonly",
-    ...(!youtubeOnly ? ["https://www.googleapis.com/auth/drive.file"] : []),
-  ];
+  const scopes = service === "gmail"
+    ? ["openid", "email", "profile", GOOGLE_MAIL_SCOPE]
+    : [
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+        "https://www.googleapis.com/auth/yt-analytics.readonly",
+        ...(service === "drive" ? ["https://www.googleapis.com/auth/drive.file"] : []),
+      ];
 
   let stateNonce: string;
   try {
     stateNonce = await createState({
       brandId,
-      platform: service === "drive" ? "google_drive" : "youtube",
+      platform: service === "drive" ? "google_drive" : service === "gmail" ? "gmail" : "youtube",
       returnTo,
-      metadata: { service },
+      metadata: {
+        service,
+        ...(service === "gmail" ? { account_id: accountId, expected_email: expectedEmail } : {}),
+      },
     });
   } catch (err) {
     return NextResponse.json(
@@ -89,6 +100,7 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("prompt", "consent");
   authUrl.searchParams.set("include_granted_scopes", "true");
   authUrl.searchParams.set("state", stateNonce);
+  if (service === "gmail") authUrl.searchParams.set("login_hint", expectedEmail);
 
   return NextResponse.redirect(authUrl.toString());
 }
