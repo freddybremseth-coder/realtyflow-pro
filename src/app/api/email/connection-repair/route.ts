@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   const { data: account, error: accountError } = await supabase
     .from("brand_email_configs")
     .select(
-      "id,brand_id,email_address,imap_host,imap_port,imap_secure,encrypted_password,encryption_iv,is_active,auto_fetch"
+      "id,brand_id,email_address,imap_host,imap_port,imap_secure,encrypted_password,encryption_iv,is_active,auto_fetch,auto_fetch_paused_by_system"
     )
     .eq("id", policy.request.accountId)
     .maybeSingle();
@@ -51,7 +51,9 @@ export async function POST(request: NextRequest) {
     });
 
     const now = new Date().toISOString();
-    const patch = buildEmailConnectionHealthRepairPatch(now);
+    const restoreAutoFetch = account.auto_fetch_paused_by_system === true;
+    const autoFetchAfterRepair = restoreAutoFetch ? true : Boolean(account.auto_fetch);
+    const patch = buildEmailConnectionHealthRepairPatch(now, { restoreAutoFetch });
     const { error: updateError } = await supabase
       .from("brand_email_configs")
       .update(patch)
@@ -69,8 +71,9 @@ export async function POST(request: NextRequest) {
         account_id: account.id,
         brand_id: account.brand_id,
         email_address: account.email_address,
-        auto_fetch_preserved: true,
-        auto_fetch: Boolean(account.auto_fetch),
+        auto_fetch_restored: restoreAutoFetch,
+        auto_fetch_preserved: !restoreAutoFetch,
+        auto_fetch: autoFetchAfterRepair,
         credentials_rotated: false,
         message_content_fetched: false,
       },
@@ -82,15 +85,17 @@ export async function POST(request: NextRequest) {
       brandId: account.brand_id,
       emailAddress: account.email_address,
       health: "healthy",
-      autoFetch: Boolean(account.auto_fetch),
-      autoFetchPreserved: true,
+      autoFetch: autoFetchAfterRepair,
+      autoFetchRestored: restoreAutoFetch,
+      autoFetchPreserved: !restoreAutoFetch,
       connection: result,
       repairedAt: now,
       safety: {
         explicitConfirmationRequired: true,
         storedCredentialUsed: true,
         credentialsRotated: false,
-        autoFetchPreserved: true,
+        autoFetchRestored: restoreAutoFetch,
+        autoFetchPreserved: !restoreAutoFetch,
         messageContentFetched: false,
         emailSent: false,
       },
