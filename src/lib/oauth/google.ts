@@ -1,8 +1,7 @@
 /**
  * Google-side helpers: token exchange, channel enumeration, and the
  * "finalize one channel" routine shared by both the auto-finalize path
- * (callback when there's exactly one channel) and the picker finalize path
- * (POST /api/oauth/google/finalize after the user picks).
+ * and provider-specific Google OAuth flows.
  */
 
 import { saveTokens, upsertChannel } from "./channels";
@@ -92,15 +91,14 @@ export async function listYouTubeChannels(accessToken: string): Promise<YouTubeC
 }
 
 /**
- * Finalize one Google channel into the canonical connection store only.
- * `social_channels + oauth_tokens` is the source of truth for YouTube and
- * Google Drive. We intentionally no longer mirror refresh tokens into
- * `brand_settings`; dual-write allowed stale or cross-brand legacy tokens to
- * survive after the canonical channel binding had changed.
+ * Finalize one Google-backed identity into the canonical connection store.
+ * `social_channels + oauth_tokens` is the source of truth. Gmail uses the
+ * mailbox email address as external_id; YouTube uses channel id; Drive uses
+ * the Google subject id.
  */
 export async function finalizeGoogleChannel(input: {
   brandId: string;
-  platform: "youtube" | "google_drive";
+  platform: "youtube" | "google_drive" | "gmail";
   channel: YouTubeChannelInfo;
   accessToken: string;
   refreshToken: string;
