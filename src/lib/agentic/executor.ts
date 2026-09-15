@@ -1,11 +1,6 @@
 /**
- * Agentic Executor — utfører GODKJENTE handlinger og lukker sløyfen
- * (AI foreslår → menneske godkjenner → system utfører).
- *
- * Utfører KUN elementer med status "approved". Idempotent (executed → skip).
- * Ruter på gatedActionClass til en registrert executor. Sending går gjennom en
- * injisert ExecutorSender som støtter dry-run — ekte utsending krever eksplisitt
- * live-modus. Alt publiseres til revenue_events (outcome="executed").
+ * Agentic Executor — executes APPROVED actions and closes the loop.
+ * Only this layer may emit proof that an underlying action was actually executed.
  */
 
 import type { RunOutcome } from "./schemas";
@@ -31,11 +26,15 @@ export interface ExecutorStore {
 }
 
 export interface GatewayExecutedEvent {
+  approvalId: string;
   runId?: string;
+  correlationId?: string;
   outcome: Extract<RunOutcome, "executed">;
   title: string;
+  gatedActionClass: string;
   subjectType: string;
   subjectRef?: string;
+  customerRef?: string;
   revenueImpactEur?: number;
 }
 
@@ -57,7 +56,6 @@ export interface ExecuteResult {
   error?: string;
 }
 
-/** send_personal: hent godkjent utkast og send (eller dry-run). */
 export const sendPersonalExecutor: ActionExecutor = async (item, deps) => {
   if (!item.draftId) throw new Error("mangler draftId");
   const draft = await deps.store.getDraft(item.draftId);
@@ -89,11 +87,15 @@ export async function executeApproval(
     const at = (deps.now?.() ?? new Date()).toISOString();
     await deps.store.markExecuted(args.id, at, detail, args.executedBy);
     await deps.publishEvent({
+      approvalId: item.id,
       runId: item.runId ?? undefined,
+      correlationId: item.correlationId ?? undefined,
       outcome: "executed",
       title: `UTFØRT: ${item.title}`,
+      gatedActionClass: item.gatedActionClass,
       subjectType: String(item.subjectType),
       subjectRef: item.subjectRef ?? undefined,
+      customerRef: item.customerRef ?? undefined,
       revenueImpactEur: item.estimatedOpportunityEur ?? undefined,
     });
     return { ok: true, executed: true, detail };
