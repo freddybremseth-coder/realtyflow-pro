@@ -12,9 +12,9 @@ test("Google OAuth Gmail flow requests full mail scope and binds a concrete emai
   assert.match(start, /GOOGLE_MAIL_SCOPE/);
   assert.match(start, /account_id/);
   assert.match(start, /expected_email/);
-  assert.match(start, /access_type.*offline/);
-  assert.match(start, /prompt.*consent/);
-  assert.match(start, /login_hint/);
+  assert.match(start, /searchParams\.set\("access_type", "offline"\)/);
+  assert.match(start, /searchParams\.set\("prompt", "consent"\)/);
+  assert.match(start, /searchParams\.set\("login_hint", expectedEmail\)/);
 });
 
 test("Gmail callback verifies exact Google identity and IMAP XOAUTH2 before enabling auto fetch", () => {
@@ -48,7 +48,7 @@ test("email transports accept OAuth access tokens while retaining password fallb
   assert.match(resolver, /decryptPassword/);
 });
 
-test("Communications exposes Sign in with Google and hides password flow for Gmail", () => {
+test("Communications exposes Sign in with Google and binds brand plus account", () => {
   const page = source("src/app/(content)/nexus-os/communications/page.tsx");
   assert.match(page, /Logg inn med Google/);
   assert.match(page, /service: "gmail"/);
