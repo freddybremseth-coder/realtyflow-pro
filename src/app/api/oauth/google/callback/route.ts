@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { createServerClient } from "@/lib/supabase/server";
 import { encryptOptional } from "@/lib/oauth/crypto";
 import { serializeEnvelope } from "@/lib/oauth/envelope";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@/lib/oauth/google";
 import { buildRedirectUri, getGoogleCredentials } from "@/lib/oauth/providers";
 import { consumeState, createState } from "@/lib/oauth/state";
+import { checkImapConnection } from "@/services/email/imap-connection-check";
 import { repairRemasterPlaylistsWithFreshAccessToken } from "@/services/integrations/remaster-youtube-oauth-repair";
 
 export const maxDuration = 60;
@@ -18,21 +20,10 @@ export const maxDuration = 60;
 /**
  * GET /api/oauth/google/callback
  *
- * Phase 3 refactor:
- *   - Verifies + consumes the `state` nonce. Rejects forged or replayed
- *     callbacks before exchanging the code.
- *   - Exchanges the code for access + refresh tokens.
- *   - Calls `youtube.channels.list({mine: true})` to enumerate the YouTube
- *     channels the auth subject can manage.
- *   - If exactly one channel is returned: creates a `social_channels` row
- *     for it under the requested brand_id and persists encrypted tokens.
- *   - If multiple channels are returned: stashes the channel list and
- *     encrypted token envelopes in a fresh state row, then redirects to
- *     /oauth/select for the user to pick one.
- *
- * Backwards-compat: also writes the refresh token to
- * `brand_settings.settings.youtube_refresh_token` (via finalizeGoogleChannel)
- * so the existing youtube-client token-walker keeps working through Phase 4.
+ * Verifies and consumes state, exchanges the one-time code and persists
+ * encrypted provider tokens. Gmail uses the expected mailbox address carried
+ * in OAuth state, tests XOAUTH2 against IMAP before enabling auto-fetch, then
+ * binds the token to that exact brand_email_configs row.
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -92,6 +83,10 @@ export async function GET(req: NextRequest) {
   if (!tokenData.refresh_token) {
     console.error("[Google OAuth] No refresh_token in response.");
     return errorRedirect(req, state.brand_id, "no_refresh_token", state.return_to);
+  }
+
+  if (service === "gmail" || state.platform === "gmail") {
+    return finalizeGmailConnection(req, state, tokenData);
   }
 
   let channels: YouTubeChannelInfo[];
@@ -157,8 +152,6 @@ export async function GET(req: NextRequest) {
         });
         console.info("[Google OAuth] Re-Master playlist bootstrap:", repair);
       } catch (err) {
-        // OAuth itself succeeded. Keep the connection and let the periodic
-        // recovery cron retry, while surfacing the exact server-side reason.
         console.error("[Google OAuth] Re-Master playlist bootstrap failed:", err);
       }
     }
@@ -200,6 +193,132 @@ export async function GET(req: NextRequest) {
     state.platform === "google_drive" ? "google_drive" : "google",
   );
   return NextResponse.redirect(pickerUrl.toString());
+}
+
+async function finalizeGmailConnection(
+  req: NextRequest,
+  state: Awaited<ReturnType<typeof consumeState>> & {},
+  tokenData: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+  },
+): Promise<NextResponse> {
+  const accountId = typeof state.metadata?.account_id === "string" ? state.metadata.account_id.trim() : "";
+  const expectedEmail = typeof state.metadata?.expected_email === "string"
+    ? state.metadata.expected_email.trim().toLowerCase()
+    : "";
+
+  if (!accountId || !expectedEmail || !tokenData.refresh_token) {
+    return errorRedirect(req, state.brand_id, "gmail_state_incomplete", state.return_to);
+  }
+
+  let userInfo;
+  try {
+    userInfo = await fetchGoogleUserInfo(tokenData.access_token);
+  } catch (err) {
+    console.error("[Google OAuth] Gmail userinfo failed:", err);
+    return errorRedirect(req, state.brand_id, "gmail_userinfo_failed", state.return_to);
+  }
+
+  const connectedEmail = String(userInfo.email || "").trim().toLowerCase();
+  if (!connectedEmail || connectedEmail !== expectedEmail) {
+    console.error(`[Google OAuth] Gmail account mismatch expected=${expectedEmail} got=${connectedEmail || "missing"}`);
+    return errorRedirect(req, state.brand_id, "gmail_account_mismatch", state.return_to);
+  }
+
+  try {
+    await checkImapConnection({
+      host: "imap.gmail.com",
+      port: 993,
+      secure: true,
+      email: connectedEmail,
+      accessToken: tokenData.access_token,
+    });
+  } catch (err) {
+    console.error("[Google OAuth] Gmail XOAUTH2 IMAP test failed:", err);
+    return errorRedirect(req, state.brand_id, "gmail_imap_oauth_test_failed", state.return_to);
+  }
+
+  try {
+    await finalizeGoogleChannel({
+      brandId: state.brand_id,
+      platform: "gmail",
+      channel: {
+        id: connectedEmail,
+        title: userInfo.name ? `${userInfo.name} · ${connectedEmail}` : connectedEmail,
+      },
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresAt: tokenData.expires_in
+        ? new Date(Date.now() + tokenData.expires_in * 1000)
+        : null,
+      scopes: (tokenData.scope || "").split(" ").filter(Boolean),
+    });
+  } catch (err) {
+    console.error("[Google OAuth] Gmail token persistence failed:", err);
+    return errorRedirect(req, state.brand_id, "gmail_token_persist_failed", state.return_to);
+  }
+
+  const supabase = createServerClient();
+  const { data: account, error: accountError } = await supabase
+    .from("brand_email_configs")
+    .select("id,brand_id,email_address")
+    .eq("id", accountId)
+    .maybeSingle();
+
+  if (accountError || !account) {
+    return errorRedirect(req, state.brand_id, "gmail_email_account_not_found", state.return_to);
+  }
+  if (account.brand_id !== state.brand_id || String(account.email_address || "").trim().toLowerCase() !== connectedEmail) {
+    return errorRedirect(req, state.brand_id, "gmail_email_account_binding_mismatch", state.return_to);
+  }
+
+  const now = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from("brand_email_configs")
+    .update({
+      imap_host: "imap.gmail.com",
+      imap_port: 993,
+      imap_secure: true,
+      smtp_host: "smtp.gmail.com",
+      smtp_port: 465,
+      smtp_secure: true,
+      auto_fetch: true,
+      auto_fetch_paused_by_system: false,
+      health_status: "healthy",
+      health_message: null,
+      consecutive_failures: 0,
+      last_error_at: null,
+      last_success_at: now,
+      updated_at: now,
+    })
+    .eq("id", accountId);
+
+  if (updateError) {
+    return errorRedirect(req, state.brand_id, "gmail_email_account_update_failed", state.return_to);
+  }
+
+  await supabase.from("automation_logs").insert({
+    action: "email_google_oauth_connected",
+    agent_name: "nexus_communications",
+    status: "success",
+    details: {
+      account_id: accountId,
+      brand_id: state.brand_id,
+      email_address: connectedEmail,
+      auth_method: "google_oauth",
+      imap_host: "imap.gmail.com",
+      smtp_host: "smtp.gmail.com",
+    },
+  });
+
+  return successRedirect(req, state.return_to, {
+    platform: "gmail",
+    brand: state.brand_id,
+    count: 1,
+  });
 }
 
 function errorRedirect(
