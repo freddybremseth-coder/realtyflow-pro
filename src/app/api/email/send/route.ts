@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { insertRevenueEvent } from "@/lib/revenue/events";
 import { buildMessageSentRevenueEventInput, normalizeEmailAddresses } from "@/lib/revenue/email-events";
-import { decryptPassword } from "@/services/email/crypto";
+import { buildSmtpConfigFromAccount } from "@/services/email/account-auth";
 import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
-import { sendEmail, type SmtpConfig, type OutgoingEmail } from "@/services/email/smtp-sender";
+import { sendEmail, type OutgoingEmail } from "@/services/email/smtp-sender";
 
 /** POST /api/email/send — send a reviewed draft reply or custom email via SMTP. */
 export async function POST(req: NextRequest) {
@@ -48,8 +48,6 @@ export async function POST(req: NextRequest) {
 
     if (!brandId) return NextResponse.json({ error: "brand_id is required" }, { status: 400 });
 
-    // Every normal advisor/draft send must honor CRM suppression. Transactional
-    // overrides intentionally live only in the lower-level sendBrandEmail API.
     const suppression = await checkCrmEmailSuppression(supabase, toAddresses);
     if (suppression.error) {
       return NextResponse.json({ error: `CRM suppression check failed: ${suppression.error}` }, { status: 503 });
@@ -69,15 +67,7 @@ export async function POST(req: NextRequest) {
       .single();
     if (configError || !config) return NextResponse.json({ error: "No active email config found for this brand" }, { status: 404 });
 
-    const password = decryptPassword(config.encrypted_password, config.encryption_iv);
-    const smtpConfig: SmtpConfig = {
-      host: config.smtp_host,
-      port: config.smtp_port,
-      secure: config.smtp_secure,
-      email: config.email_address,
-      password,
-      displayName: config.display_name || undefined,
-    };
+    const smtpConfig = await buildSmtpConfigFromAccount(config, config.display_name || undefined);
     const outgoingEmail: OutgoingEmail = {
       to: toAddresses,
       subject,
