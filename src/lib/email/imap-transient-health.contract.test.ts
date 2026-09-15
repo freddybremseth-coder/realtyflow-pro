@@ -17,8 +17,18 @@ test("email ingest retries transient IMAP connection failures", () => {
   assert.match(ingest, /TRANSIENT_RETRY_DELAY_MS/);
 });
 
-test("generic IMAP command failures are retryable and cannot trigger a system pause", () => {
+test("generic IMAP command failures remain safety-pausable when no transient detail exists", () => {
   const error = new Error("Command failed");
+  assert.equal(isTransientImapError(error), false);
+  assert.equal(isPermanentImapError(error), false);
+});
+
+test("Command failed is retryable when the server supplies a transient reason", () => {
+  const error = {
+    message: "Command failed",
+    responseStatus: "NO",
+    responseText: "Server busy, try again",
+  };
   assert.equal(isTransientImapError(error), true);
   assert.equal(isPermanentImapError(error), false);
 });
