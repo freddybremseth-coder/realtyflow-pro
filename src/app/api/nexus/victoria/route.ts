@@ -3,6 +3,10 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { filterNexusCommands } from "@/lib/nexus-command";
 import { assessPipelineMovement } from "@/lib/nexus-pipeline-movement";
 import { buildNexusActionProposals } from "@/lib/nexus-ai-governed-actions";
+import {
+  buildNexusMarketingActionProposals,
+  messageRequestsMarketingCampaign,
+} from "@/lib/nexus-ai-marketing-actions";
 import { askNexusAI, isNexusAIConfigured } from "@/services/ai/nexus-ai-client";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
@@ -34,6 +38,19 @@ function parsePageContext(value: unknown) {
 function numberValue(value: unknown) {
   const n = Number(value || 0);
   return Number.isFinite(n) ? n : 0;
+}
+
+function buildMarketingContext(conversation: any[], message: string) {
+  // Only the current turn may open the governed marketing path. Prior user
+  // turns can add context to that explicit request, but cannot trigger it.
+  if (!messageRequestsMarketingCampaign(message)) return null;
+  const recentUserTurns = conversation
+    .slice(-6)
+    .filter((item: any) => item?.role === "user")
+    .map((item: any) => String(item?.content ?? "").trim())
+    .filter(Boolean)
+    .slice(-3);
+  return [...recentUserTurns, message].join("\n");
 }
 
 function compactContact(row: any) {
@@ -144,7 +161,10 @@ export async function POST(request: NextRequest) {
     description: command.description,
     href: command.href,
   }));
-  const proposedActions = buildNexusActionProposals({ message, currentContact, contacts });
+  const marketingContext = buildMarketingContext(conversation, message);
+  const crmProposedActions = buildNexusActionProposals({ message, currentContact, contacts });
+  const marketingProposedActions = buildNexusMarketingActionProposals({ message, marketingContext });
+  const proposedActions = marketingProposedActions.length ? marketingProposedActions : crmProposedActions;
 
   const activeOpportunities = opportunities.filter((row) => String(row.opportunity_state || "").toLowerCase() === "active");
   const wonOpportunities = opportunities.filter((row) => String(row.opportunity_state || "").toLowerCase() === "won");
@@ -169,7 +189,16 @@ export async function POST(request: NextRequest) {
     page_context: pageContext,
     current_customer: currentContact,
     navigation_candidates: navigationCandidates,
-    proposed_actions: proposedActions.map((action) => ({ type: action.type, contact_id: action.contactId, contact_name: action.contactName, requires_approval: action.requiresApproval })),
+    proposed_actions: proposedActions.map((action) => ({
+      type: action.type,
+      contact_id: "contactId" in action ? action.contactId : undefined,
+      contact_name: "contactName" in action ? action.contactName : undefined,
+      brand_id: "brandId" in action ? action.brandId : undefined,
+      brand_name: "brandName" in action ? action.brandName : undefined,
+      focus: "focus" in action ? action.focus : undefined,
+      channels: "channels" in action ? action.channels : undefined,
+      requires_approval: action.requiresApproval,
+    })),
     owner_focus: ownerFocus,
     runtime_controls: runtime,
     sources: { total: sources.length, by_brand: tally(sources, "brand_id"), by_status: tally(sources, "status"), by_type: tally(sources, "source_type") },
@@ -213,6 +242,7 @@ HOVEDOPPGAVE:
 - Når brukeren spør «hvor finner jeg …?» eller «hvor skal jeg trykke?», bruk navigation_candidates og oppgi riktig modul/side. Ikke finn på menyer eller ruter.
 - Når page_context/current_customer finnes og brukeren sier «denne kunden», «her», «denne siden» eller lignende, behandle current_customer som aktiv kontekst uten å be brukeren gjenta hvem det gjelder.
 - Når proposed_actions inneholder en handling, forklar kort hva handlingskortet faktisk vil gjøre. Ikke påstå at noe er lagret, planlagt, opprettet eller sendt før brukeren har trykket på kortet og action-endepunktet har bekreftet utførelse.
+- Når proposed_actions inneholder prepare_marketing_campaign, presenter handlingskortet som det operative neste steget. Kortet lager faktiske SoMe-utkast i Approval Center; ikke send brukeren manuelt til Inventory når merkevare og fokus allerede er entydig.
 - Når brukeren spør hvordan systemet kan gjøre noe, forklar først hva RealtyFlow allerede kan gjøre, hvilken modul som eier funksjonen, og hva som eventuelt mangler. Skill tydelig mellom eksisterende funksjon, anbefalt konfigurasjon og ny utvikling.
 - Bruk konkrete kundenavn fra crm.top_actions når spørsmålet gjelder hvem som bør kontaktes. Ikke begrens deg til summeringer når konkrete rader finnes.
 
@@ -220,6 +250,8 @@ SIKKERHET OG SANNHET:
 - Selve rådgivningskallet er read-only. Det kan analysere, prioritere, forklare, navigere og foreslå allowlistede handlingskort, men ingen sideeffekt skjer uten et eksplisitt brukerklikk mot det separate governed-actions-endepunktet.
 - Allowlistede interne handlinger kan planlegge CRM-oppfølging, lagre et internt CRM-notat eller opprette en intern kundeoppgave. Disse handlingene sender aldri e-post, SMS, WhatsApp eller annen kundekommunikasjon.
 - E-posthandlingen kan bare opprette et utkast og en pending Approval Center-post. Den sender ikke e-post direkte.
+- Markedsføringshandlingen kan bare opprette manual-review SoMe-utkast og Approval Center-poster. Chat-klikket publiserer aldri direkte, selv om merkevaren ellers har controlled-auto aktivert.
+- En Inventory-bolig kan brukes som illustrativ designreferanse i en stedskampanje, men det beviser ikke at boligen ligger på stedet eller kan bygges på en konkret tomt. Ikke konverter illustrasjon til pris-, byggbarhets-, regulerings- eller tilgjengelighetspåstand.
 - Governed actions endrer aldri pipeline-status, Buyer Profile-kriterier, provisjon eller revenue truth.
 - Ikke late som en handling er utført hvis snapshot eller execution-logg ikke viser det.
 - Skill tydelig mellom proposed/draft/pending approval/approved/executed/published/measured.
