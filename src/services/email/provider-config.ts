@@ -28,6 +28,10 @@ export type MailProviderConfig = {
   smtp_secure: boolean;
 };
 
+const GOOGLE_WORKSPACE_DOMAINS = new Set([
+  "soleada.no",
+]);
+
 function asPort(value: unknown) {
   const parsed = Number(value);
   if (Number.isInteger(parsed) && parsed > 0 && parsed <= 65535) return parsed;
@@ -41,6 +45,20 @@ function asBool(value: unknown, fallback: boolean) {
     if (["0", "false", "no", "off"].includes(value.toLowerCase())) return false;
   }
   return fallback;
+}
+
+export function resolveEmailProvider(
+  requestedProvider: EmailProvider,
+  emailAddress: string,
+): EmailProvider {
+  const domain = String(emailAddress || "")
+    .trim()
+    .toLowerCase()
+    .split("@")
+    .at(-1);
+
+  if (domain && GOOGLE_WORKSPACE_DOMAINS.has(domain)) return "gmail";
+  return requestedProvider;
 }
 
 export function buildEmailProviderConfig(
