@@ -155,7 +155,7 @@ export function buildRevenueCommandCenter(input: RevenueCommandInput, now = new 
   const today = sortRevenuePriorities(
     contacts
       .map((contact) => buildCanonicalRealEstatePriority(contact, now, { revenueEvents: eventsByContactId[String(contact.id || "")] || [] }))
-      .filter((item): item is RevenuePriorityItem => Boolean(item)),
+      .filter((item): item is NonNullable<ReturnType<typeof buildCanonicalRealEstatePriority>> => Boolean(item)),
   );
   const closing = sortClosingOpportunities(
     contacts.map((contact) => buildClosingOpportunity(contact, now)).filter(Boolean) as NonNullable<ReturnType<typeof buildClosingOpportunity>>[],

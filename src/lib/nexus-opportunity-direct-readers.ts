@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  sortRevenuePriorities,
   type RevenueContactInput,
   type RevenueMemoryEventInput,
 } from "@/lib/revenue/today";
-import { buildCanonicalRealEstatePriority } from "@/lib/nexus-real-estate-priority";
+import {
+  buildCanonicalRealEstatePriority,
+  sortCanonicalRealEstatePriorities,
+} from "@/lib/nexus-real-estate-priority";
 import type { DemoSiteEventInput, DemoSiteOrderInput } from "@/lib/nexus-ai-demosites-adapter";
 
 const ACTIVE_REAL_ESTATE_STAGES = ["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "ON_HOLD"];
@@ -26,7 +28,7 @@ export function realEstateOpportunityPayloadFromRows(
   }
 
   return {
-    priorities: sortRevenuePriorities(
+    priorities: sortCanonicalRealEstatePriorities(
       contacts
         .map((contact) => buildCanonicalRealEstatePriority(contact, now, {
           revenueEvents: eventsByContact.get(String(contact.id || "")) || [],
