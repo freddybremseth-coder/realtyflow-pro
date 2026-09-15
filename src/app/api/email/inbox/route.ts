@@ -6,14 +6,10 @@ import {
   buildEmailReceivedRevenueEventInput,
   normalizeEmailAddresses,
 } from "@/lib/revenue/email-events";
-import { fetchRecentEmails, type ImapConfig } from "@/services/email/imap-reader";
-import { decryptPassword } from "@/services/email/crypto";
+import { buildImapConfigFromAccount } from "@/services/email/account-auth";
+import { fetchRecentEmails } from "@/services/email/imap-reader";
 
-/**
- * GET /api/email/inbox
- * Fetch emails for a brand from Supabase.
- * Query params: brand_id, limit, offset, unread_only, intent, urgency
- */
+/** GET /api/email/inbox — fetch stored email for a brand. */
 export async function GET(req: NextRequest) {
   const adminError = await requireAdminApi(req);
   if (adminError) return adminError;
@@ -29,7 +25,6 @@ export async function GET(req: NextRequest) {
     const archived = searchParams.get("archived") === "true";
 
     const supabase = createServerClient();
-
     let query = supabase
       .from("email_messages")
       .select("*")
@@ -37,26 +32,14 @@ export async function GET(req: NextRequest) {
       .order("received_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (brandId) {
-      query = query.eq("brand_id", brandId);
-    }
-    if (unreadOnly) {
-      query = query.eq("is_read", false);
-    }
-    if (intent) {
-      query = query.eq("ai_intent", intent);
-    }
-    if (urgency) {
-      query = query.eq("ai_urgency", urgency);
-    }
+    if (brandId) query = query.eq("brand_id", brandId);
+    if (unreadOnly) query = query.eq("is_read", false);
+    if (intent) query = query.eq("ai_intent", intent);
+    if (urgency) query = query.eq("ai_urgency", urgency);
 
     const { data: messages, error, count } = await query;
+    if (error) throw new Error(error.message);
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    // Get unread counts per brand
     const { data: unreadCounts } = await supabase
       .from("email_messages")
       .select("brand_id")
@@ -77,33 +60,21 @@ export async function GET(req: NextRequest) {
     console.error("[Email Inbox GET]", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
-/**
- * POST /api/email/inbox
- * Trigger email fetch from IMAP for a brand and store new messages.
- * Body: { brand_id: string }
- */
+/** POST /api/email/inbox — trigger IMAP fetch for one brand. */
 export async function POST(req: NextRequest) {
   const adminError = await requireAdminApi(req);
   if (adminError) return adminError;
 
   try {
     const { brand_id } = await req.json();
-
-    if (!brand_id) {
-      return NextResponse.json(
-        { error: "brand_id is required" },
-        { status: 400 }
-      );
-    }
+    if (!brand_id) return NextResponse.json({ error: "brand_id is required" }, { status: 400 });
 
     const supabase = createServerClient();
-
-    // Get all brand email configs (may have multiple accounts per brand)
     const { data: configs, error: configError } = await supabase
       .from("brand_email_configs")
       .select("*")
@@ -111,60 +82,28 @@ export async function POST(req: NextRequest) {
       .eq("is_active", true);
 
     if (configError || !configs || configs.length === 0) {
-      return NextResponse.json(
-        { error: "No active email config found for this brand" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "No active email config found for this brand" }, { status: 404 });
     }
 
-    // Get existing message IDs to avoid duplicates
     const { data: existingMessages } = await supabase
       .from("email_messages")
       .select("message_id")
       .eq("brand_id", brand_id);
-
-    const existingIds = new Set(
-      (existingMessages || []).map((m) => m.message_id)
-    );
+    const existingIds = new Set((existingMessages || []).map((m) => m.message_id));
 
     let totalFetched = 0;
     let totalInserted = 0;
     const accountResults: { email: string; fetched: number; new_messages: number; error?: string }[] = [];
 
-    // Process each email account for this brand
     for (const config of configs) {
       try {
-        // Decrypt password
-        const password = decryptPassword(config.encrypted_password, config.encryption_iv);
-
-        const imapConfig: ImapConfig = {
-          host: config.imap_host,
-          port: config.imap_port,
-          secure: config.imap_secure,
-          email: config.email_address,
-          password,
-        };
-
-        // Determine fetch window
+        const imapConfig = await buildImapConfigFromAccount(config);
         const sinceDays = config.last_fetched_at
-          ? Math.max(
-              1,
-              Math.ceil(
-                (Date.now() - new Date(config.last_fetched_at).getTime()) /
-                  (1000 * 60 * 60 * 24)
-              )
-            )
+          ? Math.max(1, Math.ceil((Date.now() - new Date(config.last_fetched_at).getTime()) / 86_400_000))
           : 7;
-
-        // Fetch from IMAP
         const fetchedEmails = await fetchRecentEmails(imapConfig, 100, sinceDays);
+        const newEmails = fetchedEmails.filter((email) => email.messageId && !existingIds.has(email.messageId));
 
-        // Filter new emails
-        const newEmails = fetchedEmails.filter(
-          (e) => e.messageId && !existingIds.has(e.messageId)
-        );
-
-        // Insert new emails
         let insertedCount = 0;
         for (const email of newEmails) {
           const { data: insertedMessage, error: insertError } = await supabase
@@ -176,8 +115,8 @@ export async function POST(req: NextRequest) {
               direction: "inbound",
               from_address: email.from.address,
               from_name: email.from.name || null,
-              to_addresses: email.to.map((t) => t.address),
-              cc_addresses: email.cc?.map((c) => c.address) || null,
+              to_addresses: email.to.map((row) => row.address),
+              cc_addresses: email.cc?.map((row) => row.address) || null,
               subject: email.subject,
               body_text: email.bodyText || null,
               body_html: email.bodyHtml || null,
@@ -186,47 +125,42 @@ export async function POST(req: NextRequest) {
             .select("id")
             .single();
 
-          if (!insertError) {
-            insertedCount++;
-            existingIds.add(email.messageId); // prevent cross-account duplicates
+          if (insertError) continue;
+          insertedCount++;
+          existingIds.add(email.messageId);
 
-            const normalizedFrom = normalizeEmailAddresses([email.from.address])[0];
-            const { data: contact, error: contactError } = normalizedFrom
-              ? await supabase
-                  .from("contacts")
-                  .select("id, email, brand_id")
-                  .eq("brand_id", brand_id)
-                  .ilike("email", normalizedFrom)
-                  .order("updated_at", { ascending: false })
-                  .limit(1)
-                  .maybeSingle()
-              : { data: null, error: null };
+          const normalizedFrom = normalizeEmailAddresses([email.from.address])[0];
+          const { data: contact, error: contactError } = normalizedFrom
+            ? await supabase
+                .from("contacts")
+                .select("id, email, brand_id")
+                .eq("brand_id", brand_id)
+                .ilike("email", normalizedFrom)
+                .order("updated_at", { ascending: false })
+                .limit(1)
+                .maybeSingle()
+            : { data: null, error: null };
 
-            if (contactError) {
-              console.warn("[Email Inbox] contact lookup for revenue event failed", contactError.message);
-            }
+          if (contactError) console.warn("[Email Inbox] contact lookup for revenue event failed", contactError.message);
 
-            const eventResult = await insertRevenueEvent(supabase, buildEmailReceivedRevenueEventInput({
-              brandId: brand_id,
-              fromAddress: email.from.address,
-              fromName: email.from.name || null,
-              toAddresses: email.to.map((t) => t.address),
-              subject: email.subject,
-              bodyPreview: (email.bodyText || "").slice(0, 280),
-              receivedAt: email.date.toISOString(),
-              messageId: email.messageId,
-              threadId: email.threadId || email.messageId,
-              storedEmailMessageId: insertedMessage?.id || null,
-              contactId: contact?.id || null,
-            }));
-
-            if (!eventResult.ok && !eventResult.tableNotReady) {
-              console.warn("[Email Inbox] revenue event insert failed", eventResult.error);
-            }
+          const eventResult = await insertRevenueEvent(supabase, buildEmailReceivedRevenueEventInput({
+            brandId: brand_id,
+            fromAddress: email.from.address,
+            fromName: email.from.name || null,
+            toAddresses: email.to.map((row) => row.address),
+            subject: email.subject,
+            bodyPreview: (email.bodyText || "").slice(0, 280),
+            receivedAt: email.date.toISOString(),
+            messageId: email.messageId,
+            threadId: email.threadId || email.messageId,
+            storedEmailMessageId: insertedMessage?.id || null,
+            contactId: contact?.id || null,
+          }));
+          if (!eventResult.ok && !eventResult.tableNotReady) {
+            console.warn("[Email Inbox] revenue event insert failed", eventResult.error);
           }
         }
 
-        // Update last_fetched_at
         await supabase
           .from("brand_email_configs")
           .update({ last_fetched_at: new Date().toISOString() })
@@ -252,7 +186,7 @@ export async function POST(req: NextRequest) {
     console.error("[Email Inbox POST]", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
