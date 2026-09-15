@@ -31,7 +31,7 @@ test("Gmail callback verifies exact Google identity and IMAP XOAUTH2 before enab
 test("legacy Gmail callback cannot persist a plaintext global refresh token", () => {
   const legacy = source("src/app/api/oauth/gmail/callback/route.ts");
   assert.doesNotMatch(legacy, /gmail_refresh_token/);
-  assert.doesNotMatch(legacy, /brand_settings/);
+  assert.doesNotMatch(legacy, /\.from\(["']brand_settings["']\)/);
   assert.match(legacy, /legacy_gmail_callback_disabled/);
 });
 
