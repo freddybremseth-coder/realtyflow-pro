@@ -12,6 +12,12 @@ export interface EmailConfigReadinessInput {
   imap_host?: string | null;
   encrypted_password?: string | null;
   encryption_iv?: string | null;
+  /**
+   * Optional explicit OAuth credential signal for callers that already know
+   * a canonical provider token is present. The verified-Gmail fallback below
+   * keeps older callers correct without forcing them to query OAuth tables.
+   */
+  oauth_configured?: boolean | null;
   health_status?: string | null;
   health_message?: string | null;
   auto_fetch_paused_by_system?: boolean | null;
@@ -31,7 +37,7 @@ export interface EmailConfigReadiness {
 export function classifyEmailConfigReadiness(
   config: EmailConfigReadinessInput
 ): EmailConfigReadiness {
-  const credentialsConfigured = Boolean(
+  const hasPasswordCredentials = Boolean(
     config.encrypted_password?.trim() && config.encryption_iv?.trim()
   );
   const hasImap = Boolean(config.imap_host?.trim());
@@ -40,6 +46,22 @@ export function classifyEmailConfigReadiness(
   const systemPaused = config.auto_fetch_paused_by_system === true;
   const health = (config.health_status || "").trim().toLowerCase();
   const failures = Math.max(0, config.consecutive_failures || 0);
+  const isGmailImap = (config.imap_host || "").trim().toLowerCase() === "imap.gmail.com";
+
+  // Gmail / Google Workspace OAuth deliberately stores no mailbox password.
+  // A successful OAuth callback performs a real XOAUTH2 IMAP check before it
+  // records healthy + last_success_at, so that verified state is a safe
+  // compatibility signal for callers that do not already provide the
+  // explicit oauth_configured flag.
+  const hasVerifiedGoogleOAuth = Boolean(
+    config.oauth_configured === true ||
+      (!hasPasswordCredentials &&
+        isGmailImap &&
+        connectionVerified &&
+        health === "healthy" &&
+        !systemPaused)
+  );
+  const credentialsConfigured = hasPasswordCredentials || hasVerifiedGoogleOAuth;
 
   if (!active) {
     return {
@@ -59,7 +81,7 @@ export function classifyEmailConfigReadiness(
       connectionVerified,
       canAttemptConnection: false,
       canBackfill: false,
-      reason: "Encrypted mailbox credentials are missing.",
+      reason: "Verified mailbox credentials are missing.",
     };
   }
 
