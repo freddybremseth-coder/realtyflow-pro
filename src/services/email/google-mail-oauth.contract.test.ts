@@ -12,13 +12,15 @@ test("Google OAuth Gmail flow requests full mail scope and binds a concrete emai
   assert.match(start, /GOOGLE_MAIL_SCOPE/);
   assert.match(start, /account_id/);
   assert.match(start, /expected_email/);
+  assert.match(start, /getGoogleCredentials\(brandId\)/);
   assert.match(start, /searchParams\.set\("access_type", "offline"\)/);
   assert.match(start, /searchParams\.set\("prompt", "consent"\)/);
   assert.match(start, /searchParams\.set\("login_hint", expectedEmail\)/);
 });
 
-test("Gmail callback verifies exact Google identity and IMAP XOAUTH2 before enabling auto fetch", () => {
+test("Gmail callback verifies exact Google identity and uses matching brand OAuth client", () => {
   const callback = source("src/app/api/oauth/google/callback/route.ts");
+  assert.match(callback, /getGoogleCredentials\(state\.brand_id\)/);
   assert.match(callback, /gmail_account_mismatch/);
   assert.match(callback, /connectedEmail !== expectedEmail/);
   assert.match(callback, /imap\.gmail\.com/);
@@ -35,7 +37,7 @@ test("legacy Gmail callback cannot persist a plaintext global refresh token", ()
   assert.match(legacy, /legacy_gmail_callback_disabled/);
 });
 
-test("email transports accept OAuth access tokens while retaining password fallback", () => {
+test("email transports accept OAuth access tokens and refresh with the mailbox brand client", () => {
   const imap = source("src/services/email/imap-reader.ts");
   const smtp = source("src/services/email/smtp-sender.ts");
   const resolver = source("src/services/email/account-auth.ts");
@@ -45,6 +47,7 @@ test("email transports accept OAuth access tokens while retaining password fallb
   assert.match(smtp, /type: "OAuth2"/);
   assert.match(smtp, /accessToken: config\.accessToken/);
   assert.match(resolver, /getChannelsByBrand\(config\.brand_id, "gmail"\)/);
+  assert.match(resolver, /getGoogleCredentials\(config\.brand_id\)/);
   assert.match(resolver, /decryptPassword/);
 });
 

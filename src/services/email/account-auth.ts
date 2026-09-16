@@ -55,7 +55,7 @@ async function resolveGoogleOAuth(config: StoredEmailAccountConfig): Promise<Res
     return { method: "google_oauth", accessToken: tokens.accessToken };
   }
 
-  const credentials = getGoogleCredentials();
+  const credentials = getGoogleCredentials(config.brand_id);
   const auth = new OAuth2Client(credentials.clientId, credentials.clientSecret);
   auth.setCredentials({ refresh_token: tokens.refreshToken });
   const result = await auth.getAccessToken();

@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "src/services/email/**"
+      - "src/lib/oauth/providers.ts"
+      - "src/lib/oauth/providers.test.ts"
       - "src/app/api/email/**"
       - "src/app/api/gmail/**"
       - "src/app/api/oauth/gmail/**"
@@ -22,4 +24,4 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: node --import tsx --test src/services/email/provider-config.test.ts src/services/email/google-mail-oauth.contract.test.ts
+      - run: node --import tsx --test src/lib/oauth/providers.test.ts src/services/email/provider-config.test.ts src/services/email/google-mail-oauth.contract.test.ts

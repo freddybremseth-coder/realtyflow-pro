@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
   let credentials;
   try {
-    credentials = getGoogleCredentials();
+    credentials = getGoogleCredentials(brandId);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Google OAuth not configured" },
