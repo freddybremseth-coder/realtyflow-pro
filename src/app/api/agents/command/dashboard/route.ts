@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { AGENT_FLEET, resolveAgentFleetId, resolveAutomationAgentId, type AgentFleetId } from "@/lib/agent-fleet-registry";
 
 export const dynamic = "force-dynamic";
+
+export const revalidate = 0;
 
 type CommandExecutionRow = {
   plan_title?: string | null;
@@ -18,15 +21,11 @@ type ContentPublicationRow = {
   created_at?: string | null;
 };
 
-const agentProfiles = [
-  { id: "ceo", name: "Victoria CEO" },
-  { id: "marketing", name: "Marketing Agent" },
-  { id: "sales", name: "Sales Agent" },
-  { id: "seo", name: "Victoria SEO" },
-  { id: "business", name: "Business Agent" },
-  { id: "youtube", name: "YouTube Agent" },
-  { id: "multi-domain", name: "Multi-Domain Expert" },
-];
+type AutomationLogRow = {
+  action?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+};
 
 function getSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -53,23 +52,20 @@ function formatRelativeActivity(dateValue?: string | null) {
   return `${days} d siden`;
 }
 
-function normalizeAgentKey(value?: string | null) {
-  return (value || "").toLowerCase().replace(/\s+/g, "-");
+function laterTimestamp(current?: string, candidate?: string | null) {
+  if (!candidate) return current;
+  if (!current) return candidate;
+  return new Date(candidate).getTime() > new Date(current).getTime() ? candidate : current;
 }
 
-function resolveAgentKey(value?: string | null) {
-  if (!value) return "";
-  const normalized = normalizeAgentKey(value);
-  const matchedAgent = agentProfiles.find(
-    (agent) => normalized.includes(agent.id) || agent.name.toLowerCase().includes((value || "").toLowerCase())
-  );
-  return matchedAgent?.id || normalized;
+function healthyAutomationStatus(status?: string | null) {
+  return ["success", "completed", "done"].includes(String(status || "").toLowerCase());
 }
 
 export async function GET(request: NextRequest) {
   const unauthorized = await requireAdminApi(request, {
     recentActions: [],
-    runtimeStats: { tasksToday: null, successRate: null, emailsToday: null, contentToday: null },
+    runtimeStats: { tasksToday: null, directTasksToday: null, systemRunsToday: null, successRate: null, emailsToday: null, contentToday: null },
     agentActivity: [],
   });
   if (unauthorized) return unauthorized;
@@ -78,14 +74,14 @@ export async function GET(request: NextRequest) {
   if (!supabase) {
     return NextResponse.json({
       recentActions: [],
-      runtimeStats: { tasksToday: null, successRate: null, emailsToday: null, contentToday: null },
+      runtimeStats: { tasksToday: null, directTasksToday: null, systemRunsToday: null, successRate: null, emailsToday: null, contentToday: null },
       agentActivity: [],
     });
   }
 
   const since = request.nextUrl.searchParams.get("since") || new Date().toISOString().slice(0, 10);
 
-  const [recentExecutionsRes, recentPublicationsRes, todayExecutionsRes, publicationsCountRes, emailCountRes] =
+  const [recentExecutionsRes, recentPublicationsRes, todayExecutionsRes, automationLogsRes, publicationsCountRes, emailCountRes] =
     await Promise.all([
       supabase
         .from("command_executions")
@@ -103,7 +99,13 @@ export async function GET(request: NextRequest) {
         .select("status, steps, created_at")
         .gte("created_at", since)
         .order("created_at", { ascending: false })
-        .limit(200),
+        .limit(500),
+      supabase
+        .from("automation_logs")
+        .select("action,status,created_at")
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(5000),
       supabase
         .from("content_publications")
         .select("id", { count: "exact", head: true })
@@ -118,6 +120,7 @@ export async function GET(request: NextRequest) {
   if (recentExecutionsRes.error) return NextResponse.json({ error: recentExecutionsRes.error.message }, { status: 500 });
   if (recentPublicationsRes.error) return NextResponse.json({ error: recentPublicationsRes.error.message }, { status: 500 });
   if (todayExecutionsRes.error) return NextResponse.json({ error: todayExecutionsRes.error.message }, { status: 500 });
+  if (automationLogsRes.error) return NextResponse.json({ error: automationLogsRes.error.message }, { status: 500 });
   if (publicationsCountRes.error) return NextResponse.json({ error: publicationsCountRes.error.message }, { status: 500 });
   if (emailCountRes.error) return NextResponse.json({ error: emailCountRes.error.message }, { status: 500 });
 
@@ -125,7 +128,7 @@ export async function GET(request: NextRequest) {
 
   for (const execution of (recentExecutionsRes.data || []) as CommandExecutionRow[]) {
     recentActions.push({
-      label: execution.plan_title || execution.summary || "Plan utfort",
+      label: execution.plan_title || execution.summary || "Plan utført",
       time: formatTime(execution.created_at),
       status: execution.status === "completed" ? "done" : "error",
     });
@@ -141,9 +144,12 @@ export async function GET(request: NextRequest) {
   }
 
   const todayExecutions = (todayExecutionsRes.data || []) as CommandExecutionRow[];
+  const automationLogs = (automationLogsRes.data || []) as AutomationLogRow[];
   let completedSteps = 0;
-  const agentCounts: Record<string, number> = {};
-  const agentLatest: Record<string, string> = {};
+  const directCounts: Partial<Record<AgentFleetId, number>> = {};
+  const systemCounts: Partial<Record<AgentFleetId, number>> = {};
+  const systemAttention: Partial<Record<AgentFleetId, number>> = {};
+  const agentLatest: Partial<Record<AgentFleetId, string>> = {};
 
   for (const execution of todayExecutions) {
     const steps = Array.isArray(execution.steps) ? execution.steps : [];
@@ -152,32 +158,50 @@ export async function GET(request: NextRequest) {
       const done = step.status === "completed" || step.status === "done";
       if (!done) continue;
       completedSteps += 1;
-      const key = resolveAgentKey(step.agent);
-      if (key) {
-        agentCounts[key] = (agentCounts[key] || 0) + 1;
-        if (!agentLatest[key] && execution.created_at) {
-          agentLatest[key] = execution.created_at;
-        }
-      }
+      const id = resolveAgentFleetId(step.agent);
+      if (!id) continue;
+      directCounts[id] = (directCounts[id] || 0) + 1;
+      const next = laterTimestamp(agentLatest[id], execution.created_at);
+      if (next) agentLatest[id] = next;
     }
+  }
+
+  let mappedAutomationRuns = 0;
+  let mappedAutomationHealthy = 0;
+  for (const log of automationLogs) {
+    const id = resolveAutomationAgentId(log.action);
+    if (!id) continue;
+    mappedAutomationRuns += 1;
+    systemCounts[id] = (systemCounts[id] || 0) + 1;
+    if (healthyAutomationStatus(log.status)) mappedAutomationHealthy += 1;
+    else systemAttention[id] = (systemAttention[id] || 0) + 1;
+    const next = laterTimestamp(agentLatest[id], log.created_at);
+    if (next) agentLatest[id] = next;
   }
 
   const successfulExecutions = todayExecutions.filter((execution) =>
     ["completed", "partial", "done"].includes(execution.status || "")
   ).length;
+  const totalObservedRuns = todayExecutions.length + mappedAutomationRuns;
+  const totalSuccessfulRuns = successfulExecutions + mappedAutomationHealthy;
 
   return NextResponse.json({
     recentActions: recentActions.slice(0, 6),
     runtimeStats: {
-      tasksToday: completedSteps,
-      successRate: todayExecutions.length > 0 ? Math.round((successfulExecutions / todayExecutions.length) * 100) : null,
+      tasksToday: completedSteps + mappedAutomationRuns,
+      directTasksToday: completedSteps,
+      systemRunsToday: mappedAutomationRuns,
+      successRate: totalObservedRuns > 0 ? Math.round((totalSuccessfulRuns / totalObservedRuns) * 100) : null,
       emailsToday: emailCountRes.count ?? 0,
       contentToday: publicationsCountRes.count ?? 0,
+      activitySource: "command_executions + automation_logs",
     },
-    agentActivity: agentProfiles.map((agent) => ({
+    agentActivity: AGENT_FLEET.map((agent) => ({
       id: agent.id,
-      tasksCompleted: agentCounts[agent.id] || 0,
-      lastActivity: agentCounts[agent.id]
+      tasksCompleted: directCounts[agent.id] || 0,
+      systemRuns: systemCounts[agent.id] || 0,
+      systemAttention: systemAttention[agent.id] || 0,
+      lastActivity: agentLatest[agent.id]
         ? formatRelativeActivity(agentLatest[agent.id])
         : "Ingen registrert aktivitet i dag",
     })),
