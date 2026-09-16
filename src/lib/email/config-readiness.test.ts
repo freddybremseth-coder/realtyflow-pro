@@ -25,6 +25,51 @@ test("ready requires verified credentials, IMAP and successful connection", () =
   });
 });
 
+test("verified Gmail OAuth is ready without storing a mailbox password", () => {
+  const result = classifyEmailConfigReadiness({
+    ...base,
+    imap_host: "imap.gmail.com",
+    encrypted_password: null,
+    encryption_iv: null,
+    health_status: "healthy",
+    auto_fetch_paused_by_system: false,
+  });
+
+  assert.equal(result.state, "ready");
+  assert.equal(result.credentialsConfigured, true);
+  assert.equal(result.connectionVerified, true);
+  assert.equal(result.canAttemptConnection, true);
+  assert.equal(result.canBackfill, true);
+});
+
+test("explicit OAuth credentials can satisfy readiness for a verified mailbox", () => {
+  const result = classifyEmailConfigReadiness({
+    ...base,
+    encrypted_password: null,
+    encryption_iv: null,
+    oauth_configured: true,
+  });
+
+  assert.equal(result.state, "ready");
+  assert.equal(result.credentialsConfigured, true);
+});
+
+test("Gmail without password or verified OAuth remains blocked", () => {
+  const result = classifyEmailConfigReadiness({
+    ...base,
+    imap_host: "imap.gmail.com",
+    encrypted_password: null,
+    encryption_iv: null,
+    health_status: "paused",
+    auto_fetch_paused_by_system: true,
+    last_success_at: null,
+  });
+
+  assert.equal(result.state, "missing_credentials");
+  assert.equal(result.credentialsConfigured, false);
+  assert.equal(result.canBackfill, false);
+});
+
 test("system pause blocks backfill but preserves connection attempt eligibility", () => {
   const result = classifyEmailConfigReadiness({
     ...base,
