@@ -11,9 +11,9 @@
  *     deploy silently disables one provider without anyone noticing until
  *     a publish fails. This module is the *only* place that resolves env
  *     vars; everywhere else imports from here.
- *   - We accept either name during the transition. New code should write
- *     only the canonical names to env files; the deprecated fallbacks will
- *     be removed once Vercel/.env.local are cleaned up.
+ *   - Google additionally supports optional brand-scoped credentials so a
+ *     Workspace brand can use an Internal OAuth app without changing the
+ *     global YouTube/Drive credentials used by other brands.
  */
 
 export interface OAuthAppCredentials {
@@ -29,14 +29,49 @@ function pick(env: Record<string, string | undefined>, ...keys: string[]): strin
   return undefined;
 }
 
+function googleBrandEnvPrefix(brandId?: string): string | null {
+  const normalized = String(brandId || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || null;
+}
+
 /**
- * Google / YouTube OAuth client. Same credentials work for YouTube, Drive,
- * Gmail, Calendar — Google groups them under one OAuth client.
+ * Google / YouTube OAuth client.
  *
- * Canonical: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
- * Deprecated: YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET
+ * Optional brand-scoped credentials take precedence when BOTH values exist:
+ *   <BRAND>_GOOGLE_CLIENT_ID
+ *   <BRAND>_GOOGLE_CLIENT_SECRET
+ *
+ * Example for `soleada`:
+ *   SOLEADA_GOOGLE_CLIENT_ID
+ *   SOLEADA_GOOGLE_CLIENT_SECRET
+ *
+ * This lets Soleada use an OAuth client owned by its Google Workspace
+ * organization while every other brand keeps using the global Google client.
+ * A partially configured brand override is rejected rather than silently
+ * mixing one brand secret with the global client.
+ *
+ * Global canonical: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+ * Global deprecated: YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET
  */
-export function getGoogleCredentials(): OAuthAppCredentials {
+export function getGoogleCredentials(brandId?: string): OAuthAppCredentials {
+  const prefix = googleBrandEnvPrefix(brandId);
+  if (prefix) {
+    const brandClientId = pick(process.env, `${prefix}_GOOGLE_CLIENT_ID`);
+    const brandClientSecret = pick(process.env, `${prefix}_GOOGLE_CLIENT_SECRET`);
+    if (brandClientId || brandClientSecret) {
+      if (!brandClientId || !brandClientSecret) {
+        throw new Error(
+          `Brand-scoped Google OAuth for ${brandId} is incomplete. Set both ${prefix}_GOOGLE_CLIENT_ID and ${prefix}_GOOGLE_CLIENT_SECRET.`,
+        );
+      }
+      return { clientId: brandClientId, clientSecret: brandClientSecret };
+    }
+  }
+
   const clientId = pick(process.env, "GOOGLE_CLIENT_ID", "YOUTUBE_CLIENT_ID");
   const clientSecret = pick(process.env, "GOOGLE_CLIENT_SECRET", "YOUTUBE_CLIENT_SECRET");
   if (!clientId || !clientSecret) {
