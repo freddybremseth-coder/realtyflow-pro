@@ -7,6 +7,7 @@ import { MultiDomainExpertAgent } from "./multi-domain-expert";
 import { YouTubeAgent } from "./youtube-agent";
 import { CEOAgent } from "./ceo-agent";
 import { SchedulingAgent } from "./scheduling-agent";
+import { EmailAgent } from "./email-agent";
 
 export interface MultiAgentResult {
   task: string;
@@ -28,6 +29,7 @@ export class AgentOrchestrator {
     this.agents.set("youtube", new YouTubeAgent());
     this.agents.set("ceo", new CEOAgent());
     this.agents.set("scheduling", new SchedulingAgent());
+    this.agents.set("email", new EmailAgent());
   }
 
   getAgent(name: string): BaseAgent | undefined {
@@ -56,9 +58,9 @@ export class AgentOrchestrator {
       id: crypto.randomUUID(),
       name: taskName,
       description: command,
-      priority: "medium",
+      priority: "medium" as const,
       parameters: this.buildParameters(agentName, command),
-      status: "pending",
+      status: "pending" as const,
     };
 
     const results = await agent.executeTasks([task]);
@@ -80,15 +82,14 @@ export class AgentOrchestrator {
       })
       .filter(Boolean) as { agent: BaseAgent; name: string }[];
 
-    // Run all agents in parallel
     const promises = tasks.map(async ({ agent, name }) => {
       const task: AgentTask = {
         id: crypto.randomUUID(),
         name: this.inferTaskName(name, taskDescription),
         description: taskDescription,
-        priority: "high",
+        priority: "high" as const,
         parameters: this.buildParameters(name, taskDescription),
-        status: "pending",
+        status: "pending" as const,
       };
 
       try {
@@ -209,6 +210,13 @@ export class AgentOrchestrator {
       if (/engasjement|analyse/.test(text)) return "analyze_engagement_patterns";
       if (/anbefal|forbedre/.test(text)) return "improve_content_recommendations";
       return "recommend_posting_time";
+    }
+
+    if (agentName === "email") {
+      if (/svar|reply|utkast|draft/.test(text)) return "draft_reply";
+      if (/match|kontekst|context|crm/.test(text)) return "match_context";
+      if (/handling|action|neste steg|follow.?up/.test(text)) return "suggest_action";
+      return "analyze_email";
     }
 
     if (agentName === "ceo") {
