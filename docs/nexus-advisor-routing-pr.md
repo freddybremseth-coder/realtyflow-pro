@@ -1,0 +1,1 @@
+This change keeps the conversational advisor read-only and makes the existing AgentOrchestrator, Automation Registry, Mission Operations, Communications review surfaces and approval gates explicit in the advisor's live routing context.
