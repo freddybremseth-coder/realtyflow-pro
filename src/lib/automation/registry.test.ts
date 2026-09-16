@@ -14,6 +14,9 @@ test("automation registry has metadata for every Vercel cron", () => {
   for (const cron of crons) {
     assert.ok(AUTOMATION_REGISTRY[cron.path], `Missing metadata for ${cron.path}`);
   }
+
+  const { warnings } = buildAutomationRegistry();
+  assert.deepEqual(warnings, []);
 });
 
 test("automation registry does not contain stale cron metadata", () => {
