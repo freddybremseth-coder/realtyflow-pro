@@ -62,7 +62,9 @@ test("Nexus AI reuses existing pipeline movement and deterministic navigation", 
   assert.match(routeSource, /assessPipelineMovement/);
   assert.match(routeSource, /filterNexusCommands/);
   assert.match(routeSource, /top_actions: topActions/);
-  assert.match(routeSource, /actions: navigationCandidates/);
+  assert.match(routeSource, /const actions = \[\.\.\.navigationCandidates, \.\.\.routingNavigation\]/);
+  assert.match(routeSource, /navigation_candidates: actions/);
+  assert.match(routeSource, /\n\s*actions,\n/);
 });
 
 test("Nexus AI keeps advice read-only and exposes governed action cards separately", () => {
