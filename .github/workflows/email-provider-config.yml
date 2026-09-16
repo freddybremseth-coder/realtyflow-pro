@@ -3,6 +3,8 @@ name: Email Provider Config
 on:
   pull_request:
     paths:
+      - "src/lib/email/config-readiness.ts"
+      - "src/lib/email/config-readiness.test.ts"
       - "src/services/email/**"
       - "src/app/api/email/**"
       - "src/app/api/gmail/**"
@@ -22,4 +24,4 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: node --import tsx --test src/services/email/provider-config.test.ts src/services/email/google-mail-oauth.contract.test.ts
+      - run: node --import tsx --test src/lib/email/config-readiness.test.ts src/services/email/provider-config.test.ts src/services/email/google-mail-oauth.contract.test.ts
