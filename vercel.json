@@ -32,7 +32,7 @@
     { "path": "/api/cron/property-editorial", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/property-conversion-editorial", "schedule": "*/10 * * * *" },
     { "path": "/api/cron/property-feed-source-refresh", "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/auto-publish", "schedule": "0 17 * * *" },
+    { "path": "/api/cron/auto-publish", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/trending-tags", "schedule": "0 13 * * 1" },
     { "path": "/api/cron/storage-archive", "schedule": "30 18 * * *" },
     { "path": "/api/cron/publishing-autopilot", "schedule": "45 17 * * *" },
