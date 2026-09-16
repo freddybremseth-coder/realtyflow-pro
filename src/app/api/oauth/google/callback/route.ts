@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   let credentials;
   try {
-    credentials = getGoogleCredentials();
+    credentials = getGoogleCredentials(state.brand_id);
   } catch (err) {
     return errorRedirect(
       req,
