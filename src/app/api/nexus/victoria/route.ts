@@ -3,10 +3,12 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { filterNexusCommands } from "@/lib/nexus-command";
 import { assessPipelineMovement } from "@/lib/nexus-pipeline-movement";
 import { buildNexusActionProposals } from "@/lib/nexus-ai-governed-actions";
+import { buildNexusAdvisorSystemRouting } from "@/lib/nexus-advisor-system-routing";
 import {
   buildNexusMarketingActionProposals,
   messageRequestsMarketingCampaign,
 } from "@/lib/nexus-ai-marketing-actions";
+import { AgentOrchestrator } from "@/services/agents/orchestrator";
 import { askNexusAI, isNexusAIConfigured } from "@/services/ai/nexus-ai-client";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
@@ -41,8 +43,6 @@ function numberValue(value: unknown) {
 }
 
 function buildMarketingContext(conversation: any[], message: string) {
-  // Only the current turn may open the governed marketing path. Prior user
-  // turns can add context to that explicit request, but cannot trigger it.
   if (!messageRequestsMarketingCampaign(message)) return null;
   const recentUserTurns = conversation
     .slice(-6)
@@ -98,6 +98,9 @@ export async function POST(request: NextRequest) {
   const conversation = Array.isArray(body?.conversation) ? body.conversation.slice(-10) : [];
   const pageContext = parsePageContext(body?.visitorInfo?.page);
   if (!message) return NextResponse.json({ response: "Hva vil du at Nexus skal vurdere?" });
+
+  const agentCapabilities = new AgentOrchestrator().getAgentCapabilities();
+  const systemRouting = buildNexusAdvisorSystemRouting(message, agentCapabilities);
 
   const currentContactPromise = pageContext.contactId
     ? supabase
@@ -161,6 +164,15 @@ export async function POST(request: NextRequest) {
     description: command.description,
     href: command.href,
   }));
+  const routingNavigation = systemRouting.emailCrmChain
+    ? systemRouting.modules
+        .filter((module) => ["email-readiness", "email-link-health", "nexus-inbox", "mission-operations"].includes(module.id))
+        .map((module) => ({ label: module.label, description: module.purpose, href: module.href! }))
+    : [];
+  const actions = [...navigationCandidates, ...routingNavigation]
+    .filter((item, index, rows) => rows.findIndex((candidate) => candidate.href === item.href) === index)
+    .slice(0, 8);
+
   const marketingContext = buildMarketingContext(conversation, message);
   const crmProposedActions = buildNexusActionProposals({ message, currentContact, contacts });
   const marketingProposedActions = buildNexusMarketingActionProposals({ message, marketingContext });
@@ -188,7 +200,8 @@ export async function POST(request: NextRequest) {
     generated_at: new Date().toISOString(),
     page_context: pageContext,
     current_customer: currentContact,
-    navigation_candidates: navigationCandidates,
+    navigation_candidates: actions,
+    system_routing: systemRouting,
     proposed_actions: proposedActions.map((action) => ({
       type: action.type,
       contact_id: "contactId" in action ? action.contactId : undefined,
@@ -238,6 +251,9 @@ export async function POST(request: NextRequest) {
 
 HOVEDOPPGAVE:
 - Svar på spørsmål om kunder, leads, CRM, pipeline, salgstall, markedsføring, systemstatus og prioriteringer.
+- system_routing er det kanoniske kartet over eksisterende agenter, automasjoner, missions og moduler. Bruk alltid en eksisterende systemeier når oppgaven allerede er dekket; ikke foreslå en ny parallell motor.
+- Når system_routing.relevantAgents eller relevantAutomations inneholder en egnet eier, forklar hvilken eksisterende komponent som skal gjøre arbeidet og hvilken review/approval-gate som gjelder.
+- For e-post/CRM-arbeid: følg system_routing.emailCrmChain. Historisk import går via Email Readiness, identitetskobling via Email Link Health, og deretter overtar eksisterende CRM/Buyer Profile/matching-workers. Ikke oppfinn en ny bulk-CRM-write fra chatten.
 - Når brukeren spør «hva bør jeg gjøre i dag?», bruk crm.top_actions, opportunities, owner_focus, approvals og runtime-status til å prioritere et lite antall konkrete handlinger med begrunnelse.
 - Når brukeren spør «hvor finner jeg …?» eller «hvor skal jeg trykke?», bruk navigation_candidates og oppgi riktig modul/side. Ikke finn på menyer eller ruter.
 - Når page_context/current_customer finnes og brukeren sier «denne kunden», «her», «denne siden» eller lignende, behandle current_customer som aktiv kontekst uten å be brukeren gjenta hvem det gjelder.
@@ -247,7 +263,8 @@ HOVEDOPPGAVE:
 - Bruk konkrete kundenavn fra crm.top_actions når spørsmålet gjelder hvem som bør kontaktes. Ikke begrens deg til summeringer når konkrete rader finnes.
 
 SIKKERHET OG SANNHET:
-- Selve rådgivningskallet er read-only. Det kan analysere, prioritere, forklare, navigere og foreslå allowlistede handlingskort, men ingen sideeffekt skjer uten et eksplisitt brukerklikk mot det separate governed-actions-endepunktet.
+- Selve rådgivningskallet er read-only. Det kan analysere, prioritere, forklare, navigere og foreslå allowlistede handlingskort, men ingen sideeffekt skjer uten et eksplisitt brukerklikk mot det separate governed-actions-endepunktet eller en allerede-governed Nexus automation/mission.
+- Rådgiveren skal orkestrere eksisterende systemer, ikke reimplementere dem. Den skal aldri lage sin egen bulk-write-path for CRM, Buyer Profile, matching, e-postutsending eller publishing.
 - Allowlistede interne handlinger kan planlegge CRM-oppfølging, lagre et internt CRM-notat eller opprette en intern kundeoppgave. Disse handlingene sender aldri e-post, SMS, WhatsApp eller annen kundekommunikasjon.
 - E-posthandlingen kan bare opprette et utkast og en pending Approval Center-post. Den sender ikke e-post direkte.
 - Markedsføringshandlingen kan bare opprette manual-review SoMe-utkast og Approval Center-poster. Chat-klikket publiserer aldri direkte, selv om merkevaren ellers har controlled-auto aktivert.
@@ -274,13 +291,18 @@ STIL:
     const ai = await askNexusAI(prompt, { systemPrompt, maxTokens: 1900 });
     return NextResponse.json({
       response: ai.text,
-      actions: navigationCandidates,
+      actions,
       proposedActions,
       pageContext,
       aiProvider: ai.provider,
       aiModel: ai.model,
       snapshotGeneratedAt: snapshot.generated_at,
       activeOwnerFocus: ownerFocus.length,
+      systemRouting: {
+        relevantAgents: systemRouting.relevantAgents.map((row) => row.id),
+        relevantAutomations: systemRouting.relevantAutomations.map((row) => row.id),
+        emailCrmChain: Boolean(systemRouting.emailCrmChain),
+      },
     });
   } catch (e) {
     return NextResponse.json({ response: `Nexus AI klarte ikke å lese Nexus akkurat nå: ${e instanceof Error ? e.message : String(e)}` }, { status: 500 });

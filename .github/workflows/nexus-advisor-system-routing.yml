@@ -1,0 +1,26 @@
+name: Nexus Advisor System Routing
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/nexus/victoria/**"
+      - "src/lib/nexus-advisor-system-routing.ts"
+      - "src/lib/nexus-advisor-system-routing.test.ts"
+      - "src/lib/nexus-advisor-system-routing.contract.test.ts"
+      - "src/lib/nexus-ai-in-app-advisor.contract.test.ts"
+      - "src/services/agents/**"
+      - "src/lib/automation/registry.ts"
+      - ".github/workflows/nexus-advisor-system-routing.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Advisor routing tests
+        run: npx tsx --test src/lib/nexus-advisor-system-routing.test.ts src/lib/nexus-advisor-system-routing.contract.test.ts
