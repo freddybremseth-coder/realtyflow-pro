@@ -62,7 +62,7 @@ function normalize(value: unknown) {
 
 function messageLooksLikeEmailCrmWork(message: string) {
   const text = normalize(message);
-  const email = /\b(e post|epost|email|mail|innboks|gmail)\b/.test(text);
+  const email = /\b(e post(?:er)?|epost(?:er)?|email(?:s)?|mail(?:er)?|innboks(?:en)?|gmail)\b/.test(text);
   const crm = /\b(crm|kunde|kunder|kontakt|kontakter|buyer profile|kjoperprofil|match)\b/.test(text);
   const bulk = /\b(alle|historikk|historiske|gjennom|avstem|synk|oppdater|legg inn|import)\b/.test(text);
   return email && (crm || bulk);
