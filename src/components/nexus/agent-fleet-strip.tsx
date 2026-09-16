@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Bot, BrainCircuit, ChevronRight, Cpu, Loader2, ShieldCheck, Zap } from "lucide-react";
+import { resolveAgentFleetId } from "@/lib/agent-fleet-registry";
 
 type AgentCapability = {
   agentName: string;
@@ -16,6 +17,7 @@ type AgentActivity = {
   tasksCompleted: number;
   systemRuns?: number;
   systemAttention?: number;
+  activityWindowDays?: number;
   lastActivity: string;
 };
 
@@ -40,10 +42,6 @@ function todayIsoStart() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
-}
-
-function normalizeAgentId(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 function activityDot(row?: AgentActivity) {
@@ -120,10 +118,8 @@ export function AgentFleetStrip() {
           <>
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
               {(loading ? Array.from({ length: 9 }, (_, index) => ({ agentName: `Laster ${index + 1}`, role: "", expertise: [], availableTasks: [] })) : agents).map((agent) => {
-                const key = normalizeAgentId(agent.agentName);
-                const direct = activityById.get(key);
-                const fuzzy = activity.find((row) => key.includes(row.id) || row.id.includes(key));
-                const row = direct || fuzzy;
+                const id = resolveAgentFleetId(agent.agentName);
+                const row = id ? activityById.get(id) : undefined;
                 const tasks = row?.tasksCompleted ?? 0;
                 const systemRuns = row?.systemRuns ?? 0;
                 const attention = row?.systemAttention ?? 0;
@@ -136,8 +132,8 @@ export function AgentFleetStrip() {
                     <div className="mt-2 truncate text-xs font-black text-white">{agent.agentName}</div>
                     <div className="mt-1 line-clamp-2 min-h-8 text-[10px] leading-4 text-slate-400">{agent.role || "Agent capability"}</div>
                     <div className="mt-2 text-[10px] leading-4">
-                      <div className="flex items-center justify-between gap-2"><span className="font-black text-cyan-300">{systemRuns} system</span><span className="text-slate-500">{agent.availableTasks?.length ?? 0} skills</span></div>
-                      <div className="mt-0.5 flex items-center justify-between gap-2"><span className="text-slate-400">{tasks} direkte</span>{attention > 0 ? <span className="font-black text-amber-300">{attention} attention</span> : <span className="text-emerald-400">OK</span>}</div>
+                      <div className="flex items-center justify-between gap-2"><span className="font-black text-cyan-300">{systemRuns} system/7d</span><span className="text-slate-500">{agent.availableTasks?.length ?? 0} skills</span></div>
+                      <div className="mt-0.5 flex items-center justify-between gap-2"><span className="text-slate-400">{tasks} direkte i dag</span>{attention > 0 ? <span className="font-black text-amber-300">{attention} attention</span> : <span className="text-emerald-400">OK</span>}</div>
                     </div>
                   </div>
                 );
