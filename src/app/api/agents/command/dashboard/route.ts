@@ -4,7 +4,6 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { AGENT_FLEET, resolveAgentFleetId, resolveAutomationAgentId, type AgentFleetId } from "@/lib/agent-fleet-registry";
 
 export const dynamic = "force-dynamic";
-
 export const revalidate = 0;
 
 type CommandExecutionRow = {
@@ -80,6 +79,8 @@ export async function GET(request: NextRequest) {
   }
 
   const since = request.nextUrl.searchParams.get("since") || new Date().toISOString().slice(0, 10);
+  const sinceMs = new Date(since).getTime();
+  const agentWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const [recentExecutionsRes, recentPublicationsRes, todayExecutionsRes, automationLogsRes, publicationsCountRes, emailCountRes] =
     await Promise.all([
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from("automation_logs")
         .select("action,status,created_at")
-        .gte("created_at", since)
+        .gte("created_at", agentWindowStart)
         .order("created_at", { ascending: false })
         .limit(5000),
       supabase
@@ -147,8 +148,8 @@ export async function GET(request: NextRequest) {
   const automationLogs = (automationLogsRes.data || []) as AutomationLogRow[];
   let completedSteps = 0;
   const directCounts: Partial<Record<AgentFleetId, number>> = {};
-  const systemCounts: Partial<Record<AgentFleetId, number>> = {};
-  const systemAttention: Partial<Record<AgentFleetId, number>> = {};
+  const systemCounts7d: Partial<Record<AgentFleetId, number>> = {};
+  const systemAttention7d: Partial<Record<AgentFleetId, number>> = {};
   const agentLatest: Partial<Record<AgentFleetId, string>> = {};
 
   for (const execution of todayExecutions) {
@@ -166,31 +167,35 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  let mappedAutomationRuns = 0;
-  let mappedAutomationHealthy = 0;
+  let mappedAutomationRunsToday = 0;
+  let mappedAutomationHealthyToday = 0;
   for (const log of automationLogs) {
     const id = resolveAutomationAgentId(log.action);
     if (!id) continue;
-    mappedAutomationRuns += 1;
-    systemCounts[id] = (systemCounts[id] || 0) + 1;
-    if (healthyAutomationStatus(log.status)) mappedAutomationHealthy += 1;
-    else systemAttention[id] = (systemAttention[id] || 0) + 1;
+    systemCounts7d[id] = (systemCounts7d[id] || 0) + 1;
+    if (!healthyAutomationStatus(log.status)) systemAttention7d[id] = (systemAttention7d[id] || 0) + 1;
     const next = laterTimestamp(agentLatest[id], log.created_at);
     if (next) agentLatest[id] = next;
+
+    const createdMs = log.created_at ? new Date(log.created_at).getTime() : NaN;
+    if (Number.isFinite(createdMs) && Number.isFinite(sinceMs) && createdMs >= sinceMs) {
+      mappedAutomationRunsToday += 1;
+      if (healthyAutomationStatus(log.status)) mappedAutomationHealthyToday += 1;
+    }
   }
 
   const successfulExecutions = todayExecutions.filter((execution) =>
     ["completed", "partial", "done"].includes(execution.status || "")
   ).length;
-  const totalObservedRuns = todayExecutions.length + mappedAutomationRuns;
-  const totalSuccessfulRuns = successfulExecutions + mappedAutomationHealthy;
+  const totalObservedRuns = todayExecutions.length + mappedAutomationRunsToday;
+  const totalSuccessfulRuns = successfulExecutions + mappedAutomationHealthyToday;
 
   return NextResponse.json({
     recentActions: recentActions.slice(0, 6),
     runtimeStats: {
-      tasksToday: completedSteps + mappedAutomationRuns,
+      tasksToday: completedSteps + mappedAutomationRunsToday,
       directTasksToday: completedSteps,
-      systemRunsToday: mappedAutomationRuns,
+      systemRunsToday: mappedAutomationRunsToday,
       successRate: totalObservedRuns > 0 ? Math.round((totalSuccessfulRuns / totalObservedRuns) * 100) : null,
       emailsToday: emailCountRes.count ?? 0,
       contentToday: publicationsCountRes.count ?? 0,
@@ -199,11 +204,12 @@ export async function GET(request: NextRequest) {
     agentActivity: AGENT_FLEET.map((agent) => ({
       id: agent.id,
       tasksCompleted: directCounts[agent.id] || 0,
-      systemRuns: systemCounts[agent.id] || 0,
-      systemAttention: systemAttention[agent.id] || 0,
+      systemRuns: systemCounts7d[agent.id] || 0,
+      systemAttention: systemAttention7d[agent.id] || 0,
+      activityWindowDays: 7,
       lastActivity: agentLatest[agent.id]
         ? formatRelativeActivity(agentLatest[agent.id])
-        : "Ingen registrert aktivitet i dag",
+        : "Ingen registrert aktivitet siste 7 dager",
     })),
   });
 }
