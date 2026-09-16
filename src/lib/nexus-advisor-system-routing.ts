@@ -36,6 +36,17 @@ const EMAIL_CHAIN_PATHS = [
   "/api/cron/nexus-property-recommendation-send",
 ] as const;
 
+const AGENT_DOMAIN_ALIASES: Array<{ match: RegExp; aliases: string[] }> = [
+  { match: /marketing/i, aliases: ["marketing", "markedsforing", "kampanje", "campaign", "innhold", "content", "facebook", "instagram", "social", "sosiale medier"] },
+  { match: /seo/i, aliases: ["seo", "sokeord", "sok", "google", "organisk", "on page", "onpage", "metadata", "synlighet"] },
+  { match: /sales/i, aliases: ["sales", "salg", "lead", "leads", "pipeline", "konverter", "konvertering", "kunde", "crm"] },
+  { match: /business/i, aliases: ["business", "forretning", "forretningsstrategi", "marked", "markedsanalyse", "vekst", "partner", "partnerskap", "posisjonering"] },
+  { match: /navigator|multi.domain/i, aliases: ["multi domain", "tverrfaglig", "tverr", "cross brand", "brands", "merkevarer", "synergi", "portefolje"] },
+  { match: /youtube/i, aliases: ["youtube", "video", "shorts", "thumbnail", "miniatyr", "kanal", "tags", "videotittel", "videobeskrivelse"] },
+  { match: /ceo/i, aliases: ["ceo", "leder", "ledelse", "prioriter", "prioritering", "deleger", "koordinering", "status", "strategi"] },
+  { match: /scheduler|scheduling/i, aliases: ["scheduler", "scheduling", "planlegg", "planlegging", "kalender", "publiseringstid", "posting time", "tidspunkt", "ukeplan"] },
+];
+
 function normalize(value: unknown) {
   return String(value ?? "")
     .normalize("NFD")
@@ -69,21 +80,45 @@ function scoreAutomation(message: string, path: string) {
   const text = normalize(message);
   if (!text) return 0;
   const haystack = normalize([row.name, row.owner, row.purpose, row.expectedOutput, ...(row.actionKeys || [])].join(" "));
-  const tokens = text.split(" ").filter((token) => token.length >= 4);
+  const tokens = text.split(" ").filter((token) => token.length >= 3);
   return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+}
+
+function aliasesForAgent(agent: AgentCapability) {
+  const identity = `${agent.agentName} ${agent.role}`;
+  return AGENT_DOMAIN_ALIASES
+    .filter((row) => row.match.test(identity))
+    .flatMap((row) => row.aliases);
 }
 
 function scoreAgent(message: string, agent: AgentCapability) {
   const text = normalize(message);
-  const haystack = normalize([agent.agentName, agent.role, ...agent.expertise, ...agent.availableTasks].join(" "));
-  const tokens = text.split(" ").filter((token) => token.length >= 4);
-  return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+  if (!text) return 0;
+  const aliases = aliasesForAgent(agent).map(normalize);
+  const haystack = normalize([agent.agentName, agent.role, ...agent.expertise, ...agent.availableTasks, ...aliases].join(" "));
+  const tokens = text.split(" ").filter((token) => token.length >= 3);
+  const tokenScore = tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+  const aliasScore = aliases.reduce((score, alias) => score + (alias && text.includes(alias) ? 4 : 0), 0);
+  return tokenScore + aliasScore;
 }
 
 export function buildNexusAdvisorSystemRouting(message: string, agents: AgentCapability[]) {
-  const agentRoutes: NexusAdvisorSystemRoute[] = agents
+  const scoredAgents = agents
     .map((agent) => ({ agent, score: scoreAgent(message, agent) }))
-    .sort((a, b) => b.score - a.score || a.agent.agentName.localeCompare(b.agent.agentName))
+    .sort((a, b) => b.score - a.score || a.agent.agentName.localeCompare(b.agent.agentName));
+
+  const allAgents: NexusAdvisorSystemRoute[] = scoredAgents.map(({ agent }) => ({
+    kind: "agent" as const,
+    id: agent.agentName,
+    label: agent.agentName,
+    owner: "AgentOrchestrator",
+    purpose: agent.role,
+    availableTasks: agent.availableTasks,
+  }));
+
+  const relevantAgents: NexusAdvisorSystemRoute[] = scoredAgents
+    .filter((row) => row.score > 0)
+    .slice(0, 5)
     .map(({ agent }) => ({
       kind: "agent" as const,
       id: agent.agentName,
@@ -92,11 +127,6 @@ export function buildNexusAdvisorSystemRouting(message: string, agents: AgentCap
       purpose: agent.role,
       availableTasks: agent.availableTasks,
     }));
-
-  const relevantAgents = agentRoutes.filter((_, index) => {
-    const agent = agents.find((candidate) => candidate.agentName === agentRoutes[index].id);
-    return agent ? scoreAgent(message, agent) > 0 : false;
-  }).slice(0, 5);
 
   const scoredAutomations = Object.keys(AUTOMATION_REGISTRY)
     .map((path) => ({ path, score: scoreAutomation(message, path) }))
@@ -122,7 +152,7 @@ export function buildNexusAdvisorSystemRouting(message: string, agents: AgentCap
       existingReviewAndApprovalGatesRemainAuthoritative: true,
     },
     relevantAgents,
-    allAgents: agentRoutes,
+    allAgents,
     relevantAutomations: [...automationMap.values()],
     modules: MODULE_ROUTES,
     emailCrmChain: messageLooksLikeEmailCrmWork(message)
