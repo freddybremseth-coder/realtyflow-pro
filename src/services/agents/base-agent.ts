@@ -1,20 +1,17 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { askClaude } from "@/services/ai/claude-client";
 
-// ─── Norwegian Content Rules ──────────────────────────────────────────
+// ─── Default Content Rules ────────────────────────────────────────────
 export const NORWEGIAN_CONTENT_RULES = `
 SPRÅK OG INNHOLDSREGLER:
-- Alt innhold SKAL skrives på norsk bokmål med mindre annet er spesifisert.
-- Bruk profesjonelt men tilgjengelig språk som engasjerer norske lesere.
-- Tilpass tone og stil til norsk forretningskultur.
-- Bruk norske uttrykk og fagtermer der det er naturlig.
-- Unngå direkte oversettelser fra engelsk som virker unaturlige.
-- Skriv tall med mellomrom som tusenskilletegn (1 000, 10 000) og komma som desimalskilletegn (3,5 %).
-- Bruk norsk datoformat: DD.MM.ÅÅÅÅ.
-- Valuta skal angis i NOK eller kr.
-- Referanser til lover, regler og standarder skal være norske (Plan- og bygningsloven, Eiendomsmeglingsloven, osv.).
-- Bruk "du/dere" for direkte henvendelser, unngå "De" med mindre konteksten krever det.
-- Inkluder relevante norske hashtags når det er aktuelt (#eiendom #bolig #norge).
+- Norsk bokmål er standardspråk når oppgaven eller kildematerialet ikke angir et annet språk.
+- Når brukeren, kunden eller kilden bruker et annet språk, følg det språket når oppgaven krever svar, oversettelse eller kundekommunikasjon.
+- Bruk profesjonelt, tilgjengelig og naturlig språk. Unngå stive direkteoversettelser.
+- Tilpass tone, fagtermer og tiltaleform til målgruppen og markedet oppgaven faktisk gjelder.
+- Bevar dokumenterte tall, priser, valutaer, enheter, datoer og egennavn. Ikke konverter EUR til NOK eller omvendt uten at oppgaven ber om det.
+- For norsk tekst kan norsk tall- og datoformat brukes når dette ikke endrer kildedata eller skaper tvetydighet.
+- Juridiske, regulatoriske og skattemessige referanser skal følge riktig jurisdiksjon i konteksten. Ikke anta norsk lov når saken gjelder Spania eller et annet land.
+- Hvis jurisdiksjon, valuta eller språk er uklart og er viktig for svaret, ikke gjett; bruk nøytral formulering eller marker hva som må avklares.
+- Hashtags, CTA-er og lokale uttrykk skal være relevante for faktisk brand, marked, kanal og målgruppe; ikke legg til norske hashtags bare fordi standardspråket er norsk.
 `;
 
 // ─── Clean Output Rules ───────────────────────────────────────────────
@@ -28,8 +25,6 @@ OUTPUT-FORMATERING:
 - Unngå "her er", "selvfølgelig", "absolutt" og lignende fyllord.
 - Gå rett på sak med substansielt innhold.
 `;
-
-// ─── Interfaces ───────────────────────────────────────────────────────
 
 export interface AgentTask {
   id: string;
@@ -66,31 +61,20 @@ export interface ExecutionResult {
   timestamp: string;
 }
 
-// ─── Abstract Base Agent ──────────────────────────────────────────────
-
 export abstract class BaseAgent {
   name: string;
   role: string;
   expertise: string[];
 
-  protected client: Anthropic;
-  protected model: string = "claude-sonnet-5";
-
   constructor(name: string, role: string, expertise: string[]) {
     this.name = name;
     this.role = role;
     this.expertise = expertise;
-    this.client = new Anthropic();
   }
 
-  /**
-   * Calls the Anthropic API with the given prompt and optional system prompt.
-   * Returns the text content from the response.
-   */
   protected async callAI(prompt: string, systemPrompt?: string): Promise<string> {
     const system = systemPrompt ?? this.getDefaultSystemPrompt();
 
-    // Use askClaude which has built-in fallback to Gemini/OpenAI
     try {
       return await askClaude(prompt, {
         systemPrompt: system,
@@ -105,17 +89,10 @@ export abstract class BaseAgent {
     }
   }
 
-  /**
-   * Attempts to parse a JSON string from AI output.
-   * Handles cases where the AI wraps JSON in markdown code fences.
-   */
   protected parseJSON<T = Record<string, unknown>>(text: string): T {
     const cleaned = this.stripMarkdownFormatting(text);
-
-    // Try to extract JSON from the cleaned text
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     const jsonArrayMatch = cleaned.match(/\[[\s\S]*\]/);
-
     const candidate = jsonMatch?.[0] ?? jsonArrayMatch?.[0];
 
     if (!candidate) {
@@ -129,24 +106,17 @@ export abstract class BaseAgent {
     }
   }
 
-  /**
-   * Strips markdown formatting artifacts from AI responses.
-   * Removes code fences, bold markers, heading markers, etc.
-   */
   protected stripMarkdownFormatting(text: string): string {
     return text
-      .replace(/```(?:json|typescript|javascript|text)?\n?/g, "") // code fences
+      .replace(/```(?:json|typescript|javascript|text)?\n?/g, "")
       .replace(/```/g, "")
-      .replace(/\*\*(.*?)\*\*/g, "$1") // bold
-      .replace(/\*(.*?)\*/g, "$1") // italic
-      .replace(/#{1,6}\s/g, "") // headings
-      .replace(/`([^`]+)`/g, "$1") // inline code
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/#{1,6}\s/g, "")
+      .replace(/`([^`]+)`/g, "$1")
       .trim();
   }
 
-  /**
-   * Builds the default system prompt for this agent.
-   */
   protected getDefaultSystemPrompt(): string {
     const now = new Date();
     const dateStr = now.toLocaleDateString("nb-NO", {
@@ -170,16 +140,13 @@ export abstract class BaseAgent {
       `DAGENS DATO: ${dateStr}`,
       `ÅR: ${now.getFullYear()}`,
       `SESONG: ${season} ${now.getFullYear()}`,
-      `VIKTIG: Referer ALLTID til riktig årstall (${now.getFullYear()}) og sesong (${season}) i innholdet. Bruk ALDRI gamle årstall.`,
+      `VIKTIG: Referer til riktig årstall (${now.getFullYear()}) og sesong (${season}) når tidskontekst er relevant. Ikke erstatt dokumenterte historiske datoer med dagens år.`,
       "",
       NORWEGIAN_CONTENT_RULES,
       CLEAN_OUTPUT_RULES,
     ].join("\n");
   }
 
-  /**
-   * Returns the capabilities of this agent.
-   */
   getCapabilities(): AgentCapability {
     return {
       agentName: this.name,
@@ -189,23 +156,8 @@ export abstract class BaseAgent {
     };
   }
 
-  /**
-   * Returns a list of task names this agent can execute.
-   */
   protected abstract getAvailableTasks(): string[];
-
-  /**
-   * Executes a list of tasks sequentially and returns results.
-   */
   abstract executeTasks(tasks: AgentTask[]): Promise<ExecutionResult[]>;
-
-  /**
-   * Analyzes the given data and returns an AI-generated analysis string.
-   */
   abstract analyzeData(data: Record<string, unknown>): Promise<string>;
-
-  /**
-   * Generates recommendations based on the provided context.
-   */
   abstract generateRecommendations(context: Record<string, unknown>): Promise<string>;
 }

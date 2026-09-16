@@ -6,14 +6,29 @@ import type { PublishResult } from "@/services/publishing/publisher";
 import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 
-// Vercel cron: runs every 15 minutes to check for scheduled posts
+// Vercel cron: runs every 15 minutes to check for scheduled posts.
 export const maxDuration = 120;
+const PATH = "/api/cron/auto-publish";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
+}
+
+async function writeAutomationLog(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  status: "success" | "partial" | "failed",
+  details: Record<string, unknown>,
+) {
+  const { error } = await supabase.from("automation_logs").insert({
+    action: "auto_publish",
+    agent_name: "sofia_scheduler",
+    status,
+    details: { runtime_control: `cron:${PATH}`, ...details },
+  });
+  if (error) console.warn("[Auto-Publish Cron] automation log failed", error.message);
 }
 
 async function publishDraftToWebsite(origin: string, post: {
@@ -64,7 +79,7 @@ export async function GET(request: NextRequest) {
     const unauthorized = requireCronApi(request);
     if (unauthorized) return unauthorized;
 
-    const safeMode = await evaluateCronSafeMode('/api/cron/auto-publish');
+    const safeMode = await evaluateCronSafeMode(PATH);
     if (safeMode.skip) {
       return NextResponse.json({
         success: true,
@@ -79,9 +94,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
     }
 
-    console.log("[Auto-Publish Cron] Starting check for scheduled posts...");
-
-    // 2. Find posts that are due for publishing
     const now = new Date().toISOString();
     const { data: duePosts, error } = await supabase
       .from("content_publications")
@@ -89,40 +101,36 @@ export async function GET(request: NextRequest) {
       .eq("status", "scheduled")
       .lte("scheduled_at", now)
       .order("scheduled_at", { ascending: true })
-      .limit(5); // Process max 5 per run to stay within timeout
+      .limit(5);
 
     if (error) {
       console.error("[Auto-Publish Cron] Query error:", error);
+      await writeAutomationLog(supabase, "failed", { stage: "read_due_posts", error: error.message.slice(0, 500) });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     if (!duePosts || duePosts.length === 0) {
-      console.log("[Auto-Publish Cron] No posts due for publishing.");
+      await writeAutomationLog(supabase, "success", { due: 0, processed: 0, published: 0, failed: 0 });
       return NextResponse.json({ message: "No posts due", published: 0 });
     }
 
-    console.log(`[Auto-Publish Cron] Found ${duePosts.length} posts due for publishing.`);
-
-    const publishResults = [];
+    const publishResults: Array<{ postId: string; success: boolean; results?: PublishResult[]; error?: string }> = [];
     const origin = request.nextUrl.origin;
 
-    // 3. Publish each due post
     for (const post of duePosts) {
       const platforms = Array.isArray(post.scheduled_platforms) ? post.scheduled_platforms.map(String) : [];
       const socialPlatforms = platforms.filter((platform: string) => platform !== "website");
       const includesWebsite = platforms.includes("website");
       if (platforms.length === 0) {
-        console.warn(`[Auto-Publish Cron] Post ${post.id} has no platforms, skipping.`);
         await supabase
           .from("content_publications")
           .update({ status: "failed", last_publish_error: "Ingen plattformer valgt" })
           .eq("id", post.id);
+        publishResults.push({ postId: post.id, success: false, error: "Ingen plattformer valgt" });
         continue;
       }
 
-      // Don't retry posts that have failed 3+ times
       if ((post.publish_attempts || 0) >= 3) {
-        console.warn(`[Auto-Publish Cron] Post ${post.id} has ${post.publish_attempts} failed attempts, marking as failed.`);
         await supabase
           .from("content_publications")
           .update({
@@ -131,13 +139,11 @@ export async function GET(request: NextRequest) {
             updated_at: new Date().toISOString(),
           })
           .eq("id", post.id);
+        publishResults.push({ postId: post.id, success: false, error: "Maks antall forsøk overskredet" });
         continue;
       }
 
-      console.log(`[Auto-Publish Cron] Publishing: "${post.title}" to ${platforms.join(", ")}`);
-
       try {
-        // Increment attempt counter first
         await supabase
           .from("content_publications")
           .update({ publish_attempts: (post.publish_attempts || 0) + 1 })
@@ -164,29 +170,7 @@ export async function GET(request: NextRequest) {
           anySuccess = anySuccess || websiteOutcome.success;
         }
 
-        publishResults.push({
-          postId: post.id,
-          title: post.title,
-          success: anySuccess,
-          results: combinedResults,
-        });
-
-        // Log to automation_logs
-        try {
-          await supabase.from("automation_logs").insert({
-            type: "auto_publish",
-            status: anySuccess ? "success" : "error",
-            details: {
-              post_id: post.id,
-              title: post.title,
-              platforms,
-              results: combinedResults,
-            },
-          });
-        } catch {
-          // Ignore log failures
-        }
-
+        publishResults.push({ postId: post.id, success: anySuccess, results: combinedResults });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Ukjent feil";
         console.error(`[Auto-Publish Cron] Failed to publish ${post.id}:`, errorMsg);
@@ -194,22 +178,28 @@ export async function GET(request: NextRequest) {
         await supabase
           .from("content_publications")
           .update({
-            last_publish_error: errorMsg,
+            last_publish_error: errorMsg.slice(0, 1000),
             updated_at: new Date().toISOString(),
           })
           .eq("id", post.id);
 
-        publishResults.push({
-          postId: post.id,
-          title: post.title,
-          success: false,
-          error: errorMsg,
-        });
+        publishResults.push({ postId: post.id, success: false, error: errorMsg.slice(0, 500) });
       }
     }
 
     const successCount = publishResults.filter((r) => r.success).length;
-    console.log(`[Auto-Publish Cron] Done. ${successCount}/${publishResults.length} published successfully.`);
+    const failedCount = publishResults.length - successCount;
+    await writeAutomationLog(
+      supabase,
+      failedCount ? (successCount ? "partial" : "failed") : "success",
+      {
+        due: duePosts.length,
+        processed: publishResults.length,
+        published: successCount,
+        failed: failedCount,
+        results: publishResults.map((row) => ({ post_id: row.postId, success: row.success, error: row.error || null })),
+      },
+    );
 
     return NextResponse.json({
       message: `Processed ${publishResults.length} posts, ${successCount} successful`,

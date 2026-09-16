@@ -3,10 +3,12 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { filterNexusCommands } from "@/lib/nexus-command";
 import { assessPipelineMovement } from "@/lib/nexus-pipeline-movement";
 import { buildNexusActionProposals } from "@/lib/nexus-ai-governed-actions";
+import { buildNexusAdvisorSystemRouting } from "@/lib/nexus-advisor-system-routing";
 import {
   buildNexusMarketingActionProposals,
   messageRequestsMarketingCampaign,
 } from "@/lib/nexus-ai-marketing-actions";
+import { AgentOrchestrator } from "@/services/agents/orchestrator";
 import { askNexusAI, isNexusAIConfigured } from "@/services/ai/nexus-ai-client";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
@@ -41,8 +43,6 @@ function numberValue(value: unknown) {
 }
 
 function buildMarketingContext(conversation: any[], message: string) {
-  // Only the current turn may open the governed marketing path. Prior user
-  // turns can add context to that explicit request, but cannot trigger it.
   if (!messageRequestsMarketingCampaign(message)) return null;
   const recentUserTurns = conversation
     .slice(-6)
@@ -98,6 +98,9 @@ export async function POST(request: NextRequest) {
   const conversation = Array.isArray(body?.conversation) ? body.conversation.slice(-10) : [];
   const pageContext = parsePageContext(body?.visitorInfo?.page);
   if (!message) return NextResponse.json({ response: "Hva vil du at Nexus skal vurdere?" });
+
+  const agentCapabilities = new AgentOrchestrator().getAgentCapabilities();
+  const systemRouting = buildNexusAdvisorSystemRouting(message, agentCapabilities);
 
   const currentContactPromise = pageContext.contactId
     ? supabase
@@ -189,6 +192,7 @@ export async function POST(request: NextRequest) {
     page_context: pageContext,
     current_customer: currentContact,
     navigation_candidates: navigationCandidates,
+    system_routing: systemRouting,
     proposed_actions: proposedActions.map((action) => ({
       type: action.type,
       contact_id: "contactId" in action ? action.contactId : undefined,
@@ -246,6 +250,15 @@ HOVEDOPPGAVE:
 - Når brukeren spør hvordan systemet kan gjøre noe, forklar først hva RealtyFlow allerede kan gjøre, hvilken modul som eier funksjonen, og hva som eventuelt mangler. Skill tydelig mellom eksisterende funksjon, anbefalt konfigurasjon og ny utvikling.
 - Bruk konkrete kundenavn fra crm.top_actions når spørsmålet gjelder hvem som bør kontaktes. Ikke begrens deg til summeringer når konkrete rader finnes.
 
+SYSTEMROUTING OG ORKESTRERING:
+- system_routing er det kanoniske kartet over eksisterende agenter, automations, modules og eventuelle relevante execution chains for brukerens forespørsel.
+- Du er ORKESTRATOR, ikke en parallell execution engine. Før du sier at noe mangler eller foreslår ny utvikling, kontroller system_routing og bruk eksisterende systemeier når oppgaven allerede er implementert.
+- Spesialiserte AI-agenter brukes til analyse/generering innen sitt fagområde. Durable Nexus-automations/workers brukes til løpende systemarbeid. Mission Operations brukes til governed flertrinns execution. Nexus Inbox/Approval Center/review-flater brukes når systemet krever menneskelig kontroll.
+- For e-post→CRM-historikk skal du følge system_routing.emailCrmChain når den finnes: Email Readiness/backfill ved behov → Email Link Health/review → Email CRM sync → Buyer Profile → criteria/matching/shortlist/presentation → preflight → eventuell governed sending.
+- Ikke bygg eller foreslå en egen rådgiver-database-write for historisk e-post, CRM-matching, Buyer Profile eller property matching når disse systemene allerede finnes.
+- Ikke send kunden til legacy Agent Command for direkte CRM-mutasjon eller direkte e-postsending. Kundekommunikasjon skal følge nyere governed actions, draft/review og approval-gater.
+- Når en automation allerede kjører automatisk, si at den eksisterer og hva den gjør. Ikke foreslå å starte en duplikatjobb bare for å skape aktivitet.
+
 SIKKERHET OG SANNHET:
 - Selve rådgivningskallet er read-only. Det kan analysere, prioritere, forklare, navigere og foreslå allowlistede handlingskort, men ingen sideeffekt skjer uten et eksplisitt brukerklikk mot det separate governed-actions-endepunktet.
 - Allowlistede interne handlinger kan planlegge CRM-oppfølging, lagre et internt CRM-notat eller opprette en intern kundeoppgave. Disse handlingene sender aldri e-post, SMS, WhatsApp eller annen kundekommunikasjon.
@@ -277,6 +290,7 @@ STIL:
       actions: navigationCandidates,
       proposedActions,
       pageContext,
+      systemRouting,
       aiProvider: ai.provider,
       aiModel: ai.model,
       snapshotGeneratedAt: snapshot.generated_at,
