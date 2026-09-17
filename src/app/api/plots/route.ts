@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdminApi } from '@/lib/api-admin';
 import { normalizeBrandId, plotMatchesBrand } from '@/lib/realty/brand-rules';
+import { normalizePlotArea, normalizePlotZoning } from '@/lib/realty/plot-normalization';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,9 +42,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const plots = Array.isArray(body) ? body : [body];
 
-  // For each plot, try to extract price and area from notes/info if they're 0
   const processedPlots = plots.map(p => {
-    let { price, area, notes } = p;
+    let { price, notes } = p;
     if ((!price || price === 0) && notes) {
       // Try to extract price from notes - patterns like "39.000€", "€45,000", "45000 euros", "Precio: 39.000"
       const priceMatch = notes.match(/(?:precio|price|pris)?[:\s]*(?:€\s*)?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(?:€|euros?|EUR)/i)
@@ -53,13 +53,15 @@ export async function POST(request: NextRequest) {
         price = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
       }
     }
-    if ((!area || area === 0) && notes) {
-      // Try to extract area - patterns like "5.000 m2", "5000m²", "parcela de 3.200 m2"
-      const areaMatch = notes.match(/(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?)\s*(?:m2|m²|sqm|metros?)/i);
-      if (areaMatch) {
-        area = parseFloat(areaMatch[1].replace(/\./g, '').replace(',', '.'));
-      }
-    }
+
+    const area = normalizePlotArea(p.area, notes);
+    const zoning = normalizePlotZoning(
+      p.zoning,
+      p.plotNumber || p.plot_number,
+      p.location,
+      p.municipality,
+      notes,
+    );
 
     // Remove id if it's a temp client-generated one (non-UUID)
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id || '');
@@ -67,11 +69,11 @@ export async function POST(request: NextRequest) {
     return {
       ...(isUUID ? { id: p.id } : {}),
       plot_number: p.plotNumber || p.plot_number || '',
-      area: area || 0,
+      area,
       price: price || 0,
       location: p.location || '',
       municipality: p.municipality || '',
-      zoning: p.zoning || 'rustico',
+      zoning,
       water: p.water || false,
       electricity: p.electricity || false,
       slope: p.slope || '',
