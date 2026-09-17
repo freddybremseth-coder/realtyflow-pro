@@ -30,12 +30,21 @@ const VENDOR_OUTREACH_PATTERNS = [
   /\bunified furniture solutions\b/i,
 ];
 
-function normalizeEmail(value: unknown) {
-  return String(value || "").trim().toLowerCase();
+export function normalizeCustomerIdentityEmail(value: unknown) {
+  const raw = String(value || "").trim().toLowerCase();
+  const at = raw.lastIndexOf("@");
+  if (at <= 0) return raw;
+  let local = raw.slice(0, at);
+  let domain = raw.slice(at + 1);
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    local = local.split("+")[0].replace(/\./g, "");
+    domain = "gmail.com";
+  }
+  return `${local}@${domain}`;
 }
 
 function domainOf(value: unknown) {
-  const email = normalizeEmail(value);
+  const email = normalizeCustomerIdentityEmail(value);
   const at = email.lastIndexOf("@");
   return at >= 0 ? email.slice(at + 1) : "";
 }
@@ -45,7 +54,7 @@ function unique<T>(values: T[]) {
 }
 
 function identityMatches(index: CustomerMailContactIndex, email: string) {
-  return index.get(normalizeEmail(email)) || [];
+  return index.get(normalizeCustomerIdentityEmail(email)) || [];
 }
 
 function resolveRecipientContacts(
@@ -73,7 +82,7 @@ export async function loadCustomerMailContactIndex(supabase: SupabaseClient) {
       .range(offset, offset + pageSize - 1);
     if (error) throw new Error(`Customer-mail contact index failed: ${error.message}`);
     for (const row of data || []) {
-      const email = normalizeEmail(row.email);
+      const email = normalizeCustomerIdentityEmail(row.email);
       if (!email) continue;
       const current = index.get(email) || [];
       current.push({ id: String(row.id), brandId: String(row.brand_id || "") });
@@ -90,7 +99,7 @@ export async function loadOwnedMailboxAddresses(supabase: SupabaseClient) {
     .select("email_address")
     .eq("is_active", true);
   if (error) throw new Error(`Owned-mailbox lookup failed: ${error.message}`);
-  return new Set((data || []).map((row) => normalizeEmail(row.email_address)).filter(Boolean));
+  return new Set((data || []).map((row) => normalizeCustomerIdentityEmail(row.email_address)).filter(Boolean));
 }
 
 async function resolveThreadContactIds(
@@ -159,7 +168,7 @@ export async function decideCustomerMailAdmission(
       return { status: "filtered", reason: `inbound_${kind}`, contactId: null };
     }
 
-    const sender = normalizeEmail(message.from.address);
+    const sender = normalizeCustomerIdentityEmail(message.from.address);
     if (sender && ownedMailboxAddresses?.has(sender)) {
       return { status: "filtered", reason: "owned_mailbox_address", contactId: null };
     }
