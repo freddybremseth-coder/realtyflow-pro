@@ -38,6 +38,19 @@ export interface HistoricalFetchedEmail extends FetchedEmail {
   mailboxPath: string;
 }
 
+export interface HistoricalMailboxFetchResult {
+  messages: HistoricalFetchedEmail[];
+  scanned: number;
+  skippedExisting: number;
+  skippedMissingMessageId: number;
+  exhausted: boolean;
+}
+
+export interface HistoricalMailboxFetchOptions {
+  existingMessageIds?: ReadonlySet<string>;
+  scanChunkSize?: number;
+}
+
 function imapAuth(config: ImapConfig) {
   if (config.accessToken) return { user: config.email, accessToken: config.accessToken };
   if (config.password) return { user: config.email, pass: config.password };
@@ -71,6 +84,11 @@ async function safeLogout(client: ImapFlow) {
       console.warn(`[IMAP] logout cleanup failed`, error);
     }
   }
+}
+
+function stableEnvelopeMessageId(value: unknown) {
+  const messageId = String(value || "").trim();
+  return messageId && !messageId.startsWith("gen-") ? messageId : null;
 }
 
 // ─── IMAP Reader ──────────────────────────────────────────────────────
@@ -114,7 +132,6 @@ export async function fetchRecentEmails(
 
         const { text, html } = await parsedContent(message.source as Buffer | undefined);
 
-        // Build thread ID from references or in-reply-to
         const references = envelope.inReplyTo
           ? [envelope.inReplyTo]
           : [];
@@ -149,7 +166,6 @@ export async function fetchRecentEmails(
         if (messages.length >= maxCount) break;
       }
 
-      // Sort newest first
       return messages.sort(
         (a, b) => b.date.getTime() - a.date.getTime()
       );
@@ -162,16 +178,21 @@ export async function fetchRecentEmails(
 }
 
 /**
- * Fetch a bounded historical slice from a standard mailbox role.
- * The mailbox is opened read-only, Sent is discovered via IMAP SPECIAL-USE,
- * and the newest matching UIDs are selected before full message parsing.
+ * Fetch the next bounded historical batch from a standard mailbox role.
+ *
+ * Unlike a simple newest-N fetch, this scanner walks backwards over UID chunks,
+ * skips stable Message-IDs that are already in the database, and keeps scanning
+ * until it finds maxCount unseen messages or reaches the start of the requested
+ * history window. This makes repeated backfill runs progress through the whole
+ * mailbox instead of repeatedly returning the same newest messages.
  */
-export async function fetchHistoricalMailboxEmails(
+export async function fetchHistoricalMailboxBatch(
   config: ImapConfig,
   mailboxRole: HistoricalMailboxRole,
   maxCount: number,
-  sinceDays: number
-): Promise<HistoricalFetchedEmail[]> {
+  sinceDays: number,
+  options: HistoricalMailboxFetchOptions = {},
+): Promise<HistoricalMailboxFetchResult> {
   const client = new ImapFlow({
     host: config.host,
     port: config.port,
@@ -179,6 +200,10 @@ export async function fetchHistoricalMailboxEmails(
     auth: imapAuth(config),
     logger: false,
   });
+
+  const existingMessageIds = options.existingMessageIds ?? new Set<string>();
+  const seenMessageIds = new Set(existingMessageIds);
+  const scanChunkSize = Math.max(maxCount, options.scanChunkSize ?? 250);
 
   try {
     await client.connect();
@@ -188,64 +213,135 @@ export async function fetchHistoricalMailboxEmails(
       : mailboxes.find((item) => item.specialUse === "\\Inbox")
         || mailboxes.find((item) => item.path.toLowerCase() === "inbox");
 
-    if (!mailbox) return [];
+    if (!mailbox) {
+      return {
+        messages: [],
+        scanned: 0,
+        skippedExisting: 0,
+        skippedMissingMessageId: 0,
+        exhausted: true,
+      };
+    }
 
     const lock = await client.getMailboxLock(mailbox.path, { readOnly: true });
     try {
       const since = new Date();
       since.setDate(since.getDate() - sinceDays);
       const searchResult = await client.search({ since }, { uid: true });
-      const uids = Array.isArray(searchResult) ? searchResult : [];
-      const selectedUids = uids.slice(-maxCount);
-      if (selectedUids.length === 0) return [];
-
-      const fetched = await client.fetchAll(
-        selectedUids,
-        { envelope: true, source: true, bodyStructure: true },
-        { uid: true }
-      );
+      const uids = (Array.isArray(searchResult) ? searchResult : [])
+        .map((uid) => Number(uid))
+        .filter((uid) => Number.isFinite(uid))
+        .sort((a, b) => b - a);
 
       const messages: HistoricalFetchedEmail[] = [];
-      for (const message of fetched) {
-        const envelope = message.envelope;
-        if (!envelope) continue;
-        const { text, html } = await parsedContent(message.source as Buffer | undefined);
-        const references = envelope.inReplyTo ? [envelope.inReplyTo] : [];
-        const threadId = references.length > 0 ? references[0] : envelope.messageId || undefined;
+      let scanned = 0;
+      let skippedExisting = 0;
+      let skippedMissingMessageId = 0;
+      let cursor = 0;
 
-        messages.push({
-          messageId: envelope.messageId || `gen-${mailboxRole}-${message.uid}`,
-          from: {
-            name: envelope.from?.[0]?.name || undefined,
-            address: envelope.from?.[0]?.address || "",
-          },
-          to: (envelope.to || []).map((address) => ({
-            name: address.name || undefined,
-            address: address.address || "",
-          })),
-          cc: envelope.cc?.map((address) => ({
-            name: address.name || undefined,
-            address: address.address || "",
-          })),
-          subject: envelope.subject || "(ingen emne)",
-          date: envelope.date ? new Date(envelope.date) : new Date(),
-          bodyText: text || undefined,
-          bodyHtml: html || undefined,
-          threadId,
-          inReplyTo: envelope.inReplyTo || undefined,
-          references,
-          mailboxRole,
-          mailboxPath: mailbox.path,
-        });
+      while (cursor < uids.length && messages.length < maxCount) {
+        const uidChunk = uids.slice(cursor, cursor + scanChunkSize);
+        cursor += uidChunk.length;
+        if (uidChunk.length === 0) break;
+
+        const metadata = await client.fetchAll(
+          uidChunk,
+          { envelope: true },
+          { uid: true },
+        );
+        const orderedMetadata = [...metadata].sort((a, b) => Number(b.uid || 0) - Number(a.uid || 0));
+        scanned += orderedMetadata.length;
+
+        const candidateUids: number[] = [];
+        for (const item of orderedMetadata) {
+          const messageId = stableEnvelopeMessageId(item.envelope?.messageId);
+          if (!messageId) {
+            skippedMissingMessageId++;
+            continue;
+          }
+          if (seenMessageIds.has(messageId)) {
+            skippedExisting++;
+            continue;
+          }
+          seenMessageIds.add(messageId);
+          candidateUids.push(Number(item.uid));
+          if (messages.length + candidateUids.length >= maxCount) break;
+        }
+
+        if (candidateUids.length === 0) continue;
+
+        const fetched = await client.fetchAll(
+          candidateUids,
+          { envelope: true, source: true, bodyStructure: true },
+          { uid: true },
+        );
+
+        for (const message of [...fetched].sort((a, b) => Number(b.uid || 0) - Number(a.uid || 0))) {
+          const envelope = message.envelope;
+          if (!envelope) continue;
+          const messageId = stableEnvelopeMessageId(envelope.messageId);
+          if (!messageId) continue;
+
+          const { text, html } = await parsedContent(message.source as Buffer | undefined);
+          const references = envelope.inReplyTo ? [envelope.inReplyTo] : [];
+          const threadId = references.length > 0 ? references[0] : messageId;
+
+          messages.push({
+            messageId,
+            from: {
+              name: envelope.from?.[0]?.name || undefined,
+              address: envelope.from?.[0]?.address || "",
+            },
+            to: (envelope.to || []).map((address) => ({
+              name: address.name || undefined,
+              address: address.address || "",
+            })),
+            cc: envelope.cc?.map((address) => ({
+              name: address.name || undefined,
+              address: address.address || "",
+            })),
+            subject: envelope.subject || "(ingen emne)",
+            date: envelope.date ? new Date(envelope.date) : new Date(),
+            bodyText: text || undefined,
+            bodyHtml: html || undefined,
+            threadId,
+            inReplyTo: envelope.inReplyTo || undefined,
+            references,
+            mailboxRole,
+            mailboxPath: mailbox.path,
+          });
+
+          if (messages.length >= maxCount) break;
+        }
       }
 
-      return messages.sort((a, b) => b.date.getTime() - a.date.getTime());
+      return {
+        messages: messages.sort((a, b) => b.date.getTime() - a.date.getTime()),
+        scanned,
+        skippedExisting,
+        skippedMissingMessageId,
+        exhausted: cursor >= uids.length,
+      };
     } finally {
       lock.release();
     }
   } finally {
     await safeLogout(client);
   }
+}
+
+/**
+ * Backwards-compatible historical fetch. Callers that need durable pagination
+ * should use fetchHistoricalMailboxBatch and pass existing Message-IDs.
+ */
+export async function fetchHistoricalMailboxEmails(
+  config: ImapConfig,
+  mailboxRole: HistoricalMailboxRole,
+  maxCount: number,
+  sinceDays: number,
+): Promise<HistoricalFetchedEmail[]> {
+  const result = await fetchHistoricalMailboxBatch(config, mailboxRole, maxCount, sinceDays);
+  return result.messages;
 }
 
 /**
