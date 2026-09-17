@@ -9,6 +9,7 @@ import {
   decideCustomerMailAdmission,
   loadCustomerMailAdmissionIds,
   loadCustomerMailContactIndex,
+  loadOwnedMailboxAddresses,
   recordCustomerMailAdmission,
 } from "@/services/email/customer-mail-admission";
 
@@ -134,6 +135,7 @@ export async function runEmailHistoryBackfillJob(
 ): Promise<EmailHistoryBackfillResult> {
   const existingMessageIds = await loadExistingMessageIds(supabase, job.brand_id, job.account_id);
   const contactIndex = await loadCustomerMailContactIndex(supabase);
+  const ownedMailboxAddresses = await loadOwnedMailboxAddresses(supabase);
   const imap = await buildImapConfigFromAccount(account as any);
   const roles: HistoricalMailboxRole[] = job.include_sent ? ["inbox", "sent"] : ["inbox"];
 
@@ -179,6 +181,7 @@ export async function runEmailHistoryBackfillJob(
         accountEmail: account.email_address,
         message,
         contactIndex,
+        ownedMailboxAddresses,
       });
 
       if (decision.status !== "accept") {
