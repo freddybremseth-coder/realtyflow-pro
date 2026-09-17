@@ -49,11 +49,11 @@ function unresolvedResult(params: Params): InboundCrmActionResult {
 /**
  * Central identity boundary for inbound CRM automation.
  *
- * The legacy action resolver selects a contact by email before applying CRM
- * mutations. This wrapper only lets that resolver run when the address maps to
- * exactly one contact globally and that contact belongs to the message brand.
- * Duplicate same-brand identities and cross-brand aliases therefore remain
- * unlinked and available for Email Link Health / human review.
+ * The mailbox decides which brand the communication belongs to, while the CRM
+ * contact is a person-level identity that may legitimately be shared across
+ * brands. Automatic mutation is therefore allowed only when the sender email
+ * resolves to exactly one contact globally. Duplicate identities remain
+ * unresolved and available for Email Link Health / review.
  */
 export async function applyInboundCrmActions(
   supabase: SupabaseClient,
@@ -70,8 +70,7 @@ export async function applyInboundCrmActions(
   if (error) throw new Error(`Inbound CRM identity lookup failed: ${error.message}`);
 
   const rows = matches || [];
-  const resolved = rows.length === 1 && String(rows[0].brand_id || "") === params.brandId;
-  if (!resolved) return unresolvedResult(params);
+  if (rows.length !== 1) return unresolvedResult(params);
 
   return applyResolvedInboundCrmActions(supabase, params);
 }
