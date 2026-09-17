@@ -15,7 +15,7 @@ import {
 } from "@/lib/email/history-backfill-preview-cookie";
 import { buildImapConfigFromAccount } from "@/services/email/account-auth";
 import {
-  fetchHistoricalMailboxEmails,
+  fetchHistoricalMailboxBatch,
   type HistoricalFetchedEmail,
   type HistoricalMailboxRole,
 } from "@/services/email/imap-reader";
@@ -39,6 +39,7 @@ function clearPreviewCookie(response: NextResponse) {
 /**
  * Controlled historical mailbox import. Preview is the default and performs no writes.
  * Apply requires the explicit confirmation phrase and a fingerprint from a matching preview.
+ * Repeated preview/apply cycles advance through unseen stable Message-IDs until history is exhausted.
  */
 export async function POST(req: NextRequest) {
   const adminError = await requireAdminApi(req);
@@ -67,7 +68,8 @@ export async function POST(req: NextRequest) {
       .from("brand_email_configs")
       .select("*")
       .eq("brand_id", request.brandId)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .order("email_address", { ascending: true });
 
     if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
     if (!configs?.length) return NextResponse.json({ error: "No active email config found for this brand" }, { status: 404 });
@@ -94,11 +96,13 @@ export async function POST(req: NextRequest) {
     if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 });
 
     const existingIds = new Set((existingMessages || []).map((row) => String(row.message_id || "")).filter(Boolean));
+    const selectedThisRun = new Set<string>();
     let fetched = 0;
     let candidates = 0;
     let duplicates = 0;
     let skippedMissingMessageId = 0;
     let inserted = 0;
+    let historyHasMore = false;
     const candidateMessageIds: string[] = [];
     const pendingMessages: Array<{ message: HistoricalFetchedEmail; accountIndex: number }> = [];
     const accountResults: Array<{
@@ -109,6 +113,13 @@ export async function POST(req: NextRequest) {
       skipped_missing_message_id: number;
       inserted: number;
       mailboxes: Partial<Record<HistoricalMailboxRole, number>>;
+      mailbox_progress?: Partial<Record<HistoricalMailboxRole, {
+        scanned: number;
+        skipped_existing: number;
+        skipped_missing_message_id: number;
+        exhausted: boolean;
+      }>>;
+      history_has_more?: boolean;
       error?: string;
     }> = [];
 
@@ -119,20 +130,42 @@ export async function POST(req: NextRequest) {
         const mailboxResults = await Promise.all(
           roles.map(async (role) => ({
             role,
-            messages: await fetchHistoricalMailboxEmails(imapConfig, role, request.maxMessages, request.sinceDays),
+            result: await fetchHistoricalMailboxBatch(
+              imapConfig,
+              role,
+              request.maxMessages,
+              request.sinceDays,
+              { existingMessageIds: existingIds },
+            ),
           })),
         );
 
         const mailboxes: Partial<Record<HistoricalMailboxRole, number>> = {};
+        const mailboxProgress: Partial<Record<HistoricalMailboxRole, {
+          scanned: number;
+          skipped_existing: number;
+          skipped_missing_message_id: number;
+          exhausted: boolean;
+        }>> = {};
         const combined: HistoricalFetchedEmail[] = [];
-        for (const result of mailboxResults) {
-          mailboxes[result.role] = result.messages.length;
+        let accountDuplicates = 0;
+        let accountSkippedMissing = 0;
+
+        for (const { role, result } of mailboxResults) {
+          mailboxes[role] = result.messages.length;
+          mailboxProgress[role] = {
+            scanned: result.scanned,
+            skipped_existing: result.skippedExisting,
+            skipped_missing_message_id: result.skippedMissingMessageId,
+            exhausted: result.exhausted,
+          };
+          accountDuplicates += result.skippedExisting;
+          accountSkippedMissing += result.skippedMissingMessageId;
           combined.push(...result.messages);
         }
         combined.sort((a, b) => b.date.getTime() - a.date.getTime());
 
         const unique = new Map<string, HistoricalFetchedEmail>();
-        let accountSkippedMissing = 0;
         for (const message of combined) {
           const messageId = stableMessageId(message);
           if (!messageId) {
@@ -140,16 +173,27 @@ export async function POST(req: NextRequest) {
             continue;
           }
           if (!unique.has(messageId)) unique.set(messageId, message);
+          else accountDuplicates++;
         }
 
         const bounded = Array.from(unique.values()).slice(0, request.maxMessages);
+        const batchTruncated = unique.size > bounded.length;
         const newMessages: HistoricalFetchedEmail[] = [];
-        let accountDuplicates = 0;
         for (const message of bounded) {
           const messageId = stableMessageId(message)!;
-          if (existingIds.has(messageId)) accountDuplicates++;
-          else newMessages.push(message);
+          if (existingIds.has(messageId) || selectedThisRun.has(messageId)) {
+            accountDuplicates++;
+            continue;
+          }
+          selectedThisRun.add(messageId);
+          newMessages.push(message);
         }
+
+        const mailboxMayHaveMore = mailboxResults.some(({ result }) =>
+          !result.exhausted || result.messages.length >= request.maxMessages,
+        );
+        const accountHasMore = batchTruncated || mailboxMayHaveMore;
+        if (accountHasMore) historyHasMore = true;
 
         const accountIndex = accountResults.length;
         for (const message of newMessages) {
@@ -157,7 +201,7 @@ export async function POST(req: NextRequest) {
           pendingMessages.push({ message, accountIndex });
         }
 
-        const accountFetched = combined.length;
+        const accountFetched = mailboxResults.reduce((sum, { result }) => sum + result.scanned, 0);
         fetched += accountFetched;
         candidates += newMessages.length;
         duplicates += accountDuplicates;
@@ -170,8 +214,11 @@ export async function POST(req: NextRequest) {
           skipped_missing_message_id: accountSkippedMissing,
           inserted: 0,
           mailboxes,
+          mailbox_progress: mailboxProgress,
+          history_has_more: accountHasMore,
         });
       } catch (error) {
+        historyHasMore = true;
         accountResults.push({
           email: config.email_address,
           fetched: 0,
@@ -180,6 +227,7 @@ export async function POST(req: NextRequest) {
           skipped_missing_message_id: 0,
           inserted: 0,
           mailboxes: {},
+          history_has_more: true,
           error: error instanceof Error ? error.message : "Unknown error",
         });
       }
@@ -208,7 +256,11 @@ export async function POST(req: NextRequest) {
         action: "email_history_backfill",
         agent_name: "nexus_communications",
         status,
-        details,
+        details: {
+          ...details,
+          history_has_more: historyHasMore,
+          pagination_mode: "skip_existing_message_ids",
+        },
       });
       if (auditError) console.warn("[Email History Backfill Audit]", auditError.message);
     };
@@ -221,6 +273,11 @@ export async function POST(req: NextRequest) {
         account_fetch_complete: false,
         failed_accounts: accountGate.failedAccounts,
         candidates,
+        history: {
+          has_more: true,
+          complete_after_apply: false,
+          pagination_mode: "skip_existing_message_ids",
+        },
         safety: {
           allActiveAccountFetchesRequiredForApply: true,
           databaseMessagesWritten: false,
@@ -288,6 +345,7 @@ export async function POST(req: NextRequest) {
       await writeApplyAudit("success");
     }
 
+    const historyCompleteAfterApply = accountGate.ok && !historyHasMore;
     const response = NextResponse.json({
       success: true,
       mode: request.mode,
@@ -306,6 +364,11 @@ export async function POST(req: NextRequest) {
       skipped_missing_message_id: skippedMissingMessageId,
       inserted,
       accounts: accountResults,
+      history: {
+        has_more: historyHasMore,
+        complete_after_apply: historyCompleteAfterApply,
+        pagination_mode: "skip_existing_message_ids",
+      },
       review: buildEmailHistoryReviewLinks(request.brandId),
       safety: {
         adminRequired: true,
