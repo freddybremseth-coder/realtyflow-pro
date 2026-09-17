@@ -1,0 +1,26 @@
+name: Marketing Run Lifecycle
+
+on:
+  pull_request:
+    paths:
+      - "src/services/marketing/run-lifecycle.ts"
+      - "src/services/marketing/run-lifecycle.test.ts"
+      - "src/app/api/cron/marketing-run-lifecycle-reconcile/route.ts"
+      - "vercel.json"
+      - ".github/workflows/marketing-run-lifecycle.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Marketing lifecycle tests
+        run: npx tsx --test src/services/marketing/run-lifecycle.test.ts
