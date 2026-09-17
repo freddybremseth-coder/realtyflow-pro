@@ -49,11 +49,11 @@ function unresolvedResult(params: Params): InboundCrmActionResult {
 /**
  * Central identity boundary for inbound CRM automation.
  *
- * The mailbox decides which brand the communication belongs to, while the CRM
- * contact is a person-level identity that may legitimately be shared across
- * brands. Automatic mutation is therefore allowed only when the sender email
- * resolves to exactly one contact globally. Duplicate identities remain
- * unresolved and available for Email Link Health / review.
+ * Customer-only admission may already have resolved a message to one contact
+ * using exact/global identity, safe Gmail canonicalization or thread evidence.
+ * Prefer that stored CRM identity after validating the contact still exists.
+ * Legacy messages without a pre-resolved identity still require exactly one
+ * global exact email match before the mutating CRM action can run.
  */
 export async function applyInboundCrmActions(
   supabase: SupabaseClient,
@@ -61,6 +61,29 @@ export async function applyInboundCrmActions(
 ): Promise<InboundCrmActionResult> {
   const fromAddress = normalize(params.fromAddress).toLowerCase();
   if (!fromAddress) return unresolvedResult(params);
+
+  const storedMessage = await supabase
+    .from("email_messages")
+    .select("crm_contact_id")
+    .eq("id", params.emailMessageId)
+    .limit(1)
+    .maybeSingle();
+  if (storedMessage.error) throw new Error(`Inbound CRM stored identity lookup failed: ${storedMessage.error.message}`);
+
+  if (storedMessage.data?.crm_contact_id) {
+    const resolvedContact = await supabase
+      .from("contacts")
+      .select("id,email")
+      .eq("id", storedMessage.data.crm_contact_id)
+      .limit(1)
+      .maybeSingle();
+    if (resolvedContact.error) throw new Error(`Inbound CRM resolved contact lookup failed: ${resolvedContact.error.message}`);
+    if (!resolvedContact.data?.id || !resolvedContact.data.email) return unresolvedResult(params);
+    return applyResolvedInboundCrmActions(supabase, {
+      ...params,
+      fromAddress: String(resolvedContact.data.email),
+    });
+  }
 
   const { data: matches, error } = await supabase
     .from("contacts")
