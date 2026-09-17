@@ -10,6 +10,7 @@ import {
   decideCustomerMailAdmission,
   loadCustomerMailAdmissionIds,
   loadCustomerMailContactIndex,
+  loadOwnedMailboxAddresses,
   promoteResolvedCustomerMailReviews,
   recordCustomerMailAdmission,
 } from "@/services/email/customer-mail-admission";
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const contactIndex = await loadCustomerMailContactIndex(supabase);
+  const ownedMailboxAddresses = await loadOwnedMailboxAddresses(supabase);
   const now = Date.now();
   const results: Array<{
     brand: string;
@@ -88,6 +90,7 @@ export async function GET(request: NextRequest) {
         brandId: String(config.brand_id),
         accountEmail: String(config.email_address),
         contactIndex,
+        ownedMailboxAddresses,
         limit: 25,
       });
       totalPromoted += promoted;
@@ -117,6 +120,7 @@ export async function GET(request: NextRequest) {
           accountEmail: String(config.email_address),
           message: admissionMessage,
           contactIndex,
+          ownedMailboxAddresses,
         });
 
         if (decision.status !== "accept") {
