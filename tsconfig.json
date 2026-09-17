@@ -19,6 +19,7 @@
       }
     ],
     "paths": {
+      "@/services/email/apply-inbound-crm-actions": ["./src/services/email/apply-inbound-crm-actions-safe.ts"],
       "@/*": ["./src/*"]
     }
   },
