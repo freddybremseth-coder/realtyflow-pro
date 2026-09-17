@@ -44,19 +44,18 @@ function unique<T>(values: T[]) {
   return [...new Set(values)];
 }
 
-function brandMatches(index: CustomerMailContactIndex, email: string, brandId: string) {
-  return (index.get(normalizeEmail(email)) || []).filter((item) => item.brandId === brandId);
+function identityMatches(index: CustomerMailContactIndex, email: string) {
+  return index.get(normalizeEmail(email)) || [];
 }
 
 function resolveRecipientContacts(
   index: CustomerMailContactIndex,
-  brandId: string,
   addresses: Array<{ address: string }>,
 ) {
   const ids = new Set<string>();
   let ambiguous = false;
   for (const address of addresses) {
-    const matches = brandMatches(index, address.address, brandId);
+    const matches = identityMatches(index, address.address);
     if (matches.length === 1) ids.add(matches[0].id);
     else if (matches.length > 1) ambiguous = true;
   }
@@ -83,6 +82,15 @@ export async function loadCustomerMailContactIndex(supabase: SupabaseClient) {
     if ((data || []).length < pageSize) break;
   }
   return index;
+}
+
+export async function loadOwnedMailboxAddresses(supabase: SupabaseClient) {
+  const { data, error } = await supabase
+    .from("brand_email_configs")
+    .select("email_address")
+    .eq("is_active", true);
+  if (error) throw new Error(`Owned-mailbox lookup failed: ${error.message}`);
+  return new Set((data || []).map((row) => normalizeEmail(row.email_address)).filter(Boolean));
 }
 
 async function resolveThreadContactIds(
@@ -117,7 +125,7 @@ async function resolveThreadContactIds(
           ...((row.to_addresses || []) as string[]),
           ...((row.cc_addresses || []) as string[]),
         ].map((address) => ({ address }));
-        const recipients = resolveRecipientContacts(contactIndex, brandId, addresses);
+        const recipients = resolveRecipientContacts(contactIndex, addresses);
         if (!recipients.ambiguous && recipients.ids.length === 1) contactIds.add(recipients.ids[0]);
       }
     }
@@ -137,9 +145,10 @@ export async function decideCustomerMailAdmission(
     accountEmail: string;
     message: CustomerMailAdmissionMessage;
     contactIndex: CustomerMailContactIndex;
+    ownedMailboxAddresses?: ReadonlySet<string>;
   },
 ): Promise<CustomerMailAdmissionDecision> {
-  const { brandId, accountEmail, message, contactIndex } = input;
+  const { brandId, accountEmail, message, contactIndex, ownedMailboxAddresses } = input;
 
   if (message.mailboxRole === "inbox") {
     const kind = classifyInboundMailSource({
@@ -151,17 +160,21 @@ export async function decideCustomerMailAdmission(
     }
 
     const sender = normalizeEmail(message.from.address);
+    if (sender && ownedMailboxAddresses?.has(sender)) {
+      return { status: "filtered", reason: "owned_mailbox_address", contactId: null };
+    }
+
     const accountDomain = domainOf(accountEmail);
     if (sender && accountDomain && domainOf(sender) === accountDomain) {
       return { status: "filtered", reason: "internal_same_domain", contactId: null };
     }
 
-    const exact = brandMatches(contactIndex, sender, brandId);
+    const exact = identityMatches(contactIndex, sender);
     if (exact.length === 1) {
-      return { status: "accept", reason: "exact_brand_contact", contactId: exact[0].id };
+      return { status: "accept", reason: "exact_global_contact", contactId: exact[0].id };
     }
     if (exact.length > 1) {
-      return { status: "review", reason: "duplicate_brand_contact_email", contactId: null };
+      return { status: "review", reason: "duplicate_global_contact_email", contactId: null };
     }
 
     const threadContacts = await resolveThreadContactIds(supabase, brandId, message, contactIndex);
@@ -181,14 +194,13 @@ export async function decideCustomerMailAdmission(
 
   const recipients = resolveRecipientContacts(
     contactIndex,
-    brandId,
     [...message.to, ...(message.cc || [])],
   );
   if (recipients.ambiguous) {
     return { status: "filtered", reason: "outbound_ambiguous_recipient", contactId: null };
   }
   if (recipients.ids.length === 1) {
-    return { status: "accept", reason: "outbound_exact_brand_contact", contactId: recipients.ids[0] };
+    return { status: "accept", reason: "outbound_exact_global_contact", contactId: recipients.ids[0] };
   }
   if (recipients.ids.length > 1) {
     return { status: "filtered", reason: "outbound_multi_customer", contactId: null };
@@ -267,6 +279,7 @@ export async function promoteResolvedCustomerMailReviews(
     brandId: string;
     accountEmail: string;
     contactIndex: CustomerMailContactIndex;
+    ownedMailboxAddresses?: ReadonlySet<string>;
     limit?: number;
   },
 ) {
@@ -299,6 +312,7 @@ export async function promoteResolvedCustomerMailReviews(
       accountEmail: input.accountEmail,
       message,
       contactIndex: input.contactIndex,
+      ownedMailboxAddresses: input.ownedMailboxAddresses,
     });
     if (decision.status !== "accept" || !decision.contactId) continue;
 
