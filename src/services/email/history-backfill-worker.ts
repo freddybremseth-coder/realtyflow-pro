@@ -5,6 +5,13 @@ import {
   type HistoricalFetchedEmail,
   type HistoricalMailboxRole,
 } from "@/services/email/imap-reader";
+import {
+  decideCustomerMailAdmission,
+  loadCustomerMailAdmissionIds,
+  loadCustomerMailContactIndex,
+  loadOwnedMailboxAddresses,
+  recordCustomerMailAdmission,
+} from "@/services/email/customer-mail-admission";
 
 export type EmailHistoryBackfillJob = {
   account_id: string;
@@ -17,6 +24,8 @@ export type EmailHistoryBackfillJob = {
   total_inserted?: number | null;
   total_linked?: number | null;
   total_deduped?: number | null;
+  total_filtered?: number | null;
+  total_review?: number | null;
 };
 
 export type EmailHistoryBackfillAccount = Record<string, unknown> & {
@@ -32,6 +41,8 @@ export type EmailHistoryBackfillResult = {
   inserted: number;
   linked: number;
   deduped: number;
+  filtered: number;
+  review: number;
   scanned: number;
   skippedExisting: number;
   skippedMissingMessageId: number;
@@ -39,13 +50,15 @@ export type EmailHistoryBackfillResult = {
   mailboxes: Record<string, { fetched: number; scanned: number; exhausted: boolean }>;
 };
 
-type ContactIndexValue = string[];
-
 function normalizeEmail(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
-async function loadExistingMessageIds(supabase: SupabaseClient, brandId: string) {
+async function loadExistingMessageIds(
+  supabase: SupabaseClient,
+  brandId: string,
+  accountId: string,
+) {
   const ids = new Set<string>();
   const pageSize = 1000;
 
@@ -75,48 +88,9 @@ async function loadExistingMessageIds(supabase: SupabaseClient, brandId: string)
     }
   }
 
+  const admissionIds = await loadCustomerMailAdmissionIds(supabase, accountId);
+  for (const id of admissionIds) ids.add(id);
   return ids;
-}
-
-async function loadContactIndex(supabase: SupabaseClient, brandId: string) {
-  const index = new Map<string, ContactIndexValue>();
-  const pageSize = 1000;
-
-  for (let offset = 0; offset < 100_000; offset += pageSize) {
-    const { data, error } = await supabase
-      .from("contacts")
-      .select("id,email")
-      .eq("brand_id", brandId)
-      .not("email", "is", null)
-      .range(offset, offset + pageSize - 1);
-    if (error) throw new Error(`History contact-index lookup failed: ${error.message}`);
-    for (const row of data || []) {
-      const email = normalizeEmail(row.email);
-      if (!email) continue;
-      const current = index.get(email) || [];
-      current.push(String(row.id));
-      index.set(email, current);
-    }
-    if ((data || []).length < pageSize) break;
-  }
-
-  return index;
-}
-
-function resolveExactContactId(
-  contactIndex: Map<string, ContactIndexValue>,
-  message: HistoricalFetchedEmail,
-) {
-  if (message.mailboxRole === "inbox") {
-    const ids = contactIndex.get(normalizeEmail(message.from.address)) || [];
-    return ids.length === 1 ? ids[0] : null;
-  }
-
-  const candidates = new Set<string>();
-  for (const address of [...message.to, ...(message.cc || [])]) {
-    for (const id of contactIndex.get(normalizeEmail(address.address)) || []) candidates.add(id);
-  }
-  return candidates.size === 1 ? [...candidates][0] : null;
 }
 
 async function findHeuristicDuplicate(
@@ -159,8 +133,9 @@ export async function runEmailHistoryBackfillJob(
   job: EmailHistoryBackfillJob,
   account: EmailHistoryBackfillAccount,
 ): Promise<EmailHistoryBackfillResult> {
-  const existingMessageIds = await loadExistingMessageIds(supabase, job.brand_id);
-  const contactIndex = await loadContactIndex(supabase, job.brand_id);
+  const existingMessageIds = await loadExistingMessageIds(supabase, job.brand_id, job.account_id);
+  const contactIndex = await loadCustomerMailContactIndex(supabase);
+  const ownedMailboxAddresses = await loadOwnedMailboxAddresses(supabase);
   const imap = await buildImapConfigFromAccount(account as any);
   const roles: HistoricalMailboxRole[] = job.include_sent ? ["inbox", "sent"] : ["inbox"];
 
@@ -178,6 +153,8 @@ export async function runEmailHistoryBackfillJob(
   let inserted = 0;
   let linked = 0;
   let deduped = 0;
+  let filtered = 0;
+  let review = 0;
   let scanned = 0;
   let skippedExisting = 0;
   let skippedMissingMessageId = 0;
@@ -199,7 +176,29 @@ export async function runEmailHistoryBackfillJob(
       if (!messageId || seenThisRun.has(messageId)) continue;
       seenThisRun.add(messageId);
 
-      const contactId = resolveExactContactId(contactIndex, message);
+      const decision = await decideCustomerMailAdmission(supabase, {
+        brandId: job.brand_id,
+        accountEmail: account.email_address,
+        message,
+        contactIndex,
+        ownedMailboxAddresses,
+      });
+
+      if (decision.status !== "accept") {
+        await recordCustomerMailAdmission(supabase, {
+          accountId: job.account_id,
+          brandId: job.brand_id,
+          message,
+          decision,
+          historical: true,
+        });
+        if (decision.status === "filtered") filtered += 1;
+        else review += 1;
+        existingMessageIds.add(messageId);
+        continue;
+      }
+
+      const contactId = decision.contactId;
       const duplicate = await findHeuristicDuplicate(supabase, job.brand_id, message);
       if (duplicate?.id) {
         deduped += 1;
@@ -261,6 +260,8 @@ export async function runEmailHistoryBackfillJob(
     inserted,
     linked,
     deduped,
+    filtered,
+    review,
     scanned,
     skipped_existing: skippedExisting,
     skipped_missing_message_id: skippedMissingMessageId,
@@ -275,6 +276,8 @@ export async function runEmailHistoryBackfillJob(
       total_inserted: Number(job.total_inserted || 0) + inserted,
       total_linked: Number(job.total_linked || 0) + linked,
       total_deduped: Number(job.total_deduped || 0) + deduped,
+      total_filtered: Number(job.total_filtered || 0) + filtered,
+      total_review: Number(job.total_review || 0) + review,
       last_run_at: now,
       completed_at: complete ? now : null,
       last_error: null,
@@ -291,6 +294,8 @@ export async function runEmailHistoryBackfillJob(
     inserted,
     linked,
     deduped,
+    filtered,
+    review,
     scanned,
     skippedExisting,
     skippedMissingMessageId,

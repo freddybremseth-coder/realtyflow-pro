@@ -6,8 +6,16 @@ import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { describeImapError, isTransientImapError } from "@/lib/email/imap-error-policy";
 import { buildImapConfigFromAccount } from "@/services/email/account-auth";
 import { fetchRecentEmails, type ImapConfig } from "@/services/email/imap-reader";
+import {
+  decideCustomerMailAdmission,
+  loadCustomerMailAdmissionIds,
+  loadCustomerMailContactIndex,
+  loadOwnedMailboxAddresses,
+  promoteResolvedCustomerMailReviews,
+  recordCustomerMailAdmission,
+} from "@/services/email/customer-mail-admission";
 import { insertRevenueEvent } from "@/lib/revenue/events";
-import { buildEmailReceivedRevenueEventInput, normalizeEmailAddresses } from "@/lib/revenue/email-events";
+import { buildEmailReceivedRevenueEventInput } from "@/lib/revenue/email-events";
 
 export const maxDuration = 300;
 const FAILURE_PAUSE_THRESHOLD = 3;
@@ -48,19 +56,45 @@ export async function GET(request: NextRequest) {
     .order("last_fetched_at", { ascending: true, nullsFirst: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  const contactIndex = await loadCustomerMailContactIndex(supabase);
+  const ownedMailboxAddresses = await loadOwnedMailboxAddresses(supabase);
   const now = Date.now();
-  const results: Array<{ brand: string; email: string; fetched: number; inserted: number; skipped?: string; error?: string; health?: string }> = [];
+  const results: Array<{
+    brand: string;
+    email: string;
+    fetched: number;
+    inserted: number;
+    filtered: number;
+    review: number;
+    promoted: number;
+    skipped?: string;
+    error?: string;
+    health?: string;
+  }> = [];
   let totalInserted = 0;
   let totalFetched = 0;
+  let totalFiltered = 0;
+  let totalReview = 0;
+  let totalPromoted = 0;
 
   for (const config of configs ?? []) {
     const intervalMs = Math.max(5, Number(config.fetch_interval_minutes || 5)) * 60_000;
     if (config.last_fetched_at && now - new Date(config.last_fetched_at).getTime() < intervalMs) {
-      results.push({ brand: config.brand_id, email: config.email_address, fetched: 0, inserted: 0, skipped: "not_due", health: config.health_status || "unknown" });
+      results.push({ brand: config.brand_id, email: config.email_address, fetched: 0, inserted: 0, filtered: 0, review: 0, promoted: 0, skipped: "not_due", health: config.health_status || "unknown" });
       continue;
     }
 
     try {
+      const promoted = await promoteResolvedCustomerMailReviews(supabase, {
+        accountId: String(config.id),
+        brandId: String(config.brand_id),
+        accountEmail: String(config.email_address),
+        contactIndex,
+        ownedMailboxAddresses,
+        limit: 25,
+      });
+      totalPromoted += promoted;
+
       const imap = await buildImapConfigFromAccount(config);
       const sinceDays = config.last_fetched_at ? Math.max(1, Math.min(30, Math.ceil((now - new Date(config.last_fetched_at).getTime()) / 86_400_000))) : 7;
       const fetched = await fetchRecentEmailsWithRetry(imap, 100, sinceDays);
@@ -71,10 +105,43 @@ export async function GET(request: NextRequest) {
         ? await supabase.from("email_messages").select("message_id").eq("brand_id", config.brand_id).in("message_id", messageIds)
         : { data: [] as Array<{ message_id: string }> };
       const existingIds = new Set((existing ?? []).map((row: any) => String(row.message_id)));
+      const admissionIds = await loadCustomerMailAdmissionIds(supabase, String(config.id));
+      for (const id of admissionIds) existingIds.add(id);
 
       let insertedCount = 0;
+      let filteredCount = 0;
+      let reviewCount = 0;
       for (const email of fetched) {
         if (!email.messageId || existingIds.has(email.messageId)) continue;
+
+        const admissionMessage = { ...email, mailboxRole: "inbox" as const };
+        const decision = await decideCustomerMailAdmission(supabase, {
+          brandId: String(config.brand_id),
+          accountEmail: String(config.email_address),
+          message: admissionMessage,
+          contactIndex,
+          ownedMailboxAddresses,
+        });
+
+        if (decision.status !== "accept") {
+          await recordCustomerMailAdmission(supabase, {
+            accountId: String(config.id),
+            brandId: String(config.brand_id),
+            message: admissionMessage,
+            decision,
+            historical: false,
+          });
+          existingIds.add(email.messageId);
+          if (decision.status === "filtered") {
+            filteredCount += 1;
+            totalFiltered += 1;
+          } else {
+            reviewCount += 1;
+            totalReview += 1;
+          }
+          continue;
+        }
+
         const { data: insertedMessage, error: insertError } = await supabase.from("email_messages").insert({
           brand_id: config.brand_id,
           message_id: email.messageId,
@@ -88,16 +155,13 @@ export async function GET(request: NextRequest) {
           body_text: email.bodyText || null,
           body_html: email.bodyHtml || null,
           received_at: email.date.toISOString(),
+          crm_contact_id: decision.contactId,
         }).select("id").single();
         if (insertError) continue;
         existingIds.add(email.messageId);
         insertedCount++;
         totalInserted++;
 
-        const normalizedFrom = normalizeEmailAddresses([email.from.address])[0];
-        const { data: contact } = normalizedFrom
-          ? await supabase.from("contacts").select("id").eq("brand_id", config.brand_id).ilike("email", normalizedFrom).order("updated_at", { ascending: false }).limit(1).maybeSingle()
-          : { data: null };
         await insertRevenueEvent(supabase, buildEmailReceivedRevenueEventInput({
           brandId: config.brand_id,
           fromAddress: email.from.address,
@@ -109,7 +173,7 @@ export async function GET(request: NextRequest) {
           messageId: email.messageId,
           threadId: email.threadId || email.messageId,
           storedEmailMessageId: insertedMessage?.id || null,
-          contactId: contact?.id || null,
+          contactId: decision.contactId,
         }));
       }
 
@@ -123,7 +187,16 @@ export async function GET(request: NextRequest) {
         last_error_at: null,
         auto_fetch_paused_by_system: false,
       }).eq("id", config.id);
-      results.push({ brand: config.brand_id, email: config.email_address, fetched: fetched.length, inserted: insertedCount, health: "healthy" });
+      results.push({
+        brand: config.brand_id,
+        email: config.email_address,
+        fetched: fetched.length,
+        inserted: insertedCount,
+        filtered: filteredCount,
+        review: reviewCount,
+        promoted,
+        health: "healthy",
+      });
     } catch (e) {
       const message = describeImapError(e);
       const transient = isTransientImapError(e);
@@ -138,7 +211,7 @@ export async function GET(request: NextRequest) {
           ? { auto_fetch: false, auto_fetch_paused_by_system: true }
           : { auto_fetch_paused_by_system: false }),
       }).eq("id", config.id);
-      results.push({ brand: config.brand_id, email: config.email_address, fetched: 0, inserted: 0, error: message, health: pause ? "paused" : "degraded" });
+      results.push({ brand: config.brand_id, email: config.email_address, fetched: 0, inserted: 0, filtered: 0, review: 0, promoted: 0, error: message, health: pause ? "paused" : "degraded" });
     }
   }
 
@@ -146,9 +219,29 @@ export async function GET(request: NextRequest) {
     action: "email_ingest",
     agent_name: "nexus_email_ingest_cron",
     status: results.some((r) => r.error) ? "partial" : "success",
-    details: { accounts: results.length, total_fetched: totalFetched, total_inserted: totalInserted, runtime_control: "cron:/api/cron/email-ingest", paused_accounts: results.filter(r => r.health === "paused").length },
+    details: {
+      accounts: results.length,
+      total_fetched: totalFetched,
+      total_inserted: totalInserted,
+      total_filtered: totalFiltered,
+      total_review: totalReview,
+      total_promoted: totalPromoted,
+      customer_only_admission: true,
+      runtime_control: "cron:/api/cron/email-ingest",
+      paused_accounts: results.filter(r => r.health === "paused").length,
+    },
   });
   if (logError) console.error("[email-ingest] automation log failed", logError.message);
 
-  return NextResponse.json({ success: true, accounts: results.length, total_fetched: totalFetched, total_inserted: totalInserted, results, logged: !logError });
+  return NextResponse.json({
+    success: true,
+    accounts: results.length,
+    total_fetched: totalFetched,
+    total_inserted: totalInserted,
+    total_filtered: totalFiltered,
+    total_review: totalReview,
+    total_promoted: totalPromoted,
+    results,
+    logged: !logError,
+  });
 }
