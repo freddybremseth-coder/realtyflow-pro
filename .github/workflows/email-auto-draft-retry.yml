@@ -1,0 +1,25 @@
+name: Email Auto Draft Retry
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/cron/email-auto-draft/route.ts"
+      - "src/services/email/auto-draft-retry.ts"
+      - "src/services/email/auto-draft-retry.test.ts"
+      - ".github/workflows/email-auto-draft-retry.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Email retry tests
+        run: npx tsx --test src/services/email/auto-draft-retry.test.ts
