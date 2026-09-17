@@ -70,8 +70,18 @@ type BackfillResult = {
     skipped_missing_message_id: number;
     inserted: number;
     mailboxes: { inbox?: number; sent?: number };
+    history_has_more?: boolean;
+    mailbox_progress?: {
+      inbox?: { scanned: number; skipped_existing: number; skipped_missing_message_id: number; exhausted: boolean };
+      sent?: { scanned: number; skipped_existing: number; skipped_missing_message_id: number; exhausted: boolean };
+    };
     error?: string;
   }>;
+  history?: {
+    has_more?: boolean;
+    complete_after_apply?: boolean;
+    pagination_mode?: string;
+  };
   review?: {
     emailLinkHealth?: string;
     highPriority?: string;
@@ -302,7 +312,7 @@ export default function EmailReadinessPage() {
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black">Email Readiness</h1>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-200">Kanonisk status for credentials, tilkoblingshelse og historisk backfill. Tilkoblingstesten leser kun mailbox-metadata. Controlled health repair kan rydde pause/feilstatus etter vellykket test uten å aktivere auto-fetch. Backfill preview beregner kandidater/duplikater uten write; apply er en separat eksplisitt handling etter preview.</p>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-200">Kanonisk status for credentials, tilkoblingshelse og historisk backfill. Tilkoblingstesten leser kun mailbox-metadata. Controlled health repair kan rydde pause/feilstatus etter vellykket test uten å aktivere auto-fetch. Backfill preview beregner kandidater/duplikater uten write; apply er en separat eksplisitt handling etter preview. Hvis historikken er større enn én batch, vises det eksplisitt og neste preview fortsetter bakover forbi allerede importerte meldinger.</p>
           </div>
           <div className="flex gap-2">
             <Link href="/nexus-os/communications" className="rounded-xl border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm font-black text-white">Communications</Link>
@@ -377,16 +387,21 @@ export default function EmailReadinessPage() {
                   <div className="font-black">Backfill preview · ingen writes</div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
                     <div>Periode: siste {preview.since_days ?? 180} dager</div>
-                    <div>Maks: {preview.max_messages ?? 200} meldinger</div>
-                    <div>Hentet: {preview.fetched ?? 0}</div>
+                    <div>Maks per batch: {preview.max_messages ?? 200} meldinger</div>
+                    <div>Skannet: {preview.fetched ?? 0}</div>
                     <div>Nye kandidater: {preview.candidates ?? 0}</div>
-                    <div>Duplikater: {preview.duplicates ?? 0}</div>
+                    <div>Allerede importert/duplikat: {preview.duplicates ?? 0}</div>
                     <div>Mangler Message-ID: {preview.skipped_missing_message_id ?? 0}</div>
                     <div>Inserted: {preview.inserted ?? 0}</div>
                     <div>Sent inkludert: {preview.include_sent ? "Ja" : "Nei"}</div>
                   </div>
+                  <div className={`mt-3 rounded-lg border p-2 text-xs font-semibold ${preview.history?.has_more ? "border-amber-300 bg-amber-50 text-amber-950" : "border-emerald-300 bg-emerald-50 text-emerald-950"}`}>
+                    {preview.history?.has_more
+                      ? "Denne previewen er én historisk batch. Mer historikk kan ligge bak denne batchen; etter import fortsetter neste preview automatisk forbi allerede importerte Message-ID-er."
+                      : "Ingen eldre, ikke-importerte meldinger ble funnet innen den valgte perioden utover denne batchen."}
+                  </div>
                   {(preview.accounts || []).map((row) => <div key={row.email} className="mt-3 rounded-lg border border-cyan-200 bg-white/70 p-2 text-xs">
-                    <b>{row.email}</b> · Inbox {row.mailboxes?.inbox ?? 0} · Sent {row.mailboxes?.sent ?? 0} · kandidater {row.candidates} · duplikater {row.duplicates}{row.error ? ` · feil: ${row.error}` : ""}
+                    <b>{row.email}</b> · Inbox {row.mailboxes?.inbox ?? 0} · Sent {row.mailboxes?.sent ?? 0} · kandidater {row.candidates} · hoppet over {row.duplicates}{row.history_has_more ? " · mer historikk" : " · slutten nådd"}{row.error ? ` · feil: ${row.error}` : ""}
                   </div>)}
                   {canApply && <button onClick={() => applyBackfill(account, preview)} disabled={applying === account.id} className="mt-4 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
                     {applying === account.id && <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />}
@@ -397,7 +412,18 @@ export default function EmailReadinessPage() {
               </div>}
               {apply && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${apply.success ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
                 {apply.success ? <>
-                  <div>Historisk backfill fullført: {apply.inserted ?? 0} meldinger importert som lest + arkivert. Ingen e-post ble sendt og ingen CRM-kobling ble gjort automatisk.</div>
+                  <div>{apply.inserted ?? 0} historiske meldinger importert som lest + arkivert. Ingen e-post ble sendt og ingen CRM-kobling ble gjort automatisk.</div>
+                  {apply.history?.has_more ? <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+                    <div className="font-black">Mer historikk gjenstår</div>
+                    <div className="mt-1 font-medium">Denne batchen er ferdig, men hele historikken er ikke ferdig. Kjør neste preview; systemet hopper over de importerte meldingene og fortsetter bakover.</div>
+                    <button onClick={() => previewBackfill(account)} disabled={previewing === account.id || applying === account.id} className="mt-3 rounded-lg bg-amber-800 px-3 py-2 font-black text-white disabled:opacity-40">
+                      {previewing === account.id && <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />}
+                      Preview neste batch
+                    </button>
+                  </div> : <div className="mt-3 rounded-lg border border-emerald-300 bg-white/70 p-3 text-xs text-emerald-950">
+                    <div className="font-black">Historisk backfill ferdig for valgt periode</div>
+                    <div className="mt-1 font-medium">Ingen eldre, ikke-importerte meldinger gjenstår innen denne backfill-perioden.</div>
+                  </div>}
                   {(apply.safety?.identityReviewRequired || apply.review?.emailLinkHealth || apply.review?.highPriority) && <div className="mt-3 rounded-lg border border-emerald-300 bg-white/70 p-3 text-xs">
                     <div className="font-black">Neste steg: menneskelig identity-review</div>
                     <div className="mt-1 font-medium">Importerte meldinger må gjennom Email Link Health før eventuell kontrollert CRM-kobling.</div>
@@ -413,7 +439,7 @@ export default function EmailReadinessPage() {
         })}
       </section>
 
-      <div className="rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mr-2 inline h-5 w-5" /><b>Sikkerhetsgrense:</b> Denne siden aktiverer ikke auto-fetch eller credential-rotasjon. Connection-check endrer ikke health. Controlled health repair krever vellykket connection-check + eksplisitt bekreftelse. Historikk-preview skriver ingenting. Backfill apply kan bare startes fra en vellykket preview med nye kandidater, krever en ny eksplisitt bekreftelse, lagrer historikk som lest + arkivert og utfører ingen automatisk CRM-kobling eller e-postsending. Etter import må identity-review gjøres eksplisitt i Email Link Health.</div>
+      <div className="rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mr-2 inline h-5 w-5" /><b>Sikkerhetsgrense:</b> Denne siden aktiverer ikke auto-fetch eller credential-rotasjon. Connection-check endrer ikke health. Controlled health repair krever vellykket connection-check + eksplisitt bekreftelse. Historikk-preview skriver ingenting. Backfill apply kan bare startes fra en vellykket preview med nye kandidater, krever en ny eksplisitt bekreftelse, lagrer historikk som lest + arkivert og utfører ingen automatisk CRM-kobling eller e-postsending. Historikk som krever flere batcher merkes som ufullstendig til siste batch er nådd. Etter import må identity-review gjøres eksplisitt i Email Link Health.</div>
     </div>
   );
 }
