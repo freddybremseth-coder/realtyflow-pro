@@ -1,0 +1,183 @@
+name: Generate ZenEco regional 30m slideshows
+
+on:
+  push:
+    branches:
+      - media/zeneco-regional-slideshows-20260918
+    paths:
+      - ".github/workflows/zeneco-regional-slideshows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    name: Render ${{ matrix.region }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - region: north
+            manifest: tools/slideshows/manifests/zeneco-north-20260918.txt
+            title: Zen Eco Homes - Costa Blanca Nord
+            output: zeneco-costa-blanca-nord-30min.mp4
+          - region: south
+            manifest: tools/slideshows/manifests/zeneco-south-20260918.txt
+            title: Zen Eco Homes - Costa Blanca Sor
+            output: zeneco-costa-blanca-sor-30min.mp4
+          - region: calida
+            manifest: tools/slideshows/manifests/zeneco-calida-20260918.txt
+            title: Zen Eco Homes - Costa Calida
+            output: zeneco-costa-calida-30min.mp4
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure FFmpeg
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Download 360 property images
+        env:
+          MANIFEST: ${{ matrix.manifest }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import concurrent.futures
+          import pathlib
+          import shutil
+          import urllib.parse
+          import urllib.request
+
+          manifest = pathlib.Path(__import__("os").environ["MANIFEST"])
+          urls = [x.strip() for x in manifest.read_text(encoding="utf-8").splitlines() if x.strip()]
+          if len(urls) != 360:
+              raise SystemExit(f"Expected exactly 360 URLs, got {len(urls)}")
+
+          out = pathlib.Path("slideshow-work/images")
+          out.mkdir(parents=True, exist_ok=True)
+
+          allowed_hosts = {"fotos15.apinmo.com"}
+
+          def fetch(item):
+              idx, url = item
+              parsed = urllib.parse.urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname not in allowed_hosts:
+                  return idx, False, f"blocked URL host/scheme: {url}"
+              dest = out / f"{idx:04d}.jpg"
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 RealtyFlow slideshow renderer"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      data = r.read()
+                      ctype = (r.headers.get("content-type") or "").lower()
+                  if len(data) < 1500 or "image" not in ctype:
+                      return idx, False, f"invalid image ({len(data)} bytes, {ctype})"
+                  dest.write_bytes(data)
+                  return idx, True, ""
+              except Exception as exc:
+                  return idx, False, str(exc)
+
+          failures = []
+          with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+              for idx, ok, msg in pool.map(fetch, enumerate(urls, start=1)):
+                  if not ok:
+                      failures.append((idx, msg))
+
+          good = sorted(out.glob("*.jpg"))
+          if not good:
+              raise SystemExit("No property images downloaded")
+
+          # Fill failed slots with existing valid images, preserving exactly 360 x 5s.
+          for pos, (idx, msg) in enumerate(failures):
+              src = good[pos % len(good)]
+              dst = out / f"{idx:04d}.jpg"
+              shutil.copyfile(src, dst)
+              print(f"Filled failed image {idx}: {msg}")
+
+          final = sorted(out.glob("*.jpg"))
+          if len(final) != 360:
+              raise SystemExit(f"Expected 360 local images, got {len(final)}")
+          print(f"Ready: {len(final)} images ({len(failures)} fallback copies)")
+          PY
+
+      - name: Build exact 5-second concat list
+        shell: bash
+        run: |
+          mkdir -p slideshow-work
+          : > slideshow-work/concat.txt
+          for i in $(seq -w 1 360); do
+            echo "file 'images/0${i}.jpg'" >> slideshow-work/concat.txt
+            echo "duration 5" >> slideshow-work/concat.txt
+          done
+          echo "file 'images/0360.jpg'" >> slideshow-work/concat.txt
+
+      - name: Render 1080p MP4
+        env:
+          OUTPUT: ${{ matrix.output }}
+          TITLE: ${{ matrix.title }}
+        shell: bash
+        run: |
+          LOGO="public/brand-logos/zeneco.png"
+          if [ -f "$LOGO" ]; then
+            ffmpeg -y \
+              -f concat -safe 0 -i slideshow-work/concat.txt \
+              -loop 1 -framerate 2 -i "$LOGO" \
+              -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 \
+              -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1[bg];[1:v]scale=220:-1,format=rgba,colorchannelmixer=aa=0.82[logo];[bg][logo]overlay=W-w-32:H-h-32[v]" \
+              -map "[v]" -map 2:a \
+              -r 2 -t 1800 \
+              -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p \
+              -c:a aac -b:a 96k \
+              -metadata title="$TITLE" \
+              -movflags +faststart \
+              "$OUTPUT"
+          else
+            ffmpeg -y \
+              -f concat -safe 0 -i slideshow-work/concat.txt \
+              -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 \
+              -vf "scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1" \
+              -map 0:v -map 1:a \
+              -r 2 -t 1800 \
+              -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p \
+              -c:a aac -b:a 96k \
+              -metadata title="$TITLE" \
+              -movflags +faststart \
+              "$OUTPUT"
+          fi
+
+      - name: Verify video
+        env:
+          OUTPUT: ${{ matrix.output }}
+        shell: bash
+        run: |
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height,r_frame_rate -of json "$OUTPUT" | tee "${OUTPUT}.ffprobe.json"
+          python - <<'PY'
+          import json, os, subprocess
+          f = os.environ["OUTPUT"]
+          raw = subprocess.check_output([
+              "ffprobe","-v","error","-show_entries","format=duration",
+              "-of","json",f
+          ], text=True)
+          duration = float(json.loads(raw)["format"]["duration"])
+          if not 1799.0 <= duration <= 1801.0:
+              raise SystemExit(f"Unexpected duration: {duration}")
+          print(f"Verified duration: {duration:.3f}s")
+          PY
+
+      - name: Upload MP4 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.region }}-zeneco-30min
+          path: |
+            ${{ matrix.output }}
+            ${{ matrix.output }}.ffprobe.json
+          compression-level: 0
+          retention-days: 7
