@@ -21,6 +21,6 @@ jobs:
       - name: Install dependencies
         run: npm ci --silent
       - name: Customer admission contracts
-        run: npx tsx --test src/services/email/customer-mail-admission.contract.test.ts src/services/email/customer-mail-identity.test.ts
+        run: npx tsx --test src/services/email/customer-mail-admission.contract.test.ts src/services/email/customer-mail-identity.test.ts src/services/email/history-backfill-worker.contract.test.ts
       - name: Inbound mail classification
         run: npx vitest run src/services/email/inbound-mail-filter.test.ts
