@@ -298,6 +298,7 @@ export async function promoteResolvedCustomerMailReviews(
     .eq("account_id", input.accountId)
     .eq("admission_status", "review")
     .eq("mailbox_role", "inbox")
+    .order("is_historical", { ascending: true })
     .order("received_at", { ascending: false })
     .limit(Math.max(1, Math.min(100, input.limit || 25)));
   if (error) throw new Error(`Customer-mail review lookup failed: ${error.message}`);
