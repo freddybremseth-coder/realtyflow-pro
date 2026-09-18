@@ -28,3 +28,16 @@ test("backfill cron is scheduler-protected and scheduled", () => {
   assert.match(cron, /exact_unique_crm_linking_only:\s*true/);
   assert.match(vercel, /\/api\/cron\/email-history-backfill/);
 });
+
+
+test("history backfill defers transient storage contention instead of aborting the batch", () => {
+  assert.match(worker, /isStorageContentionError/);
+  assert.match(worker, /statement timeout\\|lock timeout/);
+  assert.match(worker, /History contention reconcile failed/);
+  assert.match(worker, /history_storage_retry/);
+  assert.match(worker, /storage_deferred/);
+});
+
+test("non-contention history insert failures still fail closed", () => {
+  assert.match(worker, /History message insert failed/);
+});
