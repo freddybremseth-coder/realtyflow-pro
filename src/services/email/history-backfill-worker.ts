@@ -43,6 +43,7 @@ export type EmailHistoryBackfillResult = {
   deduped: number;
   filtered: number;
   review: number;
+  storageDeferred: number;
   scanned: number;
   skippedExisting: number;
   skippedMissingMessageId: number;
@@ -52,6 +53,11 @@ export type EmailHistoryBackfillResult = {
 
 function normalizeEmail(value: unknown) {
   return String(value || "").trim().toLowerCase();
+}
+
+function isStorageContentionError(error: { message?: string | null } | null | undefined) {
+  const message = String(error?.message || "");
+  return /statement timeout|lock timeout|canceling statement due to statement timeout/i.test(message);
 }
 
 async function loadExistingMessageIds(
@@ -155,6 +161,7 @@ export async function runEmailHistoryBackfillJob(
   let deduped = 0;
   let filtered = 0;
   let review = 0;
+  let storageDeferred = 0;
   let scanned = 0;
   let skippedExisting = 0;
   let skippedMissingMessageId = 0;
@@ -244,6 +251,50 @@ export async function runEmailHistoryBackfillJob(
           existingMessageIds.add(messageId);
           continue;
         }
+
+        if (isStorageContentionError(insertError)) {
+          const concurrent = await supabase
+            .from("email_messages")
+            .select("id,crm_contact_id")
+            .eq("message_id", messageId)
+            .maybeSingle();
+          if (concurrent.error) {
+            throw new Error(`History contention reconcile failed: ${concurrent.error.message}`);
+          }
+
+          if (concurrent.data?.id) {
+            deduped += 1;
+            if (contactId && !concurrent.data.crm_contact_id) {
+              const { error: linkError } = await supabase
+                .from("email_messages")
+                .update({ crm_contact_id: contactId })
+                .eq("id", concurrent.data.id)
+                .is("crm_contact_id", null);
+              if (linkError) throw new Error(`History contention CRM link failed: ${linkError.message}`);
+              linked += 1;
+            }
+            await rememberImapMessageId(supabase, String(concurrent.data.id), messageId);
+            existingMessageIds.add(messageId);
+            continue;
+          }
+
+          await recordCustomerMailAdmission(supabase, {
+            accountId: job.account_id,
+            brandId: job.brand_id,
+            message,
+            decision: {
+              status: "review",
+              reason: "history_storage_retry",
+              contactId,
+            },
+            historical: true,
+          });
+          review += 1;
+          storageDeferred += 1;
+          existingMessageIds.add(messageId);
+          continue;
+        }
+
         throw new Error(`History message insert failed: ${insertError.message}`);
       }
 
@@ -262,6 +313,7 @@ export async function runEmailHistoryBackfillJob(
     deduped,
     filtered,
     review,
+    storage_deferred: storageDeferred,
     scanned,
     skipped_existing: skippedExisting,
     skipped_missing_message_id: skippedMissingMessageId,
@@ -296,6 +348,7 @@ export async function runEmailHistoryBackfillJob(
     deduped,
     filtered,
     review,
+    storageDeferred,
     scanned,
     skippedExisting,
     skippedMissingMessageId,
