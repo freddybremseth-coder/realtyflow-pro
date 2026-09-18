@@ -50,3 +50,11 @@ test("history backfill uses the same customer admission boundary", () => {
   assert.match(history, /total_review/);
   assert.match(history, /loadCustomerMailAdmissionIds/);
 });
+
+
+test("live review candidates are promoted before historical review backlog", () => {
+  const historicalOrder = admission.indexOf('.order("is_historical", { ascending: true })');
+  const receivedOrder = admission.indexOf('.order("received_at", { ascending: false })', historicalOrder);
+  assert.ok(historicalOrder >= 0);
+  assert.ok(receivedOrder > historicalOrder);
+});
