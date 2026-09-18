@@ -69,12 +69,14 @@ interface ContentAnalyticsPayload {
 }
 
 interface SearchDiscoveryPayload {
+  brandId: string;
   totalVisits: number;
   searchVisits: number;
   aiVisits: number;
   aiShare: number;
   bySource: Array<{ source: string; visits: number }>;
-  topPages: Array<{ path: string; visits: number }>;
+  byBrand: Array<{ brandId: string; visits: number; search: number; ai: number; aiShare: number }>;
+  topPages: Array<{ brandId: string; path: string; visits: number }>;
   daily: Array<{ date: string; search: number; ai: number }>;
 }
 
@@ -105,9 +107,9 @@ async function fetchSocialGrowth(): Promise<SocialGrowthPayload | null> {
   }
 }
 
-async function fetchSearchDiscovery(): Promise<SearchDiscoveryPayload | null> {
+async function fetchSearchDiscovery(brand = "all"): Promise<SearchDiscoveryPayload | null> {
   try {
-    const response = await fetch("/api/analytics/search-discovery?brand=pinosoecolife&days=30", { cache: "no-store" });
+    const response = await fetch(`/api/analytics/search-discovery?brand=${encodeURIComponent(brand)}&days=30`, { cache: "no-store" });
     if (!response.ok) return null;
     return await response.json();
   } catch {
@@ -162,6 +164,7 @@ export default function AnalyticsPage() {
   const [platformEngagement, setPlatformEngagement] = useState<{ platform: string; likes: number; comments: number; shares: number; views: number }[]>([]);
   const [socialGrowth, setSocialGrowth] = useState<SocialGrowthPayload | null>(null);
   const [searchDiscovery, setSearchDiscovery] = useState<SearchDiscoveryPayload | null>(null);
+  const [searchBrand, setSearchBrand] = useState("all");
   const [growthActionLoading, setGrowthActionLoading] = useState<string | null>(null);
   const [growthNotice, setGrowthNotice] = useState<string | null>(null);
 
@@ -226,7 +229,7 @@ export default function AnalyticsPage() {
           supabase.from("properties").select("id", { count: "exact", head: true }),
           fetchContentAnalytics(),
           fetchSocialGrowth(),
-          fetchSearchDiscovery(),
+          fetchSearchDiscovery("all"),
         ]);
         setSocialGrowth(growthPayload);
         setSearchDiscovery(searchPayload);
@@ -558,11 +561,34 @@ export default function AnalyticsPage() {
 
         <TabsContent value="search">
           <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-semibold text-white">Pinoso Eco Life – organisk søk og AI discovery</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Førsteparts landingsdata fra kjente søke- og AI-referrere de siste 30 dagene. Ingen bruker-ID, IP eller søkespørringer lagres.
-              </p>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Portfolio – organisk søk og AI discovery</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Førsteparts landingsdata fra kjente søke- og AI-referrere de siste 30 dagene. Ingen bruker-ID, IP eller søkespørringer lagres.
+                </p>
+              </div>
+              <label className="text-xs font-medium text-slate-400">
+                Brand
+                <select
+                  value={searchBrand}
+                  onChange={async (event) => {
+                    const value = event.target.value;
+                    setSearchBrand(value);
+                    setSearchDiscovery(await fetchSearchDiscovery(value));
+                  }}
+                  className="ml-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                >
+                  <option value="all">Hele porteføljen</option>
+                  <option value="zeneco">Zen Eco Homes</option>
+                  <option value="pinosoecolife">Pinoso Eco Life</option>
+                  <option value="freddyb">Freddy Bremseth</option>
+                  <option value="freddypublishing">Books / Freddy Publishing</option>
+                  <option value="donaanna">Doña Anna</option>
+                  <option value="chatgenius">ChatGenius</option>
+                  <option value="remasterfreddy">Re-Master Freddy</option>
+                </select>
+              </label>
             </div>
 
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -580,6 +606,23 @@ export default function AnalyticsPage() {
                 </Card>
               ))}
             </div>
+
+            {searchBrand === "all" && searchDiscovery?.byBrand?.length ? (
+              <Card>
+                <CardHeader><CardTitle>Portefølje – hvem blir funnet?</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {searchDiscovery.byBrand.map((item) => (
+                      <div key={item.brandId} className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                        <p className="text-sm font-semibold text-white">{item.brandId}</p>
+                        <p className="mt-2 text-2xl font-bold text-primary-300">{item.visits}</p>
+                        <p className="text-xs text-slate-500">{item.ai} AI · {item.search} søk · {item.aiShare}% AI-andel</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
 
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
@@ -609,14 +652,10 @@ export default function AnalyticsPage() {
                     <div className="space-y-3">
                       {searchDiscovery.topPages.slice(0, 12).map((item) => (
                         <div key={item.path} className="flex items-center justify-between gap-4 border-b border-slate-800 pb-3">
-                          <a
-                            href={`https://www.pinosoecolife.com${item.path}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="min-w-0 truncate text-sm text-primary-300 hover:text-primary-200"
-                          >
-                            {item.path}
-                          </a>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm text-primary-300">{item.path}</p>
+                            {searchBrand === "all" ? <p className="text-[11px] text-slate-500">{item.brandId}</p> : null}
+                          </div>
                           <span className="shrink-0 font-semibold text-white">{item.visits}</span>
                         </div>
                       ))}
