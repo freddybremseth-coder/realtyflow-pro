@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { CheckSquare, Plus, GripVertical, X, Loader2, AlertTriangle } from "lucide-react";
+import { CheckSquare, Plus, GripVertical, X, Loader2, AlertTriangle, UserRound, ArrowUpRight } from "lucide-react";
 
 type TaskStatus = "TO_DO" | "IN_PROGRESS" | "REVIEW" | "DONE";
 type TaskPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -20,6 +21,7 @@ interface Task {
   dueDate?: string;
   brand?: string;
   sourceType?: string;
+  sourceId?: string;
   nextAction?: string;
   aiScore?: number;
   synthetic?: boolean;
@@ -47,11 +49,49 @@ function mapWorkItem(item: any): Task {
     dueDate: item.due_date || undefined,
     brand: item.brand_id || undefined,
     sourceType: item.source_type,
+    sourceId: item.source_id || undefined,
     nextAction: item.next_action || undefined,
     aiScore: item.ai_score || 0,
     synthetic: Boolean(item.metadata?.synthetic || String(item.id).includes("-")),
     metadata: item.metadata || {},
   };
+}
+
+function crmContactId(task: Task): string | null {
+  const metadata = task.metadata || {};
+  const candidates = [
+    metadata.contact_id,
+    metadata.contactId,
+    metadata.crm_contact_id,
+    metadata.crmContactId,
+    metadata.customer_id,
+    metadata.customerId,
+    metadata.lead_id,
+    metadata.leadId,
+  ];
+
+  for (const candidate of candidates) {
+    const value = String(candidate || "").trim();
+    if (/^[0-9a-f-]{36}$/i.test(value)) return value;
+  }
+
+  const readinessHref = String(metadata.stage_readiness_href || metadata.customer_href || metadata.crm_href || "").trim();
+  const hrefMatch = readinessHref.match(/[?&]contactId=([0-9a-f-]{36})/i);
+  if (hrefMatch?.[1]) return hrefMatch[1];
+
+  const sourceType = String(metadata.original_source_type || task.sourceType || "").toLowerCase();
+  const sourceId = String(task.sourceId || "").trim();
+  if (["crm", "website_lead", "chatbot"].includes(sourceType) && /^[0-9a-f-]{36}$/i.test(sourceId)) {
+    return sourceId;
+  }
+
+  const syntheticMatch = String(task.id || "").match(/^crm-([0-9a-f-]{36})$/i);
+  return syntheticMatch?.[1] || null;
+}
+
+function crmHref(task: Task): string | null {
+  const contactId = crmContactId(task);
+  return contactId ? `/customers?tab=all&contactId=${encodeURIComponent(contactId)}` : null;
 }
 
 export default function MarketingTasksPage() {
@@ -440,6 +480,15 @@ export default function MarketingTasksPage() {
                   )}
                 </div>
               )}
+              {crmHref(selectedTask) && (
+                <Button asChild className="mb-4 w-full sm:w-auto">
+                  <Link href={crmHref(selectedTask)!}>
+                    <UserRound size={15} className="mr-2" />
+                    Åpne kunde i CRM
+                    <ArrowUpRight size={14} className="ml-2" />
+                  </Link>
+                </Button>
+              )}
               <div className="flex flex-wrap gap-2 mb-4">
                 <Badge variant="outline">{selectedTask.platform}</Badge>
                 <Badge variant={priorityColors[selectedTask.priority]}>{selectedTask.priority}</Badge>
@@ -488,7 +537,22 @@ export default function MarketingTasksPage() {
                       <div className="flex items-start gap-2">
                         <GripVertical size={14} className="text-slate-600 mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-slate-200 font-medium">{task.title}</p>
+                          {crmHref(task) ? (
+                            <Link
+                              href={crmHref(task)!}
+                              onClick={(event) => event.stopPropagation()}
+                              onMouseDown={(event) => event.stopPropagation()}
+                              draggable={false}
+                              className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-200 hover:text-cyan-300 hover:underline underline-offset-2"
+                              title="Åpne kundens CRM-kort"
+                            >
+                              <UserRound size={13} className="shrink-0 text-cyan-400" />
+                              <span>{task.title}</span>
+                              <ArrowUpRight size={12} className="shrink-0 opacity-70" />
+                            </Link>
+                          ) : (
+                            <p className="text-sm text-slate-200 font-medium">{task.title}</p>
+                          )}
                           {task.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{task.description}</p>}
                           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             <Badge variant="outline" className="text-[10px]">{task.platform}</Badge>
