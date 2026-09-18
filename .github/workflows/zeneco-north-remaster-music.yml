@@ -1,0 +1,166 @@
+name: Add Re-Master Freddy music to ZenEco North
+
+on:
+  push:
+    branches:
+      - media/zeneco-regional-slideshows-20260918
+    paths:
+      - ".github/workflows/zeneco-north-remaster-music.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  music-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure FFmpeg
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+
+      - name: Download source 30-minute video
+        uses: actions/download-artifact@v4
+        with:
+          name: north-zeneco-30min
+          path: input
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: freddybremseth-coder/realtyflow-pro
+          run-id: 35372236083
+
+      - name: Download latest Re-Master Freddy tracks
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib, urllib.parse, urllib.request
+
+          manifest = pathlib.Path("tools/slideshows/manifests/remaster-freddy-latest-20260918.txt")
+          out = pathlib.Path("music")
+          out.mkdir(exist_ok=True)
+
+          rows = []
+          for line in manifest.read_text(encoding="utf-8").splitlines():
+              if not line.strip():
+                  continue
+              name, url = line.split("|", 1)
+              parsed = urllib.parse.urlparse(url)
+              if parsed.scheme != "https" or parsed.hostname != "ereapsfcsqtdmzosgnnn.supabase.co":
+                  raise SystemExit(f"Blocked soundtrack URL: {url}")
+              rows.append((name, url))
+
+          if not rows:
+              raise SystemExit("No Re-Master Freddy tracks in manifest")
+
+          with open("tracklist.txt", "w", encoding="utf-8") as tracklist:
+              for idx, (name, url) in enumerate(rows, start=1):
+                  dest = out / f"{idx:03d}.mp3"
+                  req = urllib.request.Request(url, headers={"User-Agent": "RealtyFlow soundtrack renderer"})
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      data = r.read()
+                  if len(data) < 10000:
+                      raise SystemExit(f"Track download too small: {name} ({len(data)} bytes)")
+                  dest.write_bytes(data)
+                  tracklist.write(f"{idx:02d}. {name}\n")
+                  print(f"{idx:02d}. {name}: {len(data)/1024/1024:.1f} MB")
+          PY
+
+      - name: Build 30-minute Re-Master Freddy soundtrack
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib, subprocess
+
+          tracks = sorted(pathlib.Path("music").glob("*.mp3"))
+          if not tracks:
+              raise SystemExit("No downloaded music tracks")
+
+          args = ["ffmpeg", "-y"]
+          for p in tracks:
+              args += ["-i", str(p)]
+
+          chains = []
+          labels = []
+          for i in range(len(tracks)):
+              label = f"a{i}"
+              chains.append(
+                  f"[{i}:a]aresample=48000,"
+                  f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[{label}]"
+              )
+              labels.append(f"[{label}]")
+          chains.append("".join(labels) + f"concat=n={len(tracks)}:v=0:a=1[mix]")
+          args += [
+              "-filter_complex", ";".join(chains),
+              "-map", "[mix]",
+              "-c:a", "aac",
+              "-b:a", "192k",
+              "full-mix.m4a",
+          ]
+          subprocess.run(args, check=True)
+          PY
+
+          ffmpeg -y \
+            -stream_loop -1 -i full-mix.m4a \
+            -t 1800 \
+            -af "afade=t=in:st=0:d=1,afade=t=out:st=1798:d=2" \
+            -c:a aac -b:a 192k \
+            soundtrack-30min.m4a
+
+      - name: Add soundtrack to Costa Blanca Nord video
+        shell: bash
+        run: |
+          SOURCE="input/zeneco-costa-blanca-nord-30min.mp4"
+          OUTPUT="zeneco-costa-blanca-nord-30min-remaster-freddy.mp4"
+          test -f "$SOURCE"
+
+          ffmpeg -y \
+            -i "$SOURCE" \
+            -i soundtrack-30min.m4a \
+            -map 0:v:0 -map 1:a:0 \
+            -c:v copy -c:a copy \
+            -t 1800 \
+            -metadata title="Zen Eco Homes - Costa Blanca Nord - Re-Master Freddy" \
+            -metadata artist="Re-Master Freddy" \
+            -movflags +faststart \
+            "$OUTPUT"
+
+      - name: Verify final MP4
+        shell: bash
+        run: |
+          ffprobe -v error \
+            -show_entries format=duration,size \
+            -show_entries stream=index,codec_type,codec_name,width,height \
+            -of json \
+            zeneco-costa-blanca-nord-30min-remaster-freddy.mp4 | tee final.ffprobe.json
+
+          python - <<'PY'
+          import json, subprocess
+          f = "zeneco-costa-blanca-nord-30min-remaster-freddy.mp4"
+          raw = subprocess.check_output([
+              "ffprobe","-v","error","-show_entries","format=duration",
+              "-of","json",f
+          ], text=True)
+          duration = float(json.loads(raw)["format"]["duration"])
+          if not 1799.0 <= duration <= 1801.0:
+              raise SystemExit(f"Unexpected final duration: {duration}")
+          print(f"Verified final duration: {duration:.3f}s")
+          PY
+
+      - name: Upload final video
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeneco-north-30min-remaster-freddy
+          path: |
+            zeneco-costa-blanca-nord-30min-remaster-freddy.mp4
+            tracklist.txt
+            final.ffprobe.json
+          compression-level: 0
+          retention-days: 7
