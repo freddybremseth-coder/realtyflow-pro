@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 
 const REALTY_BRANDS = ["zeneco", "pinosoecolife"];
 
@@ -52,6 +53,14 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await request.json();
+
+  const { data: previousPinosoVisibility } = await supabase
+    .from("property_brand_visibility")
+    .select("visible")
+    .eq("property_id", id)
+    .eq("brand_id", "pinosoecolife")
+    .maybeSingle();
+
   const visibleBrandIds = new Set(
     (Array.isArray(body.visibleBrandIds) ? (body.visibleBrandIds as unknown[]) : [])
       .filter((value): value is string => typeof value === "string" && REALTY_BRANDS.includes(value)),
@@ -74,9 +83,73 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  const wasVisibleOnPinoso = previousPinosoVisibility?.visible === true;
+  const isVisibleOnPinoso = visibleBrandIds.has("pinosoecolife");
+  let indexNow: Record<string, unknown> | null = null;
+
+  if (wasVisibleOnPinoso !== isVisibleOnPinoso) {
+    const [{ data: property }, { data: settingsRow }] = await Promise.all([
+      supabase
+        .from("properties")
+        .select("id, ref, external_id")
+        .eq("id", id)
+        .maybeSingle(),
+      supabase
+        .from("brand_settings")
+        .select("settings")
+        .eq("brand_id", "pinosoecolife")
+        .maybeSingle(),
+    ]);
+
+    const settings = (settingsRow?.settings || {}) as Record<string, unknown>;
+    const config = resolveWebsiteCmsConfig(
+      "pinosoecolife",
+      settings,
+      "https://www.pinosoecolife.com",
+    );
+    const reference = String(property?.ref || property?.external_id || property?.id || id);
+    const propertyUrl = `https://www.pinosoecolife.com/eiendommer/${encodeURIComponent(reference)}`;
+
+    if (config.webhookSecret) {
+      try {
+        const response = await fetch("https://www.pinosoecolife.com/api/indexnow", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-RealtyFlow-Secret": config.webhookSecret,
+            Authorization: `Bearer ${config.webhookSecret}`,
+          },
+          body: JSON.stringify({ url: propertyUrl }),
+        });
+        const result = await response.json().catch(() => ({}));
+        indexNow = {
+          ok: response.ok,
+          status: response.status,
+          propertyUrl,
+          result,
+        };
+      } catch (notifyError) {
+        indexNow = {
+          ok: false,
+          status: 0,
+          propertyUrl,
+          error: notifyError instanceof Error ? notifyError.message : "IndexNow notification failed",
+        };
+      }
+    } else {
+      indexNow = {
+        ok: false,
+        skipped: true,
+        reason: "Pinoso website CMS secret is not configured",
+        propertyUrl,
+      };
+    }
+  }
+
   return NextResponse.json({
     propertyId: id,
     visibleBrandIds: (data || []).filter((row) => row.visible).map((row) => row.brand_id),
     rows: data || [],
+    indexNow,
   });
 }

@@ -247,7 +247,11 @@ export function resolveWebsiteCmsConfig(
   const destinations = uniqueDestinations([
     ...customDestinations,
     ...getDefaultWebsiteDestinations(brandId),
-  ]);
+  ]).map((destination) =>
+    brandId === "pinosoecolife"
+      ? { ...destination, path: "/magasin" }
+      : destination,
+  );
   const defaultDestinationId = String(
     nested.default_destination ||
       settings.websiteCmsDefaultDestination ||
