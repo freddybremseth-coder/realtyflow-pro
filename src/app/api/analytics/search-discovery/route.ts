@@ -23,16 +23,19 @@ export async function GET(request: NextRequest) {
   }
 
   const days = Math.min(Math.max(Number(request.nextUrl.searchParams.get("days") || 30), 1), 90);
-  const brandId = request.nextUrl.searchParams.get("brand") || "pinosoecolife";
+  const brandId = request.nextUrl.searchParams.get("brand") || "all";
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("search_discovery_events")
-    .select("source, path, referrer_host, occurred_at")
-    .eq("brand_id", brandId)
+    .select("brand_id, source, path, referrer_host, occurred_at")
     .gte("occurred_at", since)
     .order("occurred_at", { ascending: false })
-    .limit(5000);
+    .limit(10000);
+
+  if (brandId !== "all") query = query.eq("brand_id", brandId);
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -40,19 +43,30 @@ export async function GET(request: NextRequest) {
 
   const rows = data || [];
   const sourceCounts = new Map<string, number>();
-  const pageCounts = new Map<string, number>();
+  const pageCounts = new Map<string, { brandId: string; path: string; visits: number }>();
+  const brandCounts = new Map<string, { visits: number; search: number; ai: number }>();
   const dailyCounts = new Map<string, { search: number; ai: number }>();
 
   let aiVisits = 0;
   let searchVisits = 0;
 
   for (const row of rows) {
+    const rowBrandId = String(row.brand_id || "unknown");
     const source = String(row.source || "unknown");
     const path = String(row.path || "/");
     const isAi = AI_SOURCES.has(source);
 
     sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
-    pageCounts.set(path, (pageCounts.get(path) || 0) + 1);
+    const pageKey = `${rowBrandId}:${path}`;
+    const currentPage = pageCounts.get(pageKey) || { brandId: rowBrandId, path, visits: 0 };
+    currentPage.visits += 1;
+    pageCounts.set(pageKey, currentPage);
+
+    const currentBrand = brandCounts.get(rowBrandId) || { visits: 0, search: 0, ai: 0 };
+    currentBrand.visits += 1;
+    if (isAi) currentBrand.ai += 1;
+    else currentBrand.search += 1;
+    brandCounts.set(rowBrandId, currentBrand);
 
     if (isAi) aiVisits += 1;
     else searchVisits += 1;
@@ -70,10 +84,17 @@ export async function GET(request: NextRequest) {
     .map(([source, visits]) => ({ source, visits }))
     .sort((a, b) => b.visits - a.visits);
 
-  const topPages = Array.from(pageCounts.entries())
-    .map(([path, visits]) => ({ path, visits }))
+  const topPages = Array.from(pageCounts.values())
     .sort((a, b) => b.visits - a.visits)
-    .slice(0, 20);
+    .slice(0, 30);
+
+  const byBrand = Array.from(brandCounts.entries())
+    .map(([brandId, counts]) => ({
+      brandId,
+      ...counts,
+      aiShare: counts.visits ? Math.round((counts.ai / counts.visits) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.visits - a.visits);
 
   const daily = Array.from(dailyCounts.entries())
     .map(([date, counts]) => ({ date, ...counts }))
@@ -87,6 +108,7 @@ export async function GET(request: NextRequest) {
     aiVisits,
     aiShare: rows.length ? Math.round((aiVisits / rows.length) * 1000) / 10 : 0,
     bySource,
+    byBrand,
     topPages,
     daily,
     latest: rows.slice(0, 20),
