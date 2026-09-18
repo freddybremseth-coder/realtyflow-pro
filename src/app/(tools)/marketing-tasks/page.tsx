@@ -62,6 +62,8 @@ function crmContactId(task: Task): string | null {
   const candidates = [
     metadata.contact_id,
     metadata.contactId,
+    metadata.crm_contact_id,
+    metadata.crmContactId,
     metadata.customer_id,
     metadata.customerId,
     metadata.lead_id,
@@ -72,6 +74,10 @@ function crmContactId(task: Task): string | null {
     const value = String(candidate || "").trim();
     if (/^[0-9a-f-]{36}$/i.test(value)) return value;
   }
+
+  const readinessHref = String(metadata.stage_readiness_href || metadata.customer_href || metadata.crm_href || "").trim();
+  const hrefMatch = readinessHref.match(/[?&]contactId=([0-9a-f-]{36})/i);
+  if (hrefMatch?.[1]) return hrefMatch[1];
 
   const sourceType = String(metadata.original_source_type || task.sourceType || "").toLowerCase();
   const sourceId = String(task.sourceId || "").trim();
