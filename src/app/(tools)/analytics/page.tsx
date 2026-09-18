@@ -68,6 +68,16 @@ interface ContentAnalyticsPayload {
   engagementSnapshots: AnalyticsSnapshot[];
 }
 
+interface SearchDiscoveryPayload {
+  totalVisits: number;
+  searchVisits: number;
+  aiVisits: number;
+  aiShare: number;
+  bySource: Array<{ source: string; visits: number }>;
+  topPages: Array<{ path: string; visits: number }>;
+  daily: Array<{ date: string; search: number; ai: number }>;
+}
+
 interface SocialGrowthPayload {
   totals: { views: number; reach: number; interactions: number; shares: number; saves: number; leads: number };
   dataQuality: { publicationCount: number; trackedPostCount: number; attributedLeadCount: number; highConfidenceCount: number };
@@ -88,6 +98,16 @@ interface SocialGrowthPayload {
 async function fetchSocialGrowth(): Promise<SocialGrowthPayload | null> {
   try {
     const response = await fetch('/api/social-growth', { cache: 'no-store' });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSearchDiscovery(): Promise<SearchDiscoveryPayload | null> {
+  try {
+    const response = await fetch("/api/analytics/search-discovery?brand=pinosoecolife&days=30", { cache: "no-store" });
     if (!response.ok) return null;
     return await response.json();
   } catch {
@@ -141,6 +161,7 @@ export default function AnalyticsPage() {
   }[]>([]);
   const [platformEngagement, setPlatformEngagement] = useState<{ platform: string; likes: number; comments: number; shares: number; views: number }[]>([]);
   const [socialGrowth, setSocialGrowth] = useState<SocialGrowthPayload | null>(null);
+  const [searchDiscovery, setSearchDiscovery] = useState<SearchDiscoveryPayload | null>(null);
   const [growthActionLoading, setGrowthActionLoading] = useState<string | null>(null);
   const [growthNotice, setGrowthNotice] = useState<string | null>(null);
 
@@ -200,13 +221,15 @@ export default function AnalyticsPage() {
       if (!supabase) { setLoading(false); return; }
 
       try {
-        const [leadCount, propsRes, contentAnalytics, growthPayload] = await Promise.all([
+        const [leadCount, propsRes, contentAnalytics, growthPayload, searchPayload] = await Promise.all([
           fetchLeadCount(),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           fetchContentAnalytics(),
           fetchSocialGrowth(),
+          fetchSearchDiscovery(),
         ]);
         setSocialGrowth(growthPayload);
+        setSearchDiscovery(searchPayload);
 
         const leads = leadCount || 0;
         const props = propsRes.count || 0;
@@ -367,6 +390,7 @@ export default function AnalyticsPage() {
       <Tabs defaultValue="realty" onValueChange={(val) => { if (val === 'youtube' && !ytChannel && !ytLoading) fetchYouTubeAnalytics(); }}>
         <TabsList>
           <TabsTrigger value="realty">Eiendom</TabsTrigger>
+          <TabsTrigger value="search"><Sparkles className="mr-1.5 h-3.5 w-3.5" />Google & AI-søk</TabsTrigger>
           <TabsTrigger value="content">Innhold & SoMe</TabsTrigger>
           <TabsTrigger value="engagement">SoMe Engasjement</TabsTrigger>
           <TabsTrigger value="growth"><Rocket className="mr-1.5 h-3.5 w-3.5" />Instagram Growth</TabsTrigger>
@@ -527,6 +551,101 @@ export default function AnalyticsPage() {
                     ))}</tbody>
                   </table>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="search">
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-semibold text-white">Pinoso Eco Life – organisk søk og AI discovery</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Førsteparts landingsdata fra kjente søke- og AI-referrere de siste 30 dagene. Ingen bruker-ID, IP eller søkespørringer lagres.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {[
+                { label: "Totale besøk", value: searchDiscovery?.totalVisits || 0 },
+                { label: "Google/Bing m.fl.", value: searchDiscovery?.searchVisits || 0 },
+                { label: "AI-assistenter", value: searchDiscovery?.aiVisits || 0 },
+                { label: "AI-andel", value: `${searchDiscovery?.aiShare || 0}%` },
+              ].map((metric) => (
+                <Card key={metric.label}>
+                  <CardContent className="p-4">
+                    <p className="text-2xl font-bold text-white">{metric.value}</p>
+                    <p className="mt-1 text-xs text-slate-400">{metric.label}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader><CardTitle>Kilder</CardTitle></CardHeader>
+                <CardContent>
+                  {searchDiscovery?.bySource?.length ? (
+                    <div className="space-y-3">
+                      {searchDiscovery.bySource.map((item) => (
+                        <div key={item.source} className="flex items-center justify-between border-b border-slate-800 pb-3">
+                          <span className="text-sm text-slate-300">{item.source.replaceAll("_", " ")}</span>
+                          <span className="font-semibold text-white">{item.visits}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-8 text-center text-sm text-slate-500">
+                      Ingen registrerte søke- eller AI-besøk ennå. Målingen starter når den nye nettsideversjonen er live.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle>Landingssider som blir funnet</CardTitle></CardHeader>
+                <CardContent>
+                  {searchDiscovery?.topPages?.length ? (
+                    <div className="space-y-3">
+                      {searchDiscovery.topPages.slice(0, 12).map((item) => (
+                        <div key={item.path} className="flex items-center justify-between gap-4 border-b border-slate-800 pb-3">
+                          <a
+                            href={`https://www.pinosoecolife.com${item.path}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="min-w-0 truncate text-sm text-primary-300 hover:text-primary-200"
+                          >
+                            {item.path}
+                          </a>
+                          <span className="shrink-0 font-semibold text-white">{item.visits}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-8 text-center text-sm text-slate-500">Ingen landingssider registrert ennå.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader><CardTitle>Search vs AI – daglig utvikling</CardTitle></CardHeader>
+              <CardContent>
+                {searchDiscovery?.daily?.length ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart data={searchDiscovery.daily}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} />
+                      <YAxis stroke="#94a3b8" fontSize={12} />
+                      <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
+                      <Legend />
+                      <Area type="monotone" dataKey="search" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.14} name="Søk" />
+                      <Area type="monotone" dataKey="ai" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.14} name="AI" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="py-10 text-center text-sm text-slate-500">Trenddata vises når de første besøkene er registrert.</p>
+                )}
               </CardContent>
             </Card>
           </div>
