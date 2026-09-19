@@ -1,3 +1,4 @@
+import { getSEOObservedSignals } from "./seo-data";
 import {
   BaseAgent,
   AgentTask,
@@ -55,6 +56,7 @@ export class SEOAgent extends BaseAgent {
       "on-page SEO",
       "competition analysis",
       "link building",
+      "read-only portfolio SEO analytics and AEO/GEO improvement reviews",
     ]);
   }
 
@@ -64,6 +66,7 @@ export class SEOAgent extends BaseAgent {
       "optimize_for_seo",
       "analyze_competition",
       "create_link_strategy",
+      "portfolio_growth_review",
     ];
   }
 
@@ -71,13 +74,18 @@ export class SEOAgent extends BaseAgent {
     return `Du er ${this.name}, en elite AI SEO-agent med rollen "${this.role}".
 
 DINE KJERNEKOMPETANSER:
-- Søkeordanalyse og research for det norske markedet
+- Søkeordanalyse for Norge og de faktiske språkene og geografiske markedene til hvert merke
 - On-page SEO-optimalisering (titler, meta, struktur, intern lenking)
 - Konkurrentanalyse og gap-analyse for organisk synlighet
 - Lenkebyggingsstrategi tilpasset norske nettsteder og domener
 - Teknisk SEO (Core Web Vitals, strukturert data, crawlability)
 - Lokal SEO for norske virksomheter (Google Business Profile, lokale kataloger)
 - Content SEO - optimalisering av innhold for både søkemotorer og brukere
+- AEO/GEO - direkte svar på brukerens spørsmål, tydelig fakta- og kildegrunnlag, intern lenking, forfatteransvar, korrekt canonical/hreflang og crawlbar HTML.
+- RealtyFlow portfolio-data: Bruk alltid verifiserte målinger med tidsperiode og brand-id, og skill måledata fra ideer og AI-estimater.
+- RealtyFlows search_discovery_events teller kun kjente søke-/AI-henvisninger til nettstedene. De sier INGENTING om søkeord, visninger, rangering, Search Console-klikk eller AI-siteringer. Oppgi disse som utilgjengelige inntil reelle målekilder er koblet til.
+- Ved 0 observerte hendelser: rapporter datakilde-/sporingskontroll og avstå fra vekstprosent eller bastante SEO-konklusjoner.
+- Autonomi: Analyser og lag forslag kontinuerlig, men ikke publiser, endre nettsider, bygg lenker, send meldinger eller bruk betalingsressurser uten egen godkjent publiserings-/endringsflyt.
 
 SEO-PRINSIPPER:
 1. Kvalitetsinnhold som svarer på brukerens intensjon kommer alltid først.
@@ -123,6 +131,9 @@ ${CLEAN_OUTPUT_RULES}`;
             break;
           case "create_link_strategy":
             output = await this.createLinkStrategy(task.parameters ?? {});
+            break;
+          case "portfolio_growth_review":
+            output = await this.portfolioGrowthReview();
             break;
           default:
             throw new Error(`Unknown task: ${task.name}`);
@@ -187,6 +198,40 @@ Gi anbefalinger for:
 5. Lokal SEO-optimalisering
 6. Strukturert data-implementering`;
 
+    return this.callAI(prompt, this.getSystemPrompt());
+  }
+
+  /**
+   * Reads the real first-party SEO/AI referral table at execution time.
+   * Produces read-only proposals. Execution/publication remains separately gated.
+   */
+  async portfolioGrowthReview(): Promise<string> {
+    const signals = await getSEOObservedSignals();
+    if (signals.dataQuality.truncated) {
+      return "Målevinduet er avkortet ved 10 000 hendelser. Ingen fullstendige vekstkonklusjoner kan trekkes. Del målingen opp etter merke og tidsvindu før nye prioriteringer.";
+    }
+    if (signals.totals.current === 0) {
+      return [
+        "SEO-agenten har kontrollert RealtyFlows søke-/AI-henvisningstabell.",
+        "Ingen slike besøk er registrert de siste 30 dagene. Dette dokumenterer ikke at den faktiske søketrafikken er null.",
+        "Prioritet 1: Verifiser at sporing kjører på hvert nettsted, at CORS/POST godtas, at besøk fra ekte søke-/AI-henvisninger registreres og at databasen og merke-ID-ene samsvarer.",
+        "Prioritet 2: Koble til verifiserte Google Search Console- og Bing Webmaster Tools-målinger per domene for faktiske søkeord, visninger, klikk, CTR og posisjon.",
+        "Prioritet 3: Kjør ny datadrevet analyse etter at reelle data finnes. Ikke endre titler basert på oppdiktede søkeord eller antatte rangeringer.",
+        "Automatiske publiseringer og andre eksterne endringer er ikke gjennomført.",
+      ].join("\n");
+    }
+    const prompt = [
+      "Gjør en kontinuerlig, lesebasert SEO/AEO/GEO-evaluering av alle merkevarene.",
+      "Bruk kun medfølgende målte tall som FAKTA. Dataene er henvisningsbesøk, ikke organiske søkeord, visninger, rangeringer eller AI-siteringer.",
+      "Vurder siste 30 dager mot foregående 30 dager per merke, men unngå konklusjoner ved små tall.",
+      "Skill uttrykkelig mellom observerte funn, hypoteser og ting som krever nye datakilder.",
+      "Gi 3–8 prioriterte forbedringsforslag: konkret merke, observert side eller datamangel, endring, begrunnelse, forventet retning som hypotese, QA og måling 30 dager senere.",
+      "Foreslå tekniske oppgaver, crawlbar HTML, troverdige svar og faktabasert innhold; unngå generiske masseartikler, kunstige FAQ-er, udokumenterte påstander og lenkeskjemaer.",
+      "Nettsteder: Zen Eco Homes, Pinoso Eco Life, freddybremseth.com, books.freddybremseth.com, remaster.freddybremseth.com, donaanna.com, chatgenius.pro.",
+      "Ikke oppgi fiktive søkeord-, Search Console-, AI-siterings- eller rangeringsmålinger. Foreslå kildeintegrasjoner separat.",
+      "Resultatet er forslag for review. Ikke påstå at du har oppdatert nettstedene eller automatisk publisert noe.",
+      "Måledata: " + JSON.stringify(signals),
+    ].join("\n");
     return this.callAI(prompt, this.getSystemPrompt());
   }
 
