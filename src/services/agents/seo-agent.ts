@@ -256,7 +256,7 @@ Gi anbefalinger for:
       "Kun observasjoner med dokumentert kilde og dato får presenteres som fakta.",
       "Henvisninger må ikke blandes med Search Console-visninger, søkeord, posisjoner eller verifiserte AI-siteringer.",
       "Vurder 30 dager mot foregående 30 per merke. Ved små tall: synliggjør usikkerhet og unngå bastante konklusjoner.",
-      "Teknisk audit omfatter kun hjem, robots og sitemap, ikke full crawl eller render. En mislykket request er 'ukjent', ikke en dokumentert SEO-feil.",
+      "Teknisk audit omfatter kun hjem, robots, sitemap og inntil tre offentlig oppførte undersider per domene, ikke full crawl eller render. En mislykket request er 'ukjent', ikke en dokumentert SEO-feil.",
       "Foreslå inntil åtte konkrete QA-sikre forbedringer med brand, URL der observert, kilde, handling, akseptansekriterier og måling etter 30 dager.",
       "Velg relevante seniorkompetanser i SEO_SKILLS, men ikke simuler behovsstyrte connectors eller påstå en endring er publisert.",
       "Dette er gjennomgangsforslag; alle live endringer krever separat godkjenning.",

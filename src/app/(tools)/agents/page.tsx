@@ -428,7 +428,7 @@ export default function AgentsCommandCenter() {
   const [seoAuditError, setSeoAuditError] = useState("");
   const [seoAuditResult, setSeoAuditResult] = useState<{
     checkedAt: string;
-    audits: Array<{ brandId: string; home: { status: number | null; title: string | null };
+    audits: Array<{ brandId: string; samples: Array<{ path: string; status: number | null; issue: string | null }>; home: { status: number | null; title: string | null };
       robots: { status: number | null }; sitemap: { status: number | null };
       observations: string[]; limitations: string[] }>;
   } | null>(null);
@@ -1179,12 +1179,12 @@ export default function AgentsCommandCenter() {
           {seoAuditError && <p className="text-amber-300 text-xs mt-2">{seoAuditError}</p>}
           {seoAuditResult && (
             <div className="mt-3 max-h-44 overflow-auto border-t border-slate-700 pt-2 space-y-1">
-              <p className="text-slate-400 text-xs">Teknisk begrenset kontroll {new Date(seoAuditResult.checkedAt).toLocaleString("nb-NO")}: forside, robots.txt og sitemap.xml – ikke full crawl eller Google-indeksering.</p>
+              <p className="text-slate-400 text-xs">Teknisk begrenset kontroll {new Date(seoAuditResult.checkedAt).toLocaleString("nb-NO")}: forside, robots.txt, sitemap.xml og inntil tre sitemappede undersider per nettsted – ikke full crawl eller Google-indeksering.</p>
               {seoAuditResult.audits.map(audit => (
                 <p key={audit.brandId} className="text-xs text-slate-200">
-                  <strong>{audit.brandId}</strong> · HTTP {audit.home.status ?? "ukjent"} · robots {audit.robots.status ?? "ukjent"} · sitemap {audit.sitemap.status ?? "ukjent"}.
+                  <strong>{audit.brandId}</strong> · HTTP {audit.home.status ?? "ukjent"} · robots {audit.robots.status ?? "ukjent"} · sitemap {audit.sitemap.status ?? "ukjent"} · kontrollerte undersider {audit.samples?.length ?? 0}.
                   {audit.observations.length ? ` Observasjoner: ${audit.observations.join("; ")}` : " Ingen påviste avvik i denne avgrensede kontrollen."}
-                  {audit.limitations.some(text => !text.startsWith("Homepage/robots/sitemap")) ? " Noen forespørsler feilet – se serverrapport." : ""}
+                  {audit.limitations.some(text => !/^(?:Homepage\/robots\/sitemap|Homepage, robots, sitemap)/.test(text)) ? " Noen forespørsler feilet – se serverrapport." : ""}
                 </p>
               ))}
             </div>

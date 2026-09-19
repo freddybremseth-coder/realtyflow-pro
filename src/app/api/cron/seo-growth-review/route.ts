@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
         review_work_items_created: newItems.length,
         technical_audits: audits,
         technical_findings: audits.reduce((sum, audit) => sum + audit.observations.length, 0),
-        technical_checks_incomplete: audits.reduce((sum, audit) => sum + audit.limitations.filter(message => !message.startsWith("Homepage/robots/sitemap")).length, 0),
+        technical_checks_incomplete: audits.reduce((sum, audit) => sum + audit.limitations.filter(message => !/^(?:Homepage\/robots\/sitemap|Homepage, robots, sitemap)/.test(message)).length, 0),
         report,
         needs_editor_approval: true,
         published: false,

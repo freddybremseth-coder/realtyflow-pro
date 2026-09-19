@@ -1,3 +1,5 @@
+import { choosePublicSitemapPages, inspectPublicSample, type SampledPage } from "./seo-page-sampler";
+
 /**
  * Bounded, read-only public-site observations. This is not a crawler, browser
  * rendering, Search Console URL Inspection, or a performance laboratory.
@@ -35,6 +37,7 @@ export type SiteAudit = {
   robots: { status: number | null; sitemapDeclared: boolean | null; googlebotBlocked: boolean | null };
   sitemap: { status: number | null; urlCountSample: number | null; xmlLike: boolean | null };
   observations: string[];
+  samples: SampledPage[];
   limitations: string[];
 };
 
@@ -149,7 +152,7 @@ export async function auditOneSite(
       jsonLdCount: null, jsonLdParseErrors: null },
     robots: { status: null, sitemapDeclared: null, googlebotBlocked: null },
     sitemap: { status: null, urlCountSample: null, xmlLike: null },
-    observations: [], limitations: [],
+    observations: [], samples: [], limitations: [],
   };
 
   const checks = await Promise.allSettled([
@@ -220,7 +223,32 @@ export async function auditOneSite(
     } else audit.observations.push("sitemap.xml did not return HTTP 200");
   } else audit.limitations.push("sitemap.xml request failed; status unknown: " + String(checks[2].reason).slice(0, 100));
 
-  audit.limitations.push("Homepage/robots/sitemap snapshot only, not a full crawl, rendered JS, field CWV, GSC indexing or AI citations.");
+  // Independently inspect at most three real, public, same-host URL-set pages.
+  // Unknown request status stays a limitation, not an invented SEO defect.
+  const sitemapCheck = checks[2];
+  if (sitemapCheck.status === "fulfilled" &&
+      sitemapCheck.value.status === 200 &&
+      audit.sitemap.xmlLike &&
+      !/<sitemapindex(?:\s|>)/i.test(sitemapCheck.value.body)) {
+    const targets = choosePublicSitemapPages(sitemapCheck.value.body, target.base, 3);
+    const sampled = await Promise.allSettled(targets.map(url => fetcher(url)));
+    sampled.forEach((result, index) => {
+      const path = new URL(targets[index]).pathname;
+      if (result.status === "rejected") {
+        audit.limitations.push("Sitemap sample " + path + " unavailable, status unknown: " +
+          String(result.reason).slice(0, 100));
+        return;
+      }
+      const page = inspectPublicSample(targets[index], result.value, target.base);
+      audit.samples.push(page);
+      if (page.issue) audit.observations.push(page.issue);
+    });
+  } else if (sitemapCheck.status === "fulfilled" &&
+             /<sitemapindex(?:\s|>)/i.test(sitemapCheck.value.body)) {
+    audit.limitations.push("Sitemap index returned; child sitemaps are not crawled in this bounded audit.");
+  }
+
+  audit.limitations.push("Homepage, robots, sitemap and up to three sampled declared public pages only; not a full crawl, rendered JS, field CWV, GSC indexing or AI citations.");
   return audit;
 }
 
