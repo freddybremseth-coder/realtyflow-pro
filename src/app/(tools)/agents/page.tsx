@@ -1,5 +1,7 @@
 "use client";
 
+import { SamSEOActionBoard } from "@/components/hub/sam-seo-action-board";
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1006,6 +1008,8 @@ export default function AgentsCommandCenter() {
           </Button>
         </div>
       </div>
+
+      {activeView === "victoria" && <div className="mb-4"><SamSEOActionBoard /></div>}
 
       {activeView === "victoria" && (
         <div className="mb-3 rounded-lg border border-emerald-500/30 bg-slate-900/70 px-4 py-3 text-sm">

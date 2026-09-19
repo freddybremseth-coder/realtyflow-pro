@@ -1,5 +1,7 @@
 "use client";
 
+import { SamSEOActionBoard } from "@/components/hub/sam-seo-action-board";
+
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -605,6 +607,8 @@ export default function GrowthHubPage() {
           )}
         </Button>
       </div>
+
+      <SamSEOActionBoard />
 
       <DomainWorkItems
         title="Markedsføring-hub"

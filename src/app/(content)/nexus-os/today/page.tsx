@@ -1,5 +1,7 @@
 "use client";
 
+import { SamSEOActionBoard } from "@/components/hub/sam-seo-action-board";
+
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -179,6 +181,7 @@ export default function NexusTodayPage() {
 
   return (
     <main className="mx-auto max-w-[1500px] space-y-6 p-4 sm:p-6">
+      <SamSEOActionBoard />
       <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>

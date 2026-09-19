@@ -9,6 +9,7 @@ import { SEOAgent } from "@/services/agents/seo-agent";
 import { getSEOObservedSignals } from "@/services/agents/seo-data";
 import { getSEOLeadSignals } from "@/services/agents/seo-leads";
 import { planSEOOpportunities } from "@/services/agents/seo-opportunities";
+import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { auditSEOPortfolio } from "@/services/agents/seo-audit";
 import { readGSCAllBrands } from "@/services/agents/seo-search-console";
 
@@ -54,7 +55,11 @@ export async function GET(request: NextRequest) {
     const report = (await new SEOAgent().portfolioGrowthReview({ signals, audits, leads, searchConsole })).slice(0, 24000);
     // Only evidence-backed, review-only work items. No CRM contact data or
     // generated copy is published. Keep active issues idempotent across weeks.
-    const candidates = planSEOOpportunities(signals, leads, audits);
+    const verifiedGSC = searchConsole.flatMap(item => item.status === "connected" && item.result ? [item.result] : []);
+    const candidates = [
+      ...planSEOOpportunities(signals, leads, audits),
+      ...planGSCOpportunities(verifiedGSC),
+    ].slice(0, 18);
     const { data: existingItems, error: itemsError } = await supabase.from("work_items")
       .select("source_id")
       .eq("source_type", "ai_agent")
