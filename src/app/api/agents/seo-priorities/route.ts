@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
         at: pilotCycle.data.created_at, status: pilotCycle.data.status,
         assessments: ((pilotCycle.data.details as { assessed?: unknown[] } | null)?.assessed || []),
         websiteChangesPublished: ((pilotCycle.data.details as { website_changes_published?: number } | null)?.website_changes_published || 0),
-        writeStatus: ((pilotCycle.data.details as { public_write_status?: string } | null)?.public_write_status || "unverified",
+        writeStatus: (pilotCycle.data.details as { public_write_status?: string } | null)?.public_write_status || "unverified",
       } : null,
       lastGoogleReadAt: explicitLive ? new Date().toISOString() : lastReadIsNewer
         ? lastLiveRead.data?.created_at || null : saved.data?.created_at || null,
