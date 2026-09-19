@@ -16,12 +16,10 @@ const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://donaanna.com": "donaanna",
   "https://www.chatgenius.pro": "chatgenius",
   "https://chatgenius.pro": "chatgenius",
-  "https://www.chatgenius.com": "chatgenius",
-  "https://chatgenius.com": "chatgenius",
 };
 
 const SOURCE_BY_HOST: Array<[RegExp, string]> = [
-  [/(^|\.)google\./i, "google_search"],
+  [/(^|\.)google\.(?:com|[a-z]{2}|com\.[a-z]{2}|co\.[a-z]{2})$/i, "google_search"],
   [/(^|\.)bing\.com$/i, "bing_search"],
   [/(^|\.)chatgpt\.com$/i, "chatgpt"],
   [/^copilot\.microsoft\.com$/i, "microsoft_copilot"],
@@ -80,7 +78,7 @@ export async function POST(request: NextRequest) {
   const referrer = typeof body.referrer === "string" ? body.referrer.trim() : "";
   const classified = classifyReferrer(referrer);
 
-  if (!classified || !path.startsWith("/") || path.length > 500 || path.includes("\n")) {
+  if (!classified || !path.startsWith("/") || path.startsWith("//") || path.length > 500 || /[\x00-\x1f]/.test(path)) {
     return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
   }
 
