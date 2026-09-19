@@ -374,6 +374,23 @@ export default function AgentsCommandCenter() {
   const [executing, setExecuting] = useState(false);
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [agentStatuses, setAgentStatuses] = useState<AgentInfo[]>(agents);
+  const [seoReview, setSeoReview] = useState<{
+    signals: { totals: { current: number; previous: number; search: number; ai: number };
+      dataQuality: { note: string | null; keywordsAvailable: boolean } };
+    latest: { at: string; status: string; report: string } | null;
+  } | null>(null);
+  const [seoReviewError, setSeoReviewError] = useState("");
+  const [seoReviewExpanded, setSeoReviewExpanded] = useState(false);
+  useEffect(() => {
+    fetch("/api/agents/seo-growth", { cache: "no-store" })
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "SEO-data utilgjengelig");
+        return payload;
+      })
+      .then(setSeoReview)
+      .catch(error => setSeoReviewError(error instanceof Error ? error.message : "SEO-data utilgjengelig"));
+  }, []);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [recentActions, setRecentActions] = useState<{label: string; time: string; status: "done" | "error"}[]>([]);
   const [runtimeStats, setRuntimeStats] = useState<CommandCenterStats>({
@@ -924,6 +941,41 @@ export default function AgentsCommandCenter() {
           </Button>
         </div>
       </div>
+
+      {activeView === "victoria" && (
+        <div className="mb-3 rounded-lg border border-emerald-500/30 bg-slate-900/70 px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <strong className="text-emerald-300">Sam SEO · kontinuerlig, databasert gjennomgang</strong>
+              <p className="text-slate-300 text-xs mt-1">
+                {seoReview
+                  ? `Målte henvisninger siste 30 dager: ${seoReview.signals.totals.current} · søk ${seoReview.signals.totals.search} · AI ${seoReview.signals.totals.ai}. Søkeord krever Search Console/Bing-data.`
+                  : seoReviewError || "Henter SEO-statistikk fra RealtyFlow…"}
+              </p>
+            </div>
+            {seoReview?.latest && (
+              <button
+                type="button"
+                className="text-emerald-300 text-xs underline"
+                onClick={() => setSeoReviewExpanded(value => !value)}
+              >
+                {seoReviewExpanded ? "Skjul rapport" : "Se siste SEO-rapport"}
+              </button>
+            )}
+          </div>
+          {seoReview?.signals.dataQuality.note && (
+            <p className="text-amber-300 mt-2 text-xs">{seoReview.signals.dataQuality.note}</p>
+          )}
+          {seoReview?.latest && seoReviewExpanded && (
+            <div className="mt-3 max-h-48 overflow-y-auto border-t border-slate-700 pt-3">
+              <p className="text-slate-400 text-xs mb-2">
+                {new Date(seoReview.latest.at).toLocaleString("nb-NO")} · forslag til gjennomgang, ingen automatisk publisering
+              </p>
+              <p className="whitespace-pre-wrap text-slate-200">{seoReview.latest.report}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Layout */}
       <div className="flex-1 flex gap-4 min-h-0">
