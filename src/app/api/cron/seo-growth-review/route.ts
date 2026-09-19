@@ -7,6 +7,7 @@ import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { SEOAgent } from "@/services/agents/seo-agent";
 import { getSEOObservedSignals } from "@/services/agents/seo-data";
+import { auditSEOPortfolio } from "@/services/agents/seo-audit";
 
 const ACTION = "seo_portfolio_growth_review";
 const PATH = "/api/cron/seo-growth-review";
@@ -44,8 +45,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const signals = await getSEOObservedSignals();
-    const report = (await new SEOAgent().portfolioGrowthReview()).slice(0, 24000);
+    const [signals, audits] = await Promise.all([getSEOObservedSignals(), auditSEOPortfolio()]);
+    const report = (await new SEOAgent().portfolioGrowthReview({ signals, audits })).slice(0, 24000);
     const status = signals.totals.current === 0 || signals.dataQuality.truncated ? "partial" : "success";
     const { error } = await supabase.from("automation_logs").insert({
       action: ACTION,
@@ -60,6 +61,9 @@ export async function GET(request: NextRequest) {
         by_brand: signals.byBrand,
         by_source: signals.bySource,
         top_pages: signals.topPages,
+        technical_audits: audits,
+        technical_findings: audits.reduce((sum, audit) => sum + audit.observations.length, 0),
+        technical_checks_incomplete: audits.reduce((sum, audit) => sum + audit.limitations.filter(message => !message.startsWith("Homepage/robots/sitemap")).length, 0),
         report,
         needs_editor_approval: true,
         published: false,
