@@ -248,7 +248,9 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
-  const limit = Number(searchParams.get("limit") || 100);
+  const requestedLimit = Number(searchParams.get("limit") || 100);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(700, Math.floor(requestedLimit))) : 100;
+  const view = searchParams.get("view");
 
   let query = supabase
     .from("work_items")
@@ -258,6 +260,8 @@ export async function GET(request: NextRequest) {
     .limit(limit);
 
   if (status) query = query.eq("status", status);
+  else if (view === "active") query = query.in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"]);
+  else if (view === "done") query = query.eq("status", "DONE");
 
   const { data, error } = await query;
   if (error) {
@@ -268,7 +272,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message, work_items: [] }, { status: 500 });
   }
 
-  const synthetic = await synthesizedItems(supabase);
+  const synthetic = view === "done" || (status && !["TO_DO", "IN_PROGRESS", "REVIEW"].includes(status))
+    ? [] : await synthesizedItems(supabase);
   const existingKeys = new Set((data || []).map((item) => `${item.source_type}:${item.source_id}`));
   const merged = [
     ...(data || []),
