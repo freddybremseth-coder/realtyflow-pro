@@ -14,6 +14,10 @@ type Connection = {
   temporary?: boolean; expiresAt?: string | null;
   lastFailure?: { code: string; at: string } | null;
 };
+type ZenEcoOverride = {
+  page_path: string; seo_title: string; seo_description: string;
+  revision: number; active: boolean; updated_at: string;
+};
 type Metric = {
   brandId: string; property: string; collectedAt: string;
   period: { currentStart: string; currentEnd: string };
@@ -71,6 +75,10 @@ export function SamSEOActionBoard() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [zenEcoOverrides, setZenEcoOverrides] = useState<ZenEcoOverride[]>([]);
+  const [rollbackConfirm, setRollbackConfirm] = useState<string | null>(null);
+  const [rollbackBusy, setRollbackBusy] = useState<string | null>(null);
+  const [metadataError, setMetadataError] = useState("");
   const [oauthReturn, setOauthReturn] = useState<{ brandId: string; errorCode: string | null; success: boolean } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -92,6 +100,15 @@ export function SamSEOActionBoard() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Kunne ikke lese Sams tiltak");
       setData(payload as Payload);
+      // Owner-only read. A metadata API error must not hide Search Console data
+      // or imply there are zero Google connections.
+      const metadataResponse = await fetch("/api/agents/seo-metadata", {
+        cache: "no-store", credentials: "same-origin",
+      }).catch(() => null);
+      if (metadataResponse?.ok) {
+        const metadata = await metadataResponse.json().catch(() => ({}));
+        setZenEcoOverrides(Array.isArray(metadata.pages) ? metadata.pages : []);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sams data er utilgjengelige");
     } finally {
@@ -100,6 +117,25 @@ export function SamSEOActionBoard() {
     }
   }, []);
   useEffect(() => { void read(false); }, [read]);
+
+  const rollbackZenEco = useCallback(async (page: ZenEcoOverride) => {
+    setRollbackBusy(page.page_path);
+    setMetadataError("");
+    try {
+      const response = await fetch("/api/agents/seo-metadata", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rollback", path: page.page_path,
+          expectedRevision: page.revision }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Tilbakeføringen feilet");
+      setRollbackConfirm(null);
+      await read(false);
+    } catch (cause) {
+      setMetadataError(cause instanceof Error ? cause.message : "Tilbakeføringen feilet");
+    } finally { setRollbackBusy(null); }
+  }, [read]);
 
   const disconnected = data?.connections.filter(item => !item.registered) || [];
   const savedButUnreadable = data?.connections.filter(item => item.registered && !item.connected) || [];
@@ -190,6 +226,37 @@ export function SamSEOActionBoard() {
               </>
             ) : <p className="mt-2 text-xs">Første planlagte automatiske målesyklus er ennå ikke lagret.</p>}
           </div>
+          {zenEcoOverrides.some(item => item.active) && (
+            <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+              <h3 className="font-black">Zen Eco Homes · publiserte metadataendringer</h3>
+              <p className="mt-1 text-xs">Kun fire forhåndsgodkjente landingssider. Tilbakeføring deaktiverer den lagrede versjonen og gjenoppretter sidens opprinnelige metadata ved neste regenerering; den endrer ikke boligdata eller sideinnhold.</p>
+              {zenEcoOverrides.filter(item => item.active).map(item => (
+                <div key={item.page_path} className="mt-2 rounded-lg border border-amber-200 bg-white p-3 text-sm">
+                  <p className="font-bold">{item.page_path} · versjon {item.revision}</p>
+                  <p className="mt-1 text-xs">{item.seo_title}</p>
+                  {rollbackConfirm === item.page_path ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" disabled={rollbackBusy !== null}
+                        className="rounded-lg bg-red-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                        onClick={() => void rollbackZenEco(item)}>
+                        {rollbackBusy === item.page_path ? "Tilbakefører…" : "Bekreft tilbakeføring"}
+                      </button>
+                      <button type="button" disabled={rollbackBusy !== null}
+                        className="rounded-lg border border-amber-400 px-3 py-2 text-xs font-bold"
+                        onClick={() => setRollbackConfirm(null)}>Avbryt</button>
+                    </div>
+                  ) : (
+                    <button type="button" disabled={rollbackBusy !== null}
+                      className="mt-2 rounded-lg border border-amber-400 px-3 py-2 text-xs font-bold disabled:opacity-50"
+                      onClick={() => setRollbackConfirm(item.page_path)}>
+                      Tilbakefør metadata
+                    </button>
+                  )}
+                </div>
+              ))}
+              {metadataError && <p role="alert" className="mt-2 text-sm font-bold text-red-900">{metadataError}</p>}
+            </div>
+          )}
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-emerald-800">Åpne SEO-tiltak</p>
