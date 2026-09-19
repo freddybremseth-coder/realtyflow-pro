@@ -229,7 +229,7 @@ export async function auditOneSite(
   if (sitemapCheck.status === "fulfilled" &&
       sitemapCheck.value.status === 200 &&
       audit.sitemap.xmlLike &&
-      !/<sitemapindex(?:\\s|>)/i.test(sitemapCheck.value.body)) {
+      !/<sitemapindex(?:\s|>)/i.test(sitemapCheck.value.body)) {
     const targets = choosePublicSitemapPages(sitemapCheck.value.body, target.base, 3);
     const sampled = await Promise.allSettled(targets.map(url => fetcher(url)));
     sampled.forEach((result, index) => {
@@ -244,7 +244,7 @@ export async function auditOneSite(
       if (page.issue) audit.observations.push(page.issue);
     });
   } else if (sitemapCheck.status === "fulfilled" &&
-             /<sitemapindex(?:\\s|>)/i.test(sitemapCheck.value.body)) {
+             /<sitemapindex(?:\s|>)/i.test(sitemapCheck.value.body)) {
     audit.limitations.push("Sitemap index returned; child sitemaps are not crawled in this bounded audit.");
   }
 
