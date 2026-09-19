@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const readings: StoredSearchConsole[] = request.nextUrl.searchParams.get("live") === "1"
       ? await readGSCAllBrands()
       : (Array.isArray(stored?.google_search_console) ? stored.google_search_console : []);
-    const known = new Set(connections.filter(item => item.connected).map(item => item.brandId));
+    const known = new Set<string>(connections.filter(item => item.connected).map(item => item.brandId));
     const snapshots = readings.filter((item): item is StoredSearchConsole & { result: GSCBrandSnapshot } =>
       item.status === "connected" && item.result !== null && known.has(item.brandId))
       .map(item => item.result);
