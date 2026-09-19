@@ -36,7 +36,7 @@ export function parseTrackedSEOChange(raw: unknown): TrackedSEOChange | null {
   const impressions = Number(x.baseline_impressions);
   const clicks = Number(x.baseline_clicks);
   const position = Number(x.baseline_position);
-  if (!/^[a-z0-9-]{5,90}$/.test(changeId) ||
+  if (!/^[a-z0-9_-]{5,90}$/.test(changeId) ||
       !["freddyb", "zeneco"].includes(brandId) ||
       !/^\/(?!\/)[a-z0-9/_-]*\/?$/i.test(page) ||
       !query || query.length > 180 ||
