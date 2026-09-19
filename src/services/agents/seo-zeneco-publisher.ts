@@ -179,6 +179,12 @@ export async function runZenEcoMetadataPublisher(
     path: candidate.path, title: candidate.title, description: candidate.description,
     expectedRevision: 0, changeId, action: "apply",
   });
+  if (!row.changed) {
+    // Another cron invocation already claimed this immutable change ID.
+    // Never create a second partial audit or roll back its legitimate revision.
+    return { status: "pending", reason: "Dette metadataforsøket er allerede registrert og avventer kontroll.",
+      page: candidate.path, published: 0 };
+  }
   const { error: attemptError } = await supabase.from("automation_logs").insert({
     action: ACTION, agent_name: "Sam SEO Expert", status: "partial",
     details: {
