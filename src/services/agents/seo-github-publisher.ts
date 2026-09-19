@@ -150,3 +150,139 @@ export function applyFreddyHtmlMetaChange(
   if (bodyBefore !== bodyAfter) throw new Error("SEO pilot attempted to modify page body");
   return next;
 }
+
+
+type GithubContentResponse = {
+  sha?: string; content?: string; encoding?: string;
+};
+
+async function readGithubFile(target: PublisherTarget, path: string, token: string, ref = target.branch) {
+  const response = await githubJson(
+    "https://api.github.com/repos/" + target.repository + "/contents/" +
+      path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(ref),
+    token,
+  );
+  if (!response.ok) throw new Error("GitHub target read failed: HTTP " + response.status);
+  const data = response.data as GithubContentResponse;
+  if (typeof data.sha !== "string" || typeof data.content !== "string" || data.encoding !== "base64") {
+    throw new Error("GitHub target file payload is incomplete");
+  }
+  return {
+    sha: data.sha,
+    content: Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf8"),
+  };
+}
+
+export type GithubSeoPublishResult = {
+  repository: string; path: string; previousBlobSha: string;
+  previousRef: string; commitSha: string;
+};
+
+/**
+ * Versioned, exact-file write for the Freddy pilot. The caller must have
+ * independently passed seoPublicWriteAllowed(). This function cannot choose
+ * a page and cannot alter body copy.
+ */
+export async function publishFreddySeoMetaChange(input: {
+  page: string; title?: string; description?: string; expectedCurrentBlobSha?: string;
+}): Promise<GithubSeoPublishResult> {
+  const target = TARGETS.freddyb;
+  const path = supportedFreddySeoPage(input.page);
+  if (!path) throw new Error("Freddy SEO page is outside the approved publisher map");
+  const token = process.env.GITHUB_TOKEN || "";
+  if (!token) throw new Error("GITHUB_TOKEN missing");
+
+  const status = await verifyGithubSeoPublisher("freddyb");
+  if (!status.ready) throw new Error("Freddy GitHub publisher is not verified: " + status.reason);
+
+  const branchRef = await githubJson(
+    "https://api.github.com/repos/" + target.repository + "/git/ref/heads/" + target.branch,
+    token,
+  );
+  const object = branchRef.data.object && typeof branchRef.data.object === "object"
+    ? branchRef.data.object as Record<string, unknown> : {};
+  const previousRef = typeof object.sha === "string" ? object.sha : "";
+  if (!branchRef.ok || !/^[0-9a-f]{40}$/i.test(previousRef)) {
+    throw new Error("Cannot verify current GitHub branch head");
+  }
+
+  const current = await readGithubFile(target, path, token);
+  if (input.expectedCurrentBlobSha && current.sha !== input.expectedCurrentBlobSha) {
+    throw new Error("SEO target changed since the plan was created; aborting instead of overwriting");
+  }
+  const next = applyFreddyHtmlMetaChange(current.content, input);
+  if (next === current.content) throw new Error("SEO change produced no file change");
+
+  const write = await fetch(
+    "https://api.github.com/repos/" + target.repository + "/contents/" +
+      path.split("/").map(encodeURIComponent).join("/"),
+    {
+      method: "PUT",
+      headers: { ...githubHeaders(token), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Sam SEO: bounded metadata improvement for " + input.page,
+        content: Buffer.from(next, "utf8").toString("base64"),
+        sha: current.sha,
+        branch: target.branch,
+      }),
+      signal: AbortSignal.timeout(12000),
+    },
+  );
+  const body = await write.json().catch(() => ({})) as Record<string, unknown>;
+  const commit = body.commit && typeof body.commit === "object"
+    ? body.commit as Record<string, unknown> : {};
+  const commitSha = typeof commit.sha === "string" ? commit.sha : "";
+  if (!write.ok || !/^[0-9a-f]{40}$/i.test(commitSha)) {
+    throw new Error("GitHub SEO write failed: HTTP " + write.status);
+  }
+  return {
+    repository: target.repository, path,
+    previousBlobSha: current.sha, previousRef, commitSha,
+  };
+}
+
+export async function rollbackFreddySeoMetaChange(input: {
+  path: string; previousRef: string; expectedCurrentBlobSha?: string;
+}): Promise<{ commitSha: string }> {
+  const target = TARGETS.freddyb;
+  const allowed = new Set(Object.values({
+    root: "index.html", es: "es/index.html", en: "en/index.html",
+    fr: "fr/index.html", de: "de/index.html", ru: "ru/index.html",
+  }));
+  if (!allowed.has(input.path) || !/^[0-9a-f]{40}$/i.test(input.previousRef)) {
+    throw new Error("Rollback target is outside the approved Freddy SEO map");
+  }
+  const token = process.env.GITHUB_TOKEN || "";
+  if (!token) throw new Error("GITHUB_TOKEN missing");
+
+  const current = await readGithubFile(target, input.path, token);
+  if (input.expectedCurrentBlobSha && current.sha !== input.expectedCurrentBlobSha) {
+    throw new Error("Rollback target changed after SEO publication; manual review required");
+  }
+  const previous = await readGithubFile(target, input.path, token, input.previousRef);
+  if (previous.content === current.content) return { commitSha: input.previousRef };
+
+  const response = await fetch(
+    "https://api.github.com/repos/" + target.repository + "/contents/" +
+      input.path.split("/").map(encodeURIComponent).join("/"),
+    {
+      method: "PUT",
+      headers: { ...githubHeaders(token), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Sam SEO: rollback bounded metadata change",
+        content: Buffer.from(previous.content, "utf8").toString("base64"),
+        sha: current.sha,
+        branch: target.branch,
+      }),
+      signal: AbortSignal.timeout(12000),
+    },
+  );
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const commit = body.commit && typeof body.commit === "object"
+    ? body.commit as Record<string, unknown> : {};
+  const commitSha = typeof commit.sha === "string" ? commit.sha : "";
+  if (!response.ok || !/^[0-9a-f]{40}$/i.test(commitSha)) {
+    throw new Error("GitHub SEO rollback failed: HTTP " + response.status);
+  }
+  return { commitSha };
+}
