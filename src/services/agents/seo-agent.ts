@@ -1,3 +1,4 @@
+import { getSEOLeadSignals, type SEOLeadSummary } from "./seo-leads";
 import { SEO_SKILLS, SEO_SENIOR_OPERATING_RULES } from "./seo-skills";
 import { auditSEOPortfolio, type SiteAudit } from "./seo-audit";
 import { getSEOObservedSignals } from "./seo-data";
@@ -214,12 +215,13 @@ Gi anbefalinger for:
    * Produces read-only proposals. Execution/publication remains separately gated.
    */
   async portfolioGrowthReview(
-    inputs: { signals?: Awaited<ReturnType<typeof getSEOObservedSignals>>; audits?: SiteAudit[] } = {},
+    inputs: { signals?: Awaited<ReturnType<typeof getSEOObservedSignals>>; audits?: SiteAudit[]; leads?: SEOLeadSummary } = {},
   ): Promise<string> {
     // One read per review, not two shifting windows or duplicate external calls.
-    const [signals, audits] = await Promise.all([
+    const [signals, audits, leads] = await Promise.all([
       inputs.signals ? Promise.resolve(inputs.signals) : getSEOObservedSignals(),
       inputs.audits ? Promise.resolve(inputs.audits) : auditSEOPortfolio(),
+      inputs.leads ? Promise.resolve(inputs.leads) : getSEOLeadSignals(),
     ]);
     const verifiedFindings = audits.flatMap(site =>
       site.observations.map(observation => "[" + site.brandId + "] " + observation)
@@ -232,6 +234,8 @@ Gi anbefalinger for:
       return [
         "Sam SEO: teknisk kontroll av syv offentlige nettsteder og RealtyFlows målte henvisninger.",
         "Målte søke-/AI-henvisninger siste 30 dager: " + signals.totals.current + ". Dette er ikke et mål på total søketrafikk.",
+        "Målte henvendelser fra website_lead-arbeidsoppgaver siste 30 dager: " + leads.totals.current + ". Disse er ikke dokumenterte organiske søkeleads eller unike kunder.",
+        "Henvendelser med verifisert kildeside: " + leads.dataQuality.leadsWithPage + "; uten: " + leads.dataQuality.leadsWithoutPage + ". " + leads.dataQuality.note,
         signals.dataQuality.truncated
           ? "Henvisningsdataene er avkortet ved 10 000 rader. Ingen pålitelig fullstendig tidsseriesammenligning."
           : "Ingen målte henvisninger i gjeldende vindu. Sporings- og datakildekontroll må prioriteres, ikke oppdiktede søkeord eller vekstprosent.",
@@ -253,6 +257,8 @@ Gi anbefalinger for:
       "Velg relevante seniorkompetanser i SEO_SKILLS, men ikke simuler behovsstyrte connectors eller påstå en endring er publisert.",
       "Dette er gjennomgangsforslag; alle live endringer krever separat godkjenning.",
       "Henvisningsdata: " + JSON.stringify(signals),
+      "Nettsidehenvendelser, KUN aggregater uten persondata: " + JSON.stringify(leads),
+      "Besøk og henvendelser har ingen verifisert felles session-ID. Du kan ikke beregne ekte organisk konverteringsrate eller tilskrive Google et lead basert på URL alene.",
       "Teknisk audit: " + JSON.stringify(audits),
     ].join("\n"), this.getSystemPrompt());
   }
