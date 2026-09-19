@@ -377,6 +377,9 @@ export default function AgentsCommandCenter() {
   const [seoReview, setSeoReview] = useState<{
     signals: { totals: { current: number; previous: number; search: number; ai: number };
       dataQuality: { note: string | null; keywordsAvailable: boolean } };
+    leads: { totals: { current: number; previous: number };
+      dataQuality: { leadsWithPage: number; leadsWithoutPage: number; note: string };
+      byBrand: Array<{ brandId: string; current: number; withPage: number; withoutPage: number }> };
     latest: { at: string; status: string; report: string; technicalFindings?: number | null } | null;
     skills: Array<{ id: string; domain: string; expertise: string; availability: "measured" | "advisory" | "needs_connection"; evidence: string }>;
     capabilitySummary: { measured: number; advisory: number; needsConnection: number };
@@ -972,7 +975,7 @@ export default function AgentsCommandCenter() {
               <strong className="text-emerald-300">Sam SEO · kontinuerlig, databasert gjennomgang</strong>
               <p className="text-slate-300 text-xs mt-1">
                 {seoReview
-                  ? `Målte henvisninger siste 30 dager: ${seoReview.signals.totals.current} · søk ${seoReview.signals.totals.search} · AI ${seoReview.signals.totals.ai}. Søkeord krever Search Console/Bing-data.`
+                  ? `Målte henvisninger siste 30 dager: ${seoReview.signals.totals.current} · søk ${seoReview.signals.totals.search} · AI ${seoReview.signals.totals.ai}. Nettsidehenvendelser (alle kilder): ${seoReview.leads.totals.current}; med kildeside ${seoReview.leads.dataQuality.leadsWithPage}, uten kildeside ${seoReview.leads.dataQuality.leadsWithoutPage}. Dette er ikke dokumenterte organiske leads. Søkeord krever Search Console/Bing-data.`
                   : seoReviewError || "Henter SEO-statistikk fra RealtyFlow…"}
               </p>
             </div>
@@ -986,6 +989,9 @@ export default function AgentsCommandCenter() {
               </button>
             )}
           </div>
+          {seoReview?.leads.dataQuality.note && (
+            <p className="text-amber-300 mt-2 text-xs">{seoReview.leads.dataQuality.note}</p>
+          )}
           {seoReview?.signals.dataQuality.note && (
             <p className="text-amber-300 mt-2 text-xs">{seoReview.signals.dataQuality.note}</p>
           )}
