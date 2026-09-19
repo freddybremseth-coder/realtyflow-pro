@@ -23,6 +23,13 @@ type Metric = {
 type Payload = {
   actions: Action[]; observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
   connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
+  changeEvaluations: Array<{
+    changeId: string; brandId: string; page: string; query: string; commitSha: string;
+    status: "waiting" | "unavailable" | "incomplete" | "measured";
+    baseline: { start: string; end: string; impressions: number; clicks: number; position: number };
+    current: { start: string; end: string; impressions: number; clicks: number; position: number } | null;
+    note: string;
+  }>;
   lastGoogleReadAt: string | null;
   readingMode: "live" | "last_review" | "last_live_read"; readErrors: Array<{ brandId: string; error: string }>;
   connectionSummary: { registered: number; readable: number; measured: number };
@@ -102,8 +109,9 @@ export function SamSEOActionBoard() {
           <h2 className="mt-2 text-2xl font-black text-slate-950">Anbefalinger og tiltak – synlige her</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
             Søkeord, landingssider og tekniske funn kobles til konkrete oppgaver. Her ser du hvorfor
-            noe skal gjøres, hvilken måling som ligger bak, og hva neste steg er. Ingen nettsideendringer
-            eller publiseringer skjer fra dette panelet uten separat godkjent flyt.
+            noe skal gjøres, hvilken måling som ligger bak, og hva neste steg er. Små, reversible
+            SEO-justeringer kan gjennomføres innenfor den godkjente pilotrammen når publiseringskanal
+            og tilbakeføring er kontrollert. Større endringer krever egen godkjenning.
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-600">
             {data?.latestReviewAt ? "Siste SEO-gjennomgang: " + date(data.latestReviewAt) : "Ingen samlet SEO-gjennomgang lagret"}
@@ -272,6 +280,25 @@ export function SamSEOActionBoard() {
                 ))}
               </div>
             </div>
+          )}
+          {data.changeEvaluations?.length > 0 && (
+            <section aria-label="Automatisk måling av SEO-endringer"
+              className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+              <h3 className="font-black">Sam måler gjennomførte SEO-forbedringer</h3>
+              <p className="mt-1 text-sm">Avgrensede, dokumenterte endringer krever ikke en ny godkjenningsoppgave. Sam sammenligner samme Google-søk og side etter en hel 30-dagersperiode uten overlapp med tiden før endringen.</p>
+              {data.changeEvaluations.map(change => (
+                <article key={change.changeId} className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
+                  <p className="font-bold">{LABELS[change.brandId] || change.brandId} · {change.page} · «{change.query}»</p>
+                  <p className="mt-1">Før endringen ({change.baseline.start}–{change.baseline.end}):
+                    {" "}{change.baseline.impressions} Google-visninger og {change.baseline.clicks} klikk.</p>
+                  {change.current && <p className="mt-1 font-semibold">
+                    Etter endringen ({change.current.start}–{change.current.end}):
+                    {" "}{change.current.impressions} Google-visninger og {change.current.clicks} klikk.
+                  </p>}
+                  <p className="mt-1 text-xs text-slate-700">{change.note}</p>
+                </article>
+              ))}
+            </section>
           )}
           <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-lg font-black text-slate-950">Dette bør Sam følge opp</h3>
