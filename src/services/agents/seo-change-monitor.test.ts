@@ -64,3 +64,22 @@ test("Missing, unmeasured or truncated Google data does not produce a false zero
   truncated.dataQuality.truncated = true;
   assert.equal(evaluateTrackedSEOChanges([change], [truncated])[0].status, "incomplete");
 });
+
+test("Confirmed Zen metadata revision is tracked without inventing a Git commit", () => {
+  const zen = parseTrackedSEOChange({
+    change_id: "zeneco_bolig_i_spania_20260916", brand_id: "zeneco",
+    page: "/bolig-i-spania", query: "bolig i spania", metadata_revision: 1,
+    site_verified: true, applied_at: "2026-09-19T13:00:00Z",
+    baseline_period_start: "2026-08-18", baseline_period_end: "2026-09-16",
+    baseline_impressions: 50, baseline_clicks: 0, baseline_position: 7,
+  });
+  assert.equal(zen?.commitSha, null);
+  assert.equal(zen?.metadataRevision, 1);
+  assert.equal(parseTrackedSEOChange({
+    change_id: "zeneco_bolig_i_spania_20260916", brand_id: "zeneco",
+    page: "/bolig-i-spania", query: "bolig i spania", metadata_revision: 1,
+    site_verified: false, applied_at: "2026-09-19T13:00:00Z",
+    baseline_period_start: "2026-08-18", baseline_period_end: "2026-09-16",
+    baseline_impressions: 50, baseline_clicks: 0, baseline_position: 7,
+  }), null);
+});

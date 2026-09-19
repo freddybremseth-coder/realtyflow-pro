@@ -4,11 +4,11 @@ import type { GSCBrandSnapshot } from "./seo-search-console";
  * low-risk SEO change. Never edits a live site or auto-reverts on noisy data. */
 export type TrackedSEOChange = {
   changeId: string; brandId: string; page: string; query: string;
-  appliedAt: string; commitSha: string;
+  appliedAt: string; commitSha: string | null; metadataRevision: number | null;
   baseline: { start: string; end: string; impressions: number; clicks: number; position: number };
 };
 export type SEOChangeEvaluation = {
-  changeId: string; brandId: string; page: string; query: string; commitSha: string;
+  changeId: string; brandId: string; page: string; query: string; commitSha: string | null; metadataRevision: number | null;
   status: "waiting" | "unavailable" | "incomplete" | "measured";
   baseline: TrackedSEOChange["baseline"];
   current: { start: string; end: string; impressions: number; clicks: number; position: number } | null;
@@ -28,23 +28,28 @@ export function parseTrackedSEOChange(raw: unknown): TrackedSEOChange | null {
   const query = String(x.query || "");
   const appliedAt = String(x.applied_at || "");
   const commitSha = String(x.commit_sha || "");
+  const metadataRevision = x.metadata_revision === undefined ? null : Number(x.metadata_revision);
+  const hasSourceRevision = Number.isInteger(metadataRevision) && metadataRevision !== null &&
+    metadataRevision >= 1 && metadataRevision <= 9999 && brandId === "zeneco" && x.site_verified === true;
   const start = String(x.baseline_period_start || "");
   const end = String(x.baseline_period_end || "");
   const impressions = Number(x.baseline_impressions);
   const clicks = Number(x.baseline_clicks);
   const position = Number(x.baseline_position);
-  if (!/^[a-z0-9-]{5,90}$/.test(changeId) ||
+  if (!/^[a-z0-9_-]{5,90}$/.test(changeId) ||
       !["freddyb", "zeneco"].includes(brandId) ||
       !/^\/(?!\/)[a-z0-9/_-]*\/?$/i.test(page) ||
       !query || query.length > 180 ||
       !/^\d{4}-\d{2}-\d{2}T/.test(appliedAt) || !Number.isFinite(Date.parse(appliedAt)) ||
-      !/^[0-9a-f]{40}$/i.test(commitSha) ||
+      (!/^[0-9a-f]{40}$/i.test(commitSha) && !hasSourceRevision) ||
       !/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) ||
       !Number.isFinite(impressions) || impressions < 0 ||
       !Number.isFinite(clicks) || clicks < 0 || clicks > impressions ||
       !Number.isFinite(position) || position < 0) return null;
   return {
-    changeId, brandId, page, query, appliedAt, commitSha,
+    changeId, brandId, page, query, appliedAt,
+    commitSha: /^[0-9a-f]{40}$/i.test(commitSha) ? commitSha : null,
+    metadataRevision: hasSourceRevision ? metadataRevision : null,
     baseline: { start, end, impressions, clicks, position },
   };
 }
@@ -61,7 +66,8 @@ export function evaluateTrackedSEOChanges(
   return changes.map(change => {
     const base = {
       changeId: change.changeId, brandId: change.brandId, page: change.page,
-      query: change.query, commitSha: change.commitSha, baseline: change.baseline,
+      query: change.query, commitSha: change.commitSha,
+      metadataRevision: change.metadataRevision, baseline: change.baseline,
     };
     const snapshot = snapshots.find(item => item.brandId === change.brandId);
     if (!snapshot) return {
