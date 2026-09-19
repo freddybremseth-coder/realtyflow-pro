@@ -189,7 +189,7 @@ export async function GET(req: NextRequest) {
         platform: state.platform === "google_drive" ? "google_drive" : "youtube",
         channel: channels[0],
         accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
+        refreshToken: tokenData.refresh_token || null,
         expiresAt: tokenData.expires_in
           ? new Date(Date.now() + tokenData.expires_in * 1000)
           : null,
