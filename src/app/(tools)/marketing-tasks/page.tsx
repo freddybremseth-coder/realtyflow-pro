@@ -42,6 +42,12 @@ const platforms = ["HUB", "Brand", "KDP", "Instagram", "Facebook", "LinkedIn", "
  * publication, KDP metadata and manual decisions stay with the owner. */
 function isAgentQueue(task: Task): boolean {
   if (task.synthetic) return false;
+  // Buyer-profile conflicts, intake reviews and commercial activation decisions
+  // are genuine human review tasks even when assigned to an AI-labelled agent.
+  const kind = String(task.metadata?.kind || "");
+  if (/review|conflict|approval|activation/i.test(kind)) return false;
+  if (task.metadata?.buyer_profile_review_required === true ||
+      task.metadata?.buyer_profile_revision_required === true) return false;
   if (task.metadata?.needs_editor_approval === true ||
       task.metadata?.requires_approval === true ||
       task.metadata?.external_action_executed === true ||
