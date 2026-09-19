@@ -1,58 +1,224 @@
 {
   "crons": [
-    { "path": "/api/neural-beat/cron", "schedule": "0 20 * * *" },
-    { "path": "/api/neural-beat/thumbnail-ab", "schedule": "0 11 * * *" },
-    { "path": "/api/neural-beat/shorts-followup", "schedule": "0 15 * * *" },
-    { "path": "/api/neural-beat/weekly-mix", "schedule": "0 10 * * 6" },
-    { "path": "/api/cron/email-ingest", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/email-history-backfill", "schedule": "4-59/5 * * * *" },
-    { "path": "/api/cron/nexus-criteria-confirmation", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/email-auto-draft", "schedule": "1-59/5 * * * *" },
-    { "path": "/api/cron/email-crm-sync", "schedule": "2-59/5 * * * *" },
-    { "path": "/api/cron/nexus-buyer-profile-sync", "schedule": "3-59/5 * * * *" },
-    { "path": "/api/cron/nexus-property-feedback", "schedule": "3-59/5 * * * *" },
-    { "path": "/api/cron/nexus-viewing-coach", "schedule": "11,26,41,56 * * * *" },
-    { "path": "/api/cron/nexus-property-match-prep", "schedule": "4-59/5 * * * *" },
-    { "path": "/api/cron/nexus-shortlist-prep", "schedule": "5-59/5 * * * *" },
-    { "path": "/api/cron/nexus-presentation-prep", "schedule": "6-59/5 * * * *" },
-    { "path": "/api/cron/nexus-no-match-followup", "schedule": "7-59/5 * * * *" },
-    { "path": "/api/cron/nexus-send-preflight", "schedule": "8-59/5 * * * *" },
-    { "path": "/api/cron/nexus-property-recommendation-send", "schedule": "9-59/5 * * * *" },
-    { "path": "/api/cron/nexus-outcome-snapshot", "schedule": "12 * * * *" },
-    { "path": "/api/cron/nexus-commercial-activation", "schedule": "13 * * * *" },
-    { "path": "/api/cron/nexus-revenue-learning", "schedule": "45 6 * * *" },
-    { "path": "/api/cron/communications-learning", "schedule": "20 21 * * *" },
-    { "path": "/api/cron/movement-recommendation-snapshot", "schedule": "30 5 * * *" },
-    { "path": "/api/cron/market-data", "schedule": "0 14 * * *" },
-    { "path": "/api/cron/weekly-report", "schedule": "0 21 * * 1" },
-    { "path": "/api/cron/growth-engine", "schedule": "0 15 * * *" },
-    { "path": "/api/cron/saas-scanner", "schedule": "0 22 * * 1" },
-    { "path": "/api/cron/saas-entitlements", "schedule": "30 6 * * *" },
-    { "path": "/api/cron/property-scanner", "schedule": "0 18 * * 0" },
-    { "path": "/api/cron/property-marketing", "schedule": "0 16 * * *" },
-    { "path": "/api/cron/property-editorial", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/property-conversion-editorial", "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/property-feed-source-refresh", "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/auto-publish", "schedule": "0 17 * * *" },
-    { "path": "/api/cron/trending-tags", "schedule": "0 13 * * 1" },
-    { "path": "/api/cron/storage-archive", "schedule": "30 18 * * *" },
-    { "path": "/api/cron/publishing-autopilot", "schedule": "45 17 * * *" },
-    { "path": "/api/cron/publishing-growth-loop", "schedule": "15 17 * * *" },
-    { "path": "/api/cron/publishing-market-watch", "schedule": "30 17 * * *" },
-    { "path": "/api/cron/book-distribution", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/marketing-autopilot", "schedule": "0 * * * *" },
-    { "path": "/api/cron/marketing-run-lifecycle-reconcile", "schedule": "2,17,32,47 * * * *" },
-    { "path": "/api/cron/nexus-opportunity-sync", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/nexus-mission-autopilot", "schedule": "5,20,35,50 * * * *" },
-    { "path": "/api/cron/remaster-source-sync", "schedule": "40 * * * *" },
-    { "path": "/api/cron/remaster-health-monitor", "schedule": "50 * * * *" },
-    { "path": "/api/cron/remaster-mix-worker", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/remaster-playlist-recovery", "schedule": "5,20,35,50 * * * *" },
-    { "path": "/api/cron/remaster-youtube-public-reconcile", "schedule": "25 4 * * *" },
-    { "path": "/api/cron/marketing-growth-metrics", "schedule": "10 19 * * *" },
-    { "path": "/api/cron/remaster-analytics-snapshot", "schedule": "20 19 * * *" },
-    { "path": "/api/cron/remaster-growth-loop", "schedule": "35 19 * * *" },
-    { "path": "/api/cron/lead-nurture", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/demosites-followup", "schedule": "0 8 * * *" }
+    {
+      "path": "/api/neural-beat/cron",
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/neural-beat/thumbnail-ab",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/neural-beat/shorts-followup",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/neural-beat/weekly-mix",
+      "schedule": "0 10 * * 6"
+    },
+    {
+      "path": "/api/cron/email-ingest",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/email-history-backfill",
+      "schedule": "4-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-criteria-confirmation",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/email-auto-draft",
+      "schedule": "1-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/email-crm-sync",
+      "schedule": "2-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-buyer-profile-sync",
+      "schedule": "3-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-property-feedback",
+      "schedule": "3-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-viewing-coach",
+      "schedule": "11,26,41,56 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-property-match-prep",
+      "schedule": "4-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-shortlist-prep",
+      "schedule": "5-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-presentation-prep",
+      "schedule": "6-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-no-match-followup",
+      "schedule": "7-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-send-preflight",
+      "schedule": "8-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-property-recommendation-send",
+      "schedule": "9-59/5 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-outcome-snapshot",
+      "schedule": "12 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-commercial-activation",
+      "schedule": "13 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-revenue-learning",
+      "schedule": "45 6 * * *"
+    },
+    {
+      "path": "/api/cron/communications-learning",
+      "schedule": "20 21 * * *"
+    },
+    {
+      "path": "/api/cron/movement-recommendation-snapshot",
+      "schedule": "30 5 * * *"
+    },
+    {
+      "path": "/api/cron/market-data",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-report",
+      "schedule": "0 21 * * 1"
+    },
+    {
+      "path": "/api/cron/growth-engine",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/saas-scanner",
+      "schedule": "0 22 * * 1"
+    },
+    {
+      "path": "/api/cron/saas-entitlements",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/property-scanner",
+      "schedule": "0 18 * * 0"
+    },
+    {
+      "path": "/api/cron/property-marketing",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/cron/property-editorial",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/property-conversion-editorial",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/property-feed-source-refresh",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/auto-publish",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/trending-tags",
+      "schedule": "0 13 * * 1"
+    },
+    {
+      "path": "/api/cron/storage-archive",
+      "schedule": "30 18 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-autopilot",
+      "schedule": "45 17 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-growth-loop",
+      "schedule": "15 17 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-market-watch",
+      "schedule": "30 17 * * *"
+    },
+    {
+      "path": "/api/cron/book-distribution",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-autopilot",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-run-lifecycle-reconcile",
+      "schedule": "2,17,32,47 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-opportunity-sync",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/nexus-mission-autopilot",
+      "schedule": "5,20,35,50 * * * *"
+    },
+    {
+      "path": "/api/cron/remaster-source-sync",
+      "schedule": "40 * * * *"
+    },
+    {
+      "path": "/api/cron/remaster-health-monitor",
+      "schedule": "50 * * * *"
+    },
+    {
+      "path": "/api/cron/remaster-mix-worker",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/remaster-playlist-recovery",
+      "schedule": "5,20,35,50 * * * *"
+    },
+    {
+      "path": "/api/cron/remaster-youtube-public-reconcile",
+      "schedule": "25 4 * * *"
+    },
+    {
+      "path": "/api/cron/marketing-growth-metrics",
+      "schedule": "10 19 * * *"
+    },
+    {
+      "path": "/api/cron/remaster-analytics-snapshot",
+      "schedule": "20 19 * * *"
+    },
+    {
+      "path": "/api/cron/remaster-growth-loop",
+      "schedule": "35 19 * * *"
+    },
+    {
+      "path": "/api/cron/lead-nurture",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/demosites-followup",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/seo-growth-review",
+      "schedule": "15 7 * * 1"
+    }
   ]
 }
