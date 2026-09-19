@@ -438,6 +438,13 @@ async function executeStep(
     }
 
     case 'analytics': {
+      // SEO / AEO / GEO analytics must use the verified referral signal source,
+      // not the generic CRM/YouTube analytics prompt that lacks search data.
+      if (step.agent === 'seo' || /søkeord|søkedata|search.console|organisk|aeo|geo|seo|ai-sitering/i.test(step.description)) {
+        const result = await orchestrator.executeCommand('seo', 'Analyser faktiske SEO-statistikk- og henvisningsdata for hele porteføljen: ' + step.description);
+        if (result.status !== 'success') throw new Error(result.output);
+        return { summary: result.output, data: { source: 'search_discovery_events', metric: 'referral_arrivals', published: false } };
+      }
       if (!supabase) throw new Error('Database ikke tilgjengelig');
 
       // Gather real data from all sources
