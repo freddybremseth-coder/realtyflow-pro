@@ -9,6 +9,7 @@ import { CheckSquare, Plus, GripVertical, X, Loader2, AlertTriangle } from "luci
 
 type TaskStatus = "TO_DO" | "IN_PROGRESS" | "REVIEW" | "DONE";
 type TaskPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+type QueueView = "decisions" | "agent" | "all" | "done";
 
 interface Task {
   id: string;
@@ -36,6 +37,21 @@ const cols: { key: TaskStatus; label: string; color: string }[] = [
 const priorityColors = { CRITICAL: "destructive" as const, HIGH: "destructive" as const, MEDIUM: "warning" as const, LOW: "secondary" as const };
 const platforms = ["HUB", "Brand", "KDP", "Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok", "Email", "Twitter", "Website"];
 
+/** A queue assignment is not approval or execution. Only documented low-risk
+ * internal work belongs to the agent queue; customer communications, external
+ * publication, KDP metadata and manual decisions stay with the owner. */
+function isAgentQueue(task: Task): boolean {
+  if (task.synthetic) return false;
+  if (task.metadata?.needs_editor_approval === true ||
+      task.metadata?.requires_approval === true ||
+      task.metadata?.external_action_executed === true ||
+      task.sourceType === "kdp" || task.sourceType === "publishing" ||
+      task.sourceType === "manual" || task.sourceType === "website_lead" ||
+      task.sourceType === "crm") return false;
+  return task.sourceType === "ai_agent" &&
+    ["lead_intelligence", "nexus_buyer_intelligence", "seo"].includes(task.platform);
+}
+
 function mapWorkItem(item: any): Task {
   return {
     id: item.id,
@@ -56,6 +72,7 @@ function mapWorkItem(item: any): Task {
 
 export default function MarketingTasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [queueView, setQueueView] = useState<QueueView>("decisions");
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -67,10 +84,11 @@ export default function MarketingTasksPage() {
   const [cleanupStatus, setCleanupStatus] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
 
-  const loadTasks = async () => {
+  const loadTasks = async (view: QueueView = queueView) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/work-items?limit=100");
+      const res = await fetch("/api/work-items?limit=600&view=" + (view === "done" ? "done" : "active"), { cache: "no-store" });
+      if (!res.ok) throw new Error("Task Hub fetch failed: " + res.status);
       const data = await res.json();
       setTasks((data.work_items || []).map(mapWorkItem));
       setTableNotReady(Boolean(data.tableNotReady));
@@ -81,7 +99,9 @@ export default function MarketingTasksPage() {
   };
 
   useEffect(() => {
-    loadTasks();
+    void loadTasks("decisions");
+    // The first load is always active work; switching tabs refreshes the queue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const moveTask = async (taskId: string, newStatus: TaskStatus) => {
@@ -271,6 +291,18 @@ export default function MarketingTasksPage() {
     }
   };
 
+  const activeTasks = tasks.filter(task => ["TO_DO", "IN_PROGRESS", "REVIEW"].includes(task.status));
+  const decisions = activeTasks.filter(task => !isAgentQueue(task));
+  const agentTasks = activeTasks.filter(isAgentQueue);
+  const visibleTasks = queueView === "decisions" ? decisions :
+    queueView === "agent" ? agentTasks : queueView === "done"
+      ? tasks.filter(task => task.status === "DONE") : activeTasks;
+
+  const switchView = (view: QueueView) => {
+    setQueueView(view);
+    if (view === "done" || queueView === "done") void loadTasks(view);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -279,7 +311,7 @@ export default function MarketingTasksPage() {
             <CheckSquare className="text-primary-400" size={28} />
             Oppgave-HUB
           </h1>
-          <p className="text-sm text-slate-400 mt-1">Én kø for leads, brand-arbeid, KDP, publisering og automasjoner</p>
+          <p className="text-sm text-slate-400 mt-1">Beslutninger som krever deg, separat fra agentenes interne arbeidsliste. Ingen oppgaver lukkes automatisk uten utført arbeid.</p>
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -299,6 +331,27 @@ export default function MarketingTasksPage() {
         </div>
       </div>
 
+      <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Vis oppgaver">
+          {([
+            ["decisions", "Mine beslutninger", decisions.length],
+            ["agent", "Intern agentkø", agentTasks.length],
+            ["all", "Alle åpne", activeTasks.length],
+            ["done", "Ferdige", queueView === "done" ? visibleTasks.length : null],
+          ] as const).map(([view, label, count]) => (
+            <Button key={view} size="sm" variant={queueView === view ? "default" : "outline"}
+              onClick={() => switchView(view)}>
+              {label}{count !== null ? " · " + count : ""}
+            </Button>
+          ))}
+        </div>
+        {queueView === "agent" && <p className="mt-2 text-xs text-amber-100">
+          Her ligger intern analyse og kjøperprofil-arbeid som kan forberedes uten ny godkjenning. Dette er ikke en bekreftelse på at agenten har utført jobben; oppgaven skal først lukkes etter dokumentert resultat. Kundemeldinger og publisering krever fortsatt separat kontroll.
+        </p>}
+        {queueView === "decisions" && <p className="mt-2 text-xs text-slate-300">
+          Bare oppgaver som trenger menneskelig vurdering eller handling. Interne agentoppgaver finnes i egen fane og er ikke godkjent eller utført bare fordi de er flyttet dit.
+        </p>}
+      </div>
       {cleanupStatus && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
           {cleanupStatus}
@@ -465,9 +518,9 @@ export default function MarketingTasksPage() {
           <Loader2 className="animate-spin text-slate-400" size={32} />
         </div>
       ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {cols.map((col) => {
-          const colTasks = tasks.filter((t) => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {cols.filter(col => queueView === "done" ? col.key === "DONE" : col.key !== "DONE").map((col) => {
+          const colTasks = visibleTasks.filter((t) => {
             if (t.status !== col.key) return false;
             if (kdpAppliedFilter === "all") return true;
             const isKdp = ["kdp", "publishing"].includes(String(t.sourceType || "").toLowerCase());
