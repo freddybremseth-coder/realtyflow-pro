@@ -29,4 +29,4 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Check Sam SEO evidence and public audit contracts
-        run: node --import tsx --test src/services/agents/seo-audit.test.ts src/services/agents/seo-skills.test.ts src/services/agents/seo-leads.test.ts src/services/agents/seo-search-console.test.ts src/services/agents/seo-page-sampler.test.ts src/services/agents/seo-priorities.test.ts src/services/agents/seo-autopilot-policy.test.ts src/services/agents/seo-change-monitor.test.ts src/services/agents/seo-zeneco-metadata.test.ts
+        run: node --import tsx --test src/services/agents/seo-audit.test.ts src/services/agents/seo-skills.test.ts src/services/agents/seo-leads.test.ts src/services/agents/seo-search-console.test.ts src/services/agents/seo-page-sampler.test.ts src/services/agents/seo-priorities.test.ts src/services/agents/seo-autopilot-policy.test.ts src/services/agents/seo-change-monitor.test.ts src/services/agents/seo-zeneco-metadata.test.ts src/services/agents/seo-zeneco-publisher.test.ts src/services/agents/seo-zeneco-metadata.test.ts
