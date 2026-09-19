@@ -34,6 +34,24 @@ async function checkReadiness(expectedDbHost: string): Promise<boolean> {
   } catch { return false; }
 }
 
+/**
+ * Confirm actual public Next.js head content, not an incidental mention in
+ * page body, scripts, OpenGraph, or HTML served for a different route.
+ */
+export function verifyZenEcoPublishedMetadataHtml(
+  html: string, path: string, title: string, description: string,
+): boolean {
+  const end = html.toLowerCase().indexOf("</head>");
+  if (end < 0) return false;
+  const head = html.slice(0, end);
+  const foundTitle = head.match(/<title>([^<]*)<\\/title>/i)?.[1] || "";
+  const descriptionTag = head.match(/<meta\\s+[^>]*name=["']description["'][^>]*>/i)?.[0] || "";
+  const foundDescription = descriptionTag.match(/\\bcontent=["']([^"']*)["']/i)?.[1] || "";
+  const canonicalTag = head.match(/<link\\s+[^>]*rel=["']canonical["'][^>]*>/i)?.[0] || "";
+  const canonical = canonicalTag.match(/\\bhref=["']([^"']*)["']/i)?.[1] || "";
+  return foundTitle === title && foundDescription === description && canonical === BASE + path;
+}
+
 async function visiblePublicMetadata(path: string, title: string, description: string): Promise<boolean> {
   // The page path comes from the literal owner-approved page allowlist, never
   // from a Google query or webhook input.
@@ -44,18 +62,7 @@ async function visiblePublicMetadata(path: string, title: string, description: s
     });
     if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return false;
     const html = (await response.text()).slice(0, 150000);
-    const end = html.toLowerCase().indexOf("</head>");
-    if (end < 0) return false;
-    const head = html.slice(0, end);
-    const foundTitle = head.match(/<title>([^<]*)<\/title>/i)?.[1] || "";
-    // Validate the real SEO meta description, not text appearing elsewhere
-    // in a script, OpenGraph tag, previous title, or unrelated page content.
-    const descriptionTag = head.match(/<meta\s+[^>]*name=["']description["'][^>]*>/i)?.[0] || "";
-    const foundDescription = descriptionTag.match(/\bcontent=["']([^"']*)["']/i)?.[1] || "";
-    const canonicalTag = head.match(/<link\s+[^>]*rel=["']canonical["'][^>]*>/i)?.[0] || "";
-    const canonical = canonicalTag.match(/\bhref=["']([^"']*)["']/i)?.[1] || "";
-    return foundTitle === title && foundDescription === description &&
-      canonical === BASE + path;
+    return verifyZenEcoPublishedMetadataHtml(html, path, title, description);
   } catch { return false; }
 }
 
