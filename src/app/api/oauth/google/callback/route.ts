@@ -14,6 +14,8 @@ import { buildRedirectUri, getGoogleCredentials } from "@/lib/oauth/providers";
 import { consumeState, createState } from "@/lib/oauth/state";
 import { checkImapConnection } from "@/services/email/imap-connection-check";
 import { repairRemasterPlaylistsWithFreshAccessToken } from "@/services/integrations/remaster-youtube-oauth-repair";
+import { getChannelsByBrand, setChannelActive } from "@/lib/oauth/channels";
+import { GSC_READ_SCOPE, listGSCProperties, selectGSCProperty } from "@/services/agents/seo-search-console";
 
 export const maxDuration = 60;
 
@@ -87,6 +89,44 @@ export async function GET(req: NextRequest) {
 
   if (service === "gmail" || state.platform === "gmail") {
     return finalizeGmailConnection(req, state, tokenData);
+  }
+
+  // Search Console is a dedicated, read-only scope and an exact per-brand
+  // verified property. Never treat a YouTube/Drive account as GSC access.
+  if (service === "search_console" || state.platform === "google_search_console") {
+    if (service !== "search_console" || state.platform !== "google_search_console") {
+      return errorRedirect(req, state.brand_id, "gsc_oauth_service_mismatch", "/agents");
+    }
+    const grantedScopes = (tokenData.scope || "").split(" ").filter(Boolean);
+    if (!grantedScopes.includes(GSC_READ_SCOPE)) {
+      return errorRedirect(req, state.brand_id, "gsc_readonly_scope_not_granted", "/agents");
+    }
+    try {
+      const authorizedProperties = await listGSCProperties(tokenData.access_token);
+      const property = selectGSCProperty(state.brand_id, authorizedProperties);
+      if (!property) {
+        return errorRedirect(req, state.brand_id, "gsc_no_verified_property_for_brand", "/agents");
+      }
+      const existing = await getChannelsByBrand(state.brand_id, "google_search_console");
+      await finalizeGoogleChannel({
+        brandId: state.brand_id,
+        platform: "google_search_console",
+        channel: { id: property, title: "Google Search Console · " + property },
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
+        scopes: grantedScopes,
+      });
+      for (const channel of existing) {
+        if (channel.external_id !== property) await setChannelActive(channel.id, false);
+      }
+      return successRedirect(req, "/agents", {
+        platform: "google_search_console", brand: state.brand_id, count: 1,
+      });
+    } catch (error) {
+      console.error("[GSC OAuth] Connection failed:", error instanceof Error ? error.message : "unknown");
+      return errorRedirect(req, state.brand_id, "gsc_property_or_token_save_failed", "/agents");
+    }
   }
 
   let channels: YouTubeChannelInfo[];

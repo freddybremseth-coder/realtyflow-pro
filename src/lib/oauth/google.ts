@@ -98,7 +98,7 @@ export async function listYouTubeChannels(accessToken: string): Promise<YouTubeC
  */
 export async function finalizeGoogleChannel(input: {
   brandId: string;
-  platform: "youtube" | "google_drive" | "gmail";
+  platform: "youtube" | "google_drive" | "gmail" | "google_search_console";
   channel: YouTubeChannelInfo;
   accessToken: string;
   refreshToken: string;

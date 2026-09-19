@@ -5,9 +5,10 @@ import { buildRedirectUri, getGoogleCredentials } from "@/lib/oauth/providers";
 import { createState } from "@/lib/oauth/state";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
 import { GOOGLE_MAIL_SCOPE } from "@/services/email/account-auth";
+import { GSC_READ_SCOPE, targetForBrand } from "@/services/agents/seo-search-console";
 
 /**
- * GET /api/oauth/google?brand_id=<id>&service=<youtube|drive|gmail>&return_to=<path>
+ * GET /api/oauth/google?brand_id=<id>&service=<youtube|drive|gmail|search_console>&return_to=<path>
  *
  * Multi-brand Google OAuth entry point. Gmail additionally requires the
  * concrete brand_email_configs account id + expected email address so the
@@ -26,16 +27,20 @@ export async function GET(req: NextRequest) {
   }
 
   const service = (params.get("service") || "youtube").trim();
-  if (!["youtube", "drive", "gmail"].includes(service)) {
-    return NextResponse.json({ error: "service must be youtube, drive or gmail" }, { status: 400 });
+  if (!["youtube", "drive", "gmail", "search_console"].includes(service)) {
+    return NextResponse.json({ error: "service must be youtube, drive, gmail or search_console" }, { status: 400 });
   }
 
-  if (service === "gmail") {
+  if (service === "search_console" && !targetForBrand(brandId)) {
+    return NextResponse.json({ error: "Unknown approved SEO website" }, { status: 400 });
+  }
+
+  if (service === "gmail" || service === "search_console") {
     const denied = await requireAdminApi(req);
     if (denied) return denied;
   }
 
-  const returnTo = params.get("return_to") || "/settings?tab=sosiale-medier";
+  const returnTo = service === "search_console" ? "/agents" : (params.get("return_to") || "/settings?tab=sosiale-medier");
   const accountId = (params.get("account_id") || "").trim();
   const expectedEmail = (params.get("email") || "").trim().toLowerCase();
 
@@ -60,6 +65,8 @@ export async function GET(req: NextRequest) {
 
   const scopes = service === "gmail"
     ? ["openid", "email", "profile", GOOGLE_MAIL_SCOPE]
+    : service === "search_console"
+      ? [GSC_READ_SCOPE]
     : [
         "https://www.googleapis.com/auth/youtube",
         "https://www.googleapis.com/auth/youtube.upload",
@@ -73,7 +80,7 @@ export async function GET(req: NextRequest) {
   try {
     stateNonce = await createState({
       brandId,
-      platform: service === "drive" ? "google_drive" : service === "gmail" ? "gmail" : "youtube",
+      platform: service === "drive" ? "google_drive" : service === "gmail" ? "gmail" : service === "search_console" ? "google_search_console" : "youtube",
       returnTo,
       metadata: {
         service,

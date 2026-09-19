@@ -1,3 +1,4 @@
+import { readGSCAllBrands } from "./seo-search-console";
 import { getSEOLeadSignals, type SEOLeadSummary } from "./seo-leads";
 import { SEO_SKILLS, SEO_SENIOR_OPERATING_RULES } from "./seo-skills";
 import { auditSEOPortfolio, type SiteAudit } from "./seo-audit";
@@ -215,13 +216,14 @@ Gi anbefalinger for:
    * Produces read-only proposals. Execution/publication remains separately gated.
    */
   async portfolioGrowthReview(
-    inputs: { signals?: Awaited<ReturnType<typeof getSEOObservedSignals>>; audits?: SiteAudit[]; leads?: SEOLeadSummary } = {},
+    inputs: { signals?: Awaited<ReturnType<typeof getSEOObservedSignals>>; audits?: SiteAudit[]; leads?: SEOLeadSummary; searchConsole?: Awaited<ReturnType<typeof readGSCAllBrands>> } = {},
   ): Promise<string> {
     // One read per review, not two shifting windows or duplicate external calls.
-    const [signals, audits, leads] = await Promise.all([
+    const [signals, audits, leads, searchConsole] = await Promise.all([
       inputs.signals ? Promise.resolve(inputs.signals) : getSEOObservedSignals(),
       inputs.audits ? Promise.resolve(inputs.audits) : auditSEOPortfolio(),
       inputs.leads ? Promise.resolve(inputs.leads) : getSEOLeadSignals(),
+      inputs.searchConsole ? Promise.resolve(inputs.searchConsole) : readGSCAllBrands(),
     ]);
     const verifiedFindings = audits.flatMap(site =>
       site.observations.map(observation => "[" + site.brandId + "] " + observation)
@@ -230,7 +232,8 @@ Gi anbefalinger for:
       site.limitations.filter(message => !message.startsWith("Homepage/robots/sitemap snapshot"))
         .map(message => "[" + site.brandId + "] " + message)
     );
-    if (signals.totals.current === 0 || signals.dataQuality.truncated) {
+    const verifiedGSC = searchConsole.filter(item => item.status === "connected" && item.result !== null);
+    if ((signals.totals.current === 0 || signals.dataQuality.truncated) && verifiedGSC.length === 0) {
       return [
         "Sam SEO: teknisk kontroll av syv offentlige nettsteder og RealtyFlows målte henvisninger.",
         "Målte søke-/AI-henvisninger siste 30 dager: " + signals.totals.current + ". Dette er ikke et mål på total søketrafikk.",
@@ -242,6 +245,7 @@ Gi anbefalinger for:
         "Tekniske observasjoner fra offentlig nettstedskontroll:",
         ...(verifiedFindings.length ? verifiedFindings : ["Ingen konkrete avvik i de avgrensede HTTP-kontrollene. Det beviser ikke at nettstedene er ferdig optimalisert."]),
         ...(unavailable.length ? ["Utilgjengelige kontroller:", ...unavailable] : []),
+        "Search Console-tilkobling: " + searchConsole.map(item => item.brandId + "=" + item.status).join(", ") + ".",
         "Neste tiltak: verifiser virkelig søke-/AI-henvisningssporing, koble til godkjente Google Search Console- og Bing Webmaster-kilder for søkeord og ytelse, og undersøk hvert dokumenterte tekniske avvik før publisering.",
         "Gjennomgangen er kun en anbefalingsrapport. Ingen endringer på nettstedene ble publisert.",
       ].join("\n");
@@ -256,6 +260,9 @@ Gi anbefalinger for:
       "Foreslå inntil åtte konkrete QA-sikre forbedringer med brand, URL der observert, kilde, handling, akseptansekriterier og måling etter 30 dager.",
       "Velg relevante seniorkompetanser i SEO_SKILLS, men ikke simuler behovsstyrte connectors eller påstå en endring er publisert.",
       "Dette er gjennomgangsforslag; alle live endringer krever separat godkjenning.",
+      "Google Search Console gir målte GSC-klikk, visninger, CTR, gjennomsnittsposisjon og søkeord KUN når status er connected og result ikke null. Perioder og måledefinisjoner står i hver enkelt result. Ikke bland GSC-klikk med nettstedssesjoner eller lead-konverteringer.",
+      "Hvis Search Console er tilkoblet: se etter sider med mange dokumenterte visninger og lav CTR, faktisk nedgang i klikk, og relevante søk med tydelig brukerintensjon; lag etterprøvbare forbedringsforslag for eksisterende side, CTA og internlenking. Ingen garanterte forbedringer og ingen automatisk publisering.",
+      "Søkekonsollstatus og målte data per merke: " + JSON.stringify(searchConsole),
       "Henvisningsdata: " + JSON.stringify(signals),
       "Nettsidehenvendelser, KUN aggregater uten persondata: " + JSON.stringify(leads),
       "Besøk og henvendelser har ingen verifisert felles session-ID. Du kan ikke beregne ekte organisk konverteringsrate eller tilskrive Google et lead basert på URL alene.",
@@ -278,12 +285,13 @@ Lokasjon: ${location}
 Søkeintensjonsfilter: ${intent}
 Antall søkeord ønsket: ${count}
 
-Gi en komplett søkeordanalyse som JSON:
+Dette er forslag til mulige søkefraser, ikke søkeord målt i Search Console og ikke verifisert søkevolum. Ikke oppgi anslåtte søkevolum, søkeordvanskelighet, SERP-rangeringer eller sesongtopper uten faktisk oppgitt/verifisert datakilde.
+Gi søkefrase- og intensjonshypoteser som JSON:
 {
   "primary_keywords": [
     {
       "keyword": "...",
-      "search_volume_estimate": "høy|middels|lav",
+      "search_volume_estimate": "utilgjengelig uten verifisert ekstern volumkilde",
       "difficulty": "low|medium|high",
       "intent": "informational|navigational|transactional|commercial",
       "recommended_content_type": "bloggpost|landingsside|produktside|guide"

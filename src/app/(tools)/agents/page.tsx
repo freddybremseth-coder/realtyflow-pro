@@ -383,7 +383,32 @@ export default function AgentsCommandCenter() {
     latest: { at: string; status: string; report: string; technicalFindings?: number | null } | null;
     skills: Array<{ id: string; domain: string; expertise: string; availability: "measured" | "advisory" | "needs_connection"; evidence: string }>;
     capabilitySummary: { measured: number; advisory: number; needsConnection: number };
+    searchConsoleConnections: Array<{ brandId: string; domain: string; connected: boolean; property: string | null; error: string | null }>;
   } | null>(null);
+  const [seoGSCBrand, setSeoGSCBrand] = useState("zeneco");
+  const [seoGSCBusy, setSeoGSCBusy] = useState(false);
+  const [seoGSCError, setSeoGSCError] = useState("");
+  const [seoGSCSnapshot, setSeoGSCSnapshot] = useState<{
+    brandId: string; property: string;
+    period: { currentStart: string; currentEnd: string; previousStart: string; previousEnd: string };
+    totals: { currentClicks: number; currentImpressions: number; previousClicks: number; previousImpressions: number; currentCtr: number | null };
+    topQueryPages: Array<{ query: string; page: string; clicks: number; impressions: number; ctr: number; position: number }>;
+    dataQuality: { truncated: boolean; queryRowsSampled: boolean; note: string };
+  } | null>(null);
+  const inspectGoogleSearchConsole = async () => {
+    setSeoGSCBusy(true);
+    setSeoGSCError("");
+    setSeoGSCSnapshot(null);
+    try {
+      const response = await fetch("/api/agents/seo-search-console?brand=" + encodeURIComponent(seoGSCBrand), { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Søkeorddata utilgjengelig");
+      if (!data.snapshot) throw new Error("Ingen bekreftede søkeorddata tilgjengelig");
+      setSeoGSCSnapshot(data.snapshot);
+    } catch (error) {
+      setSeoGSCError(error instanceof Error ? error.message : "Kunne ikke hente Google Search Console");
+    } finally { setSeoGSCBusy(false); }
+  };
   const [seoSkillsExpanded, setSeoSkillsExpanded] = useState(false);
   const [seoAuditBusy, setSeoAuditBusy] = useState(false);
   const [seoAuditError, setSeoAuditError] = useState("");
@@ -987,6 +1012,68 @@ export default function AgentsCommandCenter() {
               >
                 {seoReviewExpanded ? "Skjul rapport" : "Se siste SEO-rapport"}
               </button>
+            )}
+          </div>
+          <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs">
+            <strong className="text-emerald-300">Google Search Console · faktiske søkeord og søkeytelse</strong>
+            <p className="mt-1 text-slate-300">
+              Autoriser lesetilgang separat for hvert merke. Google Search Console-målinger er ikke det samme som besøk på nettstedet eller henvendelser.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-slate-200">
+                Nettsted
+                <select
+                  className="rounded border border-slate-600 bg-slate-900 p-1 text-slate-100"
+                  value={seoGSCBrand}
+                  onChange={event => { setSeoGSCBrand(event.target.value); setSeoGSCSnapshot(null); setSeoGSCError(""); }}
+                >
+                  {(seoReview?.searchConsoleConnections || []).map(connection => (
+                    <option key={connection.brandId} value={connection.brandId}>
+                      {connection.domain} · {connection.connected ? "tilkoblet" : "ikke tilkoblet"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <a
+                className="text-emerald-300 underline"
+                href={"/api/oauth/google?brand_id=" + encodeURIComponent(seoGSCBrand) + "&service=search_console"}
+              >
+                {seoReview?.searchConsoleConnections.find(connection => connection.brandId === seoGSCBrand)?.connected
+                  ? "Koble Google-konto på nytt" : "Koble til Google Search Console"}
+              </a>
+              <button
+                type="button" disabled={seoGSCBusy ||
+                  !seoReview?.searchConsoleConnections.some(connection => connection.brandId === seoGSCBrand && connection.connected)}
+                className="text-emerald-300 underline disabled:opacity-50"
+                onClick={inspectGoogleSearchConsole}
+              >
+                {seoGSCBusy ? "Leser søkeytelse…" : "Les faktiske søkeord"}
+              </button>
+            </div>
+            {seoReview?.searchConsoleConnections.find(connection => connection.brandId === seoGSCBrand)?.property && (
+              <p className="mt-2 text-slate-400">Verifisert GSC-eiendom: {seoReview.searchConsoleConnections.find(connection => connection.brandId === seoGSCBrand)?.property}</p>
+            )}
+            {seoGSCError && <p className="mt-2 text-amber-300">{seoGSCError}</p>}
+            {seoGSCSnapshot && (
+              <div className="mt-3 max-h-56 overflow-y-auto border-t border-slate-700 pt-2 text-slate-200">
+                <p>
+                  {seoGSCSnapshot.period.currentStart}–{seoGSCSnapshot.period.currentEnd}:
+                  {" "}{seoGSCSnapshot.totals.currentClicks} klikk · {seoGSCSnapshot.totals.currentImpressions} visninger ·
+                  {" "}{seoGSCSnapshot.totals.currentCtr === null ? "CTR utilgjengelig" : (100 * seoGSCSnapshot.totals.currentCtr).toFixed(1) + " % CTR"}.
+                  Forrige sammenlignbare periode: {seoGSCSnapshot.totals.previousClicks} klikk · {seoGSCSnapshot.totals.previousImpressions} visninger.
+                </p>
+                <p className="my-2 text-slate-400">{seoGSCSnapshot.dataQuality.note}</p>
+                {seoGSCSnapshot.topQueryPages.length ? (
+                  <div className="space-y-1">
+                    {seoGSCSnapshot.topQueryPages.slice(0, 12).map((item, index) => (
+                      <p key={index}>
+                        <strong>{item.query}</strong> · {item.page} · {item.impressions} visninger,
+                        {" "}{item.clicks} klikk, {(item.ctr * 100).toFixed(1)} % CTR, snittposisjon {item.position.toFixed(1)}
+                      </p>
+                    ))}
+                  </div>
+                ) : <p>Ingen søkefraser returnert for dette merket og perioden.</p>}
+              </div>
             )}
           </div>
           {seoReview?.leads.dataQuality.note && (
