@@ -23,6 +23,10 @@ type Metric = {
 type Payload = {
   actions: Action[]; observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
   connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
+  publisherChecks: Array<{
+    brandId: "freddyb" | "zeneco"; repository: string; ready: boolean;
+    canPush: boolean; canReadTarget: boolean; reason: string;
+  }>;
   changeEvaluations: Array<{
     changeId: string; brandId: string; page: string; query: string; commitSha: string;
     status: "waiting" | "unavailable" | "incomplete" | "measured";
@@ -169,11 +173,23 @@ export function SamSEOActionBoard() {
                     </p>
                   ))}
                 </div>
-                {data.seoPilot.writeStatus !== "verified" && (
-                  <p className="mt-2 text-xs font-semibold text-amber-950">Automatisk nettsidepublisering er ikke aktivert av denne målesyklusen: sikker publiseringskanal og tilbakeføring må verifiseres for den konkrete siden. Ingen oppgave er automatisk erklært utført.</p>
+                {!data.seoPilot.writeStatus.startsWith("verified") && (
+                  <p className="mt-2 text-xs font-semibold text-amber-950">Automatisk nettsidepublisering er fortsatt begrenset: sikker publiseringskanal og tilbakeføring må være verifisert for den konkrete siden. Ingen oppgave erklæres utført uten faktisk publisering.</p>
                 )}
               </>
             ) : <p className="mt-2 text-xs">Første planlagte automatiske målesyklus er ennå ikke lagret.</p>}
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {data.publisherChecks.map(check => (
+              <div key={check.brandId}
+                className={check.ready
+                  ? "rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950"
+                  : "rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"}>
+                <p className="font-black">{LABELS[check.brandId]} · publiseringskanal {check.ready ? "verifisert" : "ikke klar"}</p>
+                <p className="mt-1 text-xs">{check.reason}</p>
+                <p className="mt-1 text-xs">Målfil lesbar: {check.canReadTarget ? "ja" : "nei"} · push-rettighet: {check.canPush ? "ja" : "nei"}</p>
+              </div>
+            ))}
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
