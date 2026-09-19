@@ -58,7 +58,9 @@ export async function GET(request: NextRequest) {
     const verifiedGSC = searchConsole.flatMap(item => item.status === "connected" && item.result ? [item.result] : []);
     const candidates = [
       ...planSEOOpportunities(signals, leads, audits),
-      ...planGSCOpportunities(verifiedGSC),
+      // Zero Google impressions alone is a monitored measurement, not work
+      // requiring editorial approval. Keep it in the stored GSC snapshots.
+      ...planGSCOpportunities(verifiedGSC).filter(item => !item.issueId.startsWith("gsc-zero-visibility:")),
     ].slice(0, 18);
     const { data: existingItems, error: itemsError } = await supabase.from("work_items")
       .select("source_id")

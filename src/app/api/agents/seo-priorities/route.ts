@@ -92,12 +92,22 @@ export async function GET(request: NextRequest) {
     const snapshots = readings.filter((item): item is StoredSearchConsole & { result: GSCBrandSnapshot } =>
       item.status === "connected" && item.result !== null)
       .map(item => item.result);
-    const computed = planGSCOpportunities(snapshots).map(item => ({
-      id: "gsc:" + item.issueId, brandId: item.brandId, title: item.title,
-      description: item.description, nextAction: item.nextAction, priority: item.priority,
-      evidence: item.evidence, status: "FOR_REVIEW" as const, source: "Google Search Console",
-      requiresApproval: true,
-    }));
+    const gscSuggestions = planGSCOpportunities(snapshots);
+    // A zero-visibility observation is already measured and recorded: it
+    // cannot itself trigger publishing or demand an editorial approval.
+    // Preserve it as a separate monitored signal, not another approval card.
+    const observations = gscSuggestions.filter(item => item.issueId.startsWith("gsc-zero-visibility:"))
+      .map(item => ({
+        id: item.issueId, brandId: item.brandId, description: item.description,
+        evidence: item.evidence,
+      }));
+    const computed = gscSuggestions.filter(item => !item.issueId.startsWith("gsc-zero-visibility:"))
+      .map(item => ({
+        id: "gsc:" + item.issueId, brandId: item.brandId, title: item.title,
+        description: item.description, nextAction: item.nextAction, priority: item.priority,
+        evidence: item.evidence, status: "FOR_REVIEW" as const, source: "Google Search Console",
+        requiresApproval: true,
+      }));
     const work = (tasks.data || []).map(item => ({
       id: item.id as string, brandId: item.brand_id as string | null,
       title: item.title as string, description: (item.description || "") as string,
@@ -126,7 +136,7 @@ export async function GET(request: NextRequest) {
       period: item.period, totals: item.totals, quality: item.dataQuality.note,
     }));
     return NextResponse.json({
-      actions, connections: connected, metrics, latestReviewAt: saved.data?.created_at || null,
+      actions, observations, connections: connected, metrics, latestReviewAt: saved.data?.created_at || null,
       lastGoogleReadAt: explicitLive ? new Date().toISOString() : lastReadIsNewer
         ? lastLiveRead.data?.created_at || null : saved.data?.created_at || null,
       connectionSummary: {
