@@ -7,6 +7,7 @@ import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { readGSCAllBrands } from "@/services/agents/seo-search-console";
 import { evaluateSeoPilotBrand } from "@/services/agents/seo-autopilot-policy";
+import { verifyGithubSeoPublisher } from "@/services/agents/seo-github-publisher";
 
 const PATH = "/api/cron/seo-autopilot";
 const ACTION = "seo_autopilot_pilot_cycle";
@@ -41,7 +42,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: true, reason: "SEO pilot already measured within 20 hours" });
     }
 
-    const readings = await readGSCAllBrands();
+    const [readings, publisherChecks] = await Promise.all([
+      readGSCAllBrands(),
+      Promise.all([verifyGithubSeoPublisher("freddyb"), verifyGithubSeoPublisher("zeneco")]),
+    ]);
     const assessments = readings.map(item => evaluateSeoPilotBrand(
       item.brandId,
       item.status === "connected" ? item.result : null,
@@ -66,8 +70,11 @@ export async function GET(request: NextRequest) {
         assessed: assessments,
         search_console_brands_measured: verified,
         website_changes_published: 0,
-        public_write_status: "requires_verified_reversible_publisher",
-        note: "Automatic measurements and triage only; Search Console has no write permission. Do not treat an unverified CMS integration or GitHub repo as a production publisher.",
+        public_write_status: publisherChecks.every(item => item.ready)
+          ? "verified_github_publishers"
+          : publisherChecks.some(item => item.ready) ? "partially_verified_github_publishers" : "requires_verified_reversible_publisher",
+        publisher_checks: publisherChecks,
+        note: "Automatic measurements and triage are active. Bounded metadata writes may only use a verified exact-repo publisher with versioned rollback.",
       },
     });
     if (result.error) throw new Error("Cannot store SEO pilot cycle: " + result.error.message);
@@ -77,7 +84,10 @@ export async function GET(request: NextRequest) {
       candidates: assessments.filter(item => item.status === "candidate").length,
       published: 0,
       approvalTasksCreated: 0,
-      writeStatus: "requires_verified_reversible_publisher",
+      writeStatus: publisherChecks.every(item => item.ready)
+        ? "verified_github_publishers"
+        : publisherChecks.some(item => item.ready) ? "partially_verified_github_publishers" : "requires_verified_reversible_publisher",
+      publisherChecks,
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "SEO pilot unavailable";
