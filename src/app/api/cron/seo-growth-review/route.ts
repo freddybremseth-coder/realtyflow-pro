@@ -10,6 +10,7 @@ import { getSEOObservedSignals } from "@/services/agents/seo-data";
 import { getSEOLeadSignals } from "@/services/agents/seo-leads";
 import { planSEOOpportunities } from "@/services/agents/seo-opportunities";
 import { auditSEOPortfolio } from "@/services/agents/seo-audit";
+import { readGSCAllBrands } from "@/services/agents/seo-search-console";
 
 const ACTION = "seo_portfolio_growth_review";
 const PATH = "/api/cron/seo-growth-review";
@@ -47,8 +48,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [signals, audits, leads] = await Promise.all([getSEOObservedSignals(), auditSEOPortfolio(), getSEOLeadSignals()]);
-    const report = (await new SEOAgent().portfolioGrowthReview({ signals, audits, leads })).slice(0, 24000);
+    const [signals, audits, leads, searchConsole] = await Promise.all([
+      getSEOObservedSignals(), auditSEOPortfolio(), getSEOLeadSignals(), readGSCAllBrands(),
+    ]);
+    const report = (await new SEOAgent().portfolioGrowthReview({ signals, audits, leads, searchConsole })).slice(0, 24000);
     // Only evidence-backed, review-only work items. No CRM contact data or
     // generated copy is published. Keep active issues idempotent across weeks.
     const candidates = planSEOOpportunities(signals, leads, audits);
@@ -82,7 +85,8 @@ export async function GET(request: NextRequest) {
       })));
       if (createError) throw new Error("SEO opportunity persistence failed: " + createError.message);
     }
-    const status = signals.totals.current === 0 || signals.dataQuality.truncated ? "partial" : "success";
+    const hasVerifiedGSC = searchConsole.some(item => item.status === "connected" && item.result !== null);
+    const status = (signals.totals.current === 0 && !hasVerifiedGSC) || signals.dataQuality.truncated ? "partial" : "success";
     const { error } = await supabase.from("automation_logs").insert({
       action: ACTION,
       agent_name: "Sam SEO Expert",
@@ -97,6 +101,7 @@ export async function GET(request: NextRequest) {
         by_source: signals.bySource,
         top_pages: signals.topPages,
         website_inquiries: leads,
+        google_search_console: searchConsole,
         opportunity_candidates: candidates.length,
         review_work_items_created: newItems.length,
         technical_audits: audits,
@@ -112,7 +117,9 @@ export async function GET(request: NextRequest) {
       success: true, status, analyzed: signals.byBrand.length,
       observedVisits: signals.totals.current,
       observedWebsiteInquiries: leads.totals.current,
-      proposedReviewItems: newItems.length, published: false,
+      proposedReviewItems: newItems.length,
+      verifiedSearchConsoleBrands: searchConsole.filter(item => item.status === "connected").length,
+      published: false,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
