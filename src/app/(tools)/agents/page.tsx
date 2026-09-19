@@ -122,7 +122,7 @@ const agents: AgentInfo[] = [
   },
   {
     id: "seo",
-    name: "Victoria SEO",
+    name: "Sam SEO Expert",
     role: "SEO, Google & organisk vekst",
     color: "#10b981",
     status: "idle",
