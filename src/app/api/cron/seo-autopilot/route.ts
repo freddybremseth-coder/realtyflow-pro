@@ -7,6 +7,7 @@ import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { readGSCAllBrands } from "@/services/agents/seo-search-console";
 import { evaluateSeoPilotBrand } from "@/services/agents/seo-autopilot-policy";
+import { runZenEcoMetadataPublisher } from "@/services/agents/seo-zeneco-publisher";
 
 const PATH = "/api/cron/seo-autopilot";
 const ACTION = "seo_autopilot_pilot_cycle";
@@ -57,6 +58,21 @@ export async function GET(request: NextRequest) {
     });
     if (storedReadings.error) throw new Error("Cannot store Google readings: " + storedReadings.error.message);
 
+    // User-approved safe write pilot: ONLY four fixed Zen metadata pages, and
+    // only with recent exact-page/query Google evidence, public same-database
+    // readiness, optimistic revision audit and a separately verified live page.
+    // Failure never blocks Google metrics or sends anything to customers.
+    const zeneco = await runZenEcoMetadataPublisher(
+      supabase,
+      readings.find(item => item.brandId === "zeneco" && item.status === "connected")?.result || null,
+      url,
+    ).catch(error => ({
+      status: "blocked" as const,
+      reason: "Metadata publisher failed safely: " + (error instanceof Error ? error.message : "unknown").slice(0,130),
+      page: null,
+      published: 0,
+    }));
+
     const result = await supabase.from("automation_logs").insert({
       action: ACTION, agent_name: "Sam SEO Expert",
       status: verified ? "success" : "partial",
@@ -65,9 +81,12 @@ export async function GET(request: NextRequest) {
         pilot_brands: ["zeneco", "freddyb"],
         assessed: assessments,
         search_console_brands_measured: verified,
-        website_changes_published: 0,
-        public_write_status: "requires_verified_reversible_publisher",
-        note: "Automatic measurements and triage only; Search Console has no write permission. Do not treat an unverified CMS integration or GitHub repo as a production publisher.",
+        website_changes_published: zeneco.published,
+        public_write_status: zeneco.status === "monitor" ? "armed_evidence_gated"
+          : zeneco.status === "pending" ? "pending_site_confirmation"
+          : zeneco.status,
+        zeneco_metadata_pilot: zeneco,
+        note: "Search Console is read-only. Only four hardcoded Zen landing-page title/description variants can be staged after exact Google evidence and same-database readiness. A live change is counted only after its public HTML is verified; failed confirmation triggers exact revision rollback. Customer messages, pricing, body content and other brands remain untouched.",
       },
     });
     if (result.error) throw new Error("Cannot store SEO pilot cycle: " + result.error.message);
@@ -75,9 +94,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true, analyzed: assessments.length, measured: verified,
       candidates: assessments.filter(item => item.status === "candidate").length,
-      published: 0,
+      published: zeneco.published,
       approvalTasksCreated: 0,
-      writeStatus: "requires_verified_reversible_publisher",
+      writeStatus: zeneco.status === "monitor" ? "armed_evidence_gated"
+        : zeneco.status === "pending" ? "pending_site_confirmation"
+        : zeneco.status,
+      zenEcoMetadataPilot: zeneco,
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "SEO pilot unavailable";

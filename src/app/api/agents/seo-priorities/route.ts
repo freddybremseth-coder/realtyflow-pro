@@ -156,6 +156,9 @@ export async function GET(request: NextRequest) {
         assessments: ((pilotCycle.data.details as { assessed?: unknown[] } | null)?.assessed || []),
         websiteChangesPublished: ((pilotCycle.data.details as { website_changes_published?: number } | null)?.website_changes_published || 0),
         writeStatus: (pilotCycle.data.details as { public_write_status?: string } | null)?.public_write_status || "unverified",
+        zenEcoMetadataPilot: (pilotCycle.data.details as {
+          zeneco_metadata_pilot?: { status: string; reason: string; page: string | null; published: number }
+        } | null)?.zeneco_metadata_pilot || null,
       } : null,
       lastGoogleReadAt: explicitLive ? new Date().toISOString() : lastReadIsNewer
         ? lastLiveRead.data?.created_at || null : saved.data?.created_at || null,
