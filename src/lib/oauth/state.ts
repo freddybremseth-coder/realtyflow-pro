@@ -25,6 +25,7 @@ import { createServerClient } from "@/lib/supabase/server";
 export type OAuthPlatform =
   | "youtube"
   | "google_drive"
+  | "google_search_console"
   | "gmail"
   | "facebook"
   | "instagram"
