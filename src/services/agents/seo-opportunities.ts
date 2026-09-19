@@ -58,6 +58,26 @@ export function planSEOOpportunities(
       });
     }
   }
+  // Prioritize verified HTTP 404/noindex signals on a limited public sitemap
+  // sample. A one-off failure is a review trigger, not proof of Google index
+  // coverage or that the content should be removed.
+  for (const audit of audits) {
+    for (const sample of audit.samples || []) {
+      if (sample.status !== 404 && sample.noindex !== true) continue;
+      const reason = sample.status === 404 ? "HTTP 404" : "noindex";
+      results.push({
+        issueId: "sitemap-sampled-issue:" + audit.brandId + ":" + sample.path,
+        brandId: audit.brandId,
+        title: "Sam SEO: Undersøk " + reason + " på offentlig sitemap-side",
+        description: "Sitemap-kontrollen på " + audit.brandId + " fant " + reason +
+          " for " + sample.path + ". Dette er en prøve av maksimalt tre sider, ikke full indekseringskontroll.",
+        priority: "HIGH",
+        nextAction: "Bekreft feilen ved ny offentlig HTTP-kontroll, sammenlign sitemap og tilsiktet canonical/tilgjengelighet. Dersom dette er en faktisk feil, lag separat kodeendring til godkjenning og test på nytt etter deploy.",
+        evidence: audit.base + sample.path + " · offentlig sitemap-sample " + audit.checkedAt +
+          " · " + reason,
+      });
+    }
+  }
   if (!signals.dataQuality.truncated && !leads.dataQuality.truncated) {
     const leadsByBrand = new Map(leads.byBrand.map(b => [b.brandId, b.current]));
     for (const brand of signals.byBrand) {
