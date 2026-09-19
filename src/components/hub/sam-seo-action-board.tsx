@@ -22,7 +22,8 @@ type Metric = {
 };
 type Payload = {
   actions: Action[]; connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
-  readingMode: "live" | "last_review"; readErrors: Array<{ brandId: string; error: string }>;
+  lastGoogleReadAt: string | null;
+  readingMode: "live" | "last_review" | "last_live_read"; readErrors: Array<{ brandId: string; error: string }>;
   connectionSummary: { registered: number; readable: number; measured: number };
 };
 const LABELS: Record<string, string> = {
@@ -99,8 +100,9 @@ export function SamSEOActionBoard() {
             eller publiseringer skjer fra dette panelet uten separat godkjent flyt.
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-600">
-            {data?.latestReviewAt ? "Siste lagrede SEO-gjennomgang: " + date(data.latestReviewAt) : "Ingen tidligere SEO-gjennomgang tilgjengelig"}
-            {data?.readingMode === "live" ? " · Fersk Search Console-lesing er hentet" : " · Tall er fra sist lagrede gjennomgang"}
+            {data?.latestReviewAt ? "Siste SEO-gjennomgang: " + date(data.latestReviewAt) : "Ingen samlet SEO-gjennomgang lagret"}
+            {data?.lastGoogleReadAt ? " · Siste Google-innhenting: " + new Date(data.lastGoogleReadAt).toLocaleString("nb-NO") : " · Google-tall er ikke hentet ennå"}
+            {data?.readingMode === "live" ? " · Direkte lesing forsøkt" : data?.readingMode === "last_live_read" ? " · Sist lagrede Google-data vises" : ""}
           </p>
         </div>
         <button type="button" onClick={() => void read(true)} disabled={loading || refreshing}
@@ -208,8 +210,13 @@ export function SamSEOActionBoard() {
             </div>
           ))}
           {data.readErrors.length > 0 && <p role="status" className="mt-3 text-sm text-amber-900">
-            Google-data kunne ikke leses for: {data.readErrors.map(item => LABELS[item.brandId] || item.brandId).join(", ")}.
-            Kontroller autorisering og prøv igjen; ingen tall er estimert.
+            <strong>Google-data kunne ikke leses:</strong>
+            {data.readErrors.map(item => (
+              <span key={item.brandId} className="mt-1 block">
+                {LABELS[item.brandId] || item.brandId}: {item.error}
+              </span>
+            ))}
+            Ingen tall er estimert. En lagret Google-tilkobling trenger ikke ny godkjenning når feilen ligger i RealtyFlow.
           </p>}
           {data.metrics.length > 0 && (
             <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
