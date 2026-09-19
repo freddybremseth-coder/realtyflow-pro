@@ -7,6 +7,7 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { SEO_AUDIT_TARGETS } from "@/services/agents/seo-audit";
 import { getGSCConnectionStatus, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
+import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
 
 type StoredSearchConsole = { brandId: string; status: string; result: GSCBrandSnapshot | null; error?: string };
 const ACTIVE = ["TO_DO", "IN_PROGRESS", "REVIEW"];
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
-    const [connections, saved, tasks, oauthResults, storedChannels, lastLiveRead] = await Promise.all([
+    const [connections, saved, tasks, oauthResults, storedChannels, lastLiveRead, trackedChanges] = await Promise.all([
       getGSCConnectionStatus(),
       supabase.from("automation_logs").select("created_at,details")
         .eq("action", "seo_portfolio_growth_review")
@@ -37,9 +38,13 @@ export async function GET(request: NextRequest) {
         .eq("action", "seo_gsc_live_read")
         .in("status", ["success", "partial"])
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("automation_logs").select("details")
+        .eq("action", "seo_autopilot_change").eq("status", "success")
+        .order("created_at", { ascending: false }).limit(25),
     ]);
     if (saved.error) throw new Error("SEO review lookup: " + saved.error.message);
     if (lastLiveRead.error) throw new Error("Last Google read lookup: " + lastLiveRead.error.message);
+    if (trackedChanges.error) throw new Error("SEO change audit lookup: " + trackedChanges.error.message);
     if (tasks.error) throw new Error("SEO task lookup: " + tasks.error.message);
     if (oauthResults.error) throw new Error("Google connection diagnostic lookup: " + oauthResults.error.message);
     if (storedChannels.error) throw new Error("Google connection storage lookup: " + storedChannels.error.message);
@@ -101,6 +106,11 @@ export async function GET(request: NextRequest) {
         id: item.issueId, brandId: item.brandId, description: item.description,
         evidence: item.evidence,
       }));
+    const changeEvaluations = evaluateTrackedSEOChanges(
+      (trackedChanges.data || []).map(row => parseTrackedSEOChange(row.details))
+        .filter((change): change is NonNullable<typeof change> => change !== null),
+      snapshots,
+    );
     const computed = gscSuggestions.filter(item => !item.issueId.startsWith("gsc-zero-visibility:"))
       .map(item => ({
         id: "gsc:" + item.issueId, brandId: item.brandId, title: item.title,
@@ -136,7 +146,7 @@ export async function GET(request: NextRequest) {
       period: item.period, totals: item.totals, quality: item.dataQuality.note,
     }));
     return NextResponse.json({
-      actions, observations, connections: connected, metrics, latestReviewAt: saved.data?.created_at || null,
+      actions, observations, changeEvaluations, connections: connected, metrics, latestReviewAt: saved.data?.created_at || null,
       lastGoogleReadAt: explicitLive ? new Date().toISOString() : lastReadIsNewer
         ? lastLiveRead.data?.created_at || null : saved.data?.created_at || null,
       connectionSummary: {
