@@ -7,7 +7,8 @@
  * portfolio hosts and every returned page is filtered to that host.
  */
 import { SEO_AUDIT_TARGETS } from "./seo-audit";
-import { getChannelsByBrand, getDecryptedTokens, getTokensForBrandPlatform, saveTokens } from "@/lib/oauth/channels";
+import { getDecryptedTokens, saveTokens } from "@/lib/oauth/channels";
+import { createServerClient } from "@/lib/supabase/server";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 
 export const GSC_READ_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
@@ -88,11 +89,42 @@ export async function listGSCProperties(accessToken: string): Promise<GSCPropert
   return Array.isArray(payload.siteEntry) ? payload.siteEntry : [];
 }
 
+type GSCStoredChannel = { id: string; brand_id: string; external_id: string };
+
+/**
+ * The OAuth callback and Sam dashboard must resolve the SAME saved rows.
+ * The former saved all seven grants, while the old generic getChannelsByBrand()
+ * returned [] for every brand without reporting its query error. Query the
+ * active GSC channel set directly, fail closed on a PostgREST error, and scope
+ * the in-memory result to the exact configured brand.
+ *
+ * Select only non-secret metadata here; encrypted tokens are loaded by id
+ * separately after the property has been checked.
+ */
+export function selectStoredGSCBrandChannels(brandId: string, channels: readonly GSCStoredChannel[]): GSCStoredChannel[] {
+  return channels.filter(channel => channel.brand_id === brandId &&
+    selectGSCProperty(brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) === channel.external_id);
+}
+
+async function getStoredGSCChannels(brandId: string): Promise<GSCStoredChannel[]> {
+  if (!targetForBrand(brandId)) throw new Error("Unknown public SEO brand");
+  const { data, error } = await createServerClient()
+    .from("social_channels")
+    .select("id,brand_id,external_id")
+    .eq("platform", "google_search_console")
+    .eq("is_active", true);
+  if (error) {
+    console.error("[SamSEO] GSC channel lookup failed", { brandId, code: error.code });
+    throw new Error("Google channel database lookup failed: " + (error.code || "unknown"));
+  }
+  return selectStoredGSCBrandChannels(brandId, data || []);
+}
+
 export async function getGSCConnectionStatus() {
   return Promise.all(SEO_AUDIT_TARGETS.map(async target => {
     const domain = new URL(target.base).hostname;
     try {
-      const channels = await getChannelsByBrand(target.brandId, "google_search_console");
+      const channels = await getStoredGSCChannels(target.brandId);
       const valid = channels.filter(channel =>
         selectGSCProperty(target.brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) !== null);
       if (valid.length !== 1) return {
@@ -133,9 +165,16 @@ export async function getGSCConnectionStatus() {
 }
 
 async function authorizedAccessToken(brandId: string) {
-  const connection = await getTokensForBrandPlatform(brandId, "google_search_console");
-  if (!connection) return null;
-  const { channel, tokens } = connection;
+  const channels = await getStoredGSCChannels(brandId);
+  if (channels.length === 0) return null;
+  const valid = channels.filter(channel =>
+    selectGSCProperty(brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) === channel.external_id);
+  if (valid.length !== 1) {
+    throw new Error("Search Console saved property is missing or ambiguous for the selected brand");
+  }
+  const channel = valid[0];
+  const tokens = await getDecryptedTokens(channel.id);
+  if (!tokens) throw new Error("Search Console channel exists, but its saved OAuth token is unavailable");
   if (!tokens.scopes.includes(GSC_READ_SCOPE)) {
     throw new Error("Search Console readonly scope missing: reconnect the selected Google account");
   }

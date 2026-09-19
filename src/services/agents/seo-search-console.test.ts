@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GSC_READ_SCOPE, selectGSCProperty, targetForBrand } from "./seo-search-console";
+import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand } from "./seo-search-console";
 
 test("Search Console requests a distinct read-only grant", () => {
   assert.equal(GSC_READ_SCOPE, "https://www.googleapis.com/auth/webmasters.readonly");
@@ -38,4 +38,17 @@ test("Domain property can verify author's own subdomains; URL-prefix of root can
     { siteUrl: "sc-domain:chatgenius.com", permissionLevel: "siteOwner" },
     { siteUrl: "sc-domain:chatgenius.pro", permissionLevel: "siteFullUser" },
   ]), "sc-domain:chatgenius.pro");
+});
+
+test("Saved Search Console channel lookup uses exact brand and Google property, never neighboring brands", () => {
+  const channels = [
+    { id: "a", brand_id: "zeneco", external_id: "https://www.zenecohomes.com/" },
+    { id: "b", brand_id: "freddyb", external_id: "sc-domain:freddybremseth.com" },
+    { id: "c", brand_id: "zeneco", external_id: "sc-domain:chatgenius.pro" },
+    { id: "d", brand_id: "freddypublishing", external_id: "sc-domain:freddybremseth.com" },
+  ];
+  assert.deepEqual(selectStoredGSCBrandChannels("zeneco", channels).map(item => item.id), ["a"]);
+  assert.deepEqual(selectStoredGSCBrandChannels("freddyb", channels).map(item => item.id), ["b"]);
+  assert.deepEqual(selectStoredGSCBrandChannels("freddypublishing", channels).map(item => item.id), ["d"]);
+  assert.deepEqual(selectStoredGSCBrandChannels("pinosoecolife", channels), []);
 });
