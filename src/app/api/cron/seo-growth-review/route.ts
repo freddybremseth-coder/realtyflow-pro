@@ -7,6 +7,8 @@ import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { SEOAgent } from "@/services/agents/seo-agent";
 import { getSEOObservedSignals } from "@/services/agents/seo-data";
+import { getSEOLeadSignals } from "@/services/agents/seo-leads";
+import { planSEOOpportunities } from "@/services/agents/seo-opportunities";
 import { auditSEOPortfolio } from "@/services/agents/seo-audit";
 
 const ACTION = "seo_portfolio_growth_review";
@@ -45,8 +47,41 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [signals, audits] = await Promise.all([getSEOObservedSignals(), auditSEOPortfolio()]);
-    const report = (await new SEOAgent().portfolioGrowthReview({ signals, audits })).slice(0, 24000);
+    const [signals, audits, leads] = await Promise.all([getSEOObservedSignals(), auditSEOPortfolio(), getSEOLeadSignals()]);
+    const report = (await new SEOAgent().portfolioGrowthReview({ signals, audits, leads })).slice(0, 24000);
+    // Only evidence-backed, review-only work items. No CRM contact data or
+    // generated copy is published. Keep active issues idempotent across weeks.
+    const candidates = planSEOOpportunities(signals, leads, audits);
+    const { data: existingItems, error: itemsError } = await supabase.from("work_items")
+      .select("source_id")
+      .eq("source_type", "ai_agent")
+      .eq("assigned_agent", "seo")
+      .in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"])
+      .limit(500);
+    if (itemsError) throw new Error("SEO opportunity deduplication failed: " + itemsError.message);
+    const active = new Set((existingItems || []).map(item => String(item.source_id || "")));
+    const newItems = candidates.filter(candidate => !active.has("seo-opportunity:" + candidate.issueId));
+    if (newItems.length) {
+      const { error: createError } = await supabase.from("work_items").insert(newItems.map(item => ({
+        title: item.title,
+        description: item.description,
+        brand_id: item.brandId,
+        status: "TO_DO",
+        priority: item.priority,
+        source_type: "ai_agent",
+        source_id: "seo-opportunity:" + item.issueId,
+        assigned_agent: "seo",
+        next_action: item.nextAction,
+        metadata: {
+          seo_issue_key: item.issueId,
+          evidence: item.evidence,
+          review_only: true,
+          needs_editor_approval: true,
+          published: false,
+        },
+      })));
+      if (createError) throw new Error("SEO opportunity persistence failed: " + createError.message);
+    }
     const status = signals.totals.current === 0 || signals.dataQuality.truncated ? "partial" : "success";
     const { error } = await supabase.from("automation_logs").insert({
       action: ACTION,
@@ -61,6 +96,9 @@ export async function GET(request: NextRequest) {
         by_brand: signals.byBrand,
         by_source: signals.bySource,
         top_pages: signals.topPages,
+        website_inquiries: leads,
+        opportunity_candidates: candidates.length,
+        review_work_items_created: newItems.length,
         technical_audits: audits,
         technical_findings: audits.reduce((sum, audit) => sum + audit.observations.length, 0),
         technical_checks_incomplete: audits.reduce((sum, audit) => sum + audit.limitations.filter(message => !message.startsWith("Homepage/robots/sitemap")).length, 0),
@@ -72,7 +110,9 @@ export async function GET(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({
       success: true, status, analyzed: signals.byBrand.length,
-      observedVisits: signals.totals.current, published: false,
+      observedVisits: signals.totals.current,
+      observedWebsiteInquiries: leads.totals.current,
+      proposedReviewItems: newItems.length, published: false,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
