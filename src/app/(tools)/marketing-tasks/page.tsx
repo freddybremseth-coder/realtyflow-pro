@@ -65,7 +65,7 @@ function mapWorkItem(item: any): Task {
     sourceType: item.source_type,
     nextAction: item.next_action || undefined,
     aiScore: item.ai_score || 0,
-    synthetic: Boolean(item.metadata?.synthetic || String(item.id).includes("-")),
+    synthetic: Boolean(item.metadata?.synthetic || !/^[0-9a-f-]{36}$/i.test(String(item.id))),
     metadata: item.metadata || {},
   };
 }
