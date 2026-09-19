@@ -24,7 +24,7 @@ type Payload = {
   actions: Action[]; observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
   connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
   changeEvaluations: Array<{
-    changeId: string; brandId: string; page: string; query: string; commitSha: string;
+    changeId: string; brandId: string; page: string; query: string; commitSha: string | null; metadataRevision: number | null;
     status: "waiting" | "unavailable" | "incomplete" | "measured";
     baseline: { start: string; end: string; impressions: number; clicks: number; position: number };
     current: { start: string; end: string; impressions: number; clicks: number; position: number } | null;
@@ -37,6 +37,10 @@ type Payload = {
     at: string; status: string; websiteChangesPublished: number; writeStatus: string;
     assessments: Array<{ brandId: string; status: string; note: string;
       page: string | null; currentImpressions: number | null; currentClicks: number | null }>;
+    zenEcoMetadataPilot: null | {
+      status: "monitor" | "blocked" | "pending" | "verified" | "rollback";
+      reason: string; page: string | null; published: number;
+    };
   };
 };
 const LABELS: Record<string, string> = {
@@ -169,8 +173,19 @@ export function SamSEOActionBoard() {
                     </p>
                   ))}
                 </div>
-                {data.seoPilot.writeStatus !== "verified" && (
-                  <p className="mt-2 text-xs font-semibold text-amber-950">Automatisk nettsidepublisering er ikke aktivert av denne målesyklusen: sikker publiseringskanal og tilbakeføring må verifiseres for den konkrete siden. Ingen oppgave er automatisk erklært utført.</p>
+                {data.seoPilot.zenEcoMetadataPilot && (
+                  <div role="status" className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
+                    <strong>Zen Eco Homes · {data.seoPilot.zenEcoMetadataPilot.status === "verified" ? "Publisering verifisert"
+                      : data.seoPilot.zenEcoMetadataPilot.status === "pending" ? "Venter på kontroll av nettsiden"
+                      : data.seoPilot.zenEcoMetadataPilot.status === "blocked" ? "Sikkerhetsstopp"
+                      : data.seoPilot.zenEcoMetadataPilot.status === "rollback" ? "Tilbakeføring registrert"
+                      : "Automatisk SEO-måling"}</strong>
+                    <p className="mt-1">{data.seoPilot.zenEcoMetadataPilot.reason}</p>
+                    <p className="mt-1 text-xs text-slate-700">Piloten gjelder kun titler og metabeskrivelser på fire utvalgte norske landingssider. Ingen publisering skjer på svake eller manglende søkedata.</p>
+                  </div>
+                )}
+                {data.seoPilot.writeStatus === "requires_verified_reversible_publisher" && (
+                  <p className="mt-2 text-xs font-semibold text-amber-950">Automatisk nettsidepublisering venter på teknisk verifisering. Ingen oppgave er erklært utført.</p>
                 )}
               </>
             ) : <p className="mt-2 text-xs">Første planlagte automatiske målesyklus er ennå ikke lagret.</p>}
