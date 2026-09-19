@@ -12,6 +12,7 @@ import { planSEOOpportunities } from "@/services/agents/seo-opportunities";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { auditSEOPortfolio } from "@/services/agents/seo-audit";
 import { readGSCAllBrands } from "@/services/agents/seo-search-console";
+import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
 
 const ACTION = "seo_portfolio_growth_review";
 const PATH = "/api/cron/seo-growth-review";
@@ -53,6 +54,16 @@ export async function GET(request: NextRequest) {
       getSEOObservedSignals(), auditSEOPortfolio(), getSEOLeadSignals(), readGSCAllBrands(),
     ]);
     const report = (await new SEOAgent().portfolioGrowthReview({ signals, audits, leads, searchConsole })).slice(0, 24000);
+    const { data: changeRows, error: changeError } = await supabase.from("automation_logs")
+      .select("details")
+      .eq("action", "seo_autopilot_change").eq("status", "success")
+      .order("created_at", { ascending: false }).limit(25);
+    if (changeError) throw new Error("SEO change audit lookup failed: " + changeError.message);
+    const tracked = (changeRows || []).map(row => parseTrackedSEOChange(row.details))
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const changeEvaluations = evaluateTrackedSEOChanges(
+      tracked, searchConsole.flatMap(item => item.status === "connected" && item.result ? [item.result] : []),
+    );
     // Only evidence-backed, review-only work items. No CRM contact data or
     // generated copy is published. Keep active issues idempotent across weeks.
     const verifiedGSC = searchConsole.flatMap(item => item.status === "connected" && item.result ? [item.result] : []);
@@ -109,6 +120,7 @@ export async function GET(request: NextRequest) {
         top_pages: signals.topPages,
         website_inquiries: leads,
         google_search_console: searchConsole,
+        seo_autopilot_change_evaluations: changeEvaluations,
         opportunity_candidates: candidates.length,
         review_work_items_created: newItems.length,
         technical_audits: audits,
