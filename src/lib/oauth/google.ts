@@ -101,7 +101,7 @@ export async function finalizeGoogleChannel(input: {
   platform: "youtube" | "google_drive" | "gmail" | "google_search_console";
   channel: YouTubeChannelInfo;
   accessToken: string;
-  refreshToken: string;
+  refreshToken: string | null;
   expiresAt: Date | null;
   scopes: string[];
 }): Promise<void> {
