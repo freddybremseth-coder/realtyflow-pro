@@ -156,7 +156,7 @@ type GithubContentResponse = {
   sha?: string; content?: string; encoding?: string;
 };
 
-async function readGithubFile(target: PublisherTarget, path: string, token: string, ref = target.branch) {
+async function readGithubFile(target: PublisherTarget, path: string, token: string, ref: string = target.branch) {
   const response = await githubJson(
     "https://api.github.com/repos/" + target.repository + "/contents/" +
       path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(ref),
