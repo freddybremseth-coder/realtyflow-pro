@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
-    const [connections, saved, tasks, oauthResults, storedChannels] = await Promise.all([
+    const [connections, saved, tasks, oauthResults, storedChannels, lastLiveRead] = await Promise.all([
       getGSCConnectionStatus(),
       supabase.from("automation_logs").select("created_at,details")
         .eq("action", "seo_portfolio_growth_review")
@@ -33,8 +33,13 @@ export async function GET(request: NextRequest) {
         .order("created_at", { ascending: false }).limit(50),
       supabase.from("social_channels").select("id,brand_id,external_id")
         .eq("platform", "google_search_console").eq("is_active", true),
+      supabase.from("automation_logs").select("created_at,details")
+        .eq("action", "seo_gsc_live_read")
+        .in("status", ["success", "partial"])
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (saved.error) throw new Error("SEO review lookup: " + saved.error.message);
+    if (lastLiveRead.error) throw new Error("Last Google read lookup: " + lastLiveRead.error.message);
     if (tasks.error) throw new Error("SEO task lookup: " + tasks.error.message);
     if (oauthResults.error) throw new Error("Google connection diagnostic lookup: " + oauthResults.error.message);
     if (storedChannels.error) throw new Error("Google connection storage lookup: " + storedChannels.error.message);
@@ -64,14 +69,28 @@ export async function GET(request: NextRequest) {
       }
     }
     const stored = saved.data?.details as { google_search_console?: StoredSearchConsole[] } | null;
-    // An explicit refresh reads live Google data; the routine dashboard remains fast
-    // and reuses the last documented weekly review, with its original collection date.
-    const readings: StoredSearchConsole[] = request.nextUrl.searchParams.get("live") === "1"
-      ? await readGSCAllBrands()
-      : (Array.isArray(stored?.google_search_console) ? stored.google_search_console : []);
-    const known = new Set<string>(connections.filter(item => item.connected).map(item => item.brandId));
+    const liveStored = lastLiveRead.data?.details as { google_search_console?: StoredSearchConsole[] } | null;
+    const explicitLive = request.nextUrl.searchParams.get("live") === "1";
+    const lastReadIsNewer = Boolean(lastLiveRead.data?.created_at &&
+      (!saved.data?.created_at || Date.parse(lastLiveRead.data.created_at) > Date.parse(saved.data.created_at)));
+    const storedReadings = lastReadIsNewer ? liveStored?.google_search_console : stored?.google_search_console;
+    // An explicit Google refresh persists only provider diagnostics and actual
+    // measurements. Reloading the page must not erase the last successful read.
+    const readings: StoredSearchConsole[] = explicitLive ? await readGSCAllBrands()
+      : (Array.isArray(storedReadings) ? storedReadings : []);
+    if (explicitLive) {
+      const hadSuccess = readings.some(item => item.status === "connected" && item.result !== null);
+      const { error: recordError } = await supabase.from("automation_logs").insert({
+        action: "seo_gsc_live_read", agent_name: "Sam SEO Expert",
+        status: hadSuccess ? "success" : "partial",
+        details: { google_search_console: readings },
+      });
+      if (recordError) console.error("[SamSEO] Cannot persist latest GSC read", recordError.message);
+    }
+    // A completed provider read is primary evidence. A separate connection
+    // health check may be stale or fail and must not discard real Google data.
     const snapshots = readings.filter((item): item is StoredSearchConsole & { result: GSCBrandSnapshot } =>
-      item.status === "connected" && item.result !== null && known.has(item.brandId))
+      item.status === "connected" && item.result !== null)
       .map(item => item.result);
     const computed = planGSCOpportunities(snapshots).map(item => ({
       id: "gsc:" + item.issueId, brandId: item.brandId, title: item.title,
@@ -108,14 +127,17 @@ export async function GET(request: NextRequest) {
     }));
     return NextResponse.json({
       actions, connections: connected, metrics, latestReviewAt: saved.data?.created_at || null,
+      lastGoogleReadAt: explicitLive ? new Date().toISOString() : lastReadIsNewer
+        ? lastLiveRead.data?.created_at || null : saved.data?.created_at || null,
       connectionSummary: {
         registered: connected.filter(item => item.registered).length,
         readable: connected.filter(item => item.connected).length,
         measured: metrics.length,
       },
-      readingMode: request.nextUrl.searchParams.get("live") === "1" ? "live" : "last_review",
-      readErrors: readings.filter(item => item.status === "error").map(item => ({
-        brandId: item.brandId, error: item.error || "Search Console not available",
+      readingMode: explicitLive ? "live" : lastReadIsNewer ? "last_live_read" : "last_review",
+      readErrors: readings.filter(item => item.status === "error" ||
+        (item.status === "not_connected" && registered.has(item.brandId))).map(item => ({
+        brandId: item.brandId, error: item.error || "Google-tilkoblingen er lagret, men serveren finner den ikke under datainnhenting.",
       })),
       notes: "Search Console measures website search performance; YouTube and Instagram reach require their own channel analytics. Recommendations are proposals, not published website changes.",
     }, { headers: { "Cache-Control": "private, no-store" } });
