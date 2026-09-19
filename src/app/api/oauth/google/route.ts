@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", scopes.join(" "));
   authUrl.searchParams.set("access_type", "offline");
-  authUrl.searchParams.set("prompt", "consent");
+  authUrl.searchParams.set("prompt", service === "search_console" ? "select_account consent" : "consent");
   authUrl.searchParams.set("include_granted_scopes", "true");
   authUrl.searchParams.set("state", stateNonce);
   if (service === "gmail") authUrl.searchParams.set("login_hint", expectedEmail);
