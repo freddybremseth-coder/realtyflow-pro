@@ -101,6 +101,11 @@ type GSCStoredChannel = { id: string; brand_id: string; external_id: string };
  * Select only non-secret metadata here; encrypted tokens are loaded by id
  * separately after the property has been checked.
  */
+export function selectStoredGSCBrandChannels(brandId: string, channels: readonly GSCStoredChannel[]): GSCStoredChannel[] {
+  return channels.filter(channel => channel.brand_id === brandId &&
+    selectGSCProperty(brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) === channel.external_id);
+}
+
 async function getStoredGSCChannels(brandId: string): Promise<GSCStoredChannel[]> {
   if (!targetForBrand(brandId)) throw new Error("Unknown public SEO brand");
   const { data, error } = await createServerClient()
@@ -112,7 +117,7 @@ async function getStoredGSCChannels(brandId: string): Promise<GSCStoredChannel[]
     console.error("[SamSEO] GSC channel lookup failed", { brandId, code: error.code });
     throw new Error("Google channel database lookup failed: " + (error.code || "unknown"));
   }
-  return (data || []).filter(channel => channel.brand_id === brandId);
+  return selectStoredGSCBrandChannels(brandId, data || []);
 }
 
 export async function getGSCConnectionStatus() {
