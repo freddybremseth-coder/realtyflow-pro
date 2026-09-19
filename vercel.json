@@ -53,6 +53,7 @@
     { "path": "/api/cron/remaster-analytics-snapshot", "schedule": "20 19 * * *" },
     { "path": "/api/cron/remaster-growth-loop", "schedule": "35 19 * * *" },
     { "path": "/api/cron/lead-nurture", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/demosites-followup", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/demosites-followup", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/seo-growth-review", "schedule": "15 7 * * 1" }
   ]
 }
