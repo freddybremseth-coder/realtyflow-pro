@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getSEOObservedSignals } from "@/services/agents/seo-data";
 import { getSEOLeadSignals } from "@/services/agents/seo-leads";
-import { SEO_SKILLS, seoSkillsByAvailability } from "@/services/agents/seo-skills";
+import { SEO_SKILLS } from "@/services/agents/seo-skills";
 import { getGSCConnectionStatus } from "@/services/agents/seo-search-console";
 
 export async function GET(request: NextRequest) {
@@ -28,12 +28,22 @@ export async function GET(request: NextRequest) {
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (saved.error) throw new Error(saved.error.message);
+    const skills = SEO_SKILLS.map(skill =>
+      skill.id === "google_search_console" && connections.some(connection => connection.connected)
+        ? { ...skill, availability: "measured" as const,
+            evidence: "Authorized read-only GSC access exists for at least one brand. Confirm brand-specific status and actual live search results before citing metrics." }
+        : skill);
+    const capabilitySummary = {
+      measured: skills.filter(skill => skill.availability === "measured").length,
+      advisory: skills.filter(skill => skill.availability === "advisory").length,
+      needsConnection: skills.filter(skill => skill.availability === "needs_connection").length,
+    };
     return NextResponse.json({
       signals,
       leads,
       searchConsoleConnections: connections,
-      skills: SEO_SKILLS,
-      capabilitySummary: Object.fromEntries(Object.entries(seoSkillsByAvailability()).map(([kind, items]) => [kind, items.length])),
+      skills,
+      capabilitySummary,
       latest: saved.data
         ? { at: saved.data.created_at, status: saved.data.status,
             report: (saved.data.details as { report?: string } | null)?.report || "",
