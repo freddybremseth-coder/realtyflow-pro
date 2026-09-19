@@ -21,7 +21,8 @@ type Metric = {
   quality: string;
 };
 type Payload = {
-  actions: Action[]; connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
+  actions: Action[]; observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
+  connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
   lastGoogleReadAt: string | null;
   readingMode: "live" | "last_review" | "last_live_read"; readErrors: Array<{ brandId: string; error: string }>;
   connectionSummary: { registered: number; readable: number; measured: number };
@@ -235,6 +236,19 @@ export function SamSEOActionBoard() {
               ))}
             </div>
           )}
+          {data.observations?.length > 0 && (
+            <div className="mt-5 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sky-950">
+              <h3 className="font-black">Måles videre uten godkjenningsoppgave · {data.observations.length} nettsteder</h3>
+              <p className="mt-1 text-sm">Google har ikke returnert søkevisninger på disse målte sidene i perioden. Dette er en observasjon, ikke et publiseringsforslag eller bevis for manglende indeksering. Sam beholder målingen til neste gjennomgang; ingen nettsideendring utføres her.</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                {data.observations.map(item => (
+                  <span key={item.id} className="rounded-lg border border-sky-200 bg-white px-2 py-1 font-semibold">
+                    {LABELS[item.brandId || ""] || item.brandId}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-lg font-black text-slate-950">Dette bør Sam følge opp</h3>
             <Link href="/marketing-tasks" className="inline-flex items-center gap-1 text-sm font-bold text-emerald-800 underline">
@@ -255,7 +269,7 @@ export function SamSEOActionBoard() {
                 <p className="mt-2 text-sm leading-6 text-slate-800"><strong>Funn:</strong> {action.description}</p>
                 <p className="mt-2 text-sm leading-6 text-emerald-950"><strong>Tiltak:</strong> {action.nextAction}</p>
                 <p className="mt-2 text-xs leading-5 text-slate-600"><strong>Dokumentasjon:</strong> {action.evidence}</p>
-                <p className="mt-2 text-xs font-bold text-amber-900">Status: {action.status} · Krever godkjenning før publisering</p>
+                <p className="mt-2 text-xs font-bold text-amber-900">Analyse og utkast kan gjøres internt. En eventuell publisering eller endring krever separat godkjent flyt.</p>
               </article>
             ))}
             {data.actions.length === 0 && (
