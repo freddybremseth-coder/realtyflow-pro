@@ -1,0 +1,178 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { AlertTriangle, ArrowRight, ExternalLink, Loader2, RefreshCw, SearchCheck } from "lucide-react";
+
+type Action = {
+  id: string; brandId: string | null; title: string; description: string; nextAction: string;
+  priority: string; evidence: string; status: string; source: string; requiresApproval: boolean;
+};
+type Connection = { brandId: string; domain: string; connected: boolean; property: string | null; target: string; error: string | null };
+type Metric = {
+  brandId: string; property: string; collectedAt: string;
+  period: { currentStart: string; currentEnd: string };
+  totals: { currentClicks: number; currentImpressions: number; previousClicks: number; previousImpressions: number; currentCtr: number | null };
+  quality: string;
+};
+type Payload = {
+  actions: Action[]; connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
+  readingMode: "live" | "last_review"; readErrors: Array<{ brandId: string; error: string }>;
+};
+const LABELS: Record<string, string> = {
+  zeneco: "Zen Eco Homes", pinosoecolife: "Pinoso EcoLife",
+  freddyb: "FreddyBremseth.com", freddypublishing: "Books · Freddy Bremseth",
+  remasterfreddy: "Re-master Freddy", donaanna: "Doña Anna", chatgenius: "ChatGenius.pro",
+};
+const date = (value: string) => new Date(value).toLocaleDateString("nb-NO");
+
+export function SamSEOActionBoard() {
+  const [data, setData] = useState<Payload | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const read = useCallback(async (live: boolean) => {
+    if (live) setRefreshing(true); else setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/agents/seo-priorities" + (live ? "?live=1" : ""), {
+        cache: "no-store", credentials: "same-origin",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Kunne ikke lese Sams tiltak");
+      setData(payload as Payload);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Sams data er utilgjengelige");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+  useEffect(() => { void read(false); }, [read]);
+
+  const disconnected = data?.connections.filter(item => !item.connected) || [];
+  return (
+    <section aria-label="Sam SEO anbefalinger og tiltak" className="rounded-3xl border-2 border-emerald-300 bg-white p-5 text-slate-950 shadow-sm sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-emerald-800">
+            <SearchCheck size={18} /> Sam SEO · synlighet og leads
+          </div>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">Anbefalinger og tiltak – synlige her</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+            Søkeord, landingssider og tekniske funn kobles til konkrete oppgaver. Her ser du hvorfor
+            noe skal gjøres, hvilken måling som ligger bak, og hva neste steg er. Ingen nettsideendringer
+            eller publiseringer skjer fra dette panelet uten separat godkjent flyt.
+          </p>
+          <p className="mt-1 text-xs font-semibold text-slate-600">
+            {data?.latestReviewAt ? "Siste lagrede SEO-gjennomgang: " + date(data.latestReviewAt) : "Ingen tidligere SEO-gjennomgang tilgjengelig"}
+            {data?.readingMode === "live" ? " · Fersk Search Console-lesing er hentet" : " · Tall er fra sist lagrede gjennomgang"}
+          </p>
+        </div>
+        <button type="button" onClick={() => void read(true)} disabled={loading || refreshing}
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-800 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-60">
+          {refreshing || loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+          {refreshing ? "Leser Google-data…" : "Hent nye Google-tall"}
+        </button>
+      </div>
+      {error && <div role="alert" className="mt-4 rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-950">
+        <AlertTriangle size={16} className="mr-2 inline" />{error}
+        {data ? " · Forrige dokumenterte oversikt vises fortsatt." : ""}
+      </div>}
+      {loading && <p className="mt-4 text-sm text-slate-700">Henter Sams dokumenterte oppgaver og målinger…</p>}
+      {data && (
+        <>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-emerald-800">Åpne SEO-tiltak</p>
+              <div className="mt-1 text-3xl font-black text-emerald-950">{data.actions.length}</div>
+              <p className="text-xs text-emerald-900">Forslag og åpne oppgaver på denne oversikten</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Sam har Google-tilgang</p>
+              <div className="mt-1 text-3xl font-black text-slate-950">{data.connections.length - disconnected.length}/{data.connections.length}</div>
+              <p className="text-xs text-slate-700">Autorisert nettstedslesing; ikke det samme som Google-eierskapsbekreftelse</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Nettsteder med målte søketall</p>
+              <div className="mt-1 text-3xl font-black text-slate-950">{data.metrics.length}</div>
+              <p className="text-xs text-slate-700">Google web-søk, ikke YouTube- eller Instagram-statistikk</p>
+            </div>
+          </div>
+          {disconnected.length > 0 && (
+            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <h3 className="font-black text-amber-950">Google Search Console må kobles til Sam separat</h3>
+              <p className="mt-1 text-sm text-amber-950">Disse nettstedene har ikke en registrert lesetilkobling i RealtyFlow. Å verifisere et domene hos Google gir ikke automatisk API-tilgang.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {disconnected.map(connection => (
+                  <a key={connection.brandId} href={"/api/oauth/google?brand_id=" + encodeURIComponent(connection.brandId) + "&service=search_console"}
+                    className="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-bold text-amber-950 hover:bg-amber-100">
+                    Koble {LABELS[connection.brandId] || connection.domain} <ExternalLink size={13} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.readErrors.length > 0 && <p role="status" className="mt-3 text-sm text-amber-900">
+            Google-data kunne ikke leses for: {data.readErrors.map(item => LABELS[item.brandId] || item.brandId).join(", ")}.
+            Kontroller autorisering og prøv igjen; ingen tall er estimert.
+          </p>}
+          {data.metrics.length > 0 && (
+            <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+              {data.metrics.map(metric => (
+                <div key={metric.brandId} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="font-black text-slate-950">{LABELS[metric.brandId] || metric.brandId}</h3>
+                  <p className="mt-1 text-xs text-slate-600">{metric.period.currentStart}–{metric.period.currentEnd} · lest {date(metric.collectedAt)}</p>
+                  <p className="mt-2 text-sm font-bold text-slate-950">
+                    {metric.totals.currentClicks} Google-klikk · {metric.totals.currentImpressions} visninger
+                  </p>
+                  <p className="mt-1 text-xs text-slate-700">
+                    CTR {metric.totals.currentCtr === null ? "ikke målt" : (metric.totals.currentCtr * 100).toFixed(1) + " %"} ·
+                    forrige periode {metric.totals.previousClicks} klikk / {metric.totals.previousImpressions} visninger
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-lg font-black text-slate-950">Dette bør Sam følge opp</h3>
+            <Link href="/marketing-tasks" className="inline-flex items-center gap-1 text-sm font-bold text-emerald-800 underline">
+              Åpne Oppgave-HUB <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            {data.actions.map(action => (
+              <article key={action.id} className="rounded-xl border border-slate-300 bg-white p-4 text-slate-950">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                  <span className={action.priority === "HIGH" || action.priority === "CRITICAL"
+                    ? "rounded-full bg-amber-100 px-2 py-1 text-amber-900"
+                    : "rounded-full bg-cyan-100 px-2 py-1 text-cyan-900"}>{action.priority}</span>
+                  <span className="text-slate-700">{LABELS[action.brandId || ""] || "Hele porteføljen"}</span>
+                  <span className="text-slate-600">· {action.source}</span>
+                </div>
+                <h4 className="mt-2 text-base font-black text-slate-950">{action.title}</h4>
+                <p className="mt-2 text-sm leading-6 text-slate-800"><strong>Funn:</strong> {action.description}</p>
+                <p className="mt-2 text-sm leading-6 text-emerald-950"><strong>Tiltak:</strong> {action.nextAction}</p>
+                <p className="mt-2 text-xs leading-5 text-slate-600"><strong>Dokumentasjon:</strong> {action.evidence}</p>
+                <p className="mt-2 text-xs font-bold text-amber-900">Status: {action.status} · Krever godkjenning før publisering</p>
+              </article>
+            ))}
+            {data.actions.length === 0 && (
+              <div className="rounded-xl border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800 lg:col-span-2">
+                Ingen dokumenterte åpne SEO-oppgaver eller søkedatabaserte forslag er tilgjengelige fra sist gjennomgang.
+                Bruk «Hent nye Google-tall» ovenfor; fravær av forslag betyr ikke at nettstedene er ferdig optimalisert.
+              </div>
+            )}
+          </div>
+          <p className="mt-4 text-xs leading-5 text-slate-600">
+            Google Search Console måler søkeytelse for nettsteder, også sider som eventuelt er indeksert på andre domener.
+            For faktiske visninger, engasjement og følgere på YouTube og Instagram må Sam bruke kanalens egne tilkoblede analysedata.
+            <Link href="/youtube-studio" className="ml-1 font-bold text-emerald-800 underline">YouTube</Link>
+            {" · "}
+            <Link href="/social-automation" className="font-bold text-emerald-800 underline">Instagram og øvrige sosiale medier</Link>
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
