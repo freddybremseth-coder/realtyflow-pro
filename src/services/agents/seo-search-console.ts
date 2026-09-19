@@ -98,7 +98,9 @@ export async function getGSCConnectionStatus() {
       if (valid.length !== 1) return {
         brandId: target.brandId, domain, connected: false, property: null,
         temporary: false, expiresAt: null,
-        error: valid.length > 1 ? "Multiple Search Console connections need reauthorization" : null,
+        error: valid.length > 1 ? "Flere aktive Google-eiendommer er registrert for samme merke." :
+          channels.length === 0 ? "Ingen aktiv Google-tilkobling lagret for dette nettstedet." :
+          "Den lagrede Search Console-eiendommen samsvarer ikke med nettstedet.",
       };
       // A registered channel alone is not proof of an OAuth grant. Do not
       // mark a brand connected when the read-only token is missing or unusable.
@@ -114,10 +116,18 @@ export async function getGSCConnectionStatus() {
         expiresAt: tokens?.expiresAt?.toISOString() || null,
         error: connected ? null : "Search Console readonly OAuth authorization is missing or expired; reconnect Google",
       };
-    } catch {
+    } catch (cause) {
+      // Never hide all seven brands behind the same anonymous disconnected
+      // state: a storage/decryption issue is not a missing Google consent.
+      const detail = cause instanceof Error ? cause.message : "";
+      const error = /OAUTH_ENCRYPTION_KEY|authenticate data|auth tag|decrypt|bytea|key_id/i.test(detail)
+        ? "RealtyFlow klarer ikke å lese den lagrede Google-nøkkelen. Kontroller OAuth-krypteringsnøkkel og dekryptering på serveren."
+        : "RealtyFlow kunne ikke kontrollere den lagrede Google-tilkoblingen. Se serverloggene.";
+      console.error("[SamSEO] GSC connection check failed", {
+        brandId: target.brandId, category: error.startsWith("RealtyFlow klarer") ? "token_unreadable" : "connection_check_failed",
+      });
       return { brandId: target.brandId, domain, connected: false, property: null,
-        temporary: false, expiresAt: null,
-        error: "Google Search Console connection needs inspection or reauthorization" };
+        temporary: false, expiresAt: null, error };
     }
   }));
 }
