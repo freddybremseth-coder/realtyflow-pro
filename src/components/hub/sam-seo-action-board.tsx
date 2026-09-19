@@ -8,7 +8,11 @@ type Action = {
   id: string; brandId: string | null; title: string; description: string; nextAction: string;
   priority: string; evidence: string; status: string; source: string; requiresApproval: boolean;
 };
-type Connection = { brandId: string; domain: string; connected: boolean; property: string | null; target: string; error: string | null };
+type Connection = {
+  brandId: string; domain: string; connected: boolean; property: string | null;
+  target: string; error: string | null; temporary?: boolean; expiresAt?: string | null;
+  lastFailure?: { code: string; at: string } | null;
+};
 type Metric = {
   brandId: string; property: string; collectedAt: string;
   period: { currentStart: string; currentEnd: string };
@@ -25,12 +29,39 @@ const LABELS: Record<string, string> = {
   remasterfreddy: "Re-master Freddy", donaanna: "Doña Anna", chatgenius: "ChatGenius.pro",
 };
 const date = (value: string) => new Date(value).toLocaleDateString("nb-NO");
+const GSC_FAILURES: Record<string, string> = {
+  gsc_consent_declined: "Google-tillatelsen ble ikke godkjent. Velg en konto som har tilgang til nettstedet, og godkjenn lesetilgangen.",
+  gsc_oauth_service_mismatch: "Tilkoblingsprosessen hadde feil tjenestetype. Start Search Console-tilkoblingen på nytt.",
+  gsc_readonly_scope_not_granted: "Google gav ikke Search Console-lesetilgang. Godkjenn den særskilte Search Console-tillatelsen.",
+  gsc_no_properties_in_google_account: "Google-kontoen du valgte har ingen tilgjengelige Search Console-nettsteder. Velg kontoen som har tilgang til de bekreftede nettstedene.",
+  gsc_no_verified_property_for_brand: "Google-kontoen har ikke tilgang til Search Console-eiendommen for dette nettstedet. Kontroller riktig Google-konto og at domenet er bekreftet i Search Console.",
+  gsc_api_disabled: "Search Console API er ikke aktivert for Google OAuth-prosjektet. Det må aktiveres i Google Cloud før Sam kan lese nettstedene.",
+  gsc_property_list_forbidden: "Google avviste lesing av Search Console-nettstedene (403). Kontroller API-tilgang, OAuth-rettigheter og at Google-kontoen har tilgang til domenet.",
+  gsc_property_list_failed: "RealtyFlow kunne ikke hente listen over nettsteder fra Google. Kontroller Search Console API og prøv tilkoblingen igjen.",
+  gsc_no_usable_token: "Google ga ikke en brukbar tilgangsnøkkel. Start Google-tilkoblingen på nytt.",
+  gsc_property_or_token_save_failed: "Google-tillatelsen ble gitt, men RealtyFlow klarte ikke å lagre tilkoblingen. Dette er en intern tilkoblingsfeil; kontroller loggene før nytt forsøk.",
+};
+function gscFailure(code: string) {
+  return GSC_FAILURES[code] || "Google-tilkoblingen ble ikke fullført. Start tilkoblingen på nytt, og kontroller feilstatusen i RealtyFlow.";
+}
+
 
 export function SamSEOActionBoard() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [oauthReturn, setOauthReturn] = useState<{ brandId: string; errorCode: string | null; success: boolean } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("oauth_error");
+    const success = params.get("oauth_success") === "true" && params.get("platform") === "google_search_console";
+    const brandId = params.get("brand") || "";
+    if ((success || code?.startsWith("gsc_")) && brandId in LABELS) {
+      setOauthReturn({ brandId, errorCode: code, success });
+    }
+  }, []);
+
   const read = useCallback(async (live: boolean) => {
     if (live) setRefreshing(true); else setLoading(true);
     setError("");
@@ -75,6 +106,28 @@ export function SamSEOActionBoard() {
           {refreshing ? "Leser Google-data…" : "Hent nye Google-tall"}
         </button>
       </div>
+      {oauthReturn && (
+        <div role="status" className={oauthReturn.errorCode
+          ? "mt-4 rounded-xl border-2 border-rose-400 bg-rose-50 p-4 text-sm text-rose-950"
+          : "mt-4 rounded-xl border-2 border-emerald-400 bg-emerald-50 p-4 text-sm text-emerald-950"}>
+          <strong>{LABELS[oauthReturn.brandId]} · Google Search Console</strong>
+          <p className="mt-1">
+            {oauthReturn.errorCode
+              ? gscFailure(oauthReturn.errorCode)
+              : loading
+                ? "Kontrollerer at Google-tilkoblingen faktisk er lagret…"
+                : data?.connections.some(item => item.brandId === oauthReturn.brandId && item.connected)
+                  ? "Google-tilkoblingen er bekreftet lagret i RealtyFlow. Sam kan nå lese Search Console-data for dette nettstedet."
+                  : "Google sendte en bekreftelse, men RealtyFlow finner ingen aktiv, lagret tilkobling. Se feilinformasjonen nedenfor."}
+          </p>
+          {oauthReturn.errorCode && (
+            <a className="mt-2 inline-flex rounded-lg bg-rose-900 px-3 py-2 font-bold text-white"
+              href={"/api/oauth/google?brand_id=" + encodeURIComponent(oauthReturn.brandId) + "&service=search_console"}>
+              Koble {LABELS[oauthReturn.brandId]} på nytt
+            </a>
+          )}
+        </div>
+      )}
       {error && <div role="alert" className="mt-4 rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-950">
         <AlertTriangle size={16} className="mr-2 inline" />{error}
         {data ? " · Forrige dokumenterte oversikt vises fortsatt." : ""}
@@ -103,6 +156,16 @@ export function SamSEOActionBoard() {
             <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
               <h3 className="font-black text-amber-950">Google Search Console må kobles til Sam separat</h3>
               <p className="mt-1 text-sm text-amber-950">Disse nettstedene har ikke en registrert lesetilkobling i RealtyFlow. Å verifisere et domene hos Google gir ikke automatisk API-tilgang.</p>
+              {disconnected.some(item => item.lastFailure) && (
+                <div role="alert" className="mt-3 space-y-2">
+                  {disconnected.filter(item => item.lastFailure).map(item => (
+                    <p key={item.brandId} className="rounded-lg border border-amber-300 bg-white p-3 text-sm text-amber-950">
+                      <strong>{LABELS[item.brandId] || item.domain} · siste tilkoblingsfeil ({item.lastFailure?.at ? date(item.lastFailure.at) : "ukjent dato"}): </strong>
+                      {gscFailure(item.lastFailure?.code || "")}
+                    </p>
+                  ))}
+                </div>
+              )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {disconnected.map(connection => (
                   <a key={connection.brandId} href={"/api/oauth/google?brand_id=" + encodeURIComponent(connection.brandId) + "&service=search_console"}
@@ -113,6 +176,19 @@ export function SamSEOActionBoard() {
               </div>
             </div>
           )}
+          {data.connections.filter(item => item.connected && item.temporary).map(item => (
+            <div key={item.brandId} role="status" className="mt-3 rounded-xl border border-amber-400 bg-amber-50 p-4 text-sm text-amber-950">
+              <strong>{LABELS[item.brandId] || item.domain} · bare midlertidig Google-tilgang</strong>
+              <p className="mt-1">Google returnerte ingen fornyelsesnøkkel. Sam kan lese tall frem til
+                {item.expiresAt ? " " + new Date(item.expiresAt).toLocaleString("nb-NO") : " Google-tilgangen utløper"},
+                men kan ikke fornye denne tilgangen automatisk. Koble kontoen på nytt for varig tilgang.
+              </p>
+              <a className="mt-2 inline-flex font-bold text-amber-950 underline"
+                href={"/api/oauth/google?brand_id=" + encodeURIComponent(item.brandId) + "&service=search_console"}>
+                Gi varig lesetilgang
+              </a>
+            </div>
+          ))}
           {data.readErrors.length > 0 && <p role="status" className="mt-3 text-sm text-amber-900">
             Google-data kunne ikke leses for: {data.readErrors.map(item => LABELS[item.brandId] || item.brandId).join(", ")}.
             Kontroller autorisering og prøv igjen; ingen tall er estimert.
