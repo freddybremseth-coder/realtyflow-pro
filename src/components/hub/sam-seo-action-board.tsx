@@ -26,6 +26,11 @@ type Payload = {
   lastGoogleReadAt: string | null;
   readingMode: "live" | "last_review" | "last_live_read"; readErrors: Array<{ brandId: string; error: string }>;
   connectionSummary: { registered: number; readable: number; measured: number };
+  seoPilot: null | {
+    at: string; status: string; websiteChangesPublished: number; writeStatus: string;
+    assessments: Array<{ brandId: string; status: string; note: string;
+      page: string | null; currentImpressions: number | null; currentClicks: number | null }>;
+  };
 };
 const LABELS: Record<string, string> = {
   zeneco: "Zen Eco Homes", pinosoecolife: "Pinoso EcoLife",
@@ -143,6 +148,25 @@ export function SamSEOActionBoard() {
       {loading && <p className="mt-4 text-sm text-slate-700">Henter Sams dokumenterte oppgaver og målinger…</p>}
       {data && (
         <>
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+            <h3 className="font-black">Sam SEO · forhåndsgodkjent pilot</h3>
+            <p className="mt-1 text-sm">Automatisk Google-måling og intern prioritering for Zen Eco Homes og FreddyBremseth.com. Små offentlige endringer kan bare gjennomføres når eksakt redigerbar side, publiseringskanal, tidligere versjon og reversering er kontrollert. Boligpriser, kundedata og større omskrivinger ligger utenfor piloten.</p>
+            {data?.seoPilot ? (
+              <>
+                <p className="mt-2 text-xs font-semibold">Sist målt: {new Date(data.seoPilot.at).toLocaleString("nb-NO")} · Automatisk publisert i denne syklusen: {data.seoPilot.websiteChangesPublished}</p>
+                <div className="mt-2 space-y-1">
+                  {data.seoPilot.assessments.filter(item => ["zeneco", "freddyb"].includes(item.brandId)).map(item => (
+                    <p key={item.brandId} className="text-xs leading-5">
+                      <strong>{LABELS[item.brandId]} · {item.status === "candidate" ? "Målt mulighet" : item.status === "blocked" ? "Måling blokkert" : "Overvåkes"}:</strong> {item.note}
+                    </p>
+                  ))}
+                </div>
+                {data.seoPilot.writeStatus !== "verified" && (
+                  <p className="mt-2 text-xs font-semibold text-amber-950">Automatisk nettsidepublisering er ikke aktivert av denne målesyklusen: sikker publiseringskanal og tilbakeføring må verifiseres for den konkrete siden. Ingen oppgave er automatisk erklært utført.</p>
+                )}
+              </>
+            ) : <p className="mt-2 text-xs">Første planlagte automatiske målesyklus er ennå ikke lagret.</p>}
+          </div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-emerald-800">Åpne SEO-tiltak</p>
