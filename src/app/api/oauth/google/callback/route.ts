@@ -34,7 +34,14 @@ export async function GET(req: NextRequest) {
   const oauthError = params.get("error");
 
   if (oauthError) {
-    return errorRedirect(req, "_unknown", `oauth_error:${oauthError}`);
+    // A declined consent still has a valid state. Preserve the brand and show
+    // the reason on the SEO board instead of silently redirecting to Settings.
+    const deniedState = stateNonce ? await consumeState(stateNonce) : null;
+    if (deniedState?.platform === "google_search_console") {
+      await recordGSCOutcome(deniedState.brand_id, "error", "gsc_consent_declined");
+      return errorRedirect(req, deniedState.brand_id, "gsc_consent_declined", "/agents");
+    }
+    return errorRedirect(req, "_unknown", "oauth_error:" + oauthError);
   }
   if (!code || !stateNonce) {
     return errorRedirect(req, "_unknown", "missing_code_or_state");
@@ -82,7 +89,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (!tokenData.refresh_token) {
+  // Search Console may be granted a short-lived access token without a new
+  // refresh token. Handle that service separately and show its limited duration.
+  if (service !== "search_console" && state.platform !== "google_search_console" && !tokenData.refresh_token) {
     console.error("[Google OAuth] No refresh_token in response.");
     return errorRedirect(req, state.brand_id, "no_refresh_token", state.return_to);
   }
@@ -91,21 +100,37 @@ export async function GET(req: NextRequest) {
     return finalizeGmailConnection(req, state, tokenData);
   }
 
-  // Search Console is a dedicated, read-only scope and an exact per-brand
-  // verified property. Never treat a YouTube/Drive account as GSC access.
+  // Search Console requires its own read-only scope and a per-brand verified
+  // property. Never equate a Gmail/YouTube consent with verified GSC access.
   if (service === "search_console" || state.platform === "google_search_console") {
+    const fail = async (reason: string) => {
+      await recordGSCOutcome(state.brand_id, "error", reason);
+      return errorRedirect(req, state.brand_id, reason, "/agents");
+    };
     if (service !== "search_console" || state.platform !== "google_search_console") {
-      return errorRedirect(req, state.brand_id, "gsc_oauth_service_mismatch", "/agents");
+      return fail("gsc_oauth_service_mismatch");
     }
     const grantedScopes = (tokenData.scope || "").split(" ").filter(Boolean);
-    if (!grantedScopes.includes(GSC_READ_SCOPE)) {
-      return errorRedirect(req, state.brand_id, "gsc_readonly_scope_not_granted", "/agents");
-    }
+    if (!grantedScopes.includes(GSC_READ_SCOPE)) return fail("gsc_readonly_scope_not_granted");
+    let authorizedProperties;
     try {
-      const authorizedProperties = await listGSCProperties(tokenData.access_token);
-      const property = selectGSCProperty(state.brand_id, authorizedProperties);
-      if (!property) {
-        return errorRedirect(req, state.brand_id, "gsc_no_verified_property_for_brand", "/agents");
+      authorizedProperties = await listGSCProperties(tokenData.access_token);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "";
+      console.error("[GSC OAuth] Property listing failed:", msg);
+      return fail(msg.includes("API_DISABLED") ? "gsc_api_disabled" :
+        msg.includes("HTTP 403") ? "gsc_property_list_forbidden" : "gsc_property_list_failed");
+    }
+    const property = selectGSCProperty(state.brand_id, authorizedProperties);
+    if (!property) return fail(
+      authorizedProperties.length === 0 ? "gsc_no_properties_in_google_account" : "gsc_no_verified_property_for_brand",
+    );
+    try {
+      // The one-hour token may still be useful if Google did not return a
+      // refresh token; never claim that access will renew automatically.
+      const temporary = !tokenData.refresh_token;
+      if (temporary && (!tokenData.expires_in || tokenData.expires_in <= 90)) {
+        return fail("gsc_no_usable_token");
       }
       const existing = await getChannelsByBrand(state.brand_id, "google_search_console");
       await finalizeGoogleChannel({
@@ -113,19 +138,20 @@ export async function GET(req: NextRequest) {
         platform: "google_search_console",
         channel: { id: property, title: "Google Search Console · " + property },
         accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
+        refreshToken: tokenData.refresh_token || null,
         expiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
         scopes: grantedScopes,
       });
       for (const channel of existing) {
         if (channel.external_id !== property) await setChannelActive(channel.id, false);
       }
+      await recordGSCOutcome(state.brand_id, "success", temporary ? "gsc_temporary_grant" : "gsc_connected", property);
       return successRedirect(req, "/agents", {
-        platform: "google_search_console", brand: state.brand_id, count: 1,
+        platform: "google_search_console", brand: state.brand_id, count: 1, temporary,
       });
     } catch (error) {
-      console.error("[GSC OAuth] Connection failed:", error instanceof Error ? error.message : "unknown");
-      return errorRedirect(req, state.brand_id, "gsc_property_or_token_save_failed", "/agents");
+      console.error("[GSC OAuth] Connection save failed:", error instanceof Error ? error.message : "unknown");
+      return fail("gsc_property_or_token_save_failed");
     }
   }
 
@@ -163,7 +189,7 @@ export async function GET(req: NextRequest) {
         platform: state.platform === "google_drive" ? "google_drive" : "youtube",
         channel: channels[0],
         accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
+        refreshToken: tokenData.refresh_token || null,
         expiresAt: tokenData.expires_in
           ? new Date(Date.now() + tokenData.expires_in * 1000)
           : null,
@@ -361,6 +387,24 @@ async function finalizeGmailConnection(
   });
 }
 
+/** Diagnostic events are brand-scoped and contain no Google codes, emails or tokens. */
+async function recordGSCOutcome(
+  brandId: string, status: "success" | "error", reason: string, property?: string,
+): Promise<void> {
+  try {
+    const supabase = createServerClient();
+    const { error } = await supabase.from("automation_logs").insert({
+      action: "gsc_oauth_connection",
+      agent_name: "Sam SEO Expert",
+      status,
+      details: { brand_id: brandId, reason_code: reason, ...(property ? { property } : {}) },
+    });
+    if (error) console.error("[GSC OAuth] Could not write outcome log:", error.message);
+  } catch (error) {
+    console.error("[GSC OAuth] Could not write outcome log:", error instanceof Error ? error.message : "unknown");
+  }
+}
+
 function errorRedirect(
   req: NextRequest,
   brand: string,
@@ -377,12 +421,13 @@ function errorRedirect(
 function successRedirect(
   req: NextRequest,
   returnTo: string,
-  context: { platform: string; brand: string; count: number },
+  context: { platform: string; brand: string; count: number; temporary?: boolean },
 ): NextResponse {
   const url = new URL(returnTo, req.nextUrl.origin);
   url.searchParams.set("oauth_success", "true");
   url.searchParams.set("platform", context.platform);
   url.searchParams.set("brand", context.brand);
   url.searchParams.set("count", String(context.count));
+  if (context.temporary) url.searchParams.set("oauth_temporary", "true");
   return NextResponse.redirect(url.toString());
 }

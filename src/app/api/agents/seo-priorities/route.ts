@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
-    const [connections, saved, tasks] = await Promise.all([
+    const [connections, saved, tasks, oauthResults] = await Promise.all([
       getGSCConnectionStatus(),
       supabase.from("automation_logs").select("created_at,details")
         .eq("action", "seo_portfolio_growth_review")
@@ -28,9 +28,23 @@ export async function GET(request: NextRequest) {
       supabase.from("work_items").select("id,brand_id,title,description,next_action,priority,status,source_id,updated_at,metadata")
         .eq("assigned_agent", "seo").in("status", ACTIVE)
         .order("updated_at", { ascending: false }).limit(60),
+      supabase.from("automation_logs").select("created_at,status,details")
+        .eq("action", "gsc_oauth_connection")
+        .order("created_at", { ascending: false }).limit(50),
     ]);
     if (saved.error) throw new Error("SEO review lookup: " + saved.error.message);
     if (tasks.error) throw new Error("SEO task lookup: " + tasks.error.message);
+    if (oauthResults.error) throw new Error("Google connection diagnostic lookup: " + oauthResults.error.message);
+    const recentOAuth = new Map<string, { code: string; at: string }>();
+    for (const log of oauthResults.data || []) {
+      const details = log.details as { brand_id?: string; reason_code?: string } | null;
+      if (!details?.brand_id || recentOAuth.has(details.brand_id)) continue;
+      if (log.status === "error" && details.reason_code) {
+        recentOAuth.set(details.brand_id, { code: details.reason_code, at: log.created_at });
+      } else {
+        recentOAuth.set(details.brand_id, { code: "gsc_connected", at: log.created_at });
+      }
+    }
     const stored = saved.data?.details as { google_search_console?: StoredSearchConsole[] } | null;
     // An explicit refresh reads live Google data; the routine dashboard remains fast
     // and reuses the last documented weekly review, with its original collection date.
@@ -62,6 +76,8 @@ export async function GET(request: NextRequest) {
       .slice(0, 12);
     const connected = connections.map(item => ({
       ...item, target: SEO_AUDIT_TARGETS.find(target => target.brandId === item.brandId)?.base || "",
+      lastFailure: !item.connected && recentOAuth.get(item.brandId)?.code !== "gsc_connected"
+        ? recentOAuth.get(item.brandId) || null : null,
     }));
     const metrics = snapshots.map(item => ({
       brandId: item.brandId, property: item.property, collectedAt: item.collectedAt,

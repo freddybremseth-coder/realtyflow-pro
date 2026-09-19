@@ -75,7 +75,15 @@ export async function listGSCProperties(accessToken: string): Promise<GSCPropert
     headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" },
     cache: "no-store", signal: AbortSignal.timeout(9000),
   });
-  if (!response.ok) throw new Error("Google Search Console property listing failed: HTTP " + response.status);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as {
+      error?: { status?: string; errors?: Array<{ reason?: string }> };
+    };
+    const reason = body.error?.errors?.[0]?.reason || body.error?.status || "unknown";
+    const category = ["accessNotConfigured", "SERVICE_DISABLED", "API_DISABLED"].includes(reason)
+      ? "API_DISABLED" : "GOOGLE_API_ERROR";
+    throw new Error("Google Search Console property listing failed: HTTP " + response.status + " " + category);
+  }
   const payload = await response.json() as { siteEntry?: GSCProperty[] };
   return Array.isArray(payload.siteEntry) ? payload.siteEntry : [];
 }
@@ -89,6 +97,7 @@ export async function getGSCConnectionStatus() {
         selectGSCProperty(target.brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) !== null);
       if (valid.length !== 1) return {
         brandId: target.brandId, domain, connected: false, property: null,
+        temporary: false, expiresAt: null,
         error: valid.length > 1 ? "Multiple Search Console connections need reauthorization" : null,
       };
       // A registered channel alone is not proof of an OAuth grant. Do not
@@ -101,10 +110,13 @@ export async function getGSCConnectionStatus() {
       return {
         brandId: target.brandId, domain, connected,
         property: connected ? valid[0].external_id : null,
+        temporary: connected && !tokens?.refreshToken,
+        expiresAt: tokens?.expiresAt?.toISOString() || null,
         error: connected ? null : "Search Console readonly OAuth authorization is missing or expired; reconnect Google",
       };
     } catch {
       return { brandId: target.brandId, domain, connected: false, property: null,
+        temporary: false, expiresAt: null,
         error: "Google Search Console connection needs inspection or reauthorization" };
     }
   }));
