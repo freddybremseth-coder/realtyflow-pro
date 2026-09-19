@@ -10,7 +10,8 @@ type Action = {
 };
 type Connection = {
   brandId: string; domain: string; connected: boolean; property: string | null;
-  target: string; error: string | null; temporary?: boolean; expiresAt?: string | null;
+  target: string; error: string | null; registered: boolean; savedProperty: string | null;
+  temporary?: boolean; expiresAt?: string | null;
   lastFailure?: { code: string; at: string } | null;
 };
 type Metric = {
@@ -22,6 +23,7 @@ type Metric = {
 type Payload = {
   actions: Action[]; connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
   readingMode: "live" | "last_review"; readErrors: Array<{ brandId: string; error: string }>;
+  connectionSummary: { registered: number; readable: number; measured: number };
 };
 const LABELS: Record<string, string> = {
   zeneco: "Zen Eco Homes", pinosoecolife: "Pinoso EcoLife",
@@ -81,7 +83,8 @@ export function SamSEOActionBoard() {
   }, []);
   useEffect(() => { void read(false); }, [read]);
 
-  const disconnected = data?.connections.filter(item => !item.connected) || [];
+  const disconnected = data?.connections.filter(item => !item.registered) || [];
+  const savedButUnreadable = data?.connections.filter(item => item.registered && !item.connected) || [];
   return (
     <section aria-label="Sam SEO anbefalinger og tiltak" className="rounded-3xl border-2 border-emerald-300 bg-white p-5 text-slate-950 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -118,7 +121,9 @@ export function SamSEOActionBoard() {
                 ? "Kontrollerer at Google-tilkoblingen faktisk er lagret…"
                 : data?.connections.some(item => item.brandId === oauthReturn.brandId && item.connected)
                   ? "Google-tilkoblingen er bekreftet lagret i RealtyFlow. Sam kan nå lese Search Console-data for dette nettstedet."
-                  : "Google sendte en bekreftelse, men RealtyFlow finner ingen aktiv, lagret tilkobling. Se feilinformasjonen nedenfor."}
+                  : data?.connections.some(item => item.brandId === oauthReturn.brandId && item.registered)
+                    ? "Google-tilkoblingen er lagret, men RealtyFlow klarer ikke å lese den. Se teknisk feilinformasjon nedenfor; ikke koble til Google på nytt."
+                    : "Google sendte en bekreftelse, men RealtyFlow finner ingen aktiv, lagret tilkobling. Se feilinformasjonen nedenfor."}
           </p>
           {oauthReturn.errorCode && (
             <a className="mt-2 inline-flex rounded-lg bg-rose-900 px-3 py-2 font-bold text-white"
@@ -142,9 +147,9 @@ export function SamSEOActionBoard() {
               <p className="text-xs text-emerald-900">Forslag og åpne oppgaver på denne oversikten</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Sam har Google-tilgang</p>
-              <div className="mt-1 text-3xl font-black text-slate-950">{data.connections.length - disconnected.length}/{data.connections.length}</div>
-              <p className="text-xs text-slate-700">Autorisert nettstedslesing; ikke det samme som Google-eierskapsbekreftelse</p>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Google-tilkoblinger lagret</p>
+              <div className="mt-1 text-3xl font-black text-slate-950">{data.connectionSummary.registered}/{data.connections.length}</div>
+              <p className="text-xs text-slate-700">RealtyFlow har lagret OAuth-tillatelser; Sam kan lese {data.connectionSummary.readable}/{data.connections.length}. Dette er ikke søkevisninger eller bekreftede API-kall.</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-slate-700">Nettsteder med målte søketall</p>
@@ -152,10 +157,23 @@ export function SamSEOActionBoard() {
               <p className="text-xs text-slate-700">Google web-søk, ikke YouTube- eller Instagram-statistikk</p>
             </div>
           </div>
+          {savedButUnreadable.length > 0 && (
+            <div role="alert" className="mt-4 rounded-xl border-2 border-rose-400 bg-rose-50 p-4 text-rose-950">
+              <h3 className="font-black">Google-tilkoblingene er lagret, men Sam får ikke lest dem</h3>
+              <p className="mt-1 text-sm">Dette er en feil i RealtyFlows kontroll eller lesing av de lagrede tilkoblingene. Ikke godkjenn alle nettstedene på nytt. Se detaljer nedenfor.</p>
+              <div className="mt-3 space-y-2">
+                {savedButUnreadable.map(item => (
+                  <p key={item.brandId} className="rounded-lg border border-rose-200 bg-white p-3 text-sm">
+                    <strong>{LABELS[item.brandId] || item.domain}:</strong> {item.error || "Lagret Google-tilkobling kan foreløpig ikke leses."}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
           {disconnected.length > 0 && (
             <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
               <h3 className="font-black text-amber-950">Google Search Console må kobles til Sam separat</h3>
-              <p className="mt-1 text-sm text-amber-950">Disse nettstedene har ikke en registrert lesetilkobling i RealtyFlow. Å verifisere et domene hos Google gir ikke automatisk API-tilgang.</p>
+              <p className="mt-1 text-sm text-amber-950">Disse nettstedene mangler en lagret OAuth-tillatelse i RealtyFlow. Nettsteder som allerede er lagret, skal ikke kobles til på nytt.</p>
               {disconnected.some(item => item.lastFailure) && (
                 <div role="alert" className="mt-3 space-y-2">
                   {disconnected.filter(item => item.lastFailure).map(item => (
