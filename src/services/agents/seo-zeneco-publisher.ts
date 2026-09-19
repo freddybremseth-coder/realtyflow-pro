@@ -136,13 +136,17 @@ export async function runZenEcoMetadataPublisher(
   }
 
   const candidate = selectZenEcoMetadataCandidate(snapshot, now);
-  if (!candidate) return { status: "monitor", reason: "Ingen side oppfyller de dokumenterte Google-kravene for automatisk endring.",
+  // Capability is checked even when there is no Google candidate. The owner
+  // can see whether the live site truly reads the SAME published table before
+  // Sam is allowed to write anything.
+  const ready = await checkReadiness(expectedDbHost);
+  if (!ready) return {
+    status: "blocked", reason: "Nettstedets metadata-mottaker eller lesetilgang til riktig database er ikke verifisert. Ingen endring utført.",
+    page: candidate?.path || null, published: 0,
+  };
+  if (!candidate) return { status: "monitor", reason: "Metadata-mottakeren er verifisert, men ingen side oppfyller Google-kravene for automatisk endring.",
     page: null, published: 0 };
 
-  if (!await checkReadiness(expectedDbHost)) return {
-    status: "blocked", reason: "Zen Eco Homes bekrefter ikke at den kan lese metadata fra samme database.",
-    page: candidate.path, published: 0,
-  };
   const { data: priorRows, error: priorError } = await supabase.from("seo_page_overrides")
     .select("page_path,revision,active").eq("brand_id", "zeneco");
   if (priorError) throw new Error("SEO override state lookup failed: " + priorError.code);
