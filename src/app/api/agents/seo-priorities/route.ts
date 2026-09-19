@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
-    const [connections, saved, tasks, oauthResults, storedChannels, lastLiveRead] = await Promise.all([
+    const [connections, saved, tasks, oauthResults, storedChannels, lastLiveRead, pilotCycle] = await Promise.all([
       getGSCConnectionStatus(),
       supabase.from("automation_logs").select("created_at,details")
         .eq("action", "seo_portfolio_growth_review")
@@ -37,9 +37,13 @@ export async function GET(request: NextRequest) {
         .eq("action", "seo_gsc_live_read")
         .in("status", ["success", "partial"])
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("automation_logs").select("created_at,status,details")
+        .eq("action", "seo_autopilot_pilot_cycle")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (saved.error) throw new Error("SEO review lookup: " + saved.error.message);
     if (lastLiveRead.error) throw new Error("Last Google read lookup: " + lastLiveRead.error.message);
+    if (pilotCycle.error) throw new Error("Sam autopilot cycle lookup: " + pilotCycle.error.message);
     if (tasks.error) throw new Error("SEO task lookup: " + tasks.error.message);
     if (oauthResults.error) throw new Error("Google connection diagnostic lookup: " + oauthResults.error.message);
     if (storedChannels.error) throw new Error("Google connection storage lookup: " + storedChannels.error.message);
@@ -137,6 +141,12 @@ export async function GET(request: NextRequest) {
     }));
     return NextResponse.json({
       actions, observations, connections: connected, metrics, latestReviewAt: saved.data?.created_at || null,
+      seoPilot: pilotCycle.data ? {
+        at: pilotCycle.data.created_at, status: pilotCycle.data.status,
+        assessments: ((pilotCycle.data.details as { assessed?: unknown[] } | null)?.assessed || []),
+        websiteChangesPublished: ((pilotCycle.data.details as { website_changes_published?: number } | null)?.website_changes_published || 0),
+        writeStatus: (pilotCycle.data.details as { public_write_status?: string } | null)?.public_write_status || "unverified",
+      } : null,
       lastGoogleReadAt: explicitLive ? new Date().toISOString() : lastReadIsNewer
         ? lastLiveRead.data?.created_at || null : saved.data?.created_at || null,
       connectionSummary: {
