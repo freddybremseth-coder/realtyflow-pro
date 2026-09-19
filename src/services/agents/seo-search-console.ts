@@ -7,7 +7,7 @@
  * portfolio hosts and every returned page is filtered to that host.
  */
 import { SEO_AUDIT_TARGETS } from "./seo-audit";
-import { getChannelsByBrand, getTokensForBrandPlatform, saveTokens } from "@/lib/oauth/channels";
+import { getChannelsByBrand, getDecryptedTokens, getTokensForBrandPlatform, saveTokens } from "@/lib/oauth/channels";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 
 export const GSC_READ_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
@@ -81,15 +81,33 @@ export async function listGSCProperties(accessToken: string): Promise<GSCPropert
 }
 
 export async function getGSCConnectionStatus() {
-  const status = await Promise.all(SEO_AUDIT_TARGETS.map(async target => {
-    const channels = await getChannelsByBrand(target.brandId, "google_search_console");
-    const valid = channels.filter(channel =>
-      selectGSCProperty(target.brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) !== null);
-    return { brandId: target.brandId, domain: new URL(target.base).hostname,
-      connected: valid.length === 1, property: valid.length === 1 ? valid[0].external_id : null,
-      error: valid.length > 1 ? "Multiple Search Console connections need reauthorization" : null };
+  return Promise.all(SEO_AUDIT_TARGETS.map(async target => {
+    const domain = new URL(target.base).hostname;
+    try {
+      const channels = await getChannelsByBrand(target.brandId, "google_search_console");
+      const valid = channels.filter(channel =>
+        selectGSCProperty(target.brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) !== null);
+      if (valid.length !== 1) return {
+        brandId: target.brandId, domain, connected: false, property: null,
+        error: valid.length > 1 ? "Multiple Search Console connections need reauthorization" : null,
+      };
+      // A registered channel alone is not proof of an OAuth grant. Do not
+      // mark a brand connected when the read-only token is missing or unusable.
+      const tokens = await getDecryptedTokens(valid[0].id);
+      const hasScope = Boolean(tokens?.scopes.includes(GSC_READ_SCOPE));
+      const canRead = Boolean(tokens?.accessToken) &&
+        (!tokens?.expiresAt || tokens.expiresAt.getTime() > Date.now() + 90000 || Boolean(tokens.refreshToken));
+      const connected = hasScope && canRead;
+      return {
+        brandId: target.brandId, domain, connected,
+        property: connected ? valid[0].external_id : null,
+        error: connected ? null : "Search Console readonly OAuth authorization is missing or expired; reconnect Google",
+      };
+    } catch {
+      return { brandId: target.brandId, domain, connected: false, property: null,
+        error: "Google Search Console connection needs inspection or reauthorization" };
+    }
   }));
-  return status;
 }
 
 async function authorizedAccessToken(brandId: string) {
