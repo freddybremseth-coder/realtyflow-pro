@@ -92,6 +92,20 @@ interface CommandCenterStats {
 
 // --- Data ---
 
+/** Five DNS Domain properties cover all seven approved Sam SEO sites.
+ * Ownership verification in Google is distinct from a read-only OAuth grant. */
+const SAM_GSC_DOMAIN_GROUPS = [
+  { domain: "zenecohomes.com", brands: [{ id: "zeneco", label: "Zen Eco Homes" }] },
+  { domain: "pinosoecolife.com", brands: [{ id: "pinosoecolife", label: "Pinoso EcoLife" }] },
+  { domain: "freddybremseth.com", brands: [
+    { id: "freddyb", label: "FreddyBremseth.com" },
+    { id: "freddypublishing", label: "books.freddybremseth.com" },
+    { id: "remasterfreddy", label: "remaster.freddybremseth.com" },
+  ] },
+  { domain: "donaanna.com", brands: [{ id: "donaanna", label: "Doña Anna" }] },
+  { domain: "chatgenius.pro", brands: [{ id: "chatgenius", label: "ChatGenius" }] },
+] as const;
+
 const agents: AgentInfo[] = [
   {
     id: "ceo",
@@ -1076,6 +1090,65 @@ export default function AgentsCommandCenter() {
               </div>
             )}
           </div>
+          <details className="mt-3 rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs">
+            <summary className="cursor-pointer font-semibold text-emerald-300">
+              Oppsettguide: Legg alle syv nettstedene til i Google Search Console (fem domener)
+            </summary>
+            <p className="mt-2 text-slate-200">
+              1. Åpne <a href="https://search.google.com/search-console/" target="_blank" rel="noopener noreferrer" className="underline text-emerald-300">Google Search Console</a> med Google-kontoen din.
+              Velg «Legg til område» og deretter «Domene», ikke «URL-prefiks».
+              Skriv bare domenet uten https:// eller www.
+            </p>
+            <p className="mt-2 text-slate-200">
+              2. Google viser en unik TXT-verifiseringsverdi. Opprett en TXT-post for rotdomenet
+              hos leverandøren som faktisk styrer DNS (vertsnavn @ eller tomt felt dersom leverandøren bruker det).
+              Lim inn Googles eksakte verdi, lagre og velg «Bekreft» i Search Console.
+              Behold TXT-posten, og endre ikke MX-poster eller navnetjenere.
+            </p>
+            <p className="mt-2 text-slate-200">
+              3. Gjenta verifiseringen for de fem domenene nedenfor. Ett verifisert
+              freddybremseth.com-domene omfatter også books og remaster.
+              Google-verifisering og tilkobling til Sam er to forskjellige handlinger.
+            </p>
+            <div className="mt-3 space-y-2">
+              {SAM_GSC_DOMAIN_GROUPS.map(group => {
+                const count = group.brands.filter(brand =>
+                  seoReview?.searchConsoleConnections?.some(connection => connection.brandId === brand.id && connection.connected)).length;
+                return (
+                  <div key={group.domain} className="rounded border border-slate-700 p-2">
+                    <p className="font-semibold text-slate-100">{group.domain} · Sam tilkoblet {count}/{group.brands.length}</p>
+                    {group.brands.map(brand => {
+                      const connected = seoReview?.searchConsoleConnections?.some(connection =>
+                        connection.brandId === brand.id && connection.connected);
+                      return (
+                        <div key={brand.id} className="mt-1 flex flex-wrap items-center gap-2 text-slate-200">
+                          <span>{brand.label} · {connected ? "lesetilgang aktiv" : "ikke tilkoblet Sam"}</span>
+                          <a
+                            href={"/api/oauth/google?brand_id=" + encodeURIComponent(brand.id) + "&service=search_console"}
+                            className="text-emerald-300 underline"
+                          >
+                            {connected ? "Koble på nytt" : "Gi Sam lesetilgang"}
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-slate-400">
+              Dette viser bare lesetilgang i RealtyFlow, ikke om DNS-verifiseringen er fullført.
+              Opprett og bekreft Google-eiendommen først; godkjenn deretter Sams tilgang til
+              hvert av de syv nettstedene. For freddybremseth.com-gruppen velger Sam
+              samme verifiserte overordnede domene for begge underdomenene.
+              Sam gjør ingen endringer på nettsider eller DNS gjennom denne tilkoblingen.
+            </p>
+            <p className="mt-2 text-slate-400">
+              Til slutt: åpne «Indeksering → Nettkart» i Search Console og send inn hvert eksisterende
+              nettstedskart. Bekreft at sitemap.xml faktisk finnes og inneholder riktige offentlige sider
+              før du sender det inn. Innsending garanterer ikke indeksering.
+            </p>
+          </details>
           {seoReview?.leads.dataQuality.note && (
             <p className="text-amber-300 mt-2 text-xs">{seoReview.leads.dataQuality.note}</p>
           )}
