@@ -54,12 +54,15 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const { data: previousPinosoVisibility } = await supabase
+  const { data: previousVisibilityRows } = await supabase
     .from("property_brand_visibility")
-    .select("visible")
+    .select("brand_id, visible")
     .eq("property_id", id)
-    .eq("brand_id", "pinosoecolife")
-    .maybeSingle();
+    .in("brand_id", REALTY_BRANDS);
+
+  const previousVisibility = new Map(
+    (previousVisibilityRows || []).map((row) => [String(row.brand_id), row.visible === true]),
+  );
 
   const visibleBrandIds = new Set(
     (Array.isArray(body.visibleBrandIds) ? (body.visibleBrandIds as unknown[]) : [])
@@ -83,36 +86,50 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const wasVisibleOnPinoso = previousPinosoVisibility?.visible === true;
-  const isVisibleOnPinoso = visibleBrandIds.has("pinosoecolife");
-  let indexNow: Record<string, unknown> | null = null;
+  const changedBrands = REALTY_BRANDS.filter(
+    (brandId) => (previousVisibility.get(brandId) === true) !== visibleBrandIds.has(brandId),
+  );
+  const indexNow: Array<Record<string, unknown>> = [];
 
-  if (wasVisibleOnPinoso !== isVisibleOnPinoso) {
-    const [{ data: property }, { data: settingsRow }] = await Promise.all([
-      supabase
-        .from("properties")
-        .select("id, ref, external_id")
-        .eq("id", id)
-        .maybeSingle(),
-      supabase
+  if (changedBrands.length > 0) {
+    const { data: property } = await supabase
+      .from("properties")
+      .select("id, ref, external_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    const reference = String(property?.ref || property?.external_id || property?.id || id);
+
+    for (const brandId of changedBrands) {
+      const { data: settingsRow } = await supabase
         .from("brand_settings")
         .select("settings")
-        .eq("brand_id", "pinosoecolife")
-        .maybeSingle(),
-    ]);
+        .eq("brand_id", brandId)
+        .maybeSingle();
 
-    const settings = (settingsRow?.settings || {}) as Record<string, unknown>;
-    const config = resolveWebsiteCmsConfig(
-      "pinosoecolife",
-      settings,
-      "https://www.pinosoecolife.com",
-    );
-    const reference = String(property?.ref || property?.external_id || property?.id || id);
-    const propertyUrl = `https://www.pinosoecolife.com/eiendommer/${encodeURIComponent(reference)}`;
+      const settings = (settingsRow?.settings || {}) as Record<string, unknown>;
+      const fallbackWebsite =
+        brandId === "zeneco"
+          ? "https://www.zenecohomes.com"
+          : "https://www.pinosoecolife.com";
+      const config = resolveWebsiteCmsConfig(brandId, settings, fallbackWebsite);
+      const websiteBase = fallbackWebsite;
+      const propertyUrl = `${websiteBase}/eiendommer/${encodeURIComponent(reference)}`;
+      const endpoint = `${websiteBase}/api/indexnow`;
 
-    if (config.webhookSecret) {
+      if (!config.webhookSecret) {
+        indexNow.push({
+          brandId,
+          ok: false,
+          skipped: true,
+          reason: "Website CMS secret is not configured",
+          propertyUrl,
+        });
+        continue;
+      }
+
       try {
-        const response = await fetch("https://www.pinosoecolife.com/api/indexnow", {
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -122,27 +139,22 @@ export async function PATCH(
           body: JSON.stringify({ url: propertyUrl }),
         });
         const result = await response.json().catch(() => ({}));
-        indexNow = {
+        indexNow.push({
+          brandId,
           ok: response.ok,
           status: response.status,
           propertyUrl,
           result,
-        };
+        });
       } catch (notifyError) {
-        indexNow = {
+        indexNow.push({
+          brandId,
           ok: false,
           status: 0,
           propertyUrl,
           error: notifyError instanceof Error ? notifyError.message : "IndexNow notification failed",
-        };
+        });
       }
-    } else {
-      indexNow = {
-        ok: false,
-        skipped: true,
-        reason: "Pinoso website CMS secret is not configured",
-        propertyUrl,
-      };
     }
   }
 

@@ -23,6 +23,48 @@ function asTags(value: unknown) {
   return value.map((tag) => String(tag).trim()).filter(Boolean);
 }
 
+const FEED_INDEXNOW: Record<string, { host: string; key: string }> = {
+  chatgenius: {
+    host: "www.chatgenius.pro",
+    key: "0d2e53bd5e1846f4b7a95dce7c7b2df8",
+  },
+};
+
+async function submitFeedIndexNow(brandId: string, url: string) {
+  const config = FEED_INDEXNOW[brandId];
+  if (!config || !url) return null;
+
+  try {
+    const target = new URL(url);
+    target.protocol = "https:";
+    target.hostname = config.host;
+    const canonicalUrl = target.toString();
+    const response = await fetch("https://api.indexnow.org/indexnow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        host: config.host,
+        key: config.key,
+        keyLocation: `https://${config.host}/${config.key}.txt`,
+        urlList: [canonicalUrl],
+      }),
+      cache: "no-store",
+    });
+    return {
+      ok: response.status === 200 || response.status === 202,
+      status: response.status,
+      url: canonicalUrl,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      url,
+      error: error instanceof Error ? error.message : "IndexNow failed",
+    };
+  }
+}
+
 function firstParagraph(markdown: string) {
   return (
     markdown
@@ -281,6 +323,11 @@ export async function POST(request: NextRequest) {
       ? `${config.website.replace(/\/$/, "")}${destination.path}/${slug}`
       : "");
 
+  const indexNow =
+    publicationStatus === "published" && !config.webhookUrl && externalUrl
+      ? await submitFeedIndexNow(brandId, externalUrl)
+      : null;
+
   const warning = config.webhookUrl
     ? websitePublished
       ? ""
@@ -296,5 +343,6 @@ export async function POST(request: NextRequest) {
     destination: destination as WebsiteCmsDestination,
     publication: insertResult.data,
     usedFallback: insertResult.usedFallback,
+    indexNow,
   });
 }
