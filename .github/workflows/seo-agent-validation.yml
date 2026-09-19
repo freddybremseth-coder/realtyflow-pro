@@ -1,0 +1,30 @@
+name: Sam SEO skill and audit tests
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/agents/seo-*.ts'
+      - 'src/app/api/agents/seo-*/**'
+      - 'src/app/api/cron/seo-growth-review/**'
+      - '.github/workflows/seo-agent-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/agents/seo-*.ts'
+      - 'src/app/api/agents/seo-*/**'
+      - 'src/app/api/cron/seo-growth-review/**'
+      - '.github/workflows/seo-agent-validation.yml'
+
+jobs:
+  seo-skill-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Check Sam SEO evidence and public audit contracts
+        run: node --import tsx --test src/services/agents/seo-audit.test.ts src/services/agents/seo-skills.test.ts

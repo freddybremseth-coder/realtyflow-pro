@@ -377,8 +377,31 @@ export default function AgentsCommandCenter() {
   const [seoReview, setSeoReview] = useState<{
     signals: { totals: { current: number; previous: number; search: number; ai: number };
       dataQuality: { note: string | null; keywordsAvailable: boolean } };
-    latest: { at: string; status: string; report: string } | null;
+    latest: { at: string; status: string; report: string; technicalFindings?: number | null } | null;
+    skills: Array<{ id: string; domain: string; expertise: string; availability: "measured" | "advisory" | "needs_connection"; evidence: string }>;
+    capabilitySummary: { measured: number; advisory: number; needsConnection: number };
   } | null>(null);
+  const [seoSkillsExpanded, setSeoSkillsExpanded] = useState(false);
+  const [seoAuditBusy, setSeoAuditBusy] = useState(false);
+  const [seoAuditError, setSeoAuditError] = useState("");
+  const [seoAuditResult, setSeoAuditResult] = useState<{
+    checkedAt: string;
+    audits: Array<{ brandId: string; home: { status: number | null; title: string | null };
+      robots: { status: number | null }; sitemap: { status: number | null };
+      observations: string[]; limitations: string[] }>;
+  } | null>(null);
+  const inspectSeoPortfolio = async () => {
+    setSeoAuditBusy(true);
+    setSeoAuditError("");
+    try {
+      const response = await fetch("/api/agents/seo-audit", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Kunne ikke undersøke nettstedene");
+      setSeoAuditResult(data);
+    } catch (error) {
+      setSeoAuditError(error instanceof Error ? error.message : "SEO-kontrollen feilet");
+    } finally { setSeoAuditBusy(false); }
+  };
   const [seoReviewError, setSeoReviewError] = useState("");
   const [seoReviewExpanded, setSeoReviewExpanded] = useState(false);
   useEffect(() => {
@@ -965,6 +988,40 @@ export default function AgentsCommandCenter() {
           </div>
           {seoReview?.signals.dataQuality.note && (
             <p className="text-amber-300 mt-2 text-xs">{seoReview.signals.dataQuality.note}</p>
+          )}
+          <div className="flex flex-wrap gap-3 mt-2 text-xs items-center">
+            {seoReview?.capabilitySummary && (
+              <span className="text-slate-300">Ferdigheter: {seoReview.skills.length} · målt/verktøystøttet {seoReview.capabilitySummary.measured} · rådgivning {seoReview.capabilitySummary.advisory} · krever tilkobling {seoReview.capabilitySummary.needsConnection}</span>
+            )}
+            <button type="button" className="text-emerald-300 underline" onClick={() => setSeoSkillsExpanded(value => !value)}>
+              {seoSkillsExpanded ? "Skjul ferdigheter" : "Vis Sams ferdigheter og datatilgang"}
+            </button>
+            <button type="button" disabled={seoAuditBusy} className="text-emerald-300 underline disabled:opacity-50" onClick={inspectSeoPortfolio}>
+              {seoAuditBusy ? "Undersøker…" : "Kontroller de syv nettstedene"}
+            </button>
+          </div>
+          {seoSkillsExpanded && seoReview?.skills && (
+            <div className="mt-3 max-h-40 overflow-auto border-t border-slate-700 pt-2 space-y-1">
+              {seoReview.skills.map(skill => (
+                <p key={skill.id} className="text-xs text-slate-200">
+                  <strong>{skill.domain} · {skill.expertise}</strong>
+                  <span className="text-slate-400"> · {skill.availability === "measured" ? "verktøystøttet" : skill.availability === "advisory" ? "faglig rådgivning" : "krever kobling"} — {skill.evidence}</span>
+                </p>
+              ))}
+            </div>
+          )}
+          {seoAuditError && <p className="text-amber-300 text-xs mt-2">{seoAuditError}</p>}
+          {seoAuditResult && (
+            <div className="mt-3 max-h-44 overflow-auto border-t border-slate-700 pt-2 space-y-1">
+              <p className="text-slate-400 text-xs">Teknisk begrenset kontroll {new Date(seoAuditResult.checkedAt).toLocaleString("nb-NO")}: forside, robots.txt og sitemap.xml – ikke full crawl eller Google-indeksering.</p>
+              {seoAuditResult.audits.map(audit => (
+                <p key={audit.brandId} className="text-xs text-slate-200">
+                  <strong>{audit.brandId}</strong> · HTTP {audit.home.status ?? "ukjent"} · robots {audit.robots.status ?? "ukjent"} · sitemap {audit.sitemap.status ?? "ukjent"}.
+                  {audit.observations.length ? ` Observasjoner: ${audit.observations.join("; ")}` : " Ingen påviste avvik i denne avgrensede kontrollen."}
+                  {audit.limitations.some(text => !text.startsWith("Homepage/robots/sitemap")) ? " Noen forespørsler feilet – se serverrapport." : ""}
+                </p>
+              ))}
+            </div>
           )}
           {seoReview?.latest && seoReviewExpanded && (
             <div className="mt-3 max-h-48 overflow-y-auto border-t border-slate-700 pt-3">

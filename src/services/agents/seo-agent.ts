@@ -1,9 +1,10 @@
+import { SEO_SKILLS, SEO_SENIOR_OPERATING_RULES } from "./seo-skills";
+import { auditSEOPortfolio, type SiteAudit } from "./seo-audit";
 import { getSEOObservedSignals } from "./seo-data";
 import {
   BaseAgent,
   AgentTask,
   ExecutionResult,
-  NORWEGIAN_CONTENT_RULES,
   CLEAN_OUTPUT_RULES,
 } from "./base-agent";
 
@@ -57,6 +58,7 @@ export class SEOAgent extends BaseAgent {
       "competition analysis",
       "link building",
       "read-only portfolio SEO analytics and AEO/GEO improvement reviews",
+      ...SEO_SKILLS.map(skill => skill.id),
     ]);
   }
 
@@ -67,11 +69,15 @@ export class SEOAgent extends BaseAgent {
       "analyze_competition",
       "create_link_strategy",
       "portfolio_growth_review",
+      "technical_portfolio_audit",
     ];
   }
 
   private getSystemPrompt(): string {
-    return `Du er ${this.name}, en elite AI SEO-agent med rollen "${this.role}".
+    return `Du er ${this.name}, spesialist i senior SEO, AEO og GEO med rollen "${this.role}".
+${SEO_SENIOR_OPERATING_RULES}
+KOMPETANSE- OG TILGANGSKATALOG: ${JSON.stringify(SEO_SKILLS)}
+
 
 DINE KJERNEKOMPETANSER:
 - Søkeordanalyse for Norge og de faktiske språkene og geografiske markedene til hvert merke
@@ -105,7 +111,6 @@ NORSKE SEO-HENSYN:
 - Finn.no dominerer mange vertikaler - ta hensyn til dette.
 - Norske lenkekilder (nettaviser, bransjesider, kataloger).
 
-${NORWEGIAN_CONTENT_RULES}
 ${CLEAN_OUTPUT_RULES}`;
   }
 
@@ -134,6 +139,9 @@ ${CLEAN_OUTPUT_RULES}`;
             break;
           case "portfolio_growth_review":
             output = await this.portfolioGrowthReview();
+            break;
+          case "technical_portfolio_audit":
+            output = JSON.stringify(await auditSEOPortfolio());
             break;
           default:
             throw new Error(`Unknown task: ${task.name}`);
@@ -205,34 +213,48 @@ Gi anbefalinger for:
    * Reads the real first-party SEO/AI referral table at execution time.
    * Produces read-only proposals. Execution/publication remains separately gated.
    */
-  async portfolioGrowthReview(): Promise<string> {
-    const signals = await getSEOObservedSignals();
-    if (signals.dataQuality.truncated) {
-      return "Målevinduet er avkortet ved 10 000 hendelser. Ingen fullstendige vekstkonklusjoner kan trekkes. Del målingen opp etter merke og tidsvindu før nye prioriteringer.";
-    }
-    if (signals.totals.current === 0) {
+  async portfolioGrowthReview(
+    inputs: { signals?: Awaited<ReturnType<typeof getSEOObservedSignals>>; audits?: SiteAudit[] } = {},
+  ): Promise<string> {
+    // One read per review, not two shifting windows or duplicate external calls.
+    const [signals, audits] = await Promise.all([
+      inputs.signals ? Promise.resolve(inputs.signals) : getSEOObservedSignals(),
+      inputs.audits ? Promise.resolve(inputs.audits) : auditSEOPortfolio(),
+    ]);
+    const verifiedFindings = audits.flatMap(site =>
+      site.observations.map(observation => "[" + site.brandId + "] " + observation)
+    );
+    const unavailable = audits.flatMap(site =>
+      site.limitations.filter(message => !message.startsWith("Homepage/robots/sitemap snapshot"))
+        .map(message => "[" + site.brandId + "] " + message)
+    );
+    if (signals.totals.current === 0 || signals.dataQuality.truncated) {
       return [
-        "SEO-agenten har kontrollert RealtyFlows søke-/AI-henvisningstabell.",
-        "Ingen slike besøk er registrert de siste 30 dagene. Dette dokumenterer ikke at den faktiske søketrafikken er null.",
-        "Prioritet 1: Verifiser at sporing kjører på hvert nettsted, at CORS/POST godtas, at besøk fra ekte søke-/AI-henvisninger registreres og at databasen og merke-ID-ene samsvarer.",
-        "Prioritet 2: Koble til verifiserte Google Search Console- og Bing Webmaster Tools-målinger per domene for faktiske søkeord, visninger, klikk, CTR og posisjon.",
-        "Prioritet 3: Kjør ny datadrevet analyse etter at reelle data finnes. Ikke endre titler basert på oppdiktede søkeord eller antatte rangeringer.",
-        "Automatiske publiseringer og andre eksterne endringer er ikke gjennomført.",
+        "Sam SEO: teknisk kontroll av syv offentlige nettsteder og RealtyFlows målte henvisninger.",
+        "Målte søke-/AI-henvisninger siste 30 dager: " + signals.totals.current + ". Dette er ikke et mål på total søketrafikk.",
+        signals.dataQuality.truncated
+          ? "Henvisningsdataene er avkortet ved 10 000 rader. Ingen pålitelig fullstendig tidsseriesammenligning."
+          : "Ingen målte henvisninger i gjeldende vindu. Sporings- og datakildekontroll må prioriteres, ikke oppdiktede søkeord eller vekstprosent.",
+        "Tekniske observasjoner fra offentlig nettstedskontroll:",
+        ...(verifiedFindings.length ? verifiedFindings : ["Ingen konkrete avvik i de avgrensede HTTP-kontrollene. Det beviser ikke at nettstedene er ferdig optimalisert."]),
+        ...(unavailable.length ? ["Utilgjengelige kontroller:", ...unavailable] : []),
+        "Neste tiltak: verifiser virkelig søke-/AI-henvisningssporing, koble til godkjente Google Search Console- og Bing Webmaster-kilder for søkeord og ytelse, og undersøk hvert dokumenterte tekniske avvik før publisering.",
+        "Gjennomgangen er kun en anbefalingsrapport. Ingen endringer på nettstedene ble publisert.",
       ].join("\n");
     }
-    const prompt = [
-      "Gjør en kontinuerlig, lesebasert SEO/AEO/GEO-evaluering av alle merkevarene.",
-      "Bruk kun medfølgende målte tall som FAKTA. Dataene er henvisningsbesøk, ikke organiske søkeord, visninger, rangeringer eller AI-siteringer.",
-      "Vurder siste 30 dager mot foregående 30 dager per merke, men unngå konklusjoner ved små tall.",
-      "Skill uttrykkelig mellom observerte funn, hypoteser og ting som krever nye datakilder.",
-      "Gi 3–8 prioriterte forbedringsforslag: konkret merke, observert side eller datamangel, endring, begrunnelse, forventet retning som hypotese, QA og måling 30 dager senere.",
-      "Foreslå tekniske oppgaver, crawlbar HTML, troverdige svar og faktabasert innhold; unngå generiske masseartikler, kunstige FAQ-er, udokumenterte påstander og lenkeskjemaer.",
-      "Nettsteder: Zen Eco Homes, Pinoso Eco Life, freddybremseth.com, books.freddybremseth.com, remaster.freddybremseth.com, donaanna.com, chatgenius.pro.",
-      "Ikke oppgi fiktive søkeord-, Search Console-, AI-siterings- eller rangeringsmålinger. Foreslå kildeintegrasjoner separat.",
-      "Resultatet er forslag for review. Ikke påstå at du har oppdatert nettstedene eller automatisk publisert noe.",
-      "Måledata: " + JSON.stringify(signals),
-    ].join("\n");
-    return this.callAI(prompt, this.getSystemPrompt());
+
+    return this.callAI([
+      "Utfør en profesjonell, databasert forbedringsgjennomgang for de syv porteføljenettstedene.",
+      "Kun observasjoner med dokumentert kilde og dato får presenteres som fakta.",
+      "Henvisninger må ikke blandes med Search Console-visninger, søkeord, posisjoner eller verifiserte AI-siteringer.",
+      "Vurder 30 dager mot foregående 30 per merke. Ved små tall: synliggjør usikkerhet og unngå bastante konklusjoner.",
+      "Teknisk audit omfatter kun hjem, robots og sitemap, ikke full crawl eller render. En mislykket request er 'ukjent', ikke en dokumentert SEO-feil.",
+      "Foreslå inntil åtte konkrete QA-sikre forbedringer med brand, URL der observert, kilde, handling, akseptansekriterier og måling etter 30 dager.",
+      "Velg relevante seniorkompetanser i SEO_SKILLS, men ikke simuler behovsstyrte connectors eller påstå en endring er publisert.",
+      "Dette er gjennomgangsforslag; alle live endringer krever separat godkjenning.",
+      "Henvisningsdata: " + JSON.stringify(signals),
+      "Teknisk audit: " + JSON.stringify(audits),
+    ].join("\n"), this.getSystemPrompt());
   }
 
   // ─── Task-specific methods ──────────────────────────────────────────
