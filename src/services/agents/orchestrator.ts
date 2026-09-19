@@ -157,6 +157,7 @@ export class AgentOrchestrator {
     const text = command.toLowerCase();
 
     if (agentName === "seo") {
+      if (/statistikk|måling|målte|trafikk|data|resultat|portefølje|portfolio|kontinuerlig|vekst|growth|aeo|geo|search.console|sitering/.test(text)) return "portfolio_growth_review";
       if (/konkurrent|competitor|gap|sammenlign/.test(text)) return "analyze_competition";
       if (/lenke|link|backlink|outreach/.test(text)) return "create_link_strategy";
       if (/optimaliser|meta|title|tittel|schema|side|on-page|onpage/.test(text)) return "optimize_for_seo";
