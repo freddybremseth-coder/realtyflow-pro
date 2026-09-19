@@ -44,6 +44,7 @@ export const AGENT_FLEET_BINDINGS: AgentFleetBinding[] = [
     automationPaths: [
       "/api/cron/trending-tags",
       "/api/cron/property-editorial",
+      "/api/cron/seo-growth-review",
     ],
   },
   {
