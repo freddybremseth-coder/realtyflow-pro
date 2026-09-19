@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
   const referrer = typeof body.referrer === "string" ? body.referrer.trim() : "";
   const classified = classifyReferrer(referrer);
 
-  if (!classified || !path.startsWith("/") || path.startsWith("//") || path.length > 500 || /[\\x00-\\x1f]/.test(path)) {
+  if (!classified || !path.startsWith("/") || path.startsWith("//") || path.length > 500 || /[\x00-\x1f]/.test(path)) {
     return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
   }
 
