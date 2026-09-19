@@ -44,11 +44,11 @@ export function verifyZenEcoPublishedMetadataHtml(
   const end = html.toLowerCase().indexOf("</head>");
   if (end < 0) return false;
   const head = html.slice(0, end);
-  const foundTitle = head.match(/<title>([^<]*)<\\/title>/i)?.[1] || "";
-  const descriptionTag = head.match(/<meta\\s+[^>]*name=["']description["'][^>]*>/i)?.[0] || "";
-  const foundDescription = descriptionTag.match(/\\bcontent=["']([^"']*)["']/i)?.[1] || "";
-  const canonicalTag = head.match(/<link\\s+[^>]*rel=["']canonical["'][^>]*>/i)?.[0] || "";
-  const canonical = canonicalTag.match(/\\bhref=["']([^"']*)["']/i)?.[1] || "";
+  const foundTitle = head.match(/<title>([^<]*)<\/title>/i)?.[1] || "";
+  const descriptionTag = head.match(/<meta\s+[^>]*name=["']description["'][^>]*>/i)?.[0] || "";
+  const foundDescription = descriptionTag.match(/\bcontent=["']([^"']*)["']/i)?.[1] || "";
+  const canonicalTag = head.match(/<link\s+[^>]*rel=["']canonical["'][^>]*>/i)?.[0] || "";
+  const canonical = canonicalTag.match(/\bhref=["']([^"']*)["']/i)?.[1] || "";
   return foundTitle === title && foundDescription === description && canonical === BASE + path;
 }
 
