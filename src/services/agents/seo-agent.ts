@@ -1,6 +1,7 @@
 import { readGSCAllBrands } from "./seo-search-console";
 import { getSEOLeadSignals, type SEOLeadSummary } from "./seo-leads";
 import { SEO_SKILLS, SEO_SENIOR_OPERATING_RULES } from "./seo-skills";
+import { SAM_SITE_STRATEGY } from "./seo-site-strategy";
 import { auditSEOPortfolio, type SiteAudit } from "./seo-audit";
 import { getSEOObservedSignals } from "./seo-data";
 import {
@@ -79,6 +80,8 @@ export class SEOAgent extends BaseAgent {
     return `Du er ${this.name}, spesialist i senior SEO, AEO og GEO med rollen "${this.role}".
 ${SEO_SENIOR_OPERATING_RULES}
 KOMPETANSE- OG TILGANGSKATALOG: ${JSON.stringify(SEO_SKILLS)}
+NETTSTEDSSPESIFIKK RETNING (ikke målte resultater): ${JSON.stringify(SAM_SITE_STRATEGY)}
+Hold hvert vertsnavn, språk, målgruppe, priser og lead-kilde adskilt. Del verifisert Domain-eierskap der det er riktig, men ikke slå sammen nettstedssøk eller søkeintensjoner.
 
 
 DINE KJERNEKOMPETANSER:
@@ -235,7 +238,7 @@ Gi anbefalinger for:
     const verifiedGSC = searchConsole.filter(item => item.status === "connected" && item.result !== null);
     if ((signals.totals.current === 0 || signals.dataQuality.truncated) && verifiedGSC.length === 0) {
       return [
-        "Sam SEO: teknisk kontroll av syv offentlige nettsteder og RealtyFlows målte henvisninger.",
+        "Sam SEO: teknisk kontroll av åtte offentlige SEO-nettsteder og én teknisk-only Care-side og RealtyFlows målte henvisninger.",
         "Målte søke-/AI-henvisninger siste 30 dager: " + signals.totals.current + ". Dette er ikke et mål på total søketrafikk.",
         "Målte henvendelser fra website_lead-arbeidsoppgaver siste 30 dager: " + leads.totals.current + ". Disse er ikke dokumenterte organiske søkeleads eller unike kunder.",
         "Henvendelser med verifisert kildeside: " + leads.dataQuality.leadsWithPage + "; uten: " + leads.dataQuality.leadsWithoutPage + ". " + leads.dataQuality.note,
@@ -252,7 +255,7 @@ Gi anbefalinger for:
     }
 
     return this.callAI([
-      "Utfør en profesjonell, databasert forbedringsgjennomgang for de syv porteføljenettstedene.",
+      "Utfør en profesjonell, databasert forbedringsgjennomgang for de åtte offentlige SEO-nettstedene og teknisk-only Care.",
       "Kun observasjoner med dokumentert kilde og dato får presenteres som fakta.",
       "Henvisninger må ikke blandes med Search Console-visninger, søkeord, posisjoner eller verifiserte AI-siteringer.",
       "Vurder 30 dager mot foregående 30 per merke. Ved små tall: synliggjør usikkerhet og unngå bastante konklusjoner.",
