@@ -94,7 +94,8 @@ interface CommandCenterStats {
 
 // --- Data ---
 
-/** Five DNS Domain properties cover all seven approved Sam SEO sites.
+/** Five DNS Domain properties cover the approved Sam SEO sites. The Freddy
+ * Domain property covers the root plus its public books, art and remaster subdomains.
  * Ownership verification in Google is distinct from a read-only OAuth grant. */
 const SAM_GSC_DOMAIN_GROUPS = [
   { domain: "zenecohomes.com", brands: [{ id: "zeneco", label: "Zen Eco Homes" }] },
@@ -102,6 +103,7 @@ const SAM_GSC_DOMAIN_GROUPS = [
   { domain: "freddybremseth.com", brands: [
     { id: "freddyb", label: "FreddyBremseth.com" },
     { id: "freddypublishing", label: "books.freddybremseth.com" },
+    { id: "freddyart", label: "art.freddybremseth.com" },
     { id: "remasterfreddy", label: "remaster.freddybremseth.com" },
   ] },
   { domain: "donaanna.com", brands: [{ id: "donaanna", label: "Doña Anna" }] },
