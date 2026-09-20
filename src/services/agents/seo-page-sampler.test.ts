@@ -93,3 +93,59 @@ test("Sam reports sitemap entry canonical with unintended query parameters or in
   }, BASE);
   assert.match(insecure.issue || "", /non-HTTPS canonical/);
 });
+
+test("Books SEO chooses distinct actual titles rather than generic pages and rotates locales over days", () => {
+  const base = "https://books.freddybremseth.com";
+  const urls = [base + "/", base + "/about", base + "/library"];
+  for (const title of ["one", "two", "three", "four"]) {
+    for (const locale of ["", "/en", "/es"]) {
+      urls.push(base + locale + "/book/" + title);
+    }
+  }
+  urls.push(base + "/api/private", "https://books.freddybremseth.com.evil.invalid/book/malicious");
+  const s = xml(urls);
+  assert.deepEqual(choosePublicSitemapPages(s, base, 3, 0), [
+    base + "/book/one", base + "/book/two", base + "/book/three",
+  ]);
+  assert.deepEqual(choosePublicSitemapPages(s, base, 3, 1), [
+    base + "/en/book/four", base + "/en/book/one", base + "/en/book/two",
+  ]);
+  assert.deepEqual(choosePublicSitemapPages(s, base, 3, 2), [
+    base + "/es/book/three", base + "/es/book/four", base + "/es/book/one",
+  ]);
+});
+
+test("Art SEO checks up to three distinct actual artworks per day, never private or external URLs", () => {
+  const base = "https://art.freddybremseth.com";
+  const s = xml([base + "/", base + "/legal/privacy.html", base + "/collections/studio-archive/",
+    ...["a", "b", "c", "d", "e"].map(slug => base + "/verk/" + slug + "/"),
+    base + "/api/download", "https://art.freddybremseth.com.evil.invalid/verk/x/"]);
+  assert.deepEqual(choosePublicSitemapPages(s, base, 3, 0), [
+    base + "/verk/a/", base + "/verk/b/", base + "/verk/c/",
+  ]);
+  assert.deepEqual(choosePublicSitemapPages(s, base, 3, 1), [
+    base + "/verk/d/", base + "/verk/e/", base + "/verk/a/",
+  ]);
+});
+
+test("actual public audit retains its hard three-page bound while sampling sitemapped book entries", async () => {
+  const base = "https://books.freddybremseth.com";
+  const urls = ["one", "two", "three", "four"].flatMap(slug =>
+    ["", "/en", "/es"].map(locale => base + locale + "/book/" + slug));
+  const called: string[] = [];
+  const result = await auditOneSite({ brandId: "freddypublishing", base }, async url => {
+    const path = new URL(url).pathname;
+    called.push(path);
+    if (path === "/robots.txt") return { url, status: 200, contentType: "text/plain",
+      body: "User-agent: *\\nAllow: /", xRobots: "" };
+    if (path === "/sitemap.xml") return { url, status: 200, contentType: "application/xml",
+      body: xml([base + "/", base + "/about", ...urls]), xRobots: "" };
+    return { url, status: 200, contentType: "text/html",
+      body: '<title>Actual book</title><meta name="description" content="Book"><link rel="canonical" href="' +
+        url + '"><h1>Actual book</h1>', xRobots: "" };
+  });
+  assert.equal(called.length, 6);
+  assert.equal(result.samples.length, 3);
+  assert.equal(new Set(result.samples.map(row => row.path.replace(/^\\/(?:en|es)\\//, "/").replace(/\\/$/, ""))).size, 3);
+  assert.ok(result.samples.every(row => row.path.includes("/book/") && row.issue === null));
+});
