@@ -73,7 +73,7 @@ test("Sam flags a sitemapped book URL whose HTML canonical points to the books h
 test("Sam allows trailing-slash and www/apex aliases when a sitemap URL is otherwise self-canonical", () => {
   const page = inspectPublicSample(BASE + "/guide/example", {
     url: BASE + "/guide/example/", status: 200, contentType: "text/html",
-    body: '<title>Guide</title><link rel="canonical" href="https://zenecohomes.com/guide/example/"><h1>Guide</h1>',
+    body: '<title>Guide</title><meta name="description" content="A complete real public guide"><link rel="canonical" href="https://zenecohomes.com/guide/example/"><h1>Guide</h1>',
     xRobots: "",
   }, BASE);
   assert.equal(page.issue, null);
@@ -82,13 +82,13 @@ test("Sam allows trailing-slash and www/apex aliases when a sitemap URL is other
 test("Sam reports sitemap entry canonical with unintended query parameters or insecure protocol", () => {
   const query = inspectPublicSample(BASE + "/guide/example", {
     url: BASE + "/guide/example", status: 200, contentType: "text/html",
-    body: '<title>Guide</title><link rel="canonical" href="/guide/example?ref=track"><h1>Guide</h1>',
+    body: '<title>Guide</title><meta name="description" content="A complete real public guide"><link rel="canonical" href="/guide/example?ref=track"><h1>Guide</h1>',
     xRobots: "",
   }, BASE);
   assert.match(query.issue || "", /canonical pointing to \/guide\/example\?ref=track/);
   const insecure = inspectPublicSample(BASE + "/guide/example", {
     url: BASE + "/guide/example", status: 200, contentType: "text/html",
-    body: '<title>Guide</title><link rel="canonical" href="http://www.zenecohomes.com/guide/example"><h1>Guide</h1>',
+    body: '<title>Guide</title><meta name="description" content="A complete real public guide"><link rel="canonical" href="http://www.zenecohomes.com/guide/example"><h1>Guide</h1>',
     xRobots: "",
   }, BASE);
   assert.match(insecure.issue || "", /non-HTTPS canonical/);
@@ -148,4 +148,34 @@ test("actual public audit retains its hard three-page bound while sampling sitem
   assert.equal(result.samples.length, 3);
   assert.equal(new Set(result.samples.map(row => row.path.split("/").filter(Boolean).at(-1))).size, 3);
   assert.ok(result.samples.every(row => row.path.includes("/book/") && row.issue === null));
+});
+
+test("Sam surfaces actual missing metadata on a public page declared in a sitemap", () => {
+  const base = "https://books.freddybremseth.com";
+  const url = base + "/book/example";
+  const withoutCanonical = inspectPublicSample(url, {
+    url, status: 200, contentType: "text/html",
+    body: '<title>Example book</title><meta name="description" content="Author and series"><h1>Example book</h1>',
+    xRobots: "",
+  }, base);
+  assert.equal(withoutCanonical.canonical, null);
+  assert.match(withoutCanonical.issue || "", /has no canonical link/);
+  const withoutDescription = inspectPublicSample(url, {
+    url, status: 200, contentType: "text/html",
+    body: '<title>Example book</title><link rel="canonical" href="' + url +
+      '"><h1>Example book</h1>', xRobots: "",
+  }, base);
+  assert.equal(withoutDescription.descriptionPresent, false);
+  assert.match(withoutDescription.issue || "", /has no HTML meta description/);
+});
+
+test("deliberately nonindex public sample stays a noindex finding rather than a missing-canonical rewrite instruction", () => {
+  const base = "https://books.freddybremseth.com";
+  const url = base + "/book/hidden";
+  const sample = inspectPublicSample(url, {
+    url, status: 200, contentType: "text/html",
+    body: '<title>Hidden</title><meta name="robots" content="noindex"><h1>Hidden</h1>',
+    xRobots: "",
+  }, base);
+  assert.match(sample.issue || "", /explicitly returns noindex/);
 });

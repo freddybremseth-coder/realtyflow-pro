@@ -128,6 +128,8 @@ export function inspectPublicSample(
   if (result.noindex) result.issue = "Sitemap sample " + path + " explicitly returns noindex";
   else if (!result.titlePresent) result.issue = "Sitemap sample " + path + " has no rendered HTML title";
   else if (result.h1Count === 0) result.issue = "Sitemap sample " + path + " has no server-rendered H1";
+  else if (!result.descriptionPresent) result.issue = "Sitemap sample " + path + " has no HTML meta description";
+  else if (!result.canonical) result.issue = "Sitemap sample " + path + " has no canonical link";
   else if (result.canonical) {
     try {
       const canonical = new URL(result.canonical, snapshot.url);

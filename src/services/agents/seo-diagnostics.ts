@@ -103,7 +103,7 @@ export function planSEODiagnostics(input: {
     const audit = auditsByBrand.get(brandId);
     if (!audit) continue;
     const explicit = audit.observations.filter(observation =>
-      /noindex|site-wide disallow|canonical refers to a different host|canonical pointing to|non-HTTPS canonical|unparsable JSON-LD|did not return HTTP 200|has no server-rendered <title>/i.test(observation));
+      /noindex|site-wide disallow|canonical refers to a different host|canonical pointing to|non-HTTPS canonical|has no canonical link|has no HTML meta description|unparsable JSON-LD|did not return HTTP 200|has no server-rendered <title>/i.test(observation));
     if (explicit.length > 0) checks.push(diagnostic({
       id: "check-public-audit:" + brandId, brandId, category: "technical",
       title: "Et konkret offentlig SEO-avvik må bekreftes",
