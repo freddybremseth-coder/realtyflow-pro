@@ -348,9 +348,9 @@ export function SamSEOActionBoard() {
               <p className="text-xs text-emerald-900">Forslag og åpne oppgaver på denne oversikten</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Google-tilkoblinger lagret</p>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Search Console-nettsteder dekket</p>
               <div className="mt-1 text-3xl font-black text-slate-950">{data.connectionSummary.registered}/{data.connections.length}</div>
-              <p className="text-xs text-slate-700">RealtyFlow har lagret OAuth-tillatelser; Sam kan lese {data.connectionSummary.readable}/{data.connections.length}. Dette er ikke søkevisninger eller bekreftede API-kall.</p>
+              <p className="text-xs text-slate-700">Registrert eiendom eller arvet DNS Domain-grant dekker disse nettadressene. Sam har verifisert lesetilgang for {data.connectionSummary.readable}/{data.connections.length}. Antallet er ikke antall separate OAuth-tillatelser eller målte søkevisninger.</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-slate-700">Nettsteder med målte søketall</p>
