@@ -401,6 +401,29 @@ export default function AgentsCommandCenter() {
     capabilitySummary: { measured: number; advisory: number; needsConnection: number };
     searchConsoleConnections: Array<{ brandId: string; domain: string; connected: boolean; property: string | null; error: string | null }>;
   } | null>(null);
+  const [seoQuickBusy, setSeoQuickBusy] = useState(false);
+  const [seoQuickError, setSeoQuickError] = useState("");
+  const [seoQuickResult, setSeoQuickResult] = useState<{
+    brandId: string;
+    searchConsole: { period: { currentStart: string; currentEnd: string }; totals: { currentImpressions: number; currentClicks: number }; dataQuality: { note: string } } | null;
+    opportunities: Array<{ issueId: string; priority: string; title: string; description: string; nextAction: string; evidence: string }>;
+    totals: { websiteInquiries: number; websiteInquiriesWithKnownPage: number; measuredReferrerArrivals: number };
+    sourcePageInquiries: Array<{ path: string; inquiries: number }>;
+    dataQuality: { attributionNote: string; referralEvents: string | null };
+  } | null>(null);
+  const inspectSEOQuickWins = async () => {
+    setSeoQuickBusy(true);
+    setSeoQuickError("");
+    setSeoQuickResult(null);
+    try {
+      const response = await fetch("/api/agents/seo-live-priorities?brand=" + encodeURIComponent(seoGSCBrand), { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Kunne ikke analysere nettstedet");
+      setSeoQuickResult(data);
+    } catch (error) {
+      setSeoQuickError(error instanceof Error ? error.message : "Måledata utilgjengelig");
+    } finally { setSeoQuickBusy(false); }
+  };
   const [seoGSCBrand, setSeoGSCBrand] = useState("zeneco");
   const [seoGSCBusy, setSeoGSCBusy] = useState(false);
   const [seoGSCError, setSeoGSCError] = useState("");
@@ -1018,7 +1041,7 @@ export default function AgentsCommandCenter() {
               <strong className="text-emerald-300">Sam SEO · kontinuerlig, databasert gjennomgang</strong>
               <p className="text-slate-300 text-xs mt-1">
                 {seoReview
-                  ? `Målte henvisninger siste 30 dager: ${seoReview.signals.totals.current} · søk ${seoReview.signals.totals.search} · AI ${seoReview.signals.totals.ai}. Nettsidehenvendelser (alle kilder): ${seoReview.leads.totals.current}; med kildeside ${seoReview.leads.dataQuality.leadsWithPage}, uten kildeside ${seoReview.leads.dataQuality.leadsWithoutPage}. Dette er ikke dokumenterte organiske leads. Søkeord krever Search Console/Bing-data.`
+                  ? `Målte henvisninger siste 30 dager: ${seoReview.signals.totals.current} · søk ${seoReview.signals.totals.search} · AI ${seoReview.signals.totals.ai}. Nettsidehenvendelser (alle kilder): ${seoReview.leads.totals.current}; med kildeside ${seoReview.leads.dataQuality.leadsWithPage}, uten kildeside ${seoReview.leads.dataQuality.leadsWithoutPage}. Dette er ikke dokumenterte organiske leads. Google-søkeord kan leses separat for tilkoblede merker; Bing-data krever egen tilkobling.`
                   : seoReviewError || "Henter SEO-statistikk fra RealtyFlow…"}
               </p>
             </div>
@@ -1043,7 +1066,7 @@ export default function AgentsCommandCenter() {
                 <select
                   className="rounded border border-slate-600 bg-slate-900 p-1 text-slate-100"
                   value={seoGSCBrand}
-                  onChange={event => { setSeoGSCBrand(event.target.value); setSeoGSCSnapshot(null); setSeoGSCError(""); }}
+                  onChange={event => { setSeoGSCBrand(event.target.value); setSeoGSCSnapshot(null); setSeoGSCError(""); setSeoQuickResult(null); setSeoQuickError(""); }}
                 >
                   {(seoReview?.searchConsoleConnections || []).map(connection => (
                     <option key={connection.brandId} value={connection.brandId}>
@@ -1067,11 +1090,56 @@ export default function AgentsCommandCenter() {
               >
                 {seoGSCBusy ? "Leser søkeytelse…" : "Les faktiske søkeord"}
               </button>
+              <button
+                type="button"
+                disabled={seoQuickBusy || !seoReview?.searchConsoleConnections.some(connection =>
+                  connection.brandId === seoGSCBrand && connection.connected)}
+                className="rounded border border-emerald-500/60 px-2 py-1 text-emerald-300 disabled:opacity-50"
+                onClick={inspectSEOQuickWins}
+              >
+                {seoQuickBusy ? "Analyserer…" : "Finn konkrete forbedringer nå"}
+              </button>
             </div>
             {seoReview?.searchConsoleConnections.find(connection => connection.brandId === seoGSCBrand)?.property && (
               <p className="mt-2 text-slate-400">Verifisert GSC-eiendom: {seoReview.searchConsoleConnections.find(connection => connection.brandId === seoGSCBrand)?.property}</p>
             )}
             {seoGSCError && <p className="mt-2 text-amber-300">{seoGSCError}</p>}
+            {seoQuickError && <p className="mt-2 text-amber-300">{seoQuickError}</p>}
+            {seoQuickResult && (
+              <div className="mt-3 space-y-2 border-t border-slate-700 pt-2 text-slate-200">
+                <p>
+                  {seoQuickResult.searchConsole
+                    ? `Search Console ${seoQuickResult.searchConsole.period.currentStart}–${seoQuickResult.searchConsole.period.currentEnd}: ${seoQuickResult.searchConsole.totals.currentImpressions} visninger og ${seoQuickResult.searchConsole.totals.currentClicks} klikk.`
+                    : "Ingen verifiserte Search Console-data for dette merket."}
+                  {" "}Registrerte nettsidehenvendelser: {seoQuickResult.totals.websiteInquiries};
+                  med kjent skjemaside: {seoQuickResult.totals.websiteInquiriesWithKnownPage}.
+                  Registrerte søke-/AI-henvisninger: {seoQuickResult.totals.measuredReferrerArrivals}.
+                </p>
+                <p className="text-slate-400">{seoQuickResult.dataQuality.attributionNote}</p>
+                {seoQuickResult.dataQuality.referralEvents && <p className="text-amber-300">{seoQuickResult.dataQuality.referralEvents}</p>}
+                {seoQuickResult.opportunities.length ? (
+                  <div className="space-y-2">
+                    {seoQuickResult.opportunities.map(opportunity => (
+                      <div key={opportunity.issueId} className="rounded border border-slate-700 p-2">
+                        <strong className="text-emerald-300">{opportunity.title}</strong>
+                        <p className="mt-1">{opportunity.description}</p>
+                        <p className="mt-1 text-slate-400">Neste tiltak: {opportunity.nextAction}</p>
+                        <p className="mt-1 text-slate-500">Kilde: {opportunity.evidence}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>Ingen målte søkefunn oppfyller Sams terskler for forbedringsforslag i denne perioden. Kontroller datagrunnlaget og sidene før du gjør endringer.</p>
+                )}
+                {seoQuickResult.sourcePageInquiries.length > 0 && (
+                  <p>
+                    Skjemasider med dokumenterte henvendelser: {seoQuickResult.sourcePageInquiries
+                      .slice(0, 5).map(page => page.path + " (" + page.inquiries + ")").join(" · ")}
+                  </p>
+                )}
+                <p className="text-slate-400">Gjennomgangen er lesebasert og oppretter ingen oppgaver eller endrer publiserte nettsider.</p>
+              </div>
+            )}
             {seoGSCSnapshot && (
               <div className="mt-3 max-h-56 overflow-y-auto border-t border-slate-700 pt-2 text-slate-200">
                 <p>
