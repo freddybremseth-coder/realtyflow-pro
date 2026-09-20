@@ -4,7 +4,10 @@ export const maxDuration = 90;
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { SEO_AUDIT_TARGETS } from "@/services/agents/seo-audit";
+import { SEO_AUDIT_TARGETS, auditSEOPortfolio } from "@/services/agents/seo-audit";
+import { getSEOObservedSignals } from "@/services/agents/seo-data";
+import { getSEOLeadSignals } from "@/services/agents/seo-leads";
+import { planSEODiagnostics, type SEODiagnostic } from "@/services/agents/seo-diagnostics";
 import { getGSCConnectionStatus, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
@@ -78,7 +81,11 @@ export async function GET(request: NextRequest) {
       }
     }
     const stored = saved.data?.details as { google_search_console?: StoredSearchConsole[] } | null;
-    const liveStored = lastLiveRead.data?.details as { google_search_console?: StoredSearchConsole[] } | null;
+    const liveStored = lastLiveRead.data?.details as {
+      google_search_console?: StoredSearchConsole[];
+      diagnostics?: SEODiagnostic[];
+      auditCheckedAt?: string | null;
+    } | null;
     const explicitLive = request.nextUrl.searchParams.get("live") === "1";
     const lastReadIsNewer = Boolean(lastLiveRead.data?.created_at &&
       (!saved.data?.created_at || Date.parse(lastLiveRead.data.created_at) > Date.parse(saved.data.created_at)));
@@ -87,20 +94,39 @@ export async function GET(request: NextRequest) {
     // measurements. Reloading the page must not erase the last successful read.
     const readings: StoredSearchConsole[] = explicitLive ? await readGSCAllBrands()
       : (Array.isArray(storedReadings) ? storedReadings : []);
-    if (explicitLive) {
-      const hadSuccess = readings.some(item => item.status === "connected" && item.result !== null);
-      const { error: recordError } = await supabase.from("automation_logs").insert({
-        action: "seo_gsc_live_read", agent_name: "Sam SEO Expert",
-        status: hadSuccess ? "success" : "partial",
-        details: { google_search_console: readings },
-      });
-      if (recordError) console.error("[SamSEO] Cannot persist latest GSC read", recordError.message);
-    }
     // A completed provider read is primary evidence. A separate connection
     // health check may be stale or fail and must not discard real Google data.
     const snapshots = readings.filter((item): item is StoredSearchConsole & { result: GSCBrandSnapshot } =>
       item.status === "connected" && item.result !== null)
       .map(item => item.result);
+    // The live button also runs bounded, read-only technical and measurement
+    // checks, so sparse Google results no longer produce an empty action board.
+    // A failed public audit must never hide successful Google measurements.
+    const extra = explicitLive ? await Promise.allSettled([
+      getSEOObservedSignals(), getSEOLeadSignals(), auditSEOPortfolio(),
+    ] as const) : null;
+    const signals = extra?.[0].status === "fulfilled" ? extra[0].value : null;
+    const leads = extra?.[1].status === "fulfilled" ? extra[1].value : null;
+    const audits = extra?.[2].status === "fulfilled" ? extra[2].value : [];
+    const diagnostics = explicitLive
+      ? planSEODiagnostics({ snapshots, signals, leads, audits })
+      : Array.isArray(liveStored?.diagnostics) && lastReadIsNewer
+        ? liveStored.diagnostics : planSEODiagnostics({ snapshots, signals: null, leads: null, audits: [] });
+    if (explicitLive) {
+      const hadSuccess = snapshots.length > 0;
+      const { error: recordError } = await supabase.from("automation_logs").insert({
+        action: "seo_gsc_live_read", agent_name: "Sam SEO Expert",
+        status: hadSuccess ? "success" : "partial",
+        details: {
+          google_search_console: readings,
+          diagnostics,
+          auditCheckedAt: audits.length ? audits[0].checkedAt : null,
+          diagnosticsMeasurement: "Public SEO checks and independent GSC/first-party aggregate measurements; no individual organic lead attribution or SEO publication.",
+        },
+      });
+      if (recordError) console.error("[SamSEO] Cannot persist latest GSC and diagnostic read", recordError.message);
+    }
+
     const gscSuggestions = planGSCOpportunities(snapshots);
     // A zero-visibility observation is already measured and recorded: it
     // cannot itself trigger publishing or demand an editorial approval.
@@ -150,7 +176,10 @@ export async function GET(request: NextRequest) {
       period: item.period, totals: item.totals, quality: item.dataQuality.note,
     }));
     return NextResponse.json({
-      actions, observations, changeEvaluations, connections: connected, metrics, latestReviewAt: saved.data?.created_at || null,
+      actions, observations, diagnostics, changeEvaluations, connections: connected, metrics,
+      latestReviewAt: saved.data?.created_at || null,
+      lastDiagnosticAt: explicitLive ? new Date().toISOString()
+        : lastReadIsNewer && Array.isArray(liveStored?.diagnostics) ? lastLiveRead.data?.created_at || null : null,
       seoPilot: pilotCycle.data ? {
         at: pilotCycle.data.created_at, status: pilotCycle.data.status,
         assessments: ((pilotCycle.data.details as { assessed?: unknown[] } | null)?.assessed || []),
