@@ -235,7 +235,7 @@ Gi anbefalinger for:
     const verifiedGSC = searchConsole.filter(item => item.status === "connected" && item.result !== null);
     if ((signals.totals.current === 0 || signals.dataQuality.truncated) && verifiedGSC.length === 0) {
       return [
-        "Sam SEO: teknisk kontroll av syv offentlige nettsteder og RealtyFlows målte henvisninger.",
+        "Sam SEO: teknisk kontroll av åtte offentlige nettsteder og RealtyFlows målte henvisninger.",
         "Målte søke-/AI-henvisninger siste 30 dager: " + signals.totals.current + ". Dette er ikke et mål på total søketrafikk.",
         "Målte henvendelser fra website_lead-arbeidsoppgaver siste 30 dager: " + leads.totals.current + ". Disse er ikke dokumenterte organiske søkeleads eller unike kunder.",
         "Henvendelser med verifisert kildeside: " + leads.dataQuality.leadsWithPage + "; uten: " + leads.dataQuality.leadsWithoutPage + ". " + leads.dataQuality.note,
@@ -252,7 +252,7 @@ Gi anbefalinger for:
     }
 
     return this.callAI([
-      "Utfør en profesjonell, databasert forbedringsgjennomgang for de syv porteføljenettstedene.",
+      "Utfør en profesjonell, databasert forbedringsgjennomgang for de åtte porteføljenettstedene.",
       "Kun observasjoner med dokumentert kilde og dato får presenteres som fakta.",
       "Henvisninger må ikke blandes med Search Console-visninger, søkeord, posisjoner eller verifiserte AI-siteringer.",
       "Vurder 30 dager mot foregående 30 per merke. Ved små tall: synliggjør usikkerhet og unngå bastante konklusjoner.",
