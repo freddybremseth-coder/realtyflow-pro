@@ -76,3 +76,20 @@ test("art and care get bounded read-only diagnostics without invented Google tra
   assert.ok(extras.every(item => !/Google Search Console-måling: [0-9]/.test(item.finding)));
   assert.match(extras.find(item => item.brandId === "zenecocare")!.nextStep, /ikke fjern tilsiktet noindex/);
 });
+
+test("Freddy Art has separately attributed Google counts without inventing Books or homepage numbers", () => {
+  const art = { brandId: "freddyart", base: "https://art.freddybremseth.com",
+    checkedAt: "2026-09-20T13:00:00Z",
+    home: { status: 200, robotsMeta: null, xRobots: null },
+    robots: { googlebotBlocked: false }, observations: [] } as unknown as SiteAudit;
+  const checks = planSEODiagnostics({
+    snapshots: [snapshot("freddyb", 115, 4), snapshot("freddypublishing", 86, 2), snapshot("freddyart", 19, 2)],
+    signals: null, leads: null, audits: [art],
+  });
+  const artCheck = checks.find(item => item.brandId === "freddyart");
+  assert.ok(artCheck);
+  assert.match(artCheck.finding, /19 visninger og 2 klikk/);
+  assert.match(artCheck.finding, /omfatter ikke bøker eller hovedsiden/);
+  assert.deepEqual(checks.filter(item => item.id.startsWith("check-search-page:")).map(item => item.brandId),
+    ["freddyb", "freddypublishing"]);
+});

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand } from "./seo-search-console";
+import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand, isFreddyFamilyDomainProperty, sumPageRows } from "./seo-search-console";
 
 test("Search Console requests a distinct read-only grant", () => {
   assert.equal(GSC_READ_SCOPE, "https://www.googleapis.com/auth/webmasters.readonly");
@@ -51,4 +51,26 @@ test("Saved Search Console channel lookup uses exact brand and Google property, 
   assert.deepEqual(selectStoredGSCBrandChannels("freddyb", channels).map(item => item.id), ["b"]);
   assert.deepEqual(selectStoredGSCBrandChannels("freddypublishing", channels).map(item => item.id), ["d"]);
   assert.deepEqual(selectStoredGSCBrandChannels("pinosoecolife", channels), []);
+});
+
+test("Freddy parent Domain property can cover art, but root URL-prefix and lookalikes cannot", () => {
+  assert.equal(isFreddyFamilyDomainProperty("sc-domain:freddybremseth.com"), true);
+  for (const value of ["https://www.freddybremseth.com/", "sc-domain:art.freddybremseth.com",
+    "sc-domain:freddybremseth.com.evil.invalid", "sc-domain:zenecohomes.com"]) {
+    assert.equal(isFreddyFamilyDomainProperty(value), false);
+  }
+});
+
+test("art GSC measurements never count books, root, remaster or lookalike domains", () => {
+  const rows = [
+    { keys: ["https://art.freddybremseth.com/kunstverk/one"], clicks: 2, impressions: 19 },
+    { keys: ["https://books.freddybremseth.com/books/one"], clicks: 7, impressions: 80 },
+    { keys: ["https://www.freddybremseth.com/es/"], clicks: 3, impressions: 30 },
+    { keys: ["https://remaster.freddybremseth.com/"], clicks: 1, impressions: 50 },
+    { keys: ["https://art.freddybremseth.com.evil.invalid/"], clicks: 9, impressions: 90 },
+  ];
+  assert.deepEqual(sumPageRows(rows, { base: "https://art.freddybremseth.com" }),
+    { clicks: 2, impressions: 19, ctr: 0.1053 });
+  assert.deepEqual(sumPageRows(rows, { base: "https://books.freddybremseth.com" }),
+    { clicks: 7, impressions: 80, ctr: 0.0875 });
 });

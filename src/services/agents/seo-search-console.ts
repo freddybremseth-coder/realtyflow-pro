@@ -233,7 +233,7 @@ function periodDay(now: number, offsetDays: number) {
   // date. Display the exact dates: Google Search Console uses Pacific dates.
   return new Date(now - offsetDays * 86400000).toISOString().slice(0, 10);
 }
-function sumPageRows(rows: RawRow[], target: { base: string }) {
+export function sumPageRows(rows: RawRow[], target: { base: string }) {
   let clicks = 0, impressions = 0;
   for (const row of rows) {
     if (!row.keys?.[0] || !allowedHost(row.keys[0], target)) continue;
@@ -249,6 +249,17 @@ export async function getGSCBrandSnapshot(brandId: string): Promise<GSCBrandSnap
   if (!target) throw new Error("Unknown public SEO brand");
   const access = await authorizedAccessToken(brandId);
   if (!access) return null;
+  return getGSCBrandSnapshotForAccess(brandId, target, access);
+}
+
+/** A URL-prefix homepage grant must never be reused to read sister hosts. */
+export function isFreddyFamilyDomainProperty(property: string): boolean {
+  return property === "sc-domain:freddybremseth.com";
+}
+
+async function getGSCBrandSnapshotForAccess(
+  brandId: string, target: { base: string }, access: { property: string; token: string },
+): Promise<GSCBrandSnapshot> {
   const now = Date.now();
   const currentEnd = periodDay(now, 3);
   const currentStart = periodDay(now, 32);
@@ -300,8 +311,20 @@ export async function getGSCBrandSnapshot(brandId: string): Promise<GSCBrandSnap
   };
 }
 
+/** Separate art metrics from the already-authorized Freddy domain property.
+ * Do not count derived art access as an eighth OAuth authorization. */
+export async function getGSCFreddyArtSnapshot(): Promise<GSCBrandSnapshot | null> {
+  const access = await authorizedAccessToken("freddyb");
+  if (!access || !isFreddyFamilyDomainProperty(access.property)) return null;
+  const snapshot = await getGSCBrandSnapshotForAccess(
+    "freddyart", { base: "https://art.freddybremseth.com" }, access,
+  );
+  snapshot.dataQuality.note += " Art-host figures were read from the verified parent Domain property, not a separate OAuth connection.";
+  return snapshot;
+}
+
 export async function readGSCAllBrands() {
-  return Promise.all(SEO_AUDIT_TARGETS.map(async target => {
+  const core = await Promise.all(SEO_AUDIT_TARGETS.map(async target => {
     try {
       const result = await getGSCBrandSnapshot(target.brandId);
       return { brandId: target.brandId, status: result ? "connected" as const : "not_connected" as const, result };
@@ -310,4 +333,17 @@ export async function readGSCAllBrands() {
         error: error instanceof Error ? error.message.slice(0, 200) : "Google Search Console unavailable" };
     }
   }));
+  // A single root OAuth grant may cover art only when its property is the
+  // exact Freddy parent Domain property, never a root URL-prefix property.
+  // Read after the seven originals to avoid competing OAuth refresh writes.
+  let art: { brandId: string; status: "connected" | "not_connected" | "error";
+    result: GSCBrandSnapshot | null; error?: string };
+  try {
+    const result = await getGSCFreddyArtSnapshot();
+    art = { brandId: "freddyart", status: result ? "connected" : "not_connected", result };
+  } catch (error) {
+    art = { brandId: "freddyart", status: "error", result: null,
+      error: error instanceof Error ? error.message.slice(0, 200) : "Freddy art GSC unavailable" };
+  }
+  return [...core, art];
 }
