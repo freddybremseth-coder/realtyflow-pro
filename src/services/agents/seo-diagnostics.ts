@@ -65,7 +65,6 @@ export function planSEODiagnostics(input: {
       }));
       continue;
     }
-    const audit = auditsByBrand.get(brandId);
     const { currentImpressions: views, currentClicks: clicks } = snap.totals;
     const page = snap.topPages.find(item => item.path.startsWith("/") && !item.path.includes("@") && item.path.length < 200);
     const pageHint = page ? " Høyest registrerte side i dette uttrekket: " + page.path +
@@ -94,17 +93,24 @@ export function planSEODiagnostics(input: {
         "; ikke nettstedssesjoner eller verifiserte leads.",
       kind: "check",
     }));
-    if (audit) {
-      const explicit = audit.observations.filter(observation =>
-        /noindex|site-wide disallow|canonical refers to a different host|unparsable JSON-LD|did not return HTTP 200|has no server-rendered <title>/i.test(observation));
-      if (explicit.length > 0) checks.push(diagnostic({
-        id: "check-public-audit:" + brandId, brandId, category: "technical",
-        title: "Et konkret offentlig SEO-avvik må bekreftes",
-        finding: explicit.slice(0, 3).join("; ") + ". Den avgrensede HTTP-kontrollen er ikke en fullstendig Google-indekseringskontroll.",
-        nextStep: "Gjenta HTTP-kontrollen på eksakt offentlig URL; bekreft ønsket canonical og om siden er ment å indekseres. Rett bare dokumenterte feil i godkjent, reversibel publiseringsflyt.",
-        evidence: audit.base + " · begrenset offentlig SEO-audit " + audit.checkedAt, kind: "observed",
-      }));
-    }
+
+  }
+  // Technical observations must remain visible even when Google's read-only
+  // API is temporarily unavailable for this brand. A sitemap page that names
+  // a different same-domain canonical is an investigation, never a license to
+  // rewrite a URL or remove deliberately canonicalized/private content.
+  for (const brandId of BRANDS) {
+    const audit = auditsByBrand.get(brandId);
+    if (!audit) continue;
+    const explicit = audit.observations.filter(observation =>
+      /noindex|site-wide disallow|canonical refers to a different host|canonical pointing to|non-HTTPS canonical|unparsable JSON-LD|did not return HTTP 200|has no server-rendered <title>/i.test(observation));
+    if (explicit.length > 0) checks.push(diagnostic({
+      id: "check-public-audit:" + brandId, brandId, category: "technical",
+      title: "Et konkret offentlig SEO-avvik må bekreftes",
+      finding: explicit.slice(0, 3).join("; ") + ". Den avgrensede HTTP-kontrollen er ikke en fullstendig Google-indekseringskontroll.",
+      nextStep: "Gjenta HTTP-kontrollen på eksakt offentlig URL; bekreft ønsket canonical og om siden er ment å indekseres. Rett bare dokumenterte feil i godkjent, reversibel publiseringsflyt.",
+      evidence: audit.base + " · begrenset offentlig SEO-audit " + audit.checkedAt, kind: "observed",
+    }));
   }
   // Care is a technical-only satellite. Public service information may be
   // inspected, while private customer routes must retain intended auth/noindex.
