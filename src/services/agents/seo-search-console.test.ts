@@ -31,6 +31,9 @@ test("Domain property can verify author's own subdomains; URL-prefix of root can
     { siteUrl: "https://www.freddybremseth.com/", permissionLevel: "siteOwner" },
     { siteUrl: "sc-domain:freddybremseth.com", permissionLevel: "siteRestrictedUser" },
   ]), "sc-domain:freddybremseth.com");
+  assert.equal(selectGSCProperty("freddyart", [
+    { siteUrl: "sc-domain:freddybremseth.com", permissionLevel: "siteOwner" },
+  ]), "sc-domain:freddybremseth.com");
   assert.equal(selectGSCProperty("remasterfreddy", [
     { siteUrl: "https://www.freddybremseth.com/", permissionLevel: "siteOwner" },
   ]), null);
@@ -50,6 +53,8 @@ test("Saved Search Console channel lookup uses exact brand and Google property, 
   assert.deepEqual(selectStoredGSCBrandChannels("zeneco", channels).map(item => item.id), ["a"]);
   assert.deepEqual(selectStoredGSCBrandChannels("freddyb", channels).map(item => item.id), ["b"]);
   assert.deepEqual(selectStoredGSCBrandChannels("freddypublishing", channels).map(item => item.id), ["d"]);
+  assert.deepEqual(selectStoredGSCBrandChannels("freddyart", channels).map(item => item.id), ["b"]);
+  assert.deepEqual(selectStoredGSCBrandChannels("remasterfreddy", channels).map(item => item.id), ["b"]);
   assert.deepEqual(selectStoredGSCBrandChannels("pinosoecolife", channels), []);
 });
 
