@@ -11,6 +11,7 @@ import { planSEODiagnostics, type SEODiagnostic } from "@/services/agents/seo-di
 import { getGSCConnectionStatus, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
+import { checkGithubSeoCapability } from "@/services/agents/seo-github-capability";
 
 type StoredSearchConsole = { brandId: string; status: string; result: GSCBrandSnapshot | null; error?: string };
 const ACTIVE = ["TO_DO", "IN_PROGRESS", "REVIEW"];
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
-    const [connections, saved, tasks, oauthResults, storedChannels, lastLiveRead, pilotCycle, trackedChanges] = await Promise.all([
+    const [connections, saved, tasks, oauthResults, storedChannels, lastLiveRead, pilotCycle, trackedChanges, publisherChecks] = await Promise.all([
       getGSCConnectionStatus(),
       supabase.from("automation_logs").select("created_at,details")
         .eq("action", "seo_portfolio_growth_review")
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
       supabase.from("automation_logs").select("details")
         .eq("action", "seo_autopilot_change").eq("status", "success")
         .order("created_at", { ascending: false }).limit(25),
+      Promise.all([checkGithubSeoCapability("freddyb"), checkGithubSeoCapability("zeneco")]),
     ]);
     if (saved.error) throw new Error("SEO review lookup: " + saved.error.message);
     if (lastLiveRead.error) throw new Error("Last Google read lookup: " + lastLiveRead.error.message);
@@ -176,7 +178,7 @@ export async function GET(request: NextRequest) {
       period: item.period, totals: item.totals, quality: item.dataQuality.note,
     }));
     return NextResponse.json({
-      actions, observations, diagnostics, changeEvaluations, connections: connected, metrics,
+      actions, observations, diagnostics, changeEvaluations, publisherChecks, connections: connected, metrics,
       latestReviewAt: saved.data?.created_at || null,
       lastDiagnosticAt: explicitLive ? new Date().toISOString()
         : lastReadIsNewer && Array.isArray(liveStored?.diagnostics) ? lastLiveRead.data?.created_at || null : null,
