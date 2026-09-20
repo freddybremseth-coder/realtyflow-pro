@@ -84,3 +84,17 @@ test("Freddy Art is a separate Search Console target from Books and the homepage
   assert.ok(checks.some(item => item.id === "check-search-page:freddyb"));
   assert.ok(checks.some(item => item.id === "check-search-page:freddypublishing"));
 });
+
+test("Sam keeps a real same-domain sitemap canonical mismatch in daily technical checks without Google measurements", () => {
+  const audit = {
+    brandId: "freddypublishing", base: "https://books.freddybremseth.com",
+    checkedAt: "2026-09-20T20:00:00Z",
+    observations: ["Sitemap sample /book/shadows-of-the-past has a canonical pointing to /; verify whether the declared sitemap URL should be indexed separately"],
+  } as SiteAudit;
+  const checks = planSEODiagnostics({ snapshots: [], signals: null, leads: null, audits: [audit] });
+  const observed = checks.find(item => item.id === "check-public-audit:freddypublishing");
+  assert.ok(observed);
+  assert.match(observed.finding, /canonical pointing to/);
+  assert.equal(observed.needsApproval, false);
+  assert.ok(checks.some(item => item.id === "check-google-source:freddypublishing"));
+});

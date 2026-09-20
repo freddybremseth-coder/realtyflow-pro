@@ -101,8 +101,19 @@ export function inspectPublicSample(
     try {
       const canonical = new URL(result.canonical, snapshot.url);
       const base = new URL(siteBase);
-      if (!["www." + base.hostname.replace(/^www\./, ""), base.hostname.replace(/^www\./, "")].includes(canonical.hostname)) {
+      if (canonical.protocol !== "https:") {
+        result.issue = "Sitemap sample " + path + " has a non-HTTPS canonical; verify intent";
+      } else if (!["www." + base.hostname.replace(/^www\./, ""), base.hostname.replace(/^www\./, "")].includes(canonical.hostname)) {
         result.issue = "Sitemap sample " + path + " has a cross-domain canonical; verify intent";
+      } else {
+        const normalized = (value: string) => value.replace(/\/+$/, "") || "/";
+        const requestedPath = normalized(new URL(requestedUrl).pathname);
+        const canonicalPath = normalized(canonical.pathname);
+        if (canonicalPath !== requestedPath || canonical.search || canonical.hash) {
+          result.issue = "Sitemap sample " + path + " has a canonical pointing to " +
+            canonical.pathname + (canonical.search || "") +
+            "; verify whether the declared sitemap URL should be indexed separately";
+        }
       }
     } catch { result.issue = "Sitemap sample " + path + " has an invalid canonical URL"; }
   }
