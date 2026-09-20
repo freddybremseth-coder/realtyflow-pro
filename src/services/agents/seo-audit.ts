@@ -12,6 +12,7 @@ export const SEO_AUDIT_TARGETS = [
   { brandId: "pinosoecolife", base: "https://www.pinosoecolife.com" },
   { brandId: "freddyb", base: "https://www.freddybremseth.com" },
   { brandId: "freddypublishing", base: "https://books.freddybremseth.com" },
+  { brandId: "freddyart", base: "https://art.freddybremseth.com" },
   { brandId: "remasterfreddy", base: "https://remaster.freddybremseth.com" },
   { brandId: "donaanna", base: "https://www.donaanna.com" },
   { brandId: "chatgenius", base: "https://www.chatgenius.pro" },
