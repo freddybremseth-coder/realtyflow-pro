@@ -57,3 +57,39 @@ test("no guessing about indexability from one 200 HTML sample", () => {
   assert.equal(actual.titlePresent, true);
   assert.equal(actual.noindex, false);
 });
+
+test("Sam flags a sitemapped book URL whose HTML canonical points to the books homepage", () => {
+  const site = "https://books.freddybremseth.com";
+  const page = inspectPublicSample(site + "/book/the-facade-of-justice", {
+    url: site + "/book/the-facade-of-justice", status: 200, contentType: "text/html",
+    body: '<html><head><title>The Facade of Justice</title><link rel="canonical" href="' + site +
+      '/"><meta name="description" content="A real book"></head><body><h1>The Facade of Justice</h1></body></html>',
+    xRobots: "",
+  }, site);
+  assert.match(page.issue || "", /canonical pointing to \/; verify/);
+  assert.equal(page.canonical, site + "/");
+});
+
+test("Sam allows trailing-slash and www/apex aliases when a sitemap URL is otherwise self-canonical", () => {
+  const page = inspectPublicSample(BASE + "/guide/example", {
+    url: BASE + "/guide/example/", status: 200, contentType: "text/html",
+    body: '<title>Guide</title><link rel="canonical" href="https://zenecohomes.com/guide/example/"><h1>Guide</h1>',
+    xRobots: "",
+  }, BASE);
+  assert.equal(page.issue, null);
+});
+
+test("Sam reports sitemap entry canonical with unintended query parameters or insecure protocol", () => {
+  const query = inspectPublicSample(BASE + "/guide/example", {
+    url: BASE + "/guide/example", status: 200, contentType: "text/html",
+    body: '<title>Guide</title><link rel="canonical" href="/guide/example?ref=track"><h1>Guide</h1>',
+    xRobots: "",
+  }, BASE);
+  assert.match(query.issue || "", /canonical pointing to \/guide\/example\?ref=track/);
+  const insecure = inspectPublicSample(BASE + "/guide/example", {
+    url: BASE + "/guide/example", status: 200, contentType: "text/html",
+    body: '<title>Guide</title><link rel="canonical" href="http://www.zenecohomes.com/guide/example"><h1>Guide</h1>',
+    xRobots: "",
+  }, BASE);
+  assert.match(insecure.issue || "", /non-HTTPS canonical/);
+});
