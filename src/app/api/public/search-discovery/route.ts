@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { classifySearchDiscoveryReferrer } from "@/services/agents/seo-referrer-classifier";
+import { discoveryStorageHttpStatus } from "@/services/agents/seo-discovery-storage";
 
 const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://www.zenecohomes.com": "zeneco",
@@ -63,24 +64,43 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabase();
   if (!supabase) {
-    return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
+    // Never claim success when the collector cannot even access its database.
+    return NextResponse.json({ error: "Discovery collector unavailable" }, {
+      status: discoveryStorageHttpStatus("unavailable"),
+      headers: { ...corsHeaders(origin), "Cache-Control": "no-store" },
+    });
   }
 
   const brandId = BRAND_BY_ORIGIN[origin];
   const cleanPath = path.split("?")[0].split("#")[0] || "/";
 
-  const { error } = await supabase.from("search_discovery_events").insert({
-    brand_id: brandId,
-    source: classified.source,
-    path: cleanPath,
-    referrer_host: classified.host,
-    occurred_at: new Date().toISOString(),
-  });
-
-  if (error) console.warn("[PortfolioDiscovery] Could not store event", error.message);
+  // Only return 204 when the database write actually succeeded. Treat errors
+  // and network exceptions as unmeasured; the client may retry a later visit.
+  try {
+    const { error } = await supabase.from("search_discovery_events").insert({
+      brand_id: brandId,
+      source: classified.source,
+      path: cleanPath,
+      referrer_host: classified.host,
+      occurred_at: new Date().toISOString(),
+    });
+    if (error) {
+      console.warn("[PortfolioDiscovery] Arrival storage unavailable");
+      return NextResponse.json({ error: "Discovery collector unavailable" }, {
+        status: discoveryStorageHttpStatus("write_failed"),
+        headers: { ...corsHeaders(origin), "Cache-Control": "no-store" },
+      });
+    }
+  } catch {
+    console.warn("[PortfolioDiscovery] Arrival storage request failed");
+    return NextResponse.json({ error: "Discovery collector unavailable" }, {
+      status: discoveryStorageHttpStatus("write_failed"),
+      headers: { ...corsHeaders(origin), "Cache-Control": "no-store" },
+    });
+  }
 
   return new NextResponse(null, {
-    status: 204,
-    headers: corsHeaders(origin),
+    status: discoveryStorageHttpStatus("stored"),
+    headers: { ...corsHeaders(origin), "Cache-Control": "no-store" },
   });
 }
