@@ -54,7 +54,7 @@ export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 
   if (host === "books.freddybremseth.com") {
     const books = new Map<string, Candidate[]>();
     for (const item of other) {
-      const match = /^\\/(?:(?:en|es)\\/)?book\\/([a-z0-9-]+)\\/?$/.exec(item.path);
+      const match = new RegExp("^/(?:(?:en|es)/)?book/([a-z0-9-]+)/?$").exec(item.path);
       if (!match) continue;
       const variants = books.get(match[1]) || [];
       variants.push(item);
@@ -69,7 +69,7 @@ export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 
     }
   }
   if (host === "art.freddybremseth.com") {
-    const artworks = other.filter(item => /^\\/verk\\/[a-z0-9-]+\\/?$/.test(item.path));
+    const artworks = other.filter(item => new RegExp("^/verk/[a-z0-9-]+/?$").test(item.path));
     if (artworks.length) {
       return Array.from({ length: Math.min(limit, artworks.length) }, (_, i) =>
         artworks[(day * limit + i) % artworks.length].href);
