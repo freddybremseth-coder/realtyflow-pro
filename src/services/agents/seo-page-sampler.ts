@@ -30,7 +30,7 @@ function eligibleSitemapUrl(raw: string, siteBase: string): Candidate | null {
   } catch { return null; }
 }
 
-export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 3): string[] {
+export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 3, rotation = 0): string[] {
   // Do not follow sitemap index references as HTML pages. Index resolution is
   // deliberately a separate bounded capability, not an implicit crawler.
   if (!/<urlset(?:\s|>)/i.test(xml) || /<sitemapindex(?:\s|>)/i.test(xml)) return [];
@@ -43,6 +43,37 @@ export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 
     const group = groups.get(candidate.group) || [];
     group.push(candidate);
     groups.set(candidate.group, group);
+  }
+  // Book and art sitemaps begin with the homepage, generic information pages
+  // or three language variants of one title. A fixed first-three sample would
+  // never inspect most actual works. Rotate real, explicitly sitemapped public
+  // item URLs while keeping the SAME three-page/host HTTP request boundary.
+  const host = new URL(siteBase).hostname.toLowerCase();
+  const other = groups.get("other") || [];
+  const day = Number.isFinite(rotation) ? Math.max(0, Math.trunc(rotation)) : 0;
+  if (host === "books.freddybremseth.com") {
+    const books = new Map<string, Candidate[]>();
+    for (const item of other) {
+      const match = /^\\/(?:(?:en|es)\\/)?book\\/([a-z0-9-]+)\\/?$/.exec(item.path);
+      if (!match) continue;
+      const variants = books.get(match[1]) || [];
+      variants.push(item);
+      books.set(match[1], variants);
+    }
+    const uniqueBooks = [...books.values()];
+    if (uniqueBooks.length) {
+      return Array.from({ length: Math.min(limit, uniqueBooks.length) }, (_, i) => {
+        const variants = uniqueBooks[(day * limit + i) % uniqueBooks.length];
+        return variants[day % variants.length].href;
+      });
+    }
+  }
+  if (host === "art.freddybremseth.com") {
+    const artworks = other.filter(item => /^\\/verk\\/[a-z0-9-]+\\/?$/.test(item.path));
+    if (artworks.length) {
+      return Array.from({ length: Math.min(limit, artworks.length) }, (_, i) =>
+        artworks[(day * limit + i) % artworks.length].href);
+    }
   }
   const picked: Candidate[] = [];
   for (const group of ["property", "editorial", "local", "other"]) {
