@@ -31,6 +31,17 @@ export type GSCBrandSnapshot = {
 export function targetForBrand(brandId: string) {
   return SEO_AUDIT_TARGETS.find(target => target.brandId === brandId) || null;
 }
+
+const FREDDY_DOMAIN_FAMILY = new Set(["freddyb", "freddypublishing", "freddyart", "remasterfreddy"]);
+
+export function isFreddyFamilyDomainProperty(value: string) {
+  return value.toLowerCase() === "sc-domain:freddybremseth.com";
+}
+
+function canInheritFreddyRootProperty(brandId: string, channel: GSCStoredChannel) {
+  return brandId !== "freddyb" && FREDDY_DOMAIN_FAMILY.has(brandId) &&
+    channel.brand_id === "freddyb" && isFreddyFamilyDomainProperty(channel.external_id);
+}
 function allowedHost(value: string, target: { base: string }) {
   try {
     const page = new URL(value);
@@ -102,7 +113,14 @@ type GSCStoredChannel = { id: string; brand_id: string; external_id: string };
  * separately after the property has been checked.
  */
 export function selectStoredGSCBrandChannels(brandId: string, channels: readonly GSCStoredChannel[]): GSCStoredChannel[] {
-  return channels.filter(channel => channel.brand_id === brandId &&
+  const exact = channels.filter(channel => channel.brand_id === brandId &&
+    selectGSCProperty(brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) === channel.external_id);
+  if (exact.length > 0) return exact;
+  // A verified DNS Domain property covers its subdomains. Reuse the already
+  // consented Freddy root-domain OAuth grant for books/art/remaster instead of
+  // forcing duplicate Google authorizations. Page rows are still filtered to
+  // the exact child host before any metrics are counted.
+  return channels.filter(channel => canInheritFreddyRootProperty(brandId, channel) &&
     selectGSCProperty(brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) === channel.external_id);
 }
 
@@ -233,7 +251,7 @@ function periodDay(now: number, offsetDays: number) {
   // date. Display the exact dates: Google Search Console uses Pacific dates.
   return new Date(now - offsetDays * 86400000).toISOString().slice(0, 10);
 }
-export function sumPageRows(rows: RawRow[], target: { base: string }) {
+export export function sumPageRows(rows: RawRow[], target: { base: string }) {
   let clicks = 0, impressions = 0;
   for (const row of rows) {
     if (!row.keys?.[0] || !allowedHost(row.keys[0], target)) continue;
