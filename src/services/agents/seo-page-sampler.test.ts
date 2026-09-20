@@ -73,7 +73,7 @@ test("Sam flags a sitemapped book URL whose HTML canonical points to the books h
 test("Sam allows trailing-slash and www/apex aliases when a sitemap URL is otherwise self-canonical", () => {
   const page = inspectPublicSample(BASE + "/guide/example", {
     url: BASE + "/guide/example/", status: 200, contentType: "text/html",
-    body: '<title>Guide</title><link rel="canonical" href="https://zenecohomes.com/guide/example/"><h1>Guide</h1>',
+    body: '<title>Guide</title><meta name="description" content="A complete real public guide"><link rel="canonical" href="https://zenecohomes.com/guide/example/"><h1>Guide</h1>',
     xRobots: "",
   }, BASE);
   assert.equal(page.issue, null);
@@ -82,13 +82,13 @@ test("Sam allows trailing-slash and www/apex aliases when a sitemap URL is other
 test("Sam reports sitemap entry canonical with unintended query parameters or insecure protocol", () => {
   const query = inspectPublicSample(BASE + "/guide/example", {
     url: BASE + "/guide/example", status: 200, contentType: "text/html",
-    body: '<title>Guide</title><link rel="canonical" href="/guide/example?ref=track"><h1>Guide</h1>',
+    body: '<title>Guide</title><meta name="description" content="A complete real public guide"><link rel="canonical" href="/guide/example?ref=track"><h1>Guide</h1>',
     xRobots: "",
   }, BASE);
   assert.match(query.issue || "", /canonical pointing to \/guide\/example\?ref=track/);
   const insecure = inspectPublicSample(BASE + "/guide/example", {
     url: BASE + "/guide/example", status: 200, contentType: "text/html",
-    body: '<title>Guide</title><link rel="canonical" href="http://www.zenecohomes.com/guide/example"><h1>Guide</h1>',
+    body: '<title>Guide</title><meta name="description" content="A complete real public guide"><link rel="canonical" href="http://www.zenecohomes.com/guide/example"><h1>Guide</h1>',
     xRobots: "",
   }, BASE);
   assert.match(insecure.issue || "", /non-HTTPS canonical/);
