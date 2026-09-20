@@ -149,3 +149,33 @@ test("actual public audit retains its hard three-page bound while sampling sitem
   assert.equal(new Set(result.samples.map(row => row.path.split("/").filter(Boolean).at(-1))).size, 3);
   assert.ok(result.samples.every(row => row.path.includes("/book/") && row.issue === null));
 });
+
+test("Sam surfaces actual missing metadata on a public page declared in a sitemap", () => {
+  const base = "https://books.freddybremseth.com";
+  const url = base + "/book/example";
+  const withoutCanonical = inspectPublicSample(url, {
+    url, status: 200, contentType: "text/html",
+    body: '<title>Example book</title><meta name="description" content="Author and series"><h1>Example book</h1>',
+    xRobots: "",
+  }, base);
+  assert.equal(withoutCanonical.canonical, null);
+  assert.match(withoutCanonical.issue || "", /has no canonical link/);
+  const withoutDescription = inspectPublicSample(url, {
+    url, status: 200, contentType: "text/html",
+    body: '<title>Example book</title><link rel="canonical" href="' + url +
+      '"><h1>Example book</h1>', xRobots: "",
+  }, base);
+  assert.equal(withoutDescription.descriptionPresent, false);
+  assert.match(withoutDescription.issue || "", /has no HTML meta description/);
+});
+
+test("deliberately nonindex public sample stays a noindex finding rather than a missing-canonical rewrite instruction", () => {
+  const base = "https://books.freddybremseth.com";
+  const url = base + "/book/hidden";
+  const sample = inspectPublicSample(url, {
+    url, status: 200, contentType: "text/html",
+    body: '<title>Hidden</title><meta name="robots" content="noindex"><h1>Hidden</h1>',
+    xRobots: "",
+  }, base);
+  assert.match(sample.issue || "", /explicitly returns noindex/);
+});
