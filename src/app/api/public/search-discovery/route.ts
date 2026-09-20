@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-const AI_SOURCES = new Set(["chatgpt", "microsoft_copilot", "perplexity", "google_gemini"]);
+import { classifySearchDiscoveryReferrer } from "@/services/agents/seo-referrer-classifier";
 
 const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://www.zenecohomes.com": "zeneco",
@@ -18,17 +17,6 @@ const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://www.chatgenius.pro": "chatgenius",
   "https://chatgenius.pro": "chatgenius",
 };
-
-const SOURCE_BY_HOST: Array<[RegExp, string]> = [
-  [/(^|\.)google\.(?:com|[a-z]{2}|com\.[a-z]{2}|co\.[a-z]{2})$/i, "google_search"],
-  [/(^|\.)bing\.com$/i, "bing_search"],
-  [/(^|\.)chatgpt\.com$/i, "chatgpt"],
-  [/^copilot\.microsoft\.com$/i, "microsoft_copilot"],
-  [/(^|\.)perplexity\.ai$/i, "perplexity"],
-  [/^gemini\.google\.com$/i, "google_gemini"],
-  [/^search\.brave\.com$/i, "brave_search"],
-  [/(^|\.)duckduckgo\.com$/i, "duckduckgo"],
-];
 
 function corsHeaders(origin: string) {
   return {
@@ -49,16 +37,6 @@ function getSupabase() {
   });
 }
 
-function classifyReferrer(value: string) {
-  try {
-    const host = new URL(value).hostname.toLowerCase();
-    const match = SOURCE_BY_HOST.find(([pattern]) => pattern.test(host));
-    return match ? { source: match[1], host } : null;
-  } catch {
-    return null;
-  }
-}
-
 function allowedOrigin(request: NextRequest) {
   const raw = (request.headers.get("origin") || "").trim().replace(/\/$/, "").toLowerCase();
   return raw && BRAND_BY_ORIGIN[raw] ? raw : "";
@@ -77,7 +55,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const path = typeof body.path === "string" ? body.path.trim() : "";
   const referrer = typeof body.referrer === "string" ? body.referrer.trim() : "";
-  const classified = classifyReferrer(referrer);
+  const classified = classifySearchDiscoveryReferrer(referrer);
 
   if (!classified || !path.startsWith("/") || path.startsWith("//") || path.length > 500 || /[\x00-\x1f]/.test(path)) {
     return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
