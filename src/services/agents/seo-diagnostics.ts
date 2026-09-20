@@ -11,7 +11,7 @@ export type SEODiagnostic = {
   kind: "check" | "observed"; needsApproval: false;
 };
 
-const BRANDS = ["zeneco", "pinosoecolife", "freddyb", "freddypublishing", "remasterfreddy", "donaanna", "chatgenius"] as const;
+const BRANDS = ["zeneco", "pinosoecolife", "freddyb", "freddypublishing", "freddyart", "remasterfreddy", "donaanna", "chatgenius"] as const;
 function diagnostic(input: Omit<SEODiagnostic, "needsApproval">): SEODiagnostic {
   return { ...input, needsApproval: false };
 }
@@ -106,39 +106,27 @@ export function planSEODiagnostics(input: {
       }));
     }
   }
-  // Public satellite sites get factual HTTP checks without being counted as
-  // a Search Console OAuth grant or generating speculative publishing tasks.
+  // Care is a technical-only satellite. Public service information may be
+  // inspected, while private customer routes must retain intended auth/noindex.
   for (const target of SEO_SUPPLEMENTAL_AUDIT_TARGETS) {
     const audit = auditsByBrand.get(target.brandId);
-    const isCare = target.brandId === "zenecocare";
-    const artSnapshot = !isCare ? byBrand.get(target.brandId) : null;
-    const artGoogleFinding = artSnapshot
-      ? " Egen Google-måling for art.freddybremseth.com: " +
-        artSnapshot.totals.currentImpressions + " visninger og " +
-        artSnapshot.totals.currentClicks + " klikk i perioden " +
-        artSnapshot.period.currentStart + "–" + artSnapshot.period.currentEnd +
-        " via bekreftet overordnet Domain-eiendom. Tallene omfatter ikke bøker eller hovedsiden."
-      : isCare ? "" : " Egne Google-tall for kunstgalleriet er ikke verifisert i denne kjøringen.";
     const pageStatus = audit?.home.status;
     const explicitlyBlocked = audit
-      ? /\\bnoindex\\b/i.test([audit.home.robotsMeta, audit.home.xRobots].join(" ")) ||
+      ? /\bnoindex\b/i.test([audit.home.robotsMeta, audit.home.xRobots].join(" ")) ||
         audit.robots.googlebotBlocked === true
       : false;
     checks.push(diagnostic({
       id: "check-satellite-public:" + target.brandId,
       brandId: target.brandId, category: "technical",
-      title: isCare ? "Kontroller offentlig Care-side uten å indeksere private kundeområder"
-        : "Kontroller kunstgalleriets offentlige søkesider",
-      finding: (!audit
+      title: "Kontroller offentlig Care-side uten å indeksere private kundeområder",
+      finding: !audit
         ? "Ingen offentlig HTTP-kontroll av dette delnettstedet er tilgjengelig i siste kjøring."
         : pageStatus === null
           ? "Offentlig HTTP-status er ukjent; en nettverksfeil er ikke bevis for indekseringsfeil."
           : "Offentlig forside ga HTTP " + pageStatus +
             (explicitlyBlocked ? " og en eksplisitt indeks-/crawlerblokk ble observert." : ".") +
-            " Den tekniske kontrollen er ikke i seg selv en Google-måling.") + artGoogleFinding,
-      nextStep: isCare
-        ? "Avklar hvilke Care-sider som er offentlig tjenesteinformasjon og hvilke som er private kundeområder. Kontroller bare de offentlige sidene; ikke fjern tilsiktet noindex eller autentisering."
-        : "Bekreft offentlig forside, canonical, sitemap og de viktigste kunstverksidene. Koble art-domenet til egne Google-målinger før du vurderer endringer ut fra søketrafikk.",
+            " Den tekniske kontrollen er ikke i seg selv en Google-måling.",
+      nextStep: "Avklar hvilke Care-sider som er offentlig tjenesteinformasjon og hvilke som er private kundeområder. Kontroller bare de offentlige sidene; ikke fjern tilsiktet noindex eller autentisering.",
       evidence: target.base + (audit ? " · offentlig HTTP-kontroll " + audit.checkedAt : " · ingen fullført HTTP-kontroll"),
       kind: "check",
     }));
