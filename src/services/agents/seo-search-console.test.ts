@@ -31,6 +31,12 @@ test("Domain property can verify author's own subdomains; URL-prefix of root can
     { siteUrl: "https://www.freddybremseth.com/", permissionLevel: "siteOwner" },
     { siteUrl: "sc-domain:freddybremseth.com", permissionLevel: "siteRestrictedUser" },
   ]), "sc-domain:freddybremseth.com");
+  assert.equal(selectGSCProperty("freddyart", [
+    { siteUrl: "sc-domain:freddybremseth.com", permissionLevel: "siteOwner" },
+  ]), "sc-domain:freddybremseth.com");
+  assert.equal(selectGSCProperty("freddyart", [
+    { siteUrl: "https://www.freddybremseth.com/", permissionLevel: "siteOwner" },
+  ]), null);
   assert.equal(selectGSCProperty("remasterfreddy", [
     { siteUrl: "https://www.freddybremseth.com/", permissionLevel: "siteOwner" },
   ]), null);
