@@ -103,6 +103,7 @@ const SAM_GSC_DOMAIN_GROUPS = [
     { id: "freddyb", label: "FreddyBremseth.com" },
     { id: "freddypublishing", label: "books.freddybremseth.com" },
     { id: "remasterfreddy", label: "remaster.freddybremseth.com" },
+    { id: "freddyart", label: "art.freddybremseth.com" },
   ] },
   { domain: "donaanna.com", brands: [{ id: "donaanna", label: "Doña Anna" }] },
   { domain: "chatgenius.pro", brands: [{ id: "chatgenius", label: "ChatGenius" }] },
@@ -1096,7 +1097,7 @@ export default function AgentsCommandCenter() {
           </div>
           <details className="mt-3 rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs">
             <summary className="cursor-pointer font-semibold text-emerald-300">
-              Oppsettguide: Legg alle syv nettstedene til i Google Search Console (fem domener)
+              Oppsettguide: Legg alle åtte nettstedene til i Google Search Console (fem domener)
             </summary>
             <p className="mt-2 text-slate-200">
               1. Åpne <a href="https://search.google.com/search-console/" target="_blank" rel="noopener noreferrer" className="underline text-emerald-300">Google Search Console</a> med Google-kontoen din.
@@ -1143,7 +1144,7 @@ export default function AgentsCommandCenter() {
             <p className="mt-2 text-slate-400">
               Dette viser bare lesetilgang i RealtyFlow, ikke om DNS-verifiseringen er fullført.
               Opprett og bekreft Google-eiendommen først; godkjenn deretter Sams tilgang til
-              hvert av de syv nettstedene. For freddybremseth.com-gruppen velger Sam
+              hvert av de åtte nettstedene. For freddybremseth.com-gruppen velger Sam
               samme verifiserte overordnede domene for begge underdomenene.
               Sam gjør ingen endringer på nettsider eller DNS gjennom denne tilkoblingen.
             </p>
