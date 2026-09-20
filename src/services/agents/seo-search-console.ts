@@ -251,7 +251,7 @@ function periodDay(now: number, offsetDays: number) {
   // date. Display the exact dates: Google Search Console uses Pacific dates.
   return new Date(now - offsetDays * 86400000).toISOString().slice(0, 10);
 }
-export export function sumPageRows(rows: RawRow[], target: { base: string }) {
+export function sumPageRows(rows: RawRow[], target: { base: string }) {
   let clicks = 0, impressions = 0;
   for (const row of rows) {
     if (!row.keys?.[0] || !allowedHost(row.keys[0], target)) continue;
