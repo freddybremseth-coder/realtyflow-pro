@@ -31,6 +31,17 @@ export type GSCBrandSnapshot = {
 export function targetForBrand(brandId: string) {
   return SEO_AUDIT_TARGETS.find(target => target.brandId === brandId) || null;
 }
+
+const FREDDY_DOMAIN_FAMILY = new Set(["freddyb", "freddypublishing", "freddyart", "remasterfreddy"]);
+
+export function isFreddyFamilyDomainProperty(value: string) {
+  return value.toLowerCase() === "sc-domain:freddybremseth.com";
+}
+
+function canInheritFreddyRootProperty(brandId: string, channel: GSCStoredChannel) {
+  return brandId !== "freddyb" && FREDDY_DOMAIN_FAMILY.has(brandId) &&
+    channel.brand_id === "freddyb" && isFreddyFamilyDomainProperty(channel.external_id);
+}
 function allowedHost(value: string, target: { base: string }) {
   try {
     const page = new URL(value);
@@ -102,7 +113,14 @@ type GSCStoredChannel = { id: string; brand_id: string; external_id: string };
  * separately after the property has been checked.
  */
 export function selectStoredGSCBrandChannels(brandId: string, channels: readonly GSCStoredChannel[]): GSCStoredChannel[] {
-  return channels.filter(channel => channel.brand_id === brandId &&
+  const exact = channels.filter(channel => channel.brand_id === brandId &&
+    selectGSCProperty(brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) === channel.external_id);
+  if (exact.length > 0) return exact;
+  // A verified DNS Domain property covers its subdomains. Reuse the already
+  // consented Freddy root-domain OAuth grant for books/art/remaster instead of
+  // forcing duplicate Google authorizations. Page rows are still filtered to
+  // the exact child host before any metrics are counted.
+  return channels.filter(channel => canInheritFreddyRootProperty(brandId, channel) &&
     selectGSCProperty(brandId, [{ siteUrl: channel.external_id, permissionLevel: "siteOwner" }]) === channel.external_id);
 }
 
@@ -250,11 +268,6 @@ export async function getGSCBrandSnapshot(brandId: string): Promise<GSCBrandSnap
   const access = await authorizedAccessToken(brandId);
   if (!access) return null;
   return getGSCBrandSnapshotForAccess(brandId, target, access);
-}
-
-/** A URL-prefix homepage grant must never be reused to read sister hosts. */
-export function isFreddyFamilyDomainProperty(property: string): boolean {
-  return property === "sc-domain:freddybremseth.com";
 }
 
 async function getGSCBrandSnapshotForAccess(

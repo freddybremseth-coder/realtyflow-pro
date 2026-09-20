@@ -12,6 +12,6 @@ test("Sam SEO identifies only real measured tooling and explicitly gated externa
   assert.ok(grouped.needsConnection.some(skill => skill.id === "bing_webmaster"));
   assert.ok(grouped.needsConnection.some(skill => skill.id === "core_web_vitals"));
   assert.ok(SEO_SENIOR_OPERATING_RULES.includes("Ikke rediger produksjon"));
-  assert.equal(SEO_AUDIT_TARGETS.length, 7);
+  assert.equal(SEO_AUDIT_TARGETS.length, 8);
   assert.equal(SEO_AUDIT_TARGETS.find(item => item.brandId === "chatgenius")?.base, "https://www.chatgenius.pro");
 });

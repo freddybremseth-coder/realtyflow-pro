@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 export const SEO_BRANDS = [
-  "zeneco", "pinosoecolife", "freddyb", "freddypublishing",
+  "zeneco", "pinosoecolife", "freddyb", "freddypublishing", "freddyart",
   "remasterfreddy", "donaanna", "chatgenius",
 ] as const;
 

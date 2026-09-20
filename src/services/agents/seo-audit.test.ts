@@ -56,10 +56,12 @@ test("failed request remains unknown and never becomes a fabricated SEO error", 
   assert.ok(!result.observations.some(line => line.includes("robots.txt did not return")));
 });
 
-test("art and care are additional bounded audit targets, not extra Search Console OAuth brands", () => {
-  assert.equal(SEO_AUDIT_TARGETS.length, 7);
+test("Freddy Art is a first-class search target while Care remains technical-only", () => {
+  assert.equal(SEO_AUDIT_TARGETS.length, 8);
+  assert.equal(SEO_AUDIT_TARGETS.find(item => item.brandId === "freddyart")?.base,
+    "https://art.freddybremseth.com");
   assert.deepEqual(SEO_SUPPLEMENTAL_AUDIT_TARGETS.map(item => item.base), [
-    "https://art.freddybremseth.com", "https://care.zenecohomes.com",
+    "https://care.zenecohomes.com",
   ]);
   const origins = [...SEO_AUDIT_TARGETS, ...SEO_SUPPLEMENTAL_AUDIT_TARGETS].map(item => item.base);
   assert.equal(new Set(origins).size, 9);

@@ -21,15 +21,15 @@ function snapshot(brandId: string, views: number, clicks: number): GSCBrandSnaps
   };
 }
 
-test("all seven connected sites get a concrete check even below GSC opportunity thresholds", () => {
+test("all eight connected search sites get a concrete check even below GSC opportunity thresholds", () => {
   const data = [
     snapshot("zeneco", 48, 2), snapshot("pinosoecolife", 1, 0),
     snapshot("freddyb", 115, 4), snapshot("freddypublishing", 86, 2),
-    snapshot("remasterfreddy", 29, 0), snapshot("donaanna", 0, 0),
+    snapshot("freddyart", 19, 2), snapshot("remasterfreddy", 29, 0), snapshot("donaanna", 0, 0),
     snapshot("chatgenius", 29, 0),
   ];
   const checks = planSEODiagnostics({ snapshots: data, signals: null, leads: null, audits: [] });
-  assert.equal(checks.filter(item => item.id.startsWith("check-search-page:")).length, 7);
+  assert.equal(checks.filter(item => item.id.startsWith("check-search-page:")).length, 8);
   assert.ok(checks.every(item => item.needsApproval === false));
   assert.ok(checks.some(item => item.brandId === "donaanna" && item.finding.includes("beviser ikke")));
   assert.ok(checks.some(item => item.brandId === "zeneco" && item.finding.includes("/public-guide")));
@@ -62,34 +62,25 @@ test("technical concerns appear only if actually observed in a bounded public au
   assert.match(checks.find(item => item.category === "technical")!.nextStep, /Gjenta HTTP-kontrollen/);
 });
 
-test("art and care get bounded read-only diagnostics without invented Google traffic or private-portal indexing requests", () => {
-  const art = { brandId: "freddyart", base: "https://art.freddybremseth.com",
-    checkedAt: "2026-09-20T13:00:00Z", home: { status: 200, robotsMeta: null, xRobots: null },
-    robots: { googlebotBlocked: false }, observations: [] } as unknown as SiteAudit;
+test("Care stays technical-only and never becomes an invented Google growth target", () => {
   const care = { brandId: "zenecocare", base: "https://care.zenecohomes.com",
     checkedAt: "2026-09-20T13:00:00Z", home: { status: 200, robotsMeta: "noindex", xRobots: null },
     robots: { googlebotBlocked: false }, observations: [] } as unknown as SiteAudit;
-  const checks = planSEODiagnostics({ snapshots: [], signals: null, leads: null, audits: [art, care] });
-  const extras = checks.filter(item => ["freddyart", "zenecocare"].includes(item.brandId || ""));
-  assert.equal(extras.length, 2);
-  assert.ok(extras.every(item => item.needsApproval === false));
-  assert.ok(extras.every(item => !/Google Search Console-måling: [0-9]/.test(item.finding)));
-  assert.match(extras.find(item => item.brandId === "zenecocare")!.nextStep, /ikke fjern tilsiktet noindex/);
+  const checks = planSEODiagnostics({ snapshots: [], signals: null, leads: null, audits: [care] });
+  const careCheck = checks.find(item => item.brandId === "zenecocare");
+  assert.ok(careCheck);
+  assert.equal(careCheck.needsApproval, false);
+  assert.match(careCheck.nextStep, /ikke fjern tilsiktet noindex/);
 });
 
-test("Freddy Art has separately attributed Google counts without inventing Books or homepage numbers", () => {
-  const art = { brandId: "freddyart", base: "https://art.freddybremseth.com",
-    checkedAt: "2026-09-20T13:00:00Z",
-    home: { status: 200, robotsMeta: null, xRobots: null },
-    robots: { googlebotBlocked: false }, observations: [] } as unknown as SiteAudit;
+test("Freddy Art is a separate Search Console target from Books and the homepage", () => {
   const checks = planSEODiagnostics({
     snapshots: [snapshot("freddyb", 115, 4), snapshot("freddypublishing", 86, 2), snapshot("freddyart", 19, 2)],
-    signals: null, leads: null, audits: [art],
+    signals: null, leads: null, audits: [],
   });
-  const artCheck = checks.find(item => item.brandId === "freddyart");
+  const artCheck = checks.find(item => item.id === "check-search-page:freddyart");
   assert.ok(artCheck);
-  assert.match(artCheck.finding, /19 visninger og 2 klikk/);
-  assert.match(artCheck.finding, /omfatter ikke bøker eller hovedsiden/);
-  assert.deepEqual(checks.filter(item => item.id.startsWith("check-search-page:")).map(item => item.brandId),
-    ["freddyb", "freddypublishing"]);
+  assert.match(artCheck.finding, /19 målte Google-visninger og 2 klikk/);
+  assert.ok(checks.some(item => item.id === "check-search-page:freddyb"));
+  assert.ok(checks.some(item => item.id === "check-search-page:freddypublishing"));
 });

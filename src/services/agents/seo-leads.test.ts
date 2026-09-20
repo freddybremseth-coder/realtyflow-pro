@@ -13,6 +13,8 @@ test("public source URL removes all query data and rejects external/personal tar
   assert.equal(publicLeadPage("https://evil.invalid/phish?email=test", "zeneco"), null);
   assert.equal(publicLeadPage("https://www.zenecohomes.com/private#token=abcd", "pinosoecolife"), null);
   assert.equal(publicLeadPage("javascript:alert(1)", "zeneco"), null);
+  assert.equal(publicLeadPage("https://art.freddybremseth.com/verk/example?buyer=private", "freddyart"), "/verk/example");
+  assert.equal(publicLeadPage("https://books.freddybremseth.com/book/example", "freddyart"), null);
 });
 
 test("lead summary separates source page coverage, brands and 30-day windows", () => {

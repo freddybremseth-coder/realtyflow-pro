@@ -12,16 +12,16 @@ export const SEO_AUDIT_TARGETS = [
   { brandId: "pinosoecolife", base: "https://www.pinosoecolife.com" },
   { brandId: "freddyb", base: "https://www.freddybremseth.com" },
   { brandId: "freddypublishing", base: "https://books.freddybremseth.com" },
+  { brandId: "freddyart", base: "https://art.freddybremseth.com" },
   { brandId: "remasterfreddy", base: "https://remaster.freddybremseth.com" },
   { brandId: "donaanna", base: "https://www.donaanna.com" },
   { brandId: "chatgenius", base: "https://www.chatgenius.pro" },
 ] as const;
 
-/** These public microsites are audited separately from the seven consented
- * Search Console brand connections. Do not treat an audit as GSC authorization.
- * The Care site may deliberately keep private customer routes out of search. */
+/** Public service microsites that are technically audited but are not normal
+ * Search Console growth targets. Care may deliberately keep private customer
+ * routes out of search, so an audit must never imply those routes should index. */
 export const SEO_SUPPLEMENTAL_AUDIT_TARGETS = [
-  { brandId: "freddyart", base: "https://art.freddybremseth.com" },
   { brandId: "zenecocare", base: "https://care.zenecohomes.com" },
 ] as const;
 

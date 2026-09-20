@@ -8,7 +8,7 @@ import { SEO_AUDIT_TARGETS, auditSEOPortfolio } from "@/services/agents/seo-audi
 import { getSEOObservedSignals } from "@/services/agents/seo-data";
 import { getSEOLeadSignals } from "@/services/agents/seo-leads";
 import { planSEODiagnostics, type SEODiagnostic } from "@/services/agents/seo-diagnostics";
-import { getGSCConnectionStatus, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
+import { getGSCConnectionStatus, isFreddyFamilyDomainProperty, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
 import { checkGithubSeoCapability } from "@/services/agents/seo-github-capability";
@@ -68,6 +68,15 @@ export async function GET(request: NextRequest) {
       if (!token || !(token.scopes || []).includes("https://www.googleapis.com/auth/webmasters.readonly")) continue;
       if (!SEO_AUDIT_TARGETS.some(target => target.brandId === channel.brand_id)) continue;
       registered.set(channel.brand_id, { property: channel.external_id, expiresAt: token.expires_at });
+    }
+    // One verified freddybremseth.com DNS Domain property covers the public
+    // Books, Art and Re-Master subdomains. Reflect the inherited stored grant
+    // in the dashboard without duplicating OAuth rows or conflating metrics.
+    const freddyRootGrant = registered.get("freddyb");
+    if (freddyRootGrant && isFreddyFamilyDomainProperty(freddyRootGrant.property)) {
+      for (const child of ["freddypublishing", "freddyart", "remasterfreddy"]) {
+        if (!registered.has(child)) registered.set(child, freddyRootGrant);
+      }
     }
     // A stored Google consent and a working decrypted token are two different
     // states. Report both instead of hiding an internal read failure as 0/7.
