@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { auditOneSite, SEO_AUDIT_TARGETS } from "./seo-audit";
+import { auditOneSite, SEO_AUDIT_TARGETS, SEO_SUPPLEMENTAL_AUDIT_TARGETS } from "./seo-audit";
 
 const SITE = SEO_AUDIT_TARGETS[0];
 
@@ -54,4 +54,13 @@ test("failed request remains unknown and never becomes a fabricated SEO error", 
   assert.equal(result.robots.googlebotBlocked, null);
   assert.ok(result.limitations.some(line => line.includes("Network unavailable")));
   assert.ok(!result.observations.some(line => line.includes("robots.txt did not return")));
+});
+
+test("art and care are additional bounded audit targets, not extra Search Console OAuth brands", () => {
+  assert.equal(SEO_AUDIT_TARGETS.length, 7);
+  assert.deepEqual(SEO_SUPPLEMENTAL_AUDIT_TARGETS.map(item => item.base), [
+    "https://art.freddybremseth.com", "https://care.zenecohomes.com",
+  ]);
+  const origins = [...SEO_AUDIT_TARGETS, ...SEO_SUPPLEMENTAL_AUDIT_TARGETS].map(item => item.base);
+  assert.equal(new Set(origins).size, 9);
 });
