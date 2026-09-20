@@ -238,7 +238,10 @@ export async function auditOneSite(
       sitemapCheck.value.status === 200 &&
       audit.sitemap.xmlLike &&
       !/<sitemapindex(?:\s|>)/i.test(sitemapCheck.value.body)) {
-    const targets = choosePublicSitemapPages(sitemapCheck.value.body, target.base, 3);
+    // Rotate public creative-work samples by UTC day without increasing the
+    // three-URL-per-site request bound. A failed read remains unknown.
+    const day = Math.floor(Date.parse(audit.checkedAt) / 86_400_000);
+    const targets = choosePublicSitemapPages(sitemapCheck.value.body, target.base, 3, day);
     const sampled = await Promise.allSettled(targets.map(url => fetcher(url)));
     sampled.forEach((result, index) => {
       const path = new URL(targets[index]).pathname;
