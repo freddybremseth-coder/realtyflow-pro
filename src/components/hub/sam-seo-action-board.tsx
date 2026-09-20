@@ -8,6 +8,12 @@ type Action = {
   id: string; brandId: string | null; title: string; description: string; nextAction: string;
   priority: string; evidence: string; status: string; source: string; requiresApproval: boolean;
 };
+type Diagnostic = {
+  id: string; brandId: string | null;
+  category: "measurement" | "technical" | "search" | "leads";
+  title: string; finding: string; nextStep: string; evidence: string;
+  kind: "check" | "observed"; needsApproval: false;
+};
 type Connection = {
   brandId: string; domain: string; connected: boolean; property: string | null;
   target: string; error: string | null; registered: boolean; savedProperty: string | null;
@@ -25,8 +31,10 @@ type Metric = {
   quality: string;
 };
 type Payload = {
-  actions: Action[]; observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
+  actions: Action[]; diagnostics: Diagnostic[];
+  observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
   connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
+  lastDiagnosticAt: string | null;
   changeEvaluations: Array<{
     changeId: string; brandId: string; page: string; query: string; commitSha: string | null; metadataRevision: number | null;
     status: "waiting" | "unavailable" | "incomplete" | "measured";
@@ -154,7 +162,10 @@ export function SamSEOActionBoard() {
             og tilbakeføring er kontrollert. Større endringer krever egen godkjenning.
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-600">
-            {data?.latestReviewAt ? "Siste SEO-gjennomgang: " + date(data.latestReviewAt) : "Ingen samlet SEO-gjennomgang lagret"}
+            {data?.latestReviewAt
+              ? "Siste ukentlige SEO-rapport: " + date(data.latestReviewAt)
+              : data?.lastDiagnosticAt ? "Siste samlede målekontroll: " + new Date(data.lastDiagnosticAt).toLocaleString("nb-NO")
+              : "Ukentlig SEO-rapport er ikke lagret ennå; Google-tall kan likevel leses direkte"}
             {data?.lastGoogleReadAt ? " · Siste Google-innhenting: " + new Date(data.lastGoogleReadAt).toLocaleString("nb-NO") : " · Google-tall er ikke hentet ennå"}
             {data?.readingMode === "live" ? " · Direkte lesing forsøkt" : data?.readingMode === "last_live_read" ? " · Sist lagrede Google-data vises" : ""}
           </p>
@@ -162,7 +173,7 @@ export function SamSEOActionBoard() {
         <button type="button" onClick={() => void read(true)} disabled={loading || refreshing}
           className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-800 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-60">
           {refreshing || loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          {refreshing ? "Leser Google-data…" : "Hent nye Google-tall"}
+          {refreshing ? "Leser Google-data og kontrollerer nettstedene…" : "Hent Google-tall og konkrete kontroller"}
         </button>
       </div>
       {oauthReturn && (
@@ -274,6 +285,30 @@ export function SamSEOActionBoard() {
               <p className="text-xs text-slate-700">Google web-søk, ikke YouTube- eller Instagram-statistikk</p>
             </div>
           </div>
+          {data.diagnostics?.length > 0 && (
+            <section aria-label="Sam SEO konkrete kontroller" className="mt-5 rounded-xl border-2 border-sky-200 bg-sky-50 p-4 text-sky-950">
+              <h3 className="text-lg font-black">Dette kan Sam kontrollere nå · {data.diagnostics.length} dokumenterte neste steg</h3>
+              <p className="mt-1 text-sm leading-6">
+                Dette er avgrensede måle-, indeks- og kontaktveikontroller – ikke forslag som automatisk endrer nettsidene
+                eller krever godkjenning i Oppgave-HUB. Små søketall gir grunnlag for å undersøke,
+                men ikke konkludere med at en tittel er dårlig eller at en side må skrives om.
+              </p>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                {data.diagnostics.map(item => (
+                  <article key={item.id} className="rounded-xl border border-sky-200 bg-white p-3">
+                    <p className="text-xs font-black uppercase tracking-wide text-sky-800">
+                      {LABELS[item.brandId || ""] || "Felles kontroll"} · {item.category === "technical" ? "Teknisk observasjon" :
+                        item.category === "measurement" ? "Målegrunnlag" : item.category === "leads" ? "Henvendelser" : "Google-søkeside"}
+                    </p>
+                    <h4 className="mt-1 font-black text-slate-950">{item.title}</h4>
+                    <p className="mt-2 text-sm leading-6"><strong>Observert:</strong> {item.finding}</p>
+                    <p className="mt-2 text-sm leading-6"><strong>Neste kontroll:</strong> {item.nextStep}</p>
+                    <p className="mt-2 text-xs text-slate-600"><strong>Datagrunnlag:</strong> {item.evidence}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
           {savedButUnreadable.length > 0 && (
             <div role="alert" className="mt-4 rounded-xl border-2 border-rose-400 bg-rose-50 p-4 text-rose-950">
               <h3 className="font-black">Google-tilkoblingene er lagret, men Sam får ikke lest dem</h3>
@@ -407,8 +442,8 @@ export function SamSEOActionBoard() {
             ))}
             {data.actions.length === 0 && (
               <div className="rounded-xl border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800 lg:col-span-2">
-                Ingen dokumenterte åpne SEO-oppgaver eller søkedatabaserte forslag er tilgjengelige fra sist gjennomgang.
-                Bruk «Hent nye Google-tall» ovenfor; fravær av forslag betyr ikke at nettstedene er ferdig optimalisert.
+                Ingen publiseringsforslag eller egne oppgaver er klare i denne måleperioden.
+                Se de konkrete måle- og nettstedskontrollene ovenfor. Null godkjenningsoppgaver betyr ikke at nettstedene er ferdig optimalisert.
               </div>
             )}
           </div>
