@@ -1,4 +1,4 @@
-import type { SiteAudit } from "./seo-audit";
+import { SEO_SUPPLEMENTAL_AUDIT_TARGETS, type SiteAudit } from "./seo-audit";
 import type { SEOLeadSummary } from "./seo-leads";
 import type { getSEOObservedSignals } from "./seo-data";
 import type { GSCBrandSnapshot } from "./seo-search-console";
@@ -105,6 +105,35 @@ export function planSEODiagnostics(input: {
         evidence: audit.base + " · begrenset offentlig SEO-audit " + audit.checkedAt, kind: "observed",
       }));
     }
+  }
+  // Public satellite sites get factual HTTP checks without being counted as
+  // a Search Console OAuth grant or generating speculative publishing tasks.
+  for (const target of SEO_SUPPLEMENTAL_AUDIT_TARGETS) {
+    const audit = auditsByBrand.get(target.brandId);
+    const isCare = target.brandId === "zenecocare";
+    const pageStatus = audit?.home.status;
+    const explicitlyBlocked = audit
+      ? /\\bnoindex\\b/i.test([audit.home.robotsMeta, audit.home.xRobots].join(" ")) ||
+        audit.robots.googlebotBlocked === true
+      : false;
+    checks.push(diagnostic({
+      id: "check-satellite-public:" + target.brandId,
+      brandId: target.brandId, category: "technical",
+      title: isCare ? "Kontroller offentlig Care-side uten å indeksere private kundeområder"
+        : "Kontroller kunstgalleriets offentlige søkesider",
+      finding: !audit
+        ? "Ingen offentlig HTTP-kontroll av dette delnettstedet er tilgjengelig i siste kjøring."
+        : pageStatus === null
+          ? "Offentlig HTTP-status er ukjent; en nettverksfeil er ikke bevis for indekseringsfeil."
+          : "Offentlig forside ga HTTP " + pageStatus +
+            (explicitlyBlocked ? " og en eksplisitt indeks-/crawlerblokk ble observert." : ".") +
+            " Dette er en teknisk kontroll, ikke Google Search Console-målinger.",
+      nextStep: isCare
+        ? "Avklar hvilke Care-sider som er offentlig tjenesteinformasjon og hvilke som er private kundeområder. Kontroller bare de offentlige sidene; ikke fjern tilsiktet noindex eller autentisering."
+        : "Bekreft offentlig forside, canonical, sitemap og de viktigste kunstverksidene. Koble art-domenet til egne Google-målinger før du vurderer endringer ut fra søketrafikk.",
+      evidence: target.base + (audit ? " · offentlig HTTP-kontroll " + audit.checkedAt : " · ingen fullført HTTP-kontroll"),
+      kind: "check",
+    }));
   }
   return checks;
 }

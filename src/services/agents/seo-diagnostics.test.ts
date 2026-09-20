@@ -29,7 +29,7 @@ test("all seven connected sites get a concrete check even below GSC opportunity 
     snapshot("chatgenius", 29, 0),
   ];
   const checks = planSEODiagnostics({ snapshots: data, signals: null, leads: null, audits: [] });
-  assert.equal(checks.length, 7);
+  assert.equal(checks.filter(item => item.id.startsWith("check-search-page:")).length, 7);
   assert.ok(checks.every(item => item.needsApproval === false));
   assert.ok(checks.some(item => item.brandId === "donaanna" && item.finding.includes("beviser ikke")));
   assert.ok(checks.some(item => item.brandId === "zeneco" && item.finding.includes("/public-guide")));
@@ -58,6 +58,21 @@ test("technical concerns appear only if actually observed in a bounded public au
   } as SiteAudit;
   const checks = planSEODiagnostics({ snapshots: [snapshot("zeneco", 48, 2)],
     signals: null, leads: null, audits: [audit] });
-  assert.equal(checks.filter(item => item.category === "technical").length, 1);
+  assert.equal(checks.filter(item => item.id === "check-public-audit:zeneco").length, 1);
   assert.match(checks.find(item => item.category === "technical")!.nextStep, /Gjenta HTTP-kontrollen/);
+});
+
+test("art and care get bounded read-only diagnostics without invented Google traffic or private-portal indexing requests", () => {
+  const art = { brandId: "freddyart", base: "https://art.freddybremseth.com",
+    checkedAt: "2026-09-20T13:00:00Z", home: { status: 200, robotsMeta: null, xRobots: null },
+    robots: { googlebotBlocked: false }, observations: [] } as unknown as SiteAudit;
+  const care = { brandId: "zenecocare", base: "https://care.zenecohomes.com",
+    checkedAt: "2026-09-20T13:00:00Z", home: { status: 200, robotsMeta: "noindex", xRobots: null },
+    robots: { googlebotBlocked: false }, observations: [] } as unknown as SiteAudit;
+  const checks = planSEODiagnostics({ snapshots: [], signals: null, leads: null, audits: [art, care] });
+  const extras = checks.filter(item => ["freddyart", "zenecocare"].includes(item.brandId || ""));
+  assert.equal(extras.length, 2);
+  assert.ok(extras.every(item => item.needsApproval === false));
+  assert.ok(extras.every(item => !/Google Search Console-måling: [0-9]/.test(item.finding)));
+  assert.match(extras.find(item => item.brandId === "zenecocare")!.nextStep, /ikke fjern tilsiktet noindex/);
 });

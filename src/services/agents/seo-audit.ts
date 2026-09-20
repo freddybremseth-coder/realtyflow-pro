@@ -17,6 +17,14 @@ export const SEO_AUDIT_TARGETS = [
   { brandId: "chatgenius", base: "https://www.chatgenius.pro" },
 ] as const;
 
+/** These public microsites are audited separately from the seven consented
+ * Search Console brand connections. Do not treat an audit as GSC authorization.
+ * The Care site may deliberately keep private customer routes out of search. */
+export const SEO_SUPPLEMENTAL_AUDIT_TARGETS = [
+  { brandId: "freddyart", base: "https://art.freddybremseth.com" },
+  { brandId: "zenecocare", base: "https://care.zenecohomes.com" },
+] as const;
+
 type ResponseSnapshot = { status: number; url: string; body: string; contentType: string; xRobots: string };
 export type SiteAudit = {
   brandId: string;
@@ -252,6 +260,6 @@ export async function auditOneSite(
   return audit;
 }
 
-export async function auditSEOPortfolio(targets: ReadonlyArray<{ brandId: string; base: string }> = SEO_AUDIT_TARGETS) {
+export async function auditSEOPortfolio(targets: ReadonlyArray<{ brandId: string; base: string }> = [...SEO_AUDIT_TARGETS, ...SEO_SUPPLEMENTAL_AUDIT_TARGETS]) {
   return Promise.all(targets.map(target => auditOneSite(target)));
 }
