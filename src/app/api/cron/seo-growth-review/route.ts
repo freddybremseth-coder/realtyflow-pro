@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     // generated copy is published. Keep active issues idempotent across weeks.
     const verifiedGSC = searchConsole.flatMap(item => item.status === "connected" && item.result ? [item.result] : []);
     const candidates = [
-      ...planSEOOpportunities(signals, leads, audits),
+      ...planSEOOpportunities(signals, leads, audits.filter(audit => audit.brandId !== "zenecocare")),
       // Zero Google impressions alone is a monitored measurement, not work
       // requiring editorial approval. Keep it in the stored GSC snapshots.
       ...planGSCOpportunities(verifiedGSC).filter(item => !item.issueId.startsWith("gsc-zero-visibility:")),
