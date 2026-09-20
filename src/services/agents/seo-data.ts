@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const SEO_BRANDS = [
   "zeneco", "pinosoecolife", "freddyb", "freddypublishing",
-  "remasterfreddy", "donaanna", "chatgenius",
+  "remasterfreddy", "donaanna", "chatgenius", "freddyart",
 ] as const;
 
 const AI_SOURCES = new Set(["chatgpt", "microsoft_copilot", "perplexity", "google_gemini"]);
