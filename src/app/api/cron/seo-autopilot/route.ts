@@ -8,6 +8,10 @@ import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { readGSCAllBrands } from "@/services/agents/seo-search-console";
 import { evaluateSeoPilotBrand } from "@/services/agents/seo-autopilot-policy";
 import { runZenEcoMetadataPublisher } from "@/services/agents/seo-zeneco-publisher";
+import { auditSEOPortfolio } from "@/services/agents/seo-audit";
+import { getSEOObservedSignals } from "@/services/agents/seo-data";
+import { getSEOLeadSignals } from "@/services/agents/seo-leads";
+import { planSEODiagnostics } from "@/services/agents/seo-diagnostics";
 
 const PATH = "/api/cron/seo-autopilot";
 const ACTION = "seo_autopilot_pilot_cycle";
@@ -50,11 +54,34 @@ export async function GET(request: NextRequest) {
     ));
     const verified = readings.filter(item => item.status === "connected" && item.result !== null).length;
     const timestamp = new Date().toISOString();
-    // Share the factual measurements with Sam's main panel after reload.
+    // Daily, low-risk, evidence-tagged technical/lead/referral diagnostics for
+    // every approved public host. A failing site or data source must not erase
+    // successful Google readings or create an owner approval queue item.
+    const observations = await Promise.allSettled([
+      getSEOObservedSignals(), getSEOLeadSignals(), auditSEOPortfolio(),
+    ] as const);
+    const signals = observations[0].status === "fulfilled" ? observations[0].value : null;
+    const leads = observations[1].status === "fulfilled" ? observations[1].value : null;
+    const audits = observations[2].status === "fulfilled" ? observations[2].value : [];
+    const diagnostics = planSEODiagnostics({
+      snapshots: readings.flatMap(item => item.status === "connected" && item.result ? [item.result] : []),
+      signals, leads, audits,
+    });
+    // Share the factual measurements and zero-approval diagnostics with
+    // Sam's main panel after reload. These checks NEVER authorize site writes.
     const storedReadings = await supabase.from("automation_logs").insert({
       action: "seo_gsc_live_read", agent_name: "Sam SEO Expert",
       status: verified ? "success" : "partial",
-      details: { google_search_console: readings, source: ACTION, collected_at: timestamp },
+      details: {
+        google_search_console: readings, source: ACTION, collected_at: timestamp,
+        diagnostics, auditCheckedAt: audits.length ? timestamp : null,
+        sourceAvailability: {
+          searchConsoleMeasured: verified,
+          siteAuditsMeasured: audits.length,
+          referralsAvailable: signals !== null,
+          leadsAvailable: leads !== null,
+        },
+      },
     });
     if (storedReadings.error) throw new Error("Cannot store Google readings: " + storedReadings.error.message);
 
@@ -78,9 +105,12 @@ export async function GET(request: NextRequest) {
       status: verified ? "success" : "partial",
       details: {
         collected_at: timestamp,
+        monitored_brands: readings.map(item => item.brandId),
         pilot_brands: ["zeneco", "freddyb"],
         assessed: assessments,
         search_console_brands_measured: verified,
+        daily_diagnostics: diagnostics.length,
+        public_sites_audited: audits.length,
         website_changes_published: zeneco.published,
         public_write_status: zeneco.status === "monitor" ? "armed_evidence_gated"
           : zeneco.status === "pending" ? "pending_site_confirmation"
@@ -93,6 +123,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true, analyzed: assessments.length, measured: verified,
+      publicSitesAudited: audits.length, diagnosticsRecorded: diagnostics.length,
       candidates: assessments.filter(item => item.status === "candidate").length,
       published: zeneco.published,
       approvalTasksCreated: 0,

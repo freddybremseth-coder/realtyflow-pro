@@ -71,6 +71,8 @@ const FREDDY_FAMILY = [
     purpose: "Forfatterskap, bokserier, bokomslag og egne bok- og temasider." },
   { brandId: "freddyart", url: "https://art.freddybremseth.com", title: "Kunst",
     purpose: "Kunstgalleri, verk, samlinger og salg av kunst." },
+  { brandId: "remasterfreddy", url: "https://remaster.freddybremseth.com", title: "Musikk",
+    purpose: "Artistprofil, musikk, videoer og originale utgivelser." },
 ] as const;
 const date = (value: string) => new Date(value).toLocaleDateString("nb-NO");
 const GSC_FAILURES: Record<string, string> = {
@@ -220,14 +222,14 @@ export function SamSEOActionBoard() {
       {data && (
         <>
           <section aria-label="Freddy Bremseth nettstedfamilie" className="mt-4 rounded-xl border border-slate-300 bg-white p-4 text-slate-950">
-            <h3 className="text-lg font-black">FreddyBremseth.com · tre egne nettsteder, én samlet strategi</h3>
+            <h3 className="text-lg font-black">FreddyBremseth.com · fire egne nettsteder, én samlet strategi</h3>
             <p className="mt-1 text-sm leading-6 text-slate-700">
-              Hovedsiden, Books og Art hører sammen som avsender og merkevare, men har egne offentlige
+              Hovedsiden, Books, Art og Re-Master hører sammen som avsender og merkevare, men har egne offentlige
               nettadresser, søkeintensjoner og målinger. Klikk og visninger summeres ikke på tvers av
               sidene her. Google-tall for Art kan bare leses med et dokumentert Domain-grant som dekker
               dette vertsnavnet; en URL-prefix-tilkobling til hovedsiden er ikke nok.
             </p>
-            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {FREDDY_FAMILY.map(site => {
                 const metric = data.metrics.find(item => item.brandId === site.brandId);
                 const connection = data.connections.find(item => item.brandId === site.brandId);
@@ -247,11 +249,9 @@ export function SamSEOActionBoard() {
                       </p>
                     )}
                     <p className="mt-1 text-xs text-slate-700">
-                      {site.brandId === "freddyart"
-                        ? "Art kontrolleres teknisk separat. Google-data kan gjenbrukes fra bekreftet overordnet Domain-eiendom, men aldri fra en hovedside-URL-prefix."
-                        : connection?.connected
-                          ? "Egen vertsfiltrert Search Console-måling via lagret autorisasjon."
-                          : "Se tilkoblingsstatusen for nettstedet under Google-oversikten."}
+                      {connection?.connected
+                        ? "Egen vertsfiltrert Search Console-måling; verifisert Domain-eiendom kan deles mellom underdomenene."
+                        : "Se tilkoblingsstatusen for nettstedet under Google-oversikten."}
                     </p>
                   </article>
                 );
@@ -259,8 +259,8 @@ export function SamSEOActionBoard() {
             </div>
           </section>
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
-            <h3 className="font-black">Sam SEO · forhåndsgodkjent pilot</h3>
-            <p className="mt-1 text-sm">Automatisk Google-måling og intern prioritering for Zen Eco Homes og FreddyBremseth.com. Små offentlige endringer kan bare gjennomføres når eksakt redigerbar side, publiseringskanal, tidligere versjon og reversering er kontrollert. Boligpriser, kundedata og større omskrivinger ligger utenfor piloten.</p>
+            <h3 className="font-black">Sam SEO · automatisk porteføljekontroll og avgrenset publiseringspilot</h3>
+            <p className="mt-1 text-sm">Automatisk Search Console-måling og intern prioritering for alle åtte godkjente offentlige nettsteder; Care kontrolleres kun teknisk. Automatisk publisering er foreløpig avgrenset til fire forhåndsgodkjente Zen Eco Homes-metadatasider. Andre små offentlige endringer kan bare gjennomføres når eksakt redigerbar side, publiseringskanal, tidligere versjon og reversering er kontrollert. Boligpriser, kundedata og større omskrivinger ligger utenfor piloten.</p>
             {data?.seoPilot ? (
               <>
                 <p className="mt-2 text-xs font-semibold">Sist målt: {new Date(data.seoPilot.at).toLocaleString("nb-NO")} · Automatisk publisert i denne syklusen: {data.seoPilot.websiteChangesPublished}</p>
@@ -348,9 +348,9 @@ export function SamSEOActionBoard() {
               <p className="text-xs text-emerald-900">Forslag og åpne oppgaver på denne oversikten</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Google-tilkoblinger lagret</p>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">Search Console-nettsteder dekket</p>
               <div className="mt-1 text-3xl font-black text-slate-950">{data.connectionSummary.registered}/{data.connections.length}</div>
-              <p className="text-xs text-slate-700">RealtyFlow har lagret OAuth-tillatelser; Sam kan lese {data.connectionSummary.readable}/{data.connections.length}. Dette er ikke søkevisninger eller bekreftede API-kall.</p>
+              <p className="text-xs text-slate-700">Registrert eiendom eller arvet DNS Domain-grant dekker disse nettadressene. Sam har verifisert lesetilgang for {data.connectionSummary.readable}/{data.connections.length}. Antallet er ikke antall separate OAuth-tillatelser eller målte søkevisninger.</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-slate-700">Nettsteder med målte søketall</p>

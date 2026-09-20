@@ -67,12 +67,18 @@ export async function GET(request: NextRequest) {
     // Only evidence-backed, review-only work items. No CRM contact data or
     // generated copy is published. Keep active issues idempotent across weeks.
     const verifiedGSC = searchConsole.flatMap(item => item.status === "connected" && item.result ? [item.result] : []);
-    const candidates = [
-      ...planSEOOpportunities(signals, leads, audits.filter(audit => audit.brandId !== "zenecocare")),
-      // Zero Google impressions alone is a monitored measurement, not work
-      // requiring editorial approval. Keep it in the stored GSC snapshots.
-      ...planGSCOpportunities(verifiedGSC).filter(item => !item.issueId.startsWith("gsc-zero-visibility:")),
-    ].slice(0, 18);
+    const monitorOnly = planSEOOpportunities(
+      signals, leads, audits.filter(audit => audit.brandId !== "zenecocare"),
+    );
+    // Measurement gaps, isolated HTTP observations and unconfirmed traffic
+    // changes are Sam's own diagnostic work, NOT approval tasks for Freddy.
+    // Even measured GSC query/page opportunities are hypotheses. Keep them
+    // in Sam's weekly report until an exact proposed public edit exists and
+    // the independently verified publication boundary requires owner review.
+    const gscHypotheses = planGSCOpportunities(verifiedGSC)
+      .filter(item => !item.issueId.startsWith("gsc-zero-visibility:"));
+    const candidates = [...monitorOnly, ...gscHypotheses].slice(0, 18);
+    const reviewCandidates: typeof candidates = [];
     const { data: existingItems, error: itemsError } = await supabase.from("work_items")
       .select("source_id")
       .eq("source_type", "ai_agent")
@@ -81,7 +87,7 @@ export async function GET(request: NextRequest) {
       .limit(500);
     if (itemsError) throw new Error("SEO opportunity deduplication failed: " + itemsError.message);
     const active = new Set((existingItems || []).map(item => String(item.source_id || "")));
-    const newItems = candidates.filter(candidate => !active.has("seo-opportunity:" + candidate.issueId));
+    const newItems = reviewCandidates.filter(candidate => !active.has("seo-opportunity:" + candidate.issueId));
     if (newItems.length) {
       const { error: createError } = await supabase.from("work_items").insert(newItems.map(item => ({
         title: item.title,
@@ -122,12 +128,14 @@ export async function GET(request: NextRequest) {
         google_search_console: searchConsole,
         seo_autopilot_change_evaluations: changeEvaluations,
         opportunity_candidates: candidates.length,
+        sam_internal_monitoring: monitorOnly.length,
+        measured_search_hypotheses: gscHypotheses.length,
         review_work_items_created: newItems.length,
         technical_audits: audits,
         technical_findings: audits.reduce((sum, audit) => sum + audit.observations.length, 0),
         technical_checks_incomplete: audits.reduce((sum, audit) => sum + audit.limitations.filter(message => !/^(?:Homepage\/robots\/sitemap|Homepage, robots, sitemap)/.test(message)).length, 0),
         report,
-        needs_editor_approval: true,
+        needs_editor_approval: false,
         published: false,
       },
     });

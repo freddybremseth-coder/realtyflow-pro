@@ -107,9 +107,16 @@ export async function GET(request: NextRequest) {
       : (Array.isArray(storedReadings) ? storedReadings : []);
     // A completed provider read is primary evidence. A separate connection
     // health check may be stale or fail and must not discard real Google data.
-    const snapshots = readings.filter((item): item is StoredSearchConsole & { result: GSCBrandSnapshot } =>
-      item.status === "connected" && item.result !== null)
-      .map(item => item.result);
+    const uniqueSnapshots = new Map<string, GSCBrandSnapshot>();
+    for (const item of readings) {
+      if (item.status !== "connected" || !item.result) continue;
+      if (item.brandId !== item.result.brandId ||
+          !SEO_AUDIT_TARGETS.some(target => target.brandId === item.brandId)) continue;
+      // Older daily logs may contain Art twice from the retired satellite path.
+      // Keep one exact-brand snapshot, never sum both or report nine websites.
+      if (!uniqueSnapshots.has(item.brandId)) uniqueSnapshots.set(item.brandId, item.result);
+    }
+    const snapshots = [...uniqueSnapshots.values()];
     // The live button also runs bounded, read-only technical and measurement
     // checks, so sparse Google results no longer produce an empty action board.
     // A failed public audit must never hide successful Google measurements.
@@ -156,8 +163,8 @@ export async function GET(request: NextRequest) {
       .map(item => ({
         id: "gsc:" + item.issueId, brandId: item.brandId, title: item.title,
         description: item.description, nextAction: item.nextAction, priority: item.priority,
-        evidence: item.evidence, status: "FOR_REVIEW" as const, source: "Google Search Console",
-        requiresApproval: true,
+        evidence: item.evidence, status: "SAM_ANALYSIS" as const, source: "Google Search Console",
+        requiresApproval: false,
       }));
     const work = (tasks.data || []).map(item => ({
       id: item.id as string, brandId: item.brand_id as string | null,
@@ -165,7 +172,7 @@ export async function GET(request: NextRequest) {
       nextAction: (item.next_action || "") as string, priority: item.priority as string,
       evidence: String((item.metadata as { evidence?: string } | null)?.evidence || "SEO work_items"),
       status: item.status as string, source: "Sam SEO · oppgave",
-      requiresApproval: true,
+      requiresApproval: (item.metadata as { needs_editor_approval?: boolean } | null)?.needs_editor_approval === true,
     }));
     const order = (priority: string) => priority === "CRITICAL" ? 0 : priority === "HIGH" ? 1 : 2;
     const seen = new Set<string>();

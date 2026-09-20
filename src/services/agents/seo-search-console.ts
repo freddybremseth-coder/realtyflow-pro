@@ -324,39 +324,34 @@ async function getGSCBrandSnapshotForAccess(
   };
 }
 
-/** Separate art metrics from the already-authorized Freddy domain property.
- * Do not count derived art access as an eighth OAuth authorization. */
-export async function getGSCFreddyArtSnapshot(): Promise<GSCBrandSnapshot | null> {
-  const access = await authorizedAccessToken("freddyb");
-  if (!access || !isFreddyFamilyDomainProperty(access.property)) return null;
-  const snapshot = await getGSCBrandSnapshotForAccess(
-    "freddyart", { base: "https://art.freddybremseth.com" }, access,
-  );
-  snapshot.dataQuality.note += " Art-host figures were read from the verified parent Domain property, not a separate OAuth connection.";
-  return snapshot;
-}
-
-export async function readGSCAllBrands() {
-  const core = await Promise.all(SEO_AUDIT_TARGETS.map(async target => {
+/**
+ * One snapshot per configured public host. The Freddy Domain property may be
+ * shared for ownership/consent, but results must always be host-filtered and
+ * a site must never be counted twice in portfolio reports or automation.
+ *
+ * Read Freddy family sequentially to avoid competing refresh-token writes
+ * against the same inherited OAuth channel. Other brands remain independent.
+ */
+export async function readGSCAllBrands(
+  readBrand: (brandId: string) => Promise<GSCBrandSnapshot | null> = getGSCBrandSnapshot,
+) {
+  const readOne = async (brandId: string) => {
     try {
-      const result = await getGSCBrandSnapshot(target.brandId);
-      return { brandId: target.brandId, status: result ? "connected" as const : "not_connected" as const, result };
+      const result = await readBrand(brandId);
+      return { brandId, status: result ? "connected" as const : "not_connected" as const, result };
     } catch (error) {
-      return { brandId: target.brandId, status: "error" as const, result: null,
+      return { brandId, status: "error" as const, result: null,
         error: error instanceof Error ? error.message.slice(0, 200) : "Google Search Console unavailable" };
     }
-  }));
-  // A single root OAuth grant may cover art only when its property is the
-  // exact Freddy parent Domain property, never a root URL-prefix property.
-  // Read after the seven originals to avoid competing OAuth refresh writes.
-  let art: { brandId: string; status: "connected" | "not_connected" | "error";
-    result: GSCBrandSnapshot | null; error?: string };
-  try {
-    const result = await getGSCFreddyArtSnapshot();
-    art = { brandId: "freddyart", status: result ? "connected" : "not_connected", result };
-  } catch (error) {
-    art = { brandId: "freddyart", status: "error", result: null,
-      error: error instanceof Error ? error.message.slice(0, 200) : "Freddy art GSC unavailable" };
-  }
-  return [...core, art];
+  };
+  const freddy = SEO_AUDIT_TARGETS.filter(target =>
+    ["freddyb", "freddypublishing", "freddyart", "remasterfreddy"].includes(target.brandId));
+  const other = SEO_AUDIT_TARGETS.filter(target =>
+    !["freddyb", "freddypublishing", "freddyart", "remasterfreddy"].includes(target.brandId));
+  const independent = Promise.all(other.map(target => readOne(target.brandId)));
+  const family: Awaited<ReturnType<typeof readOne>>[] = [];
+  for (const target of freddy) family.push(await readOne(target.brandId));
+  const independentResults = await independent;
+  const byBrand = new Map([...independentResults, ...family].map(item => [item.brandId, item]));
+  return SEO_AUDIT_TARGETS.map(target => byBrand.get(target.brandId)!);
 }

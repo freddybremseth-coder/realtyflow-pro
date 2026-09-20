@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand, isFreddyFamilyDomainProperty, sumPageRows } from "./seo-search-console";
+import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand, isFreddyFamilyDomainProperty, sumPageRows, readGSCAllBrands } from "./seo-search-console";
 
 test("Search Console requests a distinct read-only grant", () => {
   assert.equal(GSC_READ_SCOPE, "https://www.googleapis.com/auth/webmasters.readonly");
@@ -78,4 +78,29 @@ test("art GSC measurements never count books, root, remaster or lookalike domain
     { clicks: 2, impressions: 19, ctr: 0.1053 });
   assert.deepEqual(sumPageRows(rows, { base: "https://books.freddybremseth.com" }),
     { clicks: 7, impressions: 80, ctr: 0.0875 });
+});
+
+test("automated portfolio GSC cycle reads each of the eight approved public sites exactly once", async () => {
+  const seen: string[] = [];
+  const result = await readGSCAllBrands(async brandId => {
+    seen.push(brandId);
+    return null;
+  });
+  assert.equal(result.length, 8);
+  assert.equal(new Set(seen).size, 8);
+  assert.equal(seen.filter(item => item === "freddyart").length, 1);
+  assert.deepEqual(result.map(item => item.brandId), [
+    "zeneco", "pinosoecolife", "freddyb", "freddypublishing",
+    "freddyart", "remasterfreddy", "donaanna", "chatgenius",
+  ]);
+});
+
+test("one site failing does not prevent the other seven from returning measurement states", async () => {
+  const result = await readGSCAllBrands(async brandId => {
+    if (brandId === "freddyart") throw new Error("Art Google API unavailable");
+    return null;
+  });
+  assert.equal(result.length, 8);
+  assert.equal(result.find(item => item.brandId === "freddyart")?.status, "error");
+  assert.equal(result.filter(item => item.status === "not_connected").length, 7);
 });
