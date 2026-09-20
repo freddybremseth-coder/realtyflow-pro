@@ -11,6 +11,7 @@ const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://www.freddybremseth.com": "freddyb",
   "https://freddybremseth.com": "freddyb",
   "https://books.freddybremseth.com": "freddypublishing",
+  "https://art.freddybremseth.com": "freddyart",
   "https://remaster.freddybremseth.com": "remasterfreddy",
   "https://www.donaanna.com": "donaanna",
   "https://donaanna.com": "donaanna",
