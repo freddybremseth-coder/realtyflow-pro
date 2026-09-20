@@ -270,11 +270,6 @@ export async function getGSCBrandSnapshot(brandId: string): Promise<GSCBrandSnap
   return getGSCBrandSnapshotForAccess(brandId, target, access);
 }
 
-/** A URL-prefix homepage grant must never be reused to read sister hosts. */
-export function isFreddyFamilyDomainProperty(property: string): boolean {
-  return property === "sc-domain:freddybremseth.com";
-}
-
 async function getGSCBrandSnapshotForAccess(
   brandId: string, target: { base: string }, access: { property: string; token: string },
 ): Promise<GSCBrandSnapshot> {
