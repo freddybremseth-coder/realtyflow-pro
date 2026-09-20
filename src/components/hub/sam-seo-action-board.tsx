@@ -59,6 +59,7 @@ const LABELS: Record<string, string> = {
   zeneco: "Zen Eco Homes", pinosoecolife: "Pinoso EcoLife",
   freddyb: "FreddyBremseth.com", freddypublishing: "Books · Freddy Bremseth",
   remasterfreddy: "Re-master Freddy", donaanna: "Doña Anna", chatgenius: "ChatGenius.pro",
+  freddyart: "Art · Freddy Bremseth", zenecocare: "Zen Eco Homes · Care",
 };
 const date = (value: string) => new Date(value).toLocaleDateString("nb-NO");
 const GSC_FAILURES: Record<string, string> = {
