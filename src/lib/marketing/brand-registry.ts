@@ -7,6 +7,7 @@ export type OwnedGrowthBrandId =
   | "chatgenius"
   | "freddyb"
   | "freddypublishing"
+  | "freddyart"
   | "freddyai"
   | "remasterfreddy";
 
@@ -93,6 +94,18 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     conversionGoals: ["expert_follow", "website_visit", "book_page_visit", "advisory_lead", "product_interest"],
     primaryCtas: ["follow", "read_more", "view_project", "view_book", "contact"],
     notes: "Professional umbrella/expertise brand. Freddy Bremseth should selectively amplify the strongest stories from owned brands without duplicating identical posts. The private Facebook profile is not an automated commercial publishing destination.",
+  },
+  {
+    id: "freddyart",
+    name: "Freddy Bremseth Art",
+    kind: "creator_media",
+    website: "https://art.freddybremseth.com",
+    pilotChannels: [],
+    plannedChannels: ["website", "instagram", "facebook", "email"],
+    contentPillars: ["artwork_stories", "art_collections", "creative_process", "symbolic_art", "digital_editions"],
+    conversionGoals: ["artwork_discovery", "artwork_interest", "digital_art_purchase", "gallery_enquiry"],
+    primaryCtas: ["browse_gallery", "view_artwork", "contact", "collect_digital_art"],
+    notes: "Dedicated visual-art gallery brand. Digital editions and physical print availability must come from real catalog and checkout state; no invented prices, editions, print sizes, or physical originals. Treat art visitors separately from publishing and personal brand.",
   },
   {
     id: "freddypublishing",
