@@ -34,6 +34,8 @@ type Payload = {
   actions: Action[]; diagnostics: Diagnostic[];
   observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
   connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
+  publisherChecks?: Array<{ brandId: "freddyb" | "zeneco"; repository: string; tokenConfigured: boolean;
+    canReadTarget: boolean; hasPushPermission: boolean; status: string; message: string }>;
   lastDiagnosticAt: string | null;
   changeEvaluations: Array<{
     changeId: string; brandId: string; page: string; query: string; commitSha: string | null; metadataRevision: number | null;
@@ -238,6 +240,28 @@ export function SamSEOActionBoard() {
               </>
             ) : <p className="mt-2 text-xs">Første planlagte automatiske målesyklus er ennå ikke lagret.</p>}
           </div>
+          {data.publisherChecks && data.publisherChecks.length > 0 && (
+            <section aria-label="Sam SEO GitHub publiseringskontroll"
+              className="mt-3 rounded-xl border border-slate-300 bg-slate-50 p-4 text-slate-950">
+              <h3 className="font-black">GitHub · kontroll av Sams publiseringstilgang</h3>
+              <p className="mt-1 text-xs leading-5">
+                Dette kontrollerer kun tilgang til riktig repo og målfil. Selv bekreftet push-rettighet
+                er ikke bevis for at automatisk publisering, nettsidevisning eller tilbakeføring fungerer.
+                Zen Eco Homes sin eksisterende metadata-pilot styres og måles separat.
+              </p>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {data.publisherChecks.map(item => (
+                  <div key={item.brandId} className="rounded-lg border border-slate-300 bg-white p-3 text-xs">
+                    <strong>{LABELS[item.brandId]} · {item.status === "permission_detected"
+                      ? "Tilgang funnet – publisering ikke aktivert" : "Publiseringsadgang ikke bekreftet"}</strong>
+                    <p className="mt-1">{item.message}</p>
+                    <p className="mt-1 text-slate-700">Målfil lesbar: {item.canReadTarget ? "ja" : "nei"} ·
+                      Push-rettighet: {item.hasPushPermission ? "registrert" : "ikke bekreftet"}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           {zenEcoOverrides.some(item => item.active) && (
             <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
               <h3 className="font-black">Zen Eco Homes · publiserte metadataendringer</h3>
