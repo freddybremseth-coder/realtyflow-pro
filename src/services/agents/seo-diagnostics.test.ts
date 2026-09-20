@@ -90,5 +90,6 @@ test("Freddy Art has separately attributed Google counts without inventing Books
   assert.ok(artCheck);
   assert.match(artCheck.finding, /19 visninger og 2 klikk/);
   assert.match(artCheck.finding, /omfatter ikke bøker eller hovedsiden/);
-  assert.equal(checks.filter(item => item.id.startsWith("check-search-page:")).length, 7);
+  assert.deepEqual(checks.filter(item => item.id.startsWith("check-search-page:")).map(item => item.brandId),
+    ["freddyb", "freddypublishing"]);
 });
