@@ -30,6 +30,9 @@ interface Property {
   bathrooms: number;
   area: number;
   plotArea: number;
+  plot_included_in_price?: boolean | null;
+  plot_price_eur?: number | null;
+  pricing_source_note?: string | null;
   status: "TILGJENGELIG" | "RESERVERT" | "SOLGT";
   featured: boolean;
   views: number;
@@ -368,6 +371,9 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     bathrooms: Number(row.bathrooms) || 0,
     area: Number(row.built_area || row.area) || 0,
     plotArea: Number(row.plot_size || row.plotArea) || 0,
+    plot_included_in_price: typeof row.plot_included_in_price === "boolean" ? row.plot_included_in_price : null,
+    plot_price_eur: row.plot_price_eur != null ? Number(row.plot_price_eur) : null,
+    pricing_source_note: typeof row.pricing_source_note === "string" ? row.pricing_source_note : null,
     status: (row.status as Property["status"]) || "TILGJENGELIG",
     featured: Boolean(row.featured),
     views: Number(row.views) || 0,
@@ -398,6 +404,9 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.bathrooms !== undefined) row.bathrooms = p.bathrooms;
   if (p.area !== undefined) row.built_area = p.area;
   if (p.plotArea !== undefined) row.plot_size = p.plotArea;
+  if (p.plot_included_in_price !== undefined) row.plot_included_in_price = p.plot_included_in_price;
+  if (p.plot_price_eur !== undefined) row.plot_price_eur = p.plot_price_eur;
+  if (p.pricing_source_note !== undefined) row.pricing_source_note = p.pricing_source_note;
   if (p.status !== undefined) row.status = p.status;
   if (p.featured !== undefined) row.featured = p.featured;
   if (p.views !== undefined) row.views = p.views;
@@ -428,15 +437,21 @@ async function apiSaveProperty(property: Property) {
   }
 }
 
-async function apiUpdateProperty(property: Property) {
+async function apiUpdateProperty(property: Property): Promise<boolean> {
   try {
-    await fetch(`/api/properties?id=${encodeURIComponent(property.id)}`, {
+    const response = await fetch(`/api/properties?id=${encodeURIComponent(property.id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(propertyToDbRow(property)),
     });
+    if (!response.ok) {
+      console.error('Failed to update property in DB:', response.status, await response.text());
+      return false;
+    }
+    return true;
   } catch (err) {
     console.error('Failed to update property in DB:', err);
+    return false;
   }
 }
 
@@ -994,10 +1009,25 @@ REGLER:
     e.target.value = "";
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!showEditModal) return;
+    const inclusion = showEditModal.plot_included_in_price;
+    const plotPrice = showEditModal.plot_price_eur;
+    const source = showEditModal.pricing_source_note?.trim() || "";
+    if (inclusion != null && !source) {
+      window.alert("Oppgi en skriftlig kilde/referanse før du bekrefter om tomten er inkludert.");
+      return;
+    }
+    if (plotPrice != null && (inclusion !== false || !source || !Number.isFinite(plotPrice) || plotPrice < 0)) {
+      window.alert("Separat tomtepris krever «Tomt kommer i tillegg», gyldig pris og skriftlig kilde.");
+      return;
+    }
+    const saved = await apiUpdateProperty(showEditModal);
+    if (!saved) {
+      window.alert("Kunne ikke lagre pris- og tomteinformasjonen. Prøv igjen.");
+      return;
+    }
     setProperties(prev => prev.map(p => p.id === showEditModal.id ? showEditModal : p));
-    apiUpdateProperty(showEditModal);
     setShowEditModal(null);
   };
 
@@ -1886,6 +1916,40 @@ REGLER:
                   <Input type="number" value={showEditModal.plotArea} onChange={e => setShowEditModal({...showEditModal, plotArea: parseInt(e.target.value) || 0})} />
                 </div>
               </div>
+              <fieldset className="rounded-xl border border-emerald-700/50 bg-emerald-950/20 p-4 space-y-3">
+                <legend className="px-2 text-sm font-semibold text-emerald-200">Bekreftet pris og tomt (publiseres på Pinoso EcoLife)</legend>
+                <p className="text-xs text-slate-300">Tomtestørrelse bekrefter ikke at tomten er inkludert. Velg bare Ja/Nei når dette er dokumentert i et skriftlig tilbud eller fra en autorisert kilde.</p>
+                <label className="block text-sm text-slate-100" htmlFor="inventory-plot-inclusion">Tomt inkludert i oppgitt boligpris?</label>
+                <select
+                  id="inventory-plot-inclusion"
+                  value={showEditModal.plot_included_in_price == null ? "" : showEditModal.plot_included_in_price ? "yes" : "no"}
+                  onChange={e => setShowEditModal({
+                    ...showEditModal,
+                    plot_included_in_price: e.target.value === "" ? null : e.target.value === "yes",
+                    plot_price_eur: e.target.value === "no" ? showEditModal.plot_price_eur : null,
+                  })}
+                  className="w-full h-10 rounded-lg border border-slate-500 bg-slate-900 px-3 text-sm text-white"
+                >
+                  <option value="">Ikke dokumentert – vis «Ikke bekreftet»</option>
+                  <option value="yes">Ja – tomten er inkludert</option>
+                  <option value="no">Nei – tomten kommer i tillegg</option>
+                </select>
+                {showEditModal.plot_included_in_price === false && (
+                  <div>
+                    <label className="text-sm text-slate-100 mb-1 block" htmlFor="inventory-plot-price">Separat tomtepris (€), dersom bekreftet</label>
+                    <Input id="inventory-plot-price" type="number" min="0" step="1" placeholder="Ukjent – la stå tomt"
+                      value={showEditModal.plot_price_eur ?? ""}
+                      onChange={e => setShowEditModal({...showEditModal, plot_price_eur: e.target.value === "" ? null : Number(e.target.value)})}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="text-sm text-slate-100 mb-1 block" htmlFor="inventory-price-source">Kildereferanse / dato (privat, nødvendig ved bekreftelse)</label>
+                  <Input id="inventory-price-source" value={showEditModal.pricing_source_note ?? ""} placeholder="F.eks. skriftlig tilbud fra utbygger, dato og prosjektreferanse"
+                    onChange={e => setShowEditModal({...showEditModal, pricing_source_note: e.target.value})}
+                  />
+                </div>
+              </fieldset>
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Status</label>
                 <select value={showEditModal.status} onChange={e => setShowEditModal({...showEditModal, status: e.target.value as Property["status"]})}
