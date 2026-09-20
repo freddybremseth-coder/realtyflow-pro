@@ -19,6 +19,7 @@ const ORIGINS: Record<string, readonly string[]> = {
   pinosoecolife: ["pinosoecolife.com"],
   freddyb: ["freddybremseth.com"],
   freddypublishing: ["books.freddybremseth.com"],
+  freddyart: ["art.freddybremseth.com"],
   remasterfreddy: ["remaster.freddybremseth.com"],
   donaanna: ["donaanna.com"],
   chatgenius: ["chatgenius.pro"],
