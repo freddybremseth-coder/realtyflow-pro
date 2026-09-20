@@ -146,6 +146,6 @@ test("actual public audit retains its hard three-page bound while sampling sitem
   });
   assert.equal(called.length, 6);
   assert.equal(result.samples.length, 3);
-  assert.equal(new Set(result.samples.map(row => row.path.replace(/^\\/(?:en|es)\\//, "/").replace(/\\/$/, ""))).size, 3);
+  assert.equal(new Set(result.samples.map(row => row.path.split("/").filter(Boolean).at(-1))).size, 3);
   assert.ok(result.samples.every(row => row.path.includes("/book/") && row.issue === null));
 });
