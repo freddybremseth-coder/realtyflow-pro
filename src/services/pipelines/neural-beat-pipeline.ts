@@ -1,4 +1,5 @@
-import { updateSongStatus, updateSongFields, getGenreImages, getLatestLogoUrl, saveGeneratedImagesToGenreLibrary } from '@/services/integrations/airtable-client';
+import { updateSongStatus, updateSongFields, getSongById, getGenreImages, getLatestLogoUrl, saveGeneratedImagesToGenreLibrary } from '@/services/integrations/airtable-client';
+import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type ArtVisualMode, type SongArtwork } from './remaster-song-art';
 import { analyzeSong, generateYouTubeSEO, generateMusicImageSet } from '@/services/integrations/gemini-client';
 import { renderVideo, cleanupRender, isAvailable as isFFmpegAvailable } from '@/services/integrations/ffmpeg-renderer';
 import { composeThumbnailVariants } from '@/services/integrations/thumbnail-composer';
@@ -291,6 +292,9 @@ export class NeuralBeatPipeline {
     let youtubeVideoId: string | null = null;
     let playlistName: string | null = null;
     let genreImageUrl: string | null = null;
+    let artMode: ArtVisualMode = null;
+    let artGallery: SongArtwork[] = [];
+    let artImageBuffers: Buffer[] = [];
     let aiImageLocalPaths: string[] = [];  // Track AI-generated image paths for saving back to Airtable
     let aiImageBuffers: Buffer[] = [];  // Keep decoded buffers around for thumbnail composition
     let usedImageGenre: string = '';        // Genre used for this song's images
@@ -354,6 +358,7 @@ export class NeuralBeatPipeline {
           audioUrl: audioUrl!,
           metadata: songRecord.metadata || undefined,
         });
+        artMode = classifyArtVisualMode(songRecord, songAnalysis);
         stepCompleted(steps[currentStepIndex]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -432,6 +437,33 @@ export class NeuralBeatPipeline {
         const imageGenre = songAnalysis!.imageGenre || 'dance';
         const imgTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nb-images-'));
 
+        if (artMode) {
+          // Dedicated fine-art lane. Fail closed instead of inserting party/DJ imagery
+          // when the art catalogue or image downloads are temporarily unavailable.
+          artGallery = await loadSongArtGallery(songRecord.id, artMode);
+          if (artGallery.length < 3) {
+            throw new Error('At least three published Freddy Bremseth Art previews are required for this song.');
+          }
+          const downloads = await Promise.all(artGallery.map(async (art, index) => {
+            try {
+              const response = await fetch(art.imageUrl);
+              if (!response.ok) return null;
+              const buffer = Buffer.from(await response.arrayBuffer());
+              if (buffer.length < 1024 || buffer.length > 16 * 1024 * 1024) return null;
+              const imagePath = path.join(imgTempDir, `art-${index}.webp`);
+              await fs.writeFile(imagePath, buffer);
+              return { art, imagePath, buffer };
+            } catch { return null; }
+          }));
+          const valid = downloads.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+          if (valid.length < 3) throw new Error('Art previews unavailable: refusing to substitute generic party visuals.');
+          artGallery = valid.map(entry => entry.art);
+          localImagePaths = valid.map(entry => entry.imagePath);
+          artImageBuffers = valid.map(entry => entry.buffer);
+          genreImageUrl = artGallery[0].imageUrl;
+          youtubeMetadata!.description = `${artCreditsDescription(songRecord.id)}\n\n${youtubeMetadata!.description.trim()}`.slice(0, 4800);
+          steps[currentStepIndex].result = `Fine-art video: ${valid.length} approved gallery previews (${artMode})`;
+        } else {
         steps[currentStepIndex].result = `Generating AI images + fetching "${imageGenre}" from database...`;
         notify();
 
@@ -570,6 +602,7 @@ export class NeuralBeatPipeline {
 
         console.log(`[NeuralBeatPipeline] ${localImagePaths.length} images ready (${aiImagePaths.length} AI + ${genreImagePaths.length} Airtable)`);
         steps[currentStepIndex].result = `${localImagePaths.length} images ready (${aiImagePaths.length} AI + ${genreImagePaths.length} Airtable)`;
+        }
 
         stepCompleted(steps[currentStepIndex]);
       } catch (error) {
@@ -627,6 +660,7 @@ export class NeuralBeatPipeline {
           logoPath,
           // Stille bilder uten zoom/panorering — Ken Burns oppleves forstyrrende.
           kenBurns: false,
+          imageFit: artMode ? 'contain' : 'cover',
           onSegmentProgress: (current, total) => {
             // Update step result with segment progress to keep SSE alive
             steps[currentStepIndex].result = `Encoding segment ${current}/${total}`;
@@ -672,7 +706,7 @@ export class NeuralBeatPipeline {
 
       // User-supplied custom thumbnail short-circuits everything else — fetch
       // it once and bypass the AI composition step entirely.
-      if (options?.customThumbnailUrl) {
+      if (options?.customThumbnailUrl && !artMode) {
         try {
           const res = await fetch(options.customThumbnailUrl);
           if (res.ok) {
@@ -693,15 +727,21 @@ export class NeuralBeatPipeline {
         if (thumbnailBuffer && options?.customThumbnailUrl) {
           console.log('[NeuralBeatPipeline] Skipping AI thumbnail composition — user supplied a custom one');
         }
-        const availableBackgrounds = aiImageBuffers.slice(0, 3);
-        const variants = (youtubeMetadata!.thumbnailVariants || []).slice(0, availableBackgrounds.length);
+        const availableBackgrounds = (artMode ? artImageBuffers : aiImageBuffers).slice(0, 3);
+        const variants = artMode
+          ? availableBackgrounds.map((_background, index) => ({
+              hook: artMode === 'meditation' ? 'MEDITATION' : artMode === 'relaxing' ? 'RELAXING' : 'ALTERNATIVE',
+              subtext: 'FREDDY BREMSETH ART',
+              accentColor: ['b7d5cb', 'e6d6ae', 'd1bedb'][index],
+            }))
+          : (youtubeMetadata!.thumbnailVariants || []).slice(0, availableBackgrounds.length);
         if (!thumbnailBuffer && availableBackgrounds.length > 0 && variants.length > 0) {
           steps[5].result = `Komponerer ${variants.length} thumbnail-varianter...`;
           notify();
           thumbnailVariantBuffers = await composeThumbnailVariants(
             availableBackgrounds,
             variants,
-            { brand: 'RE-MASTER FREDDY', logoBuffer, titleText: songRecord.title },
+            { brand: 'RE-MASTER FREDDY', logoBuffer, titleText: songRecord.title, artworkMode: !!artMode },
           );
           if (thumbnailVariantBuffers.length > 0) {
             thumbnailBuffer = thumbnailVariantBuffers[0];
@@ -709,15 +749,19 @@ export class NeuralBeatPipeline {
           }
         }
         // Fallback: raw AI image if composition produced nothing
-        if (!thumbnailBuffer && aiImageBuffers.length > 0) {
-          thumbnailBuffer = aiImageBuffers[0];
+        if (!thumbnailBuffer && (artMode ? artImageBuffers : aiImageBuffers).length > 0) {
+          thumbnailBuffer = (artMode ? artImageBuffers : aiImageBuffers)[0];
           console.log('[NeuralBeatPipeline] Thumbnail composition empty — using raw AI image as fallback');
         }
       } catch (err) {
         console.warn('[NeuralBeatPipeline] Thumbnail composition failed (non-fatal):', err instanceof Error ? err.message : err);
-        if (!thumbnailBuffer && aiImageBuffers.length > 0) {
-          thumbnailBuffer = aiImageBuffers[0];
+        if (!thumbnailBuffer && (artMode ? artImageBuffers : aiImageBuffers).length > 0) {
+          thumbnailBuffer = (artMode ? artImageBuffers : aiImageBuffers)[0];
         }
+      }
+
+      if (artMode && thumbnailVariantBuffers.length === 0) {
+        throw new Error('Art thumbnail composition failed: refusing to publish an unbranded or cropped artwork thumbnail.');
       }
 
       // Step 7: Upload video buffer directly to YouTube (no intermediate download)
@@ -859,10 +903,12 @@ export class NeuralBeatPipeline {
             tags: youtubeMetadata!.tags,
             renderer: 'ffmpeg',
             processedAt: new Date().toISOString(),
+            artVisualMode: artMode || undefined,
+            artGallery: artGallery.length ? artGallery : undefined,
             playlist: playlistName || undefined,
             thumbnailVariantUrls,
             activeThumbnailIndex: thumbnailVariantUrls.length > 0 ? 0 : undefined,
-            thumbnailHooks: (youtubeMetadata!.thumbnailVariants || []).map((v) => v.hook),
+            thumbnailHooks: artMode ? [artMode.toUpperCase()] : (youtubeMetadata!.thumbnailVariants || []).map((v) => v.hook),
             chapterMarkers: chapterMarkers.length > 0 ? chapterMarkers : undefined,
             durationSeconds: renderedDurationSec ?? undefined,
             customThumbnail: !!options?.customThumbnailUrl,
@@ -875,7 +921,7 @@ export class NeuralBeatPipeline {
         });
 
         // Save AI-generated images to genre library for future reuse.
-        if (aiImageLocalPaths.length > 0 && usedImageGenre) {
+        if (!artMode && aiImageLocalPaths.length > 0 && usedImageGenre) {
           try {
             console.log(`[NeuralBeatPipeline] Saving ${aiImageLocalPaths.length} AI images to genre library "${usedImageGenre}"...`);
             steps[currentStepIndex].result = `Saving ${aiImageLocalPaths.length} AI images to genre library...`;
@@ -925,8 +971,8 @@ export class NeuralBeatPipeline {
           // Pick a hook for the burned overlay — reuse the first thumbnail
           // variant so the Short visually echoes the main video thumbnail.
           const firstVariant = youtubeMetadata.thumbnailVariants?.[0];
-          const shortsHook = firstVariant?.hook || songAnalysis?.mood?.toUpperCase() || 'NEW DROP';
-          const shortsEndCard = 'FULL VERSION IN DESC 👇';
+          const shortsHook = artMode ? artMode.toUpperCase() : (firstVariant?.hook || songAnalysis?.mood?.toUpperCase() || 'NEW DROP');
+          const shortsEndCard = artMode ? 'FULL SONG & ART IN DESC' : 'FULL VERSION IN DESC 👇';
 
           const shortResult = await generateShort({
             videoBuffer,
@@ -946,7 +992,11 @@ export class NeuralBeatPipeline {
             hook: shortsHook,
           });
 
-          const shortsDescription = [
+          const shortsDescription = artMode ? [
+            `🎧 Full song: ${youtubeUrl}`,
+            artCreditsDescription(songRecord.id),
+            '#Shorts #ReMasterFreddy #FreddyBremsethArt',
+          ].join('\n\n') : [
             `🎧 Hele sangen / Full version: ${youtubeUrl}`,
             '',
             `${songRecord.title} — Re-Master Freddy`,
@@ -980,6 +1030,7 @@ export class NeuralBeatPipeline {
 
           await updateSongFields(songRecord.id, {
             aiMetadata: {
+              ...((await getSongById(songRecord.id)).metadata || {}),
               youtubeTitle: youtubeMetadata.title,
               youtubeDescription: youtubeMetadata.description,
               tags: youtubeMetadata.tags,

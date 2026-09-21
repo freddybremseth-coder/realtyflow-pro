@@ -27,6 +27,8 @@ import { ensureFFmpeg, ensureFont } from './ffmpeg-renderer';
 export interface ThumbnailComposeOptions {
   /** Background image (PNG/JPG buffer) — typically an AI-generated 16:9 image. */
   backgroundBuffer: Buffer;
+  /** Display the complete artwork on the right without destructive center crop. */
+  artworkMode?: boolean;
   /** 2-4 caps words, big, high-impact. Example: "DEEP VIBES", "STUDY FLOW". */
   hook: string;
   /** 1-3 words, smaller, accent colored. Example: "Lo-Fi Beats 2026". */
@@ -139,7 +141,9 @@ export async function composeThumbnail(
 
   const filters: string[] = [];
 
-  filters.push('scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720');
+  filters.push(options.artworkMode
+    ? 'scale=720:720:force_original_aspect_ratio=decrease,pad=720:720:(ow-iw)/2:(oh-ih)/2:color=0x101820,pad=1280:720:560:0:color=0x101820'
+    : 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720');
 
   filters.push('drawbox=x=0:y=0:w=iw*0.62:h=ih:color=black@0.55:t=fill');
   filters.push('drawbox=x=iw*0.55:y=0:w=iw*0.07:h=ih:color=black@0.25:t=fill');
@@ -240,6 +244,7 @@ export async function composeThumbnailVariants(
     logoBuffer?: Buffer;
     /** Song title burned in below the hook on every variant. */
     titleText?: string;
+    artworkMode?: boolean;
   } = {}
 ): Promise<Buffer[]> {
   const count = Math.min(backgrounds.length, variants.length);
@@ -250,6 +255,7 @@ export async function composeThumbnailVariants(
     try {
       const buf = await composeThumbnail({
         backgroundBuffer: backgrounds[i],
+        artworkMode: shared.artworkMode,
         hook: variants[i].hook,
         subtext: variants[i].subtext,
         titleText: shared.titleText,

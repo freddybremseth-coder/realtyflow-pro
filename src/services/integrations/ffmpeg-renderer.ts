@@ -115,6 +115,8 @@ export interface FFmpegRenderOptions {
    * dramatically increases watch-through rate on music videos. Default: true.
    */
   kenBurns?: boolean;
+  /** Preserve entire portrait paintings rather than cropping them to 16:9. */
+  imageFit?: 'cover' | 'contain';
   /** Framerate for Ken Burns motion (default 12). Higher = smoother, slower. */
   kenBurnsFps?: number;
 }
@@ -471,13 +473,16 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
       // ── Pre-scale image to target resolution + optional logo overlay ──
       // Avoids scaling every frame during encoding (huge speedup for large images)
       const scaledPath = path.join(tempDir, `scaled-${i}.jpg`);
+      const artworkScale = options.imageFit === 'contain'
+        ? `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x101820`
+        : `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`;
       if (options.logoPath && fsSync.existsSync(options.logoPath)) {
         // Scale image, then overlay logo in bottom-right corner (120px wide, 16px padding)
         await runFFmpeg([
           '-i', options.imagePaths[i],
           '-i', options.logoPath,
           '-filter_complex',
-          `[0]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}[bg];[1]scale=170:-1[logo];[bg][logo]overlay=W-w-24:H-h-24`,
+          `[0]${artworkScale}[bg];[1]scale=170:-1[logo];[bg][logo]overlay=W-w-24:H-h-24`,
           '-q:v', '2',
           '-y',
           scaledPath,
@@ -485,7 +490,7 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
       } else {
         await runFFmpeg([
           '-i', options.imagePaths[i],
-          '-vf', `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`,
+          '-vf', artworkScale,
           '-q:v', '2',
           '-y',
           scaledPath,
