@@ -141,12 +141,18 @@ export async function composeThumbnail(
 
   const filters: string[] = [];
 
+  // The art lane reserves the entire right 720px for the uncropped painting.
+  // All branding/text belongs in the left 560px; do not darken or overlay art.
   filters.push(options.artworkMode
     ? 'scale=720:720:force_original_aspect_ratio=decrease,pad=720:720:(ow-iw)/2:(oh-ih)/2:color=0x101820,pad=1280:720:560:0:color=0x101820'
     : 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720');
 
-  filters.push('drawbox=x=0:y=0:w=iw*0.62:h=ih:color=black@0.55:t=fill');
-  filters.push('drawbox=x=iw*0.55:y=0:w=iw*0.07:h=ih:color=black@0.25:t=fill');
+  if (options.artworkMode) {
+    filters.push('drawbox=x=0:y=0:w=560:h=720:color=0x101820:t=fill');
+  } else {
+    filters.push('drawbox=x=0:y=0:w=iw*0.62:h=ih:color=black@0.55:t=fill');
+    filters.push('drawbox=x=iw*0.55:y=0:w=iw*0.07:h=ih:color=black@0.25:t=fill');
+  }
 
   filters.push(`drawbox=x=28:y=28:w=${Math.min(brand.length * 14 + 40, 440)}:h=46:color=0x0891b2@0.95:t=fill`);
   filters.push(
@@ -164,18 +170,23 @@ export async function composeThumbnail(
   // the SEO subtext. Long titles get a smaller font and are truncated so
   // they stay inside the dark gradient area.
   const rawSecondary = (options.titleText || options.subtext || '').trim();
-  const secondary = rawSecondary.length > 38 ? `${rawSecondary.slice(0, 37).trimEnd()}…` : rawSecondary;
-  const secondaryFontSize = secondary.length > 26 ? 36 : 44;
+  const maxTitleLength = options.artworkMode ? 26 : 38;
+  const secondary = rawSecondary.length > maxTitleLength ? `${rawSecondary.slice(0, maxTitleLength - 1).trimEnd()}…` : rawSecondary;
+  const secondaryFontSize = options.artworkMode ? (secondary.length > 20 ? 26 : 32) : (secondary.length > 26 ? 36 : 44);
 
-  const lineSpacing = Math.round(fontSize * 0.1);
-  const totalHookHeight = lines.length * fontSize + (lines.length - 1) * lineSpacing;
+  // Normal hooks can be up to 130px; in art mode they must fit the 560px
+  // text column without entering the painting's reserved right-hand area.
+  const hookSize = options.artworkMode ? (options.hook.length > 11 ? 46 : 52) : fontSize;
+  const hookLines = options.artworkMode ? [options.hook.toUpperCase().trim()] : lines;
+  const lineSpacing = Math.round(hookSize * 0.1);
+  const totalHookHeight = hookLines.length * hookSize + (hookLines.length - 1) * lineSpacing;
   const subHeight = secondary ? secondaryFontSize + 18 : 0;
   const blockStartY = Math.round((720 - totalHookHeight - subHeight) / 2);
 
-  lines.forEach((line, i) => {
-    const y = blockStartY + i * (fontSize + lineSpacing);
+  hookLines.forEach((line, i) => {
+    const y = blockStartY + i * (hookSize + lineSpacing);
     filters.push(
-      `drawtext=${ff}fontsize=${fontSize}:fontcolor=white:borderw=4:bordercolor=black@0.8:x=48:y=${y}:text='${escapeDrawtext(line)}'`
+      `drawtext=${ff}fontsize=${hookSize}:fontcolor=white:borderw=4:bordercolor=black@0.8:x=48:y=${y}:text='${escapeDrawtext(line)}'`
     );
   });
 
@@ -186,7 +197,10 @@ export async function composeThumbnail(
     );
   }
 
-  const hasLogo = options.logoBuffer && options.logoBuffer.length > 0;
+  // Artwork mode already has a permanent RE-MASTER FREDDY badge. Avoid a
+  // second, optional image input: inaccessible/invalid logo assets must
+  // never block a properly branded painting thumbnail.
+  const hasLogo = !options.artworkMode && options.logoBuffer && options.logoBuffer.length > 0;
   let logoPath: string | null = null;
   if (hasLogo) {
     logoPath = path.join(tempDir, 'logo.png');
@@ -251,6 +265,7 @@ export async function composeThumbnailVariants(
   if (count === 0) return [];
 
   const results: Buffer[] = [];
+  const failures: string[] = [];
   for (let i = 0; i < count; i++) {
     try {
       const buf = await composeThumbnail({
@@ -267,8 +282,15 @@ export async function composeThumbnailVariants(
       results.push(buf);
       console.log(`[ThumbnailComposer] Variant ${i + 1}/${count} composed (${(buf.length / 1024).toFixed(0)} KB)`);
     } catch (err) {
-      console.warn(`[ThumbnailComposer] Variant ${i + 1} failed:`, err instanceof Error ? err.message : err);
+      const message = err instanceof Error ? err.message : String(err);
+      failures.push(`variant ${i + 1}: ${message}`);
+      console.warn(`[ThumbnailComposer] Variant ${i + 1} failed:`, message);
     }
+  }
+  // Do not swallow the underlying FFmpeg error for artwork. The pipeline
+  // must fail closed with actionable diagnostics, not publish raw previews.
+  if (shared.artworkMode && results.length === 0) {
+    throw new Error('Art thumbnail rendering failed: ' + failures.join(' | ').slice(0, 1800));
   }
   return results;
 }
