@@ -33,6 +33,8 @@ const createMixSchema = z
     playlist: z.string().trim().min(3).max(180),
     zenEcoHomesEnabled: z.boolean().default(true),
     promotionBrand: z.enum(["zeneco","art","books","none"]).optional(),
+    thumbnailStyle: z.enum(["automatic","art-lounge","standard"]).default("automatic"),
+    thumbnailTitle: z.string().trim().max(110).default(""),
     artStyles: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
     artCollections: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
     artIds: z.array(z.string().trim().min(1).max(130)).max(180).default([]),
@@ -185,6 +187,11 @@ export async function POST(request: NextRequest) {
 
   const input = parsed.data;
   const promotionBrand: PromotionBrand = input.promotionBrand || (input.zenEcoHomesEnabled ? "zeneco" : "none");
+  const thumbnailStyle = input.thumbnailStyle === "automatic"
+    ? (promotionBrand === "art" ? "art-lounge" : "standard") : input.thumbnailStyle;
+  if (thumbnailStyle === "art-lounge" && promotionBrand !== "art") {
+    return NextResponse.json({ error:"Art Lounge thumbnail style is only available for art mixes." }, { status:400 });
+  }
   const selection = {
     brand: promotionBrand, randomSeed: crypto.randomUUID(),
     artStyles: input.artStyles, artCollections: input.artCollections, artIds: input.artIds,
@@ -305,6 +312,8 @@ export async function POST(request: NextRequest) {
           visualTypes: input.visualTypes,
           sponsorIntervalMinutes: input.sponsorIntervalMinutes,
           ctaText: input.ctaText,
+          thumbnailStyle,
+          thumbnailTitle: input.thumbnailTitle || input.title,
         },
       },
       status: input.queue ? "queued" : "draft",

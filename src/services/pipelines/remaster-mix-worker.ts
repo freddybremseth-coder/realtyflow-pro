@@ -16,6 +16,7 @@ import {
   type RemasterMixAudioResult,
 } from "./remaster-mix-audio";
 import { loadZenEcoHomesVisualUrls } from "./remaster-mix-visual-source";
+import { renderArtLoungeThumbnail } from "./remaster-mix-art-thumbnail";
 import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand, type PromotionSelection, type PromotionItem } from "./remaster-mix-promotions";
 import {
   cleanupRemasterLongFormMix,
@@ -28,6 +29,7 @@ import {
   ensureRemasterLongFormPlaylist,
   isRemasterYouTubeReconnectRequired,
   uploadRemasterLongFormFile,
+  setRemasterLongFormThumbnail,
   verifyRemasterLongFormYouTubeConnection,
 } from "@/services/integrations/remaster-youtube-longform";
 
@@ -52,7 +54,8 @@ interface MixSnapshot {
   version?: string;
   exactAudioSeconds?: number | null;
   tracks?: MixSnapshotTrack[];
-  visualPlan?: PromotionSelection & {source?:string; visualTypes?: RemasterMixVisualType[]};
+  visualPlan?: PromotionSelection & {source?:string; visualTypes?: RemasterMixVisualType[];
+    thumbnailStyle?:"art-lounge"|"standard"; thumbnailTitle?:string};
 }
 
 interface MixJobRow {
@@ -340,6 +343,23 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     });
     const tags = buildMixTags(job.style, brand);
 
+    // Resolve the optional YouTube thumbnail before the irreversible upload.
+    // Thumbnail errors must NOT replay the expensive 30-minute render or cause
+    // a duplicate YouTube publication: default YouTube artwork is the fallback.
+    let thumbnailJpeg: Buffer | null = null;
+    if (brand === "art" && job.input_snapshot?.visualPlan?.thumbnailStyle === "art-lounge") {
+      try {
+        thumbnailJpeg = await renderArtLoungeThumbnail({
+          title: job.input_snapshot.visualPlan.thumbnailTitle || job.title,
+          imageUrls: promotedItems.map(item=>item.imageUrl),
+          footer:"ART.FREDDYBREMSETH.COM  -  MUSIC BY RE-MASTER FREDDY",
+        });
+      } catch (error) {
+        console.warn("[RemasterMixWorker] Art Lounge thumbnail unavailable; YouTube default will be used:",
+          error instanceof Error ? error.message : error);
+      }
+    }
+
     await report(87, "preparing_youtube_upload");
     const upload = await uploadRemasterLongFormFile({
       videoPath: video.videoPath,
@@ -362,6 +382,16 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     await completeJob(job, upload.videoId, upload.youtubeUrl);
     jobCompleted = true;
     clearInterval(heartbeatTimer);
+
+    if (thumbnailJpeg) {
+      try {
+        await setRemasterLongFormThumbnail(upload.videoId, thumbnailJpeg);
+      } catch (error) {
+        // Thumbnail enrichment never changes the verified completed video.
+        console.warn("[RemasterMixWorker] YouTube thumbnail update skipped; video remains published:",
+          error instanceof Error ? error.message : error);
+      }
+    }
 
     try {
       const playlist = await ensureRemasterLongFormPlaylist(

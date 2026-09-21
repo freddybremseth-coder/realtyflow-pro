@@ -189,6 +189,29 @@ export async function uploadRemasterLongFormFile(input: {
   };
 }
 
+/**
+ * Set an owner-approved mix's thumbnail ONLY on the already-verified Re-Master
+ * Freddy channel. Failure is handled as post-upload enrichment by the caller:
+ * never rerender/reupload an MP4 merely because YouTube refuses an image.
+ */
+export async function setRemasterLongFormThumbnail(videoId: string, jpeg: Buffer) {
+  if (!/^[A-Za-z0-9_-]{8,20}$/.test(videoId)) throw new Error("Invalid YouTube video id.");
+  if (jpeg.length < 10_000 || jpeg.length > 2_000_000 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) {
+    throw new Error("YouTube thumbnail must be a valid JPEG under 2MB.");
+  }
+  const { client, channelId } = await getVerifiedLongFormClient();
+  const video=await client.videos.list({part:["snippet"],id:[videoId]});
+  if(video.data.items?.[0]?.snippet?.channelId!==channelId) {
+    throw new Error("Cannot set thumbnail for a video outside the verified Re-Master Freddy channel.");
+  }
+  const {Readable}=await import("node:stream");
+  await client.thumbnails.set({
+    videoId,
+    media:{mimeType:"image/jpeg",body:Readable.from(jpeg)},
+  });
+  return {videoId,bytes:jpeg.length};
+}
+
 export async function ensureRemasterLongFormPublic(videoId: string) {
   const id = String(videoId || "").trim();
   if (!id) throw new Error("Re-Master YouTube video id is required.");
