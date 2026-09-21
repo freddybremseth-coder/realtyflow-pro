@@ -49,6 +49,7 @@ const PUBLIC_PATHS = [
   "/api/saas/subscribe",
   "/api/saas/stripe",
   "/api/public/books",
+  "/api/public/remaster-art-gallery",
   "/api/dona-anna/integrations",
 ];
 
