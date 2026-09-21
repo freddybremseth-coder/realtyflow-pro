@@ -18,7 +18,7 @@ import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { ensureFFmpeg, ensureFont } from './ffmpeg-renderer';
+import { ensureFFmpeg } from './ffmpeg-renderer';
 import { buildArtShortPoster } from './art-thumbnail-panel';
 
 const execFileAsync = promisify(execFile);
@@ -30,7 +30,7 @@ export interface ShortsOptions {
   videoBuffer: Buffer;
   /** Target duration in seconds. Clamped to 30-60. Default 35. */
   targetDuration?: number;
-  /** Burned caps-text hook, shown first 2.5 s. Empty string skips it. */
+  /** Bitmap hook in the permanent editorial text band (no FFmpeg drawtext). */
   hook?: string;
   /** Optional footer shown last 3 s (e.g. "FULL VERSION IN DESC 👇"). */
   endCard?: string;
@@ -74,16 +74,6 @@ function runFFmpeg(ffmpegPath: string, args: string[], timeoutMs = 180_000): Pro
     });
     proc.on('error', (err) => { clearTimeout(timer); reject(err); });
   });
-}
-
-function escapeDrawtext(s: string): string {
-  return s
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/:/g, '\\:')
-    .replace(/%/g, '\\%')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]');
 }
 
 async function probeDuration(ffmpegPath: string, videoPath: string): Promise<number> {
@@ -228,66 +218,20 @@ export async function detectTopSections(
   }
 }
 
-// ─── Shared overlay filters (hook + title + end card) ───────
-
-function buildOverlayFilters(opts: {
-  ff: string;
-  accent: string;
-  targetDur: number;
-  hook?: string;
-  titleText?: string;
-  endCard?: string;
-}): string[] {
-  const { ff, accent, targetDur } = opts;
-  const filters: string[] = [];
-
-  if (opts.hook) {
-    const hook = opts.hook.toUpperCase();
-    const fontSize = hook.length > 14 ? 90 : hook.length > 10 ? 110 : hook.length > 8 ? 140 : 180;
-    // Backing bar aligned with the text (text sits at ih/2-450).
-    filters.push(
-      `drawbox=x=0:y=ih/2-490:w=iw:h=${fontSize + 80}:color=black@0.55:t=fill:enable='between(t,0.2,2.9)'`,
-      `drawtext=${ff}fontsize=${fontSize}:fontcolor=white:borderw=6:bordercolor=0x${accent}@0.95:x=(w-text_w)/2:y=h/2-450:text='${escapeDrawtext(hook)}':enable='between(t,0.3,2.8)'`,
-    );
-  }
-
-  if (opts.titleText) {
-    // Persistent song title in the lower third — truncated so it never
-    // runs off the 1080 px frame.
-    const rawTitle = opts.titleText.trim();
-    const title = rawTitle.length > 30 ? `${rawTitle.slice(0, 29).trimEnd()}…` : rawTitle;
-    const titleFontSize = title.length > 22 ? 44 : 54;
-    filters.push(
-      `drawtext=${ff}fontsize=${titleFontSize}:fontcolor=white:borderw=4:bordercolor=black@0.85:x=(w-text_w)/2:y=h-380:text='${escapeDrawtext(title)}'`,
-      `drawtext=${ff}fontsize=34:fontcolor=0x${accent}:borderw=3:bordercolor=black@0.85:x=(w-text_w)/2:y=h-310:text='RE-MASTER FREDDY'`,
-    );
-  }
-
-  if (opts.endCard) {
-    const ecStart = targetDur - 3;
-    const ecEnd = targetDur - 0.2;
-    filters.push(
-      `drawbox=x=0:y=h-260:w=iw:h=140:color=0x${accent}@0.92:t=fill:enable='between(t,${ecStart.toFixed(2)},${ecEnd.toFixed(2)})'`,
-      `drawtext=${ff}fontsize=58:fontcolor=white:x=(w-text_w)/2:y=h-220:text='${escapeDrawtext(opts.endCard.toUpperCase())}':enable='between(t,${(ecStart + 0.1).toFixed(2)},${ecEnd.toFixed(2)})'`,
-    );
-  }
-
-  return filters;
-}
+// All branding is rendered by buildArtShortPoster in Node, not FFmpeg drawtext.
+// The server's ffmpeg-static binary does not include the drawtext filter.
 
 // ─── Main ───────────────────────────────────────────────────
 
 export async function generateShort(options: ShortsOptions): Promise<ShortsResult> {
   const ffmpegPath = await ensureFFmpeg();
-  const fontPath = await ensureFont();
-  const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
-
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neural-short-'));
   const inputPath = path.join(workDir, 'input.mp4');
   const clipPath = path.join(workDir, 'clip.mp4');
   const headPath = path.join(workDir, 'head.mp4');
   const tailPath = path.join(workDir, 'tail.mp4');
   const finalPath = path.join(workDir, 'short.mp4');
+  const posterPath = path.join(workDir, 'music-poster.ppm');
 
   await fs.writeFile(inputPath, options.videoBuffer);
 
@@ -297,10 +241,8 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       throw new Error(`Input video too short: ${duration.toFixed(1)}s (need ≥15s)`);
     }
 
-    const targetDur = Math.min(60, Math.max(30, options.targetDuration || 35));
+    const targetDur = Math.min(60, Math.max(15, options.targetDuration || 35));
     const loopFade = Math.min(1.0, Math.max(0.3, options.loopFade ?? 0.5));
-    const accent = options.accentColor || 'ff3366';
-
     // ── 1. Decide start time ──
     let detectionMethod: ShortsResult['detectionMethod'] = 'fallback-start';
     let dropSecond: number | null = null;
@@ -329,48 +271,22 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
     // Ensure we don't run past the end
     startTime = Math.min(startTime, Math.max(0, duration - targetDur - loopFade));
 
-    // ── 2. Crop to vertical 9:16 + apply hook overlay ──
-    // The hook fades in at 0.3 s and out at 2.8 s. The end card (if present)
-    // fades in at targetDur-3 and out at targetDur-0.2.
-    const filters: string[] = [
-      `crop=ih*9/16:ih:(iw-ih*9/16)/2:0`,
-      `scale=1080:1920`,
-      ...buildOverlayFilters({
-        ff,
-        accent,
-        targetDur,
-        hook: options.hook,
-        titleText: options.titleText,
-        endCard: options.endCard,
-      }),
+    // The deployed ffmpeg-static binary has no drawtext. Compose the
+    // persistent brand/title/hook as a bitmap poster and place moving video
+    // only in its center window. Ignore optional external logos: the poster
+    // already contains permanent Re-Master Freddy branding.
+    await fs.writeFile(posterPath, buildArtShortPoster(
+      options.hook || 'NEW DROP', options.titleText || 'NEW MUSIC', 'music',
+    ));
+    const clipArgs = [
+      '-ss', startTime.toFixed(2), '-i', inputPath,
+      '-loop', '1', '-framerate', '12', '-i', posterPath,
+      '-t', targetDur.toFixed(2),
+      '-filter_complex',
+      '[0:v]crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1320,fps=12,setsar=1[visual];' +
+      '[1:v]format=rgb24[poster];[poster][visual]overlay=0:160:shortest=1,format=yuv420p[vout]',
+      '-map', '[vout]', '-map', '0:a:0',
     ];
-
-    // Optional logo overlay (top-right, whole duration) — needs a second
-    // input, so the filter list becomes a filter_complex graph.
-    const hasLogo = options.logoBuffer && options.logoBuffer.length > 0;
-    let logoPath: string | null = null;
-    if (hasLogo) {
-      logoPath = path.join(workDir, 'logo.png');
-      await fs.writeFile(logoPath, options.logoBuffer!);
-    }
-
-    const clipArgs = hasLogo && logoPath
-      ? [
-          '-ss', startTime.toFixed(2),
-          '-i', inputPath,
-          '-i', logoPath,
-          '-t', targetDur.toFixed(2),
-          '-filter_complex',
-          `[0:v]${filters.join(',')}[base];[1:v]scale=170:-1[logo];[base][logo]overlay=W-w-36:110[vout]`,
-          '-map', '[vout]',
-          '-map', '0:a',
-        ]
-      : [
-          '-ss', startTime.toFixed(2),
-          '-i', inputPath,
-          '-t', targetDur.toFixed(2),
-          '-vf', filters.join(','),
-        ];
 
     await runFFmpeg(ffmpegPath, [
       ...clipArgs,
@@ -384,6 +300,10 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       clipPath,
     ]);
 
+    // Cross-fade is cosmetic; a branded, valid Short must still be returned
+    // if xfade is missing or fails on a particular FFmpeg build.
+    let outputPath = clipPath;
+    try {
     // ── 3. Loopable cross-fade ──
     // Split the clip into HEAD (0 → dur-fade) and TAIL (last `fade` s overlaps
     // with first `fade` s of the clip). Then xfade/acrossfade between HEAD
@@ -430,8 +350,13 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       finalPath,
     ]);
 
-    const videoBuffer = await fs.readFile(finalPath);
-    const finalDuration = await probeDuration(ffmpegPath, finalPath);
+      outputPath = finalPath;
+    } catch (fadeError) {
+      console.warn('[ShortsGen] Cross-fade unavailable; using branded clip:', fadeError instanceof Error ? fadeError.message : fadeError);
+    }
+
+    const videoBuffer = await fs.readFile(outputPath);
+    const finalDuration = await probeDuration(ffmpegPath, outputPath);
 
     console.log(
       `[ShortsGen] Short built: ${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB, ` +
@@ -480,20 +405,16 @@ export async function generateShortFromAudio(
   if (options.imageBuffers.length === 0) throw new Error('No images provided');
 
   const ffmpegPath = await ensureFFmpeg();
-  const fontPath = await ensureFont();
-  const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
-
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nb-audioshort-'));
   const audioPath = path.join(workDir, 'audio.mp3');
   const listPath = path.join(workDir, 'list.txt');
   const outPath = path.join(workDir, 'short.mp4');
+  const posterPath = path.join(workDir, 'music-poster.ppm');
 
   try {
     await fs.writeFile(audioPath, options.audioBuffer);
 
-    const targetDur = Math.min(60, Math.max(30, options.targetDuration || 35));
-    const accent = options.accentColor || 'ff3366';
-
+    const targetDur = Math.min(60, Math.max(15, options.targetDuration || 35));
     // Clamp start so the clip never runs past the end of the song.
     const audioDur = await probeDuration(ffmpegPath, audioPath);
     const startTime = audioDur > 0
@@ -514,41 +435,22 @@ export async function generateShortFromAudio(
     listLines.push(`file '${path.join(workDir, `img-${images.length - 1}.png`)}'`);
     await fs.writeFile(listPath, listLines.join('\n'), 'utf-8');
 
-    const filters = [
-      `scale=1080:1920:force_original_aspect_ratio=increase`,
-      `crop=1080:1920`,
-      `fps=12`,
-      `format=yuv420p`,
-      ...buildOverlayFilters({
-        ff,
-        accent,
-        targetDur,
-        hook: options.hook,
-        titleText: options.titleText,
-        endCard: options.endCard,
-      }),
-    ];
-
-    const hasLogo = options.logoBuffer && options.logoBuffer.length > 0;
-    let logoPath: string | null = null;
-    if (hasLogo) {
-      logoPath = path.join(workDir, 'logo.png');
-      await fs.writeFile(logoPath, options.logoBuffer!);
-    }
-
+    // Reuse the exact same branding as initial Shorts. The concat slideshow
+    // is cropped ONLY inside the dedicated media window, never over text.
+    await fs.writeFile(posterPath, buildArtShortPoster(
+      options.hook || 'NEW DROP', options.titleText || 'NEW MUSIC', 'music',
+    ));
     const inputArgs = [
       '-f', 'concat', '-safe', '0', '-i', listPath,
       '-ss', startTime.toFixed(2), '-i', audioPath,
-      ...(hasLogo && logoPath ? ['-i', logoPath] : []),
+      '-loop', '1', '-framerate', '12', '-i', posterPath,
     ];
-    const filterArgs = hasLogo && logoPath
-      ? [
-          '-filter_complex',
-          `[0:v]${filters.join(',')}[base];[2:v]scale=170:-1[logo];[base][logo]overlay=W-w-36:110[vout]`,
-          '-map', '[vout]',
-          '-map', '1:a',
-        ]
-      : ['-map', '0:v', '-map', '1:a', '-vf', filters.join(',')];
+    const filterArgs = [
+      '-filter_complex',
+      '[0:v]scale=1080:1320:force_original_aspect_ratio=increase,crop=1080:1320,fps=12,setsar=1[visual];' +
+      '[2:v]format=rgb24[poster];[poster][visual]overlay=0:160:shortest=1,format=yuv420p[vout]',
+      '-map', '[vout]', '-map', '1:a:0',
+    ];
 
     await runFFmpeg(ffmpegPath, [
       ...inputArgs,

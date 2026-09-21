@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApi } from '@/lib/api-admin';
-import { publishMissingArtShort } from '@/services/pipelines/remaster-art-short-publish';
+import { publishMissingShort } from '@/services/pipelines/remaster-art-short-publish';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-/** Owner-only on-demand recovery for an already published art-video song. */
+/** Owner-only on-demand recovery for an already published Re-Master Freddy song. */
 export async function POST(request: NextRequest) {
   const adminError = await requireAdminApi(request);
   if (adminError) return adminError;
@@ -15,12 +15,12 @@ export async function POST(request: NextRequest) {
     if (!/^[0-9a-f-]{36}$/i.test(songId)) {
       return NextResponse.json({ error: 'Valid songId is required' }, { status: 400 });
     }
-    const result = await publishMissingArtShort(songId);
+    const result = await publishMissingShort(songId);
     return NextResponse.json({ success: true, ...result });
   } catch (err) {
     return NextResponse.json({
       success: false,
-      error: err instanceof Error ? err.message : 'Art Short generation failed',
+      error: err instanceof Error ? err.message : 'Short generation failed',
     }, { status: 500 });
   }
 }

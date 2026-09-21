@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { generateArtShortFromAudio } from '@/services/integrations/shorts-generator';
+import { generateArtShortFromAudio, generateShortFromAudio, buildShortsTitle } from '@/services/integrations/shorts-generator';
+import { getGenreImages } from '@/services/integrations/airtable-client';
 import { loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from './remaster-song-art';
 import { uploadVideo } from '@/services/integrations/youtube-client';
 
@@ -22,10 +23,10 @@ async function loadBuffer(url: string): Promise<Buffer> {
 }
 
 /**
- * Publish ONLY the missing, branded art Short. Never re-upload the main video.
+ * Publish ONLY the missing, branded Short. Never re-upload the main video.
  * Used both by the owner-only Admin button and the automated recovery cron.
  */
-export async function publishMissingArtShort(songId: string): Promise<{
+export async function publishMissingShort(songId: string): Promise<{
   status: 'already-published' | 'published' | 'processing';
   shortUrl: string | null;
   videoUrl: string | null;
@@ -33,12 +34,12 @@ export async function publishMissingArtShort(songId: string): Promise<{
   if (!/^[0-9a-f-]{36}$/i.test(songId)) throw new Error('Invalid song ID');
   const supabase = getClient();
   const { data: song, error } = await supabase.from('songs')
-    .select('id,name,brand,file_url,youtube_url,ai_metadata')
+    .select('id,name,brand,file_url,youtube_url,genre,mood,ai_metadata')
     .eq('id', songId).eq('brand', BRAND).single();
   if (error || !song) throw new Error('Re-Master Freddy song not found');
   const metadata = song.ai_metadata && typeof song.ai_metadata === 'object' ? song.ai_metadata : {};
   const mode: ArtVisualMode = metadata.artVisualMode;
-  if (!VALID_MODES.has(String(mode))) throw new Error('This song is not a published art-video song');
+  const artMode = VALID_MODES.has(String(mode));
   if (!song.youtube_url || !song.file_url) throw new Error('Publish the full song before generating its Short');
   if (metadata.shortsUrl) return { status: 'already-published', shortUrl: metadata.shortsUrl, videoUrl: song.youtube_url };
   if (metadata.shortsStatus === 'needs-reconciliation') {
@@ -65,35 +66,60 @@ export async function publishMissingArtShort(songId: string): Promise<{
   if (claimError) throw new Error('Could not claim art Short job: ' + claimError.message);
   if (!claim) return { status: 'processing', shortUrl: null, videoUrl: song.youtube_url };
   try {
-    // Do not trust arbitrary URLs in song metadata. Load only the published
-    // gallery preview catalog, never private artwork masters or generic EDM.
-    const gallery = await loadSongArtGallery(songId, mode!);
-    if (gallery.length === 0) throw new Error('No published public art previews for Short');
-    const [audioBuffer, artworkBuffer] = await Promise.all([
-      loadBuffer(song.file_url),
-      loadBuffer(gallery[0].imageUrl),
-    ]);
-    const short = await generateArtShortFromAudio({
-      audioBuffer, artworkBuffer, title: song.name, category: mode!,
-      targetDuration: 35,
-    });
-    const title = `${song.name} | ${mode![0].toUpperCase()+mode!.slice(1)} Art & Music #Shorts`.slice(0, 100);
-    const description = [
-      `🎧 Full song: ${song.youtube_url}`,
-      artCreditsDescription(songId),
-      '#Shorts #ReMasterFreddy #FreddyBremsethArt',
-    ].join('\n\n');
+    const audioBuffer = await loadBuffer(song.file_url);
+    // Artwork uses curated public previews; ordinary music uses saved genre
+    // images and the existing MP3. Never upload the main YouTube video again.
+    const short = artMode
+      ? await (async () => {
+          const gallery = await loadSongArtGallery(songId, mode!);
+          if (gallery.length === 0) throw new Error('No published public art previews for Short');
+          const artworkBuffer = await loadBuffer(gallery[0].imageUrl);
+          const result = await generateArtShortFromAudio({
+            audioBuffer, artworkBuffer, title: song.name, category: mode!, targetDuration: 35,
+          });
+          return { videoBuffer: result.videoBuffer, startSeconds: result.startSeconds };
+        })()
+      : await (async () => {
+          const records = await getGenreImages(
+            !song.genre || song.genre.toLowerCase() === 'edm' ? 'dance' : song.genre, 3,
+          );
+          const images: Buffer[] = [];
+          for (const image of records) {
+            try { images.push(await loadBuffer(image.imageUrl)); }
+            catch (err) { console.warn('[ShortRetry] Skipping inaccessible genre image:', err); }
+          }
+          if (!images.length) throw new Error('No accessible genre images for this music Short');
+          const startSeconds = 0;
+          const result = await generateShortFromAudio({
+            audioBuffer, imageBuffers: images, startTime: startSeconds,
+            hook: song.ai_metadata?.shortsHook || song.mood?.toUpperCase() || 'NEW MUSIC',
+            titleText: song.name, targetDuration: 35,
+          });
+          return { videoBuffer: result.videoBuffer, startSeconds };
+        })();
+    const title = artMode
+      ? (song.name + ' | ' + mode![0].toUpperCase() + mode!.slice(1) + ' Art & Music #Shorts').slice(0, 100)
+      : buildShortsTitle({
+          title: song.name, genre: song.genre || 'EDM', mood: song.mood || 'energetic',
+        });
+    const description = artMode
+      ? ['🎧 Full song: ' + song.youtube_url, artCreditsDescription(songId),
+          '#Shorts #ReMasterFreddy #FreddyBremsethArt'].join('\n\n')
+      : ['🎧 Full song: ' + song.youtube_url,
+          song.name + ' — Re-Master Freddy',
+          '#Shorts #ReMasterFreddy #EDM #Music'].join('\n\n');
     const uploaded = await uploadVideo(short.videoBuffer, {
       title, description,
-      tags: ['Shorts','Re-Master Freddy','Freddy Bremseth Art',mode!,song.name],
+      tags: artMode ? ['Shorts','Re-Master Freddy','Freddy Bremseth Art',mode!,song.name]
+        : ['Shorts','Re-Master Freddy','EDM',song.genre || 'dance',song.name],
       categoryId: '10', privacyStatus: 'public', defaultAudioLanguage: 'zxx',
     }, BRAND, { requireBrandToken: true });
     const finished = {
       ...claimed, shortsStatus: 'published', shortsError: null,
       shortsUrl: uploaded.youtubeUrl, shortsVideoId: uploaded.videoId,
-      shortsHook: mode!.toUpperCase(),
+      shortsHook: artMode ? mode!.toUpperCase() : (song.mood?.toUpperCase() || 'NEW MUSIC'),
       shortsDropStartSeconds: short.startSeconds,
-      shortsDetectionMethod: 'art-calm-section',
+      shortsDetectionMethod: artMode ? 'art-calm-section' : 'audio-retry',
       shortsPublishedAt: new Date().toISOString(),
     };
     const { data: saved, error: saveError } = await supabase.from('songs').update({ ai_metadata: finished })
@@ -120,3 +146,6 @@ export async function publishMissingArtShort(songId: string): Promise<{
     throw err;
   }
 }
+
+/** Legacy alias for the existing artwork-only follow-up caller. */
+export const publishMissingArtShort = publishMissingShort;
