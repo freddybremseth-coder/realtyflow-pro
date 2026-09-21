@@ -60,7 +60,7 @@ export async function loadPublishedMixBooks():Promise<PromotionItem[]> {
     const seriesInfo=seriesById.get(book.series_id);
     return [{
       id:String(book.id),title:String(book.title||slug),imageUrl:cover,
-      detailUrl:'https://books.freddybremseth.com/books/'+encodeURIComponent(slug),
+      detailUrl:'https://books.freddybremseth.com/book/'+encodeURIComponent(slug),
       series:seriesInfo?.slug||'',language:String(book.language||''),
     }];
   });
