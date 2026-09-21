@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { promisify } from "node:util";
+import { execFile } from "node:child_process";
+import ffmpegStatic from "ffmpeg-static";
 import {
   publicBookCoverUrl, selectApprovedPromotionItems, type PromotionItem,
 } from "./remaster-mix-promotions";
 import { buildMixDescription, buildMixTags, buildMixPartnerComment } from "./remaster-mix-planner";
-import { buildConcatVisualFilterV4 } from "./remaster-mix-video-v4";
+import { buildConcatVisualFilterV4, renderRemasterLongFormMixV4, cleanupRemasterLongFormMixV4 } from "./remaster-mix-video-v4";
 import { buildRemasterMixGlobalAssOverlay } from "./remaster-mix-video-compat";
 
 const art:PromotionItem[]=[
@@ -68,4 +74,32 @@ test("partner video overlay names correct brand and remains separate from Re-Mas
   assert.match(ass,/Presented by Freddy Bremseth Books/);
   assert.match(ass,/books.freddybremseth.com/);
   assert.doesNotMatch(ass,/ZenEcoHomes/);
+});
+
+test("actual ffmpeg-static renders portrait book-cover and art-preview mixes with contain, normalized images and matching brand", {timeout:120_000}, async (t) => {
+  assert.ok(ffmpegStatic, "FFmpeg static must be installed");
+  const exec = promisify(execFile);
+  const tmp=await fs.mkdtemp(path.join(os.tmpdir(),"remaster-cross-brand-test-"));
+  const portrait=path.join(tmp,"portrait.png"), audio=path.join(tmp,"audio.wav");
+  try {
+    await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i",
+      "color=c=0x7760a2:s=480x720:r=1","-frames:v","1","-update","1","-y",portrait]);
+    await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i",
+      "sine=frequency=330:duration=16","-c:a","pcm_s16le","-y",audio]);
+    for(const brand of ["art","books"] as const) {
+      const result=await renderRemasterLongFormMixV4({
+        audioPath:audio,imageUrls:Array(12).fill(portrait),title:"Cross Brand Preview",
+        targetMinutes:16/60,sponsorIntervalMinutes:5,ctaText:brand==="art"
+          ?"Explore art.freddybremseth.com":"Explore books.freddybremseth.com",
+        promotionBrand:brand,zenEcoHomesEnabled:false,logoUrl:"/does-not-exist.png",
+        audioDurationSeconds:16,abortSignal:t.signal,
+      });
+      try {
+        assert.equal(result.imageCount,12);
+        assert.ok(result.durationSeconds>=15.5&&result.durationSeconds<=16.5);
+        const stat=await fs.stat(result.videoPath);
+        assert.ok(stat.size>10_000,"Expected playable encoded MP4");
+      } finally {await cleanupRemasterLongFormMixV4(result);}
+    }
+  } finally {await fs.rm(tmp,{recursive:true,force:true});}
 });
