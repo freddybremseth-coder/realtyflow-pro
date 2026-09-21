@@ -51,9 +51,17 @@ export async function publishMissingArtShort(songId: string): Promise<{
   }
   const startedAt = new Date().toISOString();
   const claimed = { ...metadata, shortsStatus: 'processing', shortsAttemptedAt: startedAt, shortsError: null };
-  const { data: claim, error: claimError } = await supabase.from('songs')
-    .update({ ai_metadata: claimed }).eq('id', songId)
-    .filter('ai_metadata', 'eq', JSON.stringify(metadata)).select('id').maybeSingle();
+  // Compare a small per-attempt token instead of passing the entire
+  // (potentially very large) AI/artwork metadata JSON in the request URL.
+  // Exactly one concurrent retry can claim a given previous attempt.
+  const previousAttempt = typeof metadata.shortsAttemptedAt === 'string'
+    ? metadata.shortsAttemptedAt : null;
+  let claimQuery = supabase.from('songs').update({ ai_metadata: claimed })
+    .eq('id', songId).is('ai_metadata->>shortsUrl', null);
+  claimQuery = previousAttempt
+    ? claimQuery.filter('ai_metadata->>shortsAttemptedAt', 'eq', previousAttempt)
+    : claimQuery.is('ai_metadata->>shortsAttemptedAt', null);
+  const { data: claim, error: claimError } = await claimQuery.select('id').maybeSingle();
   if (claimError) throw new Error('Could not claim art Short job: ' + claimError.message);
   if (!claim) return { status: 'processing', shortUrl: null, videoUrl: song.youtube_url };
   try {
@@ -89,7 +97,8 @@ export async function publishMissingArtShort(songId: string): Promise<{
       shortsPublishedAt: new Date().toISOString(),
     };
     const { data: saved, error: saveError } = await supabase.from('songs').update({ ai_metadata: finished })
-      .eq('id', songId).filter('ai_metadata', 'eq', JSON.stringify(claimed))
+      .eq('id', songId).filter('ai_metadata->>shortsAttemptedAt', 'eq', startedAt)
+      .filter('ai_metadata->>shortsStatus', 'eq', 'processing')
       .select('id').maybeSingle();
     if (saveError || !saved) {
       throw new Error('Short uploaded at ' + uploaded.youtubeUrl + ' but metadata save failed: ' + (saveError?.message || 'song metadata changed while publishing'));
@@ -106,7 +115,8 @@ export async function publishMissingArtShort(songId: string): Promise<{
         shortsStatus: uncertainUpload ? 'needs-reconciliation' : 'failed',
         shortsError: message.slice(0, 1200),
       },
-    }).eq('id', songId).filter('ai_metadata', 'eq', JSON.stringify(claimed));
+    }).eq('id', songId).filter('ai_metadata->>shortsAttemptedAt', 'eq', startedAt)
+      .filter('ai_metadata->>shortsStatus', 'eq', 'processing');
     throw err;
   }
 }
