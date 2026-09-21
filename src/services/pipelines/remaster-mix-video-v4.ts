@@ -141,18 +141,38 @@ async function downloadImage(url: string, destination: string) {
   await pipeline(Readable.fromWeb(response.body as any), fsSync.createWriteStream(destination));
 }
 
-async function downloadVisuals(urls: string[], workingDirectory: string) {
+async function downloadVisuals(urls: string[], workingDirectory: string, binary: string, normalizeFormat: boolean) {
   const imagePaths: string[] = [];
+  const converted = new Map<string, string>();
   for (let index = 0; index < urls.length; index += 1) {
-    const target = path.join(workingDirectory, `visual-${String(index).padStart(3, "0")}.jpg`);
+    // Reused book covers must not cause redundant 24x network requests.
+    const prior = converted.get(urls[index]);
+    if (prior) { imagePaths.push(prior); continue; }
+    const label = String(index).padStart(3, "0");
+    const target = path.join(workingDirectory, `visual-${label}.jpg`);
+    const source = normalizeFormat ? path.join(workingDirectory, `visual-${label}.source`) : target;
     try {
-      await downloadImage(urls[index], target);
-      const stat = await fs.stat(target);
-      if (stat.size > 1024) imagePaths.push(target);
-      else await fs.unlink(target).catch(() => undefined);
+      await downloadImage(urls[index], source);
+      const stat = await fs.stat(source);
+      if (stat.size <= 1024) throw new Error("Image unexpectedly small");
+      if (normalizeFormat) {
+        // The concat demuxer requires consistent codecs. Art is WebP and
+        // books mix JPEG/PNG; never feed these bytes disguised as .jpg.
+        await new Promise<void>((resolve,reject) => {
+          const child=spawn(binary,["-hide_banner","-loglevel","error","-i",source,
+            "-frames:v","1","-q:v","3","-y",target],{stdio:["ignore","ignore","pipe"]});
+          let stderr="";
+          child.stderr.on("data",chunk=>{stderr+=chunk.toString();});
+          child.once("error",reject);
+          child.once("close",code=>code===0?resolve():reject(new Error(stderr.slice(-500))));
+        });
+        await fs.unlink(source).catch(()=>undefined);
+      }
+      imagePaths.push(target);
+      converted.set(urls[index],target);
     } catch (error) {
       console.warn(`[RemasterMixVideoV4] Visual ${index + 1} skipped:`, error instanceof Error ? error.message : error);
-      await fs.unlink(target).catch(() => undefined);
+      await Promise.all([fs.unlink(target).catch(()=>undefined),fs.unlink(source).catch(()=>undefined)]);
     }
   }
   return imagePaths;
@@ -233,7 +253,8 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
 
   try {
     await input.onProgress?.(1, "downloading_visuals_v4");
-    const imagePaths = await downloadVisuals(input.imageUrls, workingDirectory);
+    const artOrBooks = input.promotionBrand === 'art' || input.promotionBrand === 'books';
+    const imagePaths = await downloadVisuals(input.imageUrls, workingDirectory, binary, artOrBooks);
     if (imagePaths.length < 12) throw new Error(`Only ${imagePaths.length} visuals downloaded; at least 12 are required.`);
 
     const expectedDuration = input.audioDurationSeconds && input.audioDurationSeconds > 0
