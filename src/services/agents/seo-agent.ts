@@ -1,7 +1,7 @@
 import { readGSCAllBrands } from "./seo-search-console";
 import { getSEOLeadSignals, type SEOLeadSummary } from "./seo-leads";
 import { SEO_SKILLS, SEO_SENIOR_OPERATING_RULES } from "./seo-skills";
-import { SAM_SITE_STRATEGY } from "./seo-site-strategy";
+import { SAM_SITE_STRATEGY, seoBrandContext } from "./seo-site-strategy";
 import { auditSEOPortfolio, type SiteAudit } from "./seo-audit";
 import { getSEOObservedSignals } from "./seo-data";
 import {
@@ -275,7 +275,7 @@ Gi anbefalinger for:
   // ─── Task-specific methods ──────────────────────────────────────────
 
   private async keywordResearch(params: Record<string, unknown>): Promise<string> {
-    const site = SAM_SITE_STRATEGY.find(item => item.brandId === params.brand_id);
+    const site = seoBrandContext(params.brand_id);
     const topic = typeof params.topic === "string" && params.topic.trim()
       ? params.topic.trim() : site?.intent || "ikke oppgitt";
     const location = typeof params.location === "string" && params.location.trim()
@@ -369,7 +369,7 @@ Gi optimalisering som JSON:
   }
 
   private async analyzeCompetition(params: Record<string, unknown>): Promise<string> {
-    const site = SAM_SITE_STRATEGY.find(item => item.brandId === params.brand_id);
+    const site = seoBrandContext(params.brand_id);
     const competitors = params.competitors
       ? JSON.stringify(params.competitors)
       : "Ikke spesifisert";
@@ -425,7 +425,7 @@ Gi en analyse som JSON:
   }
 
   private async createLinkStrategy(params: Record<string, unknown>): Promise<string> {
-    const site = SAM_SITE_STRATEGY.find(item => item.brandId === params.brand_id);
+    const site = seoBrandContext(params.brand_id);
     const domain = (params.domain as string) ?? site?.host ?? "";
     const industry = (params.industry as string) ?? site?.intent ?? "ikke oppgitt";
     const budget = (params.budget as string) ?? "ikke oppgitt";
