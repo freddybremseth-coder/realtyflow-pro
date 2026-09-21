@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SAM_SITE_STRATEGY } from "./seo-site-strategy";
+import { SAM_SITE_STRATEGY, seoBrandContext } from "./seo-site-strategy";
 import { SEO_AUDIT_TARGETS, SEO_SUPPLEMENTAL_AUDIT_TARGETS } from "./seo-audit";
 
 test("Sam has a unique, host-exact, factual brief for every searchable public site", () => {
@@ -16,4 +16,15 @@ test("Sam has a unique, host-exact, factual brief for every searchable public si
   for (const target of SEO_SUPPLEMENTAL_AUDIT_TARGETS) {
     assert.equal(SAM_SITE_STRATEGY.some(site => site.brandId === target.brandId), false);
   }
+});
+
+test("brand context never silently defaults every request to Norwegian property SEO", () => {
+  for (const site of SAM_SITE_STRATEGY) {
+    assert.equal(seoBrandContext(site.brandId), site);
+    assert.equal(seoBrandContext(site.brandId)?.host, site.host);
+  }
+  assert.equal(seoBrandContext(undefined), null);
+  assert.equal(seoBrandContext("unknown-site"), null);
+  assert.equal(seoBrandContext(""), null);
+  assert.equal(seoBrandContext({ brandId: "zeneco" }), null);
 });
