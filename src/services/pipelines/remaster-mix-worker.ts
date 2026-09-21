@@ -216,7 +216,7 @@ async function recordMixInSongHistory(
       mixJobId: job.id,
       trackCount: tracks.length,
       zenEcoHomes: job.zenecohomes_enabled,
-      promotionBrand: job.input_snapshot?.visualPlan?.brand || (job.zenecohomes_enabled ? "zeneco" : "none"),
+      promotionBrand: job.input_snapshot?.visualPlan?.brand || job.input_snapshot?.visualPlan?.source || (job.zenecohomes_enabled ? "zeneco" : "none"),
       processedAt: new Date().toISOString(),
     },
   });
@@ -267,8 +267,9 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     await report(12, "selecting_visuals");
     // For legacy plans, keep the exact previous ZenEcoHomes/music behavior.
     // For modern plans, use only the chosen public content from ONE partner.
-    const brand: PromotionBrand = ['zeneco','art','books','none'].includes(String(job.input_snapshot?.visualPlan?.brand))
-      ? job.input_snapshot.visualPlan!.brand
+    const savedBrand = job.input_snapshot?.visualPlan?.brand || job.input_snapshot?.visualPlan?.source;
+    const brand: PromotionBrand = ['zeneco','art','books','none'].includes(String(savedBrand))
+      ? savedBrand as PromotionBrand
       : (job.zenecohomes_enabled ? 'zeneco' : 'none');
     let promotedItems: PromotionItem[] = [];
     const imageUrls = brand === 'zeneco'
@@ -291,7 +292,10 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
             // Fail closed if any individually selected work was unpublished
             // between the draft and the actual production.
             const requestedIds = brand === 'art' ? job.input_snapshot?.visualPlan?.artIds : job.input_snapshot?.visualPlan?.bookIds;
-            const eligibleIds = new Set(selected.map(item => item.id));
+            const eligibleIds = new Set(selectApprovedPromotionItems(catalog, {
+              ...job.input_snapshot?.visualPlan, brand,
+              randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+            }, 180).map(item => item.id));
             if ((requestedIds || []).some(id => !eligibleIds.has(id))) {
               throw new Error('A specifically selected '+brand+' item was unpublished or no longer matches the filters');
             }
