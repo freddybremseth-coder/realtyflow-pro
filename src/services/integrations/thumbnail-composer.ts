@@ -21,6 +21,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { ensureFFmpeg, ensureFont } from './ffmpeg-renderer';
+import { buildArtThumbnailPanel } from './art-thumbnail-panel';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -127,13 +128,39 @@ export async function composeThumbnail(
   options: ThumbnailComposeOptions
 ): Promise<Buffer> {
   const ffmpegPath = await ensureFFmpeg();
-  const fontPath = await ensureFont();
-  const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'thumb-'));
   const bgPath = path.join(tempDir, 'bg.png');
   const outPath = path.join(tempDir, 'thumb.png');
   await fs.writeFile(bgPath, options.backgroundBuffer);
+
+  if (options.artworkMode) {
+    // ffmpeg-static is built WITHOUT drawtext on Linux, including Vercel.
+    // Build a real bitmap label with Node and combine it using scale/pad and
+    // overlay only. The entire painting remains unobscured in the right pane.
+    const panelPath = path.join(tempDir, 'branded-panel.ppm');
+    await fs.writeFile(panelPath, buildArtThumbnailPanel(options.hook, options.titleText || options.subtext || '', options.accentColor || 'b7d5cb'));
+    try {
+      await runFFmpeg(ffmpegPath, [
+        '-i', bgPath, '-i', panelPath,
+        '-filter_complex',
+        '[0]scale=720:720:force_original_aspect_ratio=decrease,pad=720:720:(ow-iw)/2:(oh-ih)/2:color=0x101820,pad=1280:720:560:0:color=0x101820[painting];[1]format=rgb24[panel];[painting][panel]overlay=0:0,format=rgb24',
+        '-frames:v', '1', '-update', '1', '-y', outPath,
+      ]);
+      const output = await fs.readFile(outPath);
+      if (output.length <= 2 * 1024 * 1024) return output;
+      const jpgPath = path.join(tempDir, 'thumb.jpg');
+      await runFFmpeg(ffmpegPath, ['-i', outPath, '-q:v', '3', '-frames:v', '1', '-update', '1', '-y', jpgPath]);
+      const jpg = await fs.readFile(jpgPath);
+      if (jpg.length > 2 * 1024 * 1024) throw new Error('Branded artwork thumbnail exceeds 2 MB after JPEG compression');
+      return jpg;
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  const fontPath = await ensureFont();
+  const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
 
   const brand = (options.brand || 'RE-MASTER FREDDY').toUpperCase();
   const accent = options.accentColor || pickAccent(0);
