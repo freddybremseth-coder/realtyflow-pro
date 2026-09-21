@@ -104,10 +104,10 @@ export async function publishMissingShort(songId: string): Promise<{
         });
     const description = artMode
       ? ['🎧 Full song: ' + song.youtube_url, artCreditsDescription(songId),
-          '#Shorts #ReMasterFreddy #FreddyBremsethArt'].join('\\n\\n')
+          '#Shorts #ReMasterFreddy #FreddyBremsethArt'].join('\n\n')
       : ['🎧 Full song: ' + song.youtube_url,
           song.name + ' — Re-Master Freddy',
-          '#Shorts #ReMasterFreddy #EDM #Music'].join('\\n\\n');
+          '#Shorts #ReMasterFreddy #EDM #Music'].join('\n\n');
     const uploaded = await uploadVideo(short.videoBuffer, {
       title, description,
       tags: artMode ? ['Shorts','Re-Master Freddy','Freddy Bremseth Art',mode!,song.name]
