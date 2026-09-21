@@ -41,18 +41,18 @@ function readable(items:string[]|undefined,max=3){
 function safeVisuals(items:PromotionItem[]|undefined,brand:"art"|"books",max:number){
   const host=brand==="art"?"art.freddybremseth.com":"books.freddybremseth.com";
   const seen=new Set<string>();
-  const valid:(typeof items)= [];
+  const valid:PromotionItem[] = [];
   for(const item of items||[]){
     try{
       const url=new URL(item.detailUrl);
       if(url.protocol!=="https:"||url.hostname!==host||url.username||url.password||
         !url.pathname.startsWith(brand==="art"?"/verk/":"/book/")||seen.has(url.href))continue;
       seen.add(url.href);
-      valid!.push({...item,title:clean(item.title,90),detailUrl:url.href});
-      if(valid!.length>=max)break;
+      valid.push({...item,title:clean(item.title,90),detailUrl:url.href});
+      if(valid.length>=max)break;
     }catch{/* Reject unverified / off-site catalog links. */}
   }
-  return valid||[];
+  return valid;
 }
 export function buildRemasterPartnerComment(input:PartnerCommentInput):string {
   const brand=input.brand;
