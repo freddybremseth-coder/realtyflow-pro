@@ -141,6 +141,7 @@ export async function createSong(fields: {
   title: string;
   artist?: string;
   audioUrl: string;
+  genre?: 'meditation' | 'relaxing' | 'alternative' | 'dance';
 }): Promise<SongRecord> {
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -149,6 +150,7 @@ export async function createSong(fields: {
       name: fields.title,
       artist: REMASTER_CANONICAL_SONG_ARTIST,
       file_url: fields.audioUrl,
+      genre: fields.genre || null,
       status: 'ready',
       brand: REMASTER_CANONICAL_SONG_BRAND,
     })
