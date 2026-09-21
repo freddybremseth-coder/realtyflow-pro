@@ -103,3 +103,32 @@ test("actual ffmpeg-static renders portrait book-cover and art-preview mixes wit
     }
   } finally {await fs.rm(tmp,{recursive:true,force:true});}
 });
+
+test("historical corrupt PNG branding must not strand a 30-minute mix at 18 percent", { timeout:120_000 }, async (t) => {
+  assert.ok(ffmpegStatic,"Production FFmpeg binary required");
+  const exec=promisify(execFile);
+  const tmp=await fs.mkdtemp(path.join(os.tmpdir(),"remaster-corrupt-logo-regression-"));
+  const image=path.join(tmp,"clean.png");
+  const audio=path.join(tmp,"music.wav");
+  const corruptLogo=path.join(tmp,"presented-by-broken.png");
+  try {
+    await fs.writeFile(corruptLogo,Buffer.alloc(4096,0x33));
+    await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i",
+      "testsrc2=size=640x480:rate=1","-frames:v","1","-update","1","-y",image]);
+    await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i",
+      "sine=frequency=330:duration=16","-c:a","pcm_s16le","-y",audio]);
+    for(const brand of ["art","books","zeneco"] as const) {
+      const finished=await renderRemasterLongFormMixV4({
+        audioPath:audio,imageUrls:Array(12).fill(image),title:"Corrupt sponsor logo regression",
+        targetMinutes:16/60,sponsorIntervalMinutes:5,ctaText:"Explore our portfolio",
+        promotionBrand:brand,zenEcoHomesEnabled:brand==="zeneco",
+        logoUrl:corruptLogo,zenEcoLogoUrl:image,audioDurationSeconds:16,
+        abortSignal:t.signal,
+      });
+      try {
+        assert.ok(finished.durationSeconds>=15.5 && finished.durationSeconds<=16.5);
+        assert.ok((await fs.stat(finished.videoPath)).size>10_000);
+      } finally {await cleanupRemasterLongFormMixV4(finished);}
+    }
+  } finally {await fs.rm(tmp,{recursive:true,force:true});}
+});
