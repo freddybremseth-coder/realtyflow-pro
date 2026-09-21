@@ -178,13 +178,20 @@ async function downloadVisuals(urls: string[], workingDirectory: string, binary:
   return imagePaths;
 }
 
-async function downloadLogo(url: string | null | undefined, workingDirectory: string, filename: string) {
+async function downloadLogo(url: string | null | undefined, workingDirectory: string, filename: string, binary: string) {
   if (!url) return null;
   const target = path.join(workingDirectory, filename);
   try {
     await downloadImage(url, target);
     const stat = await fs.stat(target);
     if (stat.size <= 1024) throw new Error("Logo file is unexpectedly small.");
+    // File size / extension are not proof of a decodable PNG. Use the very
+    // same FFmpeg binary deployed in production and fail open for optional
+    // branding before entering the expensive 30-minute encoder process.
+    await execFileAsync(binary, [
+      "-hide_banner", "-v", "error", "-xerror", "-i", target,
+      "-frames:v", "1", "-f", "null", "-"
+    ], { timeout: 20_000, maxBuffer: 128 * 1024 });
     return target;
   } catch (error) {
     console.warn(`[RemasterMixVideoV4] ${filename} skipped:`, error instanceof Error ? error.message : error);
@@ -287,11 +294,17 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
       }), "utf8");
     }
 
+    // Historical production regression: a superficially downloadable PNG logo
+    // could fail FFmpeg decoding and strand a long-form mix at the 18% entry
+    // to rendering. Art and books already have permanent RE-MASTER FREDDY +
+    // partner credits in the ASS overlay, so use that verified text-only
+    // branding for those still-image mixes, never a second PNG input.
     const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
-    const logoPath = await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png");
+    const logoPath = artOrBooks ? null
+      : await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png", binary);
     const zenEcoLogoUrl = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || DEFAULT_ZENECO_LOGO_URL;
     const zenEcoLogoPath = sponsorBrand === 'zeneco'
-      ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png")
+      ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png", binary)
       : null;
 
     const logoInput = logoPath ? ["-framerate", "1", "-i", logoPath] : [];
@@ -301,6 +314,9 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
     const audioInputIndex = 1 + (logoPath ? 1 : 0) + (zenEcoLogoPath ? 1 : 0);
 
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix-v4.mp4");
+    // 18% means only that FFmpeg is about to start, NOT that 18 seconds of
+    // video were encoded. Expose a separate startup phase for incident triage.
+    await input.onProgress?.(18, "starting_ffmpeg_v4");
     await input.onProgress?.(18, "rendering_visuals_v4");
     await runFFmpeg(binary, [
       "-hide_banner",
