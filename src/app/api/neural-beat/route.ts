@@ -51,7 +51,9 @@ export async function GET(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const { title, artist, audioUrl } = await request.json();
+    const { title, artist, audioUrl, genre } = await request.json();
+    const allowedGenres = new Set(['meditation', 'relaxing', 'alternative', 'dance']);
+    const selectedGenre = typeof genre === 'string' && allowedGenres.has(genre) ? genre : undefined;
 
     if (!audioUrl) {
       return NextResponse.json({ error: 'audioUrl is required' }, { status: 400 });
@@ -65,6 +67,7 @@ export async function PUT(request: NextRequest) {
       title: title || 'Untitled',
       artist: artist || 'Re-Master Freddy',
       audioUrl,
+      genre: selectedGenre as 'meditation' | 'relaxing' | 'alternative' | 'dance' | undefined,
     });
 
     return NextResponse.json({
