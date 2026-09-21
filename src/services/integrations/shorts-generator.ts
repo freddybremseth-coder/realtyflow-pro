@@ -30,7 +30,7 @@ export interface ShortsOptions {
   videoBuffer: Buffer;
   /** Target duration in seconds. Clamped to 30-60. Default 35. */
   targetDuration?: number;
-  /** Burned caps-text hook, shown first 2.5 s. Empty string skips it. */
+  /** Bitmap hook in the permanent editorial text band (no FFmpeg drawtext). */
   hook?: string;
   /** Optional footer shown last 3 s (e.g. "FULL VERSION IN DESC 👇"). */
   endCard?: string;
@@ -241,7 +241,7 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       throw new Error(`Input video too short: ${duration.toFixed(1)}s (need ≥15s)`);
     }
 
-    const targetDur = Math.min(60, Math.max(30, options.targetDuration || 35));
+    const targetDur = Math.min(60, Math.max(15, options.targetDuration || 35));
     const loopFade = Math.min(1.0, Math.max(0.3, options.loopFade ?? 0.5));
     // ── 1. Decide start time ──
     let detectionMethod: ShortsResult['detectionMethod'] = 'fallback-start';
@@ -300,6 +300,10 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       clipPath,
     ]);
 
+    // Cross-fade is cosmetic; a branded, valid Short must still be returned
+    // if xfade is missing or fails on a particular FFmpeg build.
+    let outputPath = clipPath;
+    try {
     // ── 3. Loopable cross-fade ──
     // Split the clip into HEAD (0 → dur-fade) and TAIL (last `fade` s overlaps
     // with first `fade` s of the clip). Then xfade/acrossfade between HEAD
@@ -346,8 +350,13 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       finalPath,
     ]);
 
-    const videoBuffer = await fs.readFile(finalPath);
-    const finalDuration = await probeDuration(ffmpegPath, finalPath);
+      outputPath = finalPath;
+    } catch (fadeError) {
+      console.warn('[ShortsGen] Cross-fade unavailable; using branded clip:', fadeError instanceof Error ? fadeError.message : fadeError);
+    }
+
+    const videoBuffer = await fs.readFile(outputPath);
+    const finalDuration = await probeDuration(ffmpegPath, outputPath);
 
     console.log(
       `[ShortsGen] Short built: ${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB, ` +
@@ -405,7 +414,7 @@ export async function generateShortFromAudio(
   try {
     await fs.writeFile(audioPath, options.audioBuffer);
 
-    const targetDur = Math.min(60, Math.max(30, options.targetDuration || 35));
+    const targetDur = Math.min(60, Math.max(15, options.targetDuration || 35));
     // Clamp start so the clip never runs past the end of the song.
     const audioDur = await probeDuration(ffmpegPath, audioPath);
     const startTime = audioDur > 0
