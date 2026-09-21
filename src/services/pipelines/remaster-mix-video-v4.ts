@@ -24,6 +24,7 @@ export interface RemasterMixVideoV4Input {
   sponsorIntervalMinutes: number;
   ctaText?: string | null;
   zenEcoHomesEnabled: boolean;
+  promotionBrand?: 'zeneco' | 'art' | 'books' | 'none';
   logoUrl?: string | null;
   zenEcoLogoUrl?: string | null;
   audioDurationSeconds?: number | null;
@@ -193,9 +194,12 @@ export function buildConcatVisualFilterV4(
   zenEcoLogoInputIndex: number | null = null,
   sponsorIntervalMinutes = 10,
   durationSeconds = 30 * 60,
+  visualFit: 'cover' | 'contain' = 'cover',
 ) {
   const parts = [
-    `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
+    visualFit === 'contain'
+      ? `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x101820,setsar=1[slideshow]`
+      : `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
   ];
   if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
   else parts.push("[slideshow]null[texted]");
@@ -245,20 +249,22 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
     await fs.writeFile(concatPath, buildVisualConcatFile(imagePaths, segmentDuration), "utf8");
 
     let assPath: string | null = null;
-    if (input.zenEcoHomesEnabled) {
+    const sponsorBrand = input.promotionBrand || (input.zenEcoHomesEnabled ? 'zeneco' : 'none');
+    if (sponsorBrand !== 'none') {
       assPath = path.join(workingDirectory, "overlay.ass");
       await fs.writeFile(assPath, buildRemasterMixGlobalAssOverlay({
         durationSeconds: expectedDuration,
         sponsorIntervalMinutes: input.sponsorIntervalMinutes,
         ctaText: input.ctaText,
-        zenEcoHomesEnabled: true,
+        zenEcoHomesEnabled: sponsorBrand === 'zeneco',
+        promotionBrand: sponsorBrand,
       }), "utf8");
     }
 
     const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
     const logoPath = await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png");
     const zenEcoLogoUrl = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || DEFAULT_ZENECO_LOGO_URL;
-    const zenEcoLogoPath = input.zenEcoHomesEnabled
+    const zenEcoLogoPath = sponsorBrand === 'zeneco'
       ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png")
       : null;
 
@@ -286,6 +292,7 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
         zenEcoLogoInputIndex,
         input.sponsorIntervalMinutes,
         expectedDuration,
+        sponsorBrand === 'art' || sponsorBrand === 'books' ? 'contain' : 'cover',
       ),
       "-map", "[vout]",
       "-map", `${audioInputIndex}:a:0`,
