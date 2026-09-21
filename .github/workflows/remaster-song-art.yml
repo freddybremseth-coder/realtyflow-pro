@@ -5,7 +5,7 @@ on:
       - ".github/workflows/remaster-song-art.yml"
       - "src/services/pipelines/remaster-song-art*"
       - "src/services/pipelines/neural-beat-pipeline.ts"
-      - "src/services/integrations/thumbnail-composer.ts"
+      - "src/services/integrations/thumbnail-composer*"
       - "src/services/integrations/ffmpeg-renderer.ts"
       - "src/app/api/public/remaster-art-gallery/**"
       - "src/middleware.ts"
@@ -22,4 +22,4 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --silent
-      - run: npx tsx --test src/services/pipelines/remaster-song-art.test.ts
+      - run: npx tsx --test src/services/pipelines/remaster-song-art.test.ts src/services/integrations/thumbnail-composer.test.ts

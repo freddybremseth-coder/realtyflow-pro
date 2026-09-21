@@ -748,20 +748,25 @@ export class NeuralBeatPipeline {
             console.log(`[NeuralBeatPipeline] ${thumbnailVariantBuffers.length} thumbnail variants composed`);
           }
         }
-        // Fallback: raw AI image if composition produced nothing
-        if (!thumbnailBuffer && (artMode ? artImageBuffers : aiImageBuffers).length > 0) {
-          thumbnailBuffer = (artMode ? artImageBuffers : aiImageBuffers)[0];
+        // Generic videos may fall back to their raw AI image. The artwork
+        // lane MUST never publish an unbranded preview or a cropped painting.
+        if (!artMode && !thumbnailBuffer && aiImageBuffers.length > 0) {
+          thumbnailBuffer = aiImageBuffers[0];
           console.log('[NeuralBeatPipeline] Thumbnail composition empty — using raw AI image as fallback');
         }
       } catch (err) {
-        console.warn('[NeuralBeatPipeline] Thumbnail composition failed (non-fatal):', err instanceof Error ? err.message : err);
-        if (!thumbnailBuffer && (artMode ? artImageBuffers : aiImageBuffers).length > 0) {
-          thumbnailBuffer = (artMode ? artImageBuffers : aiImageBuffers)[0];
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn('[NeuralBeatPipeline] Thumbnail composition failed:', message);
+        if (artMode) {
+          // Preserve the actionable FFmpeg/variant error in the song record
+          // and the Admin SSE instead of replacing it with a generic message.
+          throw new Error(`Artwork thumbnail failed before YouTube upload: ${message}`);
         }
+        if (!thumbnailBuffer && aiImageBuffers.length > 0) thumbnailBuffer = aiImageBuffers[0];
       }
 
       if (artMode && thumbnailVariantBuffers.length === 0) {
-        throw new Error('Art thumbnail composition failed: refusing to publish an unbranded or cropped artwork thumbnail.');
+        throw new Error('Art thumbnail composer returned no branded image; YouTube upload was not attempted.');
       }
 
       // Step 7: Upload video buffer directly to YouTube (no intermediate download)
