@@ -81,3 +81,4 @@ jobs:
           src/services/pipelines/remaster-mix-video-v3.test.ts
           src/services/pipelines/remaster-mix-video-v4-branding.test.ts
           src/services/pipelines/remaster-mix-promotions.test.ts
+          src/services/pipelines/remaster-mix-art-thumbnail.test.ts
