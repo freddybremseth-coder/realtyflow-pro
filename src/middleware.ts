@@ -55,6 +55,7 @@ const PUBLIC_PATHS = [
 
 const REMASTER_PROXY_PATHS = [
   "/api/neural-beat",
+  "/api/neural-beat/art-short",
   "/api/neural-beat/analytics",
   "/api/neural-beat/autopilot-run",
   "/api/neural-beat/autopilot-settings",

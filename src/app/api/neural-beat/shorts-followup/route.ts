@@ -3,9 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import {
   detectTopSections,
   generateShortFromAudio,
+  generateArtShortFromAudio,
   buildShortsTitle,
 } from '@/services/integrations/shorts-generator';
 import { uploadVideo } from '@/services/integrations/youtube-client';
+import { publishMissingArtShort } from '@/services/pipelines/remaster-art-short-publish';
+import { loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from '@/services/pipelines/remaster-song-art';
 import {
   getGenreImages,
   getLatestLogoUrl,
@@ -71,6 +74,23 @@ export async function GET(request: NextRequest) {
 
     if (error) throw new Error(error.message);
 
+    // Repair the FIRST missing Short before scheduling any extras. This
+    // recovers a published artwork song even if its original in-process Short
+    // failed after the full YouTube upload.
+    const missingInitial = (songs || []).find((song) => {
+      const meta = song.ai_metadata || {};
+      return ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
+        && !meta.shortsUrl && meta.shortsStatus !== 'needs-reconciliation';
+    });
+    if (missingInitial) {
+      const recovery = await publishMissingArtShort(missingInitial.id);
+      return NextResponse.json({
+        success: true, songId: missingInitial.id,
+        shortUrl: recovery.shortUrl, status: recovery.status,
+        message: recovery.status === 'published' ? 'Missing art Short uploaded' : 'Art Short already claimed or published',
+      });
+    }
+
     const now = Date.now();
     const candidate = (songs || []).find((song) => {
       const meta = song.ai_metadata || {};
@@ -104,8 +124,11 @@ export async function GET(request: NextRequest) {
       ? Math.max(0, sections[0] - 3)
       : Math.max(0, usedStarts.length * 45); // spread heuristically if detection fails
 
-    // ── Fresh background images (different from the original video mix) ──
-    const genreImages = await getGenreImages(candidate.genre || 'dance', 4).catch(() => []);
+    const artMode: ArtVisualMode = ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
+      ? meta.artVisualMode as ArtVisualMode : null;
+    // ── Artwork follow-ups reuse ONLY published public gallery previews.
+    // Do not insert EDM/party imagery into a meditation artwork Short.
+    const genreImages = artMode ? [] : await getGenreImages(candidate.genre || 'dance', 4).catch(() => []);
     const imageBuffers: Buffer[] = [];
     for (const img of genreImages.slice(0, 4)) {
       try {
@@ -113,8 +136,9 @@ export async function GET(request: NextRequest) {
         if (res.ok) imageBuffers.push(Buffer.from(await res.arrayBuffer()));
       } catch { /* skip */ }
     }
-    // Fallback: reuse stored thumbnail variants as backgrounds
-    if (imageBuffers.length === 0) {
+    // Fallback thumbnails belong only to the generic EDM lane: full-width
+    // YouTube thumbnails are not valid uncropped source paintings.
+    if (!artMode && imageBuffers.length === 0) {
       for (const url of (meta.thumbnailVariantUrls || []).slice(0, 3)) {
         try {
           const res = await fetch(url);
@@ -122,7 +146,7 @@ export async function GET(request: NextRequest) {
         } catch { /* skip */ }
       }
     }
-    if (imageBuffers.length === 0) {
+    if (!artMode && imageBuffers.length === 0) {
       return NextResponse.json(
         { success: false, songId: candidate.id, error: 'No background images available' },
         { status: 200 },
@@ -145,37 +169,52 @@ export async function GET(request: NextRequest) {
       || candidate.mood?.toUpperCase()
       || 'NEW DROP';
 
-    const short = await generateShortFromAudio({
-      audioBuffer,
-      imageBuffers,
-      startTime: sectionStart,
-      targetDuration: 35,
-      hook,
-      endCard: 'FULL VERSION IN DESC 👇',
-      accentColor: uploads.length === 0 ? '66e5ff' : 'ffe066',
-      titleText: candidate.name,
-      logoBuffer,
-    });
+    const short = artMode
+      ? await (async () => {
+          const gallery = await loadSongArtGallery(candidate.id, artMode);
+          if (!gallery.length) throw new Error('No published public artwork for follow-up Short');
+          const art = gallery[(uploads.length + 1) % gallery.length];
+          const imageRes = await fetch(art.imageUrl);
+          if (!imageRes.ok) throw new Error('Published artwork preview HTTP ' + imageRes.status);
+          return generateArtShortFromAudio({
+            audioBuffer, artworkBuffer: Buffer.from(await imageRes.arrayBuffer()),
+            title: candidate.name, category: artMode, startTime: sectionStart, targetDuration: 35,
+          });
+        })()
+      : await generateShortFromAudio({
+          audioBuffer,
+          imageBuffers,
+          startTime: sectionStart,
+          targetDuration: 35,
+          hook,
+          endCard: 'FULL VERSION IN DESC 👇',
+          accentColor: uploads.length === 0 ? '66e5ff' : 'ffe066',
+          titleText: candidate.name,
+          logoBuffer,
+        });
 
-    const shortsTitle = buildShortsTitle({
-      title: candidate.name,
-      genre: candidate.genre || 'EDM',
-      mood: candidate.mood || 'energetic',
-      hook,
-    });
+    const shortsTitle = artMode
+      ? `${candidate.name} | ${artMode} art & music #Shorts`.slice(0, 100)
+      : buildShortsTitle({
+          title: candidate.name,
+          genre: candidate.genre || 'EDM',
+          mood: candidate.mood || 'energetic',
+          hook,
+        });
 
-    const description = [
-      `🎧 Hele sangen / Full version: ${candidate.youtube_url}`,
-      '',
-      `${candidate.name} — Re-Master Freddy`,
-      '',
-      '#Shorts #AIMusic #ReMasterFreddy #ChillBeats #StudyMusic #EDM',
-    ].join('\n');
+    const description = artMode
+      ? [`🎧 Full song: ${candidate.youtube_url}`, artCreditsDescription(candidate.id),
+          '#Shorts #ReMasterFreddy #FreddyBremsethArt'].join('\n\n')
+      : [`🎧 Hele sangen / Full version: ${candidate.youtube_url}`, '',
+          `${candidate.name} — Re-Master Freddy`, '',
+          '#Shorts #AIMusic #ReMasterFreddy #ChillBeats #StudyMusic #EDM'].join('\n');
 
     const uploadResult = await uploadVideo(short.videoBuffer, {
       title: shortsTitle,
       description,
-      tags: ['Shorts', 'YouTube Shorts', candidate.genre || 'EDM', candidate.mood || 'music', 'Re-Master Freddy', 'AI Music'],
+      tags: artMode
+        ? ['Shorts','Re-Master Freddy','Freddy Bremseth Art',artMode,candidate.name]
+        : ['Shorts', 'YouTube Shorts', candidate.genre || 'EDM', candidate.mood || 'music', 'Re-Master Freddy', 'AI Music'],
       categoryId: '10',
       privacyStatus: 'public',
       defaultAudioLanguage: 'zxx',

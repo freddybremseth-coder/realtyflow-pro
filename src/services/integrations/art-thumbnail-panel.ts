@@ -122,3 +122,42 @@ export function buildArtThumbnailPanel(category: string, title: string, accentHe
   const header = Buffer.from(`P6\n${WIDTH} ${HEIGHT}\n255\n`, 'ascii');
   return Buffer.concat([header, pixels]);
 }
+
+/**
+ * A 1080x1920 poster for artwork Shorts. The painting is composited ONLY into
+ * y=160..1480; text is restricted to the top and bottom editorial bands.
+ * This deliberately avoids both FFmpeg drawtext and destructive portrait crop.
+ */
+export function buildArtShortPoster(category: string, title: string): Buffer {
+  const width = 1080, height = 1920;
+  const pixels = Buffer.alloc(width * height * 3);
+  const bg: RGB = [16, 24, 32];
+  const white: RGB = [245, 246, 240];
+  const accent: RGB = [183, 213, 203];
+  const cyan: RGB = [8, 145, 178];
+  function rect(x: number, y: number, w: number, h: number, color: RGB) {
+    const x0=Math.max(0,x), x1=Math.min(width,x+w), y0=Math.max(0,y), y1=Math.min(height,y+h);
+    for(let row=y0;row<y1;row++) for(let col=x0;col<x1;col++){
+      const i=(row*width+col)*3;
+      pixels[i]=color[0];pixels[i+1]=color[1];pixels[i+2]=color[2];
+    }
+  }
+  rect(0,0,width,height,bg);
+  rect(32,45,470,66,cyan);
+  rect(32,1530,1016,3,accent);
+  rect(32,1875,1016,2,[65,79,86]);
+  function label(value: string, x: number, y: number, scale: number, color: RGB) {
+    for(const [n,char] of [...safeUpper(value)].entries()){
+      const glyph=GLYPHS[char];
+      if(!glyph) continue;
+      for(let gy=0;gy<7;gy++)for(let gx=0;gx<5;gx++){
+        if(glyph[gy][gx]==='1') rect(x+n*scale*6+gx*scale,y+gy*scale,scale,scale,color);
+      }
+    }
+  }
+  label('RE-MASTER FREDDY',46,57,4,white);
+  label(safeUpper(category).slice(0,12)||'MEDITATION',38,1575,10,white);
+  titleLines(title,24).forEach((line,i)=>label(line,40,1690+i*61,4,accent));
+  label('FREDDY BREMSETH ART',40,1840,4,white);
+  return Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`, 'ascii'), pixels]);
+}
