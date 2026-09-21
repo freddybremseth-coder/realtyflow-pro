@@ -89,6 +89,23 @@ function ffmpeg(binary:string,args:string[],timeoutMs=60_000):Promise<void>{
   });
 }
 function escPath(value:string){return value.replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'");}
+/** A 360x180 vinyl deck drawn without external PNG/SVG/fonts or extra URL inputs. */
+export function buildArtLoungeVinylPPM():Buffer{
+  const width=360,height=180;
+  const pixels=Buffer.alloc(width*height*3);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const radius=Math.hypot(x-180,y-169);
+    const groove=Math.floor(radius/4)%2===0;
+    const color=radius<166
+      ? radius<35?[177,103,40]
+        :radius<44?[24,52,74]
+        :groove?[19,36,51]:[8,17,26]
+      :[7,16,24];
+    const i=(y*width+x)*3;
+    pixels[i]=color[0];pixels[i+1]=color[1];pixels[i+2]=color[2];
+  }
+  return Buffer.concat([Buffer.from("P6\n"+width+" "+height+"\n255\n","ascii"),pixels]);
+}
 export interface ArtLoungeThumbnailInput {
   title:string;
   imageUrls:string[];
@@ -105,6 +122,8 @@ export async function renderArtLoungeThumbnail(input:ArtLoungeThumbnailInput):Pr
     await fetchPreview(sources[1]||sources[0],right);
     const assFile=path.join(dir,"title.ass");
     await fs.writeFile(assFile,artLoungeAss(input.title,input.footer));
+    const vinyl=path.join(dir,"vinyl.ppm");
+    await fs.writeFile(vinyl,buildArtLoungeVinylPPM());
     const output=path.join(dir,"art-lounge.jpg");
     // Paintings remain fully inside their gallery frames; the title is
     // composited on a dark central panel. A graphic vinyl deck anchors
@@ -117,12 +136,13 @@ export async function renderArtLoungeThumbnail(input:ArtLoungeThumbnailInput):Pr
       "[framed][artleft]overlay=24:111[one]",
       "[one][artright]overlay=978:111[two]",
       "[two]drawbox=x=324:y=151:w=631:h=385:color=0x07121d@0.92:t=fill,drawbox=x=340:y=167:w=598:h=350:color=0x1a354d@0.44:t=3,drawbox=x=0:y=614:w=1280:h=5:color=0xa9571c@0.86:t=fill[stage]",
-      `[stage]ass=filename='${escPath(assFile)}',format=yuv420p[vout]`,
+      "[stage][3:v]overlay=460:555[deck]",
+      `[deck]ass=filename='${escPath(assFile)}',format=yuv420p[vout]`,
     ].join(";");
     await ffmpeg(binary,[
       "-hide_banner","-loglevel","error",
       "-f","lavfi","-i",`color=c=${BG}:s=${W}x${H}:r=1`,
-      "-i",left,"-i",right,"-filter_complex",filter,"-map","[vout]",
+      "-i",left,"-i",right,"-i",vinyl,"-filter_complex",filter,"-map","[vout]",
       "-frames:v","1","-q:v","5","-update","1","-y",output,
     ]);
     const result=await fs.readFile(output);
