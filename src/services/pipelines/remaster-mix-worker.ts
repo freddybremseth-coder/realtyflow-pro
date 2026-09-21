@@ -31,8 +31,10 @@ import {
   verifyRemasterLongFormYouTubeConnection,
 } from "@/services/integrations/remaster-youtube-longform";
 
-const LEASE_SECONDS = 1800;
-const HEARTBEAT_MS = 5 * 60 * 1000;
+// Renew often while encoding still images; if the process is terminated by
+// infrastructure, the existing DB claim RPC can recover without a 30m blackout.
+const LEASE_SECONDS = 600;
+const HEARTBEAT_MS = 60 * 1000;
 
 interface MixSnapshotTrack {
   position: number;

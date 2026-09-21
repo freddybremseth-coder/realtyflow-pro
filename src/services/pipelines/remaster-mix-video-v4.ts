@@ -215,11 +215,12 @@ export function buildConcatVisualFilterV4(
   sponsorIntervalMinutes = 10,
   durationSeconds = 30 * 60,
   visualFit: 'cover' | 'contain' = 'cover',
+  frameRate = FPS,
 ) {
   const parts = [
     visualFit === 'contain'
-      ? `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x101820,setsar=1[slideshow]`
-      : `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
+      ? `[0:v]fps=${frameRate},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x101820,setsar=1[slideshow]`
+      : `[0:v]fps=${frameRate},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
   ];
   if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
   else parts.push("[slideshow]null[texted]");
@@ -254,6 +255,10 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
   try {
     await input.onProgress?.(1, "downloading_visuals_v4");
     const artOrBooks = input.promotionBrand === 'art' || input.promotionBrand === 'books';
+    // Original art and book covers are still frames, not moving footage. Two
+    // frames per second preserves 1920×1080 detail while cutting 30-minute
+    // FFmpeg work/encoder pressure by ~3× compared with 6 fps realty video.
+    const frameRate = artOrBooks ? 2 : FPS;
     const imagePaths = await downloadVisuals(input.imageUrls, workingDirectory, binary, artOrBooks);
     if (imagePaths.length < 12) throw new Error(`Only ${imagePaths.length} visuals downloaded; at least 12 are required.`);
 
@@ -307,6 +312,7 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
       ...logoInput,
       ...zenEcoLogoInput,
       "-i", input.audioPath,
+      "-filter_complex_threads", artOrBooks ? "2" : "4",
       "-filter_complex", buildConcatVisualFilterV4(
         assPath,
         logoInputIndex,
@@ -314,14 +320,16 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
         input.sponsorIntervalMinutes,
         expectedDuration,
         sponsorBrand === 'art' || sponsorBrand === 'books' ? 'contain' : 'cover',
+        frameRate,
       ),
       "-map", "[vout]",
       "-map", `${audioInputIndex}:a:0`,
       "-t", expectedDuration.toFixed(3),
       "-c:v", "libx264",
       "-preset", "ultrafast",
+      "-threads", artOrBooks ? "2" : "4",
       "-crf", "30",
-      "-r", String(FPS),
+      "-r", String(frameRate),
       "-c:a", "aac",
       "-b:a", "160k",
       "-movflags", "+faststart",
