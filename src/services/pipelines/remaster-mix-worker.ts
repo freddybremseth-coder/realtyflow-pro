@@ -3,7 +3,7 @@ import { getGenreImages, REMASTER_CANONICAL_SONG_BRAND } from "@/services/integr
 import {
   buildMixDescription,
   buildMixTags,
-  buildZenEcoHomesComment,
+  buildMixPartnerComment,
   recommendedVisualCount,
   type MixTrackPlan,
   type RemasterMixRegion,
@@ -16,6 +16,7 @@ import {
   type RemasterMixAudioResult,
 } from "./remaster-mix-audio";
 import { loadZenEcoHomesVisualUrls } from "./remaster-mix-visual-source";
+import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand, type PromotionSelection, type PromotionItem } from "./remaster-mix-promotions";
 import {
   cleanupRemasterLongFormMix,
   renderRemasterLongFormMix,
@@ -49,6 +50,7 @@ interface MixSnapshot {
   version?: string;
   exactAudioSeconds?: number | null;
   tracks?: MixSnapshotTrack[];
+  visualPlan?: PromotionSelection & {source?:string; visualTypes?: RemasterMixVisualType[]};
 }
 
 interface MixJobRow {
@@ -214,6 +216,7 @@ async function recordMixInSongHistory(
       mixJobId: job.id,
       trackCount: tracks.length,
       zenEcoHomes: job.zenecohomes_enabled,
+      promotionBrand: job.input_snapshot?.visualPlan?.brand || job.input_snapshot?.visualPlan?.source || (job.zenecohomes_enabled ? "zeneco" : "none"),
       processedAt: new Date().toISOString(),
     },
   });
@@ -262,13 +265,44 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     );
 
     await report(12, "selecting_visuals");
-    const imageUrls = job.zenecohomes_enabled
+    // For legacy plans, keep the exact previous ZenEcoHomes/music behavior.
+    // For modern plans, use only the chosen public content from ONE partner.
+    const savedBrand = job.input_snapshot?.visualPlan?.brand || job.input_snapshot?.visualPlan?.source;
+    const brand: PromotionBrand = ['zeneco','art','books','none'].includes(String(savedBrand))
+      ? savedBrand as PromotionBrand
+      : (job.zenecohomes_enabled ? 'zeneco' : 'none');
+    let promotedItems: PromotionItem[] = [];
+    const imageUrls = brand === 'zeneco'
       ? (await loadZenEcoHomesVisualUrls({
           targetMinutes: job.target_minutes,
           region: job.visual_region,
           visualType: job.visual_type,
+          visualTypes: job.input_snapshot?.visualPlan?.visualTypes,
+          randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+          strictSelection: job.input_snapshot?.version === "cross-brand-mix-v2",
         })).urls
-      : await loadFallbackVisualUrls(tracks, job.target_minutes);
+      : brand === 'art' || brand === 'books'
+        ? await (async () => {
+            const catalog = brand === 'art' ? await loadPublishedMixArt() : await loadPublishedMixBooks();
+            const selected = selectApprovedPromotionItems(catalog, {
+              ...job.input_snapshot?.visualPlan, brand,
+              randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+            }, recommendedVisualCount(job.target_minutes));
+            if (!selected.length) throw new Error('No published '+brand+' visuals match the saved mix selection');
+            // Fail closed if any individually selected work was unpublished
+            // between the draft and the actual production.
+            const requestedIds = brand === 'art' ? job.input_snapshot?.visualPlan?.artIds : job.input_snapshot?.visualPlan?.bookIds;
+            const eligibleIds = new Set(selectApprovedPromotionItems(catalog, {
+              ...job.input_snapshot?.visualPlan, brand,
+              randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+            }, 180).map(item => item.id));
+            if ((requestedIds || []).some(id => !eligibleIds.has(id))) {
+              throw new Error('A specifically selected '+brand+' item was unpublished or no longer matches the filters');
+            }
+            promotedItems = selected;
+            return selected.map(item => item.imageUrl);
+          })()
+        : await loadFallbackVisualUrls(tracks, job.target_minutes);
 
     const exactAudioSeconds = Number(job.input_snapshot?.exactAudioSeconds || 0) || null;
     video = await renderRemasterLongFormMix({
@@ -278,7 +312,8 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       targetMinutes: job.target_minutes,
       sponsorIntervalMinutes: job.sponsor_interval_minutes,
       ctaText: job.cta_text,
-      zenEcoHomesEnabled: job.zenecohomes_enabled,
+      zenEcoHomesEnabled: brand === 'zeneco',
+      promotionBrand: brand,
       audioDurationSeconds: exactAudioSeconds,
       onProgress: async (renderProgress, renderStep) => {
         await report(Math.max(15, Math.min(85, renderProgress)), renderStep);
@@ -296,10 +331,12 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       style: job.style,
       tracks: trackPlan,
       crossfadeSeconds: job.crossfade_seconds,
-      zenEcoHomesEnabled: job.zenecohomes_enabled,
+      zenEcoHomesEnabled: brand === 'zeneco',
+      promotionBrand: brand,
+      promotedItems,
       ctaText: job.cta_text,
     });
-    const tags = buildMixTags(job.style);
+    const tags = buildMixTags(job.style, brand);
 
     await report(87, "preparing_youtube_upload");
     const upload = await uploadRemasterLongFormFile({
@@ -327,7 +364,7 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     try {
       const playlist = await ensureRemasterLongFormPlaylist(
         job.playlist_name,
-        "Long-form Mediterranean deep-house mixes by Re-Master Freddy. Selected editions are presented with ZenEcoHomes Costa Blanca visuals.",
+        "Long-form Re-Master Freddy music mixes featuring music, Costa Blanca homes, published art or books by Freddy Bremseth.",
       );
       await addRemasterLongFormToPlaylist(upload.videoId, playlist.playlistId);
     } catch (error) {
@@ -337,9 +374,9 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       );
     }
 
-    if (job.zenecohomes_enabled) {
+    if (brand !== 'none') {
       try {
-        await createRemasterTopLevelComment(upload.videoId, buildZenEcoHomesComment());
+        await createRemasterTopLevelComment(upload.videoId, buildMixPartnerComment(brand));
       } catch (error) {
         console.warn(
           "[RemasterMixWorker] Standard ZenEcoHomes comment skipped:",

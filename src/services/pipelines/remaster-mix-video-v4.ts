@@ -24,6 +24,7 @@ export interface RemasterMixVideoV4Input {
   sponsorIntervalMinutes: number;
   ctaText?: string | null;
   zenEcoHomesEnabled: boolean;
+  promotionBrand?: 'zeneco' | 'art' | 'books' | 'none';
   logoUrl?: string | null;
   zenEcoLogoUrl?: string | null;
   audioDurationSeconds?: number | null;
@@ -140,18 +141,38 @@ async function downloadImage(url: string, destination: string) {
   await pipeline(Readable.fromWeb(response.body as any), fsSync.createWriteStream(destination));
 }
 
-async function downloadVisuals(urls: string[], workingDirectory: string) {
+async function downloadVisuals(urls: string[], workingDirectory: string, binary: string, normalizeFormat: boolean) {
   const imagePaths: string[] = [];
+  const converted = new Map<string, string>();
   for (let index = 0; index < urls.length; index += 1) {
-    const target = path.join(workingDirectory, `visual-${String(index).padStart(3, "0")}.jpg`);
+    // Reused book covers must not cause redundant 24x network requests.
+    const prior = converted.get(urls[index]);
+    if (prior) { imagePaths.push(prior); continue; }
+    const label = String(index).padStart(3, "0");
+    const target = path.join(workingDirectory, `visual-${label}.jpg`);
+    const source = normalizeFormat ? path.join(workingDirectory, `visual-${label}.source`) : target;
     try {
-      await downloadImage(urls[index], target);
-      const stat = await fs.stat(target);
-      if (stat.size > 1024) imagePaths.push(target);
-      else await fs.unlink(target).catch(() => undefined);
+      await downloadImage(urls[index], source);
+      const stat = await fs.stat(source);
+      if (stat.size <= 1024) throw new Error("Image unexpectedly small");
+      if (normalizeFormat) {
+        // The concat demuxer requires consistent codecs. Art is WebP and
+        // books mix JPEG/PNG; never feed these bytes disguised as .jpg.
+        await new Promise<void>((resolve,reject) => {
+          const child=spawn(binary,["-hide_banner","-loglevel","error","-i",source,
+            "-frames:v","1","-q:v","3","-y",target],{stdio:["ignore","ignore","pipe"]});
+          let stderr="";
+          child.stderr.on("data",chunk=>{stderr+=chunk.toString();});
+          child.once("error",reject);
+          child.once("close",code=>code===0?resolve():reject(new Error(stderr.slice(-500))));
+        });
+        await fs.unlink(source).catch(()=>undefined);
+      }
+      imagePaths.push(target);
+      converted.set(urls[index],target);
     } catch (error) {
       console.warn(`[RemasterMixVideoV4] Visual ${index + 1} skipped:`, error instanceof Error ? error.message : error);
-      await fs.unlink(target).catch(() => undefined);
+      await Promise.all([fs.unlink(target).catch(()=>undefined),fs.unlink(source).catch(()=>undefined)]);
     }
   }
   return imagePaths;
@@ -193,9 +214,12 @@ export function buildConcatVisualFilterV4(
   zenEcoLogoInputIndex: number | null = null,
   sponsorIntervalMinutes = 10,
   durationSeconds = 30 * 60,
+  visualFit: 'cover' | 'contain' = 'cover',
 ) {
   const parts = [
-    `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
+    visualFit === 'contain'
+      ? `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x101820,setsar=1[slideshow]`
+      : `[0:v]fps=${FPS},scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WIDTH}:${HEIGHT},setsar=1[slideshow]`,
   ];
   if (assPath) parts.push(`[slideshow]ass=filename='${escapeAssFilterPath(assPath)}'[texted]`);
   else parts.push("[slideshow]null[texted]");
@@ -229,7 +253,8 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
 
   try {
     await input.onProgress?.(1, "downloading_visuals_v4");
-    const imagePaths = await downloadVisuals(input.imageUrls, workingDirectory);
+    const artOrBooks = input.promotionBrand === 'art' || input.promotionBrand === 'books';
+    const imagePaths = await downloadVisuals(input.imageUrls, workingDirectory, binary, artOrBooks);
     if (imagePaths.length < 12) throw new Error(`Only ${imagePaths.length} visuals downloaded; at least 12 are required.`);
 
     const expectedDuration = input.audioDurationSeconds && input.audioDurationSeconds > 0
@@ -245,20 +270,22 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
     await fs.writeFile(concatPath, buildVisualConcatFile(imagePaths, segmentDuration), "utf8");
 
     let assPath: string | null = null;
-    if (input.zenEcoHomesEnabled) {
+    const sponsorBrand = input.promotionBrand || (input.zenEcoHomesEnabled ? 'zeneco' : 'none');
+    if (sponsorBrand !== 'none') {
       assPath = path.join(workingDirectory, "overlay.ass");
       await fs.writeFile(assPath, buildRemasterMixGlobalAssOverlay({
         durationSeconds: expectedDuration,
         sponsorIntervalMinutes: input.sponsorIntervalMinutes,
         ctaText: input.ctaText,
-        zenEcoHomesEnabled: true,
+        zenEcoHomesEnabled: sponsorBrand === 'zeneco',
+        promotionBrand: sponsorBrand,
       }), "utf8");
     }
 
     const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
     const logoPath = await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png");
     const zenEcoLogoUrl = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || DEFAULT_ZENECO_LOGO_URL;
-    const zenEcoLogoPath = input.zenEcoHomesEnabled
+    const zenEcoLogoPath = sponsorBrand === 'zeneco'
       ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png")
       : null;
 
@@ -286,6 +313,7 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
         zenEcoLogoInputIndex,
         input.sponsorIntervalMinutes,
         expectedDuration,
+        sponsorBrand === 'art' || sponsorBrand === 'books' ? 'contain' : 'cover',
       ),
       "-map", "[vout]",
       "-map", `${audioInputIndex}:a:0`,

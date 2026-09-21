@@ -188,15 +188,12 @@ const STYLE_TAGS: Record<RemasterMixStyle, string[]> = {
   "morning-chill": ["morning chill", "chill house", "deep house", "relaxing music", "Costa Blanca"],
 };
 
-export function buildMixTags(style: RemasterMixStyle) {
-  return [
-    ...STYLE_TAGS[style],
-    "Re-Master Freddy",
-    "Mediterranean house",
-    "chill music",
-    "ZenEcoHomes",
-    "Spain lifestyle",
-  ];
+export function buildMixTags(style: RemasterMixStyle, brand: 'zeneco' | 'art' | 'books' | 'none' = 'zeneco') {
+  const partner = brand === 'zeneco' ? ['ZenEcoHomes','Spain lifestyle']
+    : brand === 'art' ? ['Freddy Bremseth Art','art gallery','original artwork']
+    : brand === 'books' ? ['Freddy Bremseth Books','book covers','author','readers']
+    : [];
+  return [...STYLE_TAGS[style], 'Re-Master Freddy', 'chill music', ...partner];
 }
 
 export function buildMixDescription(input: {
@@ -206,9 +203,36 @@ export function buildMixDescription(input: {
   crossfadeSeconds: number;
   zenEcoHomesEnabled: boolean;
   ctaText?: string | null;
+  promotionBrand?: 'zeneco' | 'art' | 'books' | 'none';
+  promotedItems?: Array<{title:string;detailUrl:string}>;
 }) {
   const chapters = buildMixChapters(input.tracks, input.crossfadeSeconds);
-  const propertyBlock = input.zenEcoHomesEnabled
+  const brand = input.promotionBrand || (input.zenEcoHomesEnabled ? 'zeneco' : 'none');
+  const items = (input.promotedItems || [])
+    .filter(item => item.detailUrl.startsWith(
+      brand === 'art' ? 'https://art.freddybremseth.com/'
+        : brand === 'books' ? 'https://books.freddybremseth.com/' : 'https://zenecohomes.com/',
+    ))
+    .filter((item,i,all)=> all.findIndex(other=>other.detailUrl===item.detailUrl)===i)
+    .slice(0,20);
+  const partnerBlock = brand === 'art'
+    ? [
+        '🎨 Original art by Freddy Bremseth — view featured works:',
+        'https://art.freddybremseth.com/',
+        ...items.map(item => item.title + ' — ' + item.detailUrl),
+        input.ctaText?.trim() || 'Explore original art from Freddy Bremseth.',
+        'Presented with Freddy Bremseth Art',
+      ].join("\n")
+    : brand === 'books'
+    ? [
+        '📚 Discover Freddy Bremseth books and featured covers:',
+        'https://books.freddybremseth.com/',
+        ...items.map(item => item.title + ' — ' + item.detailUrl),
+        input.ctaText?.trim() || 'Find your next read at Freddy Bremseth Books.',
+        'Presented with Freddy Bremseth Books',
+      ].join("\n")
+    : '';
+  const propertyBlock = brand === 'zeneco'
     ? [
         "🏡 Love the Mediterranean homes and lifestyle featured in this mix?",
         "Explore Costa Blanca properties: https://zenecohomes.com/",
@@ -219,18 +243,23 @@ export function buildMixDescription(input: {
     : "";
 
   return [
-    propertyBlock,
-    propertyBlock ? "" : null,
+    partnerBlock || propertyBlock,
+    (partnerBlock || propertyBlock) ? "" : null,
     `🎧 ${input.title}`,
     "Music by Re-Master Freddy.",
-    "A long-form Mediterranean deep-house mix for relaxing, working, driving, poolside evenings and sunset views.",
+    brand === 'zeneco' ? "A long-form Mediterranean music mix for relaxing and enjoying Costa Blanca homes." :
+      brand === 'art' ? "A long-form Re-Master Freddy music mix featuring published artwork by Freddy Bremseth." :
+      brand === 'books' ? "A long-form Re-Master Freddy music mix featuring published books by Freddy Bremseth." :
+      "A long-form music mix by Re-Master Freddy.",
     "",
     chapters ? "TRACKLIST / CHAPTERS" : null,
     chapters || null,
     "",
     "More music: https://remaster.freddybremseth.com/",
     "",
-    "#DeepHouse #Mediterranean #CostaBlanca #RemasterFreddy",
+    brand === "art" ? "#RemasterFreddy #FreddyBremsethArt #ArtAndMusic" :
+      brand === "books" ? "#RemasterFreddy #FreddyBremsethBooks #BooksAndMusic" :
+      "#DeepHouse #Mediterranean #CostaBlanca #RemasterFreddy",
   ]
     .filter((line): line is string => line !== null)
     .join("\n")
@@ -246,4 +275,16 @@ export function buildZenEcoHomesComment() {
     "🎧 Music: Re-Master Freddy",
     "https://remaster.freddybremseth.com/",
   ].join("\n");
+}
+
+export function buildMixPartnerComment(brand: 'zeneco' | 'art' | 'books' | 'none') {
+  if (brand === 'zeneco') return buildZenEcoHomesComment();
+  const url = brand === 'art' ? 'https://art.freddybremseth.com/'
+    : brand === 'books' ? 'https://books.freddybremseth.com/' : '';
+  if (!url) return '';
+  return [
+    brand === 'art' ? '🎨 Explore the original artworks in this Re-Master Freddy music mix:'
+      : '📚 Discover the books featured in this Re-Master Freddy music mix:',
+    url,'','🎧 Re-Master Freddy music: https://remaster.freddybremseth.com/',
+  ].join('\n');
 }
