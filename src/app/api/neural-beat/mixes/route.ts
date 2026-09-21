@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { REMASTER_SONG_READ_BRANDS } from "@/services/integrations/airtable-client";
+import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand } from "@/services/pipelines/remaster-mix-promotions";
+import { recommendedVisualCount } from "@/services/pipelines/remaster-mix-planner";
 
 const styleSchema = z.enum([
   "mediterranean-sunset",
@@ -30,6 +32,13 @@ const createMixSchema = z
     crossfadeSeconds: z.number().int().min(0).max(20),
     playlist: z.string().trim().min(3).max(180),
     zenEcoHomesEnabled: z.boolean().default(true),
+    promotionBrand: z.enum(["zeneco","art","books","none"]).optional(),
+    artStyles: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
+    artCollections: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
+    artIds: z.array(z.string().trim().min(1).max(130)).max(180).default([]),
+    bookSeries: z.array(z.string().trim().min(1).max(100)).max(40).default([]),
+    bookLanguages: z.array(z.string().trim().min(1).max(12)).max(12).default([]),
+    bookIds: z.array(z.string().uuid()).max(150).default([]),
     visualRegion: regionSchema.default("any"),
     visualType: visualTypeSchema.default("mixed"),
     sponsorIntervalMinutes: z.number().int().min(5).max(60).default(10),
@@ -174,6 +183,12 @@ export async function POST(request: NextRequest) {
   }
 
   const input = parsed.data;
+  const promotionBrand: PromotionBrand = input.promotionBrand || (input.zenEcoHomesEnabled ? "zeneco" : "none");
+  const selection = {
+    brand: promotionBrand, randomSeed: crypto.randomUUID(),
+    artStyles: input.artStyles, artCollections: input.artCollections, artIds: input.artIds,
+    bookSeries: input.bookSeries, bookLanguages: input.bookLanguages, bookIds: input.bookIds,
+  };
   const uniqueTrackIds = [...new Set(input.selectedSongIds)];
   if (uniqueTrackIds.length !== input.selectedSongIds.length) {
     return NextResponse.json(
@@ -220,6 +235,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (promotionBrand === "art" || promotionBrand === "books") {
+      const catalog = promotionBrand === "art" ? await loadPublishedMixArt() : await loadPublishedMixBooks();
+      const eligible = selectApprovedPromotionItems(catalog, selection, recommendedVisualCount(input.targetMinutes));
+      if (!eligible.length) {
+        return NextResponse.json({
+          error: promotionBrand === "art"
+            ? "No published artwork previews match the chosen styles, collections or paintings."
+            : "No published book covers match the chosen series, language or titles.",
+          code: "MIX_PROMOTION_SELECTION_EMPTY",
+        }, {status:400});
+      }
+      const requiredIds = promotionBrand === "art" ? input.artIds : input.bookIds;
+      const catalogIds = new Set(catalog.map(item => item.id));
+      if (requiredIds.some(id => !catalogIds.has(id))) {
+        return NextResponse.json({error:"One or more selected promotional items are not published or lack a public preview."},{status:400});
+      }
+    }
+
     const knownDuration = orderedSongs.every((song) => Number(song.duration) > 0);
     const exactAudioSeconds = knownDuration
       ? orderedSongs.reduce((sum, song) => sum + Number(song.duration || 0), 0) -
@@ -234,14 +267,14 @@ export async function POST(request: NextRequest) {
       target_minutes: input.targetMinutes,
       crossfade_seconds: input.crossfadeSeconds,
       playlist_name: input.playlist,
-      zenecohomes_enabled: input.zenEcoHomesEnabled,
+      zenecohomes_enabled: promotionBrand === "zeneco",
       visual_region: input.visualRegion,
       visual_type: input.visualType,
       sponsor_interval_minutes: input.sponsorIntervalMinutes,
       cta_text: input.ctaText || null,
       track_ids: input.selectedSongIds,
       input_snapshot: {
-        version: "mediterranean-mix-v1",
+        version: "cross-brand-mix-v2",
         createdAt: now,
         exactAudioSeconds,
         tracks: orderedSongs.map((song, index) => ({
@@ -256,9 +289,15 @@ export async function POST(request: NextRequest) {
           durationSeconds: song.duration,
         })),
         visualPlan: {
-          source: input.zenEcoHomesEnabled
-            ? "zenecohomes-properties"
-            : "remaster-image-bank",
+          source: promotionBrand,
+          promotionBrand,
+          randomSeed: selection.randomSeed,
+          artStyles: input.artStyles,
+          artCollections: input.artCollections,
+          artIds: input.artIds,
+          bookSeries: input.bookSeries,
+          bookLanguages: input.bookLanguages,
+          bookIds: input.bookIds,
           region: input.visualRegion,
           type: input.visualType,
           sponsorIntervalMinutes: input.sponsorIntervalMinutes,
