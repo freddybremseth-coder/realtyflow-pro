@@ -760,6 +760,10 @@ export class NeuralBeatPipeline {
         }
       }
 
+      if (artMode && thumbnailVariantBuffers.length === 0) {
+        throw new Error('Art thumbnail composition failed: refusing to publish an unbranded or cropped artwork thumbnail.');
+      }
+
       // Step 7: Upload video buffer directly to YouTube (no intermediate download)
       currentStepIndex = 6;
       stepRunning(steps[currentStepIndex]);
