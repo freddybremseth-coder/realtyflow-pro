@@ -88,9 +88,9 @@ DINE KJERNEKOMPETANSER:
 - Søkeordanalyse for Norge og de faktiske språkene og geografiske markedene til hvert merke
 - On-page SEO-optimalisering (titler, meta, struktur, intern lenking)
 - Konkurrentanalyse og gap-analyse for organisk synlighet
-- Lenkebyggingsstrategi tilpasset norske nettsteder og domener
+- Etisk intern- og eksternlenking tilpasset hvert merkets dokumenterte språk, innhold og marked
 - Teknisk SEO (Core Web Vitals, strukturert data, crawlability)
-- Lokal SEO for norske virksomheter (Google Business Profile, lokale kataloger)
+- Lokal SEO der et verifisert virksomhetssted og relevant lokal søkeintensjon faktisk finnes
 - Content SEO - optimalisering av innhold for både søkemotorer og brukere
 - AEO/GEO - direkte svar på brukerens spørsmål, tydelig fakta- og kildegrunnlag, intern lenking, forfatteransvar, korrekt canonical/hreflang og crawlbar HTML.
 - RealtyFlow portfolio-data: Bruk alltid verifiserte målinger med tidsperiode og brand-id, og skill måledata fra ideer og AI-estimater.
@@ -101,20 +101,19 @@ DINE KJERNEKOMPETANSER:
 SEO-PRINSIPPER:
 1. Kvalitetsinnhold som svarer på brukerens intensjon kommer alltid først.
 2. E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) er grunnlaget.
-3. Norsk søkeadferd skiller seg fra engelskspråklige markeder.
-4. Google.no og norske søkevaner krever lokal tilpasning.
-5. Mobiloptimalisering er kritisk - majoriteten søker fra mobil.
-6. Strukturert data (schema.org) gir konkurransefortrinn i SERP.
-7. Intern lenkestruktur er ofte undervurdert men svært effektivt.
-8. Sidetitler og metabeskrivelser skal optimaliseres for CTR i SERP.
+3. Fastslå sidens faktiske språk, geografiske målgruppe, søkeintensjon og merkets virksomhet før analyse. Ikke anta norsk, eiendom, Google.no eller Finn.no for kunst, bøker, musikk, oliven eller programvare.
+4. Skill uttrykkelig mellom faktisk målt Google-synlighet og forslag/hypoteser. Verifiser søkevolum, vanskelighetsgrad, konkurrenters rangering og lenkeprofil før du oppgir verdier.
+5. Mobilbruk, ytelse, strukturert data og internlenker må undersøkes på den aktuelle offentlige siden før avvik påstås.
+6. Feil canonical, hreflang eller sitemap må knyttes til eksakt offentlig URL og datert HTML-observasjon, ikke gjettes ut fra teknologivalg.
+7. Foreslå relevante titler og metabeskrivelser på eksisterende sides eget språk, og oppgi en testbar hypotese i stedet for å garantere CTR-effekt.
+8. Ingen automatisk utsendelse, kjøp av lenker, endring av juridiske eller kommersielle påstander, eller publisering uten særskilt, verifisert skrivekapasitet.
 
-NORSKE SEO-HENSYN:
-- Bruk norske søkeord, ikke engelske oversettelser.
-- Forstå forskjellen mellom bokmål og nynorsk i søk.
-- Norske brukere søker annerledes enn engelskspråklige.
-- Lokale søk er svært viktige (bynavn, kommuner, regioner).
-- Finn.no dominerer mange vertikaler - ta hensyn til dette.
-- Norske lenkekilder (nettaviser, bransjesider, kataloger).
+SPRÅK OG MARKED PER MERKE:
+- Eiendom: skill norske boligkjøpere fra andre språkgrupper og fra spanske lokale søk; verifiser sidens aktuelle språk og tilgjengelige boliger.
+- Bøker: skill originalverk, faktiske utgaver og navigasjon på norsk, engelsk og spansk; ikke oppfinn oversettelser eller bokutgaver.
+- Kunst: bruk verkets faktiske engelske tittel og metadata, ikke automatisk norsk oversettelse.
+- Musikk: hold web-søkemålinger adskilt fra YouTube/Spotify-statistikk.
+- Oliven og programvare: verifiser produktpåstander og lokalisering før forslag.
 
 ${CLEAN_OUTPUT_RULES}`;
   }
@@ -276,26 +275,32 @@ Gi anbefalinger for:
   // ─── Task-specific methods ──────────────────────────────────────────
 
   private async keywordResearch(params: Record<string, unknown>): Promise<string> {
-    const topic = (params.topic as string) ?? "eiendomsmegling";
-    const location = (params.location as string) ?? "Norge";
+    const site = SAM_SITE_STRATEGY.find(item => item.brandId === params.brand_id);
+    const topic = typeof params.topic === "string" && params.topic.trim()
+      ? params.topic.trim() : site?.intent || "ikke oppgitt";
+    const location = typeof params.location === "string" && params.location.trim()
+      ? params.location.trim() : "ikke oppgitt – ikke anta Norge eller Spania";
     const intent = (params.intent as string) ?? "alle";
-    const count = (params.count as number) ?? 20;
+    const count = typeof params.count === "number" && Number.isFinite(params.count)
+      ? Math.max(1, Math.min(30, Math.floor(params.count))) : 20;
 
     const prompt = `Utfør søkeordanalyse for følgende:
 
+Nettsted: ${site ? site.host + " (" + site.brandId + ")" : "ikke valgt"}
+Dokumentert hensyn: ${site?.qualityGate || "Avklar faktisk nettsted, målmarked og sidespråk før stedsspesifikke råd."}
 Tema: ${topic}
 Lokasjon: ${location}
 Søkeintensjonsfilter: ${intent}
 Antall søkeord ønsket: ${count}
 
-Dette er forslag til mulige søkefraser, ikke søkeord målt i Search Console og ikke verifisert søkevolum. Ikke oppgi anslåtte søkevolum, søkeordvanskelighet, SERP-rangeringer eller sesongtopper uten faktisk oppgitt/verifisert datakilde.
+Dette er mulige søkefraser basert på oppgitt emne og verifisert nettstedkontekst, IKKE målte søk eller søkevolum. Lag bare stedsspesifikke og språklige forslag når riktig nettsted, marked og sidespråk er kjent. Ikke oppgi søkevolum, søkeordvanskelighet, SERP-rangeringer, sesongtopper eller målt opportunity score uten faktisk verifisert kilde. Marker ukjent eksplisitt.
 Gi søkefrase- og intensjonshypoteser som JSON:
 {
   "primary_keywords": [
     {
       "keyword": "...",
       "search_volume_estimate": "utilgjengelig uten verifisert ekstern volumkilde",
-      "difficulty": "low|medium|high",
+      "difficulty": "ikke målt uten verifisert kilde",
       "intent": "informational|navigational|transactional|commercial",
       "recommended_content_type": "bloggpost|landingsside|produktside|guide"
     }
@@ -305,17 +310,11 @@ Gi søkefrase- og intensjonshypoteser som JSON:
       "keyword": "...",
       "parent_keyword": "...",
       "intent": "...",
-      "opportunity_score": "høy|middels|lav"
+      "opportunity_score": "ikke målt; kvalitativ hypotese kan forklares separat"
     }
   ],
   "question_keywords": ["Spørsmål folk stiller om temaet"],
-  "seasonal_trends": [
-    {
-      "keyword": "...",
-      "peak_months": ["..."],
-      "strategy": "..."
-    }
-  ],
+  "seasonal_trends": [],
   "content_clusters": [
     {
       "pillar_topic": "...",
@@ -370,50 +369,53 @@ Gi optimalisering som JSON:
   }
 
   private async analyzeCompetition(params: Record<string, unknown>): Promise<string> {
+    const site = SAM_SITE_STRATEGY.find(item => item.brandId === params.brand_id);
     const competitors = params.competitors
       ? JSON.stringify(params.competitors)
       : "Ikke spesifisert";
     const targetKeywords = params.target_keywords
       ? JSON.stringify(params.target_keywords)
       : "Ikke spesifisert";
-    const industry = (params.industry as string) ?? "eiendom";
+    const industry = (params.industry as string) ?? site?.intent ?? "ikke oppgitt";
 
     const prompt = `Utfør en SEO-konkurrentanalyse:
 
+Nettsted: ${site?.host || "ikke valgt"}.
 Konkurrenter: ${competitors}
 Mål-søkeord: ${targetKeywords}
 Bransje: ${industry}
 
+Ingen koblet sanntidskilde for konkurrenters faktiske plasseringer, søk, lenkeprofiler eller autoritet er oppgitt her. Ikke presenter rangeringer, "top keywords", SERP-observasjoner, estimert autoritet eller konkurrenters dokumenterte hull som fakta uten eksakt datert kilde. Dersom kildene mangler, gi bare hypoteser som skal undersøkes og beskriv måten de kan verifiseres på. Ikke finn på konkurrentnavn, lenkekilder eller tall.
 Gi en analyse som JSON:
 {
   "competitor_analysis": [
     {
       "competitor": "Konkurrentnavn",
-      "estimated_authority": "low|medium|high",
-      "top_keywords": ["Søkeord de rangerer for"],
-      "content_gaps": ["Innhold vi kan lage som de mangler"],
-      "backlink_strategy": "Beskrivelse av deres lenkeprofil",
-      "vulnerabilities": ["Svakheter vi kan utnytte"]
+      "verification_status": "ikke verifisert uten oppgitt datert kilde",
+      "measured_top_keywords": [],
+      "observed_content_gaps": [],
+      "verified_backlink_profile": "utilgjengelig uten verifiserte data",
+      "questions_to_verify": ["Konkrete spørsmål om innhold og faktiske søkeresultater"]
     }
   ],
   "opportunities": [
     {
       "keyword": "...",
       "difficulty": "...",
-      "current_top_result_weakness": "...",
+      "current_top_result_weakness": "ikke observert uten dokumentert SERP-kilde",
       "our_angle": "..."
     }
   ],
   "content_gap_analysis": {
-    "topics_competitors_cover": ["..."],
-    "topics_nobody_covers_well": ["..."],
-    "our_unique_angles": ["..."]
+    "verified_competitor_topics": [],
+    "unverified_content_hypotheses": ["..."],
+    "our_original_angles": ["..."]
   },
   "action_plan": [
     {
       "priority": 1,
       "action": "...",
-      "expected_impact": "...",
+      "expected_impact": "hypotese, ikke målt effekt",
       "timeframe": "..."
     }
   ]
@@ -423,10 +425,12 @@ Gi en analyse som JSON:
   }
 
   private async createLinkStrategy(params: Record<string, unknown>): Promise<string> {
-    const domain = (params.domain as string) ?? "";
-    const industry = (params.industry as string) ?? "eiendom";
-    const budget = (params.budget as string) ?? "middels";
-    const currentLinks = (params.current_backlinks as number) ?? 0;
+    const site = SAM_SITE_STRATEGY.find(item => item.brandId === params.brand_id);
+    const domain = (params.domain as string) ?? site?.host ?? "";
+    const industry = (params.industry as string) ?? site?.intent ?? "ikke oppgitt";
+    const budget = (params.budget as string) ?? "ikke oppgitt";
+    const currentLinks = typeof params.current_backlinks === "number"
+      ? params.current_backlinks : "ikke målt";
 
     const prompt = `Lag en lenkebyggingsstrategi:
 
@@ -435,6 +439,7 @@ Bransje: ${industry}
 Budsjett: ${budget}
 Nåværende antall backlinks: ${currentLinks}
 
+Kun dokumenterte, relevante innholds- og partnerlenker; ikke påstå at en navngitt kilde vil lenke, eller at lenker gir bestemt rangerings- eller autoritetseffekt. Forslag er ikke tillatelse til å sende e-post, publisere innlegg, kjøpe lenker eller kontakte tredjeparter.
 Gi en strategi som JSON:
 {
   "strategies": [
@@ -444,14 +449,13 @@ Gi en strategi som JSON:
       "target_sites": ["Nettsteder å kontakte"],
       "outreach_template": "Mal for henvendelse",
       "estimated_difficulty": "low|medium|high",
-      "expected_domain_authority_impact": "Forventet effekt"
+      "expected_domain_authority_impact": "ukjent uten måling; ingen garantert effekt"
     }
   ],
-  "norwegian_link_sources": {
-    "news_media": ["Relevante norske nettaviser"],
-    "industry_directories": ["Bransjespesifikke kataloger"],
-    "local_directories": ["Lokale kataloger og oppføringer"],
-    "partnership_opportunities": ["Samarbeidspartnere for gjesteblogging osv."]
+  "potential_link_sources": {
+    "verified_relevant_sources": [],
+    "sources_to_research": ["Kildetyper relevant for angitt nettsted, marked og språk"],
+    "partnership_opportunities": ["Kun mulige, ikke bekreftede samarbeid"]
   },
   "content_for_links": [
     {
@@ -488,7 +492,8 @@ Krav:
 - Maks 155 tegn
 - Inkluder mål-søkeordet naturlig
 - Inkluder en call-to-action
-- Skriv på norsk
+- Skriv på det dokumenterte språket i sideinnholdet. Ikke oversett en engelsk, spansk eller annen side til norsk automatisk.
+- Bruk bare påstander som faktisk støttes av sidens innhold; ingen oppdiktede produkter, priser, datoer eller garantier.
 
 Returner KUN metabeskrivelsen, ingen annen tekst.`;
 
