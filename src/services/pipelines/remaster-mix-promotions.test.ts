@@ -114,7 +114,7 @@ test("historical corrupt PNG branding must not strand a 30-minute mix at 18 perc
   try {
     await fs.writeFile(corruptLogo,Buffer.alloc(4096,0x33));
     await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i",
-      "color=c=0x415b89:s=320x180:r=1","-frames:v","1","-update","1","-y",image]);
+      "testsrc2=size=640x480:rate=1","-frames:v","1","-update","1","-y",image]);
     await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i",
       "sine=frequency=330:duration=16","-c:a","pcm_s16le","-y",audio]);
     for(const brand of ["art","books","zeneco"] as const) {
