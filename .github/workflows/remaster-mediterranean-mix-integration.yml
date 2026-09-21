@@ -10,6 +10,8 @@ on:
       - "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql"
       - "supabase/migrations/20260905204500_remaster_mix_production_guard.sql"
       - "src/services/pipelines/remaster-mix-*.ts"
+      - "src/services/pipelines/remaster-mix-promotions.ts"
+      - "src/services/pipelines/remaster-mix-promotions.test.ts"
       - "src/services/integrations/remaster-youtube-longform.ts"
       - "src/workflows/remaster-mix-production.ts"
       - "src/app/api/neural-beat/mixes/**"
@@ -77,3 +79,5 @@ jobs:
           src/services/pipelines/remaster-mix-audio.test.ts
           src/services/pipelines/remaster-mix-video.test.ts
           src/services/pipelines/remaster-mix-video-v3.test.ts
+          src/services/pipelines/remaster-mix-video-v4-branding.test.ts
+          src/services/pipelines/remaster-mix-promotions.test.ts
