@@ -6,6 +6,12 @@ on:
       - "src/services/pipelines/remaster-song-art*"
       - "src/services/pipelines/neural-beat-pipeline.ts"
       - "src/services/integrations/thumbnail-composer*"
+      - "src/services/integrations/art-thumbnail-panel.ts"
+      - "src/services/integrations/art-shorts.test.ts"
+      - "src/services/integrations/shorts-generator.ts"
+      - "src/services/pipelines/remaster-art-short-publish.ts"
+      - "src/app/api/neural-beat/art-short/**"
+      - "src/app/api/neural-beat/shorts-followup/**"
       - "src/services/integrations/ffmpeg-renderer.ts"
       - "src/app/api/public/remaster-art-gallery/**"
       - "src/middleware.ts"
@@ -22,4 +28,4 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --silent
-      - run: npx tsx --test src/services/pipelines/remaster-song-art.test.ts src/services/integrations/thumbnail-composer.test.ts
+      - run: npx tsx --test src/services/pipelines/remaster-song-art.test.ts src/services/integrations/thumbnail-composer.test.ts src/services/integrations/art-shorts.test.ts

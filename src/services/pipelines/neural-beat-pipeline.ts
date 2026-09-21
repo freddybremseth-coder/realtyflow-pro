@@ -3,7 +3,7 @@ import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type 
 import { analyzeSong, generateYouTubeSEO, generateMusicImageSet } from '@/services/integrations/gemini-client';
 import { renderVideo, cleanupRender, isAvailable as isFFmpegAvailable } from '@/services/integrations/ffmpeg-renderer';
 import { composeThumbnailVariants } from '@/services/integrations/thumbnail-composer';
-import { generateShort, buildShortsTitle } from '@/services/integrations/shorts-generator';
+import { generateShort, generateArtShortFromAudio, buildShortsTitle } from '@/services/integrations/shorts-generator';
 import { buildChapters, injectChaptersIntoDescription } from '@/services/integrations/chapter-builder';
 import { getTopTrendingTags } from '@/services/integrations/trending-tags-store';
 import { pickBestPublishTime } from '@/services/integrations/publish-time-picker';
@@ -979,23 +979,46 @@ export class NeuralBeatPipeline {
           const shortsHook = artMode ? artMode.toUpperCase() : (firstVariant?.hook || songAnalysis?.mood?.toUpperCase() || 'NEW DROP');
           const shortsEndCard = artMode ? 'FULL SONG & ART IN DESC' : 'FULL VERSION IN DESC 👇';
 
-          const shortResult = await generateShort({
-            videoBuffer,
-            targetDuration: 35,
-            hook: shortsHook,
-            endCard: shortsEndCard,
-            accentColor: 'ff3366',
-            loopFade: 0.5,
-            titleText: songRecord.title,
-            logoBuffer,
-          });
+          // The standard Shorts renderer depends on FFmpeg drawtext and
+          // crop=9:16. Both are unsuitable for the fine-art lane: use a
+          // dedicated portrait poster and an uncropped public art preview.
+          const shortResult = artMode
+            ? await (async () => {
+                if (artImageBuffers.length === 0) throw new Error('Public artwork preview missing for art Short');
+                const response = await fetch(audioUrl!);
+                if (!response.ok) throw new Error('Art Short audio fetch HTTP ' + response.status);
+                const rendered = await generateArtShortFromAudio({
+                  audioBuffer: Buffer.from(await response.arrayBuffer()),
+                  artworkBuffer: artImageBuffers[0],
+                  title: songRecord.title,
+                  category: artMode!,
+                  targetDuration: 35,
+                });
+                return {
+                  videoBuffer: rendered.videoBuffer,
+                  dropStartSeconds: rendered.startSeconds,
+                  detectionMethod: 'art-calm-section' as const,
+                };
+              })()
+            : await generateShort({
+                videoBuffer,
+                targetDuration: 35,
+                hook: shortsHook,
+                endCard: shortsEndCard,
+                accentColor: 'ff3366',
+                loopFade: 0.5,
+                titleText: songRecord.title,
+                logoBuffer,
+              });
 
-          const shortsTitle = buildShortsTitle({
-            title: songRecord.title,
-            genre: songAnalysis?.genre || 'EDM',
-            mood: songAnalysis?.mood || 'energetic',
-            hook: shortsHook,
-          });
+          const shortsTitle = artMode
+            ? `${songRecord.title} | ${artMode[0].toUpperCase() + artMode.slice(1)} Art & Music #Shorts`.slice(0, 100)
+            : buildShortsTitle({
+                title: songRecord.title,
+                genre: songAnalysis?.genre || 'EDM',
+                mood: songAnalysis?.mood || 'energetic',
+                hook: shortsHook,
+              });
 
           const shortsDescription = artMode ? [
             `🎧 Full song: ${youtubeUrl}`,
@@ -1016,7 +1039,8 @@ export class NeuralBeatPipeline {
             description: shortsDescription,
             tags: [...youtubeMetadata.tags.slice(0, 17), 'Shorts', 'YouTube Shorts', 'Short'],
             categoryId: youtubeMetadata.categoryId,
-            privacyStatus: 'public',
+            privacyStatus: publishAtIso ? 'private' : 'public',
+            publishAt: publishAtIso || undefined,
             defaultAudioLanguage: 'zxx',
           }, NEURAL_BEAT_BRAND_ID, { requireBrandToken: true });
 
@@ -1043,6 +1067,8 @@ export class NeuralBeatPipeline {
               processedAt: new Date().toISOString(),
               shortsUrl: shortsResult.youtubeUrl,
               shortsVideoId: shortsResult.videoId,
+              shortsStatus: 'published',
+              shortsError: null,
               shortsHook,
               shortsDropStartSeconds: shortResult.dropStartSeconds,
               shortsDetectionMethod: shortResult.detectionMethod,
@@ -1058,8 +1084,21 @@ export class NeuralBeatPipeline {
         // Non-fatal: don't fail the pipeline if Shorts generation fails
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`[NeuralBeatPipeline] Shorts generation failed (non-fatal): ${message}`);
-        steps[currentStepIndex].result = `Feilet (ikke-kritisk): ${message}`;
-        stepCompleted(steps[currentStepIndex]); // Mark completed even on failure since it's optional
+        // The full video is already uploaded; persist a retryable failed state
+        // rather than silently reporting that Shorts generation completed.
+        try {
+          await updateSongFields(songRecord.id, {
+            aiMetadata: {
+              ...((await getSongById(songRecord.id)).metadata || {}),
+              shortsStatus: 'failed',
+              shortsError: message.slice(0, 1200),
+            },
+          });
+        } catch (metadataError) {
+          console.warn('[NeuralBeatPipeline] Could not persist Short failure:', metadataError);
+        }
+        steps[currentStepIndex].result = `Short feilet (kan prøves separat): ${message}`;
+        stepFailed(steps[currentStepIndex], message); // Mark completed even on failure since it's optional
       }
 
       // Pipeline completed successfully

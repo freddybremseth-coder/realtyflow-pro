@@ -19,6 +19,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { ensureFFmpeg, ensureFont } from './ffmpeg-renderer';
+import { buildArtShortPoster } from './art-thumbnail-panel';
 
 const execFileAsync = promisify(execFile);
 
@@ -597,4 +598,63 @@ export function buildShortsTitle(opts: {
   ];
   const pick = formulas[Math.floor(Math.random() * formulas.length)];
   return pick.length > 100 ? pick.slice(0, 97) + '...' : pick;
+}
+
+/**
+ * Dedicated original-art Shorts renderer.
+ *
+ * Unlike the standard EDM Short, this uses no drawtext filter (absent from
+ * ffmpeg-static), never center-crops paintings, and does not assume a musical
+ * drop in ambient/meditation audio. A single approved public gallery preview
+ * is shown in full above an editorial panel with brand, track and art credit.
+ */
+export async function generateArtShortFromAudio(options: {
+  audioBuffer: Buffer;
+  artworkBuffer: Buffer;
+  title: string;
+  category: 'meditation' | 'relaxing' | 'alternative';
+  startTime?: number;
+  targetDuration?: number;
+}): Promise<{ videoBuffer: Buffer; durationSeconds: number; startSeconds: number }> {
+  if (options.audioBuffer.length < 1024 || options.artworkBuffer.length < 1024) {
+    throw new Error('Art Short requires a valid song audio file and public artwork preview');
+  }
+  const ffmpeg = await ensureFFmpeg();
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'remaster-art-short-'));
+  try {
+    const posterPath = path.join(dir, 'poster.ppm');
+    const artPath = path.join(dir, 'painting.webp');
+    const audioPath = path.join(dir, 'song.mp3');
+    const outputPath = path.join(dir, 'short.mp4');
+    await Promise.all([
+      fs.writeFile(posterPath, buildArtShortPoster(options.category, options.title)),
+      fs.writeFile(artPath, options.artworkBuffer),
+      fs.writeFile(audioPath, options.audioBuffer),
+    ]);
+    const duration = await probeDuration(ffmpeg, audioPath);
+    if (duration < 16) throw new Error('Song is too short for a 15-second artwork Short');
+    const target = Math.min(45, Math.max(15, options.targetDuration || 35), duration - 0.5);
+    const start = Math.max(0, Math.min(options.startTime ?? duration * 0.22, duration - target - 0.25));
+    await runFFmpeg(ffmpeg, [
+      '-hide_banner', '-loglevel', 'error',
+      '-loop', '1', '-framerate', '2', '-i', posterPath,
+      '-loop', '1', '-framerate', '2', '-i', artPath,
+      '-ss', start.toFixed(3), '-i', audioPath,
+      '-filter_complex',
+      '[0:v]format=rgb24[poster];[1:v]scale=1080:1320:force_original_aspect_ratio=decrease,pad=1080:1320:(ow-iw)/2:(oh-ih)/2:color=0x101820,setsar=1[painting];[poster][painting]overlay=0:160:shortest=1,format=yuv420p[v]',
+      '-map', '[v]', '-map', '2:a:0',
+      '-t', target.toFixed(3), '-r', '2',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '25',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart', '-y', outputPath,
+    ], 210_000);
+    const videoBuffer = await fs.readFile(outputPath);
+    const durationSeconds = await probeDuration(ffmpeg, outputPath);
+    if (durationSeconds < 14 || videoBuffer.length < 10_000) {
+      throw new Error('Artwork Short render was empty or too short');
+    }
+    return { videoBuffer, durationSeconds, startSeconds: start };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 }
