@@ -291,6 +291,7 @@ export async function POST(request: NextRequest) {
         })),
         visualPlan: {
           source: promotionBrand,
+          brand: promotionBrand,
           promotionBrand,
           randomSeed: selection.randomSeed,
           artStyles: input.artStyles,
