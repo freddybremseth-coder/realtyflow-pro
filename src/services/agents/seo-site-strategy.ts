@@ -46,3 +46,10 @@ export const SAM_SITE_STRATEGY = [
     qualityGate: "Verify features, service availability, integrations, prices and security statements against the deployed product.",
   },
 ] as const;
+
+/** Resolve only an explicitly identified, registered public SEO brand. */
+export function seoBrandContext(brandId: unknown) {
+  return typeof brandId === "string"
+    ? SAM_SITE_STRATEGY.find(site => site.brandId === brandId) || null
+    : null;
+}
