@@ -3,7 +3,6 @@ import { getGenreImages, REMASTER_CANONICAL_SONG_BRAND } from "@/services/integr
 import {
   buildMixDescription,
   buildMixTags,
-  buildMixPartnerComment,
   recommendedVisualCount,
   type MixTrackPlan,
   type RemasterMixRegion,
@@ -16,6 +15,7 @@ import {
   type RemasterMixAudioResult,
 } from "./remaster-mix-audio";
 import { loadZenEcoHomesVisualUrls } from "./remaster-mix-visual-source";
+import { buildRemasterPartnerComment, type PartnerCommentStyle } from "./remaster-mix-partner-comment";
 import { renderArtLoungeThumbnail } from "./remaster-mix-art-thumbnail";
 import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand, type PromotionSelection, type PromotionItem } from "./remaster-mix-promotions";
 import {
@@ -55,7 +55,8 @@ interface MixSnapshot {
   exactAudioSeconds?: number | null;
   tracks?: MixSnapshotTrack[];
   visualPlan?: PromotionSelection & {source?:string; visualTypes?: RemasterMixVisualType[];
-    thumbnailStyle?:"art-lounge"|"standard"; thumbnailTitle?:string};
+    thumbnailStyle?:"art-lounge"|"standard"; thumbnailTitle?:string;
+    commentStyle?:PartnerCommentStyle};
 }
 
 interface MixJobRow {
@@ -406,15 +407,28 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       );
     }
 
-    if (brand !== 'none') {
-      try {
-        await createRemasterTopLevelComment(upload.videoId, buildMixPartnerComment(brand));
-      } catch (error) {
-        console.warn(
-          "[RemasterMixWorker] Standard ZenEcoHomes comment skipped:",
-          error instanceof Error ? error.message : error,
-        );
-      }
+    // One useful brand-specific top-level comment per verified public video.
+    // Only list actually selected/published art and book links, never invent
+    // a property detail URL from a picture. No duplicate video/upload if
+    // YouTube disallows commenting: optional post-publication enrichment only.
+    try {
+      const plan = job.input_snapshot?.visualPlan;
+      const comment = buildRemasterPartnerComment({
+        brand,
+        style: plan?.commentStyle || "detailed",
+        title: job.title,
+        promotedItems,
+        artStyles: plan?.artStyles, artCollections: plan?.artCollections,
+        bookSeries: plan?.bookSeries, bookLanguages: plan?.bookLanguages,
+        region: job.visual_region,
+        visualTypes: plan?.visualTypes || [job.visual_type],
+      });
+      if (comment.trim()) await createRemasterTopLevelComment(upload.videoId, comment);
+    } catch (error) {
+      console.warn(
+        "[RemasterMixWorker] Partner comment skipped; published mix remains complete:",
+        error instanceof Error ? error.message : error,
+      );
     }
 
     await recordMixInSongHistory(job, tracks, upload.youtubeUrl);
