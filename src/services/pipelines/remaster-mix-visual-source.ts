@@ -23,6 +23,9 @@ export async function loadZenEcoHomesVisualUrls(input: {
   targetMinutes: number;
   region: RemasterMixRegion;
   visualType: RemasterMixVisualType;
+  visualTypes?: RemasterMixVisualType[];
+  randomSeed?: string;
+  strictSelection?: boolean;
 }) {
   const supabase = getSupabase();
   const desiredCount = recommendedVisualCount(input.targetMinutes);
@@ -49,34 +52,49 @@ export async function loadZenEcoHomesVisualUrls(input: {
     isWebsiteVisible(property) && propertyMatchesBrand(property, "zeneco"),
   ) as MixPropertyLike[];
 
-  let urls = selectZenEcoHomesVisuals(zenEcoProperties, {
-    region: input.region,
-    visualType: input.visualType,
-    limit: desiredCount,
-  });
-
-  // A narrow visual filter can legitimately have fewer images than the target.
-  // Fill the remainder from the same region before widening to all ZenEcoHomes.
-  if (urls.length < desiredCount && input.visualType !== "mixed") {
-    const fallback = selectZenEcoHomesVisuals(zenEcoProperties, {
-      region: input.region,
-      visualType: "mixed",
-      limit: desiredCount,
+  let urls: string[];
+  if (input.strictSelection) {
+    const types = input.visualTypes?.length ? input.visualTypes : [input.visualType];
+    const chosen = [...new Set(types)];
+    urls = [...new Set(chosen.flatMap(visualType => selectZenEcoHomesVisuals(zenEcoProperties,{
+      region:input.region,visualType,limit:180,
+    })))];
+    if (!urls.length) {
+      throw new Error('No ZenEcoHomes images match the selected region and image types. Widen the selection explicitly.');
+    }
+    // Deterministic shuffle/repetition within the approved property-image pool,
+    // never silently fall back to other regions/types.
+    let seed=2166136261;
+    for(const ch of input.randomSeed||'zeneco'){seed^=ch.charCodeAt(0);seed=Math.imul(seed,16777619);}
+    const rand=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return(seed>>>0)/4294967296;};
+    const ordered: string[]=[];
+    while(ordered.length<desiredCount) {
+      const batch=[...urls];
+      for(let i=batch.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[batch[i],batch[j]]=[batch[j],batch[i]];}
+      if(ordered.length&&batch.length>1&&ordered[ordered.length-1]===batch[0]) batch.push(batch.shift()!);
+      ordered.push(...batch.slice(0,desiredCount-ordered.length));
+    }
+    urls=ordered;
+  } else {
+    urls = selectZenEcoHomesVisuals(zenEcoProperties, {
+      region: input.region, visualType: input.visualType, limit: desiredCount,
     });
-    urls = [...new Set([...urls, ...fallback])].slice(0, desiredCount);
-  }
-
-  if (urls.length < desiredCount && input.region !== "any") {
-    const fallback = selectZenEcoHomesVisuals(zenEcoProperties, {
-      region: "any",
-      visualType: "mixed",
-      limit: desiredCount,
-    });
-    urls = [...new Set([...urls, ...fallback])].slice(0, desiredCount);
-  }
-
-  if (urls.length < 12) {
-    throw new Error(`ZenEcoHomes visual source returned only ${urls.length} usable images; at least 12 are required.`);
+    // Preserve legacy behavior ONLY for old saved ZenEcoHomes mix plans.
+    if (urls.length < desiredCount && input.visualType !== "mixed") {
+      const fallback = selectZenEcoHomesVisuals(zenEcoProperties, {
+        region: input.region, visualType: "mixed", limit: desiredCount,
+      });
+      urls = [...new Set([...urls, ...fallback])].slice(0, desiredCount);
+    }
+    if (urls.length < desiredCount && input.region !== "any") {
+      const fallback = selectZenEcoHomesVisuals(zenEcoProperties, {
+        region: "any", visualType: "mixed", limit: desiredCount,
+      });
+      urls = [...new Set([...urls, ...fallback])].slice(0, desiredCount);
+    }
+    if (urls.length < 12) {
+      throw new Error(`ZenEcoHomes visual source returned only ${urls.length} usable images; at least 12 are required.`);
+    }
   }
 
   return {
