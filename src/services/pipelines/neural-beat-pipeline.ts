@@ -461,7 +461,7 @@ export class NeuralBeatPipeline {
           localImagePaths = valid.map(entry => entry.imagePath);
           artImageBuffers = valid.map(entry => entry.buffer);
           genreImageUrl = artGallery[0].imageUrl;
-          youtubeMetadata!.description = `${youtubeMetadata!.description.trim()}\n\n${artCreditsDescription(songRecord.id)}`;
+          youtubeMetadata!.description = `${artCreditsDescription(songRecord.id)}\n\n${youtubeMetadata!.description.trim()}`.slice(0, 4800);
           steps[currentStepIndex].result = `Fine-art video: ${valid.length} approved gallery previews (${artMode})`;
         } else {
         steps[currentStepIndex].result = `Generating AI images + fetching "${imageGenre}" from database...`;
