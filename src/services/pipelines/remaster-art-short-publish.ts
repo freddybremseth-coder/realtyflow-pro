@@ -41,6 +41,9 @@ export async function publishMissingArtShort(songId: string): Promise<{
   if (!VALID_MODES.has(String(mode))) throw new Error('This song is not a published art-video song');
   if (!song.youtube_url || !song.file_url) throw new Error('Publish the full song before generating its Short');
   if (metadata.shortsUrl) return { status: 'already-published', shortUrl: metadata.shortsUrl, videoUrl: song.youtube_url };
+  if (metadata.shortsStatus === 'needs-reconciliation') {
+    throw new Error('A Short may already be uploaded. Check YouTube and reconcile its link before retrying, to avoid duplicates.');
+  }
   // A short-lived DB claim prevents the cron + owner button from racing.
   const previousStarted = new Date(metadata.shortsAttemptedAt || 0).getTime();
   if (metadata.shortsStatus === 'processing' && Date.now() - previousStarted < 20*60_000) {
@@ -85,9 +88,12 @@ export async function publishMissingArtShort(songId: string): Promise<{
       shortsDetectionMethod: 'art-calm-section',
       shortsPublishedAt: new Date().toISOString(),
     };
-    const { error: saveError } = await supabase.from('songs').update({ ai_metadata: finished })
-      .eq('id', songId).filter('ai_metadata', 'eq', JSON.stringify(claimed));
-    if (saveError) throw new Error('Short uploaded at ' + uploaded.youtubeUrl + ' but metadata save failed: ' + saveError.message);
+    const { data: saved, error: saveError } = await supabase.from('songs').update({ ai_metadata: finished })
+      .eq('id', songId).filter('ai_metadata', 'eq', JSON.stringify(claimed))
+      .select('id').maybeSingle();
+    if (saveError || !saved) {
+      throw new Error('Short uploaded at ' + uploaded.youtubeUrl + ' but metadata save failed: ' + (saveError?.message || 'song metadata changed while publishing'));
+    }
     return { status: 'published', shortUrl: uploaded.youtubeUrl, videoUrl: song.youtube_url };
   } catch(err) {
     const message = err instanceof Error ? err.message : String(err);
