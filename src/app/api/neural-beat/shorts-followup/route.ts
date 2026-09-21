@@ -7,7 +7,7 @@ import {
   buildShortsTitle,
 } from '@/services/integrations/shorts-generator';
 import { uploadVideo } from '@/services/integrations/youtube-client';
-import { publishMissingArtShort } from '@/services/pipelines/remaster-art-short-publish';
+import { publishMissingShort } from '@/services/pipelines/remaster-art-short-publish';
 import { loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from '@/services/pipelines/remaster-song-art';
 import {
   getGenreImages,
@@ -79,15 +79,18 @@ export async function GET(request: NextRequest) {
     // failed after the full YouTube upload.
     const missingInitial = (songs || []).find((song) => {
       const meta = song.ai_metadata || {};
-      return ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
-        && !meta.shortsUrl && meta.shortsStatus !== 'needs-reconciliation';
+      // Only retry ordinary music when its initial Short explicitly failed,
+      // so old completed tracks without Shorts are not mass-published.
+      const art = ['meditation','relaxing','alternative'].includes(meta.artVisualMode);
+      return !meta.shortsUrl && meta.shortsStatus !== 'needs-reconciliation'
+        && (art || meta.shortsStatus === 'failed');
     });
     if (missingInitial) {
-      const recovery = await publishMissingArtShort(missingInitial.id);
+      const recovery = await publishMissingShort(missingInitial.id);
       return NextResponse.json({
         success: true, songId: missingInitial.id,
         shortUrl: recovery.shortUrl, status: recovery.status,
-        message: recovery.status === 'published' ? 'Missing art Short uploaded' : 'Art Short already claimed or published',
+        message: recovery.status === 'published' ? 'Missing Short uploaded' : 'Short already claimed or published',
       });
     }
 
