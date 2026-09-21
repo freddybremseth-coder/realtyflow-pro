@@ -50,7 +50,7 @@ interface MixSnapshot {
   version?: string;
   exactAudioSeconds?: number | null;
   tracks?: MixSnapshotTrack[];
-  visualPlan?: PromotionSelection & {source?:string};
+  visualPlan?: PromotionSelection & {source?:string; visualTypes?: RemasterMixVisualType[]};
 }
 
 interface MixJobRow {
@@ -276,6 +276,9 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
           targetMinutes: job.target_minutes,
           region: job.visual_region,
           visualType: job.visual_type,
+          visualTypes: job.input_snapshot?.visualPlan?.visualTypes,
+          randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+          strictSelection: job.input_snapshot?.version === "cross-brand-mix-v2",
         })).urls
       : brand === 'art' || brand === 'books'
         ? await (async () => {
