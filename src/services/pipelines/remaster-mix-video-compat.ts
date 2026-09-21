@@ -44,21 +44,27 @@ export function buildRemasterMixAssOverlay(input: { durationSeconds: number; spo
   return assDocument(events);
 }
 
-export function buildRemasterMixGlobalAssOverlay(input: { durationSeconds: number; sponsorIntervalMinutes: number; ctaText?: string | null; zenEcoHomesEnabled: boolean }) {
-  if (!input.zenEcoHomesEnabled) return "";
+export function buildRemasterMixGlobalAssOverlay(input: {
+  durationSeconds: number; sponsorIntervalMinutes: number;
+  ctaText?: string | null; zenEcoHomesEnabled: boolean;
+  promotionBrand?: "zeneco" | "art" | "books" | "none";
+}) {
+  const brand = input.promotionBrand || (input.zenEcoHomesEnabled ? "zeneco" : "none");
+  if (brand === "none") return "";
+  const label = brand === "art" ? "Freddy Bremseth Art"
+    : brand === "books" ? "Freddy Bremseth Books" : "ZenEcoHomes.com";
+  const site = brand === "art" ? "art.freddybremseth.com"
+    : brand === "books" ? "books.freddybremseth.com" : "zenecohomes.com";
   const duration = Math.max(1, input.durationSeconds);
   const endAll = assTime(duration);
   const events: string[] = [
     `Dialogue: 2,0:00:00.00,${endAll},Brand,,0,0,0,,{\\an3\\pos(1882,1040)}RE-MASTER FREDDY`,
-    `Dialogue: 2,0:00:00.00,${endAll},Brand,,0,0,0,,{\\an1\\pos(38,1040)}Presented by ZenEcoHomes.com`,
+    `Dialogue: 2,0:00:00.00,${endAll},Brand,,0,0,0,,{\\an1\\pos(38,1040)}Presented by ${label}`,
   ];
-  const intervalMinutes = Math.max(5, input.sponsorIntervalMinutes || 10);
-  const interval = intervalMinutes * 60;
-  const sponsorDuration = 10;
-
+  const interval = Math.max(5, input.sponsorIntervalMinutes || 10) * 60;
   for (let start = interval; start < duration; start += interval) {
-    const end = Math.min(duration, start + sponsorDuration);
-    events.push(`Dialogue: 3,${assTime(start)},${assTime(end)},Sponsor,,0,0,0,,{\\an5\\pos(960,500)}Presented by ZenEcoHomes.com`);
+    const end = Math.min(duration, start + 10);
+    events.push(`Dialogue: 3,${assTime(start)},${assTime(end)},Sponsor,,0,0,0,,{\\an5\\pos(960,500)}Explore ${site}`);
     if (input.ctaText?.trim()) {
       events.push(`Dialogue: 3,${assTime(start)},${assTime(end)},CTA,,0,0,0,,{\\pos(960,700)}${escapeAssText(input.ctaText)}`);
     }
