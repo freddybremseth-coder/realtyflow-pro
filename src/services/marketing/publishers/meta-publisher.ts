@@ -144,7 +144,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       const id = media.videoUrl
         ? (await (async () => {
             if (!graph.createFbReel) throw new Error('FACEBOOK_REEL_PUBLISHER_MISSING');
-            return graph.createFbReel(target, { videoUrl: media.videoUrl, caption: caption(asset) });
+            return graph.createFbReel(target, { videoUrl: media.videoUrl!, caption: caption(asset) });
           })()).id
         : media.imageUrl
           ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset) })).id
