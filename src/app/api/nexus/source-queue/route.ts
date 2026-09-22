@@ -137,9 +137,14 @@ export async function POST(request: NextRequest) {
     }, { status: 409 });
   }
 
-  const { data: channelRows, error: channelError } = await supabase.from("social_channels").select("external_id,is_active").eq("brand_id", source.brand_id).eq("platform", requestedChannel).eq("is_active", true).limit(1);
+  const { data: channelRows, error: channelError } = await supabase.from("social_channels").select("external_id,is_active").eq("brand_id", source.brand_id).eq("platform", requestedChannel).eq("is_active", true).limit(isUmbrellaStory ? 3 : 1);
   if (channelError) return NextResponse.json({ error: channelError.message }, { status: 500 });
   if (!channelRows?.length) return NextResponse.json({ error: `CHANNEL_NOT_CONNECTED: ${source.brand_id}/${requestedChannel}` }, { status: 409 });
+  if (source.brand_id === "freddyb" && requestedChannel === "facebook") {
+    if (!isUmbrellaStory || channelRows.length !== 1 || channelRows[0].external_id !== "1324025764122967") {
+      return NextResponse.json({ error: "FREDDY_PUBLIC_FACEBOOK_EDITORIAL_ONLY: bare utvalgte historier på den offentlige Freddy Bremseth-siden kan bli utkast" }, { status: 409 });
+    }
+  }
 
   try {
     const mediaUrl = isUmbrellaStory
