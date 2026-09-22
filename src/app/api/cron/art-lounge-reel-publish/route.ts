@@ -7,19 +7,19 @@ import { REEL_BUCKET } from '@/services/pipelines/art-lounge-reels';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 180;
-const BRAND='freddyb';
-type Channel='facebook'|'instagram';
+const BRAND='freddyart';
+type Channel='instagram';
 type Delivery={id:string;job_id:string;channel:Channel;state:string;updated_at:string};
 type Job={id:string;video_path:string;caption:string;song_title:string;slot_date:string};
 
 /**
- * Work one external action at a time. At-most-once per platform:
+ * Work one external action at a time. At-most-once on the dedicated ART Instagram:
  * - conditional reserved -> publishing claim before Graph call
  * - on ambiguous result, do NOT retry a new external upload
  * - IG PROCESSING explicitly resumes the saved container via the existing
  *   marketing_publish_attempts ledger (no duplicate container).
- * A missing Instagram account blocks Instagram but never reroutes to a
- * different brand or a personal profile.
+ * A missing ART Instagram account blocks publishing: the personal umbrella
+ * Facebook Page is never a fallback for the daily ART reel.
  */
 export async function GET(request:NextRequest) {
   const unauthorized=await requireNexusSchedulerApi(request);
@@ -33,21 +33,16 @@ export async function GET(request:NextRequest) {
   const {data:settings,error:settingsError}=await db.from('art_lounge_reel_settings')
     .select('enabled,automatic,channels,destination_brand').eq('singleton',true).maybeSingle();
   if (settingsError || !settings?.enabled || !settings?.automatic || settings.destination_brand!==BRAND ||
-      JSON.stringify([...settings.channels].sort())!==JSON.stringify(['facebook','instagram']))
+      JSON.stringify([...settings.channels].sort())!==JSON.stringify(['instagram']))
     return NextResponse.json({skipped:true,reason:'ART_LOUNGE_SETTINGS_NOT_READY'});
-  // Validate BOTH exact brand channel credentials before dispatching either.
-  // In particular, an absent IG account must never cause Facebook-only
-  // publication when the owner approved delivery to both.
-  let channels:Awaited<ReturnType<typeof getTokensForBrandPlatform>>[];
+  // Exact art brand + Instagram OAuth only. NEVER borrow umbrella or music tokens.
+  let ig:Awaited<ReturnType<typeof getTokensForBrandPlatform>>;
   try {
-    channels=await Promise.all([
-      getTokensForBrandPlatform(BRAND,'facebook'),
-      getTokensForBrandPlatform(BRAND,'instagram'),
-    ]);
-    if (channels.some(c=>!c?.tokens.accessToken))
-      return NextResponse.json({skipped:true,reason:'ART_LOUNGE_CONNECT_BOTH_BRAND_ACCOUNTS'});
+    ig=await getTokensForBrandPlatform(BRAND,'instagram');
+    if (!ig?.tokens.accessToken)
+      return NextResponse.json({skipped:true,reason:'ART_LOUNGE_CONNECT_ART_INSTAGRAM'});
   } catch {
-    return NextResponse.json({skipped:true,reason:'ART_LOUNGE_BRAND_ACCOUNT_AMBIGUOUS_OR_UNAVAILABLE'});
+    return NextResponse.json({skipped:true,reason:'ART_LOUNGE_ART_INSTAGRAM_AMBIGUOUS_OR_UNAVAILABLE'});
   }
   const {data:ready,error:queueError}=await db.from('art_lounge_reel_jobs')
     .select('id,video_path,caption,song_title,slot_date').eq('state','ready')
@@ -59,6 +54,7 @@ export async function GET(request:NextRequest) {
       .select('id,job_id,channel,state,updated_at').eq('job_id',job.id);
     if (error) return NextResponse.json({error:'ART_LOUNGE_DELIVERY_READ_FAILED'},{status:503});
     for (const row of (rows||[]) as Delivery[]) {
+      if (row.channel !== 'instagram') continue; // no legacy Facebook daily syndication
       if (row.state==='reserved' ||
           (row.state==='processing' && Date.parse(row.updated_at)<Date.now()-30*60_000))
         deliveries.push({id:row.id,job,channel:row.channel,state:row.state});
@@ -89,7 +85,7 @@ export async function GET(request:NextRequest) {
     } as any,{
       idempotencyKey:'art-lounge-reel:'+item.job.id+':'+item.channel,
       publicationId:'art-lounge-reel:'+item.job.id+':'+item.channel,
-      accountId:channels[item.channel==='facebook'?0:1]!.channel.external_id,
+      accountId:ig!.channel.external_id,
       channel:item.channel,
     });
     if (result.dryRun || result.state!=='published' || !result.externalId)
@@ -104,7 +100,7 @@ export async function GET(request:NextRequest) {
     // Only Instagram's confirmed container PROCESSING can safely resume.
     // All other unknown Meta outcomes require human reconciliation, never
     // automatic re-posting or a second Facebook START/upload session.
-    const processing=item.channel==='instagram' && message.includes('IG_CONTAINER_PROCESSING');
+    const processing=message.includes('IG_CONTAINER_PROCESSING');
     await db.from('art_lounge_reel_deliveries').update({
       state:processing?'processing':'needs_review',
       error:message.slice(0,700),updated_at:new Date().toISOString(),
