@@ -5,6 +5,7 @@ import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { REMASTER_SONG_READ_BRANDS } from "@/services/integrations/airtable-client";
 import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand } from "@/services/pipelines/remaster-mix-promotions";
 import { recommendedVisualCount } from "@/services/pipelines/remaster-mix-planner";
+import { diagnoseExplicitMixSelection, describeMixSelectionIssue } from "@/services/pipelines/remaster-mix-selection-validation";
 
 const styleSchema = z.enum([
   "mediterranean-sunset",
@@ -255,10 +256,16 @@ export async function POST(request: NextRequest) {
           code: "MIX_PROMOTION_SELECTION_EMPTY",
         }, {status:400});
       }
-      const requiredIds = promotionBrand === "art" ? input.artIds : input.bookIds;
-      const catalogIds = new Set(catalog.map(item => item.id));
-      if (requiredIds.some(id => !catalogIds.has(id))) {
-        return NextResponse.json({error:"One or more selected promotional items are not published or lack a public preview."},{status:400});
+      const issues = diagnoseExplicitMixSelection(catalog, selection);
+      if (issues.length) {
+        return NextResponse.json({
+          code: "MIX_PROMOTION_SELECTION_INVALID",
+          error: "Følgende valgte bilder passer ikke til filtrene: " +
+            issues.slice(0,5).map(describeMixSelectionIssue).join(" ") +
+            (issues.length>5 ? " (og "+(issues.length-5)+" flere)" : "") +
+            " Legg til den faktiske stilen/kolleksjonen eller fjern bildet fra utvalget i Mix Studio.",
+          issues,
+        },{status:400});
       }
     }
 
