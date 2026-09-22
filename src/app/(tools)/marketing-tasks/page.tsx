@@ -549,8 +549,7 @@ export default function MarketingTasksPage() {
                       <div className="flex items-start gap-2">
                         <GripVertical size={14} className="text-slate-600 mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-slate-200 font-medium">{task.title}</p>
-                          {task.metadata?.contact_id && <div className="mt-1 text-sm"><Customer360Link contactId={task.metadata.contact_id} name={task.metadata.customer_name} /></div>}
+                          <p className="text-sm text-slate-200 font-medium"><CustomerTaskTitle title={task.title} contactId={task.metadata?.contact_id} customerName={task.metadata?.customer_name} /></p>
                           {task.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{task.description}</p>}
                           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             <Badge variant="outline" className="text-[10px]">{task.platform}</Badge>
