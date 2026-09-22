@@ -59,7 +59,7 @@ export function describeMixSelectionIssue(issue:SelectionIssue) {
 export class MixSelectionValidationError extends Error {
   readonly code="MIX_PROMOTION_SELECTION_INVALID";
   constructor(readonly issues:SelectionIssue[]){
-    super("Bildene i miksen passer ikke til de valgte filtrene: "+issues.map(describeMixSelectionIssue).join(" "));
+    super("Bildene i miksen passer ikke til de valgte filtrene: "+issues.slice(0,5).map(describeMixSelectionIssue).join(" ") + (issues.length>5?" (og "+(issues.length-5)+" flere).":"") + " Endre valgte stiler eller fjern de navngitte bildene i Mix Studio.");
     this.name="MixSelectionValidationError";
   }
 }
