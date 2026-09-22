@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getIllustrativePlotPriceEur } from "@/lib/realty/plot-price-evidence";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import {
@@ -210,6 +211,46 @@ async function attachCachedFeedSourceFacts(
   });
 }
 
+/**
+ * Only expose a verified numeric EXAMPLE-PLOT basis, not the raw RedSP text.
+ * This is never proof a specific parcel is reserved, owned or included.
+ */
+async function attachPublicEcoLifePlotBasis(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  properties: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  const eligible = properties.filter(
+    (property) => String(property.source || "").toLowerCase() === "redsp" &&
+      typeof property.id === "string" && property.id,
+  );
+  if (eligible.length === 0) return properties;
+
+  const exampleById = new Map<string, number>();
+  const chunkSize = 40;
+  for (let start = 0; start < eligible.length; start += chunkSize) {
+    const ids = eligible.slice(start, start + chunkSize).map((item) => String(item.id));
+    const { data, error } = await supabase
+      .from("properties")
+      .select("id,source_description")
+      .in("id", ids);
+    if (error) {
+      console.warn("[properties] plot-price evidence unavailable:", error.message);
+      return properties;
+    }
+    for (const row of data || []) {
+      const amount = getIllustrativePlotPriceEur("redsp", row.source_description);
+      if (amount !== null) exampleById.set(String(row.id), amount);
+    }
+  }
+
+  return properties.map((property) => {
+    const examplePlotPrice = exampleById.get(String(property.id || ""));
+    return examplePlotPrice === undefined
+      ? property
+      : { ...property, example_plot_price_eur: examplePlotPrice };
+  });
+}
+
 export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
@@ -241,7 +282,12 @@ export async function GET(req: NextRequest) {
     if (!brandId) return NextResponse.json(scopedData);
 
     const filteredData = await filterPropertiesForBrand(supabase, scopedData, brandId);
-    return NextResponse.json(filteredData);
+    // Public Eco Life buyers receive only the source-proven pricing signal.
+    // Other brands and authenticated inventory responses retain their existing shape.
+    const publicData = !authenticated && normalizeBrandId(brandId) === "pinosoecolife"
+      ? await attachPublicEcoLifePlotBasis(supabase, filteredData)
+      : filteredData;
+    return NextResponse.json(publicData);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch properties";
     return NextResponse.json({ error: message }, { status: 500 });
