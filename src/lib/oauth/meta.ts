@@ -263,8 +263,16 @@ export async function finalizeFacebookPage(input: {
   // The art brand owns only its Instagram account. Its linked Meta Page is an
   // OAuth credential bridge, NOT a dedicated Freddy Bremseth Art Facebook Page.
   // Never clone Freddy's professional umbrella FB Page into freddyart.
-  if (input.brandId === "freddyart" && !input.page.instagram?.id)
-    throw new Error("ART_INSTAGRAM_NOT_LINKED_TO_SELECTED_FACEBOOK_PAGE");
+  if (input.brandId === "freddyart") {
+    if (!input.page.instagram?.id)
+      throw new Error("ART_INSTAGRAM_NOT_LINKED_TO_SELECTED_FACEBOOK_PAGE");
+    // The chosen bridge Page must actually expose the owner's ART Instagram.
+    // Never bind another brand's IG if the Page-picker state is stale or a
+    // caller bypasses the client-side disabled button.
+    const username = input.page.instagram.username?.trim().replace(/^@/, "").toLowerCase();
+    if (username !== "freddybremseth.art")
+      throw new Error("ART_INSTAGRAM_ACCOUNT_MISMATCH: expected @freddybremseth.art");
+  }
 
   let facebookChannelId: string | null = null;
   if (input.brandId !== "freddyart") {
