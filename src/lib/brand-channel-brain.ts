@@ -2,7 +2,7 @@ import { businessPipelineForBrand } from "@/lib/business-pipeline-registry";
 import { OWNED_GROWTH_BRANDS, type GrowthBrandDefinition } from "@/lib/marketing/brand-registry";
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 
-export const FREDDY_BRAND_IDS = ["freddyb", "freddypublishing", "freddyai"] as const;
+export const FREDDY_BRAND_IDS = ["freddyb", "freddyart", "freddypublishing", "freddyai"] as const;
 export type FreddyBrandId = (typeof FREDDY_BRAND_IDS)[number];
 
 export interface BrandChannelState {

@@ -149,6 +149,7 @@ export const BRAND_BUSINESS_BINDINGS: readonly BrandBusinessBinding[] = [
   { brandId: "freddyb", pipelineId: "expert_advisory", role: "umbrella", note: "Profesjonell ekspert-/rådgiverprofil. Cross-brand innhold må fortsatt rutes til underliggende commercial pipeline når tilbudet tilhører en annen business." },
   { brandId: "donaanna", pipelineId: "product_commerce", role: "commercial", note: "Mat/agri-produktinteresse, kjøp og gjenkjøp." },
   { brandId: "remasterfreddy", pipelineId: "creator_media", role: "audience", note: "Audience growth er ikke en tradisjonell salgs-pipeline." },
+  { brandId: "freddyart", pipelineId: "creator_media", role: "commercial", note: "Art-first audience and gallery interest. High-value art inquiries should be routed to the actual artwork and owner, not to music or personal-profile posting." },
 ] as const;
 
 export function businessPipelineDefinition(pipelineId: BusinessPipelineId) {

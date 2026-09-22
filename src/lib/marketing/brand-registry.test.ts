@@ -14,6 +14,17 @@ test("keeps owned brand ids unique and Soleada outside the owned Growth OS brand
     assert.equal(growthBrandDefinition("soleada"), null);
   });
 
+test("art is its own Instagram-first brand, not the personal umbrella or music account", () => {
+  const art = growthBrandDefinition("freddyart");
+  assert.equal(art?.website,"https://art.freddybremseth.com");
+  assert.deepEqual(art?.pilotChannels,["instagram"]);
+  assert.deepEqual(art?.plannedChannels,["instagram","website"]);
+  assert.equal(isPilotChannel("freddyart","instagram"),true);
+  assert.equal(isPilotChannel("freddyart","facebook"),false);
+  assert.notEqual(art?.id,growthBrandDefinition("freddyb")?.id);
+  assert.notEqual(art?.id,growthBrandDefinition("remasterfreddy")?.id);
+});
+
 test("uses remasterfreddy as the canonical Re-master Freddy brand id", () => {
     assert.ok(OWNED_GROWTH_BRAND_IDS.includes("remasterfreddy"));
     assert.equal(growthBrandDefinition("remasterfreddy")?.name, "Re-Master Freddy");

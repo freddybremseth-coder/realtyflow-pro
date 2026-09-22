@@ -6,6 +6,7 @@ export type OwnedGrowthBrandId =
   | "donaanna"
   | "chatgenius"
   | "freddyb"
+  | "freddyart"
   | "freddypublishing"
   | "freddyai"
   | "remasterfreddy";
@@ -93,6 +94,18 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     conversionGoals: ["expert_follow", "website_visit", "book_page_visit", "advisory_lead", "product_interest"],
     primaryCtas: ["follow", "read_more", "view_project", "view_book", "contact"],
     notes: "Professional umbrella/expertise brand. Freddy Bremseth should selectively amplify the strongest stories from owned brands without duplicating identical posts. The private Facebook profile is not an automated commercial publishing destination.",
+  },
+  {
+    id: "freddyart",
+    name: "Freddy Bremseth Art",
+    kind: "creator_media",
+    website: "https://art.freddybremseth.com",
+    pilotChannels: ["instagram"],
+    plannedChannels: ["instagram", "website"],
+    contentPillars: ["original_art", "gallery_collections", "art_lounge_reels", "artwork_details", "creative_process"],
+    conversionGoals: ["artwork_view", "gallery_visit", "art_inquiry", "art_follow"],
+    primaryCtas: ["view_artwork", "visit_gallery", "follow", "contact"],
+    notes: "Dedicated ART-first identity. Daily original artwork Reels use approved low-resolution public gallery previews and authorized Re-Master Freddy soundtracks. Facebook has no dedicated art page; selected rewritten stories may appear on Freddy Bremseth's professional umbrella Page, never as identical automatic cross-posts.",
   },
   {
     id: "freddypublishing",
