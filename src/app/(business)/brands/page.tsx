@@ -95,6 +95,7 @@ const typeColors: Record<string, string> = {
   agriculture: "bg-amber-500/20 text-amber-300 border-amber-500/30",
   personal: "bg-blue-500/20 text-blue-300 border-blue-500/30",
   music: "bg-pink-500/20 text-pink-300 border-pink-500/30",
+  art: "bg-rose-500/20 text-rose-200 border-rose-500/30",
   tourism: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
   ecommerce: "bg-orange-500/20 text-orange-300 border-orange-500/30",
   other: "bg-slate-500/20 text-slate-300 border-slate-500/30",
@@ -106,6 +107,7 @@ const typeLabels: Record<string, string> = {
   agriculture: "Jordbruk",
   personal: "Personlig",
   music: "Musikk",
+  art: "Kunst",
   tourism: "Turisme",
   ecommerce: "E-handel",
   other: "Annet",
@@ -461,6 +463,7 @@ export default function BrandsPage() {
                     <option value="agriculture">Jordbruk</option>
                     <option value="personal">Personlig</option>
                     <option value="music">Musikk</option>
+                    <option value="art">Kunst</option>
                     <option value="tourism">Turisme</option>
                     <option value="ecommerce">E-handel</option>
                     <option value="other">Annet</option>
