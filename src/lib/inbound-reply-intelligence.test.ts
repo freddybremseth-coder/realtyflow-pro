@@ -121,7 +121,7 @@ test("unclear messages remain manual review", () => {
 test("long-horizon family relocation is planned follow-up, not urgent matching", () => {
   const classification = classifyInboundReply({
     subject: "Re: Er bolig i Spania fortsatt aktuelt for deg?",
-    body: "Ja, jeg er fortsatt interessert. Vi ønsker å flytte om to år når barnet starter på skolen. Fase 1 er en villa til 300-450k og fase 2 er en permanent villa. Så ikke noe hastverk.\\n> https://example.com/property/123",
+    body: "Ja, jeg er fortsatt interessert. Vi ønsker å flytte om to år når barnet starter på skolen. Fase 1 er en villa til 300-450k og fase 2 er en permanent villa. Så ikke noe hastverk.\n> https://example.com/property/123",
   });
   assert.equal(classification.intent, "follow_up_later");
   assert.equal(classification.requiresFastResponse, false);
