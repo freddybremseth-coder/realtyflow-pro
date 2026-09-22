@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Customer360Link } from "@/components/crm/customer-360-link";
 import { CheckSquare, Plus, GripVertical, X, Loader2, AlertTriangle } from "lucide-react";
 
 type TaskStatus = "TO_DO" | "IN_PROGRESS" | "REVIEW" | "DONE";
@@ -414,6 +415,7 @@ export default function MarketingTasksPage() {
                 <Button variant="ghost" size="icon" onClick={() => setSelectedTask(null)}><X size={18} /></Button>
               </div>
               {selectedTask.description && <p className="text-sm text-slate-300 mb-4">{selectedTask.description}</p>}
+              {selectedTask.metadata?.contact_id && <div className="mb-4 rounded-lg border border-slate-600 p-3 text-sm text-slate-200">Kunde: <Customer360Link contactId={selectedTask.metadata.contact_id} name={selectedTask.metadata.customer_name} /></div>}
               {["kdp", "publishing"].includes(String(selectedTask.sourceType || "").toLowerCase()) &&
                 selectedTask.metadata?.autopilot?.suggestion && (
                 <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
@@ -548,6 +550,7 @@ export default function MarketingTasksPage() {
                         <GripVertical size={14} className="text-slate-600 mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-slate-200 font-medium">{task.title}</p>
+                          {task.metadata?.contact_id && <div className="mt-1 text-sm"><Customer360Link contactId={task.metadata.contact_id} name={task.metadata.customer_name} /></div>}
                           {task.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{task.description}</p>}
                           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             <Badge variant="outline" className="text-[10px]">{task.platform}</Badge>
