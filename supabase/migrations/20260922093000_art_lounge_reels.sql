@@ -1,5 +1,8 @@
 -- Art Lounge: one durable Reel per Europe/Madrid calendar day. Service-role only.
 -- Daily claim and per-channel conditional claims prevent duplicate render/publish.
+-- Art Lounge publishes on the dedicated Freddy Bremseth Art Instagram account.
+-- The Freddy Bremseth Facebook umbrella receives selected REWRITTEN stories
+-- through a separate editorial workflow, never an identical daily auto-copy.
 create table if not exists public.art_lounge_reel_jobs (
   id uuid primary key default gen_random_uuid(),
   slot_date date not null unique,
@@ -46,14 +49,14 @@ create table if not exists public.art_lounge_reel_settings (
   min_seconds integer not null default 15 check (min_seconds = 15),
   max_seconds integer not null default 35 check (max_seconds = 35),
   automatic boolean not null default true,
-  channels text[] not null default array['facebook','instagram']::text[],
-  destination_brand text not null default 'freddyb' check (destination_brand = 'freddyb'),
+  channels text[] not null default array['instagram']::text[],
+  destination_brand text not null default 'freddyart' check (destination_brand = 'freddyart'),
   updated_at timestamptz not null default now()
 );
 alter table public.art_lounge_reel_settings enable row level security;
 revoke all on public.art_lounge_reel_settings from anon, authenticated;
 insert into public.art_lounge_reel_settings(singleton, enabled, automatic, channels, destination_brand)
-values (true, true, true, array['facebook','instagram'], 'freddyb')
+values (true, false, true, array['instagram'], 'freddyart')
 on conflict (singleton) do nothing;
 
 -- Returns true only for the winning concurrent daily worker.
