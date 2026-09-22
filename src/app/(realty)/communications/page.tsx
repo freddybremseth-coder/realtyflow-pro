@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Customer360Link } from "@/components/crm/customer-360-link";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -247,7 +248,7 @@ export default function CommunicationsPage() {
               <span className="text-xs text-slate-500">{item.brandLabel}</span>
               <span className="text-xs text-slate-600">{item.ageDays} dag(er)</span>
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-white">{item.customerName}</h2>
+            <h2 className="mt-3 text-xl font-semibold text-white">{item.contactId ? <Customer360Link contactId={item.contactId} name={item.customerName} className="text-white underline decoration-cyan-400 underline-offset-4 hover:text-cyan-200" /> : item.customerName}</h2>
             <p className="mt-1 text-sm text-slate-400">{item.recipientEmail || "Ingen gyldig e-post"} · {item.recipientPhone || "Ingen telefon"}</p>
             <p className="mt-1 text-xs text-slate-600">Oppdatert {dateLabel(item.updatedAt)}{item.approvedAt ? ` · godkjent ${dateLabel(item.approvedAt)}` : ""}</p>
 
