@@ -33,7 +33,9 @@ export function CustomerTaskTitle({ title, contactId, customerName }: {
   customerName?: unknown;
 }) {
   const name = typeof customerName === "string" ? customerName.trim() : "";
-  const index = name ? title.toLocaleLowerCase("nb-NO").indexOf(name.toLocaleLowerCase("nb-NO")) : -1;
+  const hasContact = typeof contactId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(contactId);
+  if (!hasContact || !name) return <>{title}</>;
+  const index = title.toLocaleLowerCase("nb-NO").indexOf(name.toLocaleLowerCase("nb-NO"));
   if (index < 0) return <>{title}{contactId && name ? <> · <Customer360Link contactId={contactId} name={name} /></> : null}</>;
   return <>
     {title.slice(0, index)}
