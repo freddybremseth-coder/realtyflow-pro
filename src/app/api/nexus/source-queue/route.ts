@@ -15,6 +15,22 @@ function goalFor(sourceType: string) {
 
 function masterIdea(source: any) {
   const p = source.payload ?? {};
+  if (source.brand_id === "freddyb" && source.source_type === "creative_spotlight") {
+    const kind = p.source_type === "artwork" ? "et originalt kunstverk"
+      : p.source_type === "song" ? "en låt fra Re-Master Freddy"
+      : "en utgitt bok fra forfatterskapet mitt";
+    return [
+      "Lag ett kort, varmt og konkret Facebook-innlegg skrevet i jeg-form for FREDDY BREMSETH sin offentlige samleside.",
+      "Freddy deler et UTVALGT prosjekt med egen introduksjon, ikke en identisk kopi av et Instagram-innlegg.",
+      `Verifisert prosjekt: ${kind}. Verifisert tittel: "${source.title.replace(/^Freddy story:\s*/, "")}".`,
+      `Kilde: ${source.source_url}.`,
+      `Godkjent faktabeskrivelse: ${p.suggested_copy || ""}`,
+      "Skriv 2–4 korte setninger som forteller hva publikum ser og hvor de finner prosjektet.",
+      "Bruk kun verifiserte kildedata. Ikke finn på en bakgrunnshistorie, motivasjon, skapelsesår, pris eller suksess.",
+      "Ikke antyd at Facebook har en automatisk kopi av Instagram-Reelen. Avslutt med den eksakte, verifiserte kildelenken.",
+      "Dette skal være et forslag til eierens godkjenning; publiser ALDRI automatisk."
+    ].join("\n");
+  }
   if (source.source_type === "book") {
     return `Promote the book "${source.title}" under the Freddy Bremseth author brand. Drive readers to ${p.book_page_url || source.source_url}. Use the real cover/sample/series metadata available in the source. Do not invent reviews, sales rankings or claims.`;
   }
@@ -76,6 +92,40 @@ export async function POST(request: NextRequest) {
   const { data: source, error: sourceError } = await supabase.from("marketing_source_queue").select("*").eq("id", sourceQueueId).single();
   if (sourceError || !source) return NextResponse.json({ error: sourceError?.message || "Source not found" }, { status: 404 });
   if (!["ready", "pending"].includes(String(source.status))) return NextResponse.json({ error: `Source status ${source.status} kan ikke planlegges` }, { status: 409 });
+  const isUmbrellaStory = source.brand_id === "freddyb" && source.source_type === "creative_spotlight";
+  if (isUmbrellaStory) {
+    if (requestedChannel !== "facebook" || source.status !== "ready" || source.payload?.publishing_policy !== "approval_required_rewrite_no_identical_crosspost") {
+      return NextResponse.json({ error: "FREDDY_UMBRELLA_EDITORIAL_POLICY_MISMATCH" }, { status: 409 });
+    }
+    const kind = String(source.payload?.source_type || "");
+    const key = String(source.source_id || "");
+    if (!["artwork", "song", "book"].includes(kind) || !key.startsWith(`${kind === "artwork" ? "art" : kind === "song" ? "music" : "book"}:`)) {
+      return NextResponse.json({ error: "FREDDY_EDITORIAL_SOURCE_INVALID" }, { status: 409 });
+    }
+    const id = key.slice(key.indexOf(":") + 1);
+    if (!id || !String(source.source_url || "").startsWith(kind === "artwork" ? "https://art.freddybremseth.com/verk/" : kind === "book" ? "https://books.freddybremseth.com/book/" : "https://www.youtube.com/watch?v=")) {
+      return NextResponse.json({ error: "FREDDY_EDITORIAL_LINK_NOT_VERIFIED" }, { status: 409 });
+    }
+    if (kind === "artwork") {
+      const { data: work, error: workError } = await supabase.from("art_gallery_works").select("id,published,public_preview_path").eq("id", id).maybeSingle();
+      if (workError || !work?.published || !/^[a-z0-9][a-z0-9-]{0,120}\/view\.webp$/.test(String(work.public_preview_path))) {
+        return NextResponse.json({ error: "FREDDY_EDITORIAL_ART_NOT_PUBLIC" }, { status: 409 });
+      }
+    } else if (kind === "book") {
+      const { data: book, error: bookError } = await supabase.from("book_titles").select("status").eq("id", id).maybeSingle();
+      if (bookError || book?.status !== "published") return NextResponse.json({ error: "FREDDY_EDITORIAL_BOOK_NOT_PUBLISHED" }, { status: 409 });
+    } else {
+      const { data: song, error: songError } = await supabase.from("songs").select("brand,youtube_url,file_url").eq("id", id).maybeSingle();
+      if (songError || song?.brand !== "remasterfreddy" || song?.youtube_url !== source.source_url || !song.file_url) {
+        return NextResponse.json({ error: "FREDDY_EDITORIAL_MUSIC_NOT_VERIFIED" }, { status: 409 });
+      }
+    }
+    const { data: plan, error: planError } = await supabase.from("marketing_brand_growth_plans")
+      .select("status,autonomy_mode").eq("brand_id", "freddyb").maybeSingle();
+    if (planError || plan?.status !== "active" || plan?.autonomy_mode !== "approval_required") {
+      return NextResponse.json({ error: "FREDDY_EDITORIAL_APPROVAL_REQUIRED" }, { status: 409 });
+    }
+  }
   if (source.status === "blocked") return NextResponse.json({ error: source.blocked_reason || "Source blocked" }, { status: 409 });
 
   const recommended = Array.isArray(source.recommended_channels) ? source.recommended_channels.map(String) : [];
@@ -87,12 +137,22 @@ export async function POST(request: NextRequest) {
     }, { status: 409 });
   }
 
-  const { data: channelRows, error: channelError } = await supabase.from("social_channels").select("external_id,is_active").eq("brand_id", source.brand_id).eq("platform", requestedChannel).eq("is_active", true).limit(1);
+  const { data: channelRows, error: channelError } = await supabase.from("social_channels").select("external_id,is_active").eq("brand_id", source.brand_id).eq("platform", requestedChannel).eq("is_active", true).limit(isUmbrellaStory ? 3 : 1);
   if (channelError) return NextResponse.json({ error: channelError.message }, { status: 500 });
   if (!channelRows?.length) return NextResponse.json({ error: `CHANNEL_NOT_CONNECTED: ${source.brand_id}/${requestedChannel}` }, { status: 409 });
+  if (source.brand_id === "freddyb" && requestedChannel === "facebook") {
+    if (!isUmbrellaStory || channelRows.length !== 1 || channelRows[0].external_id !== "1324025764122967") {
+      return NextResponse.json({ error: "FREDDY_PUBLIC_FACEBOOK_EDITORIAL_ONLY: bare utvalgte historier på den offentlige Freddy Bremseth-siden kan bli utkast" }, { status: 409 });
+    }
+  }
 
   try {
-    const mediaUrl = source.source_type === "book"
+    const mediaUrl = isUmbrellaStory
+      ? source.payload?.source_type === "artwork" && typeof source.payload?.approved_art_preview === "string"
+        && source.payload.approved_art_preview.startsWith("https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/art-previews/")
+        ? source.payload.approved_art_preview
+        : undefined
+      : source.source_type === "book"
       ? source.payload?.cover_image_url || undefined
       : source.source_type === "property"
         ? source.payload?.primary_image || undefined
@@ -107,12 +167,22 @@ export async function POST(request: NextRequest) {
       channel: requestedChannel,
       language: source.payload?.language || undefined,
       mediaUrl,
+      reuseCooldownDays: isUmbrellaStory ? 14 : undefined,
+      requirePublicationHistory: isUmbrellaStory,
       useInventoryProperty: source.source_type === "property",
       propertyId: source.source_type === "property" ? String(source.source_id) : undefined,
       focus: source.source_type === "property" ? source.payload?.location || undefined : undefined,
     });
 
-    await supabase.from("marketing_source_queue").update({ status: "drafted", last_planned_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", source.id);
+    if (isUmbrellaStory && result.results.some((row) => row.mode !== "manual-review" || !row.approvalId)) {
+      return NextResponse.json({
+        error: "FREDDY_EDITORIAL_MANUAL_REVIEW_NOT_CREATED",
+        results: result.results.map((row) => ({ state: row.state, mode: row.mode, error: row.error ?? null })),
+        note: "Kilden ble ikke markert som planlagt. RealtyFlow skal aldri sende slike personlige historier uten eksplisitt godkjenning.",
+      }, { status: 409 });
+    }
+    const { error: markError } = await supabase.from("marketing_source_queue").update({ status: "drafted", last_planned_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", source.id).eq("status", source.status);
+    if (markError) throw new Error(`SOURCE_DRAFT_MARK_FAILED: ${markError.message}`);
 
     const primary = result.results.find((row) => row.approvalId) ?? result.results[0] ?? null;
     const approvalId = primary?.approvalId ?? null;
