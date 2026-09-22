@@ -113,6 +113,11 @@ function operationalNextAction(input: {
   profileStatus: string | null;
   suggestedAction?: string | null;
 }) {
+  // An AI-suggested immediate shortlist must not override a customer's
+  // explicit request to take their time with a future purchase.
+  if (input.intent === "follow_up_later") {
+    return "Registrer langsiktig kjøpshorisont og eventuelle delprosjekter i CRM. Avklar ønsket tidspunkt og kontaktfrekvens; respekter kundens tidsplan. Ikke send automatisk boligshortlist.";
+  }
   if (input.suggestedAction) return normalize(input.suggestedAction);
 
   if (input.intent === "update_preferences") {
