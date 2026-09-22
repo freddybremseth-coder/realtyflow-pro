@@ -411,7 +411,7 @@ export default function MarketingTasksPage() {
           <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">{selectedTask.title}</h2>
+                <h2 className="text-lg font-semibold text-white"><CustomerTaskTitle title={selectedTask.title} contactId={selectedTask.metadata?.contact_id} customerName={selectedTask.metadata?.customer_name} /></h2>
                 <Button variant="ghost" size="icon" onClick={() => setSelectedTask(null)}><X size={18} /></Button>
               </div>
               {selectedTask.description && <p className="text-sm text-slate-300 mb-4">{selectedTask.description}</p>}
