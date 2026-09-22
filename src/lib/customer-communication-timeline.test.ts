@@ -80,6 +80,7 @@ test("explicitly linked outbound email is marked outbound", () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].direction, "out");
   assert.equal(events[0].title, "E-post sendt: Boligforslag");
+  assert.match(String(events[0].detail), /levering til mottaker er ikke bekreftet/);
 });
 
 test("unlinked email is excluded even if it has a valid timestamp", () => {
