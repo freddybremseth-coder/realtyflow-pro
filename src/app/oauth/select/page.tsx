@@ -155,6 +155,9 @@ export default function OAuthSelectPage() {
   }
 
   const isFacebook = pending.pending_pick === "facebook_page";
+  const isArtPicker = isFacebook && pending.brand_id === "freddyart";
+  const expectedArtHandle = "freddybremseth.art";
+  const isArtInstagram = (username?: string) => username?.trim().replace(/^@/, "").toLowerCase() === expectedArtHandle;
 
   return (
     <div className="p-8 max-w-3xl">
@@ -167,6 +170,13 @@ export default function OAuthSelectPage() {
           : <>Du autoriserte tilgang til flere kontoer. Velg <strong>én</strong> konto som skal kobles til merkevaren <Badge>{pending.brand_id}</Badge>. Ingen andre kontoer kobles automatisk til merkevaren.</>}
       </p>
 
+      {isArtPicker && !pending.candidates.some((candidate) => isArtInstagram(candidate.instagram?.username)) && (
+        <div className="mb-5 rounded-lg border border-amber-400/60 bg-amber-950/40 p-4 text-sm leading-6 text-amber-100" role="alert">
+          <p className="font-bold">Meta finner ikke @freddybremseth.art på noen av Facebook-sidene du har autorisert.</p>
+          <p className="mt-2">Knappen ved Freddy Bremseth-siden er derfor sperret med vilje. Sjekk at kunstkontoen er en profesjonell Instagram-konto og at den er koblet direkte til <strong>Facebook-siden Freddy Bremseth</strong> via sidens Innstillinger → Tilknyttede kontoer → Instagram, ikke bare til din private Facebook-konto i Kontosenter. Fullfør koblingen hos Meta, gå tilbake til Channel Connections, og start Meta publishing-tilkoblingen på nytt.</p>
+          <p className="mt-2">Ikke velg Instagram-kontoene som tilhører andre merkevarer.</p>
+        </div>
+      )}
       <div className="space-y-3">
         {pending.candidates.map((c) => {
           const label = c.title || c.name || c.id;
@@ -178,6 +188,7 @@ export default function OAuthSelectPage() {
 
           const isSubmitting = submittingId === c.id;
           const disabled = submittingId !== null && !isSubmitting;
+          const canBindArt = Boolean(c.instagram?.id && isArtInstagram(c.instagram.username));
 
           return (
             <Card key={c.id} className="border-slate-700">
@@ -198,7 +209,13 @@ export default function OAuthSelectPage() {
                   <div className="min-w-0">
                     <p className="font-medium text-white truncate">{label}</p>
                     {sub && <p className="text-xs text-slate-400 truncate">{sub}</p>}
-                    {c.instagram?.id && isFacebook && (
+                    {isArtPicker && !c.instagram?.id && (
+                      <p className="mt-1 text-xs leading-5 text-amber-200">Meta har ikke bekreftet noen tilknyttet, profesjonell Instagram-konto for denne Facebook-siden. Kontroller sidekoblingen i Meta før du prøver på nytt.</p>
+                    )}
+                    {isArtPicker && c.instagram?.id && !canBindArt && (
+                      <p className="mt-1 text-xs leading-5 text-amber-200">Meta fant @{c.instagram.username || "ukjent"}, ikke @freddybremseth.art. Kontoen kan ikke knyttes til kunstmerkevaren.</p>
+                    )}
+                    {c.instagram?.id && (!isArtPicker || canBindArt) && isFacebook && (
                       <p className="text-xs text-pink-300 mt-0.5">
                         {pending.brand_id === "freddyart"
                           ? `Kobler kun Instagram @${c.instagram.username || c.instagram.id} til Freddy Bremseth Art`
@@ -209,7 +226,8 @@ export default function OAuthSelectPage() {
                 </div>
                 <Button
                   variant="default"
-                  disabled={disabled || (pending.brand_id === "freddyart" && !c.instagram?.id)}
+                  disabled={disabled || (isArtPicker && !canBindArt)}
+                  title={isArtPicker && !canBindArt ? "Mangler verifisert Instagram @freddybremseth.art på denne Facebook-siden" : undefined}
                   onClick={() => onPick(c.id)}
                 >
                   {isSubmitting ? "Kobler …" : "Velg denne"}
