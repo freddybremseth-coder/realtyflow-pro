@@ -26,3 +26,18 @@ export function Customer360Link({ contactId, name, className }: Customer360LinkP
     </Link>
   );
 }
+
+export function CustomerTaskTitle({ title, contactId, customerName }: {
+  title: string;
+  contactId?: unknown;
+  customerName?: unknown;
+}) {
+  const name = typeof customerName === "string" ? customerName.trim() : "";
+  const index = name ? title.toLocaleLowerCase("nb-NO").indexOf(name.toLocaleLowerCase("nb-NO")) : -1;
+  if (index < 0) return <>{title}{contactId && name ? <> · <Customer360Link contactId={contactId} name={name} /></> : null}</>;
+  return <>
+    {title.slice(0, index)}
+    <Customer360Link contactId={contactId} name={title.slice(index, index + name.length)} />
+    {title.slice(index + name.length)}
+  </>;
+}
