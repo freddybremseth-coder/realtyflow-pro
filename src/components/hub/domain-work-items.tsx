@@ -5,6 +5,7 @@ import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Customer360Link } from "@/components/crm/customer-360-link";
 
 /**
  * Domene-hub-panel: viser de åpne oppgavene fra Oppgave-HUB-en som hører til
@@ -24,6 +25,7 @@ type WorkItem = {
   source_type?: string | null;
   brand_id?: string | null;
   ai_score?: number | null;
+  metadata?: { contact_id?: string; customer_name?: string; [key: string]: unknown } | null;
 };
 
 export type DomainHubLink = { label: string; href: string; external?: boolean };
@@ -157,6 +159,7 @@ export function DomainWorkItems({
                       {task.priority || "MEDIUM"}
                     </Badge>
                   </p>
+                  {task.metadata?.contact_id ? <div className="mt-1 text-sm">Kunde: <Customer360Link contactId={task.metadata.contact_id} name={task.metadata.customer_name} /></div> : null}
                   {task.next_action || task.description ? (
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {task.next_action || task.description}
