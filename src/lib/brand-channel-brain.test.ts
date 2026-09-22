@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildFreddyBrandChannelState, FREDDY_BRAND_IDS, freddyBrandDefinitions } from "@/lib/brand-channel-brain";
 
-test("Freddy brand brain exposes the three canonical professional brands", () => {
+test("Freddy brand brain exposes the umbrella, art, books and AI separately", () => {
   assert.deepEqual(freddyBrandDefinitions().map((brand) => brand.id), [...FREDDY_BRAND_IDS]);
 });
 
