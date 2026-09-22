@@ -251,7 +251,7 @@ export async function finalizeFacebookPage(input: {
   /** Scopes granted on the user-token (same set applies to Page tokens). */
   scopes: string[];
 }): Promise<{
-  facebookChannelId: string;
+  facebookChannelId: string | null;
   instagramChannelId: string | null;
 }> {
   if (!input.page.canPost || !input.page.accessToken) {
@@ -260,27 +260,36 @@ export async function finalizeFacebookPage(input: {
     );
   }
 
-  const fbChannel = await upsertChannel({
-    brandId: input.brandId,
-    platform: "facebook",
-    externalId: input.page.id,
-    displayName: input.page.name,
-    metadata: {
-      category: input.page.category,
-      tasks: input.page.tasks,
-      linked_ig_id: input.page.instagram?.id,
-    },
-  });
+  // The art brand owns only its Instagram account. Its linked Meta Page is an
+  // OAuth credential bridge, NOT a dedicated Freddy Bremseth Art Facebook Page.
+  // Never clone Freddy's professional umbrella FB Page into freddyart.
+  if (input.brandId === "freddyart" && !input.page.instagram?.id)
+    throw new Error("ART_INSTAGRAM_NOT_LINKED_TO_SELECTED_FACEBOOK_PAGE");
 
-  // Page tokens don't expire and don't have a refresh token — only
-  // an access_token. Saving NULL refresh is the right shape.
-  await saveTokens({
-    socialChannelId: fbChannel.id,
-    accessToken: input.page.accessToken,
-    refreshToken: null,
-    expiresAt: null,
-    scopes: input.scopes,
-  });
+  let facebookChannelId: string | null = null;
+  if (input.brandId !== "freddyart") {
+    const fbChannel = await upsertChannel({
+      brandId: input.brandId,
+      platform: "facebook",
+      externalId: input.page.id,
+      displayName: input.page.name,
+      metadata: {
+        category: input.page.category,
+        tasks: input.page.tasks,
+        linked_ig_id: input.page.instagram?.id,
+      },
+    });
+
+    // Page tokens don't expire and don't have a refresh token.
+    await saveTokens({
+      socialChannelId: fbChannel.id,
+      accessToken: input.page.accessToken,
+      refreshToken: null,
+      expiresAt: null,
+      scopes: input.scopes,
+    });
+    facebookChannelId = fbChannel.id;
+  }
 
   let instagramChannelId: string | null = null;
   if (input.page.instagram?.id) {
@@ -305,7 +314,7 @@ export async function finalizeFacebookPage(input: {
     instagramChannelId = igChannel.id;
   }
 
-  return { facebookChannelId: fbChannel.id, instagramChannelId };
+  return { facebookChannelId, instagramChannelId };
 }
 
 /**
