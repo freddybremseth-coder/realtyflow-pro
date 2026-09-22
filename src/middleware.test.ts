@@ -36,6 +36,8 @@ test("middleware passes allowlisted Nexus scheduler jobs to route-level token ve
     "/api/cron/social-inbox-sync",
     "/api/cron/engagement-tracker",
     "/api/cron/marketing-growth-metrics",
+    "/api/cron/art-lounge-reel-create",
+    "/api/cron/art-lounge-reel-publish",
   ]) {
     const response = await middleware(
       request(path, { "x-nexus-scheduler": "opaque-scheduler-token" }),
