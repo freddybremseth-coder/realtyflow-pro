@@ -141,7 +141,7 @@ export default function NexusDirectorPage() {
       <div className="text-xs font-black uppercase tracking-[0.24em] text-violet-300">Nexus OS · Portfolio Automation Director</div>
       <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
         <div><h1 className="text-3xl font-black">Hva bør RealtyFlow markedsføre neste?</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">Director prioriterer ekte sources på tvers av books, eiendom, ChatGenius, Doña Anna og creator-brandene. «Lag utkast» oppretter kampanjestart og sender den til Kontroll. Ingenting er publisert før approval og execution er fullført.</p></div>
-        <div className="flex gap-2"><Link href="/nexus-os" className="rounded-xl border border-white/20 px-4 py-2 text-sm font-bold">Nexus</Link><Link href="/approvals" className="rounded-xl border border-white/20 px-4 py-2 text-sm font-bold">Kontroll</Link><button onClick={load} disabled={loading} className="rounded-xl bg-violet-300 px-4 py-2 text-sm font-black text-slate-950 disabled:opacity-60">{loading ? "Beregner…" : "Beregn på nytt"}</button></div>
+        <div className="flex flex-wrap gap-2"><Link href="/freddy-editorial" className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-black text-slate-950">Freddy Facebook</Link><Link href="/nexus-os" className="rounded-xl border border-white/20 px-4 py-2 text-sm font-bold">Nexus</Link><Link href="/approvals" className="rounded-xl border border-white/20 px-4 py-2 text-sm font-bold">Kontroll</Link><button onClick={load} disabled={loading} className="rounded-xl bg-violet-300 px-4 py-2 text-sm font-black text-slate-950 disabled:opacity-60">{loading ? "Beregner…" : "Beregn på nytt"}</button></div>
       </div>
     </header>
 
