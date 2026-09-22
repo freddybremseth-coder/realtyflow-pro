@@ -159,13 +159,12 @@ export default function OAuthSelectPage() {
   return (
     <div className="p-8 max-w-3xl">
       <h1 className="text-2xl font-semibold text-white mb-2">
-        {isFacebook ? "Velg Facebook-side" : "Velg YouTube-kanal"}
+        {isFacebook && pending.brand_id === "freddyart" ? "Velg Facebook-siden som er koblet til kunstens Instagram" : isFacebook ? "Velg Facebook-side" : "Velg YouTube-kanal"}
       </h1>
       <p className="text-slate-400 mb-6">
-        Du autoriserte tilgang til flere kontoer. Velg <strong>én</strong> konto
-        som skal kobles til merkevaren <Badge>{pending.brand_id}</Badge>. Denne
-        bindingen er eksplisitt — ingen andre kontoer blir koblet til denne
-        merkevaren basert på dette samtykket.
+        {isFacebook && pending.brand_id === "freddyart"
+          ? <>Velg Facebook-siden som gir tilgang til Instagram-kontoen for <Badge>Freddy Bremseth Art</Badge>. Vi kobler <strong>bare Instagram</strong> til kunstmerkevaren; Facebook-siden forblir under Freddy Bremseth eller den merkevaren den tilhører.</>
+          : <>Du autoriserte tilgang til flere kontoer. Velg <strong>én</strong> konto som skal kobles til merkevaren <Badge>{pending.brand_id}</Badge>. Ingen andre kontoer kobles automatisk til merkevaren.</>}
       </p>
 
       <div className="space-y-3">
@@ -201,14 +200,16 @@ export default function OAuthSelectPage() {
                     {sub && <p className="text-xs text-slate-400 truncate">{sub}</p>}
                     {c.instagram?.id && isFacebook && (
                       <p className="text-xs text-pink-300 mt-0.5">
-                        Vil også koble Instagram @{c.instagram.username || c.instagram.id}
+                        {pending.brand_id === "freddyart"
+                          ? `Kobler kun Instagram @${c.instagram.username || c.instagram.id} til Freddy Bremseth Art`
+                          : `Vil også koble Instagram @${c.instagram.username || c.instagram.id}`}
                       </p>
                     )}
                   </div>
                 </div>
                 <Button
                   variant="default"
-                  disabled={disabled}
+                  disabled={disabled || (pending.brand_id === "freddyart" && !c.instagram?.id)}
                   onClick={() => onPick(c.id)}
                 >
                   {isSubmitting ? "Kobler …" : "Velg denne"}
