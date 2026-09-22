@@ -73,6 +73,8 @@ const NEXUS_SCHEDULER_PATHS = new Set([
   "/api/cron/engagement-tracker",
   "/api/cron/marketing-growth-metrics",
   "/api/cron/remaster-mix-worker",
+  "/api/cron/art-lounge-reel-create",
+  "/api/cron/art-lounge-reel-publish",
 ]);
 
 const ROLE_HOME: Record<AccessRole, string> = {
