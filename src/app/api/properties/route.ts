@@ -23,6 +23,7 @@ const PUBLIC_PROPERTY_SELECT = [
   "images",
   "description",
   "description_no",
+  "source",
   "featured",
   "image_color",
   "year_built",
