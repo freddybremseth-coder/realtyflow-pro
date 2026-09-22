@@ -81,6 +81,7 @@ function linkedEmailDetail(row: CustomerLinkedEmailInput) {
     row.ai_intent ? `Intent: ${row.ai_intent}` : null,
     row.ai_urgency ? `Haster: ${row.ai_urgency}` : null,
     row.ai_sentiment ? `Tone: ${row.ai_sentiment}` : null,
+    String(row.direction || "").toLowerCase() === "outbound" ? "Utsendelse registrert; levering til mottaker er ikke bekreftet." : null,
   ].filter(Boolean);
   return parts.join(" · ") || null;
 }
