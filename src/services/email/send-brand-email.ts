@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSmtpConfigFromAccount } from "@/services/email/account-auth";
+import { appendHostingerSentCopy } from "@/services/email/append-sent-copy";
 import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
 import { sendEmail, type OutgoingAttachment } from "@/services/email/smtp-sender";
 
@@ -92,6 +93,20 @@ export async function sendBrandEmail(
     received_at: new Date().toISOString(),
   });
   if (logError) console.error("[Brand Email] SMTP accepted but CRM audit insert failed", logError.message);
+
+  // IMAP Sent is a separate best-effort filing operation. Its failure does
+  // NOT mean customer delivery failed and must NEVER resend the SMTP email.
+  const sentCopy = await appendHostingerSentCopy(config, {
+    to: params.to,
+    subject: params.subject,
+    bodyText: params.bodyText,
+    bodyHtml: params.bodyHtml,
+    attachments: params.attachments,
+    fromName: params.fromName || config.display_name || undefined,
+  }, result.messageId);
+  if (sentCopy !== "appended" && sentCopy !== "already_exists" && sentCopy !== "unsupported") {
+    console.warn("[Brand Email] Customer SMTP send accepted; IMAP Sent copy status:", sentCopy);
+  }
 
   return { success: true, messageId: result.messageId };
 }
