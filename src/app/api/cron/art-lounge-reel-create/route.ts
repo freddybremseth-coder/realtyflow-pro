@@ -10,7 +10,7 @@ import { loadPublishedMixArt } from '@/services/pipelines/remaster-mix-promotion
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
-const DESTINATION_BRAND = 'freddyb';
+const DESTINATION_BRAND = 'freddyart';
 
 function madridDay(date: Date): string {
   const parts = new Intl.DateTimeFormat('en-US',{
@@ -35,19 +35,16 @@ export async function GET(request: NextRequest) {
     .select('enabled,automatic,channels,destination_brand').eq('singleton',true).maybeSingle();
   if (settingsError) return NextResponse.json({error:'ART_LOUNGE_MIGRATION_REQUIRED'},{status:503});
   if (!settings?.enabled || !settings.automatic || settings.destination_brand!==DESTINATION_BRAND ||
-      JSON.stringify([...settings.channels].sort())!==JSON.stringify(['facebook','instagram']))
+      JSON.stringify([...settings.channels].sort())!==JSON.stringify(['instagram']))
     return NextResponse.json({skipped:true,reason:'ART_LOUNGE_SETTINGS_DISABLED_OR_UNEXPECTED'});
-  // No partial automatic publishing to an unrelated Meta account. Both exact
-  // brand credentials are required before even rendering the daily asset.
+  // Reels are ART-first on the art brand's own Instagram account. The umbrella
+  // Facebook page has a separate curated editorial workflow; never mirror daily.
   if (process.env.MARKETING_META_LIVE!=='true')
     return NextResponse.json({skipped:true,reason:'MARKETING_META_LIVE_NOT_ENABLED'});
   try {
-    const [fb,ig]=await Promise.all([
-      getTokensForBrandPlatform(DESTINATION_BRAND,'facebook'),
-      getTokensForBrandPlatform(DESTINATION_BRAND,'instagram'),
-    ]);
-    if (!fb?.tokens.accessToken || !ig?.tokens.accessToken)
-      return NextResponse.json({skipped:true,reason:'ART_LOUNGE_CONNECT_BOTH_BRAND_ACCOUNTS'});
+    const ig=await getTokensForBrandPlatform(DESTINATION_BRAND,'instagram');
+    if (!ig?.tokens.accessToken)
+      return NextResponse.json({skipped:true,reason:'ART_LOUNGE_CONNECT_ART_INSTAGRAM'});
   } catch {
     return NextResponse.json({skipped:true,reason:'ART_LOUNGE_BRAND_ACCOUNT_AMBIGUOUS_OR_UNAVAILABLE'});
   }
@@ -82,11 +79,10 @@ export async function GET(request: NextRequest) {
     }).eq('slot_date',slot).eq('state','rendering').select('id').single();
     if (jobError || !job?.id) throw new Error('ART_LOUNGE_JOB_SAVE_FAILED');
     const {error:deliveryError}=await db.from('art_lounge_reel_deliveries').insert([
-      {job_id:job.id,channel:'facebook',state:'reserved'},
       {job_id:job.id,channel:'instagram',state:'reserved'},
     ]);
     if (deliveryError) throw new Error('ART_LOUNGE_DELIVERY_QUEUE_FAILED');
-    return NextResponse.json({success:true,slot,jobId:job.id,videoReady:true,channels:['facebook','instagram']});
+    return NextResponse.json({success:true,slot,jobId:job.id,videoReady:true,channels:['instagram']});
   } catch(err) {
     const message=err instanceof Error?err.message:'ART_LOUNGE_RENDER_FAILED';
     await db.from('art_lounge_reel_jobs').update({
