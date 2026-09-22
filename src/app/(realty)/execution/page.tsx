@@ -212,7 +212,7 @@ export default function ExecutionPage() {
                       <Badge variant="outline">{KIND_LABELS[item.kind]}</Badge>
                       {item.brandId && <Badge variant="secondary">{item.brandId}</Badge>}
                     </div>
-                    <h2 className="mt-3 text-lg font-semibold text-white">{item.title}</h2>
+                    <h2 className="mt-3 text-lg font-semibold text-white">{item.contactId ? <Link href={`/customers?tab=all&contactId=${encodeURIComponent(item.contactId)}`} className="underline decoration-cyan-400 underline-offset-4 hover:text-cyan-200" aria-label={`Åpne kundekort 360 for ${item.title}`}>{item.title}</Link> : item.title}</h2>
                     <p className="mt-1 text-sm text-slate-400">{item.detail}</p>
                     <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500"><span className="flex items-center gap-1"><Clock3 size={13} />{formatDate(item.dueDate)}</span><span>Score {Math.round(item.score)}</span></div>
                   </div>

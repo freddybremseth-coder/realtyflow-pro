@@ -130,7 +130,7 @@ async function synthesizedItems(supabase: NonNullable<ReturnType<typeof getSupab
       assigned_agent: "sales",
       next_action: "Kontakt kunden og avklar budsjett, område og tidslinje.",
       ai_score: score,
-      metadata: { synthetic: true, email: contact.email, pipeline_status: contact.pipeline_status },
+      metadata: { synthetic: true, contact_id: contact.id, customer_name: contact.name || contact.email || "Kunde", email: contact.email, pipeline_status: contact.pipeline_status },
       created_at: contact.updated_at,
       updated_at: contact.updated_at,
     }));
@@ -280,7 +280,38 @@ export async function GET(request: NextRequest) {
     ...synthetic.filter((item) => !existingKeys.has(`${item.source_type}:${item.source_id}`)),
   ].slice(0, limit);
 
-  return NextResponse.json({ work_items: merged, synthetic: synthetic.length > 0 });
+  // Resolve the canonical CRM identity on the server. An email message or an
+  // action source ID is not necessarily a contact ID; link only after matching
+  // it to a real contacts row. This also covers older work items without names.
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const contactIds = Array.from(new Set(merged.flatMap((item) => {
+    const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {};
+    const candidates = [metadata.contact_id, metadata.customer_id];
+    if (item.source_type === "crm") candidates.push(item.source_id);
+    return candidates.filter((id): id is string => typeof id === "string" && uuid.test(id));
+  })));
+  let itemsWithCustomerLinks = merged;
+  if (contactIds.length) {
+    const { data: contactRows, error: contactError } = await supabase
+      .from("contacts")
+      .select("id,name,email")
+      .in("id", contactIds);
+    if (!contactError && contactRows) {
+      const contactsById = new Map(contactRows.map((contact) => [contact.id, contact]));
+      itemsWithCustomerLinks = merged.map((item) => {
+        const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {};
+        const candidates = [metadata.contact_id, metadata.customer_id, ...(item.source_type === "crm" ? [item.source_id] : [])];
+        const customer = candidates.map((id) => contactsById.get(String(id || ""))).find(Boolean);
+        if (!customer) return item;
+        return { ...item, metadata: {
+          ...metadata, contact_id: customer.id,
+          customer_name: customer.name || customer.email || "Kunde",
+        } };
+      });
+    }
+  }
+
+  return NextResponse.json({ work_items: itemsWithCustomerLinks, synthetic: synthetic.length > 0 });
 }
 
 export async function POST(request: NextRequest) {

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Customer360Link, CustomerTaskTitle } from "@/components/crm/customer-360-link";
 import { CheckSquare, Plus, GripVertical, X, Loader2, AlertTriangle } from "lucide-react";
 
 type TaskStatus = "TO_DO" | "IN_PROGRESS" | "REVIEW" | "DONE";
@@ -410,10 +411,11 @@ export default function MarketingTasksPage() {
           <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">{selectedTask.title}</h2>
+                <h2 className="text-lg font-semibold text-white"><CustomerTaskTitle title={selectedTask.title} contactId={selectedTask.metadata?.contact_id} customerName={selectedTask.metadata?.customer_name} /></h2>
                 <Button variant="ghost" size="icon" onClick={() => setSelectedTask(null)}><X size={18} /></Button>
               </div>
               {selectedTask.description && <p className="text-sm text-slate-300 mb-4">{selectedTask.description}</p>}
+              {selectedTask.metadata?.contact_id && <div className="mb-4 rounded-lg border border-slate-600 p-3 text-sm text-slate-200">Kunde: <Customer360Link contactId={selectedTask.metadata.contact_id} name={selectedTask.metadata.customer_name} /></div>}
               {["kdp", "publishing"].includes(String(selectedTask.sourceType || "").toLowerCase()) &&
                 selectedTask.metadata?.autopilot?.suggestion && (
                 <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
@@ -547,7 +549,7 @@ export default function MarketingTasksPage() {
                       <div className="flex items-start gap-2">
                         <GripVertical size={14} className="text-slate-600 mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-slate-200 font-medium">{task.title}</p>
+                          <p className="text-sm text-slate-200 font-medium"><CustomerTaskTitle title={task.title} contactId={task.metadata?.contact_id} customerName={task.metadata?.customer_name} /></p>
                           {task.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{task.description}</p>}
                           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             <Badge variant="outline" className="text-[10px]">{task.platform}</Badge>
