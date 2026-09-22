@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Customer360Link } from "@/components/crm/customer-360-link";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -239,7 +240,7 @@ export default function AfterSalesPage() {
                 <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] text-slate-300">{PHASE_LABELS[customer.phase]}</span>
                 <span className="text-xs text-slate-500">{BRAND_LABELS[customer.brandId] || customer.brandId}</span>
               </div>
-              <h2 className="mt-3 text-xl font-semibold text-white">{customer.name}</h2>
+              <h2 className="mt-3 text-xl font-semibold text-white"><Customer360Link contactId={customer.id} name={customer.name} className="text-white underline decoration-cyan-400 underline-offset-4 hover:text-cyan-200" /></h2>
               <p className="mt-1 text-sm text-slate-400">{customer.propertyInterest || "Boliginteresse ikke satt"} · {money(customer.value)}</p>
               <p className="mt-1 text-xs text-slate-500">Kunde i {customer.daysSinceWon} dager · siste kontakt {dateLabel(customer.lastContactAt)} · neste {dateLabel(customer.nextFollowupAt)}</p>
               <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3"><p className="text-xs uppercase tracking-wide text-emerald-300">Anbefalt neste steg</p><p className="mt-1 text-sm text-slate-200">{customer.recommendedAction}</p></div>
