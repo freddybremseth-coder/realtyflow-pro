@@ -56,8 +56,8 @@
     { "path": "/api/cron/demosites-followup", "schedule": "0 8 * * *" },
     { "path": "/api/cron/seo-growth-review", "schedule": "15 7 * * 1" },
     { "path": "/api/cron/seo-autopilot", "schedule": "40 7 * * *" },
-    { "path": "/api/cron/art-lounge-reel-create", "schedule": "30 8 * * *" },
-    { "path": "/api/cron/art-lounge-reel-publish", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/art-lounge-reel-create", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/art-lounge-reel-publish", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/art-growth-source-sync", "schedule": "45 7 * * *" },
     { "path": "/api/cron/freddy-creative-editorial", "schedule": "15 8 * * 1" }
   ]
