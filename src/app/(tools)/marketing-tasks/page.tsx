@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Customer360Link } from "@/components/crm/customer-360-link";
+import { Customer360Link, CustomerTaskTitle } from "@/components/crm/customer-360-link";
 import { CheckSquare, Plus, GripVertical, X, Loader2, AlertTriangle } from "lucide-react";
 
 type TaskStatus = "TO_DO" | "IN_PROGRESS" | "REVIEW" | "DONE";
