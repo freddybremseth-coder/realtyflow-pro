@@ -15,6 +15,7 @@ import {
   type RemasterMixAudioResult,
 } from "./remaster-mix-audio";
 import { loadZenEcoHomesVisualUrls } from "./remaster-mix-visual-source";
+import { diagnoseExplicitMixSelection, MixSelectionValidationError } from "./remaster-mix-selection-validation";
 import { buildRemasterPartnerComment, type PartnerCommentStyle } from "./remaster-mix-partner-comment";
 import { renderArtLoungeThumbnail } from "./remaster-mix-art-thumbnail";
 import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand, type PromotionSelection, type PromotionItem } from "./remaster-mix-promotions";
@@ -166,7 +167,9 @@ async function completeJob(job: MixJobRow, videoId: string, youtubeUrl: string) 
 async function failJob(job: MixJobRow, error: unknown, retryable: boolean) {
   const supabase = getSupabase();
   const message = error instanceof Error ? error.message : String(error);
-  const code = isRemasterYouTubeReconnectRequired(error)
+  const code = error instanceof MixSelectionValidationError
+    ? "MIX_PROMOTION_SELECTION_INVALID"
+    : isRemasterYouTubeReconnectRequired(error)
     ? "YOUTUBE_RECONNECT_REQUIRED"
     : /youtube/i.test(message)
       ? "YOUTUBE_LONGFORM_FAILED"
@@ -260,6 +263,23 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     await report(2, "verifying_youtube_connection");
     await verifyRemasterLongFormYouTubeConnection();
 
+    // Fail *before* audio transcoding if a saved artwork or cover is no longer
+    // published or its actual style/collection conflicts with selected filters.
+    // Never retry a deterministic owner-selection mismatch on a worker lease.
+    const savedBrand = job.input_snapshot?.visualPlan?.brand || job.input_snapshot?.visualPlan?.source;
+    const brand: PromotionBrand = ['zeneco','art','books','none'].includes(String(savedBrand))
+      ? savedBrand as PromotionBrand
+      : (job.zenecohomes_enabled ? 'zeneco' : 'none');
+    let checkedCatalog: PromotionItem[] | null = null;
+    if (brand === "art" || brand === "books") {
+      await report(3, "validating_promotion_selection");
+      checkedCatalog = brand === "art" ? await loadPublishedMixArt() : await loadPublishedMixBooks();
+      const issues = diagnoseExplicitMixSelection(checkedCatalog, {
+        ...job.input_snapshot?.visualPlan,
+        brand, randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+      });
+      if(issues.length) throw new MixSelectionValidationError(issues);
+    }
     await report(4, "building_crossfade_audio");
     audio = await buildRemasterMixAudio(
       tracks.map((track) => ({
@@ -273,10 +293,6 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     await report(12, "selecting_visuals");
     // For legacy plans, keep the exact previous ZenEcoHomes/music behavior.
     // For modern plans, use only the chosen public content from ONE partner.
-    const savedBrand = job.input_snapshot?.visualPlan?.brand || job.input_snapshot?.visualPlan?.source;
-    const brand: PromotionBrand = ['zeneco','art','books','none'].includes(String(savedBrand))
-      ? savedBrand as PromotionBrand
-      : (job.zenecohomes_enabled ? 'zeneco' : 'none');
     let promotedItems: PromotionItem[] = [];
     const imageUrls = brand === 'zeneco'
       ? (await loadZenEcoHomesVisualUrls({
@@ -289,22 +305,18 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
         })).urls
       : brand === 'art' || brand === 'books'
         ? await (async () => {
-            const catalog = brand === 'art' ? await loadPublishedMixArt() : await loadPublishedMixBooks();
+            const catalog = checkedCatalog || (brand === 'art' ? await loadPublishedMixArt() : await loadPublishedMixBooks());
+            const finalIssues = diagnoseExplicitMixSelection(catalog, {
+              ...job.input_snapshot?.visualPlan, brand,
+              randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+            });
+            if(finalIssues.length) throw new MixSelectionValidationError(finalIssues);
             const selected = selectApprovedPromotionItems(catalog, {
               ...job.input_snapshot?.visualPlan, brand,
               randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
             }, recommendedVisualCount(job.target_minutes));
             if (!selected.length) throw new Error('No published '+brand+' visuals match the saved mix selection');
-            // Fail closed if any individually selected work was unpublished
-            // between the draft and the actual production.
-            const requestedIds = brand === 'art' ? job.input_snapshot?.visualPlan?.artIds : job.input_snapshot?.visualPlan?.bookIds;
-            const eligibleIds = new Set(selectApprovedPromotionItems(catalog, {
-              ...job.input_snapshot?.visualPlan, brand,
-              randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
-            }, 180).map(item => item.id));
-            if ((requestedIds || []).some(id => !eligibleIds.has(id))) {
-              throw new Error('A specifically selected '+brand+' item was unpublished or no longer matches the filters');
-            }
+            // Explicit IDs are validated directly above, not inferred from a 180-image random sample.
             promotedItems = selected;
             return selected.map(item => item.imageUrl);
           })()
@@ -450,7 +462,7 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     // A reconnect-required failure is also terminal until an operator repairs
     // OAuth, otherwise the recovery loop would repeatedly rerender the mix.
     const reconnectRequired = isRemasterYouTubeReconnectRequired(error);
-    await failJob(job, error, !uploadStarted && !reconnectRequired);
+    await failJob(job, error, !uploadStarted && !reconnectRequired && !(error instanceof MixSelectionValidationError));
     throw error;
   } finally {
     clearInterval(heartbeatTimer);
