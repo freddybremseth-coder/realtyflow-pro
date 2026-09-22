@@ -1,4 +1,5 @@
-import { describe,expect,it } from 'vitest';
+import { describe,it } from 'node:test';
+import assert from 'node:assert/strict';
 import { fetchApprovedReelSource, reelCaption, REEL_SECONDS, selectReelAssets } from './art-lounge-reels';
 import type { PromotionItem } from './remaster-mix-promotions';
 
@@ -13,29 +14,28 @@ const works:PromotionItem[]=Array.from({length:8},(_,i)=>({
   detailUrl:'https://art.freddybremseth.com/verk/work-'+i+'/',
 }));
 describe('Art Lounge daily production contract',()=>{
-  it('selects the same 3 distinct published artworks and a song for the same day',()=>{
+  it('selects the same 3 distinct public artworks and a song for the same day',()=>{
     const first=selectReelAssets('2026-09-22',songs,works);
-    expect(selectReelAssets('2026-09-22',songs,works)).toEqual(first);
-    expect(new Set(first.artwork.map(x=>x.id)).size).toBe(3);
-    expect(new Set(first.artwork.map(x=>x.style)).size).toBe(3);
-    expect(REEL_SECONDS).toBeGreaterThanOrEqual(15);
-    expect(REEL_SECONDS).toBeLessThanOrEqual(35);
+    assert.deepEqual(selectReelAssets('2026-09-22',songs,works),first);
+    assert.equal(new Set(first.artwork.map(x=>x.id)).size,3);
+    assert.equal(new Set(first.artwork.map(x=>x.style)).size,3);
+    assert.ok(REEL_SECONDS>=15 && REEL_SECONDS<=35);
   });
   it('rotates away from a song used during recent days',()=>{
     const prior=selectReelAssets('2026-09-22',songs,works);
     const next=selectReelAssets('2026-09-22',songs,works,[prior.song.id]);
-    expect(next.song.id).not.toBe(prior.song.id);
+    assert.notEqual(next.song.id,prior.song.id);
   });
-  it('credits the actual chosen artwork and the original music',()=>{
+  it('credits each selected artwork and the exact Re-Master song',()=>{
     const selected=selectReelAssets('2026-09-22',songs,works);
     const caption=reelCaption(selected);
-    for(const item of selected.artwork)expect(caption).toContain(item.detailUrl);
-    expect(caption).toContain(selected.song.name);
-    expect(caption).toContain(selected.song.youtube_url);
+    for(const item of selected.artwork)assert.ok(caption.includes(item.detailUrl));
+    assert.ok(caption.includes(selected.song.name));
+    assert.ok(caption.includes(selected.song.youtube_url));
   });
-  it('rejects unapproved sources before fetch (including private art originals)',async()=>{
-    await expect(fetchApprovedReelSource('https://evil.example.com/work.webp','art')).rejects.toThrow('ART_LOUNGE_UNTRUSTED_SOURCE');
-    await expect(fetchApprovedReelSource('https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/private/art-originals/work.webp','art')).rejects.toThrow('ART_LOUNGE_UNTRUSTED_SOURCE');
-    await expect(fetchApprovedReelSource('https://evil.example.com/audio.mp3','audio')).rejects.toThrow('ART_LOUNGE_UNTRUSTED_SOURCE');
+  it('rejects unapproved sources before fetch, especially private art originals',async()=>{
+    await assert.rejects(fetchApprovedReelSource('https://evil.example.com/work.webp','art'),/ART_LOUNGE_UNTRUSTED_SOURCE/);
+    await assert.rejects(fetchApprovedReelSource('https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/private/art-originals/work.webp','art'),/ART_LOUNGE_UNTRUSTED_SOURCE/);
+    await assert.rejects(fetchApprovedReelSource('https://evil.example.com/audio.mp3','audio'),/ART_LOUNGE_UNTRUSTED_SOURCE/);
   });
 });
