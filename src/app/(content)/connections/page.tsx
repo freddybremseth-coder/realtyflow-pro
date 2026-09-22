@@ -162,7 +162,7 @@ export default function ChannelConnectionsPage() {
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-5">
         <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">CONNECTED ROWS</div><div className="mt-1 text-3xl font-black">{totalConnected}</div></div>
         <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">META COMPLETE</div><div className="mt-1 text-3xl font-black">{brandsFullyMeta}/{OWNED_GROWTH_BRANDS.length}</div></div>
         <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">META COMMUNICATIONS</div><div className="mt-1 text-3xl font-black">{brandsCommunicationReady}/{OWNED_GROWTH_BRANDS.length}</div></div>
@@ -189,12 +189,12 @@ export default function ChannelConnectionsPage() {
           <h2 className="text-xl font-black">Brands & providers</h2>
           <p className="mt-1 text-sm text-slate-600">Green = live provider verification. Red = reconnect or routing cleanup required. DM/comment capability remains separate from publishing.</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1320px] border-collapse text-sm">
-            <thead className="bg-slate-100 text-left text-xs uppercase tracking-wider text-slate-700">
+        <div className="w-full min-w-0 lg:overflow-x-auto">
+          <table className="block w-full min-w-0 border-collapse text-sm lg:table lg:min-w-[1320px]">
+            <thead className="hidden bg-slate-100 text-left text-xs uppercase tracking-wider text-slate-700 lg:table-header-group">
               <tr><th className="p-4">Brand</th><th className="p-4">Meta</th><th className="p-4">LinkedIn</th><th className="p-4">YouTube</th><th className="p-4">Growth plan</th></tr>
             </thead>
-            <tbody>
+            <tbody className="block lg:table-row-group">
               {OWNED_GROWTH_BRANDS.map((brand) => {
                 const state = rowByBrand.get(brand.id);
                 const channels = state?.channels ?? [];
@@ -208,45 +208,49 @@ export default function ChannelConnectionsPage() {
                 const renderChannel = (channel: Channel) => {
                   const check = checkFor(brand.id, channel);
                   return (
-                    <div key={channel.id} className="mt-2 rounded-lg border border-slate-200 p-2 text-xs text-slate-700">
+                    <div key={channel.id} className="mt-2 min-w-0 break-words rounded-lg border border-slate-200 p-2 text-xs text-slate-700">
                       <div className="flex flex-wrap items-center gap-2">
                         <b>{channel.display_name}</b>
                         <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${statusClasses(check?.status)}`}>{statusLabel(check?.status)}</span>
                       </div>
-                      {check?.message && <div className="mt-1 leading-5 text-slate-600">{check.message}</div>}
+                      {check?.message && <div className="mt-1 whitespace-normal break-words leading-5 text-slate-600">{check.message}</div>}
                     </div>
                   );
                 };
 
                 return (
-                  <tr key={brand.id} className="border-t border-slate-200 align-top">
-                    <td className="p-4">
-                      <div className="font-black">{brand.name}</div>
+                  <tr key={brand.id} className="mb-3 block min-w-0 rounded-xl border border-slate-300 bg-white align-top shadow-sm lg:mb-0 lg:table-row lg:rounded-none lg:border-0 lg:border-t lg:shadow-none">
+                    <td className="block min-w-0 border-b border-slate-100 p-4 lg:table-cell lg:border-b-0">
+                      <div className="break-words font-black">{brand.name}</div>
                       <a href={brand.website} target="_blank" rel="noreferrer" className="mt-1 block text-xs font-bold text-cyan-800">{brand.website.replace(/^https?:\/\//, "")}</a>
                       {state?.error && <div className="mt-2 text-xs font-semibold text-rose-800">{state.error}</div>}
                     </td>
-                    <td className="p-4">
+                    <td className="block min-w-0 border-b border-slate-100 p-4 lg:table-cell lg:border-b-0">
+                      <div className="mb-2 text-xs font-black uppercase tracking-wider text-slate-600 lg:hidden">Meta</div>
                       <div className="flex flex-wrap gap-2">
                         <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${facebook.length ? "bg-emerald-100 text-emerald-900" : "bg-slate-100 text-slate-700"}`}>Facebook {facebook.length ? "✓" : "—"}</span>
                         <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${instagram.length ? "bg-emerald-100 text-emerald-900" : "bg-slate-100 text-slate-700"}`}>Instagram {instagram.length ? "✓" : "—"}</span>
-                        <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${commReady ? "bg-cyan-100 text-cyan-950" : "bg-amber-100 text-amber-950"}`}>{commReady ? "Communications ready" : "Publishing only / scope mangler"}</span>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${commReady ? "bg-cyan-100 text-cyan-950" : "bg-amber-100 text-amber-950"}`}>{commReady ? "Communications ready" : meta.length ? "Publishing only / scope mangler" : "Meta ikke koblet"}</span>
                       </div>
                       {meta.map(renderChannel)}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button onClick={() => connectMeta(brand.id, "publishing")} className={`rounded-lg px-3 py-2 text-xs font-black ${meta.length ? "border border-slate-400 bg-white text-slate-950" : "bg-blue-800 text-white"}`}>{meta.length ? "Reconnect publishing" : "Koble Meta publishing"}</button>
-                        <button onClick={() => connectMeta(brand.id, "communications")} className={`rounded-lg px-3 py-2 text-xs font-black ${commReady ? "border border-emerald-400 bg-emerald-50 text-emerald-950" : "bg-slate-950 text-white"}`}>{commReady ? "Re-authorize communications" : "Utvid til DM + kommentarer"}</button>
+                        <button onClick={() => connectMeta(brand.id, "publishing")} className={`max-w-full whitespace-normal break-words rounded-lg px-3 py-2 text-xs font-black ${meta.length ? "border border-slate-400 bg-white text-slate-950" : "bg-blue-800 text-white"}`}>{meta.length ? "Reconnect publishing" : "Koble Meta publishing"}</button>
+                        <button onClick={() => connectMeta(brand.id, "communications")} className={`max-w-full whitespace-normal break-words rounded-lg px-3 py-2 text-xs font-black ${commReady ? "border border-emerald-400 bg-emerald-50 text-emerald-950" : "bg-slate-950 text-white"}`}>{commReady ? "Re-authorize communications" : "Utvid til DM + kommentarer"}</button>
                       </div>
                     </td>
-                    <td className="p-4">
+                    <td className="block min-w-0 border-b border-slate-100 p-4 lg:table-cell lg:border-b-0">
+                      <div className="mb-2 text-xs font-black uppercase tracking-wider text-slate-600 lg:hidden">LinkedIn</div>
                       {linkedin.length ? linkedin.map(renderChannel) : <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-700">Not connected</span>}
                       <button onClick={() => connectLinkedIn(brand.id)} className={`mt-3 block rounded-lg px-3 py-2 text-xs font-black ${linkedin.length ? "border border-slate-400 bg-white text-slate-950" : "bg-sky-800 text-white"}`}>{linkedin.length ? "Koble LinkedIn på nytt" : "Koble LinkedIn"}</button>
                     </td>
-                    <td className="p-4">
+                    <td className="block min-w-0 border-b border-slate-100 p-4 lg:table-cell lg:border-b-0">
+                      <div className="mb-2 text-xs font-black uppercase tracking-wider text-slate-600 lg:hidden">YouTube</div>
                       {youtube.length ? youtube.map(renderChannel) : <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-700">Not connected</span>}
                       <button onClick={() => connectYoutube(brand.id)} className={`mt-3 block rounded-lg px-3 py-2 text-xs font-black ${youtube.length ? "border border-slate-400 bg-white text-slate-950" : "bg-red-800 text-white"}`}>{youtube.length ? "Koble YouTube på nytt" : "Koble YouTube"}</button>
                     </td>
-                    <td className="p-4 text-xs text-slate-700">
-                      <div className="font-bold text-slate-950">{brand.plannedChannels.join(" · ")}</div>
+                    <td className="block min-w-0 break-words p-4 text-xs text-slate-700 lg:table-cell">
+                      <div className="mb-2 text-xs font-black uppercase tracking-wider text-slate-600 lg:hidden">Growth plan</div>
+                      <div className="break-words font-bold text-slate-950">{brand.plannedChannels.join(" · ")}</div>
                       <div className="mt-2 leading-5">{brand.notes}</div>
                     </td>
                   </tr>
