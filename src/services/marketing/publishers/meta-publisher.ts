@@ -22,6 +22,7 @@ export interface MetaGraph {
   publishIgMedia(igUserId: string, creationId: string): Promise<{ id: string }>;
   createFbPost(pageId: string, p: { message: string; link?: string }): Promise<{ id: string }>;
   createFbPhoto(pageId: string, p: { url: string; caption?: string }): Promise<{ id: string }>;
+  createFbReel?(pageId: string, p: { videoUrl: string; caption: string }): Promise<{ id: string }>;
   reconcile?(idempotencyKey: string): Promise<{ externalId: string } | null>;
 }
 
@@ -138,9 +139,16 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     const media = asset.media ?? {};
     await writeAttempt(key, base, { status: "publishing" });
     try {
-      const id = media.imageUrl
-        ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset) })).id
-        : (await graph.createFbPost(target, { message: caption(asset), link: media.linkUrl })).id;
+      // A video must be published as an actual Facebook Reel; never degrade
+      // silently to a text-only link post or discard the video.
+      const id = media.videoUrl
+        ? (await (async () => {
+            if (!graph.createFbReel) throw new Error('FACEBOOK_REEL_PUBLISHER_MISSING');
+            return graph.createFbReel(target, { videoUrl: media.videoUrl, caption: caption(asset) });
+          })()).id
+        : media.imageUrl
+          ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset) })).id
+          : (await graph.createFbPost(target, { message: caption(asset), link: media.linkUrl })).id;
       await writeAttempt(key, base, { status: "posted", external_id: id, external_media_id: id });
       return { state: "published", externalId: id };
     } catch (err) {
@@ -218,5 +226,46 @@ export function makeGraphApi(token: string, apiVersion = "v25.0"): MetaGraph {
     publishIgMedia: (ig, creationId) => post(`/${ig}/media_publish`, { creation_id: creationId }),
     createFbPost: (pageId, p) => post(`/${pageId}/feed`, { message: p.message, ...(p.link ? { link: p.link } : {}) }),
     createFbPhoto: (pageId, p) => post(`/${pageId}/photos`, { url: p.url, caption: p.caption }),
+    // Facebook Pages Reels: START -> hosted video upload -> FINISH.
+    // Graph returns video_id (not id) at START and success (not id) at FINISH.
+    // The publishing attempt is reserved BEFORE entering this method: any
+    // uncertain failure is held for reconciliation, never replayed blindly.
+    createFbReel: async (pageId, p) => {
+      const startResponse = await fetch(`${base}/${pageId}/video_reels`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: token, upload_phase: "start" }),
+      });
+      const start = await startResponse.json().catch(() => ({})) as {
+        video_id?: string; upload_url?: string; error?: { message?: string };
+      };
+      if (!startResponse.ok || !start.video_id || !start.upload_url)
+        throw new Error(`FACEBOOK_REEL_START_FAILED: ${start.error?.message || startResponse.status}`);
+      // Never send OAuth credentials to an upload URL returned by an unexpected host.
+      const uploadUrl = new URL(start.upload_url);
+      if (uploadUrl.protocol !== "https:" || uploadUrl.hostname !== "rupload.facebook.com")
+        throw new Error("FACEBOOK_REEL_UNTRUSTED_UPLOAD_HOST");
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { Authorization: `OAuth ${token}`, file_url: p.videoUrl },
+      });
+      const uploaded = await uploadResponse.json().catch(() => ({})) as {
+        success?: boolean; error?: { message?: string };
+      };
+      if (!uploadResponse.ok || uploaded.success === false)
+        throw new Error(`FACEBOOK_REEL_UPLOAD_FAILED: ${uploaded.error?.message || uploadResponse.status}`);
+      const finishResponse = await fetch(`${base}/${pageId}/video_reels`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: token, upload_phase: "finish", video_id: start.video_id,
+          video_state: "PUBLISHED", description: p.caption,
+        }),
+      });
+      const finish = await finishResponse.json().catch(() => ({})) as {
+        success?: boolean; error?: { message?: string };
+      };
+      if (!finishResponse.ok || finish.success !== true)
+        throw new Error(`FACEBOOK_REEL_FINISH_UNCONFIRMED: ${finish.error?.message || finishResponse.status}`);
+      return { id: start.video_id };
+    },
   };
 }
