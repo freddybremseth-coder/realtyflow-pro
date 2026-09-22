@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Customer360Link } from "@/components/crm/customer-360-link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, CircleGauge, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 
@@ -70,7 +71,7 @@ export default function BuyerProfileHealthPage() {
     <section className="space-y-5">{items.map((item) => <article key={item.profile.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-6"><div>
         <div className="flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${tone(item.status)}`}>{LABEL[item.status]}</span><span className="text-xs font-bold text-slate-500">{item.customer.brand} · {item.customer.pipelineStatus}</span></div>
-        <h2 className="mt-3 text-xl font-black text-slate-950">{item.customer.name}</h2><p className="mt-1 text-xs text-slate-500">{item.customer.email || "Ingen e-post"} · {item.customer.propertyInterest || "Ingen registrert boliginteresse"}</p>
+        <h2 className="mt-3 text-xl font-black text-slate-950"><Customer360Link contactId={item.customer.id} name={item.customer.name} className="text-slate-950 underline decoration-violet-400 underline-offset-4 hover:text-violet-700" /></h2><p className="mt-1 text-xs text-slate-500">{item.customer.email || "Ingen e-post"} · {item.customer.propertyInterest || "Ingen registrert boliginteresse"}</p>
       </div><div className="flex gap-3"><Score label="Profil" value={item.profileHealth.score}/><Score label="Match" value={item.matchHealth.score}/></div></div>
 
       <div className="grid gap-4 p-5 lg:grid-cols-2 sm:p-6">
