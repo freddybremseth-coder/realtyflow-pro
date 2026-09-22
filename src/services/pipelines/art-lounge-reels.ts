@@ -29,8 +29,12 @@ export function selectReelAssets(
   day: string, songs: ReelSong[], art: PromotionItem[], recentlyUsedSongs: string[] = [],
 ): ReelSelection {
   const previous = new Set(recentlyUsedSongs);
-  const availableSongs = songs.filter(s => !previous.has(s.id));
-  const candidates = availableSongs.length ? availableSongs : songs;
+  // Historical Re-Master songs can reference external/legacy audio sources.
+  // Select only canonical public Re-Master uploads before reserving the daily job.
+  const supported = songs.filter(s => s.file_url.startsWith(AUDIO_PREFIX) &&
+    s.youtube_url.startsWith('https://www.youtube.com/'));
+  const availableSongs = supported.filter(s => !previous.has(s.id));
+  const candidates = availableSongs.length ? availableSongs : supported;
   if (!candidates.length || art.length < 3) throw new Error('ART_LOUNGE_SOURCE_UNAVAILABLE');
   const song = [...candidates].sort((a,b) => stableHash(day + a.id) - stableHash(day + b.id))[0];
   const ordered = [...art].sort((a,b) => stableHash(day + song.id + a.id) - stableHash(day + song.id + b.id));
