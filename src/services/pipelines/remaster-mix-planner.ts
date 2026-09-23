@@ -155,7 +155,7 @@ export function recommendedVisualCount(targetMinutes: number) {
   // ~75 seconds per visual at 90 images / 120 minutes. Ken Burns motion keeps
   // this intentionally slower than a property-ad slideshow while avoiding a
   // static image sitting on screen for many minutes.
-  return Math.max(12, Math.min(180, Math.round(targetMinutes * 0.75)));
+  return Math.max(targetMinutes >= 30 ? 24 : 12, Math.min(180, Math.round(targetMinutes * 0.75)));
 }
 
 function formatChapterTime(totalSeconds: number) {
