@@ -50,7 +50,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     contentPillars: ["rural_property", "new_build", "land_and_plot", "inland_lifestyle", "sustainable_living"],
     conversionGoals: ["property_lead", "viewing_request", "plot_enquiry", "website_visit"],
     primaryCtas: ["see_projects", "contact", "book_viewing", "request_plot_options"],
-    notes: "Rural/inland property positioning with learning kept separate from Zen Eco Homes.",
+    notes: "Tomter først: store dokumenterte tomter, moderne villaer og nybygg i Alicante/Murcia-innlandet. Norsk hovedspråk. Oppgi om tomt inngår i pris bare når dette er dokumentert. Ingen løfter om byggetillatelse, utvidelse eller avkastning. Bruk ekte godkjente bilder og unngå nesten like innlegg. Hold læring adskilt fra Zen Eco Homes.",
   },
   {
     id: "donaanna",
