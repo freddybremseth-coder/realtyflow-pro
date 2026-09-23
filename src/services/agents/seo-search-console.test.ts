@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand, isFreddyFamilyDomainProperty, sumPageRows, readGSCAllBrands } from "./seo-search-console";
+import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand, isFreddyFamilyDomainProperty, sumPageRows, selectGSCImpressionPages, readGSCAllBrands } from "./seo-search-console";
 
 test("Search Console requests a distinct read-only grant", () => {
   assert.equal(GSC_READ_SCOPE, "https://www.googleapis.com/auth/webmasters.readonly");
@@ -103,4 +103,17 @@ test("one site failing does not prevent the other seven from returning measureme
   assert.equal(result.length, 8);
   assert.equal(result.find(item => item.brandId === "freddyart")?.status, "error");
   assert.equal(result.filter(item => item.status === "not_connected").length, 7);
+});
+
+test("GSC page sample keeps high-impression zero-click pages ahead of low-impression click pages, scoped to the exact host", () => {
+  const target = { base: "https://www.zenecohomes.com" };
+  const rows = [
+    { keys: ["https://www.zenecohomes.com/en"], clicks: 1, impressions: 1, ctr: 1, position: 3 },
+    { keys: ["https://www.zenecohomes.com/guide/purchase"], clicks: 0, impressions: 160, ctr: 0, position: 10 },
+    { keys: ["https://other.example/guide/purchase"], clicks: 99, impressions: 99999, ctr: 0.5, position: 1 },
+  ];
+  const pages = selectGSCImpressionPages(rows, target);
+  assert.deepEqual(pages.map(page => page.path), ["/guide/purchase", "/en"]);
+  assert.equal(pages[0].impressions, 160);
+  assert.equal(pages[0].clicks, 0);
 });

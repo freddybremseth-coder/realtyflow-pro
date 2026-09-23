@@ -261,6 +261,26 @@ export function sumPageRows(rows: RawRow[], target: { base: string }) {
   return { clicks, impressions, ctr: impressions > 0 ? rounded(clicks / impressions) : null };
 }
 
+/**
+ * An impressions-first sample captures pages people actually see but rarely
+ * click. Clicks-first sampling could omit a high-visibility zero-click page,
+ * misleading Sam's report and starving evidence-gated metadata review.
+ * Google can still truncate the upstream 5,000-row page response.
+ */
+export function selectGSCImpressionPages(rows: RawRow[], target: { base: string }): GSCBrandSnapshot["topPages"] {
+  return rows.filter(row => row.keys?.[0] && allowedHost(row.keys[0], target))
+    .sort((a, b) => (Number(b.impressions) || 0) - (Number(a.impressions) || 0) ||
+      (Number(b.clicks) || 0) - (Number(a.clicks) || 0))
+    .slice(0, 25)
+    .map(row => ({
+      path: new URL(row.keys![0]).pathname,
+      clicks: Math.max(0, Number(row.clicks) || 0),
+      impressions: Math.max(0, Number(row.impressions) || 0),
+      ctr: rounded(Number(row.ctr) || 0),
+      position: rounded(Number(row.position) || 0),
+    }));
+}
+
 /** Read-only, admin/cron only. Results are bounded and scoped to the exact brand. */
 export async function getGSCBrandSnapshot(brandId: string): Promise<GSCBrandSnapshot | null> {
   const target = targetForBrand(brandId);
@@ -285,15 +305,7 @@ async function getGSCBrandSnapshotForAccess(
   ]);
   const current = sumPageRows(currentPages, target);
   const previous = sumPageRows(previousPages, target);
-  const topPages = currentPages.filter(row => row.keys?.[0] && allowedHost(row.keys[0], target))
-    .sort((a,b) => (b.clicks || 0) - (a.clicks || 0)).slice(0, 25)
-    .map(row => ({
-      path: new URL(row.keys![0]).pathname,
-      clicks: Math.max(0, Number(row.clicks) || 0),
-      impressions: Math.max(0, Number(row.impressions) || 0),
-      ctr: rounded(Number(row.ctr) || 0),
-      position: rounded(Number(row.position) || 0),
-    }));
+  const topPages = selectGSCImpressionPages(currentPages, target);
   const topQueryPages = queryPages.filter(row =>
     row.keys?.length === 2 && allowedHost(row.keys[1], target) &&
     row.keys[0].length <= 150 && !/[\r\n@]/.test(row.keys[0]))

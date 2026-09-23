@@ -98,3 +98,16 @@ test("Sam keeps a real same-domain sitemap canonical mismatch in daily technical
   assert.equal(observed.needsApproval, false);
   assert.ok(checks.some(item => item.id === "check-google-source:freddypublishing"));
 });
+
+test("page hint names the most-impressed returned page, not merely first click-sorted page or site total", () => {
+  const snap = snapshot("zeneco", 237, 4);
+  snap.topPages = [
+    { path: "/en", impressions: 2, clicks: 1, ctr: 0.5, position: 2 },
+    { path: "/guide/home-purchase", impressions: 150, clicks: 0, ctr: 0, position: 13 },
+  ];
+  const result = planSEODiagnostics({ snapshots: [snap], signals: null, leads: null, audits: [] });
+  const finding = result.find(item => item.id === "check-search-page:zeneco")!.finding;
+  assert.match(finding, /Mest viste side i det returnerte sideuttrekket: \/guide\/home-purchase \(150 visninger \/ 0 klikk\)/);
+  assert.match(finding, /ikke nettstedets totalsum/);
+  assert.doesNotMatch(finding, /Høyest registrerte side/);
+});

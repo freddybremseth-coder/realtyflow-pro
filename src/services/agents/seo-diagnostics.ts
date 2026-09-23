@@ -66,9 +66,11 @@ export function planSEODiagnostics(input: {
       continue;
     }
     const { currentImpressions: views, currentClicks: clicks } = snap.totals;
-    const page = snap.topPages.find(item => item.path.startsWith("/") && !item.path.includes("@") && item.path.length < 200);
-    const pageHint = page ? " Høyest registrerte side i dette uttrekket: " + page.path +
-      " (" + page.impressions + " visninger / " + page.clicks + " klikk)." : "";
+    const page = snap.topPages.filter(item => item.path.startsWith("/") && !item.path.includes("@") && item.path.length < 200)
+      .sort((a, b) => b.impressions - a.impressions || b.clicks - a.clicks)[0];
+    const pageHint = page ? " Mest viste side i det returnerte sideuttrekket: " + page.path +
+      " (" + page.impressions + " visninger / " + page.clicks +
+      " klikk). Sideuttrekket kan være begrenset og er ikke nettstedets totalsum." : "";
     let title: string;
     let finding: string;
     let nextStep: string;
