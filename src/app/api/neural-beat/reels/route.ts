@@ -48,6 +48,28 @@ export async function GET(request:NextRequest){
  * Same requestKey is idempotent even if the browser double-submits. Failed
  * and timed-out jobs are NOT retried on GET; a new owner's action is required.
  */
+/** Explicit owner recovery for abandoned render jobs beyond serverless max runtime. */
+export async function PATCH(request:NextRequest){
+  const denied=await requireAdminApi(request);if(denied)return denied;
+  const parsed=z.object({jobId:z.string().uuid(),action:z.literal("mark-stalled")}).strict()
+    .safeParse(await request.json().catch(()=>null));
+  if(!parsed.success)return NextResponse.json({error:"Valid Reel job ID and action required."},{status:400});
+  const database=db();
+  const {data:current,error:loadError}=await database.from("remaster_studio_reel_jobs")
+    .select("id,state,video_path,updated_at").eq("id",parsed.data.jobId).maybeSingle();
+  if(loadError||!current)return NextResponse.json({error:"Reel job not found."},{status:404});
+  const stale=Date.parse(current.updated_at)<Date.now()-10*60_000;
+  if(current.state!=="rendering"||current.video_path||!stale)
+    return NextResponse.json({error:"Only stalled Reel renders older than 10 minutes with no saved video can be marked failed."},{status:409});
+  const {data:changed,error:changeError}=await database.from("remaster_studio_reel_jobs")
+    .update({state:"failed",error:"Renderingen svarte ikke innen 10 minutter. Ingen publisering er startet. Lag en ny Reel etter å ha kontrollert bildene.",
+      updated_at:new Date().toISOString()}).eq("id",current.id)
+    .eq("state","rendering").eq("updated_at",current.updated_at).is("video_path",null)
+    .select("*").maybeSingle();
+  if(changeError||!changed)return NextResponse.json({error:"Reel state changed during recovery. Refresh status."},{status:409});
+  return NextResponse.json({job:responseJob(database,changed)},{headers:{"Cache-Control":"private, no-store"}});
+}
+
 export async function POST(request:NextRequest){
   const denied=await requireAdminApi(request);if(denied)return denied;
   const parsed=requestSchema.safeParse(await request.json().catch(()=>null));
