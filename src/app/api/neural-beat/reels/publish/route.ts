@@ -15,7 +15,7 @@ type Brand = z.infer<typeof brands>;
 type Channel = "instagram" | "youtube";
 
 /** Explicitly bound owner destinations. Do not borrow another brand's social account. */
-export const REEL_DESTINATIONS: Record<Brand, Record<Channel,string|null>> = {
+const REEL_DESTINATIONS: Record<Brand, Record<Channel,string|null>> = {
   art: { instagram:"freddyart",youtube:null },
   books: { instagram:null,youtube:null },
   zeneco: { instagram:"zeneco",youtube:"zeneco" },
