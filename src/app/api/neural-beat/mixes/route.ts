@@ -270,10 +270,15 @@ export async function POST(request: NextRequest) {
     }
 
     const knownDuration = orderedSongs.every((song) => Number(song.duration) > 0);
-    const exactAudioSeconds = knownDuration
+    const sourceAudioSeconds = knownDuration
       ? orderedSongs.reduce((sum, song) => sum + Number(song.duration || 0), 0) -
         Math.max(0, orderedSongs.length - 1) * input.crossfadeSeconds
       : null;
+    // Production normalizes/loops the crossfaded source to the owner's selected
+    // target length. Persist the actual intended rendered duration, not the
+    // natural sum of all selected source tracks, so short 3–20 minute mixes do
+    // not accidentally render for 30+ minutes.
+    const exactAudioSeconds = input.targetMinutes * 60;
 
     const now = new Date().toISOString();
     const row = {
@@ -293,6 +298,7 @@ export async function POST(request: NextRequest) {
         version: "cross-brand-mix-v2",
         createdAt: now,
         exactAudioSeconds,
+        sourceAudioSeconds,
         tracks: orderedSongs.map((song, index) => ({
           position: index + 1,
           id: song.id,

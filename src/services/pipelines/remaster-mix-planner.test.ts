@@ -108,7 +108,12 @@ test("standard comment contains both brand destinations", () => {
   assert.match(comment, /https:\/\/remaster\.freddybremseth\.com\//);
 });
 
-test("visual count stays inside long-form safety bounds", () => {
+test("visual count scales down for short mixes while preserving 30-minute and long-form density", () => {
+  assert.equal(recommendedVisualCount(3), 8);
+  assert.equal(recommendedVisualCount(5), 8);
+  assert.equal(recommendedVisualCount(10), 8);
+  assert.equal(recommendedVisualCount(15), 11);
+  assert.equal(recommendedVisualCount(20), 15);
   assert.equal(recommendedVisualCount(30), 24);
   assert.equal(recommendedVisualCount(120), 90);
   assert.equal(recommendedVisualCount(300), 180);

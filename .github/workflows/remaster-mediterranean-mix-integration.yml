@@ -10,6 +10,9 @@ on:
       - "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql"
       - "supabase/migrations/20260905204500_remaster_mix_production_guard.sql"
       - "src/services/pipelines/remaster-mix-*.ts"
+      - "src/services/pipelines/remaster-portfolio-reels*.ts"
+      - "src/app/api/neural-beat/reels/**"
+      - "supabase/migrations/20260923183000_remaster_portfolio_reels.sql"
       - "src/services/pipelines/art-lounge-reels*.ts"
       - "src/app/api/cron/art-lounge-reel-*/**"
       - "supabase/migrations/20260922093000_art_lounge_reels.sql"
@@ -69,7 +72,7 @@ jobs:
       - name: Test durable mix migration
         run: node scripts/test-remaster-mix-migration.mjs
 
-      - name: Test 30-minute production claim guard
+      - name: Test durable mix production claim guard
         run: node scripts/test-remaster-mix-production-guard.mjs
 
       - name: Test YouTube preflight and upload-marker ordering
