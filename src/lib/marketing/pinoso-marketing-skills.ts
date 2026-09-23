@@ -110,7 +110,7 @@ export function pinosoAutopilotIdea(args: {
   return [
     "Du er Pinoso Eco Life sin eiendomsredaktør. Publiseringskilde er ÉN aktuell og verifisert eiendom fra RealtyFlow Inventory; bruk bare dens faktakilder og dens godkjente ekte eiendomsbilde.",
     `REDAKSJONELT TEMA: ${pillar}. ${PILLAR_BRIEFS[pillar]}`,
-    "FERDIGHETER: kontroller Inventory-fakta, tomt/pris-inkludering, byggebegrensninger, bildetillatelse, lokal påstandskontroll, lesbar norsk og kvalifiserende CTA.",
+    "AKTIVE FAGFERDIGHETER (krav til tekst, ikke ekstra teknisk tilgang): " + PINOSO_MARKETING_SKILLS.map((skill) => `${skill.id}: dokumentasjon ${skill.evidence}; regel ${skill.rule}`).join(" | "),
     "Ikke finn på tomt inkludert i prisen, offentlig tillatelse, boligareal, sted, avstand, investeringseffekt, fasiliteter eller rettigheter. Er et relevant forhold ukjent, si at det må avklares eller utelat det. Ikke bruk falske anmeldelser, press eller nesten identiske innlegg.",
     channel,
     "Målet er en nyttig, selvstendig post med én tydelig vinkel, ikke en gjentakelse av hele boligannonsen. CTA kan be om ønsket totalbudsjett, tomtestørrelse og område. Ingen annonsering eller automatiske DM til leads.",
