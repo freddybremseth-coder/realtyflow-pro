@@ -79,7 +79,7 @@ export async function GET(request:NextRequest){
     supabase.from("remaster_reel_deliveries")
       .select("channel,state,external_id,external_url,error,updated_at").eq("reel_id",jobId),
     supabase.from("social_channels").select("platform,display_name,is_active")
-      .eq("brand_id",REEL_DESTINATIONS[job.brand].youtube||REEL_DESTINATIONS[job.brand].instagram||job.brand)
+      .eq("brand_id",REEL_DESTINATIONS[job.brand as Brand].youtube||REEL_DESTINATIONS[job.brand as Brand].instagram||String(job.brand))
       .eq("is_active",true).in("platform",["linkedin","twitter","tiktok","pinterest"]),
   ]);
   if(error)return fail("Reel delivery history is not configured: "+error.message,503);
