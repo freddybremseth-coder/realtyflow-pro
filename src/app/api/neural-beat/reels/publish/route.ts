@@ -38,20 +38,20 @@ type ResolvedChannel = {
 };
 async function resolveChannel(brand:Brand,platform:Channel):Promise<ResolvedChannel>{
   const brandId=REEL_DESTINATIONS[brand][platform];
-  if(!brandId)return {connected:false,brandId:null,channelId:null,account:null,reason:"Ingen egen "+platform+"-kanal er knyttet til denne merkevaren i RealtyFlow."};
+  if(!brandId)return {connected:false,brandId:null,channelId:null,account:null,externalId:null,reason:"Ingen egen "+platform+"-kanal er knyttet til denne merkevaren i RealtyFlow."};
   try {
     const target=await getTokensForBrandPlatform(brandId,platform);
     if(!target?.tokens.accessToken || (platform==="youtube"&&!target.tokens.refreshToken))
-      return {connected:false,brandId,channelId:null,account:null,reason:"Kanalen mangler gyldig lagret OAuth-tilkobling i RealtyFlow."};
+      return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Kanalen mangler gyldig lagret OAuth-tilkobling i RealtyFlow."};
     const scopes=target.tokens.scopes;
     if(platform==="instagram"&&!scopes.some(scope=>["instagram_content_publish","instagram_business_content_publish"].includes(scope)))
-      return {connected:false,brandId,channelId:null,account:null,reason:"Instagram-tilkoblingen mangler publiseringsrettighet."};
+      return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Instagram-tilkoblingen mangler publiseringsrettighet."};
     if(platform==="youtube"&&!scopes.some(scope=>["https://www.googleapis.com/auth/youtube.upload","https://www.googleapis.com/auth/youtube"].includes(scope)))
-      return {connected:false,brandId,channelId:null,account:null,reason:"YouTube-tilkoblingen mangler opplastingsrettighet."};
+      return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"YouTube-tilkoblingen mangler opplastingsrettighet."};
     return {connected:true,brandId,channelId:target.channel.id,account:target.channel.display_name,
       externalId:target.channel.external_id,reason:""};
   }catch{
-    return {connected:false,brandId,channelId:null,account:null,reason:"Flere kanaler eller en uleselig OAuth-tilkobling; velg/korriger kontoen i RealtyFlow."};
+    return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Flere kanaler eller en uleselig OAuth-tilkobling; velg/korriger kontoen i RealtyFlow."};
   }
 }
 async function loadReadyJob(supabase:NonNullable<ReturnType<typeof db>>,jobId:string){
