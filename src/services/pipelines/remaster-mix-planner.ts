@@ -152,11 +152,11 @@ export function selectZenEcoHomesVisuals(
 }
 
 export function recommendedVisualCount(targetMinutes: number) {
-  // Short mixes should not require the 24-image floor that made sense for
-  // 30–120 minute videos. Keep enough variation for 3–20 minute mixes without
-  // forcing unrelated inventory or needless downloads; long-form retains the
-  // same ~0.75 images/minute scaling.
-  return Math.max(8, Math.min(180, Math.round(targetMinutes * 0.75)));
+  // Short mixes should not inherit the old 24-image floor. Keep 30-minute and
+  // longer output behavior unchanged while allowing 3–20 minute jobs to render
+  // with a smaller, relevant visual pool.
+  const floor = targetMinutes >= 30 ? 24 : 8;
+  return Math.max(floor, Math.min(180, Math.round(targetMinutes * 0.75)));
 }
 
 function formatChapterTime(totalSeconds: number) {
