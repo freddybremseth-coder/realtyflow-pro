@@ -87,4 +87,5 @@ jobs:
           src/services/pipelines/remaster-mix-art-thumbnail.test.ts
           src/services/pipelines/remaster-mix-partner-comment.test.ts
           src/services/pipelines/remaster-mix-selection-validation.test.ts
+          src/services/pipelines/remaster-portfolio-reels.test.ts
           src/services/pipelines/art-lounge-reels.test.ts

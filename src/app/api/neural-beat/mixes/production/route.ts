@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   if (Number(current.target_minutes) > 30) {
     return NextResponse.json(
       {
-        error: "Production testing currently supports 30-minute mixes. Longer plans remain saved as drafts until segmented long-form rendering is enabled.",
+        error: "Mix Studio supports production from 3 to 30 minutes. Longer plans are not accepted in this simplified production mode.",
         code: "MIX_PRODUCTION_MAX_30_MIN",
       },
       { status: 409 },
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
       mix: queued,
       workflowVersion: "v2",
       workflowRunId: workflowRun.runId,
-      message: "30-minute production mix queued and V2 worker started.",
+      message: `${current.target_minutes}-minute production mix queued and V2 worker started.`,
     }, { status: 202 });
   } catch (error) {
     return NextResponse.json({

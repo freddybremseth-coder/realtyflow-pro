@@ -41,6 +41,12 @@ test("target-duration pass loops short mixes and trims to exactly 30 minutes", (
   assert.equal(args[args.length - 1], "mix.mp3");
 });
 
+test("target-duration pass supports a 3-minute short mix without changing encoding behavior", () => {
+  const args = buildTargetDurationArgs("natural.mp3", "mix.mp3", 180);
+  assert.deepEqual(args.slice(0, 6), ["-stream_loop", "-1", "-i", "natural.mp3", "-t", "180.000"]);
+  assert.equal(args[args.length - 1], "mix.mp3");
+});
+
 test("legacy Airtable attachments are classified as ephemeral", () => {
   assert.equal(isEphemeralAirtableUrl("https://v5.airtableusercontent.com/v3/u/51/example"), true);
   assert.equal(isEphemeralAirtableUrl("https://example.supabase.co/storage/v1/object/public/assets/a.mp3"), false);
