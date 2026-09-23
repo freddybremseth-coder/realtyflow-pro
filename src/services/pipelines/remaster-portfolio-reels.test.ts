@@ -6,6 +6,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import ffmpegStatic from "ffmpeg-static";
+import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
 import {
   buildPortfolioReelCaption,isApprovedReelAudioUrl,isApprovedReelImageUrl,renderPortfolioReel,
 } from "./remaster-portfolio-reels";
@@ -58,4 +59,28 @@ test("production FFmpeg renders a real 15-second 1080x1920 Reel with two approve
     assert.match(probe.stderr,/1080x1920/);
     assert.match(probe.stderr,/Duration: 00:00:15/);
   }finally{globalThis.fetch=prior;await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test("six-brand Reels use their own images and destinations", () => {
+  const song={id:"song",title:"Sunset",audioUrl:"https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/song.mp3"};
+  const artImage="https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/art-previews/work/view.webp";
+  const bookImage="https://books.freddybremseth.com/assets/covers/book.jpg";
+  const pinosoImage="https://images.example-cdn.com/pinoso.jpg";
+  assert.equal(isApprovedReelImageUrl(artImage,"freddybremseth"),true);
+  assert.equal(isApprovedReelImageUrl(bookImage,"freddybremseth"),true);
+  assert.equal(isApprovedReelImageUrl(pinosoImage,"pinosoecolife"),true);
+  // Curated Doña Anna images must match the exact approved brand media list.
+  assert.equal(isApprovedReelImageUrl(DONA_ANNA_REEL_IMAGES[0],"donaanna"),true);
+  assert.equal(isApprovedReelImageUrl("https://evil.example/olive.jpg","donaanna"),false);
+  for (const [brand,site] of [
+    ["freddybremseth","freddybremseth.com"],
+    ["pinosoecolife","pinosoecolife.com"],
+    ["donaanna","donaanna.com"],
+  ] as const) {
+    const caption=buildPortfolioReelCaption({brand,title:"Brand reel",durationSeconds:15,song,
+      imageUrls:[artImage,bookImage],areaQuery:brand==="pinosoecolife"?"Pinoso":""});
+    assert.ok(caption.includes(site),brand);
+    assert.ok(caption.includes("Re-Master Freddy"),brand);
+    assert.ok(!caption.includes("https://zenecohomes.com/"),brand);
+  }
 });

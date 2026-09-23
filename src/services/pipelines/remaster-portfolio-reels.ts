@@ -4,10 +4,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 import { isApprovedArtPreviewUrl } from "./remaster-mix-art-thumbnail";
-import type { PromotionBrand, PromotionItem } from "./remaster-mix-promotions";
+import type { PromotionItem } from "./remaster-mix-promotions";
+import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
 import type { RemasterMixRegion, RemasterMixVisualType } from "./remaster-mix-planner";
 
-export type ReelBrand = Exclude<PromotionBrand,"none">;
+export type ReelBrand = "art" | "books" | "zeneco" | "freddybremseth" | "pinosoecolife" | "donaanna";
 export type ReelChannel = "instagram"|"facebook";
 export type ReelSong = {id:string;title:string;audioUrl:string;youtubeUrl?:string|null};
 export type ReelRenderInput = {
@@ -32,10 +33,10 @@ function safeText(value:string,max:number) {
 }
 function assPath(value:string){return value.replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'");}
 function brandLabel(brand:ReelBrand) {
-  return brand==="art" ? "FREDDY BREMSETH ART" : brand==="books" ? "FREDDY BREMSETH BOOKS" : "ZEN ECO HOMES";
+  return ({art:"FREDDY BREMSETH ART",books:"FREDDY BREMSETH BOOKS",zeneco:"ZEN ECO HOMES",freddybremseth:"FREDDY BREMSETH",pinosoecolife:"PINOSO ECO LIFE",donaanna:"DOÑA ANNA"} as const)[brand];
 }
 function brandWebsite(brand:ReelBrand) {
-  return brand==="art" ? "art.freddybremseth.com" : brand==="books" ? "books.freddybremseth.com" : "zenecohomes.com";
+  return ({art:"art.freddybremseth.com",books:"books.freddybremseth.com",zeneco:"zenecohomes.com",freddybremseth:"freddybremseth.com",pinosoecolife:"pinosoecolife.com",donaanna:"donaanna.com"} as const)[brand];
 }
 function buildAss(input:ReelRenderInput) {
   const brand=brandLabel(input.brand),title=safeText(input.title,78),site=brandWebsite(input.brand);
@@ -64,8 +65,9 @@ export function isApprovedReelImageUrl(url:string,brand:ReelBrand){
   try{
     const u=new URL(url);
     if(u.protocol!=="https:"||privateHost(u.hostname)||u.username||u.password)return false;
-    if(brand==="books") return u.hostname===BOOK_HOST || SAFE_PUBLIC_SUPABASE.test(u.href);
-    return true; // ZenEco URLs originate from canonical, website-visible inventory only.
+    if(brand==="books" || brand==="freddybremseth") return (brand==="freddybremseth" && isApprovedArtPreviewUrl(url)) || u.hostname===BOOK_HOST || SAFE_PUBLIC_SUPABASE.test(u.href);
+    if(brand==="donaanna") return DONA_ANNA_REEL_IMAGES.includes(u.href);
+    return true; // Property URLs originate from canonical, website-visible, brand-filtered inventory only.
   }catch{return false;}
 }
 export function isApprovedReelAudioUrl(url:string){return SUPABASE_AUDIO.test(String(url||"")) && !/\.\.|%2f|%5c/i.test(url);}
@@ -111,14 +113,25 @@ export function buildPortfolioReelCaption(input:ReelRenderInput){
       "#FreddyBremsethBooks #BookReel #ReMasterFreddy",
     ].join("\n\n");
   }
+  if(input.brand==="freddybremseth") return [
+    "Freddy Bremseth — books, art, music and ideas.",
+    ...(input.promotedItems||[]).slice(0,6).map(item=>item.title+" — "+item.detailUrl),
+    "Explore: https://freddybremseth.com/", music,
+    "#FreddyBremseth #ArtAndBooks #ReMasterFreddy",
+  ].join("\n\n");
+  if(input.brand==="donaanna") return [
+    "🫒 Doña Anna — olives, olive oil and Mediterranean life in Biar.",
+    "Discover Doña Anna: https://donaanna.com/", music,
+    "#DonaAnna #OliveOil #Biar #ReMasterFreddy",
+  ].join("\n\n");
   const area=safeText(input.areaQuery||"",80);
   const region=input.region&&input.region!=="any" ? input.region.replace(/-/g," ") : "";
   return [
-    "🏡 Homes and property inspiration from Zen Eco Homes"+(area?" in "+area:region?" — "+region:"")+".",
-    "Explore current properties: https://zenecohomes.com/",
+    "🏡 Homes and property inspiration from "+(input.brand==="pinosoecolife"?"Pinoso EcoLife":"Zen Eco Homes")+(area?" in "+area:region?" — "+region:"")+".",
+    "Explore current properties: https://"+brandWebsite(input.brand)+"/",
     "Availability and prices can change; check the website for current listings.",
     music,
-    "#ZenEcoHomes #CostaBlanca #PropertyReel #ReMasterFreddy",
+    input.brand==="pinosoecolife"?"#PinosoEcoLife #AlicanteInland #PropertyReel #ReMasterFreddy":"#ZenEcoHomes #CostaBlanca #PropertyReel #ReMasterFreddy",
   ].join("\n\n");
 }
 
