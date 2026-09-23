@@ -11,6 +11,7 @@ on:
       - "supabase/migrations/20260905204500_remaster_mix_production_guard.sql"
       - "src/services/pipelines/remaster-mix-*.ts"
       - "src/services/pipelines/remaster-portfolio-reels*.ts"
+      - "src/services/pipelines/remaster-facebook-reel-publisher*.ts"
       - "src/app/api/neural-beat/reels/**"
       - "supabase/migrations/20260923183000_remaster_portfolio_reels.sql"
       - "src/services/pipelines/art-lounge-reels*.ts"
@@ -91,4 +92,5 @@ jobs:
           src/services/pipelines/remaster-mix-partner-comment.test.ts
           src/services/pipelines/remaster-mix-selection-validation.test.ts
           src/services/pipelines/remaster-portfolio-reels.test.ts
+          src/services/pipelines/remaster-facebook-reel-publisher.test.ts
           src/services/pipelines/art-lounge-reels.test.ts
