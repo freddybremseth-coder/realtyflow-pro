@@ -12,6 +12,7 @@ import { auditSEOPortfolio } from "@/services/agents/seo-audit";
 import { getSEOObservedSignals } from "@/services/agents/seo-data";
 import { getSEOLeadSignals } from "@/services/agents/seo-leads";
 import { planSEODiagnostics } from "@/services/agents/seo-diagnostics";
+import { checkReferralCollectorPreflight } from "@/services/agents/seo-referral-health";
 
 const PATH = "/api/cron/seo-autopilot";
 const ACTION = "seo_autopilot_pilot_cycle";
@@ -63,9 +64,15 @@ export async function GET(request: NextRequest) {
     const signals = observations[0].status === "fulfilled" ? observations[0].value : null;
     const leads = observations[1].status === "fulfilled" ? observations[1].value : null;
     const audits = observations[2].status === "fulfilled" ? observations[2].value : [];
+    // A preflight is read-only: never create synthetic visits or CRM leads.
+    // Run only if Google observed clicks but first-party arrivals are zero.
+    // The bounded network check cannot prove a browser session or event write.
+    const collectorPreflight = signals?.totals.current === 0 &&
+      readings.some(item => item.status === "connected" && (item.result?.totals.currentClicks || 0) > 0)
+      ? await checkReferralCollectorPreflight() : null;
     const diagnostics = planSEODiagnostics({
       snapshots: readings.flatMap(item => item.status === "connected" && item.result ? [item.result] : []),
-      signals, leads, audits,
+      signals, leads, audits, collectorPreflight,
     });
     // Share the factual measurements and zero-approval diagnostics with
     // Sam's main panel after reload. These checks NEVER authorize site writes.
@@ -74,11 +81,12 @@ export async function GET(request: NextRequest) {
       status: verified ? "success" : "partial",
       details: {
         google_search_console: readings, source: ACTION, collected_at: timestamp,
-        diagnostics, auditCheckedAt: audits.length ? timestamp : null,
+        diagnostics, collectorPreflight, auditCheckedAt: audits.length ? timestamp : null,
         sourceAvailability: {
           searchConsoleMeasured: verified,
           siteAuditsMeasured: audits.length,
           referralsAvailable: signals !== null,
+          collectorPreflightChecked: collectorPreflight !== null,
           leadsAvailable: leads !== null,
         },
       },
@@ -111,6 +119,11 @@ export async function GET(request: NextRequest) {
         search_console_brands_measured: verified,
         daily_diagnostics: diagnostics.length,
         public_sites_audited: audits.length,
+        collector_preflight: collectorPreflight ? {
+          pass: collectorPreflight.filter(check => check.status === "pass").length,
+          blocked: collectorPreflight.filter(check => check.status === "blocked").length,
+          unknown: collectorPreflight.filter(check => check.status === "unknown").length,
+        } : null,
         website_changes_published: zeneco.published,
         public_write_status: zeneco.status === "monitor" ? "armed_evidence_gated"
           : zeneco.status === "pending" ? "pending_site_confirmation"
