@@ -4,6 +4,7 @@ import {
   autopilotRunIdentity,
   autopilotTargetHour,
   localAutopilotSlot,
+  isPlannedAutopilotDay,
   parseLearnedAutopilotHour,
   shouldRunAutopilotSlot,
 } from "./autopilot-safety";
@@ -36,4 +37,14 @@ test("local slot date follows Europe/Madrid, including UTC date rollover", () =>
   const slot = localAutopilotSlot(new Date("2026-09-01T22:30:00Z"), "Europe/Madrid");
   assert.equal(slot.localDate, "2026-09-02");
   assert.equal(slot.hour, 0);
+});
+
+
+test("Pinoso four-day cadence and other-brand fallback", () => {
+  const days = ["monday", "wednesday", "friday", "sunday"];
+  for (const day of [0, 1, 3, 5]) assert.equal(isPlannedAutopilotDay(day, days), true);
+  for (const day of [2, 4, 6]) assert.equal(isPlannedAutopilotDay(day, days), false);
+  assert.equal(isPlannedAutopilotDay(1, null), true);
+  assert.equal(isPlannedAutopilotDay(1, []), false);
+  assert.equal(isPlannedAutopilotDay(1, ["invalid"]), false);
 });
