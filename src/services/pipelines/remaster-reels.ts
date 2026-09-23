@@ -23,6 +23,12 @@ const AUDIO_PREFIX="https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/p
 
 function clean(value:string,max=100){return String(value||"").replace(/[{}\r\n\t]/g," ").replace(/\\/g,"/").replace(/\s+/g," ").trim().slice(0,max);}
 function escapeAssPath(value:string){return value.replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'");}
+function sourceExtension(url:string){
+  try{
+    const ext=path.extname(new URL(url).pathname).toLowerCase();
+    return [".jpg",".jpeg",".png",".webp",".avif"].includes(ext)?ext:".jpg";
+  }catch{return ".jpg";}
+}
 function safeHttps(url:string){
   try{
     const parsed=new URL(url);
@@ -133,7 +139,10 @@ export async function renderRemasterReel(input:ReelRenderInput):Promise<Buffer>{
     const audioPath=path.join(dir,"audio.mp3"),assPath=path.join(dir,"overlay.ass"),out=path.join(dir,"reel.mp4");
     await fs.writeFile(audioPath,audio);await fs.writeFile(assPath,ass(input));
     const imagePaths:string[]=[];
-    for(let i=0;i<images.length;i++){const p=path.join(dir,"visual-"+i+".img");await fs.writeFile(p,images[i]);imagePaths.push(p);}
+    for(let i=0;i<images.length;i++){
+      const p=path.join(dir,"visual-"+i+sourceExtension(visuals[i].imageUrl));
+      await fs.writeFile(p,images[i]);imagePaths.push(p);
+    }
     const binary=await ensureFFmpeg();
     const segment=input.durationSeconds/imagePaths.length;
     const args=["-hide_banner","-loglevel","error"];
