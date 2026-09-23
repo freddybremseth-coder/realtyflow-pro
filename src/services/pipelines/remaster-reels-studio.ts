@@ -109,7 +109,8 @@ export async function renderStudioReel(input:StudioReelInput):Promise<Buffer>{
     await fs.writeFile(poster,buildArtShortPoster(meta.poster,input.title,"music",meta.footer));
     await fs.writeFile(song,audio);
     const sources=await Promise.all(pictures.map(async(bytes,i)=>{
-      const src=path.join(dir,"visual-"+i+".source");
+      const extension=/\.(?:png)(?:$|\?)/i.test(visuals[i].imageUrl)?".png":/\.webp(?:$|\?)/i.test(visuals[i].imageUrl)?".webp":".jpg";
+      const src=path.join(dir,"visual-"+i+extension);
       await fs.writeFile(src,bytes);
       return src;
     }));
