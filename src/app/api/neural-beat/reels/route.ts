@@ -7,6 +7,7 @@ import {
   loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionItem,
 } from "@/services/pipelines/remaster-mix-promotions";
 import { diagnoseExplicitMixSelection, describeMixSelectionIssue } from "@/services/pipelines/remaster-mix-selection-validation";
+import { DONA_ANNA_REEL_IMAGES, loadFreddyReelVisuals, loadPinosoReelVisuals, selectedReelImages } from "@/services/pipelines/remaster-reels-extra-brands";
 import { loadZenEcoHomesVisualUrls } from "@/services/pipelines/remaster-mix-visual-source";
 import {
   renderPortfolioReel, type ReelBrand, type ReelSong,
@@ -20,7 +21,7 @@ const region=z.enum(["any","north","south","inland","costa-calida"]);
 const visual=z.enum(["mixed","villas","apartments","pools","sea-views","interiors"]);
 const bodySchema=z.object({
   title:z.string().trim().min(3).max(100),
-  brand:z.enum(["art","books","zeneco"]),
+  brand:z.enum(["art","books","zeneco","freddybremseth","pinosoecolife","donaanna"]),
   durationSeconds:z.union([z.literal(15),z.literal(20),z.literal(30),z.literal(45),z.literal(60)]),
   songId:z.string().uuid(),
   channels:z.array(z.enum(["instagram","facebook"])).min(1).max(2).default(["instagram","facebook"]),
@@ -92,6 +93,17 @@ export async function POST(request:NextRequest){
         code:"REEL_NOT_ENOUGH_VISUALS",
       },{status:400});
       imageUrls=promotedItems.map(item=>item.imageUrl);
+    }else if(input.brand==="freddybremseth"){
+      const result=await loadFreddyReelVisuals(seed,count);
+      imageUrls=result.urls;
+      promotedItems=result.items;
+      if(imageUrls.length<2)return NextResponse.json({error:"FreddyBremseth.com trenger minst to publiserte kunst- eller bokbilder.",code:"REEL_NOT_ENOUGH_VISUALS"},{status:400});
+    }else if(input.brand==="donaanna"){
+      imageUrls=selectedReelImages(DONA_ANNA_REEL_IMAGES,seed,count);
+    }else if(input.brand==="pinosoecolife"){
+      imageUrls=await loadPinosoReelVisuals({seed,count,region:input.region==="any"?"inland":input.region,
+        areaQuery:input.areaQuery,visualTypes:input.visualTypes});
+      if(imageUrls.length<2)return NextResponse.json({error:"Fant ikke nok Pinoso EcoLife-bilder i valgt område og type.",code:"REEL_NOT_ENOUGH_PROPERTY_VISUALS"},{status:400});
     }else{
       const result=await loadZenEcoHomesVisualUrls({
         targetMinutes:Math.max(1,input.durationSeconds/60),
