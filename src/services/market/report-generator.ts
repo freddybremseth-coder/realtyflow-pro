@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { getBrandGuidelines } from '@/lib/brand-guidelines';
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -531,17 +532,17 @@ export class ReportGenerator {
     options?: { theme?: string; brand?: string },
   ): string {
     if (templateId === DONA_ANNA_TEMPLATE_ID) {
-      return `Du skriver på vegne av Dona Anna, et varmt og praktisk olivenolje-brand med røtter i Spania.
+      return `Du skriver på vegne av Doña Anna, ultra-premium estate olivenolje og bordoliven fra Biar, Alicante.
 
 Regler:
 - Skriv alltid på norsk (bokmål).
 - Dette er IKKE en finansrapport, eiendomsrapport eller investoranalyse.
 - Ikke bruk overskrifter eller metaforer om finansmarked, boligmarked, renter, eurokurs, investorer eller Costa Blanca-boligkjøp.
-- Fokuser på olivenolje, smak, økonomisk smart hverdagsbruk, sesong på gården, kvalitet, bærekraftig drift, tilgjengelighet og enkel kundeverdi.
-- Tonen skal være varm, personlig, ærlig og profesjonell.
+- Fokuser på olivenolje, smak, sesong på gården, høsting og batch-data, kvalitet, bærekraftig drift og tilgjengelighet.
+- Tonen skal være selvsikker, underspilt og profesjonell – ingen emoji, ingen utropstegn i overskrifter.
 - Ikke påstå sertifiseringer, økologimerker, helseeffekter eller lagerstatus hvis det ikke er eksplisitt oppgitt.
 - Inkluder minst ett konkret brukstips eller en enkel serveringsidé.
-- Svar med ren JSON i formatet beskrevet i brukerens melding.`;
+- Svar med ren JSON i formatet beskrevet i brukerens melding.${getBrandGuidelines('donaanna')}`;
     }
 
     const base = `Du er Freddy Bremseth, eiendomsekspert i Spania med dyp kunnskap om det spanske boligmarkedet, spesielt langs kysten. Du skriver markedsrapporter for RealtyFlow Pro.

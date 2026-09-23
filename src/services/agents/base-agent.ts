@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { askClaude } from "@/services/ai/claude-client";
+import { detectBrandId, withBrandGuidelines } from "@/lib/brand-guidelines";
 
 // ─── Norwegian Content Rules ──────────────────────────────────────────
 export const NORWEGIAN_CONTENT_RULES = `
@@ -86,9 +87,12 @@ export abstract class BaseAgent {
   /**
    * Calls the Anthropic API with the given prompt and optional system prompt.
    * Returns the text content from the response.
+   * Merkevareinstruks (docs/brands/*.md) legges til når brandId er gitt eller
+   * prompten nevner et brand med instruks (f.eks. Doña Anna).
    */
-  protected async callAI(prompt: string, systemPrompt?: string): Promise<string> {
-    const system = systemPrompt ?? this.getDefaultSystemPrompt();
+  protected async callAI(prompt: string, systemPrompt?: string, brandId?: string | null): Promise<string> {
+    const system =
+      withBrandGuidelines(systemPrompt ?? this.getDefaultSystemPrompt(), brandId ?? detectBrandId(prompt)) ?? "";
 
     // Use askClaude which has built-in fallback to Gemini/OpenAI
     try {

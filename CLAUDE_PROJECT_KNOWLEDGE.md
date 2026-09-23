@@ -95,7 +95,7 @@ src/
 | Soleada.no | Eiendom | Costa Blanca/Cálida luksus |
 | Zen Eco Homes | Eiendom | Bærekraftig/økologisk |
 | ChatGenius.pro | SaaS | AI chatbot-plattform |
-| Dona Anna | Landbruk | Olivenolje, økologisk |
+| Doña Anna | Landbruk | Ultra-premium olivenolje, B2B – se docs/brands/dona-anna.md |
 | Freddy Bremseth | Personlig | Entrepreneur/eiendomsekspert |
 | Pinosos Ecolife | Eiendom | Bærekraftig landliv |
 | Neural Beat | Musikk | AI EDM-produksjon |
