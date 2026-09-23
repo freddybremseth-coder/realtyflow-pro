@@ -152,10 +152,11 @@ export function selectZenEcoHomesVisuals(
 }
 
 export function recommendedVisualCount(targetMinutes: number) {
-  // ~75 seconds per visual at 90 images / 120 minutes. Ken Burns motion keeps
-  // this intentionally slower than a property-ad slideshow while avoiding a
-  // static image sitting on screen for many minutes.
-  return Math.max(24, Math.min(180, Math.round(targetMinutes * 0.75)));
+  // Short mixes should not require the 24-image floor that made sense for
+  // 30–120 minute videos. Keep enough variation for 3–20 minute mixes without
+  // forcing unrelated inventory or needless downloads; long-form retains the
+  // same ~0.75 images/minute scaling.
+  return Math.max(8, Math.min(180, Math.round(targetMinutes * 0.75)));
 }
 
 function formatChapterTime(totalSeconds: number) {
