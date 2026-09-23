@@ -28,6 +28,8 @@ export async function loadZenEcoHomesVisualUrls(input: {
   strictSelection?: boolean;
   /** Optional exact town/area focus for manually created Reels. */
   areaQuery?: string;
+  /** Brand-isolated selection for the manual short-form Reels renderer. */
+  brandId?: "zeneco" | "pinosoecolife";
 }) {
   const supabase = getSupabase();
   const desiredCount = recommendedVisualCount(input.targetMinutes);
@@ -52,8 +54,9 @@ export async function loadZenEcoHomesVisualUrls(input: {
 
   const areaNeedle = String(input.areaQuery || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
     .toLowerCase().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+  const brandId = input.brandId || "zeneco";
   const zenEcoProperties = allProperties.filter((property) => {
-    if (!isWebsiteVisible(property) || !propertyMatchesBrand(property, "zeneco")) return false;
+    if (!isWebsiteVisible(property) || !propertyMatchesBrand(property, brandId)) return false;
     if (!areaNeedle) return true;
     const haystack = [
       property.title, property.description, property.location, property.town,
@@ -71,7 +74,7 @@ export async function loadZenEcoHomesVisualUrls(input: {
       region:input.region,visualType,limit:180,
     })))];
     if (!urls.length) {
-      throw new Error('No ZenEcoHomes images match the selected region and image types. Widen the selection explicitly.');
+      throw new Error(`No ${brandId} images match the selected region and image types. Widen the selection explicitly.`);
     }
     // Deterministic shuffle/repetition within the approved property-image pool,
     // never silently fall back to other regions/types.
