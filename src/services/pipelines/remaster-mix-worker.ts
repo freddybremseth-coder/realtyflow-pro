@@ -323,7 +323,7 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
           })()
         : await loadFallbackVisualUrls(tracks, job.target_minutes);
 
-    const exactAudioSeconds = Number(job.input_snapshot?.exactAudioSeconds || 0) || null;
+    // Snapshot stores the natural sum of whole selected songs. The rendered\n    // audio may be intentionally trimmed/looped to 3–30 minutes; the video\n    // duration MUST follow the actual output, not the full-track sum.\n    const exactAudioSeconds = audio.durationSeconds;
     video = await renderRemasterLongFormMix({
       audioPath: audio.audioPath,
       imageUrls,
