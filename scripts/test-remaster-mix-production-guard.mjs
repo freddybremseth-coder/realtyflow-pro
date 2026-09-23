@@ -8,6 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const migrations = [
   "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql",
   "supabase/migrations/20260905204500_remaster_mix_production_guard.sql",
+  "supabase/migrations/20260923183000_remaster_portfolio_reels.sql",
 ].map((file) => path.join(repoRoot, file));
 
 function assert(condition, message) {
@@ -64,6 +65,7 @@ async function main() {
     }
 
     const longJobId = await insertJob(client, 120, "Two Hour Mix — must stay queued");
+    const veryShortJobId = await insertJob(client, 3, "Three Minute Production Test");
     const shortJobId = await insertJob(client, 30, "Thirty Minute Production Test");
 
     const claim = await client.query(
@@ -71,8 +73,8 @@ async function main() {
       ["production-guard-worker", 300],
     );
     assert(claim.rowCount === 1, "Production worker must claim one eligible job.");
-    assert(claim.rows[0].id === shortJobId, "Production worker must claim the 30-minute job, not the long draft.");
-    assert(Number(claim.rows[0].target_minutes) === 30, "Claimed production job must be capped at 30 minutes.");
+    assert(claim.rows[0].id === veryShortJobId, "Production worker must claim the oldest eligible 3-minute job, not the long draft.");
+    assert(Number(claim.rows[0].target_minutes) === 3, "Production guard must allow a 3-minute job.");
 
     const longJob = await client.query(`select status from public.remaster_mix_jobs where id=$1`, [longJobId]);
     assert(longJob.rows[0].status === "queued", "120-minute job must remain untouched by the production worker.");
@@ -80,14 +82,24 @@ async function main() {
     const lease = claim.rows[0].lease_token;
     await client.query(
       `select * from public.fail_remaster_mix_job($1,$2,$3,$4,$5)`,
-      [shortJobId, lease, "TEST_STOP", "Stop after guard verification", false],
+      [veryShortJobId, lease, "TEST_STOP", "Stop after guard verification", false],
     );
 
-    const noEligible = await client.query(
+    const secondClaim = await client.query(
       `select * from public.claim_remaster_mix_job($1,$2)`,
       ["production-guard-worker-2", 300],
     );
-    assert(noEligible.rowCount === 0, "Long queued mixes must remain unclaimable while the 30-minute production guard is active.");
+    assert(secondClaim.rowCount === 1, "A second eligible production job should still be claimable.");
+    assert(secondClaim.rows[0].id === shortJobId, "30-minute job must remain production-enabled after the 3-minute job.");
+    await client.query(
+      `select * from public.fail_remaster_mix_job($1,$2,$3,$4,$5)`,
+      [shortJobId, secondClaim.rows[0].lease_token, "TEST_STOP", "Stop second guard verification", false],
+    );
+    const noEligible = await client.query(
+      `select * from public.claim_remaster_mix_job($1,$2)`,
+      ["production-guard-worker-3", 300],
+    );
+    assert(noEligible.rowCount === 0, "120-minute queued mixes must remain unclaimable while production is capped at 30 minutes.");
 
     console.log("Re-Master Mediterranean Mix production guard: PASS");
   } finally {
