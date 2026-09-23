@@ -44,6 +44,16 @@ async function resolveChannel(brand:Brand,platform:Channel):Promise<ResolvedChan
     const target=await getTokensForBrandPlatform(brandId,platform);
     if(!target?.tokens.accessToken || (platform==="youtube"&&!target.tokens.refreshToken))
       return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Kanalen mangler gyldig lagret OAuth-tilkobling i RealtyFlow."};
+    if(platform==="youtube"){
+      const supabase=db();
+      if(!supabase)throw new Error("CHANNEL_CHECK_UNAVAILABLE");
+      const {data:other,error:otherError}=await supabase.from("social_channels")
+        .select("brand_id").eq("platform","youtube").eq("external_id",target.channel.external_id)
+        .eq("is_active",true).neq("brand_id",brandId).limit(1);
+      if(otherError)throw new Error("CHANNEL_CONFLICT_CHECK_FAILED");
+      if(other?.length)return {connected:false,brandId,channelId:null,account:null,externalId:null,
+        reason:"YouTube-kanalen er også aktiv under en annen merkevare i RealtyFlow. Velg en egen kanal før publisering."};
+    }
     const scopes=target.tokens.scopes;
     if(platform==="facebook"&&!scopes.includes("pages_manage_posts"))
       return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Facebook-tilkoblingen mangler rettigheten pages_manage_posts."};
