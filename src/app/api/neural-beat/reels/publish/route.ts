@@ -5,6 +5,7 @@ import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 import { makeGraphApi, makeMetaPublisher } from "@/services/marketing/publishers/meta-publisher";
 import { getChannelInfo, uploadVideo } from "@/services/integrations/youtube-client";
+import { publishFacebookPageReel } from "@/services/pipelines/remaster-facebook-reel-publisher";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,19 +13,19 @@ export const maxDuration = 300;
 
 const brands = z.enum(["art","books","zeneco","freddybremseth","pinosoecolife","donaanna"]);
 type Brand = z.infer<typeof brands>;
-type Channel = "instagram" | "youtube";
+type Channel = "instagram" | "youtube" | "facebook";
 
 /** Explicitly bound owner destinations. Do not borrow another brand's social account. */
 const REEL_DESTINATIONS: Record<Brand, Record<Channel,string|null>> = {
-  art: { instagram:"freddyart",youtube:null },
-  books: { instagram:null,youtube:null },
-  zeneco: { instagram:"zeneco",youtube:"zeneco" },
-  freddybremseth: { instagram:null,youtube:"freddyb" },
-  pinosoecolife: { instagram:"pinosoecolife",youtube:null },
-  donaanna: { instagram:"donaanna",youtube:"donaanna" },
+  art: { instagram:"freddyart",youtube:null,facebook:null },
+  books: { instagram:null,youtube:null,facebook:null },
+  zeneco: { instagram:"zeneco",youtube:"zeneco",facebook:"zeneco" },
+  freddybremseth: { instagram:null,youtube:"freddyb",facebook:"freddyb" },
+  pinosoecolife: { instagram:"pinosoecolife",youtube:null,facebook:"pinosoecolife" },
+  donaanna: { instagram:"donaanna",youtube:"donaanna",facebook:"donaanna" },
 };
 
-const postSchema=z.object({jobId:z.string().uuid(),channel:z.enum(["instagram","youtube"])}).strict();
+const postSchema=z.object({jobId:z.string().uuid(),channel:z.enum(["instagram","youtube","facebook"])}).strict();
 const jobIdSchema=z.string().uuid();
 const BUCKET="remaster-reels";
 function db(){
@@ -44,6 +45,8 @@ async function resolveChannel(brand:Brand,platform:Channel):Promise<ResolvedChan
     if(!target?.tokens.accessToken || (platform==="youtube"&&!target.tokens.refreshToken))
       return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Kanalen mangler gyldig lagret OAuth-tilkobling i RealtyFlow."};
     const scopes=target.tokens.scopes;
+    if(platform==="facebook"&&!scopes.includes("pages_manage_posts"))
+      return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Facebook-tilkoblingen mangler rettigheten pages_manage_posts."};
     if(platform==="instagram"&&!scopes.some(scope=>["instagram_content_publish","instagram_business_content_publish"].includes(scope)))
       return {connected:false,brandId,channelId:null,account:null,externalId:null,reason:"Instagram-tilkoblingen mangler publiseringsrettighet."};
     if(platform==="youtube"&&!scopes.some(scope=>["https://www.googleapis.com/auth/youtube.upload","https://www.googleapis.com/auth/youtube"].includes(scope)))
@@ -71,13 +74,18 @@ export async function GET(request:NextRequest){
   if(!jobIdSchema.safeParse(jobId).success)return fail("Valid Reel jobId required.");
   const job=await loadReadyJob(supabase,jobId);
   if(!job)return fail("Reel is not ready.",404);
-  const [instagram,youtube,{data:deliveries,error}]=await Promise.all([
-    resolveChannel(job.brand,"instagram"),resolveChannel(job.brand,"youtube"),
+  const [instagram,youtube,facebook,{data:deliveries,error},{data:extras}]=await Promise.all([
+    resolveChannel(job.brand,"instagram"),resolveChannel(job.brand,"youtube"),resolveChannel(job.brand,"facebook"),
     supabase.from("remaster_reel_deliveries")
       .select("channel,state,external_id,external_url,error,updated_at").eq("reel_id",jobId),
+    supabase.from("social_channels").select("platform,display_name,is_active")
+      .eq("brand_id",REEL_DESTINATIONS[job.brand].youtube||REEL_DESTINATIONS[job.brand].instagram||job.brand)
+      .eq("is_active",true).in("platform",["linkedin","twitter","tiktok","pinterest"]),
   ]);
   if(error)return fail("Reel delivery history is not configured: "+error.message,503);
-  return NextResponse.json({channels:{instagram,youtube},deliveries:deliveries||[]},
+  return NextResponse.json({channels:{instagram,youtube,facebook},deliveries:deliveries||[],
+    otherChannels:(extras||[]).map(c=>({platform:c.platform,account:c.display_name,
+      connected:true,publishSupported:false,reason:"Direkte publisering av Reel-video er ikke implementert for denne kanalen."}))},
     {headers:{"Cache-Control":"private, no-store"}});
 }
 
@@ -93,8 +101,8 @@ export async function POST(request:NextRequest){
   const supabase=db();if(!supabase)return fail("Supabase not configured.",503);
   const job=await loadReadyJob(supabase,jobId);
   if(!job)return fail("Reel is not ready; render and review the MP4 first.",409);
-  if(channel==="instagram" && !job.channels.includes("instagram"))
-    return fail("Denne Reel ble ikke klargjort for Instagram. Velg Instagram når du lager en ny Reel.",409);
+  if((channel==="instagram"||channel==="facebook") && !job.channels.includes(channel))
+    return fail("Denne Reel ble ikke klargjort for "+channel+". Velg kanalen når du lager en ny Reel.",409);
   const target=await resolveChannel(job.brand,channel);
   if(!target.connected||!target.channelId||!target.externalId||!target.brandId)
     return fail(target.reason||"The selected brand has no connected "+channel+" account.",409);
@@ -139,6 +147,14 @@ export async function POST(request:NextRequest){
       });
       if(result.dryRun||result.state!=="published"||!result.externalId)throw new Error("INSTAGRAM_PUBLICATION_UNCONFIRMED");
       externalId=result.externalId;
+    }else if(channel==="facebook"){
+      const connection=await getTokensForBrandPlatform(target.brandId,"facebook");
+      if(!connection||connection.channel.id!==target.channelId||connection.channel.external_id!==target.externalId)
+        throw new Error("FACEBOOK_ACCOUNT_CHANGED");
+      const posted=await publishFacebookPageReel({pageId:target.externalId,
+        accessToken:connection.tokens.accessToken,videoUrl:publicUrl,
+        title:String(job.title),description:String(job.caption)});
+      externalId=posted.videoId;externalUrl=posted.videoUrl;
     }else{
       const {data:download,error}=await supabase.storage.from(BUCKET).download(job.video_path);
       if(error||!download)throw new Error("REEL_MP4_DOWNLOAD_FAILED: "+(error?.message||"no media"));
