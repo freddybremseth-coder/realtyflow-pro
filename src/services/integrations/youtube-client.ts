@@ -262,7 +262,7 @@ export async function uploadVideo(
   videoBuffer: Buffer,
   metadata: YouTubeVideoMetadata,
   brandId?: string,
-  options?: { requireBrandToken?: boolean },
+  options?: { requireBrandToken?: boolean; expectedChannelId?: string; singleInsertAttempt?: boolean },
 ): Promise<YouTubeUploadResult> {
   const willSchedule = !!metadata.publishAt;
   const hasLocalizations = !!(metadata.localizations && Object.keys(metadata.localizations).length > 0);
@@ -290,6 +290,13 @@ export async function uploadVideo(
   const safeTags = sanitizeTags(metadata.tags);
 
   return runWithTokenFallback(brandId, async (youtube, source) => {
+    // Manual Reels: verify the precise brand-owned destination before ANY external upload.
+    if (options?.expectedChannelId) {
+      const owned = await youtube.channels.list({ part: ["id"], mine: true });
+      if (owned.data.items?.[0]?.id !== options.expectedChannelId) {
+        throw new Error("YOUTUBE_DESTINATION_MISMATCH: token belongs to a different channel; upload aborted.");
+      }
+    }
     // Verify the actual Google OAuth channel BEFORE videos.insert. The old
     // after-upload verification could notice a wrong channel too late.
     if (requiresZenecoCanonicalYoutubeChannel(brandId)) {
@@ -363,21 +370,23 @@ export async function uploadVideo(
 
     let res: Awaited<ReturnType<typeof insertWith>> | undefined;
     const attemptErrors: string[] = [];
-    for (let i = 0; i < attempts.length; i++) {
+    // An ambiguous network failure must never cause another videos.insert for an owner-initiated Reel.
+    const safeAttempts = options?.singleInsertAttempt ? attempts.slice(0, 1) : attempts;
+    for (let i = 0; i < safeAttempts.length; i++) {
       try {
-        res = await insertWith(attempts[i]);
-        if (i > 0) console.warn(`[YouTube] Upload lyktes på forsøk ${i + 1} (${attempts[i].label})`);
+        res = await insertWith(safeAttempts[i]);
+        if (i > 0) console.warn(`[YouTube] Upload lyktes på forsøk ${i + 1} (${safeAttempts[i].label})`);
         break;
       } catch (err) {
         if (isInvalidGrantError(err)) throw err;
         const msg = err instanceof Error ? err.message : String(err);
-        attemptErrors.push(`${attempts[i].label}: ${msg.slice(0, 200)}`);
-        console.warn(`[YouTube] Insert-forsøk '${attempts[i].label}' feilet: ${msg.slice(0, 300)}`);
+        attemptErrors.push(`${safeAttempts[i].label}: ${msg.slice(0, 200)}`);
+        console.warn(`[YouTube] Insert-forsøk '${safeAttempts[i].label}' feilet: ${msg.slice(0, 300)}`);
       }
     }
     if (!res) {
       // Version marker [upload-v3] confirms which code produced the error.
-      throw new Error(`[upload-v3] Alle ${attempts.length} opplastingsforsøk feilet — ${attemptErrors.join(' | ')}`);
+      throw new Error(`[upload-v3] Alle ${safeAttempts.length} opplastingsforsøk feilet — ${attemptErrors.join(' | ')}`);
     }
 
     const video = res.data;
