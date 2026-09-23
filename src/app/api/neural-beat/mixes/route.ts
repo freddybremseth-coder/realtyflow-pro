@@ -29,7 +29,7 @@ const createMixSchema = z
   .object({
     title: z.string().trim().min(3).max(160),
     style: styleSchema,
-    targetMinutes: z.number().int().min(30).max(180),
+    targetMinutes: z.number().int().min(3).max(30),
     crossfadeSeconds: z.number().int().min(0).max(20),
     playlist: z.string().trim().min(3).max(180),
     zenEcoHomesEnabled: z.boolean().default(true),
