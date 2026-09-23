@@ -288,6 +288,7 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
         audioUrl: track.audioUrl,
       })),
       job.crossfade_seconds,
+      job.target_minutes * 60,
     );
 
     await report(12, "selecting_visuals");
