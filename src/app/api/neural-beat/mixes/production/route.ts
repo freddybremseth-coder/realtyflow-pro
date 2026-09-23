@@ -43,10 +43,10 @@ export async function POST(request: NextRequest) {
   if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
   if (!current) return NextResponse.json({ error: "Mix job not found." }, { status: 404 });
 
-  if (Number(current.target_minutes) > 30) {
+  if (Number(current.target_minutes) < 3 || Number(current.target_minutes) > 30) {
     return NextResponse.json(
       {
-        error: "Production testing currently supports 30-minute mixes. Longer plans remain saved as drafts until segmented long-form rendering is enabled.",
+        error: "Produksjon støtter nå 3–30 minutter. Lengre mikser lagres som utkast.",
         code: "MIX_PRODUCTION_MAX_30_MIN",
       },
       { status: 409 },
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
       mix: queued,
       workflowVersion: "v2",
       workflowRunId: workflowRun.runId,
-      message: "30-minute production mix queued and V2 worker started.",
+      message: "Mix (3–30 minutter) er satt i produksjonskøen.",
     }, { status: 202 });
   } catch (error) {
     return NextResponse.json({

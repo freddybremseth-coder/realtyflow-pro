@@ -8,6 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const migrations = [
   "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql",
   "supabase/migrations/20260905204500_remaster_mix_production_guard.sql",
+  "supabase/migrations/20260923160000_remaster_short_mixes.sql",
 ].map((file) => path.join(repoRoot, file));
 
 function assert(condition, message) {
@@ -88,6 +89,18 @@ async function main() {
       ["production-guard-worker-2", 300],
     );
     assert(noEligible.rowCount === 0, "Long queued mixes must remain unclaimable while the 30-minute production guard is active.");
+    // Newly enabled short mixes are claimable; long drafts still are not.
+    const shortThreeId = await insertJob(client, 3, "Three Minute Reel-inspired Mix");
+    const shortClaim = await client.query(
+      `select * from public.claim_remaster_mix_job($1,$2)`,
+      ["production-short-mix-worker",300],
+    );
+    assert(shortClaim.rowCount===1 && shortClaim.rows[0].id===shortThreeId,
+      "3-minute mix must be claimable after target duration constraint migration.");
+    assert(Number(shortClaim.rows[0].target_minutes)===3,"Claimed 3-minute mix must retain requested length.");
+    const longStill=await client.query("select status from public.remaster_mix_jobs where id=$1",[longJobId]);
+    assert(longStill.rows[0].status==="queued","120-minute plan must remain unclaimable.");
+
 
     console.log("Re-Master Mediterranean Mix production guard: PASS");
   } finally {

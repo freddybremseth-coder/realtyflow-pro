@@ -35,6 +35,17 @@ test("buildAcrossfadeFilter rejects invalid track counts", () => {
   assert.throws(() => buildAcrossfadeFilter(61, 8), /between 2 and 60 tracks/i);
 });
 
+test("3-minute multi-song mix allocates excerpts from every selected track before crossfade",()=>{
+  const target=180,fade=8,count=3;
+  const seconds=(target+(count-1)*fade)/count;
+  const result=buildAcrossfadeFilter(count,fade,seconds);
+  assert.match(result.filter,/\[0:a\]atrim=duration=65\.333,asetpts=PTS-STARTPTS\[clip0\]/);
+  assert.match(result.filter,/\[1:a\]atrim=duration=65\.333,asetpts=PTS-STARTPTS\[clip1\]/);
+  assert.match(result.filter,/\[2:a\]atrim=duration=65\.333,asetpts=PTS-STARTPTS\[clip2\]/);
+  assert.match(result.filter,/\[clip0\]\[clip1\]acrossfade=d=8/);
+  assert.match(result.filter,/\[mix1\]\[clip2\]acrossfade=d=8/);
+  assert.equal(buildTargetDurationArgs("natural.mp3","mix.mp3",180)[5],"180.000");
+});
 test("target-duration pass loops short mixes and trims to exactly 30 minutes", () => {
   const args = buildTargetDurationArgs("natural.mp3", "mix.mp3", 1800);
   assert.deepEqual(args.slice(0, 6), ["-stream_loop", "-1", "-i", "natural.mp3", "-t", "1800.000"]);
