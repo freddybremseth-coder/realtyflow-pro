@@ -2,6 +2,7 @@ import { SEO_SUPPLEMENTAL_AUDIT_TARGETS, type SiteAudit } from "./seo-audit";
 import type { SEOLeadSummary } from "./seo-leads";
 import type { getSEOObservedSignals } from "./seo-data";
 import type { GSCBrandSnapshot } from "./seo-search-console";
+import type { ReferralPreflightCheck } from "./seo-referral-health";
 
 type Signals = Awaited<ReturnType<typeof getSEOObservedSignals>>;
 export type SEODiagnostic = {
@@ -25,18 +26,31 @@ export function planSEODiagnostics(input: {
   signals: Signals | null;
   leads: SEOLeadSummary | null;
   audits: readonly SiteAudit[];
+  collectorPreflight?: readonly ReferralPreflightCheck[] | null;
 }): SEODiagnostic[] {
-  const { snapshots, signals, leads, audits } = input;
+  const { snapshots, signals, leads, audits, collectorPreflight } = input;
   const checks: SEODiagnostic[] = [];
   const totalClicks = snapshots.reduce((sum, snap) => sum + snap.totals.currentClicks, 0);
   if (signals && signals.totals.current === 0 && totalClicks > 0) {
+    const blocked = collectorPreflight?.filter(check => check.status === "blocked").map(check => check.brandId) || [];
+    const unknown = collectorPreflight?.filter(check => check.status === "unknown").map(check => check.brandId) || [];
+    const preflightFinding = blocked.length
+      ? " Read-only CORS OPTIONS failed admission for these approved origins: " + blocked.join(", ") + "."
+      : collectorPreflight && unknown.length === 0
+        ? " Read-only CORS OPTIONS passed for all eight approved origins; this does not prove that browser scripts ran or arrivals were saved."
+        : unknown.length
+          ? " Read-only CORS OPTIONS could not be determined for: " + unknown.join(", ") + "."
+          : " Collector preflight was not measured in this cycle.";
     checks.push(diagnostic({
       id: "check-referral-instrumentation", brandId: null, category: "measurement",
       title: "Sjekk henvisningsmålingen på tvers av nettstedene",
       finding: snapshots.length + " nettsteder hadde til sammen " + totalClicks +
-        " Google-klikk i Search Console, men RealtyFlow har ingen registrerte søke-/AI-henvisningsankomster siste 30 dager.",
-      nextStep: "Test en virkelig søkehenvisning fra et nettsted til RealtyFlow: nettleserens nettverksforespørsel, Origin/CORS, sporingskode, eventuelle samtykkesperrer og registrert databasehendelse. Search Console-klikk er ikke identisk med økter, og periodene er ikke helt like.",
-      evidence: "Google Search Console sine datoangitte webklikk og separate RealtyFlow first-party arrival events.",
+        " Google-klikk i Search Console, men RealtyFlow har ingen registrerte søke-/AI-henvisningsankomster siste 30 dager." + preflightFinding,
+      nextStep: blocked.length
+        ? "Kontroller collectorens Origin/CORS-regler for de navngitte nettstedene før du tester en reell nettleserhenvisning. OPTIONS-kontrollen har IKKE sendt syntetiske besøk eller opprettet kunder."
+        : "Test en virkelig søkehenvisning fra et nettsted til RealtyFlow: nettleserens nettverksforespørsel, faktisk JavaScript-kjøring, CSP, eventuelle samtykkesperrer og registrert databasehendelse. Search Console-klikk er ikke identisk med økter, og periodene er ikke helt like.",
+      evidence: "Google Search Console sine datoangitte webklikk, separate RealtyFlow first-party arrival events" +
+        (collectorPreflight ? " og kun skrivefri collector OPTIONS-preflight per godkjent origin." : "."),
       kind: "check",
     }));
   }
