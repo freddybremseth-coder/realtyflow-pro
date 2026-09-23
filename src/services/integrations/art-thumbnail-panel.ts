@@ -128,7 +128,7 @@ export function buildArtThumbnailPanel(category: string, title: string, accentHe
  * y=160..1480; text is restricted to the top and bottom editorial bands.
  * This deliberately avoids both FFmpeg drawtext and destructive portrait crop.
  */
-export function buildArtShortPoster(category: string, title: string, variant: 'art' | 'music' = 'art'): Buffer {
+export function buildArtShortPoster(category: string, title: string, variant: 'art' | 'music' = 'art', footer?: string): Buffer {
   const width = 1080, height = 1920;
   const pixels = Buffer.alloc(width * height * 3);
   const bg: RGB = [16, 24, 32];
@@ -156,8 +156,8 @@ export function buildArtShortPoster(category: string, title: string, variant: 'a
     }
   }
   label('RE-MASTER FREDDY',46,57,4,white);
-  label(safeUpper(category).slice(0,12)||'MEDITATION',38,1575,10,white);
+  label(safeUpper(category).slice(0,16)||'MEDITATION',38,1575,10,white);
   titleLines(title,24).forEach((line,i)=>label(line,40,1690+i*61,4,accent));
-  label(variant === 'art' ? 'FREDDY BREMSETH ART' : 'FULL SONG ON CHANNEL',40,1840,4,white);
+  label((footer || (variant === 'art' ? 'FREDDY BREMSETH ART' : 'FULL SONG ON CHANNEL')).slice(0,40),40,1840,4,white);
   return Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`, 'ascii'), pixels]);
 }
