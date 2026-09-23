@@ -339,11 +339,18 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       },
     });
 
+    // Video chapters for short mixes must describe the actual excerpt windows,
+    // not the full-length songs whose total may exceed this video's runtime.
+    const clipSeconds=job.target_minutes<30
+      ?(audio.durationSeconds+(tracks.length-1)*job.crossfade_seconds)/tracks.length
+      :null;
     const trackPlan: MixTrackPlan[] = tracks.map((track) => ({
       id: track.id,
       title: track.title,
       artist: track.artist,
-      durationSeconds: track.durationSeconds,
+      durationSeconds:clipSeconds!==null
+        ?Math.min(Number(track.durationSeconds||clipSeconds),clipSeconds)
+        :track.durationSeconds,
     }));
     const description = buildMixDescription({
       title: job.title,
