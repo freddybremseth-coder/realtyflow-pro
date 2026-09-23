@@ -136,5 +136,5 @@ test("passing server preflight never claims an actual search visit or stored arr
   });
   const issue = checks.find(item => item.id === "check-referral-instrumentation")!;
   assert.match(issue.finding, /does not prove that browser scripts ran or arrivals were saved/);
-  assert.match(issue.nextStep, /reell.*nettleserhenvisning/);
+  assert.match(issue.nextStep, /virkelig søkehenvisning/);
 });
