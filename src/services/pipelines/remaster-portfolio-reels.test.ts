@@ -35,7 +35,7 @@ test("production FFmpeg renders a real 15-second 1080x1920 Reel with two approve
   const prior=globalThis.fetch;
   try{
     await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i","testsrc2=size=480x640:rate=1","-frames:v","1","-y",pic1]);
-    await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=0x9a602f:s=640x480:r=1","-frames:v","1","-y",pic2]);
+    await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i","testsrc2=size=640x480:rate=1","-vf","hflip","-frames:v","1","-y",pic2]);
     await exec(ffmpegStatic!,["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=330:duration=35","-c:a","libmp3lame","-y",audioFile]);
     const one=await fs.readFile(pic1),two=await fs.readFile(pic2),audio=await fs.readFile(audioFile);
     const audioUrl="https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/song.mp3";
