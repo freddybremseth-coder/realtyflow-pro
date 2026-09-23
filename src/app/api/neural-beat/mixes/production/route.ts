@@ -43,11 +43,12 @@ export async function POST(request: NextRequest) {
   if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
   if (!current) return NextResponse.json({ error: "Mix job not found." }, { status: 404 });
 
-  if (Number(current.target_minutes) > 30) {
+  const targetMinutes = Number(current.target_minutes);
+  if (!Number.isFinite(targetMinutes) || targetMinutes < 3 || targetMinutes > 30) {
     return NextResponse.json(
       {
-        error: "Mix Studio supports production from 3 to 30 minutes. Longer plans are not accepted in this simplified production mode.",
-        code: "MIX_PRODUCTION_MAX_30_MIN",
+        error: "Mix Studio supports production from 3 to 30 minutes.",
+        code: "MIX_PRODUCTION_DURATION_OUT_OF_RANGE",
       },
       { status: 409 },
     );
