@@ -26,6 +26,8 @@ export async function loadZenEcoHomesVisualUrls(input: {
   visualTypes?: RemasterMixVisualType[];
   randomSeed?: string;
   strictSelection?: boolean;
+  /** Optional exact town/area focus for manually created Reels. */
+  areaQuery?: string;
 }) {
   const supabase = getSupabase();
   const desiredCount = recommendedVisualCount(input.targetMinutes);
@@ -48,9 +50,18 @@ export async function loadZenEcoHomesVisualUrls(input: {
     if (data.length < pageSize) break;
   }
 
-  const zenEcoProperties = allProperties.filter((property) =>
-    isWebsiteVisible(property) && propertyMatchesBrand(property, "zeneco"),
-  ) as MixPropertyLike[];
+  const areaNeedle = String(input.areaQuery || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .toLowerCase().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+  const zenEcoProperties = allProperties.filter((property) => {
+    if (!isWebsiteVisible(property) || !propertyMatchesBrand(property, "zeneco")) return false;
+    if (!areaNeedle) return true;
+    const haystack = [
+      property.title, property.description, property.location, property.town,
+      property.province, property.region, property.municipality,
+    ].filter(Boolean).join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .toLowerCase().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+    return haystack.includes(areaNeedle);
+  }) as MixPropertyLike[];
 
   let urls: string[];
   if (input.strictSelection) {
