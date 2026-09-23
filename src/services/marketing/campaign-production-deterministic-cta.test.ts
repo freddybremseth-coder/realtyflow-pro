@@ -52,3 +52,36 @@ test("deterministic Inventory fallback does not invent a CTA without a property 
 
   assert.equal(creative.asset.cta, undefined);
 });
+
+test("Pinoso fallback links to Pinoso, preserves verified plot pricing, never links to ZenEco", () => {
+  const creative = makeDeterministicInventoryCreative({
+    ...brief, genome: { ...brief.genome, brandId: "pinosoecolife" },
+  }, {
+    id: "pinoso-property",
+    ref: "N9950",
+    title: "Moderne villa med stor tomt",
+    propertyType: "Villa",
+    primaryImage: "https://example.com/pinoso.jpg",
+    factSources: [
+      { claim: "Tittel: Moderne villa med stor tomt", source: "Inventory" },
+      { claim: "Tomt: 12555 m²", source: "Inventory" },
+      { claim: "Tomt inkludert i oppgitt pris: nei", source: "Inventory" },
+      { claim: "Separat tomtepris: €53000", source: "Inventory" },
+    ],
+  } as any);
+  assert.match(creative.asset.cta ?? "", /^Se boligen: https:\/\/www\.pinosoecolife\.com\/eiendommer\/N9950/);
+  assert.doesNotMatch(creative.asset.cta ?? "", /zenecohomes/i);
+  assert.match(creative.asset.body, /Tomt inkludert i oppgitt pris: nei/);
+  assert.match(creative.asset.body, /Separat tomtepris: €53000/);
+});
+
+test("unrecognized brand fails closed rather than redirecting to a different property site", () => {
+  const creative = makeDeterministicInventoryCreative({
+    ...brief, genome: { ...brief.genome, brandId: "anotherbrand" },
+  }, {
+    id: "other-property", ref: "X1", title: "Bolig", propertyType: "Villa",
+    primaryImage: "https://example.com/p.jpg",
+    factSources: [{ claim: "Tittel: Bolig", source: "Inventory" }],
+  } as any);
+  assert.equal(creative.asset.cta, undefined);
+});

@@ -35,6 +35,15 @@ export function localAutopilotSlot(now: Date = new Date(), timeZone = "Europe/Ma
   };
 }
 
+/** Optional brand-specific weekday schedule; invalid values fail closed. */
+export function isPlannedAutopilotDay(dayIndex: number, days: unknown): boolean {
+  if (days == null) return true;
+  if (!Array.isArray(days) || days.length === 0) return false;
+  const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) return false;
+  return days.some((day) => typeof day === "string" && day.trim().toLowerCase() === weekdays[dayIndex]);
+}
+
 export function parseLearnedAutopilotHour(value: string | undefined): number | null {
   const match = String(value ?? "").match(/^h_(\d{2})$/);
   if (!match) return null;

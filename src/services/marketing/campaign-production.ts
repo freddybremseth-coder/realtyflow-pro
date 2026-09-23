@@ -28,7 +28,10 @@ import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 const PREAPPROVED_REUSABLE_SOURCES = new Set(["ad_creative", "content_hub_approved"]);
-const ZENECO_PROPERTY_BASE = "https://www.zenecohomes.com/eiendommer";
+const PROPERTY_BASE_BY_BRAND: Record<string, string> = {
+  zeneco: "https://www.zenecohomes.com/eiendommer",
+  pinosoecolife: "https://www.pinosoecolife.com/eiendommer",
+};
 const DETERMINISTIC_INVENTORY_FACT_PREFIXES = [
   "Tittel:",
   "Sted:",
@@ -38,6 +41,8 @@ const DETERMINISTIC_INVENTORY_FACT_PREFIXES = [
   "Bad:",
   "Boligareal:",
   "Tomt:",
+  "Tomt inkludert i oppgitt pris:",
+  "Separat tomtepris:",
   "Boligtype:",
   "Privat/felles basseng:",
   "Garasje/parkering oppgitt:",
@@ -122,7 +127,8 @@ export function makeDeterministicInventoryCreative(brief: any, property: Invento
     .map(({ claim }) => claim.trim())
     .filter(Boolean);
   const body = bodyFacts.length ? bodyFacts.join("\n") : (property.ref ? `Referanse: ${property.ref}` : "Verifisert Inventory-bolig");
-  const propertyUrl = property.ref ? `${ZENECO_PROPERTY_BASE}/${encodeURIComponent(property.ref)}` : null;
+  const base = PROPERTY_BASE_BY_BRAND[String(brief?.genome?.brandId ?? brief?.brandId ?? "")];
+  const propertyUrl = base && property.ref ? `${base}/${encodeURIComponent(property.ref)}` : null;
   const cta = propertyUrl
     ? `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`
     : undefined;

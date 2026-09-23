@@ -10,6 +10,7 @@ import {
   autopilotRunIdentity,
   autopilotTargetHour,
   localAutopilotSlot,
+  isPlannedAutopilotDay,
   parseLearnedAutopilotHour,
   shouldRunAutopilotSlot,
 } from "@/lib/marketing/autopilot-safety";
@@ -115,10 +116,19 @@ async function claimRunRequest(supabase: any): Promise<RunRequest | null> {
   return claimed?.id ? claimed as RunRequest : null;
 }
 
-function ideaForBrand(plan: any, guidance: string) {
+function ideaForBrand(plan: any, guidance: string, dayIndex: number) {
   const role = String(plan?.metadata?.brand_role ?? "");
   const sources = Array.isArray(plan?.source_types) ? plan.source_types.join(", ") : "approved brand sources";
   const channelSafety = " Ikke skriv ‘lenke i bio’, ‘link in bio’, ‘se lenken i profilen’ eller tilsvarende med mindre en slik kanal-lenke er eksplisitt verifisert i brand-data. Bruk heller en direkte, sann CTA som ‘send oss en melding’ eller ‘kontakt oss’.";
+  if (role === "real_estate" && String(plan?.brand_id ?? "") === "pinosoecolife") {
+    const themes: Record<number, string> = {
+      0: "Vis dokumentert romslig tomt og uteliv knyttet til en faktisk tilgjengelig eiendom; ikke finn på lokalavstander.",
+      1: "TOMTER: fremhev verifisert tomtestørrelse, plass og beliggenhet. Tomt inkludert i pris bare hvis bekreftet i kilden.",
+      3: "Moderne villa: fremhev dokumenterte boligfakta, arkitektur og reelle eiendomsbilder.",
+      5: "Tomter og nybygg: vis godkjente muligheter, men ikke lov byggetillatelse, utvidelser, gjestehus eller fast totalpris.",
+    };
+    return `Presenter én aktuell eiendom fra RealtyFlow Inventory for Pinoso Eco Life. ${themes[dayIndex] ?? themes[1]} Bruk kun godkjente, ekte eiendomsbilder og verifiserte fakta. Varier vinkel og eiendom; ingen nesten identiske innlegg. ${channelSafety}${guidance}`;
+  }
   if (role === "real_estate") return `Presenter én aktuell bolig fra RealtyFlow Inventory på en troverdig, nyttig og salgsutløsende måte. Bruk kun verifiserte Inventory-fakta og brandets godkjente tone, CTA og rolle.${channelSafety}${guidance}`;
   if (role === "food_agriculture") return `Lag nyttig og visuelt merkevareinnhold basert på verifiserte kilder (${sources}). Prioriter gård, oliven, høsting, opprinnelse, EVOO, matbruk eller oppskrifter. Ikke fremsett helse- eller sykdomspåstander uten uavhengig dokumentasjon/review.${channelSafety}${guidance}`;
   if (role === "saas_b2b") return `Lag konkret B2B-innhold basert på verifiserte produktkilder (${sources}). Ikke finn på funksjoner, priser, kundetall eller resultater. Bruk en tydelig nytteverdi og relevant CTA.${channelSafety}${guidance}`;
@@ -143,7 +153,7 @@ export async function GET(request: NextRequest) {
   const manualRun = !!runRequest;
 
   try {
-    const { data: plans, error } = await supabase.from("marketing_brand_growth_plans").select("brand_id,status,autonomy_mode,metadata,source_types").eq("status", "active").eq("autonomy_mode", "controlled_auto");
+    const { data: plans, error } = await supabase.from("marketing_brand_growth_plans").select("brand_id,status,autonomy_mode,metadata,source_types,posting_strategy").eq("status", "active").eq("autonomy_mode", "controlled_auto");
     if (error) throw new Error(error.message);
     const results: Array<Record<string, unknown>> = [];
     for (const plan of plans ?? []) {
@@ -154,6 +164,10 @@ export async function GET(request: NextRequest) {
       if (!channels.length) { results.push({ brandId, skipped: true, reason: "No requested/preapproved autopilot channels" }); continue; }
 
       for (const channel of channels) {
+        if (!manualRun && !isPlannedAutopilotDay(dayIndex, plan?.posting_strategy?.days)) {
+          results.push({ brandId, channel, skipped: true, reason: "not_configured_publishing_day", localDate });
+          continue;
+        }
         if (await hasRecentAutoPublication(supabase, brandId, channel)) { results.push({ brandId, channel, skipped: true, reason: "recent_auto_publication_exists" }); continue; }
         const recommendation = await recommendForGeneration(supabase as any, { scope: channelLearningScope(brandId, channel) }).catch(() => undefined);
         const learnedHour = parseLearnedAutopilotHour(recommendation?.favor?.publishHour?.value);
@@ -173,7 +187,7 @@ export async function GET(request: NextRequest) {
           }
 
           const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
-          const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance);
+          const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex);
           let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
           let generatedMedia: Record<string, unknown> | null = null;
 

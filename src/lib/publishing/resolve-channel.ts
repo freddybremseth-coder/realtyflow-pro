@@ -72,6 +72,9 @@ export async function resolveChannel(
         `Channel ${opts.socialChannelId} is platform "${channel.platform}", expected "${platform}".`,
       );
     }
+    if (!channel.is_active) {
+      throw new ChannelResolutionError("missing", brandId, platform, `Channel ${channel.id} is inactive. Select an active channel.`);
+    }
     const tokens = await getDecryptedTokens(channel.id);
     if (!tokens) {
       throw new ChannelResolutionError(
