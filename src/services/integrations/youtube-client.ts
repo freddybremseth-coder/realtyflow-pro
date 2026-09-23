@@ -8,6 +8,7 @@ import {
 } from '@/lib/remaster/oauth-return';
 import { Readable } from 'stream';
 import { createYoutubeOAuthClient } from '@/services/integrations/youtube-oauth-client';
+import { assertZenecoYoutubeUploadDestination, requiresZenecoCanonicalYoutubeChannel } from '@/services/integrations/zeneco-youtube-routing';
 
 // Cache per (brandId, token) so we can re-use OAuth clients but also invalidate
 // when we fall back to a different token source.
@@ -289,6 +290,19 @@ export async function uploadVideo(
   const safeTags = sanitizeTags(metadata.tags);
 
   return runWithTokenFallback(brandId, async (youtube, source) => {
+    // Verify the actual Google OAuth channel BEFORE videos.insert. The old
+    // after-upload verification could notice a wrong channel too late.
+    if (requiresZenecoCanonicalYoutubeChannel(brandId)) {
+      const { getChannelsByBrand } = await import('@/lib/oauth/channels');
+      const active = await getChannelsByBrand('zeneco', 'youtube');
+      const owned = await youtube.channels.list({ part: ['id'], mine: true });
+      assertZenecoYoutubeUploadDestination(
+        brandId,
+        owned.data.items?.[0]?.id ?? null,
+        active.map((channel) => channel.external_id).filter((id): id is string => !!id),
+      );
+    }
+
     // Nice-to-have metadata must never sink an upload. Try the full payload
     // first, then strip one optional field per attempt until the insert
     // succeeds: localizations → defaultAudioLanguage → scheduled publishAt.
@@ -432,7 +446,9 @@ export async function uploadVideo(
       privacyStatus: verifiedVideo.status?.privacyStatus || appliedPrivacyStatus,
       tokenSource: source,
     };
-  }, options);
+  }, requiresZenecoCanonicalYoutubeChannel(brandId)
+    ? { ...options, requireBrandToken: true }
+    : options);
 }
 
 /**
