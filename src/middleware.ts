@@ -65,7 +65,7 @@ const REMASTER_PROXY_PATHS = [
   "/api/neural-beat/upload",
   "/api/youtube/status",
 ];
-const REMASTER_PROXY_PREFIXES = ["/api/neural-beat/jobs", "/api/neural-beat/mixes"];
+const REMASTER_PROXY_PREFIXES = ["/api/neural-beat/jobs", "/api/neural-beat/mixes", "/api/neural-beat/reels"];
 const NEXUS_SCHEDULER_PATHS = new Set([
   "/api/cron/email-ingest",
   "/api/cron/email-auto-draft",
