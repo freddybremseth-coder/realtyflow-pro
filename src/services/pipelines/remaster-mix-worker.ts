@@ -288,6 +288,7 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
         audioUrl: track.audioUrl,
       })),
       job.crossfade_seconds,
+      job.target_minutes * 60,
     );
 
     await report(12, "selecting_visuals");
@@ -322,7 +323,7 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
           })()
         : await loadFallbackVisualUrls(tracks, job.target_minutes);
 
-    const exactAudioSeconds = Number(job.input_snapshot?.exactAudioSeconds || 0) || null;
+    const exactAudioSeconds = audio.durationSeconds;
     video = await renderRemasterLongFormMix({
       audioPath: audio.audioPath,
       imageUrls,

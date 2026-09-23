@@ -8,6 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const migrations = [
   "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql",
   "supabase/migrations/20260905204500_remaster_mix_production_guard.sql",
+  "supabase/migrations/20260923190500_remaster_mix_short_duration.sql",
 ].map((file) => path.join(repoRoot, file));
 
 function assert(condition, message) {
@@ -63,33 +64,52 @@ async function main() {
       await client.query(await fs.readFile(migrationPath, "utf8"));
     }
 
-    const longJobId = await insertJob(client, 120, "Two Hour Mix — must stay queued");
-    const shortJobId = await insertJob(client, 30, "Thirty Minute Production Test");
+    // New owner-facing production range is 3–30 minutes; there are no 60–180
+    // minute drafts in the new API contract.
+    const threeMinuteId = await insertJob(client, 3, "Three Minute Smoke Mix");
+    const thirtyMinuteId = await insertJob(client, 30, "Thirty Minute Production Mix");
 
-    const claim = await client.query(
-      `select * from public.claim_remaster_mix_job($1,$2)`,
-      ["production-guard-worker", 300],
+    for (const invalid of [2,31,60,120]) {
+      let rejected = false;
+      try { await insertJob(client, invalid, "Invalid "+invalid+" Minute Mix"); }
+      catch { rejected = true; }
+      assert(rejected, "target_minutes="+invalid+" must be rejected by the 3–30 minute database guard.");
+    }
+
+    const oneTrack = await client.query(
+      `insert into public.remaster_mix_jobs (
+        title,style,target_minutes,crossfade_seconds,playlist_name,
+        zenecohomes_enabled,visual_region,visual_type,sponsor_interval_minutes,
+        track_ids,status,pipeline_step,queued_at
+      ) values (
+        'One Track Short Mix','morning-chill',5,0,'Short Mixes',
+        false,'any','mixed',10,array['track-a'],'queued','queued',now()
+      ) returning id`,
     );
-    assert(claim.rowCount === 1, "Production worker must claim one eligible job.");
-    assert(claim.rows[0].id === shortJobId, "Production worker must claim the 30-minute job, not the long draft.");
-    assert(Number(claim.rows[0].target_minutes) === 30, "Claimed production job must be capped at 30 minutes.");
+    assert(oneTrack.rowCount===1,"A 3–30 minute short mix may intentionally use one song.");
 
-    const longJob = await client.query(`select status from public.remaster_mix_jobs where id=$1`, [longJobId]);
-    assert(longJob.rows[0].status === "queued", "120-minute job must remain untouched by the production worker.");
+    const first = await client.query(
+      `select * from public.claim_remaster_mix_job($1,$2)`,
+      ["production-guard-worker",300],
+    );
+    assert(first.rowCount===1,"Production worker must claim a valid short mix.");
+    assert(first.rows[0].id===threeMinuteId,"Queue order must preserve the first 3-minute mix.");
+    assert(Number(first.rows[0].target_minutes)===3,"Worker must accept 3-minute production.");
 
-    const lease = claim.rows[0].lease_token;
     await client.query(
       `select * from public.fail_remaster_mix_job($1,$2,$3,$4,$5)`,
-      [shortJobId, lease, "TEST_STOP", "Stop after guard verification", false],
+      [threeMinuteId,first.rows[0].lease_token,"TEST_STOP","Stop after 3-minute verification",false],
     );
 
-    const noEligible = await client.query(
+    const second = await client.query(
       `select * from public.claim_remaster_mix_job($1,$2)`,
-      ["production-guard-worker-2", 300],
+      ["production-guard-worker-2",300],
     );
-    assert(noEligible.rowCount === 0, "Long queued mixes must remain unclaimable while the 30-minute production guard is active.");
+    assert(second.rowCount===1,"Production worker must continue to another valid 3–30 minute job.");
+    assert(second.rows[0].id===thirtyMinuteId,"The 30-minute job remains supported.");
+    assert(Number(second.rows[0].target_minutes)===30,"30-minute production remains valid.");
 
-    console.log("Re-Master Mediterranean Mix production guard: PASS");
+    console.log("Re-Master 3–30 minute Mix production guard: PASS");
   } finally {
     await client.end();
   }

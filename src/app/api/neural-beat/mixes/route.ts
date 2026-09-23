@@ -29,7 +29,7 @@ const createMixSchema = z
   .object({
     title: z.string().trim().min(3).max(160),
     style: styleSchema,
-    targetMinutes: z.number().int().min(30).max(180),
+    targetMinutes: z.number().int().min(3).max(30),
     crossfadeSeconds: z.number().int().min(0).max(20),
     playlist: z.string().trim().min(3).max(180),
     zenEcoHomesEnabled: z.boolean().default(true),
@@ -48,7 +48,7 @@ const createMixSchema = z
     visualTypes: z.array(visualTypeSchema).min(1).max(6).default(["mixed"]),
     sponsorIntervalMinutes: z.number().int().min(5).max(60).default(10),
     ctaText: z.string().trim().max(500).default(""),
-    selectedSongIds: z.array(z.string().trim().min(1).max(200)).min(2).max(60),
+    selectedSongIds: z.array(z.string().trim().min(1).max(200)).min(1).max(60),
     queue: z.boolean().optional().default(false),
   })
   .strict();

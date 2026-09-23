@@ -103,3 +103,93 @@ export async function loadZenEcoHomesVisualUrls(input: {
     requestedVisualCount: desiredCount,
   };
 }
+
+
+function reelPropertyText(property: Record<string, unknown>) {
+  return [property.title,property.title_no,property.location,property.town,property.description,property.description_no,property.property_type,property.type]
+    .filter(Boolean).join(" ").toLowerCase();
+}
+function reelPropertyImages(property: Record<string, unknown>, visualType: RemasterMixVisualType) {
+  const gallery = Array.isArray(property.gallery)
+    ? property.gallery.filter((value): value is string => typeof value==="string" && /^https:\/\//i.test(value))
+    : [];
+  const primary = typeof property.primary_image==="string" && /^https:\/\//i.test(property.primary_image)
+    ? [property.primary_image] : [];
+  return visualType==="interiors"
+    ? [...gallery.slice(2),...gallery.slice(0,2),...primary]
+    : [...primary,...gallery];
+}
+
+/** Manual Reels Studio visual source. Unlike the broad Mix source this can
+ * narrow to a concrete town/area typed by the owner (Benidorm, Finestrat,
+ * Villajoyosa, etc.). No fallback to another town is allowed.
+ */
+export async function loadZenEcoHomesReelVisuals(input:{
+  region: RemasterMixRegion;
+  town?: string | null;
+  visualType: RemasterMixVisualType;
+  limit: number;
+}) {
+  const client=getSupabase();
+  const rows:Record<string,unknown>[]=[];
+  const pageSize=500;
+  for(let from=0;from<3000;from+=pageSize){
+    const {data,error}=await client.from("properties").select("*")
+      .order("created_at",{ascending:false}).range(from,from+pageSize-1);
+    if(error)throw new Error("Could not load ZenEcoHomes properties: "+error.message);
+    if(!data?.length)break;
+    rows.push(...data);
+    if(data.length<pageSize)break;
+  }
+  const town=String(input.town||"").trim().toLowerCase();
+  const brandRows=rows.filter(property=>isWebsiteVisible(property)&&propertyMatchesBrand(property,"zeneco"));
+  const regionRows=input.region==="any" ? brandRows : brandRows.filter(property=>
+    selectZenEcoHomesVisuals([property as MixPropertyLike],{region:input.region,visualType:"mixed",limit:1}).length>0
+  );
+  const areaRows=town ? regionRows.filter(property=>reelPropertyText(property).includes(town)) : regionRows;
+  const typed=areaRows.filter(property=>
+    selectZenEcoHomesVisuals([property as MixPropertyLike],{region:"any",visualType:input.visualType,limit:1}).length>0
+  );
+  if(!typed.length){
+    const where=[town||null,input.region!=="any"?input.region:null,input.visualType!=="mixed"?input.visualType:null].filter(Boolean).join(" / ");
+    throw new Error("No Zen Eco Homes properties match the selected Reel area/type"+(where?": "+where:"")+".");
+  }
+  const urls:string[]=[];
+  const visualSummaries:Array<{url:string;propertyId:string;title:string;location:string;ref:string;externalUrl:string}>=[];
+  const seen=new Set<string>();
+  let imageIndex=0;
+  const buckets=typed.map(property=>({property,urls:reelPropertyImages(property,input.visualType)})).filter(x=>x.urls.length);
+  const cap=Math.max(1,Math.min(12,Math.floor(input.limit||6)));
+  while(urls.length<cap&&buckets.length){
+    let added=false;
+    for(const bucket of buckets){
+      const url=bucket.urls[imageIndex];
+      if(!url||seen.has(url))continue;
+      seen.add(url);urls.push(url);added=true;
+      visualSummaries.push({
+        url,
+        propertyId:String(bucket.property.id||""),
+        title:String(bucket.property.title_no||bucket.property.title||bucket.property.ref||"Property"),
+        location:String(bucket.property.town||bucket.property.location||""),
+        ref:String(bucket.property.ref||""),
+        externalUrl:typeof bucket.property.external_url==="string"&&/^https:\/\//i.test(bucket.property.external_url)?bucket.property.external_url:"",
+      });
+      if(urls.length>=cap)break;
+    }
+    imageIndex++;
+    if(!added&&buckets.every(bucket=>imageIndex>=bucket.urls.length))break;
+  }
+  if(!urls.length)throw new Error("Selected Zen Eco Homes properties have no usable public images.");
+  return {
+    urls,
+    visualSummaries,
+    propertyCount:typed.length,
+    propertySummaries:typed.slice(0,6).map(property=>({
+      id:String(property.id||""),
+      title:String(property.title_no||property.title||property.ref||"Property"),
+      location:String(property.town||property.location||""),
+      ref:String(property.ref||""),
+      externalUrl:typeof property.external_url==="string"&&/^https:\/\//i.test(property.external_url)?property.external_url:"",
+    })),
+  };
+}
