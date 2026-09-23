@@ -8,7 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const migrations = [
   "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql",
   "supabase/migrations/20260905204500_remaster_mix_production_guard.sql",
-  "supabase/migrations/20260923183000_remaster_portfolio_reels.sql",
+  "supabase/migrations/20260923182500_remaster_short_mix_duration.sql",
 ].map((file) => path.join(repoRoot, file));
 
 function assert(condition, message) {
