@@ -44,7 +44,7 @@ test("3-minute multi-song mix allocates excerpts from every selected track befor
   assert.match(result.filter,/\[2:a\]atrim=duration=65\.333,asetpts=PTS-STARTPTS\[clip2\]/);
   assert.match(result.filter,/\[clip0\]\[clip1\]acrossfade=d=8/);
   assert.match(result.filter,/\[mix1\]\[clip2\]acrossfade=d=8/);
-  assert.equal(buildTargetDurationArgs("natural.mp3","mix.mp3",180)[4],"180.000");
+  assert.equal(buildTargetDurationArgs("natural.mp3","mix.mp3",180)[5],"180.000");
 });
 test("target-duration pass loops short mixes and trims to exactly 30 minutes", () => {
   const args = buildTargetDurationArgs("natural.mp3", "mix.mp3", 1800);
