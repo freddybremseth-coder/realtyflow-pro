@@ -85,3 +85,39 @@ test("middleware passes Stripe webhooks to route-level signature verification", 
   assert.equal(response.headers.get("x-middleware-next"), "1");
   assert.equal(response.headers.get("location"), null);
 });
+
+test("middleware admits Re-Master Reels proxy only with its shared credential", async () => {
+  const previous = process.env.REALTYFLOW_MIGRATION_SECRET;
+  process.env.REALTYFLOW_MIGRATION_SECRET = "reels-proxy-test-secret";
+  try {
+    for (const method of ["GET", "POST"]) {
+      const accepted = await middleware(new NextRequest(
+        "https://realtyflow.test/api/neural-beat/reels",
+        {
+          method,
+          headers: {
+            "x-remaster-migration-secret": "reels-proxy-test-secret",
+            "x-remaster-admin": "freddy.bremseth@gmail.com",
+          },
+        },
+      ));
+      assert.equal(accepted.status, 200, method);
+      assert.equal(accepted.headers.get("x-middleware-next"), "1", method);
+      assert.equal(accepted.headers.get("location"), null, method);
+    }
+
+    for (const credential of [undefined, "incorrect-reels-proxy-secret"]) {
+      const denied = await middleware(request("/api/neural-beat/reels", credential
+        ? { "x-remaster-migration-secret": credential }
+        : undefined));
+      assert.equal(denied.status, 307);
+      assert.equal(
+        denied.headers.get("location"),
+        "https://realtyflow.test/login?next=%2Fapi%2Fneural-beat%2Freels",
+      );
+    }
+  } finally {
+    if (previous === undefined) delete process.env.REALTYFLOW_MIGRATION_SECRET;
+    else process.env.REALTYFLOW_MIGRATION_SECRET = previous;
+  }
+});
