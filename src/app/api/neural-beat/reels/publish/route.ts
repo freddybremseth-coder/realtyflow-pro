@@ -32,7 +32,11 @@ function db(){
   return url&&key?createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}}):null;
 }
 function fail(message:string,status=400){return NextResponse.json({error:message},{status});}
-async function resolveChannel(brand:Brand,platform:Channel){
+type ResolvedChannel = {
+  connected:boolean;brandId:string|null;channelId:string|null;account:string|null;
+  externalId:string|null;reason:string;
+};
+async function resolveChannel(brand:Brand,platform:Channel):Promise<ResolvedChannel>{
   const brandId=REEL_DESTINATIONS[brand][platform];
   if(!brandId)return {connected:false,brandId:null,channelId:null,account:null,reason:"Ingen egen "+platform+"-kanal er knyttet til denne merkevaren i RealtyFlow."};
   try {
