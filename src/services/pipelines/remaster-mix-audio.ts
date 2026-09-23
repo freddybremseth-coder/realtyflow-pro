@@ -137,24 +137,29 @@ function runFFmpeg(binary: string, args: string[]) {
   });
 }
 
-export function buildAcrossfadeFilter(trackCount: number, crossfadeSeconds: number) {
+export function buildAcrossfadeFilter(trackCount: number, crossfadeSeconds: number, perTrackSeconds?: number) {
   if (!Number.isInteger(trackCount) || trackCount < 2 || trackCount > 60) {
     throw new Error("A long-form mix requires between 2 and 60 tracks.");
   }
   const fade = Math.max(0, Math.min(20, crossfadeSeconds));
-
+  const useSlices=Number.isFinite(perTrackSeconds) && Number(perTrackSeconds)>fade+1;
+  const slices=useSlices
+    ?Array.from({length:trackCount},(_,index)=>
+       `[${index}:a]atrim=duration=${Number(perTrackSeconds).toFixed(3)},asetpts=PTS-STARTPTS[clip${index}]`)
+    :[];
+  const input=(index:number)=>useSlices?`clip${index}`:`${index}:a`;
   if (fade === 0) {
     return {
-      filter: `${Array.from({ length: trackCount }, (_, index) => `[${index}:a]`).join("")}concat=n=${trackCount}:v=0:a=1[mixout]`,
+      filter: [...slices,
+        `${Array.from({ length: trackCount }, (_, index) => `[${input(index)}]`).join("")}concat=n=${trackCount}:v=0:a=1[mixout]`].join(";"),
       outputLabel: "mixout",
     };
   }
-
-  const parts: string[] = [];
-  let previous = "0:a";
+  const parts: string[] = [...slices];
+  let previous = input(0);
   for (let index = 1; index < trackCount; index += 1) {
     const output = index === trackCount - 1 ? "mixout" : `mix${index}`;
-    parts.push(`[${previous}][${index}:a]acrossfade=d=${fade}:c1=tri:c2=tri[${output}]`);
+    parts.push(`[${previous}][${input(index)}]acrossfade=d=${fade}:c1=tri:c2=tri[${output}]`);
     previous = output;
   }
   return { filter: parts.join(";"), outputLabel: "mixout" };
@@ -209,7 +214,13 @@ export async function buildRemasterMixAudio(
 
     const naturalMixPath = path.join(workingDirectory, "mix-audio-natural.mp3");
     const inputArgs = trackPaths.flatMap((trackPath) => ["-i", trackPath]);
-    const { filter, outputLabel } = buildAcrossfadeFilter(trackPaths.length, crossfadeSeconds);
+    // For 3–20 minute mixes, divide the available runtime between every
+    // selected song BEFORE crossfading. Trimming the final full-length mix
+    // would otherwise publish only the first song of a multi-song short mix.
+    const perTrackSeconds=targetSeconds<30*60
+      ?(targetSeconds+(trackPaths.length-1)*Math.max(0,Math.min(20,crossfadeSeconds)))/trackPaths.length
+      :undefined;
+    const { filter, outputLabel } = buildAcrossfadeFilter(trackPaths.length, crossfadeSeconds, perTrackSeconds);
 
     await runFFmpeg(binary, [
       ...inputArgs,
