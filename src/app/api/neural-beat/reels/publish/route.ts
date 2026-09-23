@@ -17,11 +17,11 @@ type Channel = "instagram" | "youtube" | "facebook";
 
 /** Explicitly bound owner destinations. Do not borrow another brand's social account. */
 const REEL_DESTINATIONS: Record<Brand, Record<Channel,string|null>> = {
-  art: { instagram:"freddyart",youtube:null,facebook:null },
-  books: { instagram:null,youtube:null,facebook:null },
+  art: { instagram:"freddyart",youtube:"freddyart",facebook:"freddyart" },
+  books: { instagram:"freddypublishing",youtube:"freddypublishing",facebook:"freddypublishing" },
   zeneco: { instagram:"zeneco",youtube:"zeneco",facebook:"zeneco" },
-  freddybremseth: { instagram:null,youtube:"freddyb",facebook:"freddyb" },
-  pinosoecolife: { instagram:"pinosoecolife",youtube:null,facebook:"pinosoecolife" },
+  freddybremseth: { instagram:"freddyb",youtube:"freddyb",facebook:"freddyb" },
+  pinosoecolife: { instagram:"pinosoecolife",youtube:"pinosoecolife",facebook:"pinosoecolife" },
   donaanna: { instagram:"donaanna",youtube:"donaanna",facebook:"donaanna" },
 };
 
