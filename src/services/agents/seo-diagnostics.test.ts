@@ -111,3 +111,30 @@ test("page hint names the most-impressed returned page, not merely first click-s
   assert.match(finding, /ikke nettstedets totalsum/);
   assert.doesNotMatch(finding, /Høyest registrerte side/);
 });
+
+test("measured blocked collector OPTIONS identifies only affected brands without fake visits", () => {
+  const signals = { totals: { current: 0 } } as unknown as Awaited<ReturnType<typeof getSEOObservedSignals>>;
+  const checks = planSEODiagnostics({
+    snapshots: [snapshot("freddyb", 40, 2)], signals, leads: null, audits: [],
+    collectorPreflight: [
+      { brandId: "freddyb", status: "blocked", evidence: "OPTIONS HTTP 403" },
+      { brandId: "freddypublishing", status: "pass", evidence: "OPTIONS HTTP 204" },
+    ],
+  });
+  const issue = checks.find(item => item.id === "check-referral-instrumentation")!;
+  assert.match(issue.finding, /freddyb/);
+  assert.doesNotMatch(issue.finding, /failed admission.*freddypublishing/);
+  assert.match(issue.nextStep, /IKKE sendt syntetiske besøk/);
+  assert.equal(issue.needsApproval, false);
+});
+
+test("passing server preflight never claims an actual search visit or stored arrival", () => {
+  const signals = { totals: { current: 0 } } as unknown as Awaited<ReturnType<typeof getSEOObservedSignals>>;
+  const checks = planSEODiagnostics({
+    snapshots: [snapshot("zeneco", 50, 3)], signals, leads: null, audits: [],
+    collectorPreflight: [{ brandId: "zeneco", status: "pass", evidence: "OPTIONS HTTP 204" }],
+  });
+  const issue = checks.find(item => item.id === "check-referral-instrumentation")!;
+  assert.match(issue.finding, /does not prove that browser scripts ran or arrivals were saved/);
+  assert.match(issue.nextStep, /reell.*nettleserhenvisning/);
+});
