@@ -51,7 +51,7 @@ export function reelStudioCaption(input:StudioReelInput):string{
     meta.tags,
   ].filter(Boolean).join("\n\n");
 }
-function isApprovedImage(url:string,brand:StudioReelBrand):boolean{
+export function isApprovedStudioReelImage(url:string,brand:StudioReelBrand):boolean{
   if(brand==="art")return isApprovedArtPreviewUrl(url);
   try {
     const u=new URL(url);
@@ -69,7 +69,7 @@ export function assertStudioReelSources(input:StudioReelInput):void {
   if(!input.song.audioUrl.startsWith(PUBLIC_AUDIO)||/%2f|%5c|\.\.|[?#]/i.test(input.song.audioUrl.slice(PUBLIC_AUDIO.length))) {
     throw new Error("REEL_SONG_NEEDS_PUBLIC_REMASTER_AUDIO");
   }
-  for(const visual of input.visuals) if(!isApprovedImage(visual.imageUrl,input.brand))
+  for(const visual of input.visuals) if(!isApprovedStudioReelImage(visual.imageUrl,input.brand))
     throw new Error("REEL_UNAPPROVED_VISUAL: "+noControl(visual.title).slice(0,85)+" ["+visual.id+"]");
 }
 async function fetchBytes(url:string,max:number,kind:string):Promise<Buffer>{
