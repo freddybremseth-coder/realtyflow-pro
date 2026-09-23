@@ -186,8 +186,8 @@ export async function buildRemasterMixAudio(
   crossfadeSeconds: number,
   targetSeconds = 30 * 60,
 ): Promise<RemasterMixAudioResult> {
-  if (tracks.length < 2 || tracks.length > 60) {
-    throw new Error("A long-form mix requires between 2 and 60 tracks.");
+  if (tracks.length < 1 || tracks.length > 60) {
+    throw new Error("A mix requires between 1 and 60 tracks.");
   }
   if (tracks.some((track) => !track.audioUrl)) {
     throw new Error("Every selected mix track must have an audio URL.");
@@ -208,25 +208,23 @@ export async function buildRemasterMixAudio(
     }
 
     const naturalMixPath = path.join(workingDirectory, "mix-audio-natural.mp3");
-    const inputArgs = trackPaths.flatMap((trackPath) => ["-i", trackPath]);
-    const { filter, outputLabel } = buildAcrossfadeFilter(trackPaths.length, crossfadeSeconds);
-
-    await runFFmpeg(binary, [
-      ...inputArgs,
-      "-filter_complex",
-      filter,
-      "-map",
-      `[${outputLabel}]`,
-      "-vn",
-      "-c:a",
-      "libmp3lame",
-      "-b:a",
-      "192k",
-      "-ar",
-      "44100",
-      "-y",
-      naturalMixPath,
-    ]);
+    if (trackPaths.length === 1) {
+      await runFFmpeg(binary, [
+        "-i", trackPaths[0],
+        "-vn", "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100",
+        "-y", naturalMixPath,
+      ]);
+    } else {
+      const inputArgs = trackPaths.flatMap((trackPath) => ["-i", trackPath]);
+      const { filter, outputLabel } = buildAcrossfadeFilter(trackPaths.length, crossfadeSeconds);
+      await runFFmpeg(binary, [
+        ...inputArgs,
+        "-filter_complex", filter,
+        "-map", `[${outputLabel}]`,
+        "-vn", "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100",
+        "-y", naturalMixPath,
+      ]);
+    }
 
     const outputPath = path.join(workingDirectory, "mix-audio.mp3");
     await runFFmpeg(binary, buildTargetDurationArgs(naturalMixPath, outputPath, targetSeconds));

@@ -9,8 +9,12 @@ on:
       - "scripts/test-remaster-youtube-preflight.mjs"
       - "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql"
       - "supabase/migrations/20260905204500_remaster_mix_production_guard.sql"
+      - "supabase/migrations/20260923190500_remaster_mix_short_duration.sql"
+      - "supabase/migrations/20260923190000_remaster_reels_studio.sql"
       - "src/services/pipelines/remaster-mix-*.ts"
       - "src/services/pipelines/art-lounge-reels*.ts"
+      - "src/services/pipelines/remaster-reels*.ts"
+      - "src/app/api/neural-beat/reels/**"
       - "src/app/api/cron/art-lounge-reel-*/**"
       - "supabase/migrations/20260922093000_art_lounge_reels.sql"
       - "src/services/pipelines/remaster-mix-promotions.ts"
@@ -64,12 +68,13 @@ jobs:
       - name: Verify Re-Master mix middleware proxy access
         run: >-
           node -e "const fs=require('fs'); const s=fs.readFileSync('src/middleware.ts','utf8');
-          if (!s.includes('/api/neural-beat/mixes')) throw new Error('Mix proxy prefix missing from middleware');"
+          if (!s.includes('/api/neural-beat/mixes')) throw new Error('Mix proxy prefix missing from middleware');
+          if (!s.includes('/api/neural-beat/reels')) throw new Error('Reels proxy prefix missing from middleware');"
 
       - name: Test durable mix migration
         run: node scripts/test-remaster-mix-migration.mjs
 
-      - name: Test 30-minute production claim guard
+      - name: Test 3–30 minute production claim guard
         run: node scripts/test-remaster-mix-production-guard.mjs
 
       - name: Test YouTube preflight and upload-marker ordering
@@ -88,3 +93,4 @@ jobs:
           src/services/pipelines/remaster-mix-partner-comment.test.ts
           src/services/pipelines/remaster-mix-selection-validation.test.ts
           src/services/pipelines/art-lounge-reels.test.ts
+          src/services/pipelines/remaster-reels.test.ts
