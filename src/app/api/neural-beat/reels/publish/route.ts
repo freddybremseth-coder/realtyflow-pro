@@ -78,14 +78,25 @@ export async function GET(request:NextRequest){
     resolveChannel(job.brand,"instagram"),resolveChannel(job.brand,"youtube"),resolveChannel(job.brand,"facebook"),
     supabase.from("remaster_reel_deliveries")
       .select("channel,state,external_id,external_url,error,updated_at").eq("reel_id",jobId),
-    supabase.from("social_channels").select("platform,display_name,is_active")
+    supabase.from("social_channels").select("id,platform,display_name,is_active")
       .eq("brand_id",REEL_DESTINATIONS[job.brand as Brand].youtube||REEL_DESTINATIONS[job.brand as Brand].instagram||String(job.brand))
       .eq("is_active",true).in("platform",["linkedin","twitter","tiktok","pinterest"]),
   ]);
   if(error)return fail("Reel delivery history is not configured: "+error.message,503);
-  return NextResponse.json({channels:{instagram,youtube,facebook},deliveries:deliveries||[],
-    otherChannels:(extras||[]).map(c=>({platform:c.platform,account:c.display_name,
-      connected:true,publishSupported:false,reason:"Direkte publisering av Reel-video er ikke implementert for denne kanalen."}))},
+  const registered=extras||[];
+  const tokenRows=registered.length?await supabase.from("oauth_tokens")
+    .select("social_channel_id,expires_at").in("social_channel_id",registered.map(c=>c.id)):
+    {data:[],error:null};
+  if(tokenRows.error)return fail("Unable to verify registered social accounts.",503);
+  const tokens=new Map((tokenRows.data||[]).map(row=>[row.social_channel_id,row]));
+  const otherChannels=registered.map(c=>{
+    const token=tokens.get(c.id),expired=Boolean(token?.expires_at&&Date.parse(token.expires_at)<=Date.now());
+    const connected=Boolean(token&&!expired);
+    return {platform:c.platform,account:c.display_name,connected,publishSupported:false,
+      reason:!token?"Kanalen mangler lagret innlogging i RealtyFlow.":expired?"Kanaltilgangen er utløpt. Koble kontoen til på nytt i RealtyFlow.":
+      "Kontoen er koblet til, men direkte Reel-videopublisering er ikke implementert for denne kanalen."};
+  });
+  return NextResponse.json({channels:{instagram,youtube,facebook},deliveries:deliveries||[],otherChannels},
     {headers:{"Cache-Control":"private, no-store"}});
 }
 
