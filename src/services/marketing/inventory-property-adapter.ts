@@ -151,6 +151,14 @@ function propertyFacts(row: any): Array<{ claim: string; source: string }> {
   add(area != null && area > 0 ? `Boligareal: ${area} m²` : null);
   const plot = asNumber(row.plot_size);
   add(plot != null && plot > 0 ? `Tomt: ${plot} m²` : null);
+  // A large plot does not imply its price is included. Only explicit inventory
+  // fields may become facts for the AI and deterministic marketing fallback.
+  if (row.plot_included_in_price === true) add("Tomt inkludert i oppgitt pris: ja");
+  if (row.plot_included_in_price === false) {
+    add("Tomt inkludert i oppgitt pris: nei");
+    const plotPrice = asNumber(row.plot_price_eur);
+    if (plotPrice != null && plotPrice > 0) add(`Separat tomtepris: €${plotPrice}`);
+  }
   add(row.property_type || row.type ? `Boligtype: ${row.property_type || row.type}` : null);
   if (row.pool === true) add("Privat/felles basseng: ja");
   if (row.garage === true) add("Garasje/parkering oppgitt: ja");
