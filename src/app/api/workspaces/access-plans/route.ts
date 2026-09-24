@@ -30,17 +30,27 @@ export async function GET(request: NextRequest) {
     supabase.rpc("workspace_zeneco_new_crm_candidates_count"),
   ]);
   const { data, error } = accessSnapshot;
-  if (error || contactSnapshot.error || zenJointSnapshot.error || !data || !Array.isArray(data.brands) ||
-    !Array.isArray(data.plans) || !Array.isArray(contactSnapshot.data) ||
-    !zenJointSnapshot.data || !Number.isSafeInteger(zenJointSnapshot.data.new_crm_records_to_review) ||
-    !Number.isSafeInteger(zenJointSnapshot.data.approved_joint_records)) {
+  // This OPTIONAL overview is introduced by a separate unapplied migration.
+  // Never break the existing owner permissions dashboard during a safe
+  // app-before-migration rollout, and never misreport an unavailable count as 0.
+  const optionalRpcError = zenJointSnapshot.error;
+  const missingZenRpc = Boolean(optionalRpcError &&
+    (optionalRpcError.code === "PGRST202" || optionalRpcError.code === "42883") &&
+    /workspace_zeneco_new_crm_candidates_count/i.test(optionalRpcError.message || ""));
+  const jointPreview = missingZenRpc ? null : zenJointSnapshot.data;
+  if (error || contactSnapshot.error || (optionalRpcError && !missingZenRpc) ||
+    !data || !Array.isArray(data.brands) || !Array.isArray(data.plans) ||
+    !Array.isArray(contactSnapshot.data) ||
+    (jointPreview && (!Number.isSafeInteger(jointPreview.new_crm_records_to_review) ||
+      !Number.isSafeInteger(jointPreview.approved_joint_records))) ||
+    (!jointPreview && !missingZenRpc)) {
     return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
   }
   return response({
     brands: data.brands,
     plans: data.plans,
     contactCounts: contactSnapshot.data,
-    zenJointPreview: zenJointSnapshot.data,
+    zenJointPreview: jointPreview,
     activationAvailable: false,
     message: "Dette er kun tilgangsutkast. Ingen tilgang aktiveres eller invitasjoner sendes.",
   });
