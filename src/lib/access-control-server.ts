@@ -123,7 +123,7 @@ export async function saveAccessProfile(params: {
   const email = normalizeEmail(params.email);
   const role = normalizeRole(params.role);
   if (!actorEmail || !email || !email.includes("@")) return { error: "Gyldig e-post mangler.", settings: null };
-  if (!role || role === "OWNER" || !ACCESS_ROLES.includes(role)) return { error: "Owner kan ikke tildeles gjennom denne arbeidsflaten.", settings: null };
+  if (!role || role === "OWNER" || role === "WORKSPACE_MEMBER" || !ACCESS_ROLES.includes(role)) return { error: "Owner kan ikke tildeles gjennom denne arbeidsflaten.", settings: null };
   const displayName = String(params.displayName || "").trim().slice(0, 120) || null;
   const current = await loadAccessSettings();
   if (current.error) return { error: current.error, settings: null };
