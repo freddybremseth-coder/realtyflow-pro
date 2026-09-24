@@ -42,8 +42,11 @@ export async function GET(
     status: 503, headers: noStore,
   });
   const rows = data || [];
+  // Fail closed again at the response boundary, even if an upstream query,
+  // view, mock or future refactor accidentally supplies a foreign brand row.
+  const visible = rows.filter(row => row.brand_id === brandKey && row.brand === brandKey);
   return NextResponse.json({
-    ok: true, brand: brandKey, contacts: rows.slice(0, PAGE_SIZE),
+    ok: true, brand: brandKey, contacts: visible.slice(0, PAGE_SIZE),
     page, pageSize: PAGE_SIZE, hasMore: rows.length > PAGE_SIZE,
   }, { headers: noStore });
 }
