@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, LockKeyhole, RefreshCw, ShieldAlert, UserRoundCog } from "lucide-react";
 import { WORKSPACE_PERMISSIONS, type WorkspacePermission } from "@/lib/workspaces/brand-policy";
+import { SharedCommissionPreview } from "@/components/workspaces/shared-commission-preview";
 
 type Brand = { id: string; brand_key: string; display_name: string };
 type Plan = { brand_id: string; email: string; permissions: WorkspacePermission[]; status: "draft" | "discarded"; updated_by: string; updated_at: string };
@@ -88,6 +89,7 @@ export default function WorkspaceAccessPage() {
       {error && <p role="alert" className="rounded-xl border border-red-700 bg-red-950/50 p-3 text-red-200">{error}</p>}
       {notice && <p role="status" className="flex items-center gap-2 rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200"><CheckCircle2 size={16} />{notice}</p>}
       {loading && <p className="text-sm text-slate-400">Laster merkevarer og tilgangsutkast…</p>}
+      {payload && <SharedCommissionPreview />}
       {payload && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,1fr)]">
           <section className="space-y-5 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
@@ -100,6 +102,11 @@ export default function WorkspaceAccessPage() {
             <label className="block text-sm text-slate-300">Medarbeiderens e-post
               <input type="email" autoComplete="off" className={input} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="navn@eksempel.no" />
             </label>
+            {brandKey === "zeneco" && <div role="note" className="rounded-xl border border-amber-700/70 bg-amber-950/25 p-4 text-sm text-amber-100">
+              <strong>Zen Eco Homes · Andrea – bare nye felles kunder fra 24.09.2026</strong>
+              <p className="mt-2">Eldre Zen Eco Homes-kunder er ikke omfattet. Selv et lagret CRM-tilgangsutkast åpner derfor ikke Zen Eco-kundene for medarbeidere. Før aktivering trenger vi en verifisert kundeliste per samarbeid, ikke bred tilgang til hele merkevarens CRM.</p>
+              <p className="mt-2">Felles utbyggerprovisjon på nye salg: 10 % til markedsføring, deretter godkjente og dokumenterte salgsutlegg, og så 50/50 til Freddy og Andrea. Dette er en provisjonsdeling, ikke overføring av eierskap til Zen Eco Homes.</p>
+            </div>}
             {brandContacts && <div className="rounded-xl border border-cyan-800/60 bg-cyan-950/25 p-3 text-sm text-slate-200">
               <strong>CRM-klargjøring · {selectedBrand?.display_name || brandKey}</strong>
               <p className="mt-1">{brandContacts.assigned} kunder er knyttet til denne merkevaren i begge CRM-feltene.
