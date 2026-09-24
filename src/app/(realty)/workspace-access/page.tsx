@@ -7,7 +7,8 @@ import { WORKSPACE_PERMISSIONS, type WorkspacePermission } from "@/lib/workspace
 
 type Brand = { id: string; brand_key: string; display_name: string };
 type Plan = { brand_id: string; email: string; permissions: WorkspacePermission[]; status: "draft" | "discarded"; updated_by: string; updated_at: string };
-type Payload = { brands: Brand[]; plans: Plan[]; activationAvailable: false; message: string };
+type ContactCount = { brand_key: string; assigned: number; needs_review: number };
+type Payload = { brands: Brand[]; plans: Plan[]; contactCounts: ContactCount[]; activationAvailable: false; message: string };
 const permissionLabels: Record<WorkspacePermission, { title: string; description: string }> = {
   "properties.catalog.read": { title: "Eiendomskatalog", description: "Se vanlige boligoppføringer. Ikke intern pris-/importdata." },
   "crm.read": { title: "Kunder og CRM – se", description: "Les kun kunder som er knyttet til valgt merkevare." },
@@ -70,6 +71,7 @@ export default function WorkspaceAccessPage() {
     finally { setBusy(false); }
   }
   const selectedBrand = payload?.brands.find((brand) => brand.brand_key === brandKey);
+  const brandContacts = payload?.contactCounts?.find((item) => item.brand_key === brandKey);
   const plans = (payload?.plans || []).filter((plan) => plan.status === "draft");
   const input = "mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-cyan-500 focus:outline-none";
   return (
@@ -98,6 +100,13 @@ export default function WorkspaceAccessPage() {
             <label className="block text-sm text-slate-300">Medarbeiderens e-post
               <input type="email" autoComplete="off" className={input} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="navn@eksempel.no" />
             </label>
+            {brandContacts && <div className="rounded-xl border border-cyan-800/60 bg-cyan-950/25 p-3 text-sm text-slate-200">
+              <strong>CRM-klargjøring · {selectedBrand?.display_name || brandKey}</strong>
+              <p className="mt-1">{brandContacts.assigned} kunder er knyttet til denne merkevaren i begge CRM-feltene.
+                {brandContacts.needs_review > 0 && <> {brandContacts.needs_review} kundeposter har motstridende merkevarefelter og må gjennomgås av eier.</>}
+              </p>
+              {brandContacts.assigned === 0 && <p className="mt-2 text-amber-300">Ingen eksisterende kunder blir synlige for medarbeideren ennå. Gjennomgå eventuelle kundetildelinger separat; dette skjermbildet flytter eller deler ikke kunder.</p>}
+            </div>}
             <h2 className="text-xl font-semibold">2. Velg rettigheter</h2>
             <div className="space-y-2">
               {WORKSPACE_PERMISSIONS.map((permission) => (
