@@ -151,12 +151,12 @@ begin
         and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
         and t.brand_id=b.id
     )
-  returning t.id,t.contact_id,t.title,t.due_on,t.status,t.updated_at,
+  returning t.id,t.contact_id,t.title,t.due_on,t.status,t.created_at,t.updated_at,
     t.finished_at,t.finished_by_email into v_task;
   if not found then return null; end if;
   return jsonb_build_object('id',v_task.id,'contact_id',v_task.contact_id,
     'title',v_task.title,'due_on',v_task.due_on,'status',v_task.status,
-    'updated_at',v_task.updated_at,'finished_at',v_task.finished_at,
+    'created_at',v_task.created_at,'updated_at',v_task.updated_at,'finished_at',v_task.finished_at,
     'finished_by_email',v_task.finished_by_email);
 end; $joint_task_complete$;
 revoke execute on function public.workspace_zeneco_joint_task_complete(uuid,text,uuid,uuid)
