@@ -43,6 +43,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
   MARKETING:["/social-automation","/growth-hub","/marketing-readiness","/analytics","/ad-campaigns","/content-studio"],
   KEYHOLDING:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/communications"],
   VIEWER:["/revenue-command","/today","/customers","/executive-briefing","/monthly-close","/forecast"],
+  WORKSPACE_MEMBER:[],
 };
 
 function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM,WORKSPACE_ACCESS_NAV_ITEM]; }
