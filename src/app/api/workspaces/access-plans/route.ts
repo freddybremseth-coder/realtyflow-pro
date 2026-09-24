@@ -87,7 +87,13 @@ export async function POST(request: NextRequest) {
   }
   if (action === "SAVE_DRAFT" && Array.isArray(permissions) && (
     (brandKey === "zeneco" && permissions.some(permission => permission === "crm.read" || permission === "crm.write")) ||
-    (brandKey !== "zeneco" && permissions.some(permission => permission === "crm.joint.read" || permission === "crm.joint.write")) ||
+    (brandKey !== "zeneco" && permissions.some(permission =>
+      ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission))) ||
+    (brandKey === "zeneco" && permissions.some(permission =>
+      ["tasks.joint.read", "tasks.joint.write"].includes(permission)) &&
+      !permissions.includes("crm.joint.read")) ||
+    (brandKey === "zeneco" && permissions.includes("tasks.joint.write") &&
+      !permissions.includes("tasks.joint.read")) ||
     (brandKey === "zeneco" && permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")))) {
     return response({ error: "INVALID_BRAND_CRM_SCOPE" }, 400);
   }
