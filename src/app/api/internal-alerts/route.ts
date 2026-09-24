@@ -227,6 +227,10 @@ async function buildFreshCenter(request: NextRequest, supabase: any) {
   if (tokenSession.role !== "OWNER") {
     const profile = accessResult.settings.profiles.find((item) => item.email === tokenSession.email && item.active);
     if (!profile) return { error: "Access profile is inactive or missing", status: 401, center: null, session: null, settings: null };
+    // Even when a profile changes DURING the request, no workspace member can
+    // be promoted into this legacy global all-customer alerts handler.
+    if (profile.role === "WORKSPACE_MEMBER")
+      return { error: "Scoped workspace required", status: 403, center: null, session: null, settings: null };
     effectiveRole = profile.role;
   }
   const session = { email: tokenSession.email, role: effectiveRole };
