@@ -69,7 +69,7 @@ function validateContactInput(value: unknown, updating: boolean):
     if (raw !== null && typeof raw !== "string") return { value: null, error: "INVALID_CONTACT_FIELDS" };
     const text = typeof raw === "string" ? raw.trim() : "";
     if (field === "email") {
-      if (text && (text.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(text)))
+      if (text && (text.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)))
         return { value: null, error: "INVALID_EMAIL" };
       input.email = text ? text.toLowerCase() : null;
     } else {
