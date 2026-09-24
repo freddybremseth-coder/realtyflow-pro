@@ -222,6 +222,8 @@ test("read-only brand member can search Pinoso CRM but cannot write or select an
     const callsBeforeWrite = calls.filter(c => c.method === "from").length;
     const forbidden = await POST(mutation("POST", cookie, { name: "Forbidden write" }) as any, context);
     assert.equal(forbidden.status, 403);
+    const forbiddenEdit = await PATCH(mutation("PATCH", cookie, { id: "pinoso-contact", name: "Forbidden edit" }) as any, context);
+    assert.equal(forbiddenEdit.status, 403);
     assert.equal(calls.filter(c => c.method === "from").length, callsBeforeWrite);
     const crossBrand = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
     assert.equal(crossBrand.status, 404);
