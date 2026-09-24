@@ -103,3 +103,19 @@ revoke execute on function public.workspace_brand_grant(text,text) from public, 
 grant execute on function public.workspace_access_snapshot() to service_role;
 grant execute on function public.workspace_access_save_draft(text,text,text[],text,text) to service_role;
 grant execute on function public.workspace_brand_grant(text,text) to service_role;
+
+-- List only exact brand-membership candidates for the session email. The server
+-- independently checks each returned user_id with Supabase Auth before showing it.
+create or replace function public.workspace_user_brand_grants(p_email text)
+returns jsonb language sql stable security invoker set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'brand', jsonb_build_object('id', b.id, 'brand_key', b.brand_key, 'display_name', b.display_name),
+    'grant', jsonb_build_object('brand_id', m.brand_id, 'user_id', m.user_id,
+      'email', m.email, 'status', m.status, 'permissions', m.permissions)
+  ) order by b.display_name), '[]'::jsonb)
+  from core.brand_workspace_memberships m
+  join core.brands b on b.id = m.brand_id
+  where m.email = lower(btrim(p_email)) and m.status = 'active';
+$$;
+revoke execute on function public.workspace_user_brand_grants(text) from public, anon, authenticated;
+grant execute on function public.workspace_user_brand_grants(text) to service_role;
