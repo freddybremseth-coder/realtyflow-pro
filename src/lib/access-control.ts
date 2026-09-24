@@ -147,6 +147,8 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
     // a narrow writable-field list; do not allow mutation of other modules.
     if (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco" && method.toUpperCase() === "PATCH")
       return "AUTHENTICATED";
+    if (workspaceRoute === "joint-tasks" && workspaceParts[3] === "zeneco" &&
+      ["GET", "POST", "PATCH"].includes(method.toUpperCase())) return "AUTHENTICATED";
     if (workspaceRoute === "contacts" && ["POST", "PATCH"].includes(method.toUpperCase()))
       return "AUTHENTICATED";
   }
