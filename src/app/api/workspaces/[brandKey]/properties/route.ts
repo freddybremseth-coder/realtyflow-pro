@@ -31,15 +31,14 @@ export async function GET(
   let query = access.value.supabase.from("properties")
     .select(SAFE_CATALOGUE_COLUMNS)
     .eq("show_on_website", true)
-    .eq("website_visible", true)
-    .order("created_at", { ascending: false })
-    .range((page - 1) * perPage, page * perPage - 1);
+    .eq("website_visible", true);
   if (term) {
     // Escape PostgREST OR-expression metacharacters rather than interpolate SQL.
     const safe = term.replace(/[^\\p{L}\\p{N}\\s-]/gu, " ").replace(/\\s+/g, " ").trim();
     if (safe) query = query.or(`title.ilike.%${safe}%,town.ilike.%${safe}%,location.ilike.%${safe}%,ref.ilike.%${safe}%`);
   }
-  const { data, error } = await query;
+  const { data, error } = await query.order("created_at", { ascending: false })
+    .range((page - 1) * perPage, page * perPage - 1);
   if (error) return NextResponse.json({ ok: false, error: { code: "CATALOGUE_UNAVAILABLE" } }, {
     status: 503, headers: noStore,
   });
