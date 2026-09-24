@@ -89,7 +89,7 @@ export default function WorkspaceAccessPage() {
       {error && <p role="alert" className="rounded-xl border border-red-700 bg-red-950/50 p-3 text-red-200">{error}</p>}
       {notice && <p role="status" className="flex items-center gap-2 rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200"><CheckCircle2 size={16} />{notice}</p>}
       {loading && <p className="text-sm text-slate-400">Laster merkevarer og tilgangsutkast…</p>}
-      {payload && <SharedCommissionPreview />}
+      {payload && brandKey === "zeneco" && <SharedCommissionPreview />}
       {payload && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,1fr)]">
           <section className="space-y-5 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
