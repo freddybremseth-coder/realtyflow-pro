@@ -77,8 +77,8 @@ try {
   for (const func of ["workspace_zeneco_review_candidates", "workspace_zeneco_review_lead",
     "workspace_zeneco_joint_contacts", "workspace_zeneco_joint_contact_update"]) {
     const grants = await sql(
-      "select has_function_privilege('anon',$1,'EXECUTE') as anon, has_function_privilege('authenticated',$1,'EXECUTE') as authenticated, has_function_privilege('service_role',$1,'EXECUTE') as service",
-      ["public." + func],
+      "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
+      [func],
     );
     verify(!grants.rows[0].anon && !grants.rows[0].authenticated && grants.rows[0].service,
       func + ": privileged execute grant leaked");
