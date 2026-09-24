@@ -24,19 +24,23 @@ export async function GET(request: NextRequest) {
   if (failure) return failure;
   const supabase = getPlatformSupabase();
   if (!supabase) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
-  const [accessSnapshot, contactSnapshot] = await Promise.all([
+  const [accessSnapshot, contactSnapshot, zenJointSnapshot] = await Promise.all([
     supabase.rpc("workspace_access_snapshot"),
     supabase.rpc("workspace_contact_brand_counts"),
+    supabase.rpc("workspace_zeneco_new_crm_candidates_count"),
   ]);
   const { data, error } = accessSnapshot;
-  if (error || contactSnapshot.error || !data || !Array.isArray(data.brands) ||
-    !Array.isArray(data.plans) || !Array.isArray(contactSnapshot.data)) {
+  if (error || contactSnapshot.error || zenJointSnapshot.error || !data || !Array.isArray(data.brands) ||
+    !Array.isArray(data.plans) || !Array.isArray(contactSnapshot.data) ||
+    !zenJointSnapshot.data || !Number.isSafeInteger(zenJointSnapshot.data.new_crm_records_to_review) ||
+    !Number.isSafeInteger(zenJointSnapshot.data.approved_joint_records)) {
     return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
   }
   return response({
     brands: data.brands,
     plans: data.plans,
     contactCounts: contactSnapshot.data,
+    zenJointPreview: zenJointSnapshot.data,
     activationAvailable: false,
     message: "Dette er kun tilgangsutkast. Ingen tilgang aktiveres eller invitasjoner sendes.",
   });
