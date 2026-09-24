@@ -119,3 +119,32 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
 $$;
 revoke execute on function public.workspace_user_brand_grants(text) from public, anon, authenticated;
 grant execute on function public.workspace_user_brand_grants(text) to service_role;
+
+-- Owner-only, aggregate CRM readiness counts for each configured brand.
+-- This never returns contact identity, methods, notes, or other customer details,
+-- and NEVER assigns/transfers a customer. Expose via owner-only API, not staff UI.
+create or replace function public.workspace_contact_brand_counts()
+returns jsonb language sql stable security invoker set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'brand_key', grouped.brand_key,
+    'assigned', grouped.assigned,
+    'needs_review', grouped.needs_review
+  ) order by grouped.brand_key), '[]'::jsonb)
+  from (
+    select b.brand_key,
+      count(c.id) filter (
+        where c.brand_id = b.brand_key and c.brand = b.brand_key
+      )::integer as assigned,
+      count(c.id) filter (
+        where c.id is not null and
+          (c.brand_id is distinct from b.brand_key or c.brand is distinct from b.brand_key)
+      )::integer as needs_review
+    from core.brands b
+    left join public.contacts c
+      on c.brand_id = b.brand_key or c.brand = b.brand_key
+    group by b.brand_key
+  ) grouped;
+$$;
+revoke execute on function public.workspace_contact_brand_counts()
+  from public, anon, authenticated;
+grant execute on function public.workspace_contact_brand_counts() to service_role;
