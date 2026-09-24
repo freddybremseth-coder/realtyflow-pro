@@ -2,6 +2,7 @@ export const WORKSPACE_PERMISSIONS = [
   "crm.read",
   "crm.write",
   "crm.joint.read",
+  "crm.joint.write",
   "properties.catalog.read",
   "marketing.read",
   "marketing.draft",
