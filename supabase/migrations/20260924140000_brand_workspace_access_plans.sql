@@ -6,7 +6,7 @@ create table if not exists core.brand_workspace_access_plans (
   email text not null check (email = lower(btrim(email)) and email ~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'),
   permissions text[] not null default '{}'::text[]
     check (permissions <@ array[
-      'crm.read', 'crm.write', 'crm.joint.read', 'properties.catalog.read',
+      'crm.read', 'crm.write', 'crm.joint.read', 'crm.joint.write', 'properties.catalog.read',
       'marketing.read', 'marketing.draft', 'marketing.publish'
     ]::text[]),
   status text not null default 'draft' check (status in ('draft', 'discarded')),
