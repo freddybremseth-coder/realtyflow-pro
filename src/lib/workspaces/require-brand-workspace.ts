@@ -25,6 +25,7 @@ function reject(status: number, code: string): Rejection {
  */
 export function roleAllowsWorkspacePermission(role: AccessRole, permission: WorkspacePermission) {
   if (role === "OWNER") return true;
+  if (role === "WORKSPACE_MEMBER") return process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true";
   const legacyPermission: AccessPermission = permission === "crm.write" ? "customers.write"
     : permission === "crm.read" ? "customers.read"
     : permission === "marketing.publish" || permission === "marketing.draft" ? "marketing.write"
