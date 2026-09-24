@@ -86,14 +86,14 @@ create or replace function public.workspace_zeneco_review_candidates()
 returns jsonb language sql stable security invoker set search_path = '' as $$
   select jsonb_build_object(
     'contacts', coalesce(jsonb_agg(jsonb_build_object(
-      'id', rows.id, 'name', rows.name, 'email', rows.email,
+      'id', rows.id, 'brand_id', rows.brand_id, 'brand', rows.brand,\n      'name', rows.name, 'email', rows.email,
       'created_at', rows.created_at, 'source', rows.source,
       'status', coalesce(rows.eligibility, 'unreviewed')
     ) order by rows.created_at desc, rows.id), '[]'::jsonb),
     'hasMore', count(*) > 25
   )
   from (
-    select c.id, c.name, c.email, c.created_at, c.source, j.eligibility
+    select c.id, c.brand_id, c.brand, c.name, c.email, c.created_at, c.source, j.eligibility
     from public.contacts c
     left join core.zeneco_joint_lead_cohort j on j.contact_id = c.id
     where c.brand_id = 'zeneco' and c.brand = 'zeneco'
@@ -158,7 +158,7 @@ begin
     v_next := 'approved';
   end if;
 
-  insert into core.zeneco_joint_lead_cohort (
+  insert into core.zeneco_joint_lead_cohort as original (
     contact_id, brand_id, eligibility, first_genuine_enquiry_at,
     received_source, evidence_reference, review_reason, reviewed_by,
     reviewed_at, updated_at
@@ -171,13 +171,13 @@ begin
   ) on conflict (contact_id) do update
     set eligibility = excluded.eligibility,
       first_genuine_enquiry_at = case when p_action = 'REVOKE'
-        then core.zeneco_joint_lead_cohort.first_genuine_enquiry_at
+        then original.first_genuine_enquiry_at
         else excluded.first_genuine_enquiry_at end,
       received_source = case when p_action = 'REVOKE'
-        then core.zeneco_joint_lead_cohort.received_source
+        then original.received_source
         else excluded.received_source end,
       evidence_reference = case when p_action = 'REVOKE'
-        then core.zeneco_joint_lead_cohort.evidence_reference
+        then original.evidence_reference
         else excluded.evidence_reference end,
       review_reason = excluded.review_reason,
       reviewed_by = excluded.reviewed_by,
