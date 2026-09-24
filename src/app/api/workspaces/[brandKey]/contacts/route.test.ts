@@ -126,7 +126,7 @@ test("new scoped customer sets trusted brand and NEW status without looking up c
   assert.equal(result.status, 201);
   const inserted = calls.find(c => c.method === "insert")?.args[0] as Record<string, unknown>;
   assert.deepEqual(inserted, {
-    name: "Ada", email: "ada@example.test", brand_id: "pinosoecolife", pipeline_status: "NEW",
+    name: "Ada", email: "ada@example.test", brand_id: "pinosoecolife", brand: "pinosoecolife", pipeline_status: "NEW",
   });
   assert.equal(calls.some(c => c.method === "upsert" || c.method === "limit"), false);
   assert.equal(calls.some(c => c.method === "select" && c.args[0] === "*"), false);
