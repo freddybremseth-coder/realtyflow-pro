@@ -81,7 +81,9 @@ export default function FocusedWorkspacePage() {
   const visibleTabs = tabs.filter(item => !item.permitted || item.permitted.some(permission => permissions.includes(permission)));
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
   const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
-  const canEditCrm = permissions.includes("crm.read") && permissions.includes("crm.write");
+  const isJointCrm = brandKey === "zeneco" && !permissions.includes("crm.read") && permissions.includes("crm.joint.read");
+  const canCreateCrm = permissions.includes("crm.read") && permissions.includes("crm.write");
+  const canEditCrm = canCreateCrm || (isJointCrm && permissions.includes("crm.joint.write"));
   const showProperties = permissions.includes("properties.catalog.read");
   const showMarketing = permissions.some(p => p.startsWith("marketing."));
 
@@ -90,10 +92,11 @@ export default function FocusedWorkspacePage() {
     setContactError("");
   }
   async function saveContact() {
-    if (!canEditCrm || !formName.trim()) return;
+    if (!canEditCrm || !formName.trim() || (isJointCrm && !editingId)) return;
     setSavingContact(true); setContactError(""); setContactNotice("");
     try {
-      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/contacts`, {
+      const targetRoute = isJointCrm ? "joint-contacts" : "contacts";
+      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/${targetRoute}`, {
         method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...(editingId ? { id: editingId } : {}),
@@ -168,7 +171,7 @@ export default function FocusedWorkspacePage() {
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm" /></label>
               <button type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Søk</button>
             </form>
-            {canEditCrm && <form className="mt-5 space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
+            {canEditCrm && (canCreateCrm || editingId) && <form className="mt-5 space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
               <h3 className="font-semibold">{editingId ? "Rediger kunde" : "Legg til kunde"}</h3>
               <p className="text-xs text-slate-400">Kun navn, e-post og telefon kan endres her. Merkevare og økonomiske felt låses av serveren.</p>
               <div className="grid gap-3 sm:grid-cols-2">
