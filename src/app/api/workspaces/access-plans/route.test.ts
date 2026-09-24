@@ -163,3 +163,35 @@ test("Zen access drafts cannot grant full-brand CRM and joint CRM cannot be assi
   assert.equal(forgedPinosoWrite.status, 400);
   assert.equal((await forgedPinosoWrite.json()).error, "INVALID_BRAND_CRM_SCOPE");
 });
+
+test("owner access plans remain available when only optional new Zen cohort RPC is not installed", async () => {
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async (name: string) => name === "workspace_access_snapshot"
+      ? { data: { brands: [{ id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" }], plans: [] }, error: null }
+      : name === "workspace_contact_brand_counts"
+        ? { data: [{ brand_key: "pinosoecolife", assigned: 0, needs_review: 0 }], error: null }
+        : { data: null, error: { code: "PGRST202",
+          message: "Could not find the function public.workspace_zeneco_new_crm_candidates_count() in the schema cache" } },
+  } as unknown as SupabaseClient));
+  const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const result = await GET(req("GET", cookie) as any);
+  assert.equal(result.status, 200);
+  const body = await result.json();
+  assert.equal(body.zenJointPreview, null);
+  assert.equal(body.activationAvailable, false);
+  assert.equal(body.brands[0].brand_key, "pinosoecolife");
+});
+
+test("optional Zen RPC real errors must not be silently mistaken for an unapplied migration", async () => {
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async (name: string) => name === "workspace_access_snapshot"
+      ? { data: { brands: [], plans: [] }, error: null }
+      : name === "workspace_contact_brand_counts"
+        ? { data: [], error: null }
+        : { data: null, error: { code: "42501", message: "permission denied" } },
+  } as unknown as SupabaseClient));
+  const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const result = await GET(req("GET", cookie) as any);
+  assert.equal(result.status, 503);
+  assert.equal((await result.json()).error, "WORKSPACE_UNAVAILABLE");
+});
