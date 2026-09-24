@@ -41,6 +41,7 @@ export async function getRequestAccessContext(request: NextRequest): Promise<Req
   if (session) {
     const resolved = await findAccessProfile(session.email);
     if (resolved.error || !resolved.profile || !resolved.profile.active) return null;
+    if (resolved.profile.role === "WORKSPACE_MEMBER" && process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
     return {
       email: resolved.profile.email,
       role: resolved.profile.role,
