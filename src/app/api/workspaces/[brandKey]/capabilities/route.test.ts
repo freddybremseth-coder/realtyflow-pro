@@ -53,3 +53,47 @@ test("requested brand must be canonical and exactly match verified scope", async
   assert.equal(wrongBrand.status, 404);
   assert.deepEqual(calls, ["workspace_brand_grant"]);
 });
+
+test("Zen Eco member capability response never advertises brand-wide CRM for historical customers", async () => {
+  const oldUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const oldKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const oldFlag = process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
+  const originalFetch = globalThis.fetch;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://workspace-test.supabase.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
+  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
+  const permitted = ["crm.read", "crm.write", "properties.catalog.read"];
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async () => ({
+      data: { brand: { id: "zeneco-uuid", brand_key: "zeneco" },
+        grant: { brand_id: "zeneco-uuid", user_id: "staff-id", email: "staff@example.test", status: "active", permissions: permitted } },
+      error: null,
+    }),
+    auth: { admin: { getUserById: async (id: string) => ({
+      data: { user: { id, email: "staff@example.test" } }, error: null,
+    }) } },
+  } as unknown as SupabaseClient));
+  globalThis.fetch = (async (url: RequestInfo | URL) => {
+    if (!String(url).includes("/rest/v1/brand_settings")) throw new Error("Unexpected request");
+    return new Response(JSON.stringify({
+      settings: { profiles: [{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }] },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
+    const response = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.permissions, ["properties.catalog.read"]);
+    assert.equal(JSON.stringify(body).includes("crm.read"), false);
+    assert.equal(JSON.stringify(body).includes("crm.write"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = oldUrl;
+    if (oldKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = oldKey;
+    if (oldFlag === undefined) delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
+    else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = oldFlag;
+  }
+});
