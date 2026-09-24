@@ -31,9 +31,12 @@ export async function GET(request: NextRequest) {
   const email = await getPortalEmail(request, supabase);
   if (!email) return NextResponse.json({ error: "Invalid portal session" }, { status: 401 });
 
+  // This is the Zen customer portal. A customer's verified email alone must
+  // not grant visibility into a message tagged to a different brand.
   const { data, error } = await supabase
     .from("portal_messages")
     .select("*")
+    .eq("brand_id", "zeneco")
     .eq("email", email)
     .order("created_at", { ascending: true })
     .limit(200);
@@ -59,9 +62,16 @@ export async function POST(request: NextRequest) {
   const attachmentName = String(body.attachmentName || "").trim();
   if (!text && !attachmentUrl) return NextResponse.json({ error: "message or attachment is required" }, { status: 400 });
 
+  // The legacy portal previously matched a customer by email alone, which
+  // could attach a Pinoso/Soleada contact to a Zen-tagged portal message and
+  // create a falsely Zen-labelled task. Require both independent CRM labels.
+  // A legacy ambiguous/unassigned contact remains unmatched: keep accepting
+  // their authenticated portal message but never assign another brand contact.
   const { data: contact } = await supabase
     .from("contacts")
     .select("id,name")
+    .eq("brand_id", "zeneco")
+    .eq("brand", "zeneco")
     .eq("email", email)
     .order("updated_at", { ascending: false })
     .limit(1)
