@@ -3,14 +3,19 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { GET, POST } from "./route";
+import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 test.beforeEach(() => {
+  setPlatformSupabaseFactoryForTests(null);
   process.env.REALTYFLOW_SESSION_SECRET = "workspace-access-tests";
   process.env.REALTYFLOW_ADMIN_EMAILS = "owner@example.test";
   delete process.env.NEXT_PUBLIC_SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   process.env.REALTYFLOW_MIGRATION_SECRET = "proxy-test-secret";
 });
+
+test.afterEach(() => setPlatformSupabaseFactoryForTests(null));
 
 const endpoint = "https://realtyflow.test/api/workspaces/access-plans";
 function req(method: string, cookie?: string, body?: unknown, headers: Record<string, string> = {}) {
@@ -78,6 +83,38 @@ test("valid owner draft cannot activate access when database is not configured",
   const response = await POST(req("POST", cookie, {
     action: "SAVE_DRAFT", brandKey: "pinosoecolife", email: "user@example.test", permissions: ["crm.read"],
   }) as any);
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "WORKSPACE_UNAVAILABLE");
+});
+
+test("owner can preview aggregate assigned and ambiguous CRM counts without any customer PII", async () => {
+  const called: string[] = [];
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async (name: string) => {
+      called.push(name);
+      return name === "workspace_access_snapshot"
+        ? { data: { brands: [{ id: "brand-uuid", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" }], plans: [] }, error: null }
+        : { data: [{ brand_key: "pinosoecolife", assigned: 0, needs_review: 0 }], error: null };
+    },
+  } as unknown as SupabaseClient));
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const response = await GET(req("GET", cookie) as any);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.activationAvailable, false);
+  assert.deepEqual(body.contactCounts, [{ brand_key: "pinosoecolife", assigned: 0, needs_review: 0 }]);
+  assert.deepEqual(called.sort(), ["workspace_access_snapshot", "workspace_contact_brand_counts"]);
+  assert.equal(JSON.stringify(body).includes("contact_email"), false);
+});
+
+test("missing aggregate RPC fails closed, rather than fabricating counts or activating access", async () => {
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async (name: string) => name === "workspace_access_snapshot"
+      ? { data: { brands: [], plans: [] }, error: null }
+      : { data: null, error: { message: "MIGRATION_MISSING" } },
+  } as unknown as SupabaseClient));
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const response = await GET(req("GET", cookie) as any);
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, "WORKSPACE_UNAVAILABLE");
 });
