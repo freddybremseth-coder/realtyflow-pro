@@ -236,3 +236,20 @@ test("read-only brand member can search Pinoso CRM but cannot write or select an
     else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = previousFlag;
   }
 });
+
+test("response never serializes a row with conflicting legacy brand tags", async () => {
+  scopedResult = [
+    { id: "pinoso-ok", brand_id: "pinosoecolife", brand: "pinosoecolife", name: "Safe" },
+    { id: "other-legacy", brand_id: "pinosoecolife", brand: "zenecohomes", name: "PRIVATE CUSTOMER", email: "hidden@example.test" },
+    { id: "other-id", brand_id: "zenecohomes", brand: "pinosoecolife", name: "PRIVATE CUSTOMER" },
+    { id: "unassigned-legacy", brand_id: "pinosoecolife", name: "PRIVATE CUSTOMER" },
+  ];
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const response = await GET(request(cookie) as any, context);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.contacts.map((item: { id: string }) => item.id), ["pinoso-ok"]);
+  assert.equal(JSON.stringify(body).includes("PRIVATE CUSTOMER"), false);
+  assert.equal(JSON.stringify(body).includes("hidden@example.test"), false);
+  assert.equal(calls.some(row => row.method === "eq" && row.args[0] === "brand"), true);
+});
