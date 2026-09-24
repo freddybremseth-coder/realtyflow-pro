@@ -307,35 +307,51 @@ export async function getGenreImages(genre: string, count = 20): Promise<GenreIm
   const supabase = getSupabase();
   const genresToTry = [genre, ...getGenreFallbacks(genre)];
 
+  // Fetch first-party imagery IN THE QUERY, not after .limit(100): imported
+  // Airtable rows occupy the first 100 records for dance, so a post-query
+  // preference alone would never encounter the working Supabase images.
   for (const g of genresToTry) {
     const { data, error } = await supabase
       .from('genre_images')
-      .select('*')
+      .select('id, genre, image_url')
       .ilike('genre', g)
+      .like('image_url', '%/storage/v1/object/public/%')
+      .order('created_at', { ascending: false })
       .limit(100);
 
     if (error) {
-      console.warn(`[Supabase] Genre images query failed for "${g}": ${error.message}`);
+      console.warn(`[Supabase] Public genre images query failed for "${g}": ${error.message}`);
       continue;
     }
 
-    if (data && data.length > 0) {
-      const images: GenreImage[] = data.map(row => ({
+    if (data?.length) {
+      const images: GenreImage[] = data.map((row) => ({
         id: row.id,
         genre: row.genre,
         imageUrl: row.image_url,
       }));
+      return shuffleArray(images).slice(0, count);
+    }
+  }
 
-      console.log(`[Supabase] Found ${images.length} images for genre "${g}" (requested "${genre}")`);
-      // Public Supabase Storage URLs are durable. Legacy Airtable attachment
-      // URLs expire, so never select them ahead of available first-party files.
-      const durable = shuffleArray(images.filter((image) =>
-        /\/storage\/v1\/object\/public\//.test(image.imageUrl || ''),
-      ));
-      const legacy = shuffleArray(images.filter((image) =>
-        !/\/storage\/v1\/object\/public\//.test(image.imageUrl || ''),
-      ));
-      return [...durable, ...legacy].slice(0, count);
+  // Preserve legacy support for genres that genuinely have no first-party
+  // images yet. The Short renderer retries across candidates and explains
+  // the failure if these old, potentially expired attachments cannot load.
+  for (const g of genresToTry) {
+    const { data, error } = await supabase
+      .from('genre_images')
+      .select('id, genre, image_url')
+      .ilike('genre', g)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) {
+      console.warn(`[Supabase] Legacy genre images query failed for "${g}": ${error.message}`);
+      continue;
+    }
+    if (data?.length) {
+      return shuffleArray(data.map((row): GenreImage => ({
+        id: row.id, genre: row.genre, imageUrl: row.image_url,
+      }))).slice(0, count);
     }
   }
 
