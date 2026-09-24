@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, Users } from "lucide-react";
 import { useParams } from "next/navigation";
+import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; pipeline_status: string | null; updated_at: string | null };
 type Tab = "overview" | "crm" | "properties" | "marketing";
@@ -102,10 +103,11 @@ export default function FocusedWorkspacePage() {
             <p className="mt-4 text-xs text-slate-500">Denne første visningen er skrivebeskyttet. Sikker endring av kundekort og tilknyttede data bygges før medarbeidere får tilgang.</p>
           </section>
         )}
-        {!loading && !error && (tab === "properties" || tab === "marketing") && (
+        {!loading && !error && tab === "properties" && <WorkspacePropertyCatalogue brandKey={brandKey} />}
+        {!loading && !error && tab === "marketing" && (
           <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <h2 className="text-xl font-semibold">{tab === "properties" ? "Eiendommer" : "Markedsføring"}</h2>
-            <p className="mt-2 max-w-xl text-slate-400">Denne arbeidsflaten er under utvikling. Den kobles til samme merkevaretilgang som CRM før den åpnes for medarbeidere. Ingen globale sider eller andre merkevarers data er koblet hit.</p>
+            <h2 className="text-xl font-semibold">Markedsføring</h2>
+            <p className="mt-2 max-w-xl text-slate-400">Markedsføring er under utvikling. Vi kobler Reels og publisering til merkevarens godkjente kanaler etter at rettigheter og lagring er sikret.</p>
           </section>
         )}
       </main>
