@@ -43,24 +43,23 @@ export async function requireBrandWorkspace(
   const supabase = getPlatformSupabase();
   if (!supabase) return reject(503, "WORKSPACE_UNAVAILABLE");
 
-  const { data: brand, error: brandError } = await supabase.schema("core")
-    .from("brands").select("id,brand_key").eq("brand_key", brandKey).maybeSingle();
-  if (brandError) return reject(503, "WORKSPACE_UNAVAILABLE");
-  if (!brand) return reject(404, "WORKSPACE_NOT_FOUND");
+  // The public-schema RPC is service-role-only; core is NOT exposed to PostgREST clients.
+  const { data: scope, error: scopeError } = await supabase.rpc("workspace_brand_grant", {
+    p_brand_key: brandKey, p_email: context.email,
+  });
+  if (scopeError) return reject(503, "WORKSPACE_UNAVAILABLE");
+  if (!scope?.brand?.id || scope.brand.brand_key !== brandKey) return reject(404, "WORKSPACE_NOT_FOUND");
+  const brandId: string = scope.brand.id;
 
   if (context.role !== "OWNER") {
-    const { data: grant, error: grantError } = await supabase.schema("core")
-      .from("brand_workspace_memberships")
-      .select("brand_id,user_id,email,status,permissions")
-      .eq("brand_id", brand.id).eq("email", context.email).maybeSingle();
-    if (grantError) return reject(503, "WORKSPACE_UNAVAILABLE");
+    const grant = scope.grant;
     if (!grant?.user_id) return reject(403, "ACCESS_DENIED");
     const { data: authResult, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !authResult?.user || !hasVerifiedBrandGrant({
-      grant, brandId: brand.id, sessionEmail: context.email,
+      grant, brandId, sessionEmail: context.email,
       verifiedUserId: authResult.user.id, verifiedUserEmail: authResult.user.email || "",
       permission,
     })) return reject(403, "ACCESS_DENIED");
   }
-  return { value: { brandKey, brandId: brand.id, supabase }, response: null };
+  return { value: { brandKey, brandId, supabase }, response: null };
 }
