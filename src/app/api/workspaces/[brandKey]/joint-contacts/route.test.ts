@@ -4,12 +4,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
-import { GET } from "./route";
+import { GET, PATCH } from "./route";
 
 const brandId = "11111111-1111-4111-8111-111111111111";
 const memberId = "22222222-2222-4222-8222-222222222222";
 const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
 let permissions = ["crm.joint.read"];
+let returnedUpdate: Record<string, unknown> | null = null;
 let returnedContacts: Array<Record<string, unknown>> = [];
 const endpoint = "https://realtyflow.test/api/workspaces/zeneco/joint-contacts";
 function req(cookie?: string, query = "") {
@@ -23,6 +24,7 @@ test.beforeEach(() => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
   calls.length = 0;
   permissions = ["crm.joint.read"];
+  returnedUpdate = null;
   returnedContacts = [{ id: "33333333-3333-4333-8333-333333333333", brand_id: "zeneco", brand: "zeneco",
     name: "New joint client", email: "new@example.test", phone: "+34000000000",
     pipeline_status: "NEW", created_at: "2026-09-24T11:00:00Z", updated_at: "2026-09-24T11:00:00Z" }];
@@ -37,6 +39,7 @@ test.beforeEach(() => {
       if (name === "workspace_zeneco_joint_contacts") return {
         data: { contacts: returnedContacts, hasMore: false }, error: null,
       };
+      if (name === "workspace_zeneco_joint_contact_update") return { data: returnedUpdate, error: null };
       throw new Error("unexpected privileged RPC");
     },
     auth: { admin: { getUserById: async (id: string) => ({
@@ -123,4 +126,84 @@ test("flag shutdown, invalid pagination and missing cohort migration fail closed
   assert.equal(calls.some(call => call.name === "workspace_zeneco_joint_contacts"), false);
   delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
   assert.equal((await GET(req(token) as any, { params: { brandKey: "zeneco" } })).status, 401);
+});
+
+function patch(signedCookie: string, body: unknown, customHeaders: Record<string, string> = {}) {
+  return new NextRequest(endpoint, {
+    method: "PATCH",
+    headers: { cookie: signedCookie, "content-type": "application/json",
+      origin: "https://realtyflow.test", ...customHeaders },
+    body: JSON.stringify(body),
+  });
+}
+const newJointId = "33333333-3333-4333-8333-333333333333";
+const updateBody = { id: newJointId, name: "Updated joint client",
+  email: "updated@example.test", phone: "+34000000001" };
+
+test("member with only joint.read cannot PATCH, and foreign brand URLs are never writable", async () => {
+  liveProfile();
+  const token = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  assert.equal((await PATCH(patch(token, updateBody) as any, { params: { brandKey: "zeneco" } })).status, 403);
+  assert.equal((await PATCH(patch(token, updateBody) as any, { params: { brandKey: "soleada" } })).status, 404);
+  assert.equal(calls.some(call => call.name === "workspace_zeneco_joint_contact_update"), false);
+});
+
+test("joint.read + joint.write PATCH passes verified user, same-brand record ID and safe contact fields", async () => {
+  liveProfile();
+  permissions = ["crm.joint.read", "crm.joint.write"];
+  returnedUpdate = { ...returnedContacts[0], ...updateBody, brand_id: "zeneco",
+    brand: "zeneco", created_at: "2026-09-24T11:00:00Z",
+    notes: "HIDDEN NOTES", pipeline_value: 500000 };
+  const token = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  const response = await PATCH(patch(token, updateBody) as any, { params: { brandKey: "zeneco" } });
+  assert.equal(response.status, 200);
+  const rpc = calls.find(call => call.name === "workspace_zeneco_joint_contact_update");
+  assert.ok(rpc);
+  assert.deepEqual(rpc.args, {
+    p_user_id: memberId, p_member_email: "staff@example.test",
+    p_contact_id: newJointId, p_name: "Updated joint client",
+    p_contact_email: "updated@example.test", p_phone: "+34000000001",
+  });
+  const body = await response.json();
+  assert.equal(body.contact.name, "Updated joint client");
+  assert.equal(JSON.stringify(body).includes("HIDDEN"), false);
+  assert.equal(JSON.stringify(body).includes("pipeline_value"), false);
+});
+
+test("joint PATCH fails closed for forged fields, unsafe origin and invalid customer data", async () => {
+  liveProfile();
+  permissions = ["crm.joint.read", "crm.joint.write"];
+  const token = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  for (const forged of [
+    { ...updateBody, brand_id: "soleada" },
+    { ...updateBody, pipeline_status: "WON" },
+    { ...updateBody, commission: 100000 },
+    { ...updateBody, notes: "SECRET" },
+    { ...updateBody, id: "contact-id' OR true" },
+    { ...updateBody, email: "not-an-email" },
+    { ...updateBody, name: "" },
+  ]) {
+    const result = await PATCH(patch(token, forged) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(result.status, 400);
+  }
+  assert.equal((await PATCH(patch(token, updateBody, { origin: "https://evil.example.test" }) as any,
+    { params: { brandKey: "zeneco" } })).status, 403);
+  assert.equal((await PATCH(patch(token, updateBody, { "sec-fetch-site": "cross-site" }) as any,
+    { params: { brandKey: "zeneco" } })).status, 403);
+  assert.equal(calls.some(call => call.name === "workspace_zeneco_joint_contact_update"), false);
+});
+
+test("revoked/ineligible join returns 404 and cannot leak a mismatched brand or old contact", async () => {
+  liveProfile();
+  permissions = ["crm.joint.read", "crm.joint.write"];
+  const token = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  returnedUpdate = null;
+  assert.equal((await PATCH(patch(token, updateBody) as any,
+    { params: { brandKey: "zeneco" } })).status, 404);
+  returnedUpdate = { ...returnedContacts[0], ...updateBody, brand_id: "soleada", brand: "soleada" };
+  assert.equal((await PATCH(patch(token, updateBody) as any,
+    { params: { brandKey: "zeneco" } })).status, 503);
+  returnedUpdate = { ...returnedContacts[0], ...updateBody, created_at: "2026-09-22T13:00:00Z" };
+  assert.equal((await PATCH(patch(token, updateBody) as any,
+    { params: { brandKey: "zeneco" } })).status, 503);
 });
