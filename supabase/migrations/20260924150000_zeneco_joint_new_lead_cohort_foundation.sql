@@ -253,3 +253,76 @@ revoke execute on function public.workspace_zeneco_joint_contacts(uuid,text,inte
   from public, anon, authenticated;
 grant execute on function public.workspace_zeneco_joint_contacts(uuid,text,integer,text)
   to service_role;
+
+-- Member changes are narrow and independently audited. This table is NOT
+-- readable from customer/staff endpoints and never stores changed PII values.
+create table if not exists core.zeneco_joint_contact_edit_audit (
+  id uuid primary key default gen_random_uuid(),
+  contact_id uuid not null references public.contacts(id) on delete restrict,
+  actor_user_id uuid not null,
+  actor_email text not null,
+  changed_fields text[] not null,
+  edited_at timestamptz not null default now()
+);
+alter table core.zeneco_joint_contact_edit_audit enable row level security;
+revoke all on core.zeneco_joint_contact_edit_audit from anon, authenticated;
+grant select, insert on core.zeneco_joint_contact_edit_audit to service_role;
+
+-- Atomic checked write: the membership AND approved joint cohort must be
+-- current for this exact Zen contact when UPDATE executes. Generic CRM writes
+-- and unapproved historical Zen records are NEVER accepted.
+create or replace function public.workspace_zeneco_joint_contact_update(
+  p_user_id uuid, p_member_email text, p_contact_id uuid,
+  p_name text, p_contact_email text, p_phone text
+) returns jsonb language plpgsql security invoker set search_path = '' as $joint_write$
+declare v_contact record;
+begin
+  if p_user_id is null or p_contact_id is null
+    or p_member_email is null or p_member_email <> lower(btrim(p_member_email))
+    or p_member_email !~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
+    or p_name is null or length(btrim(p_name)) < 1 or length(btrim(p_name)) > 140
+    or p_contact_email is null or length(btrim(p_contact_email)) > 254
+    or (length(btrim(p_contact_email)) > 0 and
+      btrim(p_contact_email) !~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$')
+    or p_phone is null or length(btrim(p_phone)) > 60 then
+    return null;
+  end if;
+  update public.contacts c set
+    name = btrim(p_name),
+    email = nullif(lower(btrim(p_contact_email)), ''),
+    phone = nullif(btrim(p_phone), ''),
+    updated_at = now()
+  where c.id = p_contact_id and c.brand_id = 'zeneco' and c.brand = 'zeneco'
+    and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
+    and exists (
+      select 1
+      from core.brand_workspace_memberships m
+      join core.brands b on b.id = m.brand_id and b.brand_key = 'zeneco'
+      join core.zeneco_joint_lead_cohort j on j.brand_id = b.id
+        and j.contact_id = c.id and j.eligibility = 'approved'
+        and j.first_genuine_enquiry_at >= timestamptz '2026-09-23 22:00:00+00'
+        and length(btrim(coalesce(j.evidence_reference,''))) >= 8
+        and j.reviewed_at is not null
+      where m.user_id = p_user_id and m.email = p_member_email
+        and m.status = 'active'
+        and m.permissions @> array['crm.joint.read','crm.joint.write']::text[]
+    )
+  returning c.id,c.name,c.email,c.phone,c.brand_id,c.brand,c.created_at,c.updated_at
+    into v_contact;
+  if not found then return null; end if;
+  insert into core.zeneco_joint_contact_edit_audit
+    (contact_id,actor_user_id,actor_email,changed_fields)
+  values (v_contact.id,p_user_id,p_member_email,array['name','email','phone']::text[]);
+  return jsonb_build_object(
+    'id',v_contact.id,'name',v_contact.name,
+    'email',v_contact.email,'phone',v_contact.phone,
+    'brand_id',v_contact.brand_id,'brand',v_contact.brand,
+    'created_at',v_contact.created_at,'updated_at',v_contact.updated_at
+  );
+end; $joint_write$;
+revoke execute on function public.workspace_zeneco_joint_contact_update(
+  uuid,text,uuid,text,text,text
+) from public, anon, authenticated;
+grant execute on function public.workspace_zeneco_joint_contact_update(
+  uuid,text,uuid,text,text,text
+) to service_role;
