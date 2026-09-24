@@ -127,6 +127,10 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
   const write = isWrite(method);
 
   if (path === "/api/auth/me") return "AUTHENTICATED";
+  // Only this explicit read route is available to a signed-in brand member.
+  // The route itself verifies the current membership, Auth user and row scope.
+  // Access-plan administration and any unknown workspace route remain OWNER_ONLY.
+  if (method.toUpperCase() === "GET" && /^\\/api\\/workspaces\\/[a-z0-9][a-z0-9-]{1,62}\\/contacts$/.test(path)) return "AUTHENTICATED";
   if (path.startsWith("/api/access-control")) return "OWNER_ONLY";
   if (path.startsWith("/api/platform")) return "OWNER_ONLY";
   if (path.startsWith("/api/audit-log")) return "audit.read";
