@@ -43,6 +43,12 @@ export async function GET(
         verifiedUserId: identity.user.id, verifiedUserEmail: identity.user.email || "", permission,
       }),
     );
+    if (brandKey === "zeneco") {
+      // Matching the brand must not expose pre-agreement Zen Eco customers.
+      // CRM requires a separate, audited contact cohort from 2026-09-24.
+      permissions = permissions.filter(permission =>
+        permission !== "crm.read" && permission !== "crm.write");
+    }
     if (permissions.length === 0) return fail(403, "ACCESS_DENIED");
   }
   return NextResponse.json({ ok: true, brand: brandKey, permissions }, { headers: noStore });
