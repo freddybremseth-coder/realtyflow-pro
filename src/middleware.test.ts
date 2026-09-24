@@ -123,16 +123,42 @@ test("middleware admits Re-Master Reels proxy only with its shared credential", 
   }
 });
 
+
+function mockLiveProfiles(profiles: Array<{ email: string; role: string; active: boolean }>) {
+  const oldFetch = globalThis.fetch;
+  const oldUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const oldKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://supabase-workspace.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "middleware-test-service-key";
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/rest/v1/brand_settings")) {
+      return new Response(JSON.stringify([{ settings: { profiles } }]), { status: 200 });
+    }
+    return oldFetch(url, init);
+  }) as typeof fetch;
+  return () => {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = oldUrl;
+    if (oldKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = oldKey;
+  };
+}
+
 test("workspace-only role is disabled by default and does not enter legacy CRM", async () => {
   delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-  const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
-  const denied = await middleware(request("/workspace/pinosoecolife", { cookie }));
-  assert.equal(denied.status, 307);
-  assert.match(denied.headers.get("location") || "", /\/login\?/);
+  const restore = mockLiveProfiles([{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }]);
+  try {
+    const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
+    const denied = await middleware(request("/workspace/pinosoecolife", { cookie }));
+    assert.equal(denied.status, 307);
+    assert.match(denied.headers.get("location") || "", /\/login\?/);
+  } finally { restore(); }
 });
 
 test("when explicitly enabled workspace role can enter only narrow shell and scoped reads", async () => {
   process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
+  const restore = mockLiveProfiles([{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }]);
   try {
     const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
     for (const path of [
@@ -155,5 +181,35 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
       { method: "POST", headers: { cookie } },
     ));
     assert.equal(deniedWrite.status, 403);
-  } finally { delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED; }
+  } finally { restore(); delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED; }
+});
+
+test("stale SALES session is rejected immediately after profile is reduced to workspace-only", async () => {
+  let restore = mockLiveProfiles([{ email: "staff@example.test", role: "SALES", active: true }]);
+  const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "SALES")}`;
+  try {
+    const initiallyAllowed = await middleware(request("/api/contacts", { cookie }));
+    assert.equal(initiallyAllowed.status, 200);
+    restore();
+    restore = mockLiveProfiles([{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }]);
+    const revokedGlobal = await middleware(request("/api/contacts", { cookie }));
+    assert.equal(revokedGlobal.status, 403);
+    const revokedPage = await middleware(request("/customers", { cookie }));
+    assert.equal(revokedPage.status, 307);
+    assert.match(revokedPage.headers.get("location") || "", /\/login\?/);
+  } finally { restore(); }
+});
+
+test("disabled role profile and failed revalidation both deny old sessions before legacy API access", async () => {
+  const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "SALES")}`;
+  const restore = mockLiveProfiles([{ email: "staff@example.test", role: "SALES", active: false }]);
+  try {
+    const revoked = await middleware(request("/api/contacts", { cookie }));
+    assert.equal(revoked.status, 403);
+  } finally { restore(); }
+  const restoreMissingDb = mockLiveProfiles([{ email: "another@example.test", role: "SALES", active: true }]);
+  try {
+    const dbUnavailable = await middleware(request("/api/contacts", { cookie }));
+    assert.equal(dbUnavailable.status, 403);
+  } finally { restoreMissingDb(); }
 });
