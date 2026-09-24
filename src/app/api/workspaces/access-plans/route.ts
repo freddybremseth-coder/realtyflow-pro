@@ -75,6 +75,11 @@ export async function POST(request: NextRequest) {
     new Set(permissions).size !== permissions.length)) {
     return response({ error: "INVALID_PERMISSIONS" }, 400);
   }
+  if (action === "SAVE_DRAFT" && Array.isArray(permissions) && (
+    (brandKey === "zeneco" && permissions.some(permission => permission === "crm.read" || permission === "crm.write")) ||
+    (brandKey !== "zeneco" && permissions.includes("crm.joint.read")))) {
+    return response({ error: "INVALID_BRAND_CRM_SCOPE" }, 400);
+  }
   const supabase = getPlatformSupabase();
   if (!supabase) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
   // Public-schema RPC is service-role-only and writes ONLY a draft, never an actual grant.
