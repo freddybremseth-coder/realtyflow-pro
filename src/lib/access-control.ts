@@ -131,6 +131,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
   const write = isWrite(method);
 
   if (path === "/api/auth/me") return "AUTHENTICATED";
+  if (path === "/api/workspaces/available" && !write) return "AUTHENTICATED";
   // Only this explicit read route is available to a signed-in brand member.
   // The route itself verifies the current membership, Auth user and row scope.
   // Access-plan administration and any unknown workspace route remain OWNER_ONLY.
