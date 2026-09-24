@@ -182,6 +182,31 @@ async function verifyToken(token?: string): Promise<{ email: string; role: Acces
   }
 }
 
+/**
+ * A WORKSPACE_MEMBER is NOT a legacy SALES user. Only explicitly reviewed,
+ * per-brand workspace routes may be reached; unknown, public-looking global
+ * CRM/360, inbox, communications, tasks, exports, notes and alerts routes do
+ * not inherit access from an authenticated session. Each allowed route also
+ * verifies a live per-brand grant and, for Zen CRM, a reviewed joint cohort.
+ *
+ * Public/portal/cron endpoints are authenticated independently before this
+ * role gate and do not gain any employee privileges from a workspace cookie.
+ */
+function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
+  const verb = method.toUpperCase();
+  if (pathname === "/api/auth/me" && verb === "GET") return true;
+  if (pathname === "/api/workspaces/available" && verb === "GET") return true;
+  const parts = pathname.split("/");
+  if (parts.length !== 5 || parts[1] !== "api" || parts[2] !== "workspaces" ||
+      !/^[a-z0-9][a-z0-9-]{1,62}$/.test(parts[3])) return false;
+  const brand = parts[3];
+  const resource = parts[4];
+  if (["capabilities", "properties"].includes(resource)) return verb === "GET";
+  if (resource === "contacts") return brand !== "zeneco" && ["GET", "POST", "PATCH"].includes(verb);
+  if (resource === "joint-contacts") return brand === "zeneco" && ["GET", "PATCH"].includes(verb);
+  return false;
+}
+
 function roleDenied(request: NextRequest, role: AccessRole, requirement: string) {
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Access permission required", role, requiredPermission: requirement }, { status: 403 });
@@ -289,6 +314,13 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set("x-access-email", session.email);
 
     if (session.role !== "OWNER") {
+      // Deny by default BEFORE legacy special-cases such as internal-alerts.
+      // No legacy customer 360, tasks, messages, files, exports or finance API
+      // can be opened merely by switching to a WORKSPACE_MEMBER session.
+      if (session.role === "WORKSPACE_MEMBER" && pathname.startsWith("/api/") &&
+          !workspaceMemberProtectedApiAllowed(pathname, request.method)) {
+        return roleDenied(request, session.role, "scoped-workspace-route");
+      }
       const internalAlertsApi = pathname === "/api/internal-alerts";
       const internalAlertsPage = pathname === "/internal-alerts";
       const executiveBriefingApi = pathname === "/api/revenue/executive-briefing";
