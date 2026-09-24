@@ -11,7 +11,7 @@ type Brand = { id: string; brand_key: string; display_name: string };
 type Plan = { brand_id: string; email: string; permissions: WorkspacePermission[]; status: "draft" | "discarded"; updated_by: string; updated_at: string };
 type ContactCount = { brand_key: string; assigned: number; needs_review: number };
 type Payload = { brands: Brand[]; plans: Plan[]; contactCounts: ContactCount[];
-  zenJointPreview: { new_crm_records_to_review: number; approved_joint_records: number };
+  zenJointPreview: { new_crm_records_to_review: number; approved_joint_records: number } | null;
   activationAvailable: false; message: string };
 const permissionLabels: Record<WorkspacePermission, { title: string; description: string }> = {
   "properties.catalog.read": { title: "Eiendomskatalog", description: "Se vanlige boligoppføringer. Ikke intern pris-/importdata." },
@@ -114,6 +114,12 @@ export default function WorkspaceAccessPage() {
             <label className="block text-sm text-slate-300">Medarbeiderens e-post
               <input type="email" autoComplete="off" className={input} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="navn@eksempel.no" />
             </label>
+            {brandKey === "zeneco" && !payload.zenJointPreview && <p role="status"
+              className="rounded-xl border border-amber-700/60 bg-amber-950/25 p-4 text-sm text-amber-200">
+              Oversikten over nye CRM-poster er ikke installert ennå. Det er ikke registrert en nullverdi:
+              antall kandidater og godkjente felleskunder er foreløpig ukjent. Eksisterende tilgangsutkast
+              kan fremdeles gjennomgås; ingen kunde- eller medarbeidertilgang aktiveres her.
+            </p>}
             {brandKey === "zeneco" && payload.zenJointPreview && <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200">
               <strong>Nye Zen Eco CRM-poster · kun til gjennomgang</strong>
               <p className="mt-2">{payload.zenJointPreview.new_crm_records_to_review} CRM-poster er opprettet siden 24.09.2026 og må vurderes før de kan regnes som nye felles kunder. Opprettelsesdato alene er ikke dokumentasjon på første reelle kundehenvendelse.</p>
