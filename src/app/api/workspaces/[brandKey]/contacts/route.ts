@@ -100,7 +100,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
   const input = validateContactInput(await request.json().catch(() => null), false);
   if (!input.value) return failWrite(400, input.error);
   const { data, error } = await access.value.supabase.from("contacts")
-    .insert({ ...input.value, brand_id: brandKey, pipeline_status: "NEW" })
+    .insert({ ...input.value, brand_id: brandKey, brand: brandKey, pipeline_status: "NEW" })
     .select(SAFE_CONTACT_COLUMNS).single();
   if (error || !data || data.brand_id !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
   return NextResponse.json({ ok: true, brand: brandKey, contact: data }, { status: 201, headers: noStore });
