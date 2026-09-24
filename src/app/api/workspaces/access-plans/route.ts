@@ -24,13 +24,19 @@ export async function GET(request: NextRequest) {
   if (failure) return failure;
   const supabase = getPlatformSupabase();
   if (!supabase) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
-  const { data, error } = await supabase.rpc("workspace_access_snapshot");
-  if (error || !data || !Array.isArray(data.brands) || !Array.isArray(data.plans)) {
+  const [accessSnapshot, contactSnapshot] = await Promise.all([
+    supabase.rpc("workspace_access_snapshot"),
+    supabase.rpc("workspace_contact_brand_counts"),
+  ]);
+  const { data, error } = accessSnapshot;
+  if (error || contactSnapshot.error || !data || !Array.isArray(data.brands) ||
+    !Array.isArray(data.plans) || !Array.isArray(contactSnapshot.data)) {
     return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
   }
   return response({
     brands: data.brands,
     plans: data.plans,
+    contactCounts: contactSnapshot.data,
     activationAvailable: false,
     message: "Dette er kun tilgangsutkast. Ingen tilgang aktiveres eller invitasjoner sendes.",
   });
