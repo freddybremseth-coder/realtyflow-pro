@@ -50,7 +50,8 @@ test("known API routes map to explicit permissions and unknown routes stay owner
   assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/capabilities", "GET"), "AUTHENTICATED");
   assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "GET"), "AUTHENTICATED");
   assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "POST"), "OWNER_ONLY");
-  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "PATCH"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "PATCH"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "DELETE"), "OWNER_ONLY");
   assert.equal(accessRequirementForApi("/api/workspaces/soleada/joint-contacts", "GET"), "OWNER_ONLY");
   assert.equal(accessRequirementForApi("/api/workspaces/zeneco/contacts/export", "GET"), "OWNER_ONLY");
   assert.equal(accessRequirementForApi("/api/access-control", "GET"), "OWNER_ONLY");
