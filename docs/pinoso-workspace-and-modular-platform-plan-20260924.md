@@ -53,3 +53,13 @@ Use the *existing* approved canonical Pinoso brand ID from database/configuratio
 ## Completion boundary
 
 This phase is deliberately a specification on a feature branch. No user has been invited, no production data/schema or permissions have been changed, and no music or publication module has been moved. Do not merge a cosmetic brand switch as a substitute for verified end-to-end isolation.
+
+## Implementation update: focused UI + owner permission drafts (2026-09-24)
+
+The feature branch now includes an owner `/workspaces` hub and a bare-shell `/workspace/[brandKey]` preview with exactly four navigation tabs (Overview, Customers, Properties, Marketing). Only read-only, brand-scoped customer listing is implemented in the preview; the other tabs are deliberately nonfunctional placeholders. They must not link into the owner/global CRM or Re-Master administration.
+
+`/workspace-access` and its owner-session-only API let Freddy select any real configured brand, enter a colleague email, and save/edit/discard a capabilities **draft** (`crm.read`, `crm.write`, `properties.catalog.read`, `marketing.read`, `marketing.draft`, `marketing.publish`). Drafts live in `core.brand_workspace_access_plans`, with audit; this table is **never** read by any authorisation check, and there is no activation, account provisioning, email invitation, or publishing action. `core.brand_workspace_memberships` remains a separate live-grant foundation; it is not populated by drafts.
+
+**Future activation contract:** after all unsafe legacy routes and stored data are secured, introduce a narrow `WORKSPACE_MEMBER` login path that does not grant the current global SALES/MARKETING/VIEWER role matrix. Read verified capabilities and exact brand membership on every request; render menu items from those capabilities. For a Pinoso-only employee, default visible menu should be Overview, Properties, CRM, Marketing (and no global navigation or cross-brand AI chatbot). A freelancer supporting more brands can switch only among explicitly authorised memberships, not arbitrary brand query params. Separate private finance and music masters; marketing publishing must additionally confirm the exact allowed account ID, the chosen brand, the publish permission and ownership of media assets at execution time. Require owner-confirmed activation, security tests, a disabled-by-default feature flag and audited revocation.
+
+**Operations:** do not run production migrations or deploy this draft PR until build/test failures, existing-route audit, staging schema/RLS, service-role bypass and precise account bindings have been verified. Configuring a permissions draft is not the same as granting safe access.
