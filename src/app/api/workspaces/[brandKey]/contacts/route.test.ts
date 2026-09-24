@@ -45,7 +45,7 @@ test.beforeEach(() => {
   process.env.REALTYFLOW_ADMIN_EMAILS = "owner@example.test";
   calls.length = 0;
   testGrant = null;
-  scopedResult = [{ id: "pinoso-contact", brand_id: "pinosoecolife", name: "Example", email: null }];
+  scopedResult = [{ id: "pinoso-contact", brand_id: "pinosoecolife", brand: "pinosoecolife", name: "Example", email: null }];
   setPlatformSupabaseFactoryForTests(() => fakeDatabase());
 });
 test.afterEach(() => setPlatformSupabaseFactoryForTests(null));
@@ -66,6 +66,7 @@ test("read is restricted to exact brand at database and never selects internal f
   assert.equal(payload.brand, "pinosoecolife");
   assert.deepEqual(calls.filter(c => c.method === "eq"), [
     { method: "eq", args: ["brand_id", "pinosoecolife"] },
+    { method: "eq", args: ["brand", "pinosoecolife"] },
   ]);
   const select = String(calls.find(c => c.method === "select")?.args[0] || "");
   assert.equal(select.includes("*"), false);
@@ -96,7 +97,7 @@ test("search and pagination remain constrained by exact brand", async () => {
 });
 
 test("returns a bounded page and hasMore without leaking extra records", async () => {
-  scopedResult = Array.from({ length: 51 }, (_, i) => ({ id: `customer-${i}`, brand_id: "pinosoecolife" }));
+  scopedResult = Array.from({ length: 51 }, (_, i) => ({ id: `customer-${i}`, brand_id: "pinosoecolife", brand: "pinosoecolife" }));
   const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
   const result = await GET(request(cookie) as any, context);
   const body = await result.json();
@@ -158,6 +159,7 @@ test("PATCH enforces both exact id and brand and only changes allowlisted fields
   assert.deepEqual(calls.filter(c => c.method === "eq"), [
     { method: "eq", args: ["id", "contact-1"] },
     { method: "eq", args: ["brand_id", "pinosoecolife"] },
+    { method: "eq", args: ["brand", "pinosoecolife"] },
   ]);
 });
 
