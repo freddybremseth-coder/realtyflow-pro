@@ -60,7 +60,7 @@ function safeIso(value: unknown) {
 }
 
 function canAcknowledgeRole(role: AccessRole) {
-  return role !== "VIEWER";
+  return role !== "VIEWER" && role !== "WORKSPACE_MEMBER";
 }
 
 function parseAssignmentSettings(value: unknown) {
@@ -208,6 +208,11 @@ function filterCenterForRole(center: ReturnType<typeof buildInternalAlertCenter>
 async function buildFreshCenter(request: NextRequest, supabase: any) {
   const tokenSession = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
   if (!tokenSession?.email || !tokenSession.role) return { error: "Unauthorized", status: 401, center: null, session: null, settings: null };
+  // Defence in depth: this legacy all-brand service-role API is never a
+  // workspace employee view. Reject before fetching ANY global contact/task.
+  // Middleware independently rejects this path for WORKSPACE_MEMBER.
+  if (tokenSession.role === "WORKSPACE_MEMBER")
+    return { error: "Scoped workspace required", status: 403, center: null, session: null, settings: null };
   const [contactsResult, workResult, accessResult, assignmentRow, alertRow] = await Promise.all([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(3000),
     supabase.from("work_items").select("*").in("status", OPEN_TASK_STATUSES).order("due_date", { ascending: true, nullsFirst: false }).limit(2000),
