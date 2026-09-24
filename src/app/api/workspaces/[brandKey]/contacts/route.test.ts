@@ -8,6 +8,7 @@ import { GET, POST, PATCH } from "./route";
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let scopedResult: Array<Record<string, unknown>> = [];
+let testGrant: Record<string, unknown> | null = null;
 function fakeDatabase() {
   const query: any = {
     select(...args: unknown[]) { calls.push({ method: "select", args }); return query; },
@@ -26,9 +27,12 @@ function fakeDatabase() {
   return {
     rpc(name: string) {
       calls.push({ method: "rpc", args: [name] });
-      return Promise.resolve({ data: { brand: { id: "pinoso-uuid", brand_key: "pinosoecolife" }, grant: null }, error: null });
+      return Promise.resolve({ data: { brand: { id: "pinoso-uuid", brand_key: "pinosoecolife" }, grant: testGrant }, error: null });
     },
     from(table: string) { calls.push({ method: "from", args: [table] }); return query; },
+    auth: { admin: { getUserById: async (id: string) => ({
+      data: { user: { id, email: "staff@example.test" } }, error: null,
+    }) } },
   } as unknown as SupabaseClient;
 }
 const base = "https://realtyflow.test/api/workspaces/pinosoecolife/contacts";
@@ -40,6 +44,7 @@ test.beforeEach(() => {
   process.env.REALTYFLOW_SESSION_SECRET = "workspace-contact-route-tests";
   process.env.REALTYFLOW_ADMIN_EMAILS = "owner@example.test";
   calls.length = 0;
+  testGrant = null;
   scopedResult = [{ id: "pinoso-contact", brand_id: "pinosoecolife", name: "Example", email: null }];
   setPlatformSupabaseFactoryForTests(() => fakeDatabase());
 });
@@ -188,4 +193,44 @@ test("unsafe origin, missing content type and missing user session cannot write"
   const unsigned = await POST(mutation("POST", "", { name: "Ada" }) as any, context);
   assert.equal(unsigned.status, 401);
   assert.equal(calls.some(c => c.method === "from"), false);
+});
+
+test("read-only brand member can search Pinoso CRM but cannot write or select another brand", async () => {
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const previousFlag = process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
+  const fetchBefore = globalThis.fetch;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://workspace-test.supabase.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "scoped-workspace-test-service-key";
+  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
+  testGrant = {
+    brand_id: "pinoso-uuid", user_id: "verified-user", email: "staff@example.test",
+    status: "active", permissions: ["crm.read"],
+  };
+  globalThis.fetch = (async (url: RequestInfo | URL) => {
+    if (!String(url).includes("/rest/v1/brand_settings")) throw new Error("unexpected external request");
+    return new Response(JSON.stringify({
+      settings: { profiles: [{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }] },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
+    const readable = await GET(request(cookie) as any, context);
+    assert.equal(readable.status, 200);
+    const callsBeforeWrite = calls.filter(c => c.method === "from").length;
+    const forbidden = await POST(mutation("POST", cookie, { name: "Forbidden write" }) as any, context);
+    assert.equal(forbidden.status, 403);
+    assert.equal(calls.filter(c => c.method === "from").length, callsBeforeWrite);
+    const crossBrand = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(crossBrand.status, 404);
+    assert.equal(calls.filter(c => c.method === "from").length, callsBeforeWrite);
+  } finally {
+    globalThis.fetch = fetchBefore;
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+    if (previousFlag === undefined) delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
+    else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = previousFlag;
+  }
 });
