@@ -226,7 +226,7 @@ test("read-only brand member can search Pinoso CRM but cannot write or select an
     assert.equal(forbiddenEdit.status, 403);
     assert.equal(calls.filter(c => c.method === "from").length, callsBeforeWrite);
     const crossBrand = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
-    assert.equal(crossBrand.status, 404);
+    assert.equal(crossBrand.status, 403); // Zen new-lead cohort guard fails before legacy CRM lookup
     assert.equal(calls.filter(c => c.method === "from").length, callsBeforeWrite);
   } finally {
     globalThis.fetch = fetchBefore;
