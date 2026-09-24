@@ -293,7 +293,7 @@ export async function middleware(request: NextRequest) {
         }
       } else if (internalAlertsPage || executiveBriefingPage || operatingReviewPage || weeklyManagementReviewPage || continuousImprovementPage) {
         if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
-      } else if (!canSeeNavHref(session.role, pathname)) {
+      } else if (!(pathname.startsWith("/workspace/") && pathname.split("/").length === 3) && !canSeeNavHref(session.role, pathname)) {
         return roleDenied(request, session.role, "page-access");
       }
     }
