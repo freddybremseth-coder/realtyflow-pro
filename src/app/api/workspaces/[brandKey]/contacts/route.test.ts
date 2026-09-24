@@ -94,3 +94,12 @@ test("returns a bounded page and hasMore without leaking extra records", async (
   assert.equal(body.contacts.length, 50);
   assert.equal(body.hasMore, true);
 });
+
+test("search accepts an email domain without allowing a cross-brand query", async () => {
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const result = await GET(request(cookie, "?q=" + encodeURIComponent("test.user@example.com")) as any, context);
+  assert.equal(result.status, 200);
+  const filter = String(calls.find(c => c.method === "or")?.args[0] || "");
+  assert.equal(filter.includes("test.user@example.com"), true);
+  assert.equal(calls.some(c => c.method === "eq" && c.args[0] === "brand_id" && c.args[1] === "pinosoecolife"), true);
+});
