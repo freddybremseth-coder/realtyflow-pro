@@ -287,6 +287,17 @@ begin
     or p_phone is null or length(btrim(p_phone)) > 60 then
     return null;
   end if;
+  -- Serialize against the owner review function, which locks the same CRM
+  -- row BEFORE changing cohort status. The subsequent UPDATE is a separate
+  -- READ COMMITTED statement and therefore sees a revocation committed while
+  -- this transaction was waiting for the contact-row lock. Checking EXISTS
+  -- only inside an UPDATE could evaluate an older statement snapshot.
+  perform 1 from public.contacts c
+  where c.id = p_contact_id
+    and c.brand_id = 'zeneco' and c.brand = 'zeneco'
+    and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
+  for update;
+  if not found then return null; end if;
   update public.contacts c set
     name = btrim(p_name),
     email = nullif(lower(btrim(p_contact_email)), ''),
