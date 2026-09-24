@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, Users } from "lucide-react";
 import { useParams } from "next/navigation";
@@ -28,6 +28,9 @@ export default function FocusedWorkspacePage() {
   const [crmError, setCrmError] = useState("");
   const [owner, setOwner] = useState(false);
   const [search, setSearch] = useState("");
+  const [crmQuery, setCrmQuery] = useState("");
+  const [crmPage, setCrmPage] = useState(1);
+  const [crmHasMore, setCrmHasMore] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
@@ -56,17 +59,17 @@ export default function FocusedWorkspacePage() {
     if (!permissions.includes("crm.read")) return;
     setCrmBusy(true); setCrmError("");
     try {
-      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/contacts`, { cache: "no-store" });
+      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/contacts?page=${crmPage}&q=${encodeURIComponent(crmQuery)}`, { cache: "no-store" });
       if (!result.ok) throw new Error(result.status === 403
         ? "Du har ikke CRM-tilgang i dette arbeidsområdet." : "CRM er ikke tilgjengelig ennå.");
       const body = await result.json();
       setContacts(body.contacts || []);
-    } catch (cause) { setContacts([]); setCrmError(cause instanceof Error ? cause.message : "Kunne ikke hente CRM."); }
+      setCrmHasMore(Boolean(body.hasMore));
+    } catch (cause) { setContacts([]); setCrmHasMore(false); setCrmError(cause instanceof Error ? cause.message : "Kunne ikke hente CRM."); }
     finally { setCrmBusy(false); }
   }
-  useEffect(() => { if (permissions.includes("crm.read")) void loadCrm(); }, [brandKey, permissions]);
-  const filtered = useMemo(() => contacts.filter(c =>
-    [c.name, c.email, c.phone].some(v => (v || "").toLowerCase().includes(search.toLowerCase()))), [contacts, search]);
+  useEffect(() => { if (permissions.includes("crm.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery]);
+  const filtered = contacts;
   const visibleTabs = tabs.filter(item => !item.permitted || item.permitted.some(permission => permissions.includes(permission)));
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey;
   const showCrm = permissions.includes("crm.read");
@@ -124,9 +127,12 @@ export default function FocusedWorkspacePage() {
               <h2 className="text-xl font-semibold">Kunder · kun {title}</h2>
               <button className="inline-flex items-center gap-2 text-sm text-cyan-300" onClick={() => void loadCrm()}><RefreshCw size={15}/> Oppdater</button>
             </div>
-            <label className="relative mt-4 block"><Search size={17} className="absolute left-3 top-3 text-slate-500" />
+            <form className="relative mt-4 flex gap-2" onSubmit={event => { event.preventDefault(); setCrmPage(1); setCrmQuery(search.trim()); }}>
+              <label className="relative block flex-1"><Search size={17} className="absolute left-3 top-3 text-slate-500" />
               <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Søk i kundene her"
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm" /></label>
+              <button type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Søk</button>
+            </form>
             {crmBusy && <p className="mt-4 text-sm text-slate-400">Laster CRM…</p>}
             {crmError && <p role="alert" className="mt-4 text-sm text-amber-300">{crmError}</p>}
             {!crmBusy && !crmError && <div className="mt-4 space-y-2">
@@ -137,7 +143,14 @@ export default function FocusedWorkspacePage() {
               </article>)}
               {filtered.length === 0 && <p className="p-4 text-sm text-slate-400">Ingen kunder funnet på denne siden.</p>}
             </div>}
-            <p className="mt-4 text-xs text-slate-500">CRM er foreløpig skrivebeskyttet og viser inntil 100 kunder. Merkevaresikker redigering og full søk/paginering kommer senere.</p>
+            {!crmBusy && !crmError && <div className="mt-4 flex items-center justify-between gap-3">
+              <button type="button" disabled={crmPage === 1} onClick={() => setCrmPage(page => Math.max(1, page - 1))}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-40">Forrige</button>
+              <span className="text-xs text-slate-400">Side {crmPage}</span>
+              <button type="button" disabled={!crmHasMore || crmPage >= 1000} onClick={() => setCrmPage(page => page + 1)}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-40">Neste</button>
+            </div>}
+            <p className="mt-4 text-xs text-slate-500">CRM er foreløpig skrivebeskyttet. Viser opptil 50 kunder per side, og søker kun innenfor denne merkevaren.</p>
           </section>
         )}
         {!loading && !error && showProperties && tab === "properties" &&
