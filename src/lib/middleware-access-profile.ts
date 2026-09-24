@@ -29,11 +29,12 @@ export async function liveRoleForMiddleware(email: string): Promise<AccessRole |
     if (!Array.isArray(rows) || rows.length !== 1) return null;
     const profiles: unknown = rows[0]?.settings?.profiles;
     if (!Array.isArray(profiles)) return null;
-    const matching = profiles.filter((profile: unknown) => (
-      profile && typeof profile === "object" &&
-      typeof profile.email === "string" &&
-      profile.email.trim().toLowerCase() === email.trim().toLowerCase()
-    ));
+    type LiveProfile = { email: string; active?: unknown; role?: unknown };
+    const matching: LiveProfile[] = profiles.filter((profile: unknown): profile is LiveProfile => {
+      if (!profile || typeof profile !== "object" || !("email" in profile) ||
+        typeof profile.email !== "string") return false;
+      return profile.email.trim().toLowerCase() === email.trim().toLowerCase();
+    });
     if (matching.length !== 1 || matching[0].active === false) return null;
     const role = normalizeRole(matching[0].role);
     if (!role || role === "OWNER") return null;
