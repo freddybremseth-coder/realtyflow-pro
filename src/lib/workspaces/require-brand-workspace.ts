@@ -1,7 +1,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
-import { hasPermission, type AccessPermission } from "@/lib/access-control";
+import { hasPermission, type AccessPermission, type AccessRole } from "@/lib/access-control";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { hasVerifiedBrandGrant, isCanonicalBrandKey, type WorkspacePermission } from "./brand-policy";
 
@@ -23,6 +23,15 @@ function reject(status: number, code: string): Rejection {
  * safe for an employee; those must be closed before any employee is invited.
  * Neither tenant membership nor a requested brand ID constitutes permission.
  */
+export function roleAllowsWorkspacePermission(role: AccessRole, permission: WorkspacePermission) {
+  if (role === "OWNER") return true;
+  const legacyPermission: AccessPermission = permission === "crm.write" ? "customers.write"
+    : permission === "crm.read" ? "customers.read"
+    : permission === "marketing.publish" || permission === "marketing.draft" ? "marketing.write"
+    : permission === "marketing.read" ? "marketing.read" : "revenue.read";
+  return hasPermission(role, legacyPermission);
+}
+
 export async function requireBrandWorkspace(
   request: NextRequest,
   brandKey: string,
@@ -33,13 +42,7 @@ export async function requireBrandWorkspace(
   if (!context) return reject(401, "AUTH_REQUIRED");
   // Owner-only migration proxy cannot act as a human workspace session.
   if (context.source === "remaster-proxy") return reject(403, "ACCESS_DENIED");
-  if (context.role !== "OWNER") {
-    const legacyPermission: AccessPermission = permission === "crm.write" ? "customers.write"
-      : permission === "crm.read" ? "customers.read"
-      : permission === "marketing.publish" || permission === "marketing.draft" ? "marketing.write"
-      : permission === "marketing.read" ? "marketing.read" : "revenue.read";
-    if (!hasPermission(context.role, legacyPermission)) return reject(403, "ACCESS_DENIED");
-  }
+  if (!roleAllowsWorkspacePermission(context.role, permission)) return reject(403, "ACCESS_DENIED");
   const supabase = getPlatformSupabase();
   if (!supabase) return reject(503, "WORKSPACE_UNAVAILABLE");
 
