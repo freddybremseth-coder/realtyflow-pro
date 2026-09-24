@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
   const safe = data.contacts.filter((item: unknown) => {
     if (!item || typeof item !== "object") return false;
     const row = item as Record<string, unknown>;
-    return typeof row.id === "string" && uuid.test(row.id) &&
+    return row.brand_id === "zeneco" && row.brand === "zeneco" &&
+      typeof row.id === "string" && uuid.test(row.id) &&
       typeof row.created_at === "string" && Date.parse(row.created_at) >= cutoff &&
       typeof row.name === "string" &&
       ["unreviewed", "pending", "approved", "excluded", "revoked"].includes(String(row.status));
