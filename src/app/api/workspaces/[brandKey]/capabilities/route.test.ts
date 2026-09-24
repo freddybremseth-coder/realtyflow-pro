@@ -132,13 +132,18 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
     assert.equal(scoped.status, 200);
     assert.deepEqual((await scoped.json()).permissions, ["properties.catalog.read"]);
 
-    currentPermissions = ["crm.joint.read", "crm.joint.write", "crm.read", "crm.write"];
+    currentPermissions = ["crm.joint.read", "crm.joint.write", "crm.read", "crm.write", "tasks.joint.write"];
     const joint = await GET(request(signed) as any, { params: { brandKey: "zeneco" } });
     assert.equal(joint.status, 200);
     assert.deepEqual((await joint.json()).permissions, ["crm.joint.read", "crm.joint.write"]);
+    currentPermissions = ["crm.joint.read", "tasks.joint.read", "tasks.joint.write"];
+    const taskScope = await GET(request(signed) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(taskScope.status, 200);
+    assert.deepEqual((await taskScope.json()).permissions,
+      ["crm.joint.read", "tasks.joint.read", "tasks.joint.write"]);
 
     currentBrand = "pinosoecolife";
-    currentPermissions = ["crm.joint.read", "crm.joint.write", "properties.catalog.read"];
+    currentPermissions = ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write", "properties.catalog.read"];
     const otherBrand = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
     assert.equal(otherBrand.status, 200);
     assert.deepEqual((await otherBrand.json()).permissions, ["properties.catalog.read"]);
