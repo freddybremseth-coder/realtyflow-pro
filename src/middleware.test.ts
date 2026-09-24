@@ -166,6 +166,7 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
       "/api/workspaces/pinosoecolife/capabilities",
       "/api/workspaces/pinosoecolife/contacts", "/api/workspaces/pinosoecolife/properties",
       "/api/workspaces/zeneco/joint-contacts",
+      "/api/workspaces/zeneco/joint-tasks",
       "/api/auth/me",
     ]) {
       const admitted = await middleware(request(path, { cookie }));
@@ -184,6 +185,8 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
       "/api/workspaces/soleada/joint-contacts",
       "/api/workspaces/zeneco/joint-contacts/export",
       "/api/workspaces/zeneco/messages", "/api/workspaces/zeneco/tasks",
+      "/api/workspaces/pinosoecolife/joint-tasks",
+      "/api/workspaces/zeneco/joint-tasks/old-global-task",
     ]) {
       const denied = await middleware(request(path, { cookie }));
       assert.equal(denied.status, 403, path);
@@ -195,6 +198,10 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
     assert.equal(deniedWrite.status, 403);
     for (const [path, method, expected] of [
       ["/api/workspaces/zeneco/joint-contacts", "PATCH", 200],
+      ["/api/workspaces/zeneco/joint-tasks", "POST", 200],
+      ["/api/workspaces/zeneco/joint-tasks", "PATCH", 200],
+      ["/api/workspaces/zeneco/joint-tasks", "DELETE", 403],
+      ["/api/workspaces/pinosoecolife/joint-tasks", "POST", 403],
       ["/api/workspaces/zeneco/joint-contacts", "POST", 403],
       ["/api/workspaces/zeneco/joint-contacts", "DELETE", 403],
       ["/api/workspaces/zeneco/contacts", "PATCH", 403],
