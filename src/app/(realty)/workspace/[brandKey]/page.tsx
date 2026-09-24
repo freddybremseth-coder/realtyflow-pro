@@ -51,7 +51,13 @@ export default function FocusedWorkspacePage() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
           <div><p className="text-xs uppercase tracking-wider text-cyan-400">RealtyFlow · Arbeidsområde</p>
             <h1 className="text-2xl font-bold">{title}</h1></div>
-          {owner && <Link href="/workspaces" className="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Tilbake til arbeidsområder</Link>}
+          <div className="flex items-center gap-2">
+            {owner && <Link href="/workspaces" className="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Arbeidsområder</Link>}
+            <button type="button" className="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800" onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.assign("/login");
+            }}>Logg ut</button>
+          </div>
         </div>
       </header>
       <nav className="border-b border-slate-800 px-4" aria-label="Arbeidsområdet">
