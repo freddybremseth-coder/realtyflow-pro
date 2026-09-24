@@ -85,6 +85,7 @@ const ROLE_HOME: Record<AccessRole, string> = {
   MARKETING: "/attribution",
   KEYHOLDING: "/care",
   VIEWER: "/revenue-command",
+  WORKSPACE_MEMBER: "/workspace",
 };
 
 function isPublicPath(pathname: string) {
@@ -265,7 +266,7 @@ export async function middleware(request: NextRequest) {
   if (hasNexusSchedulerCredential(request, pathname)) return NextResponse.next({ request: { headers: requestHeaders } });
 
   const session = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
-  if (session) {
+  if (session && (session.role !== "WORKSPACE_MEMBER" || process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true")) {
     requestHeaders.set("x-admin-authenticated", "true");
     requestHeaders.set("x-access-role", session.role);
     requestHeaders.set("x-access-email", session.email);
@@ -293,7 +294,7 @@ export async function middleware(request: NextRequest) {
         }
       } else if (internalAlertsPage || executiveBriefingPage || operatingReviewPage || weeklyManagementReviewPage || continuousImprovementPage) {
         if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
-      } else if (!(pathname.startsWith("/workspace/") && pathname.split("/").length === 3) && !canSeeNavHref(session.role, pathname)) {
+      } else if (!(pathname === "/workspace" || (pathname.startsWith("/workspace/") && pathname.split("/").length === 3)) && !canSeeNavHref(session.role, pathname)) {
         return roleDenied(request, session.role, "page-access");
       }
     }
