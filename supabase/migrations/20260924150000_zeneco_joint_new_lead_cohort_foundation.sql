@@ -86,7 +86,8 @@ create or replace function public.workspace_zeneco_review_candidates()
 returns jsonb language sql stable security invoker set search_path = '' as $$
   select jsonb_build_object(
     'contacts', coalesce(jsonb_agg(jsonb_build_object(
-      'id', rows.id, 'brand_id', rows.brand_id, 'brand', rows.brand,\n      'name', rows.name, 'email', rows.email,
+      'id', rows.id, 'brand_id', rows.brand_id, 'brand', rows.brand,
+      'name', rows.name, 'email', rows.email,
       'created_at', rows.created_at, 'source', rows.source,
       'status', coalesce(rows.eligibility, 'unreviewed')
     ) order by rows.created_at desc, rows.id), '[]'::jsonb),
