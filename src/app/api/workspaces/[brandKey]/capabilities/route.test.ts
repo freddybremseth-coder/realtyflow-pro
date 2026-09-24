@@ -97,3 +97,60 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
     else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = oldFlag;
   }
 });
+
+test("Zen joint-write is not advertised without joint-read; Pinoso cannot advertise joint grants", async () => {
+  const previous = {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    flag: process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED,
+    fetch: globalThis.fetch,
+  };
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://workspace-test.supabase.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
+  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
+  let currentBrand = "zeneco";
+  let currentPermissions = ["crm.joint.write", "properties.catalog.read"];
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async () => ({
+      data: { brand: { id: "brand-id", brand_key: currentBrand },
+        grant: { brand_id: "brand-id", user_id: "staff-id", email: "staff@example.test",
+          status: "active", permissions: currentPermissions } }, error: null,
+    }),
+    auth: { admin: { getUserById: async (id: string) => ({
+      data: { user: { id, email: "staff@example.test" } }, error: null,
+    }) } },
+  } as unknown as SupabaseClient));
+  globalThis.fetch = (async (url: RequestInfo | URL) => {
+    if (!String(url).includes("/rest/v1/brand_settings")) throw new Error("Unexpected request");
+    return new Response(JSON.stringify({
+      settings: { profiles: [{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }] },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const signed = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+    const scoped = await GET(request(signed) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(scoped.status, 200);
+    assert.deepEqual((await scoped.json()).permissions, ["properties.catalog.read"]);
+
+    currentPermissions = ["crm.joint.read", "crm.joint.write", "crm.read", "crm.write"];
+    const joint = await GET(request(signed) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(joint.status, 200);
+    assert.deepEqual((await joint.json()).permissions, ["crm.joint.read", "crm.joint.write"]);
+
+    currentBrand = "pinosoecolife";
+    currentPermissions = ["crm.joint.read", "crm.joint.write", "properties.catalog.read"];
+    const otherBrand = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
+    assert.equal(otherBrand.status, 200);
+    assert.deepEqual((await otherBrand.json()).permissions, ["properties.catalog.read"]);
+  } finally {
+    globalThis.fetch = previous.fetch;
+    for (const [key, value] of [
+      ["NEXT_PUBLIC_SUPABASE_URL", previous.url],
+      ["SUPABASE_SERVICE_ROLE_KEY", previous.key],
+      ["REALTYFLOW_WORKSPACE_MEMBERS_ENABLED", previous.flag],
+    ] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
