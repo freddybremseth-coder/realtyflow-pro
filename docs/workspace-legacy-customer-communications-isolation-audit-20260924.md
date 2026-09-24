@@ -45,3 +45,16 @@ The shared Zen contact row is now locked before the staff edit function performs
 `/api/internal-alerts` also rejects a signed `WORKSPACE_MEMBER` directly in its legacy handler, **before** querying any all-brand customer or task data, even if a future code path bypasses middleware. The direct-handler negative test verifies no external database request occurs.
 
 No current CRM messages, global tasks, earlier interactions, file attachments or cross-brand activity are copied into the employee workspace. New joint-only tasks/messages, if later needed, must have independently designed permission and data contracts rather than reusing the full legacy endpoints.
+
+
+## Separat felles oppgavebok (utkast, ikke aktivert)
+
+Den nye migrasjonen `20260924160000_zeneco_joint_tasks_isolated_foundation.sql` oppretter **utelukkende** `core.zeneco_joint_work_items` for helt nye oppgaver. Verken eldre `public.work_items`, e-poster, sosial innboks, kundeportal, `contacts.notes` eller `contacts.interactions` kopieres eller deles. Ingen oppgaver sendes som kundemeldinger, ingen automatiske følgerutiner kjøres, og ingen eksisterende kunder blir felles gjennom en oppgave.
+
+Egne rettigheter `tasks.joint.read` og `tasks.joint.write` kan kun foreslås for Zen; de forutsetter separat `crm.joint.read`, og skriveadgang forutsetter oppgave-leseadgang. Skriveadgang gir bare anledning til å **opprette** en ny oppgave med kort tittel/valgfri frist og **markere den fullført**. Ingen friteksthistorikk, vedlegg, endring av kundestatus, sletting, gjenåpning, generell CRM-oppgaveadministrasjon eller utgående kommunikasjon er tilgjengelig.
+
+Hvert serverkall kontrollerer live medarbeiderprofil, eksakt Supabase Auth-UUID/e-post, gjeldende Zen-medlemskap, egne oppgaverettigheter, to samsvarende Zen-merkevarefelt i CRM og individuelt eiergodkjent ny kundekohort. Opprettelse/fullføring låser den samme kundeposten som eierens godkjennings-/tilbakekallingsfunksjon, slik at et allerede tilbakekalt kundegrunnlag ikke kan brukes når en ventende oppgaveoperasjon fortsetter.
+
+Grensesnittet viser en egen `Felles oppgaver`-fane bare dersom rettighetene finnes og CRM kan vise individuelt godkjente nye kunder. Brukeren må velge en slik kunde. Oppgavene forsvinner fra medarbeiderens visning dersom kunden eller medlemskapet tilbakekalles; oppgavehistorikken blir liggende serverinternt for revisjon.
+
+Den isolerte PostgreSQL-integrasjonstesten installerer alle fire migrasjonsutkast i en midlertidig testdatabase og rapporterte **60 beståtte kontroller** etter utvidelsen, inkludert separate oppgavegrants, gamle og feilmerkede kunder, opprettelse/fullføring, feil kundereferanse, manglende innsyn etter tilbakekalling og at global `public.work_items` ikke brukes. Dette er ikke en produksjonsgodkjenning: Kjør full CI på siste kodeversjon og gjennomgå tilgangsutkast før eventuell utrulling.
