@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const { context, failure } = await ownerAccess(request);
-  if (failure || !context) return failure;
+  if (failure) return failure;
+  if (!context) return response({ error: "OWNER_REQUIRED" }, 403);
   const origin = request.headers.get("origin");
   const requestOrigin = new URL(request.url).origin;
   if ((origin && origin !== requestOrigin) ||
