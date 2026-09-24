@@ -11,6 +11,7 @@ const HOME_BY_ROLE: Record<string, string> = {
   MARKETING: "/attribution",
   KEYHOLDING: "/care",
   VIEWER: "/revenue-command",
+  WORKSPACE_MEMBER: "/workspace",
 };
 
 export async function POST(request: NextRequest) {
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest) {
     if (resolved.error) return NextResponse.json({ error: "Tilgangsprofilen kunne ikke kontrolleres." }, { status: 503 });
     if (!resolved.profile || !resolved.profile.active) return NextResponse.json({ error: "Denne e-posten har ikke aktiv tilgang til RealtyFlow." }, { status: 403 });
     role = resolved.profile.role;
+    if (role === "WORKSPACE_MEMBER" && process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") {
+      return NextResponse.json({ error: "Arbeidsområdet er ikke aktivert for medarbeidere ennå." }, { status: 403 });
+    }
   }
 
   const token = await createAdminSession(normalizedEmail, role);
