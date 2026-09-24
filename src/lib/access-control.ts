@@ -136,10 +136,17 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
   // The route itself verifies the current membership, Auth user and row scope.
   // Access-plan administration and any unknown workspace route remain OWNER_ONLY.
   const workspaceParts = path.split("/");
-  if (method.toUpperCase() === "GET" && workspaceParts.length === 5 &&
+  if (workspaceParts.length === 5 &&
     workspaceParts[1] === "api" && workspaceParts[2] === "workspaces" &&
-    /^[a-z0-9][a-z0-9-]{1,62}$/.test(workspaceParts[3]) &&
-    (["contacts", "properties", "capabilities"].includes(workspaceParts[4]))) return "AUTHENTICATED";
+    /^[a-z0-9][a-z0-9-]{1,62}$/.test(workspaceParts[3])) {
+    const workspaceRoute = workspaceParts[4];
+    if (method.toUpperCase() === "GET" &&
+      ["contacts", "properties", "capabilities"].includes(workspaceRoute)) return "AUTHENTICATED";
+    // The scoped CRM handler independently enforces crm.write, exact brand and
+    // a narrow writable-field list; do not allow mutation of other modules.
+    if (workspaceRoute === "contacts" && ["POST", "PATCH"].includes(method.toUpperCase()))
+      return "AUTHENTICATED";
+  }
   if (path.startsWith("/api/access-control")) return "OWNER_ONLY";
   if (path.startsWith("/api/platform")) return "OWNER_ONLY";
   if (path.startsWith("/api/audit-log")) return "audit.read";
