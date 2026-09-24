@@ -17,6 +17,7 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "properties.catalog.read": { title: "Eiendomskatalog", description: "Se vanlige boligoppføringer. Ikke intern pris-/importdata." },
   "crm.read": { title: "Kunder og CRM – se", description: "Les kun kunder som er knyttet til valgt merkevare." },
   "crm.write": { title: "Kunder og CRM – endre", description: "Opprette kontakter og endre navn, e-post og telefon i egen merkevare. Oppfølging og status kommer senere." },
+  "crm.joint.read": { title: "Zen · kun nye felles kunder", description: "Les bare manuelt godkjente nye Zen Eco Homes-kunder. Ingen eldre Zen-kunder og ingen skrivetilgang." },
   "marketing.read": { title: "Markedsføring – se", description: "Se innhold og kampanjer for valgt merkevare." },
   "marketing.draft": { title: "Markedsføring – lage utkast", description: "Lage Reels, videoutkast, tekst og innholdskalender." },
   "marketing.publish": { title: "Publisere i sosiale medier", description: "Kun godkjente kontoer for merkevaren. Krever separat teknisk kontroll før aktivering." },
@@ -99,7 +100,13 @@ export default function WorkspaceAccessPage() {
           <section className="space-y-5 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
             <h2 className="text-xl font-semibold">1. Hvem skal jobbe hvor?</h2>
             <label className="block text-sm text-slate-300">Merkevare
-              <select className={input} value={brandKey} onChange={(event) => setBrandKey(event.target.value)}>
+              <select className={input} value={brandKey} onChange={(event) => {
+                const nextBrand = event.target.value;
+                setBrandKey(nextBrand);
+                setPermissions(nextBrand === "zeneco"
+                  ? [...suggested.filter(permission => permission !== "crm.read" && permission !== "crm.write"), "crm.joint.read"]
+                  : suggested);
+              }}>
                 {payload.brands.map((brand) => <option key={brand.id} value={brand.brand_key}>{brand.display_name} ({brand.brand_key})</option>)}
               </select>
             </label>
@@ -125,7 +132,9 @@ export default function WorkspaceAccessPage() {
             </div>}
             <h2 className="text-xl font-semibold">2. Velg rettigheter</h2>
             <div className="space-y-2">
-              {WORKSPACE_PERMISSIONS.map((permission) => (
+              {WORKSPACE_PERMISSIONS.filter(permission => brandKey === "zeneco"
+                ? permission !== "crm.read" && permission !== "crm.write"
+                : permission !== "crm.joint.read").map((permission) => (
                 <label key={permission} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                   <input type="checkbox" className="mt-1 accent-cyan-500" checked={permissions.includes(permission)}
                     onChange={(event) => setPermissions((current) => event.target.checked ? [...current, permission] : current.filter((value) => value !== permission))} />
