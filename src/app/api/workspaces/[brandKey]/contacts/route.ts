@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 const noStore = { "Cache-Control": "private, no-store" };
 const PAGE_SIZE = 50;
-const SAFE_CONTACT_COLUMNS = "id,name,email,phone,brand_id,pipeline_status,source,updated_at";
+const SAFE_CONTACT_COLUMNS = "id,name,email,phone,brand_id,brand,pipeline_status,source,updated_at";
 
 /** Only brand-assigned contacts. No cross-brand fallbacks, duplicate search or inferred sharing. */
 export async function GET(
@@ -30,7 +30,9 @@ export async function GET(
   // Keep the dot in a normal email address while stripping syntax-like dots
   // from general text searches. Parentheses and commas are always removed.
   const safeTerm = term.includes("@") ? term : term.replace(/[.,()]/g, " ").trim();
-  let query = access.value.supabase.from("contacts").select(SAFE_CONTACT_COLUMNS).eq("brand_id", brandKey);
+  // Legacy CRM stores BOTH labels. Require agreement, never infer sharing from just one tag.
+  let query = access.value.supabase.from("contacts").select(SAFE_CONTACT_COLUMNS)
+    .eq("brand_id", brandKey).eq("brand", brandKey);
   if (safeTerm) {
     query = query.or(`name.ilike.%${safeTerm}%,email.ilike.%${safeTerm}%,phone.ilike.%${safeTerm}%`);
   }
@@ -102,7 +104,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
   const { data, error } = await access.value.supabase.from("contacts")
     .insert({ ...input.value, brand_id: brandKey, brand: brandKey, pipeline_status: "NEW" })
     .select(SAFE_CONTACT_COLUMNS).single();
-  if (error || !data || data.brand_id !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+  if (error || !data || data.brand_id !== brandKey || data.brand !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
   return NextResponse.json({ ok: true, brand: brandKey, contact: data }, { status: 201, headers: noStore });
 }
 
@@ -125,10 +127,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
   if (!input.value) return failWrite(400, input.error);
   const { data, error } = await access.value.supabase.from("contacts")
     .update({ ...input.value, updated_at: new Date().toISOString() })
-    .eq("id", id).eq("brand_id", brandKey)
+    .eq("id", id).eq("brand_id", brandKey).eq("brand", brandKey)
     .select(SAFE_CONTACT_COLUMNS).maybeSingle();
   if (error) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
   if (!data) return failWrite(404, "CONTACT_NOT_FOUND");
-  if (data.brand_id !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+  if (data.brand_id !== brandKey || data.brand !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
   return NextResponse.json({ ok: true, brand: brandKey, contact: data }, { headers: noStore });
 }
