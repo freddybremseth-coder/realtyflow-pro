@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const { data: authResult, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !authResult?.user) continue;
     const permissions = WORKSPACE_PERMISSIONS.filter(permission =>
+      (brand.brand_key !== "zeneco" || (permission !== "crm.read" && permission !== "crm.write")) &&
       roleAllowsWorkspacePermission(context.role, permission) &&
       hasVerifiedBrandGrant({
         grant, brandId: brand.id, sessionEmail: context.email,
