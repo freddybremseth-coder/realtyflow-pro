@@ -1,4 +1,4 @@
-export const ACCESS_ROLES = ["OWNER", "SALES", "CLOSING", "FINANCE", "MARKETING", "KEYHOLDING", "VIEWER"] as const;
+export const ACCESS_ROLES = ["OWNER", "SALES", "CLOSING", "FINANCE", "MARKETING", "KEYHOLDING", "VIEWER", "WORKSPACE_MEMBER"] as const;
 export type AccessRole = (typeof ACCESS_ROLES)[number];
 
 export const ACCESS_ROLE_LABELS: Record<AccessRole, string> = {
@@ -9,6 +9,7 @@ export const ACCESS_ROLE_LABELS: Record<AccessRole, string> = {
   MARKETING: "Marketing",
   KEYHOLDING: "Keyholding",
   VIEWER: "Read-only",
+  WORKSPACE_MEMBER: "Brand workspace member",
 };
 
 export const ACCESS_PERMISSIONS = [
@@ -69,6 +70,9 @@ export const ROLE_PERMISSIONS: Record<AccessRole, AccessPermission[]> = {
     "communications.read", "communications.write", "execution.read", "execution.write",
   ],
   VIEWER: [...READ_PERMISSIONS],
+  // Narrow member role has ZERO global privileges. The separate workspace
+  // guard checks exact membership and module grants on every request.
+  WORKSPACE_MEMBER: [],
 };
 
 export interface AccessProfile {
