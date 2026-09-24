@@ -34,7 +34,7 @@ export async function liveRoleForMiddleware(email: string): Promise<AccessRole |
       typeof profile.email === "string" &&
       profile.email.trim().toLowerCase() === email.trim().toLowerCase()
     ));
-    if (matching.length !== 1 || matching[0].active !== true) return null;
+    if (matching.length !== 1 || matching[0].active === false) return null;
     const role = normalizeRole(matching[0].role);
     if (!role || role === "OWNER") return null;
     if (role === "WORKSPACE_MEMBER" && process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
