@@ -32,8 +32,15 @@ const client = new Client({ connectionString: localUrl, application_name: "isola
 let checks = 0;
 const verify = (condition, message) => { checks += 1; assert(condition, message); };
 async function sql(query, args = []) { return client.query(query, args); }
+// Execute privileged RPCs as a realistic Supabase service_role, not the
+// superuser fixture: missing schema/table/function grants must fail in CI.
+async function serviceSql(query, args = []) {
+  await sql("set role service_role");
+  try { return await sql(query, args); }
+  finally { await sql("reset role"); }
+}
 async function review(id, action, first = null) {
-  const result = await sql(
+  const result = await serviceSql(
     "select public.workspace_zeneco_review_lead($1::uuid,$2::text,$3::timestamptz,$4::text,$5::text,$6::text,$7::text) as ok",
     [id, action, first, first ? "website form" : null,
       first ? "intake-evidence-20260924-1" : null,
@@ -42,14 +49,14 @@ async function review(id, action, first = null) {
   return result.rows[0].ok;
 }
 async function list(user = member, email = "staff@example.test") {
-  const res = await sql(
+  const res = await serviceSql(
     "select public.workspace_zeneco_joint_contacts($1::uuid,$2::text,0,'') as result",
     [user, email],
   );
   return res.rows[0].result;
 }
 async function edit(id = newId, name = "Updated eligible name") {
-  const res = await sql(
+  const res = await serviceSql(
     "select public.workspace_zeneco_joint_contact_update($1::uuid,$2::text,$3::uuid,$4::text,$5::text,$6::text) as result",
     [member, "staff@example.test", id, name, "updated@example.test", "+34600000000"],
   );
@@ -66,6 +73,9 @@ try {
     const existing = await sql("select 1 from pg_roles where rolname=$1", [role]);
     if (!existing.rowCount) await sql("create role " + role + " nologin");
   }
+  // Production Supabase service_role has BYPASSRLS. Match it ONLY in the
+  // disposable local CI database after legacy migration tests have finished.
+  await sql("alter role service_role bypassrls");
   await sql("drop schema if exists core cascade");
   await sql("drop schema if exists auth cascade");
   await sql("drop schema if exists public cascade");
@@ -104,7 +114,7 @@ try {
     "insert into public.contacts (id,name,brand_id,brand,created_at,source) values ($1,'Historical Zen','zeneco','zeneco',$5,'website'),($2,'New Zen','zeneco','zeneco',$6,'website'),($3,'Reimported historical','zeneco','zeneco',$6,'old export'),($4,'Other brand','pinosoecolife','pinosoecolife',$6,'website')",
     [old, newId, importedOld, other, older, newer],
   );
-  const candidate = await sql("select public.workspace_zeneco_review_candidates() as result");
+  const candidate = await serviceSql("select public.workspace_zeneco_review_candidates() as result");
   verify(candidate.rows[0].result.contacts.length === 2, "Candidate view leaked historical or other-brand records");
   verify(candidate.rows[0].result.contacts.every(row => row.brand_id === "zeneco" && row.brand === "zeneco"),
     "Candidate brand fields must agree");
