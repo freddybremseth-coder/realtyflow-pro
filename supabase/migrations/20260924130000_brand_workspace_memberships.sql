@@ -9,7 +9,7 @@ create table if not exists core.brand_workspace_memberships (
     check (status in ('active', 'disabled', 'revoked')),
   permissions text[] not null default '{}'::text[]
     check (permissions <@ array[
-      'crm.read', 'crm.write', 'properties.catalog.read',
+      'crm.read', 'crm.write', 'crm.joint.read', 'properties.catalog.read',
       'marketing.read', 'marketing.draft', 'marketing.publish'
     ]::text[]),
   created_at timestamptz not null default now(),
