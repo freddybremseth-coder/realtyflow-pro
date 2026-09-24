@@ -34,8 +34,10 @@ export async function requireBrandWorkspace(
   // Owner-only migration proxy cannot act as a human workspace session.
   if (context.source === "remaster-proxy") return reject(403, "ACCESS_DENIED");
   if (context.role !== "OWNER") {
-    const legacyPermission: AccessPermission = permission.startsWith("crm.") ? "customers.read"
-      : permission.startsWith("marketing.") ? "marketing.read" : "revenue.read";
+    const legacyPermission: AccessPermission = permission === "crm.write" ? "customers.write"
+      : permission === "crm.read" ? "customers.read"
+      : permission === "marketing.publish" || permission === "marketing.draft" ? "marketing.write"
+      : permission === "marketing.read" ? "marketing.read" : "revenue.read";
     if (!hasPermission(context.role, legacyPermission)) return reject(403, "ACCESS_DENIED");
   }
   const supabase = getPlatformSupabase();
