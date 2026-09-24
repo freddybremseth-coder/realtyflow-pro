@@ -12,8 +12,9 @@ const files = [
   "20260924150000_zeneco_joint_new_lead_cohort_foundation.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
-assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname),
-  "Require a local isolated PostgreSQL service");
+assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
+  new URL(localUrl).pathname === "/remaster_migration_test",
+  "Require the explicitly named local isolated migration-test PostgreSQL database");
 assert(!process.env.SUPABASE_DB_URL && !process.env.POSTGRES_URL && !process.env.DATABASE_URL,
   "Refuse connections when production-style database variables are configured");
 
@@ -59,7 +60,17 @@ try {
   await client.connect();
   await sql("set statement_timeout = '30s'");
   await sql("set lock_timeout = '5s'");
-  await sql("create role anon nologin; create role authenticated nologin; create role service_role nologin");
+  // Existing isolated migration tests have already created these roles and may
+  // have left fixture schemas. Reset only this explicitly local test database.
+  for (const role of ["anon", "authenticated", "service_role"]) {
+    const existing = await sql("select 1 from pg_roles where rolname=$1", [role]);
+    if (!existing.rowCount) await sql("create role " + role + " nologin");
+  }
+  await sql("drop schema if exists core cascade");
+  await sql("drop schema if exists auth cascade");
+  await sql("drop schema if exists public cascade");
+  await sql("create schema public");
+  await sql("grant all on schema public to public");
   await sql("create schema auth; create schema core");
   await sql("create table auth.users (id uuid primary key, email text)");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
