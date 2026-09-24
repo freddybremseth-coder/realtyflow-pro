@@ -24,16 +24,13 @@ export async function GET(request: NextRequest) {
   if (failure) return failure;
   const supabase = getPlatformSupabase();
   if (!supabase) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
-  const [brandsResult, draftsResult] = await Promise.all([
-    supabase.schema("core").from("brands").select("id,brand_key,display_name").order("display_name"),
-    supabase.schema("core").from("brand_workspace_access_plans")
-      .select("brand_id,email,permissions,status,updated_by,updated_at")
-      .order("updated_at", { ascending: false }).limit(500),
-  ]);
-  if (brandsResult.error || draftsResult.error) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
+  const { data, error } = await supabase.rpc("workspace_access_snapshot");
+  if (error || !data || !Array.isArray(data.brands) || !Array.isArray(data.plans)) {
+    return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
+  }
   return response({
-    brands: brandsResult.data || [],
-    plans: draftsResult.data || [],
+    brands: data.brands,
+    plans: data.plans,
     activationAvailable: false,
     message: "Dette er kun tilgangsutkast. Ingen tilgang aktiveres eller invitasjoner sendes.",
   });
@@ -69,25 +66,14 @@ export async function POST(request: NextRequest) {
   }
   const supabase = getPlatformSupabase();
   if (!supabase) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
-  const { data: brand, error: brandError } = await supabase.schema("core").from("brands")
-    .select("id").eq("brand_key", brandKey).maybeSingle();
-  if (brandError) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
-  if (!brand) return response({ error: "WORKSPACE_NOT_FOUND" }, 404);
-
-  const table = supabase.schema("core").from("brand_workspace_access_plans");
-  if (action === "DISCARD_DRAFT") {
-    const { data, error } = await table.update({
-      status: "discarded", updated_by: context.email, updated_at: new Date().toISOString(),
-    }).eq("brand_id", brand.id).eq("email", email).eq("status", "draft").select("email").maybeSingle();
-    if (error) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
-    if (!data) return response({ error: "DRAFT_NOT_FOUND" }, 404);
-  } else {
-    // The draft table is NEVER consulted by the live authorisation guard.
-    const { error } = await table.upsert({
-      brand_id: brand.id, email, permissions: permissions as WorkspacePermission[],
-      status: "draft", updated_by: context.email, updated_at: new Date().toISOString(),
-    }, { onConflict: "brand_id,email" });
-    if (error) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
-  }
+  // Public-schema RPC is service-role-only and writes ONLY a draft, never an actual grant.
+  const { data: saved, error } = await supabase.rpc("workspace_access_save_draft", {
+    p_brand_key: brandKey, p_email: email,
+    p_permissions: action === "SAVE_DRAFT" ? permissions as WorkspacePermission[] : [],
+    p_status: action === "SAVE_DRAFT" ? "draft" : "discarded",
+    p_actor: context.email,
+  });
+  if (error) return response({ error: "WORKSPACE_UNAVAILABLE" }, 503);
+  if (!saved) return response({ error: action === "SAVE_DRAFT" ? "WORKSPACE_NOT_FOUND" : "DRAFT_NOT_FOUND" }, 404);
   return response({ ok: true, activationAvailable: false });
 }
