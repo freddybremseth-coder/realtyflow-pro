@@ -153,6 +153,7 @@ type NavigationPreferences = {
   version: number;
   favorites: string[];
   collapsed: boolean;
+  simpleMode?: boolean;
 };
 
 function preferenceKey(email: string) {
@@ -206,6 +207,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+  const [simpleMode, setSimpleMode] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [query, setQuery] = useState("");
@@ -232,13 +234,28 @@ export function Sidebar() {
     };
   }, [router]);
 
-  const visibleSections = useMemo(
+  const fullVisibleSections = useMemo(
     () => (user ? buildVisibleNavigation(user.role, user.permissions) : []),
     [user],
   );
+  // Presentation only. Advanced routes, APIs and permissions are unchanged;
+  // the staff shell uses its own brand-scoped navigation and data guards.
+  const simpleOwnerHrefs = new Set([
+    "/workspaces", "/nexus-os/today", "/customers", "/inventory",
+    "/growth-hub", "/remaster-freddy", "/billing", "/nexus-os",
+    "/workspace-access",
+  ]);
+  const visibleSections = useMemo(() => (
+    user?.role === "OWNER" && simpleMode
+      ? fullVisibleSections
+          .map(section => ({ ...section, items: section.items.filter(item => simpleOwnerHrefs.has(item.href)) }))
+          .filter(section => section.items.length > 0)
+      : fullVisibleSections
+  ), [user, simpleMode, fullVisibleSections]);
+  // Keep all saved favorites when toggling modes, even if not shown in simple mode.
   const availableHrefs = useMemo(
-    () => visibleSections.flatMap((section) => section.items.map((item) => item.href)),
-    [visibleSections],
+    () => fullVisibleSections.flatMap((section) => section.items.map((item) => item.href)),
+    [fullVisibleSections],
   );
   const availableKey = availableHrefs.join("|");
 
@@ -247,6 +264,7 @@ export function Sidebar() {
     const preferences = readPreferences(user.email);
     setFavorites(normalizeNavigationFavorites(preferences.favorites, availableHrefs));
     setCollapsed(Boolean(preferences.collapsed));
+    setSimpleMode(preferences.simpleMode !== false);
     setPreferencesLoaded(true);
   }, [user, availableKey]);
 
@@ -256,9 +274,10 @@ export function Sidebar() {
       version: NAV_PREFERENCES_VERSION,
       favorites: normalizeNavigationFavorites(favorites, availableHrefs),
       collapsed,
+      simpleMode,
     };
     window.localStorage.setItem(preferenceKey(user.email), JSON.stringify(preferences));
-  }, [user, preferencesLoaded, favorites, collapsed, availableKey]);
+  }, [user, preferencesLoaded, favorites, collapsed, simpleMode, availableKey]);
 
   useEffect(() => {
     document.documentElement.dataset.realtyflowSidebar = collapsed ? "collapsed" : "expanded";
@@ -357,6 +376,15 @@ export function Sidebar() {
         </label>
       </div>
 
+      {user?.role === "OWNER" && (
+        <div className={cn("px-3 pb-3", collapsed && "lg:hidden")}>
+          <button type="button" onClick={() => setSimpleMode(mode => !mode)}
+            className="w-full rounded-lg border border-slate-700 px-3 py-2 text-left text-xs font-medium text-cyan-300 hover:bg-slate-800"
+            aria-pressed={!simpleMode}>
+            {simpleMode ? "Vis alle funksjoner" : "Bruk enkel meny"}
+          </button>
+        </div>
+      )}
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {!user && <div className="px-3 py-4 text-xs text-slate-600">Laster tilgang…</div>}
 
