@@ -22,7 +22,7 @@ Status: security audit and implementation boundary for draft PR #1028. No staff 
 
 ### Important legacy intake observation
 
-The existing `/api/portal/messages` POST currently looks up contacts by **email only**, without matching both Zen brand fields, and then creates a Zen-tagged message/work item. That lookup is not trustworthy evidence of who originally enquired after the agreement cutoff; do not use it to autoapprove joint customers or build new member queries. Improving that legacy portal contact attribution requires a separate scoped migration and regression review so existing customer sign-ins are not unexpectedly changed. The new joint workspace neither reads nor uses that route to infer eligibility.
+The pre-existing `/api/portal/messages` POST looked up contacts by **email only**, without matching both Zen brand fields, and then created a Zen-tagged message/work item. This PR now restricts GET to authenticated customers' **Zen-only** messages and POST contact attribution to independently matching `contacts.brand_id='zeneco'` **and** `contacts.brand='zeneco'` and verified customer email. The server independently filters GET results and rejects an unexpectedly mismatched POST contact lookup result. Authenticated customers with ambiguous legacy brand tags may still send their message, but the route deliberately does **not** link a cross-brand CRM contact or create a linked contact task. This does not grant a staff member access to any portal content, and portal events do not automatically approve joint leads. Synthetic API tests cover same-email cross-brand messages and contact attribution without touching real customer records.
 
 ## Required gates before any new tasks or communications
 
@@ -36,3 +36,12 @@ The existing `/api/portal/messages` POST currently looks up contacts by **email 
 
 - The prior exact-head CI run passed all 8 workflows, including separate, temporary PostgreSQL integration testing with 30 checks of approved versus historical cohorts, audited narrow contact edits, role grants and revocation. The next CI run must also pass the new middleware, capabilities, optional-RPC compatibility and portal-auth independence tests.
 - Schema inventory was read-only on the existing Supabase project and included table/column names and types only; no actual customer/communication rows were retrieved for this review.
+
+
+## Race-condition and service-role staging checks
+
+The shared Zen contact row is now locked before the staff edit function performs its separate, fresh eligibility check. The owner revoke function also locks that exact contact before changing its cohort status. In the isolated PostgreSQL integration test, an employee edit is deliberately blocked on the owner's customer-row lock; the owner then revokes eligibility and commits. The pending edit returns no row and does not modify the customer or produce an edit audit. This prevents a stale snapshot from authorizing an edit after an owner revocation. The test now executes the review/read/edit RPCs under a fixture `service_role` with Supabase-like `BYPASSRLS` rather than solely as the test superuser. All of these checks use an ephemeral local database and synthetic customer IDs.
+
+`/api/internal-alerts` also rejects a signed `WORKSPACE_MEMBER` directly in its legacy handler, **before** querying any all-brand customer or task data, even if a future code path bypasses middleware. The direct-handler negative test verifies no external database request occurs.
+
+No current CRM messages, global tasks, earlier interactions, file attachments or cross-brand activity are copied into the employee workspace. New joint-only tasks/messages, if later needed, must have independently designed permission and data contracts rather than reusing the full legacy endpoints.
