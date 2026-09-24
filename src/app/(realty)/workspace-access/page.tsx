@@ -12,7 +12,7 @@ type Payload = { brands: Brand[]; plans: Plan[]; contactCounts: ContactCount[]; 
 const permissionLabels: Record<WorkspacePermission, { title: string; description: string }> = {
   "properties.catalog.read": { title: "Eiendomskatalog", description: "Se vanlige boligoppføringer. Ikke intern pris-/importdata." },
   "crm.read": { title: "Kunder og CRM – se", description: "Les kun kunder som er knyttet til valgt merkevare." },
-  "crm.write": { title: "Kunder og CRM – endre", description: "Opprette kontakter, oppdatere kundekort og planlegge oppfølging." },
+  "crm.write": { title: "Kunder og CRM – endre", description: "Opprette kontakter og endre navn, e-post og telefon i egen merkevare. Oppfølging og status kommer senere." },
   "marketing.read": { title: "Markedsføring – se", description: "Se innhold og kampanjer for valgt merkevare." },
   "marketing.draft": { title: "Markedsføring – lage utkast", description: "Lage Reels, videoutkast, tekst og innholdskalender." },
   "marketing.publish": { title: "Publisere i sosiale medier", description: "Kun godkjente kontoer for merkevaren. Krever separat teknisk kontroll før aktivering." },
