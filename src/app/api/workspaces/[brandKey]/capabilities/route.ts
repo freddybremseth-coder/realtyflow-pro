@@ -37,6 +37,11 @@ export async function GET(
     const { data: identity, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !identity?.user) return fail(403, "ACCESS_DENIED");
     permissions = WORKSPACE_PERMISSIONS.filter(permission =>
+      (brandKey === "zeneco"
+        ? permission !== "crm.read" && permission !== "crm.write"
+        : permission !== "crm.joint.read" && permission !== "crm.joint.write") &&
+      (permission !== "crm.joint.write" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
       roleAllowsWorkspacePermission(context.role, permission) &&
       hasVerifiedBrandGrant({
         grant, brandId: scope.brand.id, sessionEmail: context.email,
