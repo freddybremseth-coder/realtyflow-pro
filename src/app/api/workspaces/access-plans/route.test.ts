@@ -152,4 +152,14 @@ test("Zen access drafts cannot grant full-brand CRM and joint CRM cannot be assi
   }) as any);
   assert.equal(forgedPinoso.status, 400);
   assert.equal((await forgedPinoso.json()).error, "INVALID_BRAND_CRM_SCOPE");
+  const partialZen = await POST(req("POST", signed, {
+    action: "SAVE_DRAFT", brandKey: "zeneco", email: "andrea@example.test", permissions: ["crm.joint.write"],
+  }) as any);
+  assert.equal(partialZen.status, 400);
+  assert.equal((await partialZen.json()).error, "INVALID_BRAND_CRM_SCOPE");
+  const forgedPinosoWrite = await POST(req("POST", signed, {
+    action: "SAVE_DRAFT", brandKey: "pinosoecolife", email: "andrea@example.test", permissions: ["crm.joint.write"],
+  }) as any);
+  assert.equal(forgedPinosoWrite.status, 400);
+  assert.equal((await forgedPinosoWrite.json()).error, "INVALID_BRAND_CRM_SCOPE");
 });
