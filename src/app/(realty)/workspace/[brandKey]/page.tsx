@@ -11,7 +11,7 @@ type Contact = { id: string; name: string | null; email: string | null; phone: s
 type Tab = "overview" | "crm" | "properties" | "marketing";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
   { id: "overview", label: "Oversikt", icon: Building2 },
-  { id: "crm", label: "Kunder", icon: Users, permitted: ["crm.read"] },
+  { id: "crm", label: "Kunder", icon: Users, permitted: ["crm.read", "crm.joint.read"] },
   { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
   { id: "marketing", label: "Markedsføring", icon: Megaphone, permitted: ["marketing.read", "marketing.draft", "marketing.publish"] },
 ];
@@ -63,10 +63,11 @@ export default function FocusedWorkspacePage() {
   }, [brandKey]);
 
   async function loadCrm() {
-    if (!permissions.includes("crm.read")) return;
+    if (!permissions.includes("crm.read") && !permissions.includes("crm.joint.read")) return;
     setCrmBusy(true); setCrmError("");
     try {
-      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/contacts?page=${crmPage}&q=${encodeURIComponent(crmQuery)}`, { cache: "no-store" });
+      const endpoint = brandKey === "zeneco" && !permissions.includes("crm.read") ? "joint-contacts" : "contacts";
+      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/${endpoint}?page=${crmPage}&q=${encodeURIComponent(crmQuery)}`, { cache: "no-store" });
       if (!result.ok) throw new Error(result.status === 403
         ? "Du har ikke CRM-tilgang i dette arbeidsområdet." : "CRM er ikke tilgjengelig ennå.");
       const body = await result.json();
@@ -75,12 +76,12 @@ export default function FocusedWorkspacePage() {
     } catch (cause) { setContacts([]); setCrmHasMore(false); setCrmError(cause instanceof Error ? cause.message : "Kunne ikke hente CRM."); }
     finally { setCrmBusy(false); }
   }
-  useEffect(() => { if (permissions.includes("crm.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery]);
+  useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery]);
   const filtered = contacts;
   const visibleTabs = tabs.filter(item => !item.permitted || item.permitted.some(permission => permissions.includes(permission)));
-  const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey;
-  const showCrm = permissions.includes("crm.read");
-  const canEditCrm = showCrm && permissions.includes("crm.write");
+  const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
+  const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
+  const canEditCrm = permissions.includes("crm.read") && permissions.includes("crm.write");
   const showProperties = permissions.includes("properties.catalog.read");
   const showMarketing = permissions.some(p => p.startsWith("marketing."));
 
