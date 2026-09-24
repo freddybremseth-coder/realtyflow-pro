@@ -27,6 +27,29 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
 };
 const suggested: WorkspacePermission[] = ["properties.catalog.read", "crm.read", "crm.write", "marketing.read", "marketing.draft"];
 
+/** Draft-only dependency helper; never enables a real member or CRM grant. */
+function togglePermission(current: WorkspacePermission[], permission: WorkspacePermission, checked: boolean) {
+  const next = new Set(current);
+  if (checked) {
+    next.add(permission);
+    if (permission === "crm.joint.write") next.add("crm.joint.read");
+    if (permission === "tasks.joint.read") next.add("crm.joint.read");
+    if (permission === "tasks.joint.write") {
+      next.add("crm.joint.read");
+      next.add("tasks.joint.read");
+    }
+  } else {
+    next.delete(permission);
+    if (permission === "crm.joint.read") {
+      next.delete("crm.joint.write");
+      next.delete("tasks.joint.read");
+      next.delete("tasks.joint.write");
+    }
+    if (permission === "tasks.joint.read") next.delete("tasks.joint.write");
+  }
+  return WORKSPACE_PERMISSIONS.filter(candidate => next.has(candidate));
+}
+
 export default function WorkspaceAccessPage() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [brandKey, setBrandKey] = useState("");
@@ -146,7 +169,7 @@ export default function WorkspaceAccessPage() {
                 : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)).map((permission) => (
                 <label key={permission} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                   <input type="checkbox" className="mt-1 accent-cyan-500" checked={permissions.includes(permission)}
-                    onChange={(event) => setPermissions((current) => event.target.checked ? [...current, permission] : current.filter((value) => value !== permission))} />
+                    onChange={(event) => setPermissions((current) => togglePermission(current, permission, event.target.checked))} />
                   <span><span className="block font-medium">{permissionLabels[permission].title}</span><span className="text-sm text-slate-400">{permissionLabels[permission].description}</span></span>
                 </label>
               ))}
