@@ -327,8 +327,15 @@ export async function getGenreImages(genre: string, count = 20): Promise<GenreIm
       }));
 
       console.log(`[Supabase] Found ${images.length} images for genre "${g}" (requested "${genre}")`);
-      const shuffled = shuffleArray(images);
-      return shuffled.slice(0, count);
+      // Public Supabase Storage URLs are durable. Legacy Airtable attachment
+      // URLs expire, so never select them ahead of available first-party files.
+      const durable = shuffleArray(images.filter((image) =>
+        /\/storage\/v1\/object\/public\//.test(image.imageUrl || ''),
+      ));
+      const legacy = shuffleArray(images.filter((image) =>
+        !/\/storage\/v1\/object\/public\//.test(image.imageUrl || ''),
+      ));
+      return [...durable, ...legacy].slice(0, count);
     }
   }
 
