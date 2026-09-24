@@ -145,6 +145,8 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
       (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco"))) return "AUTHENTICATED";
     // The scoped CRM handler independently enforces crm.write, exact brand and
     // a narrow writable-field list; do not allow mutation of other modules.
+    if (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco" && method.toUpperCase() === "PATCH")
+      return "AUTHENTICATED";
     if (workspaceRoute === "contacts" && ["POST", "PATCH"].includes(method.toUpperCase()))
       return "AUTHENTICATED";
   }
