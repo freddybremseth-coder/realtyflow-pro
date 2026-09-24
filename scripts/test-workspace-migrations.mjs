@@ -10,6 +10,7 @@ const files = [
   "20260924130000_brand_workspace_memberships.sql",
   "20260924140000_brand_workspace_access_plans.sql",
   "20260924150000_zeneco_joint_new_lead_cohort_foundation.sql",
+  "20260924160000_zeneco_joint_tasks_isolated_foundation.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -96,7 +97,9 @@ try {
   const roles = await sql("select rolname from pg_roles where rolname in ('anon','authenticated','service_role')");
   verify(roles.rowCount === 3, "Test roles missing");
   for (const func of ["workspace_zeneco_review_candidates", "workspace_zeneco_review_lead",
-    "workspace_zeneco_joint_contacts", "workspace_zeneco_joint_contact_update"]) {
+    "workspace_zeneco_joint_contacts", "workspace_zeneco_joint_contact_update",
+    "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
+    "workspace_zeneco_joint_task_complete"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -104,7 +107,8 @@ try {
     verify(!grants.rows[0].anon && !grants.rows[0].authenticated && grants.rows[0].service,
       func + ": privileged execute grant leaked");
   }
-  for (const table of ["zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit", "zeneco_joint_contact_edit_audit"]) {
+  for (const table of ["zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
+    "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
@@ -145,7 +149,56 @@ try {
   const audit = await sql("select actor_email,changed_fields from core.zeneco_joint_contact_edit_audit where contact_id=$1", [newId]);
   verify(audit.rowCount === 1 && audit.rows[0].actor_email === "staff@example.test",
     "Joint edit audit missing");
+  const tasks = (contact = newId, email = "staff@example.test") =>
+    serviceSql("select public.workspace_zeneco_joint_tasks($1::uuid,$2::text,$3::uuid) as result",
+      [member, email, contact]).then(r => r.rows[0].result);
+  const createTask = (contact = newId, title = "Check plot selection", email = "staff@example.test") =>
+    serviceSql("select public.workspace_zeneco_joint_task_create($1::uuid,$2::text,$3::uuid,$4::text,$5::date) as result",
+      [member, email, contact, title, "2026-09-30"]).then(r => r.rows[0].result);
+  const finishTask = (contact, taskId, email = "staff@example.test") =>
+    serviceSql("select public.workspace_zeneco_joint_task_complete($1::uuid,$2::text,$3::uuid,$4::uuid) as result",
+      [member, email, contact, taskId]).then(r => r.rows[0].result);
+  verify((await tasks()).tasks.length === 0, "Task read without explicit task grant must be empty");
+  verify(await createTask() === null, "CRM edit role wrongly created a joint task");
+  await sql(
+    "update core.brand_workspace_memberships set permissions=array['crm.joint.read','crm.joint.write','tasks.joint.read']::text[] where brand_id=$1 and user_id=$2",
+    [zen, member],
+  );
+  verify((await tasks()).tasks.length === 0, "New-only task ledger contained historical legacy tasks");
+  verify(await createTask() === null, "Read-only task scope allowed task creation");
+  await sql(
+    "update core.brand_workspace_memberships set permissions=array['crm.joint.read','crm.joint.write','tasks.joint.read','tasks.joint.write']::text[] where brand_id=$1 and user_id=$2",
+    [zen, member],
+  );
+  verify(await createTask(old) === null, "Task created for historical Zen customer");
+  verify(await createTask(importedOld) === null, "Task created for unapproved reimport");
+  verify(await createTask(other) === null, "Task created for other brand customer");
+  verify(await createTask(newId, "No", "wrong@example.test") === null,
+    "Task creator email or title was not validated");
+  const createdTask = await createTask();
+  verify(createdTask?.contact_id === newId && createdTask.status === "open",
+    "A legitimate approved new Zen task was not created");
+  const taskId = createdTask.id;
+  verify((await tasks()).tasks.length === 1 && (await tasks()).tasks[0].title === "Check plot selection",
+    "Exact reviewed new-contact task is not visible");
+  verify((await tasks(newId, "wrong@example.test")).tasks.length === 0,
+    "Task read did not require the exact member email");
+  verify((await tasks(old)).tasks.length === 0 && (await tasks(other)).tasks.length === 0,
+    "Historical/foreign contact task list was exposed");
+  verify(await finishTask(old, taskId) === null, "Task completed via a different contact ID");
+  verify(await finishTask(newId, "99999999-9999-4999-8999-999999999999") === null,
+    "Task completion accepted an unrelated task ID");
+  const doneTask = await finishTask(newId, taskId);
+  verify(doneTask?.status === "done" && doneTask.finished_by_email === "staff@example.test" &&
+    doneTask.created_at, "Scoped task completion actor/status missing");
+  verify(await finishTask(newId, taskId) === null, "Completed task could be finished twice");
+  const legacyTasks = await sql("select to_regclass('public.work_items') as name");
+  verify(legacyTasks.rows[0].name === null, "Joint tasks must not use legacy work_items");
   verify(await review(newId, "REVOKE") === true, "Owner could not revoke existing joint approval");
+  verify((await tasks()).tasks.length === 0, "Revoked joint customer tasks remained visible");
+  verify(await createTask() === null, "Revoked joint customer accepted a new task");
+  verify(await finishTask(newId, taskId) === null, "Revoked joint task could still be modified");
+
   verify((await list()).contacts.length === 0, "Revoked customer still visible in joint CRM");
   verify(await edit() === null, "Revoked customer still editable");
   const row = await sql("select name from public.contacts where id=$1", [old]);
