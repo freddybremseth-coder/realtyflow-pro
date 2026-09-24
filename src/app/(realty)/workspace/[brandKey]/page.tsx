@@ -5,13 +5,15 @@ import Link from "next/link";
 import { Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
+import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; pipeline_status: string | null };
-type Tab = "overview" | "crm" | "properties" | "marketing";
+type Tab = "overview" | "crm" | "joint-tasks" | "properties" | "marketing";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
   { id: "overview", label: "Oversikt", icon: Building2 },
   { id: "crm", label: "Kunder", icon: Users, permitted: ["crm.read", "crm.joint.read"] },
+  { id: "joint-tasks", label: "Felles oppgaver", icon: Users, permitted: ["tasks.joint.read"] },
   { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
   { id: "marketing", label: "Markedsføring", icon: Megaphone, permitted: ["marketing.read", "marketing.draft", "marketing.publish"] },
 ];
@@ -81,6 +83,8 @@ export default function FocusedWorkspacePage() {
   const visibleTabs = tabs.filter(item => !item.permitted || item.permitted.some(permission => permissions.includes(permission)));
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
   const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
+  const showJointTasks = brandKey === "zeneco" && permissions.includes("crm.joint.read") && permissions.includes("tasks.joint.read");
+  const canWriteJointTasks = showJointTasks && permissions.includes("tasks.joint.write");
   const isJointCrm = brandKey === "zeneco" && !permissions.includes("crm.read") && permissions.includes("crm.joint.read");
   const canCreateCrm = permissions.includes("crm.read") && permissions.includes("crm.write");
   const canEditCrm = canCreateCrm || (isJointCrm && permissions.includes("crm.joint.write"));
@@ -149,6 +153,10 @@ export default function FocusedWorkspacePage() {
               <Users size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Kunder</h2>
               <p className="mt-1 text-sm text-slate-400">Åpne CRM og kundene i dette arbeidsområdet.</p>
             </button>}
+            {showJointTasks && <button onClick={() => setTab("joint-tasks")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
+              <Users size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Felles oppgaver</h2>
+              <p className="mt-1 text-sm text-slate-400">Kun nye oppgaver for individuelt godkjente felleskunder.</p>
+            </button>}
             {showProperties && <button onClick={() => setTab("properties")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
               <Building2 size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Eiendommer</h2>
               <p className="mt-1 text-sm text-slate-400">Søk i publiserte boliger på tvers av områder.</p>
@@ -209,6 +217,8 @@ export default function FocusedWorkspacePage() {
             <p className="mt-4 text-xs text-slate-500">Søk og visning er avgrenset til merkevaren. Opprettelse og redigering er begrenset til kontaktopplysninger; status, notater, avtaler og økonomi er ikke åpnet for medarbeidere.</p>
           </section>
         )}
+        {!loading && !error && showJointTasks && tab === "joint-tasks" &&
+          <ZenJointTasks contacts={contacts} canWrite={canWriteJointTasks} />}
         {!loading && !error && showProperties && tab === "properties" &&
           <WorkspacePropertyCatalogue brandKey={brandKey} />}
         {!loading && !error && showMarketing && tab === "marketing" &&
