@@ -1,7 +1,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
-import { hasPermission, type AccessPermission, type AccessRole } from "@/lib/access-control";
+import { type AccessRole } from "@/lib/access-control";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { hasVerifiedBrandGrant, isCanonicalBrandKey, type WorkspacePermission } from "./brand-policy";
 
@@ -23,14 +23,13 @@ function reject(status: number, code: string): Rejection {
  * safe for an employee; those must be closed before any employee is invited.
  * Neither tenant membership nor a requested brand ID constitutes permission.
  */
-export function roleAllowsWorkspacePermission(role: AccessRole, permission: WorkspacePermission) {
+export function roleAllowsWorkspacePermission(role: AccessRole, _permission: WorkspacePermission) {
+  // Do not use a legacy global SALES/MARKETING/VIEWER account as a brand member.
+  // New branded workspaces may be opened only by OWNER or a narrow,
+  // independently verified, flag-enabled WORKSPACE_MEMBER.
   if (role === "OWNER") return true;
-  if (role === "WORKSPACE_MEMBER") return process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true";
-  const legacyPermission: AccessPermission = permission === "crm.write" ? "customers.write"
-    : permission === "crm.read" ? "customers.read"
-    : permission === "marketing.publish" || permission === "marketing.draft" ? "marketing.write"
-    : permission === "marketing.read" ? "marketing.read" : "revenue.read";
-  return hasPermission(role, legacyPermission);
+  return role === "WORKSPACE_MEMBER" &&
+    process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true";
 }
 
 export async function requireBrandWorkspace(
