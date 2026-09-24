@@ -94,7 +94,9 @@ test("owner can preview aggregate assigned and ambiguous CRM counts without any 
       called.push(name);
       return name === "workspace_access_snapshot"
         ? { data: { brands: [{ id: "brand-uuid", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" }], plans: [] }, error: null }
-        : { data: [{ brand_key: "pinosoecolife", assigned: 0, needs_review: 0 }], error: null };
+        : name === "workspace_contact_brand_counts"
+          ? { data: [{ brand_key: "pinosoecolife", assigned: 0, needs_review: 0 }], error: null }
+          : { data: { new_crm_records_to_review: 0, approved_joint_records: 0 }, error: null };
     },
   } as unknown as SupabaseClient));
   const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
@@ -103,7 +105,8 @@ test("owner can preview aggregate assigned and ambiguous CRM counts without any 
   const body = await response.json();
   assert.equal(body.activationAvailable, false);
   assert.deepEqual(body.contactCounts, [{ brand_key: "pinosoecolife", assigned: 0, needs_review: 0 }]);
-  assert.deepEqual(called.sort(), ["workspace_access_snapshot", "workspace_contact_brand_counts"]);
+  assert.deepEqual(body.zenJointPreview, { new_crm_records_to_review: 0, approved_joint_records: 0 });
+  assert.deepEqual(called.sort(), ["workspace_access_snapshot", "workspace_contact_brand_counts", "workspace_zeneco_new_crm_candidates_count"]);
   assert.equal(JSON.stringify(body).includes("contact_email"), false);
 });
 
@@ -117,4 +120,22 @@ test("missing aggregate RPC fails closed, rather than fabricating counts or acti
   const response = await GET(req("GET", cookie) as any);
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, "WORKSPACE_UNAVAILABLE");
+});
+
+test("owner snapshot never equates a post-cutoff CRM row with an approved joint lead", async () => {
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async (name: string) =>
+      name === "workspace_access_snapshot"
+        ? { data: { brands: [], plans: [] }, error: null }
+        : name === "workspace_contact_brand_counts"
+          ? { data: [], error: null }
+          : { data: { new_crm_records_to_review: 4, approved_joint_records: 0 }, error: null },
+  } as unknown as SupabaseClient));
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const response = await GET(req("GET", cookie) as any);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.zenJointPreview.new_crm_records_to_review, 4);
+  assert.equal(body.zenJointPreview.approved_joint_records, 0);
+  assert.equal(body.activationAvailable, false);
 });
