@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
-import { GET } from "./route";
+import { GET, POST, PATCH } from "./route";
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let scopedResult: Array<Record<string, unknown>> = [];
@@ -12,6 +12,10 @@ function fakeDatabase() {
   const query: any = {
     select(...args: unknown[]) { calls.push({ method: "select", args }); return query; },
     eq(...args: unknown[]) { calls.push({ method: "eq", args }); return query; },
+    insert(...args: unknown[]) { calls.push({ method: "insert", args }); return query; },
+    update(...args: unknown[]) { calls.push({ method: "update", args }); return query; },
+    single() { calls.push({ method: "single", args: [] }); return Promise.resolve({ data: scopedResult[0] || null, error: null }); },
+    maybeSingle() { calls.push({ method: "maybeSingle", args: [] }); return Promise.resolve({ data: scopedResult[0] || null, error: null }); },
     or(...args: unknown[]) { calls.push({ method: "or", args }); return query; },
     order(...args: unknown[]) { calls.push({ method: "order", args }); return query; },
     range(...args: unknown[]) { calls.push({ method: "range", args }); return query; },
@@ -102,4 +106,86 @@ test("search accepts an email domain without allowing a cross-brand query", asyn
   const filter = String(calls.find(c => c.method === "or")?.args[0] || "");
   assert.equal(filter.includes("test.user@example.com"), true);
   assert.equal(calls.some(c => c.method === "eq" && c.args[0] === "brand_id" && c.args[1] === "pinosoecolife"), true);
+});
+
+function mutation(method: "POST" | "PATCH", cookie: string, body: unknown, headers: Record<string, string> = {}) {
+  return new NextRequest(base, {
+    method, headers: { cookie, "content-type": "application/json", origin: "https://realtyflow.test", ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+test("new scoped customer sets trusted brand and NEW status without looking up cross-brand duplicates", async () => {
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const result = await POST(mutation("POST", cookie, { name: "Ada", email: "Ada@Example.Test" }) as any, context);
+  assert.equal(result.status, 201);
+  const inserted = calls.find(c => c.method === "insert")?.args[0] as Record<string, unknown>;
+  assert.deepEqual(inserted, {
+    name: "Ada", email: "ada@example.test", brand_id: "pinosoecolife", pipeline_status: "NEW",
+  });
+  assert.equal(calls.some(c => c.method === "upsert" || c.method === "limit"), false);
+  assert.equal(calls.some(c => c.method === "select" && c.args[0] === "*"), false);
+});
+
+test("new scoped customer refuses user-specified brand, lifecycle, finance, notes and unknown fields", async () => {
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  for (const payload of [
+    { name: "Ada", brand_id: "zeneco" },
+    { name: "Ada", pipeline_status: "WON" },
+    { name: "Ada", commission_amount: 99999 },
+    { name: "Ada", notes: "cross-brand note" },
+    { name: "Ada", interactions: [{ to: "other brand" }] },
+  ]) {
+    const result = await POST(mutation("POST", cookie, payload) as any, context);
+    assert.equal(result.status, 400);
+  }
+  assert.equal(calls.some(c => c.method === "from"), false);
+});
+
+test("PATCH enforces both exact id and brand and only changes allowlisted fields", async () => {
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const response = await PATCH(mutation("PATCH", cookie, { id: "contact-1", name: "Ada Updated" }) as any, context);
+  assert.equal(response.status, 200);
+  const updated = calls.find(c => c.method === "update")?.args[0] as Record<string, unknown>;
+  assert.equal(updated.name, "Ada Updated");
+  assert.equal(typeof updated.updated_at, "string");
+  assert.equal(Object.keys(updated).length, 2);
+  assert.deepEqual(calls.filter(c => c.method === "eq"), [
+    { method: "eq", args: ["id", "contact-1"] },
+    { method: "eq", args: ["brand_id", "pinosoecolife"] },
+  ]);
+});
+
+test("PATCH cannot transfer or modify a different brand or financial/CRM internal columns", async () => {
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  for (const payload of [
+    { id: "contact-1", brand_id: "zeneco" },
+    { id: "contact-1", name: "Name", pipeline_status: "WON" },
+    { id: "contact-1", commission_amount: 10 },
+    { id: "contact-1", updated_at: "2020-01-01" },
+    { id: "../../other", name: "Forged id" },
+  ]) {
+    const response = await PATCH(mutation("PATCH", cookie, payload) as any, context);
+    assert.equal(response.status, 400);
+  }
+  assert.equal(calls.some(c => c.method === "from"), false);
+});
+
+test("PATCH returns 404 when id does not belong to the verified brand", async () => {
+  scopedResult = [];
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const response = await PATCH(mutation("PATCH", cookie, { id: "other-brand-contact", name: "Inaccessible" }) as any, context);
+  assert.equal(response.status, 404);
+  assert.equal(calls.some(c => c.method === "eq" && c.args[0] === "brand_id" && c.args[1] === "pinosoecolife"), true);
+});
+
+test("unsafe origin, missing content type and missing user session cannot write", async () => {
+  const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const crossOrigin = await POST(mutation("POST", cookie, { name: "Ada" }, { origin: "https://evil.example" }) as any, context);
+  assert.equal(crossOrigin.status, 403);
+  const crossSite = await PATCH(mutation("PATCH", cookie, { id: "contact-1", name: "Ada" }, { "sec-fetch-site": "cross-site" }) as any, context);
+  assert.equal(crossSite.status, 403);
+  const unsigned = await POST(mutation("POST", "", { name: "Ada" }) as any, context);
+  assert.equal(unsigned.status, 401);
+  assert.equal(calls.some(c => c.method === "from"), false);
 });
