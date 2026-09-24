@@ -162,6 +162,17 @@ test("Zen access drafts cannot grant full-brand CRM and joint CRM cannot be assi
   }) as any);
   assert.equal(forgedPinosoWrite.status, 400);
   assert.equal((await forgedPinosoWrite.json()).error, "INVALID_BRAND_CRM_SCOPE");
+  for (const [brandKey, grants] of [
+    ["pinosoecolife", ["crm.read", "tasks.joint.read"]],
+    ["zeneco", ["tasks.joint.read"]],
+    ["zeneco", ["crm.joint.read", "tasks.joint.write"]],
+  ] as const) {
+    const rejected = await POST(req("POST", signed, {
+      action: "SAVE_DRAFT", brandKey, email: "andrea@example.test", permissions: grants,
+    }) as any);
+    assert.equal(rejected.status, 400, brandKey + ":" + grants.join(","));
+    assert.equal((await rejected.json()).error, "INVALID_BRAND_CRM_SCOPE");
+  }
 });
 
 test("owner access plans remain available when only optional new Zen cohort RPC is not installed", async () => {
