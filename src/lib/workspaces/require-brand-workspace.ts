@@ -43,6 +43,14 @@ export async function requireBrandWorkspace(
   // Owner-only migration proxy cannot act as a human workspace session.
   if (context.source === "remaster-proxy") return reject(403, "ACCESS_DENIED");
   if (!roleAllowsWorkspacePermission(context.role, permission)) return reject(403, "ACCESS_DENIED");
+  // Zen Eco Homes collaboration starts with incoming leads from 24 Sep 2026,
+  // not the existing Zen Eco CRM. Until an independently verified per-contact
+  // cohort is implemented, NEVER grant a staff member a brand-wide Zen CRM read
+  // or write just because they have a Zen brand membership.
+  if (brandKey === "zeneco" && context.role !== "OWNER" &&
+    (permission === "crm.read" || permission === "crm.write")) {
+    return reject(403, "ZEN_NEW_LEADS_COHORT_REQUIRED");
+  }
   const supabase = getPlatformSupabase();
   if (!supabase) return reject(503, "WORKSPACE_UNAVAILABLE");
 
