@@ -27,7 +27,9 @@ export async function GET(
   // Characters used to construct the PostgREST OR syntax are never accepted
   // from the request. Keep the search inside the same brand-filtered DB query.
   const term = raw.trim().replace(/[^\p{L}\p{N}\s@.+_-]/gu, " ").replace(/\s+/g, " ").trim();
-  const safeTerm = term.replace(/[.,()]/g, " ").trim();
+  // Keep the dot in a normal email address while stripping syntax-like dots
+  // from general text searches. Parentheses and commas are always removed.
+  const safeTerm = term.includes("@") ? term : term.replace(/[.,()]/g, " ").trim();
   let query = access.value.supabase.from("contacts").select(SAFE_CONTACT_COLUMNS).eq("brand_id", brandKey);
   if (safeTerm) {
     query = query.or(`name.ilike.%${safeTerm}%,email.ilike.%${safeTerm}%,phone.ilike.%${safeTerm}%`);
