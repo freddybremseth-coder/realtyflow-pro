@@ -155,6 +155,59 @@ try {
     reviewAudit.rows.map(r => r.new_status).includes("revoked"), "Owner review/revocation audit missing");
   await sql("update core.brand_workspace_memberships set status='revoked' where brand_id=$1 and user_id=$2", [zen, member]);
   verify((await list()).contacts.length === 0, "Revoked membership still listed records");
+
+  // Race: owner starts a revocation while holding the exact CRM row lock.
+  // A staff write must wait and recheck CURRENT cohort eligibility only after
+  // the owner commits; no stale statement snapshot may allow this write.
+  const concurrentId = "88888888-8888-4888-8888-888888888888";
+  await sql(
+    "insert into public.contacts(id,name,brand_id,brand,created_at,source) values ($1,'Concurrent joint contact','zeneco','zeneco',$2,'website')",
+    [concurrentId, newer],
+  );
+  verify(await review(concurrentId, "APPROVE", newer) === true, "Concurrent test customer was not approved");
+  await sql("update core.brand_workspace_memberships set status='active' where brand_id=$1 and user_id=$2", [zen, member]);
+  const activePid = (await sql("select pg_backend_pid() as pid")).rows[0].pid;
+  const blocker = new Client({ connectionString: localUrl, application_name: "isolated_zen_owner_revoke_race" });
+  let pendingEdit;
+  let lockCommitted = false;
+  await blocker.connect();
+  try {
+    await blocker.query("begin");
+    await blocker.query("select id from public.contacts where id=$1::uuid for update", [concurrentId]);
+    pendingEdit = edit(concurrentId, "SHOULD NEVER BE WRITTEN").catch(error => error);
+    let observedWaiting = false;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await blocker.query("select pg_sleep(0.04)");
+      const state = await blocker.query(
+        "select wait_event_type from pg_stat_activity where pid=$1", [activePid],
+      );
+      if (state.rows[0]?.wait_event_type === "Lock") {
+        observedWaiting = true;
+        break;
+      }
+    }
+    verify(observedWaiting, "Concurrent employee edit did not wait for the owner contact lock");
+    const revoke = await blocker.query(
+      "select public.workspace_zeneco_review_lead($1::uuid,'REVOKE',null,null,null,$2::text,$3::text) as ok",
+      [concurrentId, "Independent owner review revokes joint collaboration", "owner@example.test"],
+    );
+    verify(revoke.rows[0].ok === true, "Concurrent owner revocation failed");
+    await blocker.query("commit");
+    lockCommitted = true;
+    verify((await pendingEdit) === null, "Stale staff write succeeded after owner revoked the customer");
+  } finally {
+    if (!lockCommitted) await blocker.query("rollback").catch(() => undefined);
+    await blocker.end();
+    if (pendingEdit) await pendingEdit.catch(() => undefined);
+  }
+  const afterRace = await sql("select name from public.contacts where id=$1", [concurrentId]);
+  verify(afterRace.rows[0].name === "Concurrent joint contact",
+    "An employee modified the customer AFTER owner revocation");
+  const raceAudits = await sql(
+    "select count(*)::int as total from core.zeneco_joint_contact_edit_audit where contact_id=$1",
+    [concurrentId],
+  );
+  verify(raceAudits.rows[0].total === 0, "A revoked customer received an unauthorized edit audit");
   process.stdout.write("Isolated Zen joint-customer migration checks passed: " + checks + "\n");
 } finally {
   await client.end();
