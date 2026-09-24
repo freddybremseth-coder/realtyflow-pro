@@ -141,8 +141,8 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
     /^[a-z0-9][a-z0-9-]{1,62}$/.test(workspaceParts[3])) {
     const workspaceRoute = workspaceParts[4];
     if (method.toUpperCase() === "GET" &&
-      ["contacts", "properties", "capabilities"].includes(workspaceRoute) ||
-      (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco")) return "AUTHENTICATED";
+      (["contacts", "properties", "capabilities"].includes(workspaceRoute) ||
+      (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco"))) return "AUTHENTICATED";
     // The scoped CRM handler independently enforces crm.write, exact brand and
     // a narrow writable-field list; do not allow mutation of other modules.
     if (workspaceRoute === "contacts" && ["POST", "PATCH"].includes(method.toUpperCase()))
