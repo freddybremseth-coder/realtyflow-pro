@@ -83,7 +83,7 @@ grant select, insert on core.zeneco_joint_lead_review_audit to service_role;
 -- PREVIEW: names/identifiers returned only to the verified owner-session API.
 -- Staff cannot execute this RPC or query core, even with a Zen brand grant.
 create or replace function public.workspace_zeneco_review_candidates()
-returns jsonb language sql stable security invoker set search_path = '' as $
+returns jsonb language sql stable security invoker set search_path = '' as $zen_review$
   select jsonb_build_object(
     'contacts', coalesce(jsonb_agg(jsonb_build_object(
       'id', candidate_rows.id, 'brand_id', candidate_rows.brand_id, 'brand', candidate_rows.brand,
@@ -102,7 +102,7 @@ returns jsonb language sql stable security invoker set search_path = '' as $
     order by c.created_at desc, c.id
     limit 26
   ) candidate_rows;
-$;
+$zen_review$;
 revoke execute on function public.workspace_zeneco_review_candidates()
   from public, anon, authenticated;
 grant execute on function public.workspace_zeneco_review_candidates() to service_role;
