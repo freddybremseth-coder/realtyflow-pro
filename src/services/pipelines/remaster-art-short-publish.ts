@@ -14,8 +14,8 @@ function getClient() {
   return createClient(url, key);
 }
 
-async function loadBuffer(url: string): Promise<Buffer> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(25_000) });
+async function loadBuffer(url: string, timeoutMs = 25_000): Promise<Buffer> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error('Art Short source download HTTP ' + res.status);
   const data = Buffer.from(await res.arrayBuffer());
   if (data.length < 1024 || data.length > 40 * 1024 * 1024) throw new Error('Art Short source invalid or too large');
@@ -40,7 +40,9 @@ export async function publishMissingShort(songId: string): Promise<{
   const metadata = song.ai_metadata && typeof song.ai_metadata === 'object' ? song.ai_metadata : {};
   const mode: ArtVisualMode = metadata.artVisualMode;
   const artMode = VALID_MODES.has(String(mode));
-  if (!song.youtube_url || !song.file_url) throw new Error('Publish the full song before generating its Short');
+  // Owner-triggered Shorts can be released independently of the full video.
+  // The daily follow-up cron still selects only songs with published full videos.
+  if (!song.file_url) throw new Error('Upload a song audio file before generating its Short');
   if (metadata.shortsUrl) return { status: 'already-published', shortUrl: metadata.shortsUrl, videoUrl: song.youtube_url };
   if (metadata.shortsStatus === 'needs-reconciliation') {
     throw new Error('A Short may already be uploaded. Check YouTube and reconcile its link before retrying, to avoid duplicates.');
@@ -81,14 +83,26 @@ export async function publishMissingShort(songId: string): Promise<{
         })()
       : await (async () => {
           const records = await getGenreImages(
-            !song.genre || song.genre.toLowerCase() === 'edm' ? 'dance' : song.genre, 3,
+            !song.genre || song.genre.toLowerCase() === 'edm' ? 'dance' : song.genre, 18,
           );
           const images: Buffer[] = [];
-          for (const image of records) {
-            try { images.push(await loadBuffer(image.imageUrl)); }
-            catch (err) { console.warn('[ShortRetry] Skipping inaccessible genre image:', err); }
+          // Try more than the first three records: old Airtable links may
+          // have expired. Fetch small batches so one broken URL cannot block
+          // the whole render, and stop as soon as three images are usable.
+          for (let i = 0; i < records.length && images.length < 3; i += 4) {
+            const batch = await Promise.allSettled(records.slice(i, i + 4).map(
+              (image) => loadBuffer(image.imageUrl, 8_000),
+            ));
+            for (const result of batch) {
+              if (result.status === 'fulfilled' && images.length < 3) images.push(result.value);
+              else if (result.status === 'rejected') {
+                console.warn('[ShortRetry] Skipping inaccessible genre image:', result.reason);
+              }
+            }
           }
-          if (!images.length) throw new Error('No accessible genre images for this music Short');
+          if (!images.length) {
+            throw new Error('No downloadable genre images for this music Short (checked ' + records.length + ' image records)');
+          }
           const startSeconds = 0;
           const result = await generateShortFromAudio({
             audioBuffer, imageBuffers: images, startTime: startSeconds,
@@ -103,9 +117,9 @@ export async function publishMissingShort(songId: string): Promise<{
           title: song.name, genre: song.genre || 'EDM', mood: song.mood || 'energetic',
         });
     const description = artMode
-      ? ['🎧 Full song: ' + song.youtube_url, artCreditsDescription(songId),
-          '#Shorts #ReMasterFreddy #FreddyBremsethArt'].join('\n\n')
-      : ['🎧 Full song: ' + song.youtube_url,
+      ? [...(song.youtube_url ? ['🎧 Full song: ' + song.youtube_url] : []),
+          artCreditsDescription(songId), '#Shorts #ReMasterFreddy #FreddyBremsethArt'].join('\n\n')
+      : [...(song.youtube_url ? ['🎧 Full song: ' + song.youtube_url] : []),
           song.name + ' — Re-Master Freddy',
           '#Shorts #ReMasterFreddy #EDM #Music'].join('\n\n');
     const uploaded = await uploadVideo(short.videoBuffer, {
@@ -134,7 +148,8 @@ export async function publishMissingShort(songId: string): Promise<{
     const message = err instanceof Error ? err.message : String(err);
     // Preserve the published YouTube link if an upload succeeded but DB
     // reconciliation failed: human intervention avoids duplicate uploads.
-    const uncertainUpload = message.includes('but metadata save failed');
+    const uncertainUpload = message.includes('but metadata save failed')
+      || message.includes('upload returned video id');
     await supabase.from('songs').update({
       ai_metadata: {
         ...claimed,
