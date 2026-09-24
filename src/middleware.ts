@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { liveRoleForMiddleware } from "@/lib/middleware-access-profile";
 import {
   accessRequirementForApi,
   canSeeNavHref,
@@ -266,6 +267,22 @@ export async function middleware(request: NextRequest) {
   if (hasNexusSchedulerCredential(request, pathname)) return NextResponse.next({ request: { headers: requestHeaders } });
 
   const session = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
+  if (session && session.role !== "OWNER") {
+    // Signed role is historical. Revalidate the CURRENT active profile on
+    // every protected request, before trusting role headers or legacy routes.
+    // If the user was downgraded/revoked, their old signed cookie cannot widen access.
+    const currentRole = await liveRoleForMiddleware(session.email);
+    if (!currentRole || currentRole !== session.role) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Session access changed. Sign in again." }, {
+          status: 403, headers: { "Cache-Control": "private, no-store" },
+        });
+      }
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("next", "/workspace");
+      return NextResponse.redirect(loginUrl);
+    }
+  }
   if (session && (session.role !== "WORKSPACE_MEMBER" || process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true")) {
     requestHeaders.set("x-admin-authenticated", "true");
     requestHeaders.set("x-access-role", session.role);
