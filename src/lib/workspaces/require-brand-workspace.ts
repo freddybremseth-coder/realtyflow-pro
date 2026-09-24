@@ -1,7 +1,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
-import { hasPermission } from "@/lib/access-control";
+import { hasPermission, type AccessPermission } from "@/lib/access-control";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { hasVerifiedBrandGrant, isCanonicalBrandKey, type WorkspacePermission } from "./brand-policy";
 
@@ -34,7 +34,7 @@ export async function requireBrandWorkspace(
   // Owner-only migration proxy cannot act as a human workspace session.
   if (context.source === "remaster-proxy") return reject(403, "ACCESS_DENIED");
   if (context.role !== "OWNER") {
-    const legacyPermission = permission.startsWith("crm.") ? "customers.read"
+    const legacyPermission: AccessPermission = permission.startsWith("crm.") ? "customers.read"
       : permission.startsWith("marketing.") ? "marketing.read" : "revenue.read";
     if (!hasPermission(context.role, legacyPermission)) return reject(403, "ACCESS_DENIED");
   }
