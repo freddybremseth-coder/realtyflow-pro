@@ -45,3 +45,61 @@ revoke all on core.brand_workspace_access_plans, core.brand_workspace_access_pla
 grant select, insert, update, delete on core.brand_workspace_access_plans to service_role;
 grant select on core.brand_workspace_access_plan_audit to service_role;
 comment on table core.brand_workspace_access_plans is 'Owner-designated access drafts only: never used in authorization.';
+
+-- Expose ONLY service-role RPCs in public, not the core schema to browsers.
+-- Keep actual auth decision in the server route AND check membership on each call.
+create or replace function public.workspace_access_snapshot()
+returns jsonb language sql stable security invoker set search_path = '' as $$
+  select jsonb_build_object(
+    'brands', coalesce((select jsonb_agg(jsonb_build_object(
+      'id', b.id, 'brand_key', b.brand_key, 'display_name', b.display_name
+    ) order by b.display_name) from core.brands b), '[]'::jsonb),
+    'plans', coalesce((select jsonb_agg(jsonb_build_object(
+      'brand_id', p.brand_id, 'email', p.email, 'permissions', p.permissions,
+      'status', p.status, 'updated_by', p.updated_by, 'updated_at', p.updated_at
+    ) order by p.updated_at desc) from core.brand_workspace_access_plans p), '[]'::jsonb)
+  );
+$$;
+
+create or replace function public.workspace_access_save_draft(
+  p_brand_key text, p_email text, p_permissions text[], p_status text, p_actor text
+) returns boolean language plpgsql security invoker set search_path = '' as $$
+declare v_brand_id uuid;
+begin
+  select b.id into v_brand_id from core.brands b where b.brand_key = p_brand_key;
+  if v_brand_id is null then return false; end if;
+  if p_status = 'discarded' then
+    update core.brand_workspace_access_plans
+      set status = 'discarded', updated_by = p_actor, updated_at = now()
+      where brand_id = v_brand_id and email = p_email and status = 'draft';
+    return found;
+  end if;
+  if p_status <> 'draft' then return false; end if;
+  insert into core.brand_workspace_access_plans
+    (brand_id, email, permissions, status, updated_by, updated_at)
+  values (v_brand_id, p_email, p_permissions, 'draft', p_actor, now())
+  on conflict (brand_id, email) do update
+    set permissions = excluded.permissions, status = 'draft',
+        updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+  return true;
+end; $$;
+
+-- Read only the one brand's exact grant, not unrelated membership rows.
+create or replace function public.workspace_brand_grant(p_brand_key text, p_email text)
+returns jsonb language sql stable security invoker set search_path = '' as $$
+  select jsonb_build_object(
+    'brand', jsonb_build_object('id', b.id, 'brand_key', b.brand_key),
+    'grant', (select jsonb_build_object(
+      'brand_id', m.brand_id, 'user_id', m.user_id, 'email', m.email,
+      'status', m.status, 'permissions', m.permissions
+    ) from core.brand_workspace_memberships m
+    where m.brand_id = b.id and m.email = p_email)
+  )
+  from core.brands b where b.brand_key = p_brand_key;
+$$;
+revoke execute on function public.workspace_access_snapshot() from public, anon, authenticated;
+revoke execute on function public.workspace_access_save_draft(text,text,text[],text,text) from public, anon, authenticated;
+revoke execute on function public.workspace_brand_grant(text,text) from public, anon, authenticated;
+grant execute on function public.workspace_access_snapshot() to service_role;
+grant execute on function public.workspace_access_save_draft(text,text,text[],text,text) to service_role;
+grant execute on function public.workspace_brand_grant(text,text) to service_role;
