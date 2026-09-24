@@ -165,6 +165,8 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
       "/workspace", "/workspace/pinosoecolife", "/api/workspaces/available",
       "/api/workspaces/pinosoecolife/capabilities",
       "/api/workspaces/pinosoecolife/contacts", "/api/workspaces/pinosoecolife/properties",
+      "/api/workspaces/zeneco/joint-contacts",
+      "/api/auth/me",
     ]) {
       const admitted = await middleware(request(path, { cookie }));
       assert.equal(admitted.status, 200, path);
@@ -172,6 +174,16 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
     for (const path of [
       "/api/contacts", "/api/access-control", "/api/workspaces/access-plans",
       "/api/workspaces/pinosoecolife/contacts/another",
+      "/api/internal-alerts",
+      "/api/customers", "/api/customers/11111111-1111-4111-8111-111111111111",
+      "/api/customers/11111111-1111-4111-8111-111111111111/sales-assistant-note",
+      "/api/contacts/11111111-1111-4111-8111-111111111111",
+      "/api/portal/legacy-private", "/api/revenue/communications",
+      "/api/revenue/execution", "/api/calendar", "/api/revenue/commissions",
+      "/api/workspaces/zeneco/contacts",
+      "/api/workspaces/soleada/joint-contacts",
+      "/api/workspaces/zeneco/joint-contacts/export",
+      "/api/workspaces/zeneco/messages", "/api/workspaces/zeneco/tasks",
     ]) {
       const denied = await middleware(request(path, { cookie }));
       assert.equal(denied.status, 403, path);
@@ -181,6 +193,22 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
       { method: "POST", headers: { cookie } },
     ));
     assert.equal(deniedWrite.status, 403);
+    for (const [path, method, expected] of [
+      ["/api/workspaces/zeneco/joint-contacts", "PATCH", 200],
+      ["/api/workspaces/zeneco/joint-contacts", "POST", 403],
+      ["/api/workspaces/zeneco/joint-contacts", "DELETE", 403],
+      ["/api/workspaces/zeneco/contacts", "PATCH", 403],
+      ["/api/workspaces/zeneco/contacts", "GET", 403],
+      ["/api/internal-alerts", "GET", 403],
+      ["/api/workspaces/available", "POST", 403],
+      ["/api/auth/me", "POST", 403],
+    ] as const) {
+      const result = await middleware(new NextRequest(
+        "https://realtyflow.test" + path,
+        { method, headers: { cookie } },
+      ));
+      assert.equal(result.status, expected, path + " " + method);
+    }
   } finally { restore(); delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED; }
 });
 
