@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle2, LockKeyhole, RefreshCw, ShieldAlert, UserRoundCog } from "lucide-react";
 import { WORKSPACE_PERMISSIONS, type WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import { SharedCommissionPreview } from "@/components/workspaces/shared-commission-preview";
+import { ZenJointLeadReview } from "@/components/workspaces/zen-joint-lead-review";
 
 type Brand = { id: string; brand_key: string; display_name: string };
 type Plan = { brand_id: string; email: string; permissions: WorkspacePermission[]; status: "draft" | "discarded"; updated_by: string; updated_at: string };
@@ -92,6 +93,7 @@ export default function WorkspaceAccessPage() {
       {notice && <p role="status" className="flex items-center gap-2 rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200"><CheckCircle2 size={16} />{notice}</p>}
       {loading && <p className="text-sm text-slate-400">Laster merkevarer og tilgangsutkast…</p>}
       {payload && brandKey === "zeneco" && <SharedCommissionPreview />}
+      {payload && brandKey === "zeneco" && <ZenJointLeadReview />}
       {payload && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,1fr)]">
           <section className="space-y-5 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
