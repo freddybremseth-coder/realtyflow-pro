@@ -83,14 +83,14 @@ grant select, insert on core.zeneco_joint_lead_review_audit to service_role;
 -- PREVIEW: names/identifiers returned only to the verified owner-session API.
 -- Staff cannot execute this RPC or query core, even with a Zen brand grant.
 create or replace function public.workspace_zeneco_review_candidates()
-returns jsonb language sql stable security invoker set search_path = '' as $$
+returns jsonb language sql stable security invoker set search_path = '' as $
   select jsonb_build_object(
     'contacts', coalesce(jsonb_agg(jsonb_build_object(
-      'id', rows.id, 'brand_id', rows.brand_id, 'brand', rows.brand,
-      'name', rows.name, 'email', rows.email,
-      'created_at', rows.created_at, 'source', rows.source,
-      'status', coalesce(rows.eligibility, 'unreviewed')
-    ) order by rows.created_at desc, rows.id), '[]'::jsonb),
+      'id', candidate_rows.id, 'brand_id', candidate_rows.brand_id, 'brand', candidate_rows.brand,
+      'name', candidate_rows.name, 'email', candidate_rows.email,
+      'created_at', candidate_rows.created_at, 'source', candidate_rows.source,
+      'status', coalesce(candidate_rows.eligibility, 'unreviewed')
+    ) order by candidate_rows.created_at desc, candidate_rows.id), '[]'::jsonb),
     'hasMore', count(*) > 25
   )
   from (
@@ -101,8 +101,8 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
       and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
     order by c.created_at desc, c.id
     limit 26
-  ) rows;
-$$;
+  ) candidate_rows;
+$;
 revoke execute on function public.workspace_zeneco_review_candidates()
   from public, anon, authenticated;
 grant execute on function public.workspace_zeneco_review_candidates() to service_role;
