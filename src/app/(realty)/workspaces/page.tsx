@@ -39,6 +39,11 @@ export default function WorkspacesPage() {
           </Link>
         ))}
       </div>
+      <div className="rounded-2xl border border-cyan-800/70 bg-slate-900/80 p-5">
+        <h2 className="text-xl font-semibold">Pinoso EcoLife · fokusert arbeidsflate</h2>
+        <p className="mt-2 text-sm text-slate-400">Se hvordan et enkelt arbeidsområde uten den globale menyen vil fungere. CRM er foreløpig kun lesing, og forhåndsvisningen forutsetter at tilgangsmigrasjonen er installert.</p>
+        <Link href="/workspace/pinosoecolife" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 hover:underline">Åpne forhåndsvisning <ArrowRight size={16}/></Link>
+      </div>
       <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
         <div className="flex items-start gap-3"><Users className="shrink-0 text-cyan-400" size={23}/><div>
           <h2 className="text-xl font-semibold">Medarbeidere og tilganger</h2>
