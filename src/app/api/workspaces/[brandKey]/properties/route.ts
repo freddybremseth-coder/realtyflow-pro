@@ -36,7 +36,7 @@ export async function GET(
     .range((page - 1) * perPage, page * perPage - 1);
   if (term) {
     // Escape PostgREST OR-expression metacharacters rather than interpolate SQL.
-    const safe = term.replace(/[%_\\]/g, "").replace(/[(),.]/g, " ").trim();
+    const safe = term.replace(/[^\\p{L}\\p{N}\\s-]/gu, " ").replace(/\\s+/g, " ").trim();
     if (safe) query = query.or(`title.ilike.%${safe}%,town.ilike.%${safe}%,location.ilike.%${safe}%,ref.ilike.%${safe}%`);
   }
   const { data, error } = await query;
