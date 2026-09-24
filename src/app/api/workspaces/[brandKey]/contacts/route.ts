@@ -45,3 +45,90 @@ export async function GET(
     page, pageSize: PAGE_SIZE, hasMore: rows.length > PAGE_SIZE,
   }, { headers: noStore });
 }
+
+
+type AllowedContactInput = { name?: string; email?: string | null; phone?: string | null };
+
+function validateContactInput(value: unknown, updating: boolean):
+  | { value: AllowedContactInput; error: null }
+  | { value: null; error: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { value: null, error: "INVALID_CONTACT" };
+  const body = value as Record<string, unknown>;
+  const keys = Object.keys(body);
+  if (keys.length === 0 || keys.some(key => !["name", "email", "phone"].includes(key)))
+    return { value: null, error: "INVALID_CONTACT_FIELDS" };
+  const input: AllowedContactInput = {};
+  if ("name" in body) {
+    if (typeof body.name !== "string" || body.name.trim().length < 1 || body.name.trim().length > 140)
+      return { value: null, error: "INVALID_NAME" };
+    input.name = body.name.trim();
+  } else if (!updating) return { value: null, error: "INVALID_NAME" };
+  for (const field of ["email", "phone"] as const) {
+    if (!(field in body)) continue;
+    const raw = body[field];
+    if (raw !== null && typeof raw !== "string") return { value: null, error: "INVALID_CONTACT_FIELDS" };
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (field === "email") {
+      if (text && (text.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(text)))
+        return { value: null, error: "INVALID_EMAIL" };
+      input.email = text ? text.toLowerCase() : null;
+    } else {
+      if (text.length > 60) return { value: null, error: "INVALID_PHONE" };
+      input.phone = text || null;
+    }
+  }
+  return { value: input, error: null };
+}
+
+function writeRequestIsSafe(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  return request.headers.get("content-type")?.toLowerCase().startsWith("application/json") &&
+    (!origin || origin === new URL(request.url).origin) &&
+    request.headers.get("sec-fetch-site") !== "cross-site";
+}
+
+function failWrite(status: number, code: string) {
+  return NextResponse.json({ ok: false, error: { code } }, { status, headers: noStore });
+}
+
+/** New scoped contacts never use the legacy upsert/duplicate finder: it can leak cross-brand PII. */
+export async function POST(request: NextRequest, { params }: { params: { brandKey: string } }) {
+  const { brandKey } = params;
+  const access = await requireBrandWorkspace(request, brandKey, "crm.write");
+  if (!access.value) return access.response;
+  if (!writeRequestIsSafe(request)) return failWrite(403, "INVALID_REQUEST_ORIGIN");
+  const input = validateContactInput(await request.json().catch(() => null), false);
+  if (!input.value) return failWrite(400, input.error);
+  const { data, error } = await access.value.supabase.from("contacts")
+    .insert({ ...input.value, brand_id: brandKey, pipeline_status: "NEW" })
+    .select(SAFE_CONTACT_COLUMNS).single();
+  if (error || !data || data.brand_id !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+  return NextResponse.json({ ok: true, brand: brandKey, contact: data }, { status: 201, headers: noStore });
+}
+
+/**
+ * Row mutation checks both ID and exact brand in the database operation;
+ * it never looks up an arbitrary contact first and never accepts a client
+ * supplied brand/status/commission/notes/interaction field.
+ */
+export async function PATCH(request: NextRequest, { params }: { params: { brandKey: string } }) {
+  const { brandKey } = params;
+  const access = await requireBrandWorkspace(request, brandKey, "crm.write");
+  if (!access.value) return access.response;
+  if (!writeRequestIsSafe(request)) return failWrite(403, "INVALID_REQUEST_ORIGIN");
+  const body: unknown = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return failWrite(400, "INVALID_CONTACT");
+  const { id, ...fields } = body as Record<string, unknown>;
+  if (typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(id))
+    return failWrite(400, "INVALID_CONTACT_ID");
+  const input = validateContactInput(fields, true);
+  if (!input.value) return failWrite(400, input.error);
+  const { data, error } = await access.value.supabase.from("contacts")
+    .update({ ...input.value, updated_at: new Date().toISOString() })
+    .eq("id", id).eq("brand_id", brandKey)
+    .select(SAFE_CONTACT_COLUMNS).maybeSingle();
+  if (error) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+  if (!data) return failWrite(404, "CONTACT_NOT_FOUND");
+  if (data.brand_id !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+  return NextResponse.json({ ok: true, brand: brandKey, contact: data }, { headers: noStore });
+}
