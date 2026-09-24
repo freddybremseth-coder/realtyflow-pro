@@ -33,7 +33,9 @@ function cents(value: number, field: string) {
 export function allocateSharedCommission(input: SharedCommissionInput): SharedCommissionAllocation {
   cents(input.developerCommissionReceivedCents, "developerCommissionReceivedCents");
   cents(input.approvedDirectExpensesCents, "approvedDirectExpensesCents");
-  const marketingReserveCents = Math.round(input.developerCommissionReceivedCents * 0.1);
+  const receipt = input.developerCommissionReceivedCents;
+  // Exact integer-cent half-up rounding for 10%, avoiding floating-point drift.
+  const marketingReserveCents = Math.floor(receipt / 10) + (receipt % 10 >= 5 ? 1 : 0);
   const distributableCents =
     input.developerCommissionReceivedCents - marketingReserveCents - input.approvedDirectExpensesCents;
   if (distributableCents < 0)
