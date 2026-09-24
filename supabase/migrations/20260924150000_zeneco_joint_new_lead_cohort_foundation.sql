@@ -201,3 +201,55 @@ revoke execute on function public.workspace_zeneco_review_lead(
 grant execute on function public.workspace_zeneco_review_lead(
   uuid,text,timestamptz,text,text,text,text
 ) to service_role;
+
+
+-- Read ONLY reviewed new joint customers for a verified Zen workspace member.
+-- This is independent of brand-wide contacts access. The server verifies the
+-- signed session/profile + Auth user ID before passing p_user_id and p_email.
+-- The service-only function also re-checks exact live membership and permission.
+create or replace function public.workspace_zeneco_joint_contacts(
+  p_user_id uuid, p_email text, p_offset integer, p_search text
+) returns jsonb language sql stable security invoker set search_path = '' as $$
+  with scoped as (
+    select c.id, c.name, c.email, c.phone, c.brand_id, c.brand,
+           c.pipeline_status, c.source, c.created_at, c.updated_at
+    from core.brand_workspace_memberships m
+    join core.brands b on b.id = m.brand_id and b.brand_key = 'zeneco'
+    join core.zeneco_joint_lead_cohort j on j.brand_id = b.id
+      and j.eligibility = 'approved'
+      and j.first_genuine_enquiry_at >= timestamptz '2026-09-23 22:00:00+00'
+      and length(btrim(coalesce(j.evidence_reference,''))) >= 8
+      and j.reviewed_at is not null
+    join public.contacts c on c.id = j.contact_id
+      and c.brand_id = 'zeneco' and c.brand = 'zeneco'
+      and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
+    where m.user_id = p_user_id
+      and m.email = lower(btrim(p_email))
+      and m.status = 'active'
+      and m.permissions @> array['crm.joint.read']::text[]
+      and p_offset between 0 and 49950
+      and length(coalesce(p_search,'')) <= 80
+      and (
+        coalesce(p_search,'') = ''
+        or position(lower(p_search) in lower(coalesce(c.name,''))) > 0
+        or position(lower(p_search) in lower(coalesce(c.email,''))) > 0
+        or position(lower(p_search) in lower(coalesce(c.phone,''))) > 0
+      )
+    order by c.updated_at desc nulls last, c.id
+    offset greatest(coalesce(p_offset, 0), 0) limit 51
+  )
+  select jsonb_build_object(
+    'contacts', coalesce(jsonb_agg(jsonb_build_object(
+      'id', eligible.id, 'name', eligible.name, 'email', eligible.email,
+      'phone', eligible.phone, 'brand_id', eligible.brand_id,
+      'brand', eligible.brand, 'pipeline_status', eligible.pipeline_status,
+      'source', eligible.source, 'created_at', eligible.created_at,
+      'updated_at', eligible.updated_at
+    ) order by eligible.updated_at desc nulls last, eligible.id), '[]'::jsonb),
+    'hasMore', count(*) > 50
+  ) from scoped eligible;
+$$;
+revoke execute on function public.workspace_zeneco_joint_contacts(uuid,text,integer,text)
+  from public, anon, authenticated;
+grant execute on function public.workspace_zeneco_joint_contacts(uuid,text,integer,text)
+  to service_role;
