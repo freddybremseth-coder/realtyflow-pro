@@ -39,7 +39,11 @@ export async function GET(
     permissions = WORKSPACE_PERMISSIONS.filter(permission =>
       (brandKey === "zeneco"
         ? permission !== "crm.read" && permission !== "crm.write"
-        : permission !== "crm.joint.read" && permission !== "crm.joint.write") &&
+        : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)) &&
+      (!["tasks.joint.read", "tasks.joint.write"].includes(permission) ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
+      (permission !== "tasks.joint.write" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("tasks.joint.read"))) &&
       (permission !== "crm.joint.write" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
       roleAllowsWorkspacePermission(context.role, permission) &&
