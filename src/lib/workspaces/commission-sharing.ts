@@ -51,3 +51,58 @@ export function allocateSharedCommission(input: SharedCommissionInput): SharedCo
     roundingHoldCents: distributableCents - eachCents * 2,
   };
 }
+
+/** Itemised, owner-reviewed expenses: no marketing-reserve spending in this list. */
+export type SharedDealCost = {
+  id: string;
+  kind: "fuel" | "parking" | "toll" | "customer_meeting" | "other_direct";
+  amountCents: number;
+  paidBy: "freddy" | "andrea" | "business";
+  receiptReference: string;
+  approved: boolean;
+};
+export type ItemisedSharedCommissionAllocation = SharedCommissionAllocation & {
+  freddyExpenseReimbursementCents: number;
+  andreaExpenseReimbursementCents: number;
+  businessPaidExpenseCents: number;
+};
+
+export function allocateItemisedSharedCommission(
+  developerCommissionReceivedCents: number,
+  expenses: SharedDealCost[],
+): ItemisedSharedCommissionAllocation {
+  if (!Array.isArray(expenses) || expenses.length > 100)
+    throw new RangeError("Expense list must contain no more than 100 approved items");
+  const seenIds = new Set<string>();
+  const seenReceipts = new Set<string>();
+  let freddy = 0;
+  let andrea = 0;
+  let business = 0;
+  for (const cost of expenses) {
+    if (!cost || !["fuel", "parking", "toll", "customer_meeting", "other_direct"].includes(cost.kind))
+      throw new RangeError("Only direct sale-related costs are allowed, never ad spending or general overhead");
+    cents(cost.amountCents, "expense.amountCents");
+    const id = typeof cost.id === "string" ? cost.id.trim() : "";
+    const receipt = typeof cost.receiptReference === "string" ? cost.receiptReference.trim() : "";
+    if (!cost.approved || !id || !receipt || seenIds.has(id) || seenReceipts.has(receipt.toLowerCase()))
+      throw new RangeError("Expenses must be approved with unique IDs and receipt references");
+    seenIds.add(id);
+    seenReceipts.add(receipt.toLowerCase());
+    if (cost.paidBy === "freddy") freddy += cost.amountCents;
+    else if (cost.paidBy === "andrea") andrea += cost.amountCents;
+    else if (cost.paidBy === "business") business += cost.amountCents;
+    else throw new RangeError("Unknown expense payer");
+  }
+  const approvedDirectExpensesCents = freddy + andrea + business;
+  cents(approvedDirectExpensesCents, "approvedDirectExpensesCents");
+  const allocation = allocateSharedCommission({
+    developerCommissionReceivedCents,
+    approvedDirectExpensesCents,
+  });
+  return {
+    ...allocation,
+    freddyExpenseReimbursementCents: freddy,
+    andreaExpenseReimbursementCents: andrea,
+    businessPaidExpenseCents: business,
+  };
+}
