@@ -1,0 +1,55 @@
+# RealtyFlow: Pinoso workspace and modular platform — implementation plan
+
+Status: proposed, **not deployed or activated**. Date: 2026-09-24. Owner review required before introducing a new non-owner user. This document is the initial implementation specification, not a claim of completed isolation.
+
+## Product decision
+
+Retain one shared platform and one login, with separate workspaces/modules for Property & CRM, Marketing, Finance, Re-Master production, and common AI/Automation. Reuse existing `core` tenants/memberships/modules where applicable; do not migrate or duplicate business data merely to create separate navigation. A brand is an access scope; a legal billing organization is not necessarily a brand or tenant.
+
+Re-Master remains the music master/catalogue and specialised music/video production UI. RealtyFlow Marketing owns cross-brand campaign planning, media-library reuse, approval, calendar, account/channel mapping, publish ledger, delivery and analytics. Expose Re-Master-derived media via an authenticated, audited integration with rights/usage metadata; do not give a Pinoso employee access to the owner-only Re-Master admin or its migration/proxy secret. Rendering workers may be shared, but the requesting brand, owner, credits, output paths and destination identity must be pinned and enforced by the server.
+
+## Phase 0: access policy to build before inviting Andrea
+
+Use the *existing* approved canonical Pinoso brand ID from database/configuration; examples below are descriptive, not permission-bearing string comparisons. User identity must be from a verified session, not a supplied `brand_id` or URL. Define effective access as `user membership AND active workspace AND permission AND row/resource scope`, on the server. For owner, retain explicit cross-brand scope. Default deny for unknown routes, unknown brands and missing/mismatched brand IDs. Do not turn an existing broad `SALES` or `MARKETING` role directly into Andrea's login.
+
+| Area | Andrea's initial Pinoso workspace | Owner |
+| --- | --- | --- |
+| Property inventory | Read/search **all** ordinary real-estate listings needed for matching, including other areas when appropriate; show source and which brand may market them. Edit Pinoso-approved listing overrides and Pinoso public marketing text only after explicit authorisation. No global importer, cross-brand publication toggles, source/feed credentials or destructive bulk operations. Commercially sensitive internal property fields are separately permissioned. | All inventory and import configuration. |
+| CRM/contacts/leads | Read/create/update Pinoso-associated customers, notes, tasks, viewings, shortlists, messages and pipeline. Other-brand and personal customer records are not returned, including in search, counts, exports, activity logs, attachments, AI retrieval and duplicate detection. New leads are server-stamped to Pinoso. | All brands, with explicit brand choice and documented transfers. |
+| Marketing | Pinoso media, campaigns, social calendar, draft Reel and captions, Pinoso channel analytics. Allow publishing to **only** explicitly authorised Pinoso Facebook/Instagram account IDs once route tests and owner policy are satisfied. Initially drafts + review; grant routine publish separately. | All brands, account/OAuth management and policy configuration. |
+| Finance | No general finance module, invoices, bank, other-brand commissions, billing provider tokens or global revenue dashboard. A future scoped Pinoso deal/commission summary is a distinct permission. | All finance. |
+| Re-Master | Select explicitly licensed/approved finished audio/video assets exposed to Pinoso Marketing; no artist master uploads, catalogue edits, cross-brand Reels history, owner proxy, OAuth or music-business reports. | Re-Master administration. |
+| Admin/AI | No user management, API keys, automation rules, integration setup or cross-brand reports. AI tools inherit same brand/resource filters as the calling user, including background jobs and generated exports. | Platform administration. |
+
+**Property nuance:** read-all ordinary inventory does not imply read-all CRM, full internal property columns, edit-all listings or publish-on-all-brand-websites. Separate `properties.catalog.read` from `properties.internal.read`, `properties.brand.write`, `properties.import.manage` and `properties.global.write`.
+
+## Confirmed code inspection points (source inspection only, not a production security audit)
+
+- `src/lib/access-control.ts`: existing `OWNER`, `SALES`, `MARKETING` etc. give **global** role permissions, without requested brand membership in that check; navigation hiding is not a security boundary.
+- `src/lib/api-admin.ts`: `requireAdminApi` authorises a route by role and route requirement; its Re-Master proxy can produce an `OWNER` context with verified owner/secret. The proxy must remain owner-only and never be used for Andrea's access.
+- `src/app/api/contacts/route.ts`: GET currently selects the entire contacts table for authorised readers; PATCH and DELETE identify contacts by ID without checking membership to that contact's brand. POST's cross-brand duplicate response includes the matching contact. All list, read, update, delete, duplicate and related event paths must be scoped **before** exposing them to a scoped user. No cross-brand PII in 409 responses.
+- `src/app/api/properties/route.ts`: authenticated GET can return every property with `select('*')`, and an ID lookup does not enforce the brand query parameter. The route's existing `property_brand_visibility` is marketing visibility, not proof of permission. Split safe ordinary catalogue fields from internal listing data and restrict write endpoints.
+- `src/app/api/neural-beat/reels/route.ts`: GET returns latest jobs across brands; POST accepts brand from request body and reads/render resources via a privileged server client. This must remain owner-only until scoped list/create/render/storage/publish restrictions are implemented and exercised end to end.
+- `docs/platform-core-v1.md`: already describes core tenants, memberships, modules and RLS. Reuse/verify that architecture rather than inventing a second, conflicting tenant system. Confirm actual applied production migrations separately.
+
+## Implementation sequence and required deliverables
+
+1. **Inventory and threat map (no external user activation):** enumerate every relevant UI route, API, RPC, service-role query, storage bucket, export, notification, cron, AI tool, publication webhook and OAuth channel. Catalogue current auth pattern and effective brand scope. Check actual production schema/RLS and whether Platform Core migration is applied; README and merged PRs do not prove runtime activation.
+2. **Identity and policy foundation:** introduce verified member-to-brand membership and separate capability grants for inventory/CRM/marketing/publishing. Resolve brand identity from session/DB on each request. A client-selected workspace can only narrow authorised access; switching brand never widens it. Use common `requireWorkspacePermission` / row-scope utilities with default deny; audit user+brand+resource+action and access changes. Distinguish shared inventory references from private brand-specific overlays.
+3. **CRM and inventory enforcement:** filter contacts and all dependent material server-side, including detail endpoints and cross-brand duplicate checks. Scope writes by resource ID + authorised brand in same transaction where possible. For existing customer on multiple brands, use explicit `contact_brand_memberships`/sharing decisions; do not silently copy or expose another brand's contact. Implement inventory public/all-catalogue read projection and guarded per-brand editing; route global imports and property-brand-visibility controls to OWNER only.
+4. **Pinoso workspace:** launch a focused /workspace/pinoso home with property search, CRM, shortlists, calendar, content queue, Pinoso social accounts. Render navigation from capabilities, but rely on API/DB enforcement. Freddy's owner home shows all workspaces and cross-brand overview.
+5. **Marketing studio boundaries:** introduce single brand-scoped asset/campaign/job schema and a media contract from Re-Master to Marketing; retain original Re-Master site and production flow. Require brand-pinned destination account IDs, explicit allowed publish permission, delivery idempotency and audit logs; connect Facebook and Instagram only after confirming actual Pinoso account mapping and scoped publish tests. Do not transplant existing owner-only proxy routes directly into employee UI.
+6. **Finance isolation and optional product extraction:** keep common ledger/invoices in a separate permissioned Finance workspace. Separate deployment/service only if operational evidence later justifies it; retain shared identity/brand policy APIs.
+
+## Security and acceptance tests — all required before user invitation
+
+- With Andrea's test account, list/search/detail/patch/delete/export guessed IDs from Zen Eco Homes, Soleada, Doña Anna, personal brands and unbranded contacts: return 403/404 or only legitimately shared data; zero customer names, contact methods, counts, events or AI-retrieved snippets leak, including duplicate-contact responses.
+- With Andrea's account, browse all **ordinary property catalogue** listings but never receive protected internal property columns, global property mutation privileges, source/feed secrets or another brand's private visibility overrides. Pinoso-specific editing cannot change another brand's website visibility.
+- Forged brand body/query/header, direct URL, server action, shared cache key, attachment URL, storage path, page pagination and background-job IDs must not widen membership. Revoke membership and verify access stops, including existing sessions/queued jobs where feasible.
+- Reels list/create/render/preview/media URL and publish must be scoped to Pinoso; attempting to publish a Pinoso Reel to another brand's Facebook/Instagram/YouTube identity fails without any upload. Verify exact account ID, owner-confirmed channel binding, idempotency and safe retry after network error.
+- Check service-role bypass paths, RLS and storage policies; no privileged key in browser, no authorisation based solely on hidden UI or user-supplied brand ID. Test negative/positive paths in CI and preview using synthetic test fixtures, not real customer data.
+- Owner retains cross-brand workflows; existing Re-Master production and RealtyFlow lead intake work unchanged. Roll out behind a flag with a tested rollback. Confirm production migrations + CI + preview + limited real E2E before claiming deployment.
+
+## Completion boundary
+
+This phase is deliberately a specification on a feature branch. No user has been invited, no production data/schema or permissions have been changed, and no music or publication module has been moved. Do not merge a cosmetic brand switch as a substitute for verified end-to-end isolation.
