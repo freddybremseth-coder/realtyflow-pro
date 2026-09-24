@@ -2,6 +2,8 @@
 // Validated approach for Flux Kontext Pro: pair the visual reference with
 // a verbatim text description of every label/typography element.
 
+import { detectBrandId, getBrandImagePromptSuffix } from "@/lib/brand-guidelines";
+
 const QUALITY_TAIL =
   "Hyperrealistic, sharp focus on label, magazine-quality commercial photography, refined elegance.";
 
@@ -29,5 +31,8 @@ export function buildPrompt(input: PromptBuilderInput): string {
   if (!/Hyperrealistic|magazine-quality/i.test(prompt)) {
     prompt = `${prompt} ${QUALITY_TAIL}`;
   }
+  // Merkevare-tillegg (f.eks. Doña Anna §5). Etikett-tekst skal bevares, så ingen «no text».
+  const brandSuffix = getBrandImagePromptSuffix(detectBrandId(input.product_name), { allowText: true });
+  if (brandSuffix) prompt = `${prompt} ${brandSuffix}`;
   return prompt.trim();
 }

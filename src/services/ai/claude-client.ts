@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ResponseSchema } from '@google/generative-ai';
+import { detectBrandId, withBrandGuidelines } from "@/lib/brand-guidelines";
 
 let client: Anthropic | null = null;
 
@@ -162,8 +163,15 @@ export async function askClaude(
     // bokskriving gir de svakere modellene dårlig/kort prosa som ikke følger
     // formatet — bedre å feile tydelig så brukeren ser at Anthropic er nede.
     anthropicOnly?: boolean;
+    // Brand-id (f.eks. "donaanna"). Når satt – eller når brukerprompten nevner et
+    // brand med merkevareinstruks – legges instruksen til systemprompten.
+    brandId?: string | null;
   }
 ): Promise<string> {
+  const guidedSystemPrompt = withBrandGuidelines(options?.systemPrompt, options?.brandId ?? detectBrandId(prompt));
+  if (guidedSystemPrompt !== options?.systemPrompt) {
+    options = { ...options, systemPrompt: guidedSystemPrompt };
+  }
   if (options?.anthropicOnly && !process.env.ANTHROPIC_API_KEY) {
     throw new Error('Anthropic AI er ikke konfigurert (mangler API-nøkkel).');
   }

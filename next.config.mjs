@@ -6,6 +6,10 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '50mb',
     },
+    // Merkevareinstrukser (src/lib/brand-guidelines.ts) leses fra disk i serverless-funksjoner.
+    outputFileTracingIncludes: {
+      '/**': ['./docs/brands/**'],
+    },
   },
   async headers() {
     return [
