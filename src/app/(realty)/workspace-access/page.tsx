@@ -17,7 +17,8 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "properties.catalog.read": { title: "Eiendomskatalog", description: "Se vanlige boligoppføringer. Ikke intern pris-/importdata." },
   "crm.read": { title: "Kunder og CRM – se", description: "Les kun kunder som er knyttet til valgt merkevare." },
   "crm.write": { title: "Kunder og CRM – endre", description: "Opprette kontakter og endre navn, e-post og telefon i egen merkevare. Oppfølging og status kommer senere." },
-  "crm.joint.read": { title: "Zen · kun nye felles kunder", description: "Les bare manuelt godkjente nye Zen Eco Homes-kunder. Ingen eldre Zen-kunder og ingen skrivetilgang." },
+  "crm.joint.read": { title: "Zen · kun nye felles kunder", description: "Les bare manuelt godkjente nye Zen Eco Homes-kunder. Ingen eldre Zen-kunder." },
+  "crm.joint.write": { title: "Zen · endre nye felles kunder", description: "Endre kun navn, e-post og telefon på manuelt godkjente felles Zen-kunder. Ingen tilgang til eldre kunder eller økonomi." },
   "marketing.read": { title: "Markedsføring – se", description: "Se innhold og kampanjer for valgt merkevare." },
   "marketing.draft": { title: "Markedsføring – lage utkast", description: "Lage Reels, videoutkast, tekst og innholdskalender." },
   "marketing.publish": { title: "Publisere i sosiale medier", description: "Kun godkjente kontoer for merkevaren. Krever separat teknisk kontroll før aktivering." },
@@ -104,7 +105,7 @@ export default function WorkspaceAccessPage() {
                 const nextBrand = event.target.value;
                 setBrandKey(nextBrand);
                 setPermissions(nextBrand === "zeneco"
-                  ? [...suggested.filter(permission => permission !== "crm.read" && permission !== "crm.write"), "crm.joint.read"]
+                  ? [...suggested.filter(permission => permission !== "crm.read" && permission !== "crm.write"), "crm.joint.read", "crm.joint.write"]
                   : suggested);
               }}>
                 {payload.brands.map((brand) => <option key={brand.id} value={brand.brand_key}>{brand.display_name} ({brand.brand_key})</option>)}
@@ -134,7 +135,7 @@ export default function WorkspaceAccessPage() {
             <div className="space-y-2">
               {WORKSPACE_PERMISSIONS.filter(permission => brandKey === "zeneco"
                 ? permission !== "crm.read" && permission !== "crm.write"
-                : permission !== "crm.joint.read").map((permission) => (
+                : permission !== "crm.joint.read" && permission !== "crm.joint.write").map((permission) => (
                 <label key={permission} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                   <input type="checkbox" className="mt-1 accent-cyan-500" checked={permissions.includes(permission)}
                     onChange={(event) => setPermissions((current) => event.target.checked ? [...current, permission] : current.filter((value) => value !== permission))} />
