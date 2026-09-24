@@ -6,7 +6,7 @@ import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { hasVerifiedBrandGrant, isCanonicalBrandKey, type WorkspacePermission } from "./brand-policy";
 
 type Rejection = { value: null; response: NextResponse };
-type Access = { value: { brandKey: string; brandId: string; supabase: NonNullable<ReturnType<typeof getPlatformSupabase>> }; response: null };
+type Access = { value: { brandKey: string; brandId: string; verifiedUserId: string | null; supabase: NonNullable<ReturnType<typeof getPlatformSupabase>> }; response: null };
 
 function reject(status: number, code: string): Rejection {
   return {
@@ -62,6 +62,7 @@ export async function requireBrandWorkspace(
   if (!scope?.brand?.id || scope.brand.brand_key !== brandKey) return reject(404, "WORKSPACE_NOT_FOUND");
   const brandId: string = scope.brand.id;
 
+  let verifiedUserId: string | null = null;
   if (context.role !== "OWNER") {
     const grant = scope.grant;
     if (!grant?.user_id) return reject(403, "ACCESS_DENIED");
@@ -71,6 +72,7 @@ export async function requireBrandWorkspace(
       verifiedUserId: authResult.user.id, verifiedUserEmail: authResult.user.email || "",
       permission,
     })) return reject(403, "ACCESS_DENIED");
+    verifiedUserId = authResult.user.id;
   }
-  return { value: { brandKey, brandId, supabase }, response: null };
+  return { value: { brandKey, brandId, verifiedUserId, supabase }, response: null };
 }
