@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
     return fail(400, "INVALID_SEARCH");
   const { data, error } = await access.value.supabase.rpc("workspace_zeneco_joint_contacts", {
     p_user_id: access.value.verifiedUserId,
-    p_email: request.cookies.get("realtyflow_admin") ? undefined : undefined,
+    p_email: access.value.verifiedEmail,
     p_offset: (page - 1) * 50,
     p_search: search,
   });
