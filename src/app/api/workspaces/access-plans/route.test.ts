@@ -139,3 +139,17 @@ test("owner snapshot never equates a post-cutoff CRM row with an approved joint 
   assert.equal(body.zenJointPreview.approved_joint_records, 0);
   assert.equal(body.activationAvailable, false);
 });
+
+test("Zen access drafts cannot grant full-brand CRM and joint CRM cannot be assigned to Pinoso", async () => {
+  const signed = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
+  const legacyZen = await POST(req("POST", signed, {
+    action: "SAVE_DRAFT", brandKey: "zeneco", email: "andrea@example.test", permissions: ["crm.read", "crm.write"],
+  }) as any);
+  assert.equal(legacyZen.status, 400);
+  assert.equal((await legacyZen.json()).error, "INVALID_BRAND_CRM_SCOPE");
+  const forgedPinoso = await POST(req("POST", signed, {
+    action: "SAVE_DRAFT", brandKey: "pinosoecolife", email: "andrea@example.test", permissions: ["crm.joint.read"],
+  }) as any);
+  assert.equal(forgedPinoso.status, 400);
+  assert.equal((await forgedPinoso.json()).error, "INVALID_BRAND_CRM_SCOPE");
+});
