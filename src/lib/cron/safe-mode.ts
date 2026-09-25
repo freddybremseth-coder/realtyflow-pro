@@ -14,7 +14,12 @@ type SafeModeDependencies = {
   cronEnabledCheck?: CronEnabledCheck;
 };
 
-const FAIL_CLOSED_CONTROL_PATHS = new Set(["/api/cron/marketing-autopilot"]);
+const FAIL_CLOSED_CONTROL_PATHS = new Set([
+  "/api/cron/marketing-autopilot",
+  "/api/cron/freddy-website-autopilot",
+  "/api/cron/portfolio-reel-autopublish",
+  "/api/cron/remaster-mix-autopilot",
+]);
 
 function parseCsv(value?: string): string[] {
   if (!value) return [];
