@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 300;
 
-const brands = z.enum(["art","books","zeneco","freddybremseth","pinosoecolife","donaanna"]);
+const brands = z.enum(["art","books","zeneco","freddybremseth","pinosoecolife","donaanna","chatgenius","freddyai","remasterfreddy"]);
 type Brand = z.infer<typeof brands>;
 type Channel = "instagram" | "youtube" | "facebook";
 
@@ -23,6 +23,9 @@ const REEL_DESTINATIONS: Record<Brand, Record<Channel,string|null>> = {
   freddybremseth: { instagram:"freddyb",youtube:"freddyb",facebook:"freddyb" },
   pinosoecolife: { instagram:"pinosoecolife",youtube:"pinosoecolife",facebook:"pinosoecolife" },
   donaanna: { instagram:"donaanna",youtube:"donaanna",facebook:"donaanna" },
+  chatgenius: { instagram:"chatgenius",youtube:"chatgenius",facebook:"chatgenius" },
+  freddyai: { instagram:"freddyai",youtube:"freddyai",facebook:"freddyai" },
+  remasterfreddy: { instagram:"remasterfreddy",youtube:"remasterfreddy",facebook:"remasterfreddy" },
 };
 
 const postSchema=z.object({jobId:z.string().uuid(),channel:z.enum(["instagram","youtube","facebook"])}).strict();
