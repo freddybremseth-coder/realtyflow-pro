@@ -54,7 +54,18 @@ export async function admitWorkspaceMemberLogin(
           typeof permission === "string" && WORKSPACE_PERMISSIONS.includes(permission as any))) {
       return { ok: false, reason: "IDENTITY_MISMATCH" };
     }
-    activeBrands.push(brand.brand_key);
+    const permissions = grant.permissions as string[];
+    const brandKey = brand.brand_key;
+    const invalidScope = brandKey === "zeneco"
+      ? permissions.some(permission => permission === "crm.read" || permission === "crm.write") ||
+        (permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) ||
+        (permissions.some(permission => permission === "tasks.joint.read" || permission === "tasks.joint.write") &&
+          !permissions.includes("crm.joint.read")) ||
+        (permissions.includes("tasks.joint.write") && !permissions.includes("tasks.joint.read"))
+      : permissions.some(permission =>
+        ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission));
+    if (invalidScope) return { ok: false, reason: "IDENTITY_MISMATCH" };
+    activeBrands.push(brandKey);
   }
 
   return { ok: true, activeBrands: Array.from(new Set(activeBrands)) };
