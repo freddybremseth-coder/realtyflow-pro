@@ -25,6 +25,11 @@ import {
   remasterPromotionMediaUrl,
 } from "@/services/marketing/remaster-promotion-source";
 import { loadAutopilotSignalGuidance } from "@/services/marketing/autopilot-signal-guidance";
+import {
+  loadFreddyPublicSource,
+  freddyPublicMasterIdea,
+  markFreddyPublicSourcePlanned,
+} from "@/services/marketing/freddy-public-source";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
@@ -218,10 +223,19 @@ export async function GET(request: NextRequest) {
             results.push({ brandId, channel, skipped: true, reason: "no_eligible_remaster_song_source", cooldownDays: 14 });
             continue;
           }
+          const freddySource = brandId === "freddyb" && channel === "facebook"
+            ? await loadFreddyPublicSource(supabase, { cooldownDays: 14, preferSpotlight: true })
+            : null;
+          if (brandId === "freddyb" && channel === "facebook" && !freddySource) {
+            results.push({ brandId, channel, skipped: true, reason: "no_verified_freddy_public_source", cooldownDays: 14 });
+            continue;
+          }
 
           const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
-          const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
-          let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
+          const masterIdea = freddySource
+            ? freddyPublicMasterIdea(freddySource, guidance)
+            : remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
+          let mediaUrl = freddySource?.mediaUrl || (remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined);
           let generatedMedia: Record<string, unknown> | null = null;
 
           // Instagram cannot publish text-only content. SaaS brands historically
@@ -316,6 +330,14 @@ export async function GET(request: NextRequest) {
               sourceMarkError = markError instanceof Error ? markError.message : String(markError);
             }
           }
+          if (freddySource && generated) {
+            try {
+              await markFreddyPublicSourcePlanned(supabase, freddySource.id);
+              sourceMarked = true;
+            } catch (markError) {
+              sourceMarkError = markError instanceof Error ? markError.message : String(markError);
+            }
+          }
 
           results.push({
             brandId,
@@ -331,7 +353,15 @@ export async function GET(request: NextRequest) {
             generatedMedia,
             recovery,
             failureState,
-            source: remasterSource ? {
+            source: freddySource ? {
+              sourceQueueId: freddySource.id,
+              kind: freddySource.verifiedKind,
+              sourceId: freddySource.sourceId,
+              title: freddySource.title,
+              sourceUrl: freddySource.sourceUrl,
+              sourceMarked,
+              sourceMarkError,
+            } : remasterSource ? {
               sourceQueueId: remasterSource.id,
               songId: remasterSource.source_id,
               title: remasterSource.title,
