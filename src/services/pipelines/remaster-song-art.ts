@@ -17,7 +17,7 @@ export type SongArtwork = {
 
 const PREVIEW_PATH = /^[a-z0-9][a-z0-9-]{0,120}\/view\.webp$/;
 const THUMB_PATH = /^[a-z0-9][a-z0-9-]{0,120}\/thumb\.webp$/;
-const CALM_STYLES = new Set(['landscape', 'impressionism', 'abstract', 'surrealism', 'art-nouveau', 'symbolic-realism']);
+const CALM_STYLES = new Set(['landscape', 'impressionism', 'art-nouveau', 'symbolic-realism']);
 const ALTERNATIVE_STYLES = new Set(['symbolic-realism', 'surrealism', 'conceptual', 'expressionism', 'abstract']);
 
 function normalized(input: unknown): string {
@@ -44,6 +44,24 @@ export function classifyArtVisualMode(song: {
     return 'relaxing';
   }
   return null;
+}
+
+export function classifyMixArtVisualMode(
+  songs: Array<{ genre?: string | null; style?: string | null; mood?: string | null }>,
+): 'meditation' | 'relaxing' | null {
+  if (!songs.length) return null;
+  const modes = songs.map(song => classifyArtVisualMode({
+    genre: song.genre || undefined,
+    style: song.style || undefined,
+    mood: song.mood || undefined,
+  }));
+  const calmModes = modes.filter((mode): mode is 'meditation' | 'relaxing' =>
+    mode === 'meditation' || mode === 'relaxing',
+  );
+  // A calm visual lane should represent the mix, not a single outlier track.
+  if (calmModes.length < Math.floor(songs.length / 2) + 1) return null;
+  const meditationCount = calmModes.filter(mode => mode === 'meditation').length;
+  return meditationCount >= Math.ceil(calmModes.length / 2) ? 'meditation' : 'relaxing';
 }
 
 function hash(value: string): number {
@@ -90,7 +108,7 @@ export function selectSongArtworks(
   }));
 }
 
-export async function loadSongArtGallery(songId: string, mode: Exclude<ArtVisualMode, null>): Promise<SongArtwork[]> {
+export async function loadSongArtGallery(songId: string, mode: Exclude<ArtVisualMode, null>, count = 8): Promise<SongArtwork[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('Art gallery storage is not configured');
@@ -101,7 +119,7 @@ export async function loadSongArtGallery(songId: string, mode: Exclude<ArtVisual
   if (error) throw new Error('Could not read public art gallery previews: ' + error.message);
   const bucket = supabase.storage.from('art-previews');
   return selectSongArtworks((data || []) as Array<Record<string, unknown>>, songId, mode,
-    path => bucket.getPublicUrl(path).data.publicUrl);
+    path => bucket.getPublicUrl(path).data.publicUrl, count);
 }
 
 export function artCreditsDescription(songId: string): string {
