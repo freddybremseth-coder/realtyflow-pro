@@ -7,11 +7,12 @@
 
 import type { ContentGenome, MarketingChannel } from "../genome";
 import type { GenomeRecommendation } from "../learning";
+import { creativeStyleInstruction } from "../creative-style";
 import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.9";
+export const CREATIVE_PROMPT_VERSION = "cg-2.0";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -93,6 +94,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
   const avoided = req.recommendation ? req.recommendation.avoid.map((a) => `${a.dimension}=${a.value}`).join(", ") : "";
   const propertyRef = zenEcoPropertyRef(req);
   const propertyUrl = propertyRef ? `${ZENECO_PROPERTY_BASE}/${encodeURIComponent(propertyRef)}` : null;
+  const styleInstruction = creativeStyleInstruction(brief.genome.creativeStyle);
 
   const system = [
     `Du er markedsføringsforfatter for ${brand.brandName}.`,
@@ -125,6 +127,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
   const user = [
     `Kanal: ${brief.channel} — ${spec?.adaptationNote ?? ""}`,
     FORMAT_INSTRUCTIONS[brief.genome.format] && `Format: ${FORMAT_INSTRUCTIONS[brief.genome.format]}`,
+    styleInstruction && `Creative concept (${brief.genome.creativeStyle}): ${styleInstruction}`,
     `Vinkel: ${brief.angle}`,
     `Mål: ${brief.goal.kind}.`,
     propertyUrl
