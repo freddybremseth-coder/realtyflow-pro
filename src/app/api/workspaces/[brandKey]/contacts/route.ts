@@ -48,7 +48,28 @@ export async function GET(
   // Keep the dot in a normal email address while stripping syntax-like dots
   // from general text searches. Parentheses and commas are always removed.
   const safeTerm = term.includes("@") ? term : term.replace(/[.,()]/g, " ").trim();
-  // Legacy CRM stores BOTH labels. Require agreement, never infer sharing from just one tag.
+  if (access.value.verifiedUserId) {
+    const { data, error } = await access.value.supabase.rpc("workspace_brand_contacts", {
+      p_brand_key: brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_offset: (page - 1) * PAGE_SIZE,
+      p_search: safeTerm,
+    });
+    if (error || !data || !Array.isArray(data.contacts) || typeof data.hasMore !== "boolean") {
+      return NextResponse.json({ ok: false, error: { code: "CRM_UNAVAILABLE" } }, {
+        status: error ? 503 : 404, headers: noStore,
+      });
+    }
+    const visible = data.contacts.map((row: unknown) => safeContactRow(row, brandKey))
+      .filter(Boolean).slice(0, PAGE_SIZE);
+    return NextResponse.json({
+      ok: true, brand: brandKey, contacts: visible,
+      page, pageSize: PAGE_SIZE, hasMore: data.hasMore,
+    }, { headers: noStore });
+  }
+
+  // Owner path: legacy CRM stores BOTH labels. Require agreement, never infer sharing from just one tag.
   let query = access.value.supabase.from("contacts").select(SAFE_CONTACT_COLUMNS)
     .eq("brand_id", brandKey).eq("brand", brandKey);
   if (safeTerm) {
@@ -61,10 +82,12 @@ export async function GET(
   });
   const rows = data || [];
   // Fail closed again at the response boundary, even if an upstream query,
-  // view, mock or future refactor accidentally supplies a foreign brand row.
-  const visible = rows.filter(row => row.brand_id === brandKey && row.brand === brandKey);
+  // view, mock or future refactor accidentally supplies a foreign brand row or
+  // an extra private column not present in SAFE_CONTACT_COLUMNS.
+  const visible = rows.map((row: unknown) => safeContactRow(row, brandKey))
+    .filter(Boolean).slice(0, PAGE_SIZE);
   return NextResponse.json({
-    ok: true, brand: brandKey, contacts: visible.slice(0, PAGE_SIZE),
+    ok: true, brand: brandKey, contacts: visible,
     page, pageSize: PAGE_SIZE, hasMore: rows.length > PAGE_SIZE,
   }, { headers: noStore });
 }
