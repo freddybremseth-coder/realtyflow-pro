@@ -26,6 +26,7 @@ import { resolveInventoryMarketingProperty, type InventoryMarketingProperty } fr
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
+import { renderPropertySocialCard, type PropertyCardSupabase } from "@/services/marketing/property-social-card";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 const PREAPPROVED_REUSABLE_SOURCES = new Set(["ad_creative", "content_hub_approved"]);
@@ -398,6 +399,43 @@ export async function createCampaignDraft(
           ? makeDeterministicInventoryCreative(brief, inventoryProperty)
           : await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
         creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
+
+        const creativeStyle = creative.asset.genome.creativeStyle;
+        const storageReady = Boolean((supabase as any)?.storage?.from);
+        if (
+          storageReady
+          && creativeStyle
+          && (brief.channel === "facebook" || brief.channel === "instagram")
+          && /^https:\/\//i.test(inventoryProperty.primaryImage)
+        ) {
+          try {
+            const card = await renderPropertySocialCard(supabase as unknown as PropertyCardSupabase, {
+              brandId: input.brandId,
+              brandName: brand.brandName,
+              propertyId: inventoryProperty.id,
+              propertyRef: inventoryProperty.ref,
+              sourceImageUrl: inventoryProperty.primaryImage,
+              creativeStyle: creativeStyle as any,
+              factSources: inventoryProperty.factSources,
+              channel: brief.channel,
+            });
+            creative = {
+              ...creative,
+              asset: {
+                ...creative.asset,
+                media: {
+                  ...creative.asset.media,
+                  imageUrl: card.imageUrl,
+                  mediaType: "image",
+                  altText: [inventoryProperty.title, inventoryProperty.location].filter(Boolean).join(" · "),
+                },
+              },
+            };
+          } catch (error) {
+            console.warn("[Creative Variant Engine] Property card render failed; using original Inventory image:", error instanceof Error ? error.message : error);
+          }
+        }
+
         sourceType = "generated";
         sourceId = `property:${inventoryProperty.id}`;
         reuseMode = input.deterministicInventoryCopy ? "inventory_deterministic_fallback" : "inventory_grounded";
