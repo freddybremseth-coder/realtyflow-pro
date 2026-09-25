@@ -111,6 +111,26 @@ try {
   }
   const roles = await sql("select rolname from pg_roles where rolname in ('anon','authenticated','service_role')");
   verify(roles.rowCount === 3, "Test roles missing");
+  const membershipPrivileges = await sql(
+    "select has_table_privilege('service_role','core.brand_workspace_memberships','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.brand_workspace_memberships','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.brand_workspace_memberships','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.brand_workspace_memberships','DELETE') as del",
+  );
+  verify(membershipPrivileges.rows[0].sel && membershipPrivileges.rows[0].ins &&
+    membershipPrivileges.rows[0].upd && !membershipPrivileges.rows[0].del,
+    "service_role workspace membership privileges must allow lifecycle updates but never hard delete");
+  const membershipAuditExec = await sql(
+    "select has_function_privilege('anon','core.audit_brand_workspace_membership()','EXECUTE') as anon, " +
+    "has_function_privilege('authenticated','core.audit_brand_workspace_membership()','EXECUTE') as authenticated, " +
+    "has_function_privilege('service_role','core.audit_brand_workspace_membership()','EXECUTE') as service",
+  );
+  verify(!membershipAuditExec.rows[0].anon && !membershipAuditExec.rows[0].authenticated &&
+    !membershipAuditExec.rows[0].service,
+    "membership audit trigger function must not be directly executable by app roles");
+  const initialMemberships = await sql("select count(*)::int as total from core.brand_workspace_memberships");
+  verify(initialMemberships.rows[0].total === 0,
+    "Workspace migrations must never activate a member implicitly");
   for (const func of ["workspace_zeneco_review_candidates", "workspace_zeneco_review_lead",
     "workspace_zeneco_joint_contacts", "workspace_zeneco_joint_contact_update",
     "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
@@ -123,7 +143,8 @@ try {
     verify(!grants.rows[0].anon && !grants.rows[0].authenticated && grants.rows[0].service,
       func + ": privileged execute grant leaked");
   }
-  for (const table of ["zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
+  for (const table of ["brand_workspace_memberships", "brand_workspace_membership_audit",
+    "zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
     "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
     "brand_workspace_contact_write_audit"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
@@ -165,6 +186,17 @@ try {
     "insert into core.brand_workspace_memberships(brand_id,user_id,email,status,permissions) values ($1,$2,'staff@example.test','active',array['crm.joint.read']::text[])",
     [zen, member],
   );
+  const firstMembershipAudit = await sql(
+    "select action,old_status,new_status,new_permissions from core.brand_workspace_membership_audit " +
+    "where brand_id=$1 and user_id=$2 order by at,id",
+    [zen, member],
+  );
+  verify(firstMembershipAudit.rowCount === 1 &&
+    firstMembershipAudit.rows[0].action === "created" &&
+    firstMembershipAudit.rows[0].old_status === null &&
+    firstMembershipAudit.rows[0].new_status === "active" &&
+    firstMembershipAudit.rows[0].new_permissions.join() === "crm.joint.read",
+    "Initial workspace membership lifecycle audit missing or inaccurate");
   verify((await list()).contacts.map(c => c.id).join() === newId,
     "Scoped list must show only the owner-approved Zen contact");
   verify((await list(member, "wrong@example.test")).contacts.length === 0,
@@ -174,6 +206,17 @@ try {
     "update core.brand_workspace_memberships set permissions=array['crm.joint.read','crm.joint.write']::text[] where brand_id=$1 and user_id=$2",
     [zen, member],
   );
+  const updatedMembershipAudit = await sql(
+    "select action,old_status,new_status,old_permissions,new_permissions from core.brand_workspace_membership_audit " +
+    "where brand_id=$1 and user_id=$2 order by at desc,id desc limit 1",
+    [zen, member],
+  );
+  verify(updatedMembershipAudit.rows[0]?.action === "updated" &&
+    updatedMembershipAudit.rows[0]?.old_status === "active" &&
+    updatedMembershipAudit.rows[0]?.new_status === "active" &&
+    updatedMembershipAudit.rows[0]?.old_permissions.join() === "crm.joint.read" &&
+    updatedMembershipAudit.rows[0]?.new_permissions.join() === "crm.joint.read,crm.joint.write",
+    "Workspace membership permission change audit missing");
   verify(await edit(old) === null, "Historical Zen customer was editable");
   verify(await edit(importedOld) === null, "Unapproved post-cutoff import was editable");
   verify(await edit(other) === null, "Foreign brand customer was editable");
