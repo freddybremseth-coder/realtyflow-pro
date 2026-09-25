@@ -13,6 +13,34 @@ type ContactCount = { brand_key: string; assigned: number; needs_review: number 
 type Payload = { brands: Brand[]; plans: Plan[]; contactCounts: ContactCount[];
   zenJointPreview: { new_crm_records_to_review: number; approved_joint_records: number } | null;
   activationAvailable: false; message: string };
+type Readiness = {
+  brand: { brandKey: string; name: string };
+  email: string;
+  draft: { permissions: WorkspacePermission[] } | null;
+  checks: {
+    authUserExists: boolean;
+    workspaceProfile: { role: string; active: boolean } | null;
+    activeMembershipExists: boolean;
+    featureFlagEnabled: boolean;
+  };
+  blockers: string[];
+  readyForOwnerReview: boolean;
+  activationAvailable: false;
+  message: string;
+};
+const readinessLabels: Record<string, string> = {
+  NO_DRAFT: "Lagre et tilgangsutkast først.",
+  INVALID_DRAFT_PERMISSIONS: "Utkastet inneholder en ukjent eller ugyldig rettighet.",
+  EMPTY_PERMISSIONS: "Utkastet har ingen rettigheter.",
+  INVALID_BRAND_SCOPE: "Rettighetene passer ikke med denne merkevarens avgrensning.",
+  MARKETING_SCOPE_NOT_IMPLEMENTED: "Markedsføringsrettigheter er fortsatt planlagt og har ingen sikker medarbeiderrute ennå.",
+  AUTH_USER_MISSING: "Supabase Auth-brukeren finnes ikke ennå.",
+  ACCESS_PROFILE_MISSING: "RealtyFlow-profilen WORKSPACE_MEMBER finnes ikke ennå.",
+  ACCESS_PROFILE_WRONG_ROLE: "Eksisterende RealtyFlow-profil har feil rolle.",
+  ACCESS_PROFILE_INACTIVE: "RealtyFlow-profilen er deaktivert.",
+  ACTIVE_MEMBERSHIP_ALREADY_PRESENT: "Et aktivt medlemskap finnes allerede; dette må gjennomgås, ikke overskrives.",
+  FEATURE_FLAG_DISABLED: "Medarbeiderfunksjonen er fortsatt slått av globalt, som forventet før godkjent utrulling.",
+};
 const permissionLabels: Record<WorkspacePermission, { title: string; description: string }> = {
   "properties.catalog.read": { title: "Eiendomskatalog", description: "Se vanlige boligoppføringer. Ikke intern pris-/importdata." },
   "crm.read": { title: "Kunder og CRM – se", description: "Les kun kunder som er knyttet til valgt merkevare." },
@@ -59,6 +87,8 @@ export default function WorkspaceAccessPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [readinessBusy, setReadinessBusy] = useState(false);
 
   async function reload() {
     setLoading(true); setError("");
@@ -83,6 +113,25 @@ export default function WorkspaceAccessPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  async function checkReadiness(selectedBrand = brandKey, selectedEmail = email.trim().toLowerCase()) {
+    if (!selectedBrand || !selectedEmail) {
+      setError("Velg merkevare og e-post før sikkerhetskontrollen.");
+      return;
+    }
+    setReadinessBusy(true); setError(""); setReadiness(null);
+    try {
+      const query = new URLSearchParams({ brandKey: selectedBrand, email: selectedEmail });
+      const res = await fetch("/api/workspaces/access-readiness?" + query.toString(), { cache: "no-store" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Sikkerhetskontrollen kunne ikke kjøres.");
+      setReadiness(body);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Sikkerhetskontrollen kunne ikke kjøres.");
+    } finally {
+      setReadinessBusy(false);
+    }
+  }
+
   async function save(action: "SAVE_DRAFT" | "DISCARD_DRAFT", plan?: Plan) {
     const selectedBrand = plan ? payload?.brands.find((item) => item.id === plan.brand_id)?.brand_key : brandKey;
     const selectedEmail = plan?.email || email.trim().toLowerCase();
@@ -97,6 +146,7 @@ export default function WorkspaceAccessPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Kunne ikke lagre.");
       setNotice(action === "SAVE_DRAFT" ? "Rettighetene er lagret som utkast. Ingen tilgang er aktivert." : "Utkastet er forkastet.");
+      setReadiness(null);
       await reload();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Kunne ikke lagre."); }
     finally { setBusy(false); }
@@ -174,10 +224,26 @@ export default function WorkspaceAccessPage() {
                 </label>
               ))}
             </div>
-            <button type="button" disabled={busy || !brandKey || !email.trim()} onClick={() => void save("SAVE_DRAFT")}
-              className="rounded-xl bg-cyan-600 px-5 py-3 font-semibold text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50">
-              {busy ? "Lagrer…" : "Lagre tilgangsutkast"}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button type="button" disabled={busy || !brandKey || !email.trim()} onClick={() => void save("SAVE_DRAFT")}
+                className="rounded-xl bg-cyan-600 px-5 py-3 font-semibold text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50">
+                {busy ? "Lagrer…" : "Lagre tilgangsutkast"}
+              </button>
+              <button type="button" disabled={readinessBusy || !brandKey || !email.trim()}
+                onClick={() => void checkReadiness()}
+                className="rounded-xl border border-cyan-700 px-5 py-3 font-semibold text-cyan-200 hover:bg-cyan-950/40 disabled:opacity-50">
+                {readinessBusy ? "Kontrollerer…" : "Kjør sikkerhetskontroll"}
+              </button>
+            </div>
+            {readiness && <div className={`rounded-xl border p-4 text-sm ${readiness.readyForOwnerReview ? "border-emerald-700 bg-emerald-950/25 text-emerald-100" : "border-amber-700 bg-amber-950/25 text-amber-100"}`}>
+              <strong>{readiness.readyForOwnerReview ? "Utkastet er klart for eierens videre gjennomgang" : "Følgende må avklares før eventuell aktivering"}</strong>
+              <p className="mt-1 text-xs opacity-80">Kontrollen er kun lesing og kan ikke opprette bruker, medlemskap eller invitasjon.</p>
+              <ul className="mt-3 list-disc space-y-1 pl-5">
+                {readiness.blockers.length === 0
+                  ? <li>Ingen tekniske blokkeringer funnet.</li>
+                  : readiness.blockers.map(blocker => <li key={blocker}>{readinessLabels[blocker] || blocker}</li>)}
+              </ul>
+            </div>}
             <p className="flex items-center gap-2 text-xs text-slate-400"><LockKeyhole size={14} /> Aktivering og invitasjoner er deaktivert inntil sikkerhetskontrollene er bestått.</p>
           </section>
           <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
@@ -194,6 +260,9 @@ export default function WorkspaceAccessPage() {
                   <p className="text-xs text-amber-300">Utkast · ingen aktiv tilgang</p>
                   <div className="flex gap-2 pt-2">
                     <button onClick={() => selectPlan(plan)} className="rounded-lg border border-slate-600 px-3 py-2 text-sm hover:bg-slate-800">Rediger</button>
+                    <button disabled={readinessBusy || !brand?.brand_key}
+                      onClick={() => void checkReadiness(brand?.brand_key || "", plan.email)}
+                      className="rounded-lg border border-cyan-800 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-950/40 disabled:opacity-50">Sikkerhetskontroll</button>
                     <button disabled={busy} onClick={() => void save("DISCARD_DRAFT", plan)} className="rounded-lg border border-red-800 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40 disabled:opacity-50">Forkast</button>
                   </div>
                 </div>
