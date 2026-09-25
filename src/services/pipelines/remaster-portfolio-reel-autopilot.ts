@@ -176,17 +176,21 @@ export async function createAutonomousPortfolioReel(
   supabase:SupabaseLike,
   definition:AutonomousReelDefinition,
   slotKey:string,
+  socialLearning?:Record<string,unknown>,
 ){
   const destinations=await activeDestinations(supabase,definition.growthBrandId);
   if(!destinations.length) return {skipped:true,reason:"no_connected_video_channels"} as const;
 
   const signals=await loadAutopilotSignalGuidance(supabase,definition.growthBrandId)
     .catch(()=>({text:"",evidence:{seo:null,youtube:null}}));
+  const socialGuidance=socialLearning&&Object.keys(socialLearning).length
+    ? ` Social learning: ${JSON.stringify(socialLearning)}. Use this as measured channel guidance, not as a factual claim.`
+    : "";
   const duration=learnedDuration(signals.evidence);
   const count=visualCount(duration);
   const seed=`${slotKey}:${definition.growthBrandId}`;
   const song=await chooseSong(supabase,seed,definition.reelBrand);
-  const selected=await visualSelection(supabase,definition,seed,count,signals.text);
+  const selected=await visualSelection(supabase,definition,seed,count,signals.text+socialGuidance);
   if(selected.imageUrls.length<2) throw new Error("REEL_NOT_ENOUGH_AUTONOMOUS_VISUALS");
 
   const title=definition.reelBrand==="remasterfreddy"
@@ -203,6 +207,7 @@ export async function createAutonomousPortfolioReel(
     reelBrand:definition.reelBrand,
     destinations,
     signalEvidence:signals.evidence,
+    socialLearning:socialLearning||null,
     learnedDurationSeconds:duration,
     promotedItems:selected.promotedItems.map(item=>({
       id:item.id,title:item.title,detailUrl:item.detailUrl,
