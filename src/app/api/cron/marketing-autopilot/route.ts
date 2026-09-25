@@ -8,11 +8,10 @@ import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { summarizeMarketingAutopilotHeartbeat } from "@/lib/marketing/autopilot-heartbeat";
 import {
   autopilotRunIdentity,
-  autopilotTargetHour,
+  autopilotTargetHours,
+  dueAutopilotTargetHour,
   localAutopilotSlot,
-  isPlannedAutopilotDay,
   parseLearnedAutopilotHour,
-  shouldRunAutopilotSlot,
 } from "@/lib/marketing/autopilot-safety";
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
@@ -25,9 +24,31 @@ import {
   remasterPromotionMasterIdea,
   remasterPromotionMediaUrl,
 } from "@/services/marketing/remaster-promotion-source";
+import { loadAutopilotSignalGuidance } from "@/services/marketing/autopilot-signal-guidance";
+import {
+  loadFreddyPublicSource,
+  freddyPublicMasterIdea,
+  markFreddyPublicSourcePlanned,
+} from "@/services/marketing/freddy-public-source";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
+const FREDDY_PUBLIC_FACEBOOK_PAGE_ID = "1324025764122967";
+const REEL_AUTOPILOT_BRANDS = new Set(["zeneco","pinosoecolife","donaanna","freddyart","freddypublishing","chatgenius","freddyai","remasterfreddy"]);
+
+async function verifiedAutopilotDestination(supabase:any, brandId:string, channel:string) {
+  if (brandId !== "freddyb" || channel !== "facebook") return { ok:true as const };
+  const { data, error } = await supabase.from("social_channels")
+    .select("id,external_id,display_name,is_active")
+    .eq("brand_id","freddyb").eq("platform","facebook").eq("is_active",true);
+  if (error) return { ok:false as const, reason:"freddy_public_page_verification_failed", error:error.message };
+  if (!Array.isArray(data) || data.length !== 1)
+    return { ok:false as const, reason:"freddy_public_page_not_uniquely_bound" };
+  if (String(data[0].external_id) !== FREDDY_PUBLIC_FACEBOOK_PAGE_ID)
+    return { ok:false as const, reason:"freddy_private_or_wrong_facebook_destination_blocked", externalId:String(data[0].external_id||"") };
+  return { ok:true as const, pageId:FREDDY_PUBLIC_FACEBOOK_PAGE_ID, displayName:String(data[0].display_name||"Freddy Bremseth") };
+}
+
 const RECOVERABLE_PROPERTY_COPY_ERRORS = [
   "FACT_NOT_VERIFIED",
   "CLAIM_NOT_VERIFIED",
@@ -57,7 +78,7 @@ function safeFallbackIdentity(identity: ReturnType<typeof autopilotRunIdentity> 
 }
 
 async function hasRecentAutoPublication(supabase: any, brandId: string, channel: string) {
-  const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - 11.5 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from("marketing_publications")
     .select("publication_id")
@@ -159,18 +180,40 @@ export async function GET(request: NextRequest) {
       if (!channels.length) { results.push({ brandId, skipped: true, reason: "No requested/preapproved autopilot channels" }); continue; }
 
       for (const channel of channels) {
-        if (!manualRun && !isPlannedAutopilotDay(dayIndex, plan?.posting_strategy?.days)) {
-          results.push({ brandId, channel, skipped: true, reason: "not_configured_publishing_day", localDate });
+        const destination = await verifiedAutopilotDestination(supabase, brandId, channel);
+        if (!destination.ok) {
+          results.push({ brandId, channel, skipped:true, ...destination });
           continue;
         }
+        // Portfolio autopilot is intentionally interval-based: two slots per day,
+        // exactly 12 hours apart. Legacy weekday plans remain available for manual
+        // and older callers but do not suppress this owner-authorized loop.
         if (await hasRecentAutoPublication(supabase, brandId, channel)) { results.push({ brandId, channel, skipped: true, reason: "recent_auto_publication_exists" }); continue; }
         const recommendation = await recommendForGeneration(supabase as any, { scope: channelLearningScope(brandId, channel) }).catch(() => undefined);
         const learnedHour = parseLearnedAutopilotHour(recommendation?.favor?.publishHour?.value);
-        const targetHour = autopilotTargetHour(dayIndex, learnedHour);
-        if (!manualRun && !shouldRunAutopilotSlot(localHour, targetHour)) { results.push({ brandId, channel, skipped: true, reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due", localHour, learnedHour, targetHour }); continue; }
+        const targetHours = autopilotTargetHours(brandId, learnedHour);
+        const dueTargetHour = dueAutopilotTargetHour(localHour, targetHours);
+        if (!manualRun && dueTargetHour == null) {
+          results.push({
+            brandId, channel, skipped: true,
+            reason: learnedHour == null ? "staggered_12h_slot_not_due" : "learned_12h_slot_not_due",
+            localHour, learnedHour, targetHours,
+          });
+          continue;
+        }
+        if (!manualRun && REEL_AUTOPILOT_BRANDS.has(brandId) && dueTargetHour !== targetHours[0]) {
+          results.push({
+            brandId, channel, skipped: true,
+            reason: "reel_slot_reserved",
+            localHour, targetHours,
+          });
+          continue;
+        }
+        const targetHour = dueTargetHour ?? localHour;
 
         try {
-          const guidance = recommendation ? ` Bruk dokumentert læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "";
+          const signalGuidance = await loadAutopilotSignalGuidance(supabase as any, brandId).catch(() => ({ text: "", evidence: { seo: null, youtube: null } }));
+          const guidance = (recommendation ? ` Bruk dokumentert kanal-læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "") + signalGuidance.text;
           const role = String(plan?.metadata?.brand_role ?? "");
           const isRemasterCreator = brandId === "remasterfreddy" && role === "creator_media";
           const remasterSource = isRemasterCreator
@@ -180,10 +223,19 @@ export async function GET(request: NextRequest) {
             results.push({ brandId, channel, skipped: true, reason: "no_eligible_remaster_song_source", cooldownDays: 14 });
             continue;
           }
+          const freddySource = brandId === "freddyb" && channel === "facebook"
+            ? await loadFreddyPublicSource(supabase, { cooldownDays: 14, preferSpotlight: true })
+            : null;
+          if (brandId === "freddyb" && channel === "facebook" && !freddySource) {
+            results.push({ brandId, channel, skipped: true, reason: "no_verified_freddy_public_source", cooldownDays: 14 });
+            continue;
+          }
 
           const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
-          const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
-          let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
+          const masterIdea = freddySource
+            ? freddyPublicMasterIdea(freddySource, guidance)
+            : remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
+          let mediaUrl = freddySource?.mediaUrl || (remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined);
           let generatedMedia: Record<string, unknown> | null = null;
 
           // Instagram cannot publish text-only content. SaaS brands historically
@@ -278,6 +330,14 @@ export async function GET(request: NextRequest) {
               sourceMarkError = markError instanceof Error ? markError.message : String(markError);
             }
           }
+          if (freddySource && generated) {
+            try {
+              await markFreddyPublicSourcePlanned(supabase, freddySource.id);
+              sourceMarked = true;
+            } catch (markError) {
+              sourceMarkError = markError instanceof Error ? markError.message : String(markError);
+            }
+          }
 
           results.push({
             brandId,
@@ -287,11 +347,21 @@ export async function GET(request: NextRequest) {
             localHour,
             learnedHour,
             targetHour,
+            targetHours,
             recommendation: recommendation?.favor ?? {},
+            signalEvidence: signalGuidance.evidence,
             generatedMedia,
             recovery,
             failureState,
-            source: remasterSource ? {
+            source: freddySource ? {
+              sourceQueueId: freddySource.id,
+              kind: freddySource.verifiedKind,
+              sourceId: freddySource.sourceId,
+              title: freddySource.title,
+              sourceUrl: freddySource.sourceUrl,
+              sourceMarked,
+              sourceMarkError,
+            } : remasterSource ? {
               sourceQueueId: remasterSource.id,
               songId: remasterSource.source_id,
               title: remasterSource.title,

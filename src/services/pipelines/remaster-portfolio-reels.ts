@@ -8,7 +8,7 @@ import type { PromotionItem } from "./remaster-mix-promotions";
 import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
 import type { RemasterMixRegion, RemasterMixVisualType } from "./remaster-mix-planner";
 
-export type ReelBrand = "art" | "books" | "zeneco" | "freddybremseth" | "pinosoecolife" | "donaanna";
+export type ReelBrand = "art" | "books" | "zeneco" | "freddybremseth" | "pinosoecolife" | "donaanna" | "chatgenius" | "freddyai" | "remasterfreddy";
 export type ReelChannel = "instagram"|"facebook";
 export type ReelSong = {id:string;title:string;audioUrl:string;youtubeUrl?:string|null};
 export type ReelRenderInput = {
@@ -33,10 +33,10 @@ function safeText(value:string,max:number) {
 }
 function assPath(value:string){return value.replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'");}
 function brandLabel(brand:ReelBrand) {
-  return ({art:"FREDDY BREMSETH ART",books:"FREDDY BREMSETH BOOKS",zeneco:"ZEN ECO HOMES",freddybremseth:"FREDDY BREMSETH",pinosoecolife:"PINOSO ECO LIFE",donaanna:"DOÑA ANNA"} as const)[brand];
+  return ({art:"FREDDY BREMSETH ART",books:"FREDDY BREMSETH BOOKS",zeneco:"ZEN ECO HOMES",freddybremseth:"FREDDY BREMSETH",pinosoecolife:"PINOSO ECO LIFE",donaanna:"DOÑA ANNA",chatgenius:"CHATGENIUS.PRO",freddyai:"FREDDY AI PRODUCTS",remasterfreddy:"RE-MASTER FREDDY"} as const)[brand];
 }
 function brandWebsite(brand:ReelBrand) {
-  return ({art:"art.freddybremseth.com",books:"books.freddybremseth.com",zeneco:"zenecohomes.com",freddybremseth:"freddybremseth.com",pinosoecolife:"pinosoecolife.com",donaanna:"donaanna.com"} as const)[brand];
+  return ({art:"art.freddybremseth.com",books:"books.freddybremseth.com",zeneco:"zenecohomes.com",freddybremseth:"freddybremseth.com",pinosoecolife:"pinosoecolife.com",donaanna:"donaanna.com",chatgenius:"chatgenius.pro",freddyai:"freddybremseth.com",remasterfreddy:"remaster.freddybremseth.com"} as const)[brand];
 }
 function buildAss(input:ReelRenderInput) {
   const brand=brandLabel(input.brand),title=safeText(input.title,78),site=brandWebsite(input.brand);
@@ -67,6 +67,7 @@ export function isApprovedReelImageUrl(url:string,brand:ReelBrand){
     if(u.protocol!=="https:"||privateHost(u.hostname)||u.username||u.password)return false;
     if(brand==="books" || brand==="freddybremseth") return (brand==="freddybremseth" && isApprovedArtPreviewUrl(url)) || u.hostname===BOOK_HOST || SAFE_PUBLIC_SUPABASE.test(u.href);
     if(brand==="donaanna") return DONA_ANNA_REEL_IMAGES.includes(u.href);
+    if(["chatgenius","freddyai","remasterfreddy"].includes(brand)) return SAFE_PUBLIC_SUPABASE.test(u.href);
     return true; // Property URLs originate from canonical, website-visible, brand-filtered inventory only.
   }catch{return false;}
 }
@@ -123,6 +124,21 @@ export function buildPortfolioReelCaption(input:ReelRenderInput){
     "🫒 Doña Anna — olives, olive oil and Mediterranean life in Biar.",
     "Discover Doña Anna: https://donaanna.com/", music,
     "#DonaAnna #OliveOil #Biar #ReMasterFreddy",
+  ].join("\n\n");
+  if(input.brand==="chatgenius") return [
+    "Practical AI workflows and tools for businesses.",
+    "Explore ChatGenius.pro: https://chatgenius.pro/", music,
+    "#ChatGenius #AIForBusiness #Automation #ReMasterFreddy",
+  ].join("\n\n");
+  if(input.brand==="freddyai") return [
+    "AI products, automation and practical business systems.",
+    "Explore the latest projects: https://freddybremseth.com/", music,
+    "#AIProducts #Automation #BusinessAI #ReMasterFreddy",
+  ].join("\n\n");
+  if(input.brand==="remasterfreddy") return [
+    "Original music and visual mixes from Re-Master Freddy.",
+    "Listen and explore: https://remaster.freddybremseth.com/", music,
+    "#ReMasterFreddy #OriginalMusic #MusicReel",
   ].join("\n\n");
   const area=safeText(input.areaQuery||"",80);
   const region=input.region&&input.region!=="any" ? input.region.replace(/-/g," ") : "";

@@ -18,9 +18,18 @@ export async function GET(request:NextRequest) {
   if (!db) return NextResponse.json({error:"SUPABASE_UNAVAILABLE"},{status:503});
   const {data:plan,error:planError}=await db.from("marketing_brand_growth_plans")
     .select("status,autonomy_mode").eq("brand_id","freddyb").maybeSingle();
-  if (planError || plan?.status!=="active" || plan?.autonomy_mode!=="approval_required")
-    return NextResponse.json({skipped:true,reason:"UMBRELLA_REQUIRES_APPROVAL_MODE"});
+  const autonomyMode=String(plan?.autonomy_mode||"");
+  if (planError || plan?.status!=="active" || !["approval_required","controlled_auto"].includes(autonomyMode))
+    return NextResponse.json({skipped:true,reason:"UMBRELLA_EDITORIAL_PLAN_NOT_ACTIVE"});
   const {data,error}=await db.rpc("curate_freddy_creative_editorial_sources");
   if (error) return NextResponse.json({error:"EDITORIAL_CURATION_FAILED",details:error.message},{status:503});
-  return NextResponse.json({success:true,brandId:"freddyb",newCandidates:data,externalPosts:0,approvalRequired:true});
+  return NextResponse.json({
+    success:true,
+    brandId:"freddyb",
+    newCandidates:data,
+    externalPosts:0,
+    approvalRequired:autonomyMode==="approval_required",
+    controlledAuto:autonomyMode==="controlled_auto",
+    privateFacebookProfileDestination:false,
+  });
 }
