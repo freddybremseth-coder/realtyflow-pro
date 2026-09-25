@@ -129,6 +129,16 @@ try {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
+  for (const auditTable of ["zeneco_joint_lead_review_audit", "zeneco_joint_contact_edit_audit",
+    "brand_workspace_contact_write_audit"]) {
+    const privileges = await sql(
+      "select has_table_privilege('service_role',$1,'SELECT') as sel, has_table_privilege('service_role',$1,'INSERT') as ins, has_table_privilege('service_role',$1,'UPDATE') as upd, has_table_privilege('service_role',$1,'DELETE') as del",
+      ["core." + auditTable],
+    );
+    verify(privileges.rows[0].sel && privileges.rows[0].ins &&
+      !privileges.rows[0].upd && !privileges.rows[0].del,
+      auditTable + " must be append-only for service_role");
+  }
   await sql("insert into auth.users(id,email) values ($1,'staff@example.test')", [member]);
   await sql("insert into core.brands(id,brand_key,display_name) values ($1,'zeneco','Zen Eco Homes'),($2,'pinosoecolife','Pinoso EcoLife')", [zen, pinoso]);
   await sql(
