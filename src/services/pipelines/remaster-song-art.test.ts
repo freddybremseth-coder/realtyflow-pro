@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { artCreditsDescription, classifyArtVisualMode, selectSongArtworks } from './remaster-song-art';
+import { artCreditsDescription, classifyArtVisualMode, classifyMixArtVisualMode, selectSongArtworks } from './remaster-song-art';
 
 const artworks = [
   { id: 'quiet-coastal-horizon', title_en: 'Quiet Coastal Horizon', style_id: 'landscape', collection_id: 'mediterranean-soul', published: true, public_preview_path: 'quiet-coastal-horizon/view.webp', public_thumb_path: 'quiet-coastal-horizon/thumb.webp', pixel_width: 1122, pixel_height: 1402 },
@@ -17,13 +17,16 @@ test('routes meditation, relaxing and alternative to art; leaves EDM untouched',
   assert.equal(classifyArtVisualMode({ genre: 'Alternative Rock' }), 'alternative');
   assert.equal(classifyArtVisualMode({ genre: 'EDM', mood: 'energetic', metadata: { energy: 'high' } }), null);
   assert.equal(classifyArtVisualMode({ genre: 'House' }, { genre: 'ambient', mood: 'relaxing' }), 'relaxing');
+  assert.equal(classifyMixArtVisualMode([{ genre: 'Meditation' }, { mood: 'peaceful' }]), 'meditation');
+  assert.equal(classifyMixArtVisualMode([{ genre: 'Meditation' }, { genre: 'EDM', mood: 'energetic' }]), null);
+  assert.equal(classifyMixArtVisualMode([{ genre: 'Ambient' }, { genre: 'Relaxing' }, { genre: 'House' }]), 'relaxing');
 });
 
 test('selects only published public previews in an appropriate mood lane', () => {
   const result = selectSongArtworks(artworks, 'song-1', 'meditation', path => 'https://supabase.test/storage/v1/object/public/art-previews/' + path);
-  assert.equal(result.length, 3);
+  assert.equal(result.length, 2);
   assert.ok(result.every(item => item.imageUrl.includes('/art-previews/') && item.imageUrl.endsWith('/view.webp')));
-  assert.ok(!result.some(item => item.id === 'private-master' || item.id === 'hidden-art' || item.id === 'red-graffiti'));
+  assert.ok(!result.some(item => item.id === 'private-master' || item.id === 'hidden-art' || item.id === 'red-graffiti' || item.id === 'moon-garden'));
   assert.deepEqual(result.map(item => item.id), selectSongArtworks(artworks, 'song-1', 'meditation', path => path).map(item => item.id));
 });
 
