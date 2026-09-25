@@ -89,7 +89,7 @@ export async function GET(request:NextRequest){
 
     const slotKey=`${localDate}:h${String(targetHour).padStart(2,"0")}`;
     try{
-      const result=await createAutonomousPortfolioReel(db as any,definition,slotKey);
+      const result=await createAutonomousPortfolioReel(db as any,definition,slotKey,recommendation ? {favor:recommendation.favor,avoid:recommendation.avoid} : undefined);
       const details={
         brandId:definition.growthBrandId,
         reelBrand:definition.reelBrand,
