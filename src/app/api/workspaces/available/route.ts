@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const { data: authResult, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !authResult?.user) continue;
     const permissions = WORKSPACE_PERMISSIONS.filter(permission =>
+      !permission.startsWith("marketing.") &&
       (brand.brand_key === "zeneco"
         ? permission !== "crm.read" && permission !== "crm.write"
         : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)) &&
