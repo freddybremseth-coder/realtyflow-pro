@@ -128,6 +128,28 @@ try {
   verify(!membershipAuditExec.rows[0].anon && !membershipAuditExec.rows[0].authenticated &&
     !membershipAuditExec.rows[0].service,
     "membership audit trigger function must not be directly executable by app roles");
+
+  const accessPlanPrivileges = await sql(
+    "select has_table_privilege('service_role','core.brand_workspace_access_plans','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.brand_workspace_access_plans','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.brand_workspace_access_plans','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.brand_workspace_access_plans','DELETE') as del",
+  );
+  verify(accessPlanPrivileges.rows[0].sel && accessPlanPrivileges.rows[0].ins &&
+    accessPlanPrivileges.rows[0].upd && !accessPlanPrivileges.rows[0].del,
+    "service_role access-plan privileges must preserve discarded drafts rather than hard-delete them");
+  const accessPlanAuditExec = await sql(
+    "select has_function_privilege('anon','core.audit_brand_workspace_access_plan()','EXECUTE') as anon, " +
+    "has_function_privilege('authenticated','core.audit_brand_workspace_access_plan()','EXECUTE') as authenticated, " +
+    "has_function_privilege('service_role','core.audit_brand_workspace_access_plan()','EXECUTE') as service",
+  );
+  verify(!accessPlanAuditExec.rows[0].anon && !accessPlanAuditExec.rows[0].authenticated &&
+    !accessPlanAuditExec.rows[0].service,
+    "access-plan audit trigger function must not be directly executable by app roles");
+  const initialPlans = await sql("select count(*)::int as total from core.brand_workspace_access_plans");
+  verify(initialPlans.rows[0].total === 0,
+    "Workspace migrations must never create an access-plan draft implicitly");
+
   const initialMemberships = await sql("select count(*)::int as total from core.brand_workspace_memberships");
   verify(initialMemberships.rows[0].total === 0,
     "Workspace migrations must never activate a member implicitly");
@@ -144,6 +166,7 @@ try {
       func + ": privileged execute grant leaked");
   }
   for (const table of ["brand_workspace_memberships", "brand_workspace_membership_audit",
+    "brand_workspace_access_plans", "brand_workspace_access_plan_audit",
     "zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
     "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
     "brand_workspace_contact_write_audit"]) {
