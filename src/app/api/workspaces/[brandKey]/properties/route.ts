@@ -49,14 +49,44 @@ export async function GET(
     return NextResponse.json({ ok: false, error: { code: "INVALID_SEARCH" } }, { status: 400, headers: noStore });
   }
   const perPage = 24;
+  const safeSearch = term
+    ? term.replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim()
+    : "";
+
+  if (access.value.verifiedUserId) {
+    const { data, error } = await access.value.supabase.rpc("workspace_brand_property_catalogue", {
+      p_brand_key: brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_offset: (page - 1) * perPage,
+      p_search: safeSearch,
+    });
+    if (error) return NextResponse.json({ ok: false, error: { code: "CATALOGUE_UNAVAILABLE" } }, {
+      status: 503, headers: noStore,
+    });
+    if (!data) return NextResponse.json({ ok: false, error: { code: "CATALOGUE_ACCESS_REVOKED" } }, {
+      status: 403, headers: noStore,
+    });
+    if (!Array.isArray(data.properties) || typeof data.hasMore !== "boolean") {
+      return NextResponse.json({ ok: false, error: { code: "CATALOGUE_UNAVAILABLE" } }, {
+        status: 503, headers: noStore,
+      });
+    }
+    const properties = data.properties.map(safeCatalogueRow).filter(Boolean).slice(0, perPage);
+    return NextResponse.json({
+      ok: true, brand: brandKey, page, pageSize: perPage,
+      scope: "brand_scoped_published_catalogue", properties, hasMore: data.hasMore,
+    }, { headers: noStore });
+  }
+
   let query = access.value.supabase.from("properties")
     .select(SAFE_CATALOGUE_COLUMNS)
     .eq("show_on_website", true)
     .eq("website_visible", true);
-  if (term) {
-    // Escape PostgREST OR-expression metacharacters rather than interpolate SQL.
-    const safe = term.replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim();
-    if (safe) query = query.or(`title.ilike.%${safe}%,town.ilike.%${safe}%,location.ilike.%${safe}%,ref.ilike.%${safe}%`);
+  if (safeSearch) {
+    // Owner-only fallback path remains public-catalogue-only. Staff never
+    // reaches this PostgREST query; their brand scope is enforced in one RPC.
+    query = query.or(`title.ilike.%${safeSearch}%,town.ilike.%${safeSearch}%,location.ilike.%${safeSearch}%,ref.ilike.%${safeSearch}%`);
   }
   const { data, error } = await query.order("created_at", { ascending: false })
     .range((page - 1) * perPage, page * perPage - 1);
@@ -69,6 +99,7 @@ export async function GET(
   const properties = (data || []).map(safeCatalogueRow).filter(Boolean);
   return NextResponse.json({
     ok: true, brand: brandKey, page, pageSize: perPage,
-    scope: "published_public_catalogue", properties,
+    scope: "published_public_catalogue_owner", properties,
+    hasMore: properties.length === perPage,
   }, { headers: noStore });
 }
