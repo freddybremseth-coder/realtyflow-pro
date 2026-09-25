@@ -6,6 +6,10 @@ import { createAdminSession } from "@/lib/admin-auth";
 import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
 import { GET, POST, PATCH } from "./route";
 
+const contactId = "11111111-1111-4111-8111-111111111111";
+const otherContactId = "22222222-2222-4222-8222-222222222222";
+const legacyZenId = "33333333-3333-4333-8333-333333333333";
+
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let scopedResult: Array<Record<string, unknown>> = [];
 let testGrant: Record<string, unknown> | null = null;
@@ -25,9 +29,15 @@ function fakeDatabase() {
     },
   };
   return {
-    rpc(name: string) {
-      calls.push({ method: "rpc", args: [name] });
-      return Promise.resolve({ data: { brand: { id: "pinoso-uuid", brand_key: "pinosoecolife" }, grant: testGrant }, error: null });
+    rpc(name: string, args?: Record<string, unknown>) {
+      calls.push({ method: "rpc", args: [name, args] });
+      if (name === "workspace_brand_grant") {
+        return Promise.resolve({ data: { brand: { id: "pinoso-uuid", brand_key: "pinosoecolife" }, grant: testGrant }, error: null });
+      }
+      if (name === "workspace_brand_contact_create" || name === "workspace_brand_contact_update") {
+        return Promise.resolve({ data: scopedResult[0] || null, error: null });
+      }
+      throw new Error("Unexpected privileged RPC: " + name);
     },
     from(table: string) { calls.push({ method: "from", args: [table] }); return query; },
     auth: { admin: { getUserById: async (id: string) => ({
@@ -45,7 +55,7 @@ test.beforeEach(() => {
   process.env.REALTYFLOW_ADMIN_EMAILS = "owner@example.test";
   calls.length = 0;
   testGrant = null;
-  scopedResult = [{ id: "pinoso-contact", brand_id: "pinosoecolife", brand: "pinosoecolife", name: "Example", email: null }];
+  scopedResult = [{ id: contactId, brand_id: "pinosoecolife", brand: "pinosoecolife", name: "Example", email: null }];
   setPlatformSupabaseFactoryForTests(() => fakeDatabase());
 });
 test.afterEach(() => setPlatformSupabaseFactoryForTests(null));
@@ -62,7 +72,7 @@ test("read is restricted to exact brand at database and never selects internal f
   assert.equal(result.status, 200);
   assert.equal(result.headers.get("cache-control"), "private, no-store");
   const payload = await result.json();
-  assert.equal(payload.contacts[0].id, "pinoso-contact");
+  assert.equal(payload.contacts[0].id, contactId);
   assert.equal(payload.brand, "pinosoecolife");
   assert.deepEqual(calls.filter(c => c.method === "eq"), [
     { method: "eq", args: ["brand_id", "pinosoecolife"] },
@@ -150,14 +160,14 @@ test("new scoped customer refuses user-specified brand, lifecycle, finance, note
 
 test("PATCH enforces both exact id and brand and only changes allowlisted fields", async () => {
   const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
-  const response = await PATCH(mutation("PATCH", cookie, { id: "contact-1", name: "Ada Updated" }) as any, context);
+  const response = await PATCH(mutation("PATCH", cookie, { id: contactId, name: "Ada Updated" }) as any, context);
   assert.equal(response.status, 200);
   const updated = calls.find(c => c.method === "update")?.args[0] as Record<string, unknown>;
   assert.equal(updated.name, "Ada Updated");
   assert.equal(typeof updated.updated_at, "string");
   assert.equal(Object.keys(updated).length, 2);
   assert.deepEqual(calls.filter(c => c.method === "eq"), [
-    { method: "eq", args: ["id", "contact-1"] },
+    { method: "eq", args: ["id", contactId] },
     { method: "eq", args: ["brand_id", "pinosoecolife"] },
     { method: "eq", args: ["brand", "pinosoecolife"] },
   ]);
@@ -166,10 +176,10 @@ test("PATCH enforces both exact id and brand and only changes allowlisted fields
 test("PATCH cannot transfer or modify a different brand or financial/CRM internal columns", async () => {
   const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
   for (const payload of [
-    { id: "contact-1", brand_id: "zeneco" },
-    { id: "contact-1", name: "Name", pipeline_status: "WON" },
-    { id: "contact-1", commission_amount: 10 },
-    { id: "contact-1", updated_at: "2020-01-01" },
+    { id: contactId, brand_id: "zeneco" },
+    { id: contactId, name: "Name", pipeline_status: "WON" },
+    { id: contactId, commission_amount: 10 },
+    { id: contactId, updated_at: "2020-01-01" },
     { id: "../../other", name: "Forged id" },
   ]) {
     const response = await PATCH(mutation("PATCH", cookie, payload) as any, context);
@@ -181,7 +191,7 @@ test("PATCH cannot transfer or modify a different brand or financial/CRM interna
 test("PATCH returns 404 when id does not belong to the verified brand", async () => {
   scopedResult = [];
   const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
-  const response = await PATCH(mutation("PATCH", cookie, { id: "other-brand-contact", name: "Inaccessible" }) as any, context);
+  const response = await PATCH(mutation("PATCH", cookie, { id: otherContactId, name: "Inaccessible" }) as any, context);
   assert.equal(response.status, 404);
   assert.equal(calls.some(c => c.method === "eq" && c.args[0] === "brand_id" && c.args[1] === "pinosoecolife"), true);
 });
@@ -190,7 +200,7 @@ test("unsafe origin, missing content type and missing user session cannot write"
   const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
   const crossOrigin = await POST(mutation("POST", cookie, { name: "Ada" }, { origin: "https://evil.example" }) as any, context);
   assert.equal(crossOrigin.status, 403);
-  const crossSite = await PATCH(mutation("PATCH", cookie, { id: "contact-1", name: "Ada" }, { "sec-fetch-site": "cross-site" }) as any, context);
+  const crossSite = await PATCH(mutation("PATCH", cookie, { id: contactId, name: "Ada" }, { "sec-fetch-site": "cross-site" }) as any, context);
   assert.equal(crossSite.status, 403);
   const unsigned = await POST(mutation("POST", "", { name: "Ada" }) as any, context);
   assert.equal(unsigned.status, 401);
@@ -222,7 +232,7 @@ test("read-only brand member can search Pinoso CRM but cannot write or select an
     const callsBeforeWrite = calls.filter(c => c.method === "from").length;
     const forbidden = await POST(mutation("POST", cookie, { name: "Forbidden write" }) as any, context);
     assert.equal(forbidden.status, 403);
-    const forbiddenEdit = await PATCH(mutation("PATCH", cookie, { id: "pinoso-contact", name: "Forbidden edit" }) as any, context);
+    const forbiddenEdit = await PATCH(mutation("PATCH", cookie, { id: contactId, name: "Forbidden edit" }) as any, context);
     assert.equal(forbiddenEdit.status, 403);
     assert.equal(calls.filter(c => c.method === "from").length, callsBeforeWrite);
     const crossBrand = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
@@ -230,10 +240,72 @@ test("read-only brand member can search Pinoso CRM but cannot write or select an
     const crossBrandPost = await POST(mutation("POST", cookie, { name: "No Zen legacy write" }) as any,
       { params: { brandKey: "zeneco" } });
     assert.equal(crossBrandPost.status, 403);
-    const crossBrandPatch = await PATCH(mutation("PATCH", cookie, { id: "legacy-zen-contact", name: "No Zen legacy edit" }) as any,
+    const crossBrandPatch = await PATCH(mutation("PATCH", cookie, { id: legacyZenId, name: "No Zen legacy edit" }) as any,
       { params: { brandKey: "zeneco" } });
     assert.equal(crossBrandPatch.status, 403);
     assert.equal(calls.filter(c => c.method === "from").length, callsBeforeWrite);
+  } finally {
+    globalThis.fetch = fetchBefore;
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+    if (previousFlag === undefined) delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
+    else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = previousFlag;
+  }
+});
+
+test("writable Pinoso member uses atomic RPCs and never performs direct service-role contact insert/update", async () => {
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const previousFlag = process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
+  const fetchBefore = globalThis.fetch;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://workspace-test.supabase.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "scoped-workspace-test-service-key";
+  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
+  testGrant = {
+    brand_id: "pinoso-uuid", user_id: "verified-user", email: "staff@example.test",
+    status: "active", permissions: ["crm.read", "crm.write"],
+  };
+  globalThis.fetch = (async (url: RequestInfo | URL) => {
+    if (!String(url).includes("/rest/v1/brand_settings")) throw new Error("unexpected external request");
+    return new Response(JSON.stringify({
+      settings: { profiles: [{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }] },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
+    scopedResult = [{
+      id: contactId, brand_id: "pinosoecolife", brand: "pinosoecolife",
+      name: "Ada", email: "ada@example.test", phone: null, pipeline_status: "NEW",
+      source: "manual", updated_at: "2026-09-25T06:00:00Z",
+    }];
+    const created = await POST(mutation("POST", cookie, { name: "Ada", email: "Ada@Example.Test" }) as any, context);
+    assert.equal(created.status, 201);
+    const createCall = calls.find(c => c.method === "rpc" && c.args[0] === "workspace_brand_contact_create");
+    assert.ok(createCall);
+    assert.deepEqual((createCall?.args[1] as Record<string, unknown>), {
+      p_brand_key: "pinosoecolife", p_user_id: "verified-user", p_email: "staff@example.test",
+      p_name: "Ada", p_contact_email: "ada@example.test", p_phone: null,
+    });
+    assert.equal(calls.some(c => c.method === "insert"), false);
+
+    scopedResult = [{ ...scopedResult[0], name: "Ada Updated" }];
+    const updated = await PATCH(mutation("PATCH", cookie, { id: contactId, name: "Ada Updated" }) as any, context);
+    assert.equal(updated.status, 200);
+    const updateCall = calls.find(c => c.method === "rpc" && c.args[0] === "workspace_brand_contact_update");
+    assert.ok(updateCall);
+    const args = updateCall?.args[1] as Record<string, unknown>;
+    assert.equal(args.p_brand_key, "pinosoecolife");
+    assert.equal(args.p_contact_id, contactId);
+    assert.equal(args.p_set_name, true);
+    assert.equal(args.p_set_email, false);
+    assert.equal(args.p_set_phone, false);
+    assert.equal(calls.some(c => c.method === "update"), false);
+
+    scopedResult = [];
+    const revokedOrMissing = await PATCH(mutation("PATCH", cookie, { id: contactId, phone: "+34 600 000 000" }) as any, context);
+    assert.equal(revokedOrMissing.status, 404);
   } finally {
     globalThis.fetch = fetchBefore;
     if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
