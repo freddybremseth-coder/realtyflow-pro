@@ -28,12 +28,12 @@ test("owner navigation is organized around nine understandable work areas", () =
   const home = sections.find((section) => section.id === "workspace");
   assert.ok(home);
   assert.deepEqual(home.items.slice(0, 6).map((item) => item.href), [
+    "/workspaces",
     "/nexus-os/today",
     "/nexus-os/focus",
     "/personal-intelligence",
     "/nexus-os/inbox",
     "/nexus-os/communications",
-    "/approvals",
   ]);
   assert.equal(home.items.some((item) => item.href === "/today"), false);
   assert.equal(sections.flatMap((section) => section.items).some((item) => item.href === "/communications"), false);
@@ -48,6 +48,8 @@ test("role navigation keeps permission boundaries", () => {
   const sales = buildVisibleNavigation("SALES", permissionsForRole("SALES"));
   const hrefs = sales.flatMap((section) => section.items.map((item) => item.href));
   assert.equal(hrefs.includes("/access-control"), false);
+  assert.equal(hrefs.includes("/workspace-access"), false);
+  assert.equal(hrefs.includes("/workspaces"), false);
   assert.equal(hrefs.includes("/monthly-close"), false);
   assert.equal(hrefs.includes("/personal-intelligence"), false);
   assert.equal(hrefs.includes("/communications"), true);
@@ -93,12 +95,12 @@ test("owner quick links expose the six daily work surfaces", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   const quick = quickNavigationItems("OWNER", sections, []);
   assert.deepEqual(quick.map((item) => item.href), [
+    "/workspaces",
     "/nexus-os/today",
     "/customers",
     "/nexus-os/communications",
     "/inventory",
     "/social-automation",
-    "/personal-intelligence",
   ]);
 });
 

@@ -1,4 +1,4 @@
-export const ACCESS_ROLES = ["OWNER", "SALES", "CLOSING", "FINANCE", "MARKETING", "KEYHOLDING", "VIEWER"] as const;
+export const ACCESS_ROLES = ["OWNER", "SALES", "CLOSING", "FINANCE", "MARKETING", "KEYHOLDING", "VIEWER", "WORKSPACE_MEMBER"] as const;
 export type AccessRole = (typeof ACCESS_ROLES)[number];
 
 export const ACCESS_ROLE_LABELS: Record<AccessRole, string> = {
@@ -9,6 +9,7 @@ export const ACCESS_ROLE_LABELS: Record<AccessRole, string> = {
   MARKETING: "Marketing",
   KEYHOLDING: "Keyholding",
   VIEWER: "Read-only",
+  WORKSPACE_MEMBER: "Brand workspace member",
 };
 
 export const ACCESS_PERMISSIONS = [
@@ -69,6 +70,9 @@ export const ROLE_PERMISSIONS: Record<AccessRole, AccessPermission[]> = {
     "communications.read", "communications.write", "execution.read", "execution.write",
   ],
   VIEWER: [...READ_PERMISSIONS],
+  // Narrow member role has ZERO global privileges. The separate workspace
+  // guard checks exact membership and module grants on every request.
+  WORKSPACE_MEMBER: [],
 };
 
 export interface AccessProfile {
@@ -127,6 +131,27 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
   const write = isWrite(method);
 
   if (path === "/api/auth/me") return "AUTHENTICATED";
+  if (path === "/api/workspaces/available" && !write) return "AUTHENTICATED";
+  // Only this explicit read route is available to a signed-in brand member.
+  // The route itself verifies the current membership, Auth user and row scope.
+  // Access-plan administration and any unknown workspace route remain OWNER_ONLY.
+  const workspaceParts = path.split("/");
+  if (workspaceParts.length === 5 &&
+    workspaceParts[1] === "api" && workspaceParts[2] === "workspaces" &&
+    /^[a-z0-9][a-z0-9-]{1,62}$/.test(workspaceParts[3])) {
+    const workspaceRoute = workspaceParts[4];
+    if (method.toUpperCase() === "GET" &&
+      (["contacts", "properties", "capabilities"].includes(workspaceRoute) ||
+      (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco"))) return "AUTHENTICATED";
+    // The scoped CRM handler independently enforces crm.write, exact brand and
+    // a narrow writable-field list; do not allow mutation of other modules.
+    if (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco" && method.toUpperCase() === "PATCH")
+      return "AUTHENTICATED";
+    if (workspaceRoute === "joint-tasks" && workspaceParts[3] === "zeneco" &&
+      ["GET", "POST", "PATCH"].includes(method.toUpperCase())) return "AUTHENTICATED";
+    if (workspaceRoute === "contacts" && ["POST", "PATCH"].includes(method.toUpperCase()))
+      return "AUTHENTICATED";
+  }
   if (path.startsWith("/api/access-control")) return "OWNER_ONLY";
   if (path.startsWith("/api/platform")) return "OWNER_ONLY";
   if (path.startsWith("/api/audit-log")) return "audit.read";

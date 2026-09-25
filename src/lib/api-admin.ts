@@ -41,6 +41,10 @@ export async function getRequestAccessContext(request: NextRequest): Promise<Req
   if (session) {
     const resolved = await findAccessProfile(session.email);
     if (resolved.error || !resolved.profile || !resolved.profile.active) return null;
+    // Deny stale signed global-role cookies after owner changes or revokes the profile.
+    // A new session must be issued with the new role before any API may run.
+    if (resolved.profile.role !== session.role) return null;
+    if (resolved.profile.role === "WORKSPACE_MEMBER" && process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
     return {
       email: resolved.profile.email,
       role: resolved.profile.role,

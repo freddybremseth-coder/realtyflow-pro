@@ -30,6 +30,7 @@ const roleLabels: Record<AccessRole, string> = {
   MARKETING: "Marketing",
   KEYHOLDING: "Keyholding",
   VIEWER: "Read-only",
+  WORKSPACE_MEMBER: "Brand workspace member",
 };
 
 const loadLabels = {

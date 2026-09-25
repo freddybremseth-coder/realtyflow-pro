@@ -31,9 +31,12 @@ export async function GET(request: NextRequest) {
   const email = await getPortalEmail(request, supabase);
   if (!email) return NextResponse.json({ error: "Invalid portal session" }, { status: 401 });
 
+  // This is the Zen customer portal. A customer's verified email alone must
+  // not grant visibility into a message tagged to a different brand.
   const { data, error } = await supabase
     .from("portal_messages")
     .select("*")
+    .eq("brand_id", "zeneco")
     .eq("email", email)
     .order("created_at", { ascending: true })
     .limit(200);
@@ -44,7 +47,15 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json({ messages: data || [] });
+  // Defence in depth: never serialize a foreign-brand or other customer's
+  // messages even if a future query/view refactor returns mixed data.
+  const visible = (data || []).filter((item) =>
+    item.brand_id === "zeneco" &&
+    typeof item.email === "string" &&
+    item.email.trim().toLowerCase() === email);
+  return NextResponse.json({ messages: visible }, {
+    headers: { "Cache-Control": "private, no-store" },
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -59,13 +70,29 @@ export async function POST(request: NextRequest) {
   const attachmentName = String(body.attachmentName || "").trim();
   if (!text && !attachmentUrl) return NextResponse.json({ error: "message or attachment is required" }, { status: 400 });
 
-  const { data: contact } = await supabase
+  // The legacy portal previously matched a customer by email alone, which
+  // could attach a Pinoso/Soleada contact to a Zen-tagged portal message and
+  // create a falsely Zen-labelled task. Require both independent CRM labels.
+  // A legacy ambiguous/unassigned contact remains unmatched: keep accepting
+  // their authenticated portal message but never assign another brand contact.
+  const { data: matchedContact } = await supabase
     .from("contacts")
-    .select("id,name")
+    .select("id,name,email,brand_id,brand")
+    .eq("brand_id", "zeneco")
+    .eq("brand", "zeneco")
     .eq("email", email)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  // Do not trust an unexpectedly cross-brand backend result as a contact link.
+  // The customer's portal message itself still arrives if CRM attribution
+  // cannot be independently confirmed.
+  const contact = matchedContact?.brand_id === "zeneco" &&
+    matchedContact.brand === "zeneco" &&
+    typeof matchedContact.email === "string" &&
+    matchedContact.email.trim().toLowerCase() === email &&
+    typeof matchedContact.id === "string"
+    ? { id: matchedContact.id, name: matchedContact.name } : null;
 
   const attachments = attachmentUrl
     ? [{ name: attachmentName || "Vedlegg", url: attachmentUrl }]

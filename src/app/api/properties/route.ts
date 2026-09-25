@@ -215,7 +215,9 @@ export async function GET(req: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const accessContext = await getRequestAccessContext(req);
-  const authenticated = Boolean(accessContext);
+  // A brand-scoped employee never receives internal listing fields from this
+  // legacy public route, even with a signed workspace session.
+  const authenticated = Boolean(accessContext && accessContext.role !== "WORKSPACE_MEMBER");
   const selectColumns = authenticated ? "*" : PUBLIC_PROPERTY_SELECT;
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
