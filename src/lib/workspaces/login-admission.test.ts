@@ -77,9 +77,9 @@ test("stale grant for another Supabase Auth user fails closed even if email matc
   assert.deepEqual(result, { ok: false, reason: "IDENTITY_MISMATCH" });
 });
 
-test("malformed, inactive, unknown-brand and RPC-error grants fail closed", async () => {
+test("malformed, inactive, invalid-brand and RPC-error grants fail closed", async () => {
   for (const value of [
-    [{ brand: { brand_key: "not-a-brand" }, grant: {
+    [{ brand: { brand_key: "BAD BRAND" }, grant: {
       user_id: userId, email: "staff@example.test", status: "active", permissions: ["crm.read"],
     } }],
     [{ brand: { brand_key: "pinosoecolife" }, grant: {
