@@ -105,6 +105,22 @@ test("malformed, inactive, invalid-brand and RPC-error grants fail closed", asyn
       brand_id: "brand-id", user_id: userId, email: "staff@example.test",
       status: "active", permissions: ["finance.read"],
     } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["crm.joint.read"],
+    } }],
+    [{ brand: { id: "zen-id", brand_key: "zeneco" }, grant: {
+      brand_id: "zen-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["crm.read"],
+    } }],
+    [{ brand: { id: "zen-id", brand_key: "zeneco" }, grant: {
+      brand_id: "zen-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["tasks.joint.write"],
+    } }],
+    [{ brand: { id: "zen-id", brand_key: "zeneco" }, grant: {
+      brand_id: "zen-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["crm.joint.read", "tasks.joint.write"],
+    } }],
   ]) {
     rpcData = value;
     const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
