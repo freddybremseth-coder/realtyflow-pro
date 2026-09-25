@@ -112,5 +112,8 @@ test("search preserves Norwegian and Spanish letters while stripping PostgREST s
   assert.equal(filter.includes("Åsen Málaga"), true);
   assert.equal(filter.includes("id.eq.private"), false);
   assert.equal(filter.includes(")"), false);
-  assert.equal(filter.includes(","), false);
+  // Commas are the route's own fixed OR separators. The user must not be able
+  // to inject a close-group + new PostgREST expression such as "),id.eq...".
+  assert.equal(filter.includes("),"), false);
+  assert.equal((filter.match(/,/g) || []).length, 3);
 });
