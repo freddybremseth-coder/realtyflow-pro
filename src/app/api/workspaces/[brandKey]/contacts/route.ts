@@ -11,7 +11,7 @@ const CONTACT_UUID = /^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a
 function safeContactRow(row: unknown, brandKey: string) {
   if (!row || typeof row !== "object" || Array.isArray(row)) return null;
   const item = row as Record<string, unknown>;
-  if (typeof item.id !== "string" || !CONTACT_UUID.test(item.id) ||
+  if (typeof item.id !== "string" || !item.id || item.id.length > 128 ||
       item.brand_id !== brandKey || item.brand !== brandKey ||
       typeof item.name !== "string") return null;
   return {
