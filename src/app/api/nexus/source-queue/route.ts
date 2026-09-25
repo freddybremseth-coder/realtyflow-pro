@@ -28,7 +28,7 @@ function masterIdea(source: any) {
       "Skriv 2–4 korte setninger som forteller hva publikum ser og hvor de finner prosjektet.",
       "Bruk kun verifiserte kildedata. Ikke finn på en bakgrunnshistorie, motivasjon, skapelsesår, pris eller suksess.",
       "Ikke antyd at Facebook har en automatisk kopi av Instagram-Reelen. Avslutt med den eksakte, verifiserte kildelenken.",
-      "Dette skal være et forslag til eierens godkjenning; publiser ALDRI automatisk."
+      "Publiser bare gjennom den eksakte verifiserte offentlige Freddy Bremseth Facebook-siden; aldri privatprofilen."
     ].join("\n");
   }
   if (source.source_type === "book") {
@@ -94,7 +94,9 @@ export async function POST(request: NextRequest) {
   if (!["ready", "pending"].includes(String(source.status))) return NextResponse.json({ error: `Source status ${source.status} kan ikke planlegges` }, { status: 409 });
   const isUmbrellaStory = source.brand_id === "freddyb" && source.source_type === "creative_spotlight";
   if (isUmbrellaStory) {
-    if (requestedChannel !== "facebook" || source.status !== "ready" || source.payload?.publishing_policy !== "approval_required_rewrite_no_identical_crosspost") {
+    const policy=String(source.payload?.publishing_policy||"");
+    if (requestedChannel !== "facebook" || source.status !== "ready" ||
+        !["approval_required_rewrite_no_identical_crosspost","controlled_auto_public_page_rewrite_no_identical_crosspost"].includes(policy)) {
       return NextResponse.json({ error: "FREDDY_UMBRELLA_EDITORIAL_POLICY_MISMATCH" }, { status: 409 });
     }
     const kind = String(source.payload?.source_type || "");
@@ -122,8 +124,8 @@ export async function POST(request: NextRequest) {
     }
     const { data: plan, error: planError } = await supabase.from("marketing_brand_growth_plans")
       .select("status,autonomy_mode").eq("brand_id", "freddyb").maybeSingle();
-    if (planError || plan?.status !== "active" || plan?.autonomy_mode !== "approval_required") {
-      return NextResponse.json({ error: "FREDDY_EDITORIAL_APPROVAL_REQUIRED" }, { status: 409 });
+    if (planError || plan?.status !== "active" || !["approval_required","controlled_auto"].includes(String(plan?.autonomy_mode||""))) {
+      return NextResponse.json({ error: "FREDDY_EDITORIAL_AUTONOMY_NOT_ALLOWED" }, { status: 409 });
     }
   }
   if (source.status === "blocked") return NextResponse.json({ error: source.blocked_reason || "Source blocked" }, { status: 409 });
@@ -174,11 +176,16 @@ export async function POST(request: NextRequest) {
       focus: source.source_type === "property" ? source.payload?.location || undefined : undefined,
     });
 
-    if (isUmbrellaStory && result.results.some((row) => row.mode !== "manual-review" || !row.approvalId)) {
+    const {data:umbrellaPlan}=isUmbrellaStory
+      ? await supabase.from("marketing_brand_growth_plans").select("autonomy_mode").eq("brand_id","freddyb").maybeSingle()
+      : {data:null};
+    const umbrellaControlledAuto=isUmbrellaStory&&umbrellaPlan?.autonomy_mode==="controlled_auto";
+    if (isUmbrellaStory && !umbrellaControlledAuto &&
+        result.results.some((row) => row.mode !== "manual-review" || !row.approvalId)) {
       return NextResponse.json({
         error: "FREDDY_EDITORIAL_MANUAL_REVIEW_NOT_CREATED",
         results: result.results.map((row) => ({ state: row.state, mode: row.mode, error: row.error ?? null })),
-        note: "Kilden ble ikke markert som planlagt. RealtyFlow skal aldri sende slike personlige historier uten eksplisitt godkjenning.",
+        note: "Kilden ble ikke markert som planlagt fordi planen fortsatt krever godkjenning.",
       }, { status: 409 });
     }
     const { error: markError } = await supabase.from("marketing_source_queue").update({ status: "drafted", last_planned_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", source.id).eq("status", source.status);
@@ -195,7 +202,7 @@ export async function POST(request: NextRequest) {
       channel: requestedChannel,
       campaign: result,
       workflow: {
-        state: approvalId ? "awaiting_approval" : "draft_created",
+        state: approvalId ? "awaiting_approval" : umbrellaControlledAuto ? "controlled_auto" : "draft_created",
         approvalId,
         publicationId,
         approvalHref,
@@ -203,8 +210,10 @@ export async function POST(request: NextRequest) {
         marketingRunId: result.marketingRunId,
       },
       note: approvalId
-        ? "Kampanjestart opprettet og venter på godkjenning. Dette er ikke publisert ennå."
-        : "Kampanjedraft opprettet. Ingen konkret approval-ID ble returnert; åpne Kontroll for status."
+        ? "Kampanjestart opprettet og venter på godkjenning."
+        : umbrellaControlledAuto
+          ? "Freddy-kilden er kjørt gjennom kontrollert autopilot mot den offentlige siden."
+          : "Kampanjedraft opprettet."
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
