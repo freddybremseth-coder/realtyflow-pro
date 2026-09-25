@@ -69,6 +69,13 @@ export async function GET(request:NextRequest){
       });
       continue;
     }
+    if(targetHour!==targetHours[1]){
+      considered.push({
+        brandId:definition.growthBrandId,reelBrand:definition.reelBrand,
+        skipped:true,reason:"marketing_post_slot_reserved",localHour,targetHours,
+      });
+      continue;
+    }
 
     const recent=await recentAutonomousJob(db,definition.reelBrand);
     if(recent){
