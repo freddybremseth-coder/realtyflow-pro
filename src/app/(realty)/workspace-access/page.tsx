@@ -21,11 +21,11 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "crm.joint.write": { title: "Zen · endre nye felles kunder", description: "Endre kun navn, e-post og telefon på manuelt godkjente felles Zen-kunder. Ingen tilgang til eldre kunder eller økonomi." },
   "tasks.joint.read": { title: "Zen · lese nye felles oppgaver", description: "Kun nye oppgaver som opprettes særskilt for manuelt godkjente felleskunder. Ingen eldre CRM-oppgaver, meldinger eller vedlegg." },
   "tasks.joint.write": { title: "Zen · opprette og fullføre felles oppgaver", description: "Opprette egne, nye oppgaver og merke dem fullført. Ingen kundemeldinger, gamle oppgaver eller globale oppfølgingsrutiner." },
-  "marketing.read": { title: "Markedsføring – se", description: "Se innhold og kampanjer for valgt merkevare." },
-  "marketing.draft": { title: "Markedsføring – lage utkast", description: "Lage Reels, videoutkast, tekst og innholdskalender." },
-  "marketing.publish": { title: "Publisere i sosiale medier", description: "Kun godkjente kontoer for merkevaren. Krever separat teknisk kontroll før aktivering." },
+  "marketing.read": { title: "Markedsføring – se (planlagt)", description: "Kan lagres som utkast, men åpner ingen medarbeiderfunksjon før egne merkevareavgrensede markedsførings-API-er er ferdige." },
+  "marketing.draft": { title: "Markedsføring – lage utkast (planlagt)", description: "Kan lagres som utkast, men gir foreløpig ingen tilgang til Reels, videoutkast, tekst eller innholdskalender." },
+  "marketing.publish": { title: "Publisere i sosiale medier (planlagt)", description: "Ikke aktivert for medarbeidere. Krever egne kontoområder, publiseringssperrer og separat teknisk kontroll." },
 };
-const suggested: WorkspacePermission[] = ["properties.catalog.read", "crm.read", "crm.write", "marketing.read", "marketing.draft"];
+const suggested: WorkspacePermission[] = ["properties.catalog.read", "crm.read", "crm.write"];
 
 /** Draft-only dependency helper; never enables a real member or CRM grant. */
 function togglePermission(current: WorkspacePermission[], permission: WorkspacePermission, checked: boolean) {
