@@ -12,9 +12,18 @@ export const PROPERTY_CREATIVE_STYLES = [
 
 export type PropertyCreativeStyle = (typeof PROPERTY_CREATIVE_STYLES)[number];
 
-const CHANNEL_POOLS: Partial<Record<MarketingChannel, PropertyCreativeStyle[]>> = {
-  facebook: ["hero_property", "fact_card", "lifestyle", "question_hook", "advisor", "minimal_premium", "carousel"],
-  instagram: ["lifestyle", "minimal_premium", "carousel", "hero_property", "question_hook", "fact_card", "advisor"],
+export const CREATIVE_VARIANT_BRANDS = ["zeneco", "pinosoecolife"] as const;
+export type CreativeVariantBrandId = (typeof CREATIVE_VARIANT_BRANDS)[number];
+
+const BRAND_CHANNEL_POOLS: Record<CreativeVariantBrandId, Partial<Record<MarketingChannel, PropertyCreativeStyle[]>>> = {
+  zeneco: {
+    facebook: ["hero_property", "lifestyle", "minimal_premium", "fact_card", "question_hook", "carousel", "advisor"],
+    instagram: ["lifestyle", "minimal_premium", "hero_property", "carousel", "fact_card", "question_hook", "advisor"],
+  },
+  pinosoecolife: {
+    facebook: ["fact_card", "hero_property", "question_hook", "lifestyle", "carousel", "advisor", "minimal_premium"],
+    instagram: ["fact_card", "lifestyle", "hero_property", "carousel", "question_hook", "advisor", "minimal_premium"],
+  },
 };
 
 const STYLE_INSTRUCTIONS: Record<PropertyCreativeStyle, string> = {
@@ -40,21 +49,28 @@ function isStyle(value: string | null | undefined): value is PropertyCreativeSty
   return !!value && (PROPERTY_CREATIVE_STYLES as readonly string[]).includes(value);
 }
 
+export function isCreativeVariantBrand(brandId: string): brandId is CreativeVariantBrandId {
+  return (CREATIVE_VARIANT_BRANDS as readonly string[]).includes(brandId);
+}
+
 export function creativeStyleInstruction(value: string | null | undefined): string | null {
   return isStyle(value) ? STYLE_INSTRUCTIONS[value] : null;
 }
 
 export function selectPropertyCreativeStyle(input: {
+  brandId: string;
   channel: MarketingChannel;
   seed: string;
   favoredStyle?: string | null;
   recentStyles?: string[];
-}): PropertyCreativeStyle {
-  if (isStyle(input.favoredStyle)) return input.favoredStyle;
+}): PropertyCreativeStyle | null {
+  if (!isCreativeVariantBrand(input.brandId)) return null;
 
-  const pool = CHANNEL_POOLS[input.channel] ?? PROPERTY_CREATIVE_STYLES.slice();
+  const pool = BRAND_CHANNEL_POOLS[input.brandId][input.channel] ?? PROPERTY_CREATIVE_STYLES.slice();
+  if (isStyle(input.favoredStyle) && pool.includes(input.favoredStyle)) return input.favoredStyle;
+
   const recent = new Set((input.recentStyles ?? []).filter(isStyle));
   const fresh = pool.filter((style) => !recent.has(style));
   const candidates = fresh.length ? fresh : pool;
-  return candidates[hashSeed(`${input.channel}|${input.seed}`) % candidates.length];
+  return candidates[hashSeed(`${input.brandId}|${input.channel}|${input.seed}`) % candidates.length];
 }
