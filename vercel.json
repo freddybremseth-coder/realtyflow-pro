@@ -63,6 +63,7 @@
     { "path": "/api/cron/art-lounge-reel-create", "schedule": "30 8 * * *" },
     { "path": "/api/cron/art-lounge-reel-publish", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/art-growth-source-sync", "schedule": "45 7 * * *" },
+    { "path": "/api/cron/freddy-website-autopilot", "schedule": "35 * * * *" },
     { "path": "/api/cron/freddy-creative-editorial", "schedule": "15 8 * * 1" }
   ]
 }
