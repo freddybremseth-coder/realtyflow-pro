@@ -261,6 +261,77 @@ try {
     [concurrentId],
   );
   verify(raceAudits.rows[0].total === 0, "A revoked customer received an unauthorized edit audit");
+
+  // Employee membership revocation also serializes with ALL supported write
+  // operations, not just with owner customer-cohort revocation. These isolated
+  // races deliberately block the service_role query on a locked member row.
+  const memberRaceId = "99999999-9999-4999-8999-999999999998";
+  await sql(
+    "insert into public.contacts(id,name,brand_id,brand,created_at,source) values ($1,'Membership race customer','zeneco','zeneco',$2,'website')",
+    [memberRaceId, newer],
+  );
+  verify(await review(memberRaceId, "APPROVE", newer) === true,
+    "Member-revocation race contact was not approved");
+  const taskBeforeMemberRevoke = await createTask(memberRaceId, "Finish after membership lock");
+  verify(taskBeforeMemberRevoke?.id, "Could not create the open task for membership race");
+  for (const scenario of [
+    { label: "joint CRM edit", invoke: () => edit(memberRaceId, "UNAUTHORIZED MEMBER RACE EDIT") },
+    { label: "joint task create", invoke: () => createTask(memberRaceId, "UNAUTHORIZED MEMBER RACE TASK") },
+    { label: "joint task complete", invoke: () => finishTask(memberRaceId, taskBeforeMemberRevoke.id) },
+  ]) {
+    await sql(
+      "update core.brand_workspace_memberships set status='active' where brand_id=$1 and user_id=$2",
+      [zen, member],
+    );
+    const membershipBlocker = new Client({
+      connectionString: localUrl,
+      application_name: "isolated_zen_membership_revoke_race",
+    });
+    await membershipBlocker.connect();
+    let pendingWrite;
+    let committed = false;
+    try {
+      await membershipBlocker.query("begin");
+      await membershipBlocker.query(
+        "select user_id from core.brand_workspace_memberships where brand_id=$1 and user_id=$2 for update",
+        [zen, member],
+      );
+      pendingWrite = scenario.invoke().catch(error => error);
+      let waiting = false;
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        await membershipBlocker.query("select pg_sleep(0.05)");
+        const state = await membershipBlocker.query(
+          "select wait_event_type from pg_stat_activity where pid=$1", [activePid],
+        );
+        if (state.rows[0]?.wait_event_type === "Lock") {
+          waiting = true;
+          break;
+        }
+      }
+      verify(waiting, scenario.label + " did not serialize against membership revocation");
+      await membershipBlocker.query(
+        "update core.brand_workspace_memberships set status='revoked' where brand_id=$1 and user_id=$2",
+        [zen, member],
+      );
+      await membershipBlocker.query("commit");
+      committed = true;
+      verify((await pendingWrite) === null,
+        scenario.label + " succeeded after employee membership was revoked");
+    } finally {
+      if (!committed) await membershipBlocker.query("rollback").catch(() => undefined);
+      await membershipBlocker.end();
+      if (pendingWrite) await pendingWrite.catch(() => undefined);
+    }
+  }
+  const memberRaceContact = await sql("select name from public.contacts where id=$1", [memberRaceId]);
+  verify(memberRaceContact.rows[0].name === "Membership race customer",
+    "Revoked employee changed a contact during the concurrent membership test");
+  const memberRaceTasks = await sql(
+    "select title,status from core.zeneco_joint_work_items where contact_id=$1 order by created_at,id",
+    [memberRaceId],
+  );
+  verify(memberRaceTasks.rowCount === 1 && memberRaceTasks.rows[0].status === "open",
+    "Revoked employee created/completed a joint task during membership revocation");
   process.stdout.write("Isolated Zen joint-customer migration checks passed: " + checks + "\n");
 } finally {
   await client.end();
