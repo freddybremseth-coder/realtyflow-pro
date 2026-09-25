@@ -139,6 +139,12 @@ try {
       !privileges.rows[0].upd && !privileges.rows[0].del,
       auditTable + " must be append-only for service_role");
   }
+  const planAuditPrivileges = await sql(
+    "select has_table_privilege('service_role','core.brand_workspace_access_plan_audit','SELECT') as sel, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','INSERT') as ins, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','UPDATE') as upd, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','DELETE') as del",
+  );
+  verify(planAuditPrivileges.rows[0].sel && !planAuditPrivileges.rows[0].ins &&
+    !planAuditPrivileges.rows[0].upd && !planAuditPrivileges.rows[0].del,
+    "brand_workspace_access_plan_audit must be trigger-owned and read-only to service_role");
   await sql("insert into auth.users(id,email) values ($1,'staff@example.test')", [member]);
   await sql("insert into core.brands(id,brand_key,display_name) values ($1,'zeneco','Zen Eco Homes'),($2,'pinosoecolife','Pinoso EcoLife')", [zen, pinoso]);
   await sql(
