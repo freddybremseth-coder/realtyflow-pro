@@ -103,10 +103,10 @@ export async function loadAutopilotSignalGuidance(
       .order("snapshot_at", { ascending: false })
       .limit(200);
 
-    const rows = (snapshots || [])
+    const rows = ((snapshots || []) as unknown[])
       .map((row: unknown) => asRecord(row))
-      .filter((row): row is Record<string, unknown> => Boolean(row))
-      .filter((row) => String(asRecord(row.raw_data)?.brand ?? "").toLowerCase() === brand);
+      .filter((row: Record<string, unknown> | null): row is Record<string, unknown> => row !== null)
+      .filter((row: Record<string, unknown>) => String(asRecord(row.raw_data)?.brand ?? "").toLowerCase() === brand);
 
     const latestByVideo = new Map<string, Record<string, unknown>>();
     for (const row of rows) {
