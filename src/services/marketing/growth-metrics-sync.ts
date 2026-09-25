@@ -344,6 +344,9 @@ export async function syncGrowthInstagramMetrics(
       const engagement = await fetchInstagramMediaEngagement(attempt.mediaId, accessToken);
       const metrics: ContentMetrics = {
         views: engagement.views,
+        impressions: engagement.impressions,
+        reactions: engagement.likes,
+        comments: engagement.comments,
         saves: engagement.saves,
         shares: engagement.shares,
       };
