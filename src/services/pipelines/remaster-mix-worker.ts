@@ -18,6 +18,7 @@ import { loadZenEcoHomesVisualUrls } from "./remaster-mix-visual-source";
 import { diagnoseExplicitMixSelection, MixSelectionValidationError } from "./remaster-mix-selection-validation";
 import { buildRemasterPartnerComment, type PartnerCommentStyle } from "./remaster-mix-partner-comment";
 import { renderArtLoungeThumbnail } from "./remaster-mix-art-thumbnail";
+import { classifyMixArtVisualMode, loadSongArtGallery } from "./remaster-song-art";
 import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand, type PromotionSelection, type PromotionItem } from "./remaster-mix-promotions";
 import {
   cleanupRemasterLongFormMix,
@@ -188,9 +189,76 @@ async function failJob(job: MixJobRow, error: unknown, retryable: boolean) {
   }
 }
 
-async function loadFallbackVisualUrls(tracks: MixSnapshotTrack[], targetMinutes: number) {
+function mixVisualTargetCount(targetMinutes: number) {
+  // The current long-form renderer needs at least 12 visual entries even for
+  // short 3–20 minute mixes.
+  return Math.max(12, recommendedVisualCount(targetMinutes));
+}
+
+function repeatVisualUrls(urls: string[], count: number) {
+  const unique = [...new Set(urls.filter(Boolean))];
+  if (!unique.length) return [];
+  return Array.from({ length: count }, (_, index) => unique[index % unique.length]);
+}
+
+function interleaveVisualUrls(primary: string[], secondary: string[]) {
+  const merged: string[] = [];
+  const max = Math.max(primary.length, secondary.length);
+  for (let index = 0; index < max; index += 1) {
+    if (primary[index]) merged.push(primary[index]);
+    if (secondary[index]) merged.push(secondary[index]);
+  }
+  return [...new Set(merged)];
+}
+
+function hasExplicitArtSelection(plan: MixSnapshot["visualPlan"]) {
+  return Boolean(plan?.artIds?.length || plan?.artStyles?.length || plan?.artCollections?.length);
+}
+
+async function loadCalmArtItems(
+  tracks: MixSnapshotTrack[],
+  mode: "meditation" | "relaxing",
+  targetMinutes: number,
+): Promise<PromotionItem[]> {
+  const desired = mixVisualTargetCount(targetMinutes);
+  const seed = tracks[0]?.id || "remaster-calm-mix";
+  const artwork = await loadSongArtGallery(seed, mode, desired).catch((error) => {
+    console.warn("[RemasterMixWorker] Calm art gallery unavailable:",
+      error instanceof Error ? error.message : error);
+    return [];
+  });
+  return artwork.map(item => ({
+    id: item.id,
+    title: item.title,
+    imageUrl: item.imageUrl,
+    detailUrl: item.artworkUrl,
+  }));
+}
+
+async function loadFallbackVisualUrls(
+  tracks: MixSnapshotTrack[],
+  targetMinutes: number,
+  calmMode: "meditation" | "relaxing" | null,
+) {
+  const desired = mixVisualTargetCount(targetMinutes);
+
+  if (calmMode) {
+    // Calm and meditative mixes get a dedicated visual lane. Never fall back
+    // to dance/pop imagery such as neon beaches, cars or party scenes.
+    const art = await loadCalmArtItems(tracks, calmMode, targetMinutes);
+    const genre = calmMode === "meditation" ? "meditation" : "relaxing";
+    const images = await getGenreImages(genre, desired).catch(() => []);
+    const calmUrls = interleaveVisualUrls(
+      art.map(item => item.imageUrl),
+      images.map(image => image.imageUrl).filter(Boolean),
+    );
+    if (calmUrls.length < 4) {
+      throw new Error(`Only ${calmUrls.length} calm Re-Master visuals available for ${genre}; refusing unrelated dance/pop fallbacks.`);
+    }
+    return repeatVisualUrls(calmUrls, desired);
+  }
+
   const genre = tracks.find((track) => track.genre)?.genre || "deep house";
-  const desired = recommendedVisualCount(targetMinutes);
   const images = await getGenreImages(genre, desired).catch(() => []);
   const urls = [...new Set(images.map((image) => image.imageUrl).filter(Boolean))];
   if (urls.length < 12) {
@@ -270,6 +338,7 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
     const brand: PromotionBrand = ['zeneco','art','books','none'].includes(String(savedBrand))
       ? savedBrand as PromotionBrand
       : (job.zenecohomes_enabled ? 'zeneco' : 'none');
+    const calmVisualMode = classifyMixArtVisualMode(tracks);
     let checkedCatalog: PromotionItem[] | null = null;
     if (brand === "art" || brand === "books") {
       await report(3, "validating_promotion_selection");
@@ -312,16 +381,20 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
               randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
             });
             if(finalIssues.length) throw new MixSelectionValidationError(finalIssues);
-            const selected = selectApprovedPromotionItems(catalog, {
-              ...job.input_snapshot?.visualPlan, brand,
-              randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
-            }, recommendedVisualCount(job.target_minutes));
+            const selected = brand === 'art' && calmVisualMode &&
+              !hasExplicitArtSelection(job.input_snapshot?.visualPlan)
+              ? await loadCalmArtItems(tracks, calmVisualMode, job.target_minutes)
+              : selectApprovedPromotionItems(catalog, {
+                  ...job.input_snapshot?.visualPlan, brand,
+                  randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
+                }, mixVisualTargetCount(job.target_minutes));
             if (!selected.length) throw new Error('No published '+brand+' visuals match the saved mix selection');
-            // Explicit IDs are validated directly above, not inferred from a 180-image random sample.
+            // Explicit owner filters always win. With no manual art filter, calm
+            // music automatically uses tranquil published Art previews.
             promotedItems = selected;
-            return selected.map(item => item.imageUrl);
+            return repeatVisualUrls(selected.map(item => item.imageUrl), mixVisualTargetCount(job.target_minutes));
           })()
-        : await loadFallbackVisualUrls(tracks, job.target_minutes);
+        : await loadFallbackVisualUrls(tracks, job.target_minutes, calmVisualMode);
 
     const exactAudioSeconds = audio.durationSeconds;
     video = await renderRemasterLongFormMix({
