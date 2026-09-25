@@ -1,5 +1,5 @@
 import { getPlatformSupabase } from "@/lib/platform/supabase";
-import { isCanonicalBrandKey } from "@/lib/workspaces/brand-policy";
+import { isCanonicalBrandKey, WORKSPACE_PERMISSIONS } from "@/lib/workspaces/brand-policy";
 
 export type WorkspaceLoginAdmission =
   | { ok: true; activeBrands: string[] }
@@ -43,10 +43,15 @@ export async function admitWorkspaceMemberLogin(
     const brand = value.brand as Record<string, unknown> | undefined;
     const grant = value.grant as Record<string, unknown> | undefined;
     if (!brand || !grant || !isCanonicalBrandKey(brand.brand_key) ||
-        grant.status !== "active" ||
+        typeof brand.id !== "string" || !brand.id ||
+        grant.brand_id !== brand.id || grant.status !== "active" ||
         typeof grant.user_id !== "string" || grant.user_id !== authenticatedUserId ||
         typeof grant.email !== "string" || grant.email.trim().toLowerCase() !== normalizedEmail ||
-        !Array.isArray(grant.permissions)) {
+        !Array.isArray(grant.permissions) || grant.permissions.length === 0 ||
+        grant.permissions.length > WORKSPACE_PERMISSIONS.length ||
+        new Set(grant.permissions).size !== grant.permissions.length ||
+        !grant.permissions.every(permission =>
+          typeof permission === "string" && WORKSPACE_PERMISSIONS.includes(permission as any))) {
       return { ok: false, reason: "IDENTITY_MISMATCH" };
     }
     activeBrands.push(brand.brand_key);
