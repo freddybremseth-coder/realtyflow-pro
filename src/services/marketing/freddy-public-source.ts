@@ -105,7 +105,7 @@ export async function loadFreddyPublicSource(db:Db,options:{cooldownDays?:number
   if(error)throw new Error("FREDDY_SOURCE_LOOKUP_FAILED: "+error.message);
   const rows=[...(data||[])].sort((a:any,b:any)=>{
     if(options.preferSpotlight!==false){
-      const rank=(row:any)=>row.source_type==="creative_spotlight"?0:row.source_type==="website"?1:2;
+      const rank=(row:any)=>row.source_type==="creative_spotlight"?0:row.source_type==="book"?1:2;
       const delta=rank(a)-rank(b);if(delta)return delta;
     }
     return 0;
