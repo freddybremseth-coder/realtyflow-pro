@@ -65,8 +65,17 @@ export async function admitWorkspaceMemberLogin(
       : permissions.some(permission =>
         ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission));
     if (invalidScope) return { ok: false, reason: "IDENTITY_MISMATCH" };
+
+    // Draftable marketing permissions are deliberately not an admission path
+    // until dedicated brand-scoped marketing APIs exist. A user with only
+    // planned marketing rights must not receive an authenticated workspace shell.
+    const implementedPermissions = permissions.filter(permission => !permission.startsWith("marketing."));
+    if (implementedPermissions.length === 0) continue;
     activeBrands.push(brandKey);
   }
 
-  return { ok: true, activeBrands: Array.from(new Set(activeBrands)) };
+  const uniqueBrands = Array.from(new Set(activeBrands));
+  return uniqueBrands.length
+    ? { ok: true, activeBrands: uniqueBrands }
+    : { ok: false, reason: "NO_ACTIVE_GRANT" };
 }
