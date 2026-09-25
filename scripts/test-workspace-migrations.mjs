@@ -443,8 +443,14 @@ try {
     "select public.workspace_brand_contacts($1::text,$2::uuid,$3::text,$4::integer,$5::text) as result",
     ["pinosoecolife", member, "staff@example.test", 0, ""],
   ).then(r => r.rows[0].result);
+  const readBrandProperties = (search = "") => serviceSql(
+    "select public.workspace_brand_property_catalogue($1::text,$2::uuid,$3::text,$4::integer,$5::text) as result",
+    ["pinosoecolife", member, "staff@example.test", 0, search],
+  ).then(r => r.rows[0].result);
   verify(await readBrandContacts() === null,
     "Pinoso CRM was readable without an active Pinoso membership");
+  verify(await readBrandProperties() === null,
+    "Pinoso property catalogue was readable without an active Pinoso membership");
   verify(await createBrandContact() === null,
     "Pinoso contact was created without an active Pinoso membership");
   await sql(
@@ -457,10 +463,40 @@ try {
     "Pinoso read RPC leaked another brand or failed exact brand scoping");
   verify(await createBrandContact() === null,
     "Read-only Pinoso membership created a customer");
+  verify(await readBrandProperties() === null,
+    "CRM-only Pinoso membership read the property catalogue without its own permission");
   await sql(
-    "update core.brand_workspace_memberships set permissions=array['crm.read','crm.write']::text[] where brand_id=$1 and user_id=$2",
+    "update core.brand_workspace_memberships set permissions=array['crm.read','crm.write','properties.catalog.read']::text[] where brand_id=$1 and user_id=$2",
     [pinoso, member],
   );
+
+  const pinosoProperty = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+  const zenProperty = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
+  const hiddenProperty = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
+  const overrideHiddenProperty = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
+  await sql(
+    "insert into public.properties(id,ref,title,town,location,price,bedrooms,bathrooms,area_m2,plot_size,property_type,primary_image,created_at,show_on_website,website_visible) values " +
+    "($1,'PIN-1','Pinoso Villa','Pinoso','Alicante',365000,3,2,180,10000,'villa','https://example.test/p1.jpg',$5,true,true)," +
+    "($2,'ZEN-1','Coastal Villa','Altea','Alicante',850000,4,3,260,1200,'villa','https://example.test/p2.jpg',$5,true,true)," +
+    "($3,'PIN-HIDDEN','Hidden Pinoso','Pinoso','Alicante',300000,3,2,170,9000,'villa','https://example.test/p3.jpg',$5,false,true)," +
+    "($4,'PIN-OFF','Manual hidden Pinoso','Pinoso','Alicante',310000,3,2,175,9500,'villa','https://example.test/p4.jpg',$5,true,true)",
+    [pinosoProperty, zenProperty, hiddenProperty, overrideHiddenProperty, newer],
+  );
+  await sql(
+    "insert into public.property_brand_visibility(property_id,brand_id,visible) values " +
+    "($1,'pinosoecolife',true),($2,'zeneco',true),($3,'pinosoecolife',true),($4,'pinosoecolife',false)",
+    [pinosoProperty, zenProperty, hiddenProperty, overrideHiddenProperty],
+  );
+  const scopedProperties = await readBrandProperties();
+  verify(scopedProperties?.properties?.length === 1 &&
+    scopedProperties.properties[0].id === pinosoProperty &&
+    scopedProperties.properties[0].title === "Pinoso Villa" &&
+    scopedProperties.hasMore === false,
+    "Pinoso property catalogue leaked cross-brand, hidden or non-website inventory");
+  const searchedProperties = await readBrandProperties("pinoso");
+  verify(searchedProperties?.properties?.length === 1 &&
+    searchedProperties.properties[0].id === pinosoProperty,
+    "Brand property catalogue search escaped exact visibility scope");
   verify(await createBrandContact("zeneco", "FORBIDDEN ZEN LEGACY") === null,
     "Generic brand contact RPC accepted Zen Eco Homes");
   const pinosoCreated = await createBrandContact();
@@ -531,6 +567,48 @@ try {
     if (!pinosoReadCommitted) await pinosoReadBlocker.query("rollback").catch(() => undefined);
     await pinosoReadBlocker.end();
     if (pendingPinosoRead) await pendingPinosoRead.catch(() => undefined);
+  }
+  await sql(
+    "update core.brand_workspace_memberships set status='active' where brand_id=$1 and user_id=$2",
+    [pinoso, member],
+  );
+
+  // Property catalogue reads also serialize with owner membership revocation.
+  const pinosoPropertyBlocker = new Client({
+    connectionString: localUrl,
+    application_name: "isolated_pinoso_membership_revoke_property_race",
+  });
+  await pinosoPropertyBlocker.connect();
+  let pendingPinosoProperties;
+  let pinosoPropertyCommitted = false;
+  try {
+    await pinosoPropertyBlocker.query("begin");
+    await pinosoPropertyBlocker.query(
+      "select user_id from core.brand_workspace_memberships where brand_id=$1 and user_id=$2 for update",
+      [pinoso, member],
+    );
+    pendingPinosoProperties = readBrandProperties().catch(error => error);
+    let waiting = false;
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await pinosoPropertyBlocker.query("select pg_sleep(0.05)");
+      const state = await pinosoPropertyBlocker.query(
+        "select wait_event_type from pg_stat_activity where pid=$1", [activePid],
+      );
+      if (state.rows[0]?.wait_event_type === "Lock") { waiting = true; break; }
+    }
+    verify(waiting, "Pinoso property catalogue did not serialize against membership revocation");
+    await pinosoPropertyBlocker.query(
+      "update core.brand_workspace_memberships set status='revoked' where brand_id=$1 and user_id=$2",
+      [pinoso, member],
+    );
+    await pinosoPropertyBlocker.query("commit");
+    pinosoPropertyCommitted = true;
+    verify((await pendingPinosoProperties) === null,
+      "Pinoso property catalogue returned inventory after employee membership was revoked");
+  } finally {
+    if (!pinosoPropertyCommitted) await pinosoPropertyBlocker.query("rollback").catch(() => undefined);
+    await pinosoPropertyBlocker.end();
+    if (pendingPinosoProperties) await pendingPinosoProperties.catch(() => undefined);
   }
   await sql(
     "update core.brand_workspace_memberships set status='active' where brand_id=$1 and user_id=$2",
@@ -638,6 +716,8 @@ try {
     "Blocked Pinoso membership-race write produced an audit entry");
   verify(await readBrandContacts() === null,
     "Revoked Pinoso membership still read CRM customers");
+  verify(await readBrandProperties() === null,
+    "Revoked Pinoso membership still read brand property catalogue");
   verify(await createBrandContact() === null,
     "Revoked Pinoso membership still created a customer");
 
