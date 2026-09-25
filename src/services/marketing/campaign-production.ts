@@ -346,6 +346,7 @@ export async function createCampaignDraft(
   const routedFormat = routeContentFormat(effectiveMediaUrl) ?? "post";
   const creativeStyle = inventoryProperty
     ? selectPropertyCreativeStyle({
+        brandId: input.brandId,
         channel: input.channel ?? "facebook",
         seed: `${inventoryProperty.id}|${run.marketingRunId}`,
         favoredStyle: fav.creativeStyle ?? null,
