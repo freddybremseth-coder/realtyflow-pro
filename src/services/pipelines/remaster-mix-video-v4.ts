@@ -302,7 +302,7 @@ export async function renderRemasterLongFormMixV4(input: RemasterMixVideoV4Input
     const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
     const logoPath = artOrBooks ? null
       : await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png", binary);
-    const zenEcoLogoUrl = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || DEFAULT_ZENECO_LOGO_URL;
+    const zenEcoLogoUrl = input.zenEcoLogoUrl || DEFAULT_ZENECO_LOGO_URL;
     const zenEcoLogoPath = sponsorBrand === 'zeneco'
       ? await downloadLogo(zenEcoLogoUrl, workingDirectory, "zeneco-logo.png", binary)
       : null;

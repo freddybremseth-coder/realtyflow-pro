@@ -27,6 +27,7 @@ export type ReelRenderResult = {buffer:Buffer;caption:string;durationSeconds:num
 const SUPABASE_AUDIO = /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/object\/(?:public|sign)\/assets\/neural-beat\//i;
 const SAFE_PUBLIC_SUPABASE = /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/object\/public\/[a-z0-9_-]+\//i;
 const BOOK_HOST="books.freddybremseth.com";
+export const ZENECO_REMASTER_PROFILE_URL="https://realtyflow.chatgenius.pro/brand-logos/zeneco.png";
 
 function safeText(value:string,max:number) {
   return String(value||"").replace(/[{}\\\r\n]+/g," ").replace(/\s+/g," ").trim().slice(0,max);
@@ -37,6 +38,9 @@ function brandLabel(brand:ReelBrand) {
 }
 function brandWebsite(brand:ReelBrand) {
   return ({art:"art.freddybremseth.com",books:"books.freddybremseth.com",zeneco:"zenecohomes.com",freddybremseth:"freddybremseth.com",pinosoecolife:"pinosoecolife.com",donaanna:"donaanna.com"} as const)[brand];
+}
+export function reelBrandProfileUrl(brand:ReelBrand){
+  return brand==="zeneco" ? ZENECO_REMASTER_PROFILE_URL : null;
 }
 function buildAss(input:ReelRenderInput) {
   const brand=brandLabel(input.brand),title=safeText(input.title,78),site=brandWebsite(input.brand);
@@ -150,10 +154,15 @@ export async function renderPortfolioReel(input:ReelRenderInput):Promise<ReelRen
       let ext=".jpg";try{const candidate=path.extname(new URL(imageUrls[i]).pathname).toLowerCase();if([".jpg",".jpeg",".png",".webp"].includes(candidate))ext=candidate;}catch{}
       const target=path.join(dir,"visual-"+i+ext);await download(imageUrls[i],target,10*1024*1024);files.push(target);
     }
+    const profileUrl=reelBrandProfileUrl(input.brand);
+    const profilePath=profileUrl ? path.join(dir,"brand-profile.png") : null;
+    if(profileUrl && profilePath) await download(profileUrl,profilePath,5*1024*1024);
+
     const binary=await ensureFFmpeg();
     const segment=input.durationSeconds/files.length;
     const args=["-hide_banner","-loglevel","error"];
     for(const file of files)args.push("-loop","1","-framerate","24","-t",segment.toFixed(3),"-i",file);
+    if(profilePath) args.push("-loop","1","-framerate","24","-t",String(input.durationSeconds),"-i",profilePath);
     args.push("-stream_loop","-1","-ss","10","-i",audio);
     const filters:string[]=[];
     for(let i=0;i<files.length;i++)filters.push(
@@ -161,8 +170,15 @@ export async function renderPortfolioReel(input:ReelRenderInput):Promise<ReelRen
     );
     filters.push(files.map((_,i)=>"[v"+i+"]").join("")+`concat=n=${files.length}:v=1:a=0[gallery]`);
     filters.push(`[gallery]pad=1080:1920:0:190:color=0x07131f[canvas]`);
-    filters.push(`[canvas]ass=filename='${assPath(ass)}',format=yuv420p[vout]`);
-    const audioIndex=files.length;
+    let brandedInput="canvas";
+    if(profilePath){
+      const profileIndex=files.length;
+      filters.push(`[${profileIndex}:v]scale=150:150:force_original_aspect_ratio=decrease,pad=168:168:(ow-iw)/2:(oh-ih)/2:color=white@0.94[brand_profile]`);
+      filters.push(`[canvas][brand_profile]overlay=x=44:y=18:eof_action=repeat:shortest=0[branded_canvas]`);
+      brandedInput="branded_canvas";
+    }
+    filters.push(`[${brandedInput}]ass=filename='${assPath(ass)}',format=yuv420p[vout]`);
+    const audioIndex=files.length+(profilePath?1:0);
     args.push("-filter_complex",filters.join(";"),"-map","[vout]","-map",`${audioIndex}:a:0`,
       "-t",String(input.durationSeconds),"-r","24","-c:v","libx264","-preset","ultrafast","-crf","27",
       "-pix_fmt","yuv420p","-c:a","aac","-ar","48000","-b:a","128k","-movflags","+faststart","-y",out);

@@ -8,13 +8,13 @@ import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 import { buildRemasterMixGlobalAssOverlay, buildVisualConcatFile } from "./remaster-mix-video-compat";
-import { ZENECO_PRESENTED_PNG_BASE64 } from "./zeneco-brand-asset";
 
 const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
 const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
+const DEFAULT_ZENECO_LOGO_URL = "https://realtyflow.chatgenius.pro/brand-logos/zeneco.png";
 
 export interface RemasterMixVideoV3Input {
   audioPath: string;
@@ -189,12 +189,7 @@ async function downloadLogo(url: string | null | undefined, workingDirectory: st
 }
 
 async function resolveZenEcoPresentedLogo(url: string | null | undefined, workingDirectory: string) {
-  if (url) return downloadLogo(url, workingDirectory, "zeneco-presented.png");
-  const target = path.join(workingDirectory, "zeneco-presented.png");
-  await fs.writeFile(target, Buffer.from(ZENECO_PRESENTED_PNG_BASE64, "base64"));
-  const stat = await fs.stat(target);
-  if (stat.size <= 1024) throw new Error("Embedded ZenEcoHomes sponsor logo is unexpectedly small.");
-  return target;
+  return downloadLogo(url || DEFAULT_ZENECO_LOGO_URL, workingDirectory, "zeneco-presented.png");
 }
 
 function escapeAssFilterPath(value: string) {
@@ -338,7 +333,7 @@ export async function renderRemasterLongFormMixV3(input: RemasterMixVideoV3Input
 
     const logoUrl = input.logoUrl || process.env.REMASTER_MIX_LOGO_URL || DEFAULT_REMASTER_LOGO_URL;
     const logoPath = await downloadLogo(logoUrl, workingDirectory, "remaster-logo.png");
-    const zenEcoLogoOverride = input.zenEcoLogoUrl || process.env.REMASTER_MIX_ZENECO_LOGO_URL || null;
+    const zenEcoLogoOverride = input.zenEcoLogoUrl || null;
     const zenEcoLogoPath = input.zenEcoHomesEnabled
       ? await resolveZenEcoPresentedLogo(zenEcoLogoOverride, workingDirectory)
       : null;
