@@ -11,6 +11,7 @@ const files = [
   "20260924140000_brand_workspace_access_plans.sql",
   "20260924150000_zeneco_joint_new_lead_cohort_foundation.sql",
   "20260924160000_zeneco_joint_tasks_isolated_foundation.sql",
+  "20260924170000_brand_workspace_contact_writes.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -63,6 +64,20 @@ async function edit(id = newId, name = "Updated eligible name") {
   );
   return res.rows[0].result;
 }
+async function createBrandContact(brandKey = "pinosoecolife", name = "Pinoso staff contact") {
+  const res = await serviceSql(
+    "select public.workspace_brand_contact_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text) as result",
+    [brandKey, member, "staff@example.test", name, "pinoso.staff@example.test", "+34611111111"],
+  );
+  return res.rows[0].result;
+}
+async function updateBrandContact(id, name = "Pinoso staff contact updated") {
+  const res = await serviceSql(
+    "select public.workspace_brand_contact_update($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::text,$7::boolean,$8::text,$9::boolean,$10::text) as result",
+    ["pinosoecolife", member, "staff@example.test", id, true, name, false, null, false, null],
+  );
+  return res.rows[0].result;
+}
 
 try {
   await client.connect();
@@ -85,10 +100,10 @@ try {
   await sql("create schema auth; create schema core");
   await sql("create table auth.users (id uuid primary key, email text)");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
-  await sql("create table public.contacts (id uuid primary key, name text not null, email text, phone text, brand_id text, brand text, pipeline_status text, source text, created_at timestamptz, updated_at timestamptz)");
+  await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("grant usage on schema core to service_role");
   await sql("grant select on core.brands to service_role");
-  await sql("grant select, update on public.contacts to service_role");
+  await sql("grant select, insert, update on public.contacts to service_role");
   for (const filename of files) {
     const contents = await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8");
     await sql(contents);
@@ -99,7 +114,8 @@ try {
   for (const func of ["workspace_zeneco_review_candidates", "workspace_zeneco_review_lead",
     "workspace_zeneco_joint_contacts", "workspace_zeneco_joint_contact_update",
     "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
-    "workspace_zeneco_joint_task_complete"]) {
+    "workspace_zeneco_joint_task_complete", "workspace_brand_contact_create",
+    "workspace_brand_contact_update"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -332,7 +348,83 @@ try {
   );
   verify(memberRaceTasks.rowCount === 1 && memberRaceTasks.rows[0].status === "open",
     "Revoked employee created/completed a joint task during membership revocation");
-  process.stdout.write("Isolated Zen joint-customer migration checks passed: " + checks + "\n");
+
+  // Pinoso full-brand CRM writes use separate non-Zen RPCs. They are still
+  // membership-scoped and cannot fall back to Zen's historical CRM.
+  verify(await createBrandContact() === null,
+    "Pinoso contact was created without an active Pinoso membership");
+  await sql(
+    "insert into core.brand_workspace_memberships(brand_id,user_id,email,status,permissions) values ($1,$2,'staff@example.test','active',array['crm.read']::text[])",
+    [pinoso, member],
+  );
+  verify(await createBrandContact() === null,
+    "Read-only Pinoso membership created a customer");
+  await sql(
+    "update core.brand_workspace_memberships set permissions=array['crm.read','crm.write']::text[] where brand_id=$1 and user_id=$2",
+    [pinoso, member],
+  );
+  verify(await createBrandContact("zeneco", "FORBIDDEN ZEN LEGACY") === null,
+    "Generic brand contact RPC accepted Zen Eco Homes");
+  const pinosoCreated = await createBrandContact();
+  verify(pinosoCreated?.brand_id === "pinosoecolife" && pinosoCreated?.brand === "pinosoecolife" &&
+    pinosoCreated?.pipeline_status === "NEW" && pinosoCreated?.name === "Pinoso staff contact",
+    "Atomic Pinoso contact creation failed or returned the wrong brand");
+  const pinosoContactId = pinosoCreated.id;
+  const pinosoUpdated = await updateBrandContact(pinosoContactId);
+  verify(pinosoUpdated?.id === pinosoContactId && pinosoUpdated?.name === "Pinoso staff contact updated" &&
+    pinosoUpdated?.brand_id === "pinosoecolife" && pinosoUpdated?.brand === "pinosoecolife",
+    "Atomic Pinoso contact update failed");
+  verify(await updateBrandContact(newId, "DO NOT EDIT ZEN") === null,
+    "Pinoso generic RPC updated a Zen contact");
+
+  // Race: membership revocation wins over an already-started Pinoso update.
+  const pinosoBlocker = new Client({
+    connectionString: localUrl,
+    application_name: "isolated_pinoso_membership_revoke_race",
+  });
+  await pinosoBlocker.connect();
+  let pendingPinosoUpdate;
+  let pinosoCommitted = false;
+  try {
+    await pinosoBlocker.query("begin");
+    await pinosoBlocker.query(
+      "select user_id from core.brand_workspace_memberships where brand_id=$1 and user_id=$2 for update",
+      [pinoso, member],
+    );
+    pendingPinosoUpdate = updateBrandContact(pinosoContactId, "UNAUTHORIZED PINOSO RACE EDIT").catch(error => error);
+    let waiting = false;
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await pinosoBlocker.query("select pg_sleep(0.05)");
+      const state = await pinosoBlocker.query(
+        "select wait_event_type from pg_stat_activity where pid=$1", [activePid],
+      );
+      if (state.rows[0]?.wait_event_type === "Lock") {
+        waiting = true;
+        break;
+      }
+    }
+    verify(waiting, "Pinoso contact update did not serialize against membership revocation");
+    await pinosoBlocker.query(
+      "update core.brand_workspace_memberships set status='revoked' where brand_id=$1 and user_id=$2",
+      [pinoso, member],
+    );
+    await pinosoBlocker.query("commit");
+    pinosoCommitted = true;
+    verify((await pendingPinosoUpdate) === null,
+      "Pinoso contact update succeeded after employee membership was revoked");
+  } finally {
+    if (!pinosoCommitted) await pinosoBlocker.query("rollback").catch(() => undefined);
+    await pinosoBlocker.end();
+    if (pendingPinosoUpdate) await pendingPinosoUpdate.catch(() => undefined);
+  }
+  const pinosoAfterRace = await sql("select name,brand_id,brand from public.contacts where id=$1", [pinosoContactId]);
+  verify(pinosoAfterRace.rows[0].name === "Pinoso staff contact updated" &&
+    pinosoAfterRace.rows[0].brand_id === "pinosoecolife" && pinosoAfterRace.rows[0].brand === "pinosoecolife",
+    "Revoked Pinoso employee changed customer data during membership revocation");
+  verify(await createBrandContact() === null,
+    "Revoked Pinoso membership still created a customer");
+
+  process.stdout.write("Isolated workspace migration checks passed: " + checks + "\n");
 } finally {
   await client.end();
 }
