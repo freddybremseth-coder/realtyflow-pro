@@ -48,7 +48,8 @@ test("keeps currently controlled Meta pilots enabled", () => {
     assert.equal(isPilotChannel("donaanna", "facebook"), true);
     assert.equal(isPilotChannel("chatgenius", "instagram"), true);
     assert.equal(isPilotChannel("chatgenius", "facebook"), true);
-    assert.equal(isPilotChannel("freddyb", "instagram"), true);
+    assert.equal(isPilotChannel("freddyb", "instagram"), false);
+    assert.equal(isPilotChannel("freddyb", "facebook"), true);
     assert.equal(isPilotChannel("freddypublishing", "instagram"), true);
     assert.equal(isPilotChannel("freddypublishing", "facebook"), true);
     assert.equal(isPilotChannel("freddyai", "instagram"), true);
