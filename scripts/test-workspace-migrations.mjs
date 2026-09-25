@@ -124,7 +124,8 @@ try {
       func + ": privileged execute grant leaked");
   }
   for (const table of ["zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
-    "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items"]) {
+    "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
+    "brand_workspace_contact_write_audit"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
@@ -384,6 +385,25 @@ try {
   verify(pinosoUpdated?.id === pinosoContactId && pinosoUpdated?.name === "Pinoso staff contact updated" &&
     pinosoUpdated?.brand_id === "pinosoecolife" && pinosoUpdated?.brand === "pinosoecolife",
     "Atomic Pinoso contact update failed");
+  const pinosoAudit = await sql(
+    "select action,actor_email,changed_fields from core.brand_workspace_contact_write_audit where contact_id=$1 order by at,id",
+    [pinosoContactId],
+  );
+  verify(pinosoAudit.rowCount === 2 &&
+    pinosoAudit.rows[0].action === "created" && pinosoAudit.rows[1].action === "updated" &&
+    pinosoAudit.rows.every(row => row.actor_email === "staff@example.test"),
+    "Pinoso staff create/update audit entries missing");
+  verify(pinosoAudit.rows[0].changed_fields.includes("name") &&
+    pinosoAudit.rows[0].changed_fields.includes("email") &&
+    pinosoAudit.rows[0].changed_fields.includes("phone") &&
+    pinosoAudit.rows[1].changed_fields.join() === "name",
+    "Pinoso audit changed-field names are inaccurate");
+  const auditColumns = await sql(
+    "select column_name from information_schema.columns where table_schema='core' and table_name='brand_workspace_contact_write_audit'",
+  );
+  verify(!auditColumns.rows.some(row =>
+    ["name","email","phone","before","after","value"].includes(row.column_name)),
+    "Pinoso write audit table stores customer PII values");
   verify(await updateBrandContact(newId, "DO NOT EDIT ZEN") === null,
     "Pinoso generic RPC updated a Zen contact");
 
@@ -474,6 +494,12 @@ try {
   verify(pinosoAfterRace.rows[0].name === "Pinoso staff contact updated" &&
     pinosoAfterRace.rows[0].brand_id === "pinosoecolife" && pinosoAfterRace.rows[0].brand === "pinosoecolife",
     "Revoked Pinoso employee changed customer data during membership revocation");
+  const auditAfterRace = await sql(
+    "select count(*)::int as total from core.brand_workspace_contact_write_audit where contact_id=$1",
+    [pinosoContactId],
+  );
+  verify(auditAfterRace.rows[0].total === 2,
+    "Blocked Pinoso membership-race write produced an audit entry");
   verify(await readBrandContacts() === null,
     "Revoked Pinoso membership still read CRM customers");
   verify(await createBrandContact() === null,
