@@ -88,6 +88,15 @@ begin
     and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
     for update;
   if not found then return null; end if;
+  -- Keep the member row SHARE-locked through task insertion. If the owner
+  -- revokes a member while this request is waiting, PostgreSQL rechecks the
+  -- active-status predicate after obtaining the lock and this write fails.
+  perform 1 from core.brand_workspace_memberships m
+  join core.brands b on b.id=m.brand_id and b.brand_key='zeneco'
+  where m.user_id=p_user_id and m.email=p_email and m.status='active'
+    and m.permissions @> array['crm.joint.read','tasks.joint.read','tasks.joint.write']::text[]
+  for share of m;
+  if not found then return null; end if;
 
   insert into core.zeneco_joint_work_items
     (contact_id,brand_id,title,due_on,created_by_user_id,created_by_email)
@@ -131,6 +140,13 @@ begin
     and c.brand_id='zeneco' and c.brand='zeneco'
     and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
     for update;
+  if not found then return null; end if;
+  -- Same membership serialization for task completion as for task creation.
+  perform 1 from core.brand_workspace_memberships m
+  join core.brands b on b.id=m.brand_id and b.brand_key='zeneco'
+  where m.user_id=p_user_id and m.email=p_email and m.status='active'
+    and m.permissions @> array['crm.joint.read','tasks.joint.read','tasks.joint.write']::text[]
+  for share of m;
   if not found then return null; end if;
   update core.zeneco_joint_work_items t set
     status='done',updated_at=now(),finished_at=now(),
