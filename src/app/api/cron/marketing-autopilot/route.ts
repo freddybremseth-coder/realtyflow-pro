@@ -8,11 +8,10 @@ import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { summarizeMarketingAutopilotHeartbeat } from "@/lib/marketing/autopilot-heartbeat";
 import {
   autopilotRunIdentity,
-  autopilotTargetHour,
+  autopilotTargetHours,
+  dueAutopilotTargetHour,
   localAutopilotSlot,
-  isPlannedAutopilotDay,
   parseLearnedAutopilotHour,
-  shouldRunAutopilotSlot,
 } from "@/lib/marketing/autopilot-safety";
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
@@ -25,9 +24,10 @@ import {
   remasterPromotionMasterIdea,
   remasterPromotionMediaUrl,
 } from "@/services/marketing/remaster-promotion-source";
+import { loadAutopilotSignalGuidance } from "@/services/marketing/autopilot-signal-guidance";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
-const EXCLUDED_BRANDS = new Set(["soleada"]);
+const EXCLUDED_BRANDS = new Set(["soleada", "freddyb"]);
 const RECOVERABLE_PROPERTY_COPY_ERRORS = [
   "FACT_NOT_VERIFIED",
   "CLAIM_NOT_VERIFIED",
@@ -57,7 +57,7 @@ function safeFallbackIdentity(identity: ReturnType<typeof autopilotRunIdentity> 
 }
 
 async function hasRecentAutoPublication(supabase: any, brandId: string, channel: string) {
-  const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - 11.5 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from("marketing_publications")
     .select("publication_id")
@@ -159,18 +159,27 @@ export async function GET(request: NextRequest) {
       if (!channels.length) { results.push({ brandId, skipped: true, reason: "No requested/preapproved autopilot channels" }); continue; }
 
       for (const channel of channels) {
-        if (!manualRun && !isPlannedAutopilotDay(dayIndex, plan?.posting_strategy?.days)) {
-          results.push({ brandId, channel, skipped: true, reason: "not_configured_publishing_day", localDate });
-          continue;
-        }
+        // Portfolio autopilot is intentionally interval-based: two slots per day,
+        // exactly 12 hours apart. Legacy weekday plans remain available for manual
+        // and older callers but do not suppress this owner-authorized loop.
         if (await hasRecentAutoPublication(supabase, brandId, channel)) { results.push({ brandId, channel, skipped: true, reason: "recent_auto_publication_exists" }); continue; }
         const recommendation = await recommendForGeneration(supabase as any, { scope: channelLearningScope(brandId, channel) }).catch(() => undefined);
         const learnedHour = parseLearnedAutopilotHour(recommendation?.favor?.publishHour?.value);
-        const targetHour = autopilotTargetHour(dayIndex, learnedHour);
-        if (!manualRun && !shouldRunAutopilotSlot(localHour, targetHour)) { results.push({ brandId, channel, skipped: true, reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due", localHour, learnedHour, targetHour }); continue; }
+        const targetHours = autopilotTargetHours(brandId, learnedHour);
+        const dueTargetHour = dueAutopilotTargetHour(localHour, targetHours);
+        if (!manualRun && dueTargetHour == null) {
+          results.push({
+            brandId, channel, skipped: true,
+            reason: learnedHour == null ? "staggered_12h_slot_not_due" : "learned_12h_slot_not_due",
+            localHour, learnedHour, targetHours,
+          });
+          continue;
+        }
+        const targetHour = dueTargetHour ?? localHour;
 
         try {
-          const guidance = recommendation ? ` Bruk dokumentert læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "";
+          const signalGuidance = await loadAutopilotSignalGuidance(supabase as any, brandId).catch(() => ({ text: "", evidence: { seo: null, youtube: null } }));
+          const guidance = (recommendation ? ` Bruk dokumentert kanal-læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "") + signalGuidance.text;
           const role = String(plan?.metadata?.brand_role ?? "");
           const isRemasterCreator = brandId === "remasterfreddy" && role === "creator_media";
           const remasterSource = isRemasterCreator
@@ -287,7 +296,9 @@ export async function GET(request: NextRequest) {
             localHour,
             learnedHour,
             targetHour,
+            targetHours,
             recommendation: recommendation?.favor ?? {},
+            signalEvidence: signalGuidance.evidence,
             generatedMedia,
             recovery,
             failureState,
