@@ -110,7 +110,10 @@ test("search and pagination remain constrained by exact brand", async () => {
 });
 
 test("returns a bounded page and hasMore without leaking extra records", async () => {
-  scopedResult = Array.from({ length: 51 }, (_, i) => ({ id: `customer-${i}`, brand_id: "pinosoecolife", brand: "pinosoecolife" }));
+  scopedResult = Array.from({ length: 51 }, (_, i) => ({
+    id: `customer-${i}`, name: `Customer ${i}`,
+    brand_id: "pinosoecolife", brand: "pinosoecolife",
+  }));
   const cookie = `realtyflow_admin=${await createAdminSession("owner@example.test")}`;
   const result = await GET(request(cookie) as any, context);
   const body = await result.json();
