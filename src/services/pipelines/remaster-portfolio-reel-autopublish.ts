@@ -102,7 +102,6 @@ export async function publishAutonomousPortfolioReel(
 ){
   if(job.selection?.autopilot!==true)return {success:false,permanent:true,reason:"not_autopilot_job"} as const;
   if(!isAutoBrand(job.brand))return {success:false,permanent:true,reason:"brand_not_allowed_for_autopilot"} as const;
-  if(job.brand==="freddybremseth")return {success:false,permanent:true,reason:"freddy_personal_autopilot_forbidden"} as const;
   if(job.state!=="ready"||!job.video_path||!job.caption)
     return {success:false,permanent:true,reason:"job_not_ready"} as const;
   if(!intended(job,channel))
