@@ -3,6 +3,24 @@
 -- joint cohort functions and must never fall back to brand-wide CRM writes.
 -- No membership or customer is created by this migration.
 
+-- Immutable, PII-minimal staff CRM write audit. It records only actor,
+-- contact ID, action and changed field NAMES, never field values.
+create table if not exists core.brand_workspace_contact_write_audit (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid not null references core.brands(id) on delete restrict,
+  contact_id uuid not null references public.contacts(id) on delete restrict,
+  actor_user_id uuid not null references auth.users(id) on delete restrict,
+  actor_email text not null,
+  action text not null check (action in ('created','updated')),
+  changed_fields text[] not null,
+  at timestamptz not null default now()
+);
+alter table core.brand_workspace_contact_write_audit enable row level security;
+revoke all on core.brand_workspace_contact_write_audit from public, anon, authenticated;
+grant select, insert on core.brand_workspace_contact_write_audit to service_role;
+comment on table core.brand_workspace_contact_write_audit is
+  'PII-minimal audit for atomic non-Zen workspace CRM writes. Never stores changed values.';
+
 create or replace function public.workspace_brand_contacts(
   p_brand_key text, p_user_id uuid, p_email text, p_offset integer, p_search text
 ) returns jsonb language plpgsql security invoker set search_path = '' as $workspace_brand_contacts$
@@ -54,6 +72,17 @@ begin
   )
   returning id,name,email,phone,brand_id,brand,pipeline_status,source,created_at,updated_at
     into v_contact;
+
+  insert into core.brand_workspace_contact_write_audit
+    (brand_id,contact_id,actor_user_id,actor_email,action,changed_fields)
+  values (
+    v_brand_id,v_contact.id,p_user_id,p_email,'created',
+    array_remove(array[
+      'name',
+      case when p_contact_email is not null then 'email' end,
+      case when p_phone is not null then 'phone' end
+    ]::text[],null)
+  );
 
   return jsonb_build_object(
     'id',v_contact.id,'name',v_contact.name,'email',v_contact.email,'phone',v_contact.phone,
@@ -111,6 +140,17 @@ begin
   returning c.id,c.name,c.email,c.phone,c.brand_id,c.brand,c.pipeline_status,c.source,c.created_at,c.updated_at
     into v_contact;
   if not found then return null; end if;
+
+  insert into core.brand_workspace_contact_write_audit
+    (brand_id,contact_id,actor_user_id,actor_email,action,changed_fields)
+  values (
+    v_brand_id,v_contact.id,p_user_id,p_email,'updated',
+    array_remove(array[
+      case when p_set_name then 'name' end,
+      case when p_set_email then 'email' end,
+      case when p_set_phone then 'phone' end
+    ]::text[],null)
+  );
 
   return jsonb_build_object(
     'id',v_contact.id,'name',v_contact.name,'email',v_contact.email,'phone',v_contact.phone,
