@@ -121,12 +121,12 @@ function knownBookingConfig(brandId: string) {
   const templates: Record<string, any> = {
     zeneco: {
       domain: "ZenEcoHomes.com",
-      siteName: "ZenEcoHomes",
+      siteName: "Zen Eco Homes",
       bookingUrl: "zenecohomes.com/book",
-      logoUrl: "https://realtyflow.chatgenius.pro/brand-logos/zeneco.png",
+      logoUrl: "https://www.zenecohomes.com/assets/logoZEH.png?v=20260925-approved",
       accent: "leaf",
       profile: {
-        name: "ZenEcoHomes",
+        name: "Zen Eco Homes",
         initials: "ZE",
         role: "Bolig i Spania",
         location: "Costa Blanca",
