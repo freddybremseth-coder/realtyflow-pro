@@ -298,6 +298,15 @@ begin
     and c.created_at >= timestamptz '2026-09-23 22:00:00+00'
   for update;
   if not found then return null; end if;
+  -- A membership revocation/update must serialize with an already started
+  -- employee edit, not merely be checked in the UPDATE statement snapshot.
+  -- FOR SHARE waits for a concurrent membership UPDATE and rechecks status.
+  perform 1 from core.brand_workspace_memberships m
+  join core.brands b on b.id=m.brand_id and b.brand_key='zeneco'
+  where m.user_id=p_user_id and m.email=p_member_email and m.status='active'
+    and m.permissions @> array['crm.joint.read','crm.joint.write']::text[]
+  for share of m;
+  if not found then return null; end if;
   update public.contacts c set
     name = btrim(p_name),
     email = nullif(lower(btrim(p_contact_email)), ''),
