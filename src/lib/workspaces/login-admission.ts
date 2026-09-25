@@ -1,0 +1,56 @@
+import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { isCanonicalBrandKey } from "@/lib/workspaces/brand-policy";
+
+export type WorkspaceLoginAdmission =
+  | { ok: true; activeBrands: string[] }
+  | { ok: false; reason: "DISABLED" | "UNAVAILABLE" | "NO_ACTIVE_GRANT" | "IDENTITY_MISMATCH" };
+
+/**
+ * Final login admission for WORKSPACE_MEMBER only.
+ * An active legacy access profile is not enough: the just-authenticated
+ * Supabase Auth UUID must also own at least one CURRENT active brand grant.
+ * No data permission is derived here; every workspace route still re-checks
+ * its exact brand/module grant independently.
+ */
+export async function admitWorkspaceMemberLogin(
+  email: string,
+  authenticatedUserId: string,
+): Promise<WorkspaceLoginAdmission> {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") {
+    return { ok: false, reason: "DISABLED" };
+  }
+  if (!normalizedEmail || !normalizedEmail.includes("@") ||
+      !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(authenticatedUserId)) {
+    return { ok: false, reason: "IDENTITY_MISMATCH" };
+  }
+
+  const supabase = getPlatformSupabase();
+  if (!supabase) return { ok: false, reason: "UNAVAILABLE" };
+
+  const { data, error } = await supabase.rpc("workspace_user_brand_grants", {
+    p_email: normalizedEmail,
+  });
+  if (error || !Array.isArray(data) || data.length > 50) {
+    return { ok: false, reason: "UNAVAILABLE" };
+  }
+  if (data.length === 0) return { ok: false, reason: "NO_ACTIVE_GRANT" };
+
+  const activeBrands: string[] = [];
+  for (const row of data) {
+    if (!row || typeof row !== "object") return { ok: false, reason: "UNAVAILABLE" };
+    const value = row as Record<string, unknown>;
+    const brand = value.brand as Record<string, unknown> | undefined;
+    const grant = value.grant as Record<string, unknown> | undefined;
+    if (!brand || !grant || !isCanonicalBrandKey(brand.brand_key) ||
+        grant.status !== "active" ||
+        typeof grant.user_id !== "string" || grant.user_id !== authenticatedUserId ||
+        typeof grant.email !== "string" || grant.email.trim().toLowerCase() !== normalizedEmail ||
+        !Array.isArray(grant.permissions)) {
+      return { ok: false, reason: "IDENTITY_MISMATCH" };
+    }
+    activeBrands.push(brand.brand_key);
+  }
+
+  return { ok: true, activeBrands: Array.from(new Set(activeBrands)) };
+}
