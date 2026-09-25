@@ -12,6 +12,7 @@ const files = [
   "20260924150000_zeneco_joint_new_lead_cohort_foundation.sql",
   "20260924160000_zeneco_joint_tasks_isolated_foundation.sql",
   "20260924170000_brand_workspace_contact_writes.sql",
+  "20260924180000_workspace_brand_property_catalogue.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -101,9 +102,12 @@ try {
   await sql("create table auth.users (id uuid primary key, email text)");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
   await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
+  await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
   await sql("grant usage on schema core to service_role");
   await sql("grant select on core.brands to service_role");
   await sql("grant select, insert, update on public.contacts to service_role");
+  await sql("grant select on public.properties, public.property_brand_visibility to service_role");
   for (const filename of files) {
     const contents = await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8");
     await sql(contents);
@@ -157,7 +161,8 @@ try {
     "workspace_zeneco_joint_contacts", "workspace_zeneco_joint_contact_update",
     "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
     "workspace_zeneco_joint_task_complete", "workspace_brand_contacts",
-    "workspace_brand_contact_create", "workspace_brand_contact_update"]) {
+    "workspace_brand_contact_create", "workspace_brand_contact_update",
+    "workspace_brand_property_catalogue"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
