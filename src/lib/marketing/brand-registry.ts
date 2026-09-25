@@ -81,9 +81,9 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Freddy Bremseth",
     kind: "personal",
     website: "https://freddybremseth.com",
-    // FB pilot is for manually reviewed, selected umbrella editorial stories only.
-    // It does not grant controlled-auto or blanket Instagram cross-posting.
-    pilotChannels: ["instagram", "facebook"],
+    // Controlled autopilot is bound only to the exact public Facebook Page.
+    // The active Instagram row is the separate Art identity and must never be used by the umbrella.
+    pilotChannels: ["facebook"],
     plannedChannels: ["instagram", "facebook", "linkedin", "youtube", "website", "email"],
     contentPillars: [
       "expertise_and_analysis",
