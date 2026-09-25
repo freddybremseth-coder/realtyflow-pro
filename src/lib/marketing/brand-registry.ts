@@ -32,13 +32,13 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     id: "zeneco",
     name: "Zen Eco Homes",
     kind: "real_estate",
-    website: "https://zenecohomes.com",
+    website: "https://www.zenecohomes.com",
     pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["instagram", "facebook", "website", "email"],
     contentPillars: ["property_showcase", "area_and_lifestyle", "buyer_education", "new_build", "investment_and_value"],
     conversionGoals: ["property_lead", "viewing_request", "guide_download", "website_visit"],
     primaryCtas: ["view_property", "book_viewing", "contact", "download_guide"],
-    notes: "Inventory-grounded property marketing. Property facts must come from canonical inventory and material outbound changes remain approval-gated.",
+    notes: "Inventory-grounded property marketing. Property facts must come from canonical inventory and material outbound changes remain approval-gated. Approved visual identity: Zen Eco Homes wordmark with modern Mediterranean villa, gold sun, deep teal waves/details and restrained Mediterranean greenery; palette deep teal, warm gold and off-white; positioning Modern Mediterranean Living / Costa Blanca. Use the approved logo asset and never substitute the old black ZE identity or invent/redraw the logo."
   },
   {
     id: "pinosoecolife",
