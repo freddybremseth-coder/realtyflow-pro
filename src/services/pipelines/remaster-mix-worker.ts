@@ -381,9 +381,8 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
               randomSeed: job.input_snapshot?.visualPlan?.randomSeed || job.id,
             });
             if(finalIssues.length) throw new MixSelectionValidationError(finalIssues);
-            const calmAutoArt = brand === 'art' && calmVisualMode &&
-              !hasExplicitArtSelection(job.input_snapshot?.visualPlan);
-            const selected = calmAutoArt
+            const selected = brand === 'art' && calmVisualMode &&
+              !hasExplicitArtSelection(job.input_snapshot?.visualPlan)
               ? await loadCalmArtItems(tracks, calmVisualMode, job.target_minutes)
               : selectApprovedPromotionItems(catalog, {
                   ...job.input_snapshot?.visualPlan, brand,
