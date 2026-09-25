@@ -17,6 +17,7 @@ create table if not exists core.brand_workspace_contact_write_audit (
 );
 alter table core.brand_workspace_contact_write_audit enable row level security;
 revoke all on core.brand_workspace_contact_write_audit from public, anon, authenticated;
+revoke all on core.brand_workspace_contact_write_audit from service_role;
 grant select, insert on core.brand_workspace_contact_write_audit to service_role;
 comment on table core.brand_workspace_contact_write_audit is
   'PII-minimal audit for atomic non-Zen workspace CRM writes. Never stores changed values.';
