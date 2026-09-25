@@ -114,8 +114,8 @@ try {
   for (const func of ["workspace_zeneco_review_candidates", "workspace_zeneco_review_lead",
     "workspace_zeneco_joint_contacts", "workspace_zeneco_joint_contact_update",
     "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
-    "workspace_zeneco_joint_task_complete", "workspace_brand_contact_create",
-    "workspace_brand_contact_update"]) {
+    "workspace_zeneco_joint_task_complete", "workspace_brand_contacts",
+    "workspace_brand_contact_create", "workspace_brand_contact_update"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -349,14 +349,24 @@ try {
   verify(memberRaceTasks.rowCount === 1 && memberRaceTasks.rows[0].status === "open",
     "Revoked employee created/completed a joint task during membership revocation");
 
-  // Pinoso full-brand CRM writes use separate non-Zen RPCs. They are still
+  // Pinoso full-brand CRM reads/writes use separate non-Zen RPCs. They are
   // membership-scoped and cannot fall back to Zen's historical CRM.
+  const readBrandContacts = () => serviceSql(
+    "select public.workspace_brand_contacts($1::text,$2::uuid,$3::text,$4::integer,$5::text) as result",
+    ["pinosoecolife", member, "staff@example.test", 0, ""],
+  ).then(r => r.rows[0].result);
+  verify(await readBrandContacts() === null,
+    "Pinoso CRM was readable without an active Pinoso membership");
   verify(await createBrandContact() === null,
     "Pinoso contact was created without an active Pinoso membership");
   await sql(
     "insert into core.brand_workspace_memberships(brand_id,user_id,email,status,permissions) values ($1,$2,'staff@example.test','active',array['crm.read']::text[])",
     [pinoso, member],
   );
+  const readOnlyPinoso = await readBrandContacts();
+  verify(readOnlyPinoso?.contacts?.length === 1 && readOnlyPinoso.contacts[0].id === other &&
+    readOnlyPinoso.contacts[0].brand_id === "pinosoecolife" && readOnlyPinoso.contacts[0].brand === "pinosoecolife",
+    "Pinoso read RPC leaked another brand or failed exact brand scoping");
   verify(await createBrandContact() === null,
     "Read-only Pinoso membership created a customer");
   await sql(
@@ -376,6 +386,49 @@ try {
     "Atomic Pinoso contact update failed");
   verify(await updateBrandContact(newId, "DO NOT EDIT ZEN") === null,
     "Pinoso generic RPC updated a Zen contact");
+
+  // Race: an employee read waiting behind an owner membership lock must not
+  // return CRM rows after the owner commits revocation.
+  const pinosoReadBlocker = new Client({
+    connectionString: localUrl,
+    application_name: "isolated_pinoso_membership_revoke_read_race",
+  });
+  await pinosoReadBlocker.connect();
+  let pendingPinosoRead;
+  let pinosoReadCommitted = false;
+  try {
+    await pinosoReadBlocker.query("begin");
+    await pinosoReadBlocker.query(
+      "select user_id from core.brand_workspace_memberships where brand_id=$1 and user_id=$2 for update",
+      [pinoso, member],
+    );
+    pendingPinosoRead = readBrandContacts().catch(error => error);
+    let waiting = false;
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await pinosoReadBlocker.query("select pg_sleep(0.05)");
+      const state = await pinosoReadBlocker.query(
+        "select wait_event_type from pg_stat_activity where pid=$1", [activePid],
+      );
+      if (state.rows[0]?.wait_event_type === "Lock") { waiting = true; break; }
+    }
+    verify(waiting, "Pinoso CRM read did not serialize against membership revocation");
+    await pinosoReadBlocker.query(
+      "update core.brand_workspace_memberships set status='revoked' where brand_id=$1 and user_id=$2",
+      [pinoso, member],
+    );
+    await pinosoReadBlocker.query("commit");
+    pinosoReadCommitted = true;
+    verify((await pendingPinosoRead) === null,
+      "Pinoso CRM read returned customer rows after membership was revoked");
+  } finally {
+    if (!pinosoReadCommitted) await pinosoReadBlocker.query("rollback").catch(() => undefined);
+    await pinosoReadBlocker.end();
+    if (pendingPinosoRead) await pendingPinosoRead.catch(() => undefined);
+  }
+  await sql(
+    "update core.brand_workspace_memberships set status='active' where brand_id=$1 and user_id=$2",
+    [pinoso, member],
+  );
 
   // Race: membership revocation wins over an already-started Pinoso update.
   const pinosoBlocker = new Client({
@@ -421,6 +474,8 @@ try {
   verify(pinosoAfterRace.rows[0].name === "Pinoso staff contact updated" &&
     pinosoAfterRace.rows[0].brand_id === "pinosoecolife" && pinosoAfterRace.rows[0].brand === "pinosoecolife",
     "Revoked Pinoso employee changed customer data during membership revocation");
+  verify(await readBrandContacts() === null,
+    "Revoked Pinoso membership still read CRM customers");
   verify(await createBrandContact() === null,
     "Revoked Pinoso membership still created a customer");
 
