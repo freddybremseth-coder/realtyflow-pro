@@ -42,10 +42,16 @@ create trigger trg_brand_workspace_access_plan_audit
  for each row execute function core.audit_brand_workspace_access_plan();
 alter table core.brand_workspace_access_plans enable row level security;
 alter table core.brand_workspace_access_plan_audit enable row level security;
-revoke all on core.brand_workspace_access_plans, core.brand_workspace_access_plan_audit from anon, authenticated;
-revoke all on core.brand_workspace_access_plan_audit from service_role;
-grant select, insert, update, delete on core.brand_workspace_access_plans to service_role;
+revoke all on core.brand_workspace_access_plans, core.brand_workspace_access_plan_audit
+  from public, anon, authenticated;
+revoke all on core.brand_workspace_access_plans, core.brand_workspace_access_plan_audit
+  from service_role;
+-- Drafts are never hard-deleted by the app: DISCARD_DRAFT is an audited status
+-- update, preserving the record and its history for owner review.
+grant select, insert, update on core.brand_workspace_access_plans to service_role;
 grant select on core.brand_workspace_access_plan_audit to service_role;
+revoke execute on function core.audit_brand_workspace_access_plan()
+  from public, anon, authenticated, service_role;
 comment on table core.brand_workspace_access_plans is 'Owner-designated access drafts only: never used in authorization.';
 
 -- Expose ONLY service-role RPCs in public, not the core schema to browsers.
