@@ -32,6 +32,11 @@ const PROPERTY_BASE_BY_BRAND: Record<string, string> = {
   zeneco: "https://www.zenecohomes.com/eiendommer",
   pinosoecolife: "https://www.pinosoecolife.com/eiendommer",
 };
+
+function propertyUrlForBrand(brandId: string, property: Pick<InventoryMarketingProperty, "ref">): string | null {
+  const base = PROPERTY_BASE_BY_BRAND[brandId];
+  return base && property.ref ? `${base}/${encodeURIComponent(property.ref)}` : null;
+}
 const DETERMINISTIC_INVENTORY_FACT_PREFIXES = [
   "Tittel:",
   "Sted:",
@@ -127,11 +132,12 @@ export function makeDeterministicInventoryCreative(brief: any, property: Invento
     .map(({ claim }) => claim.trim())
     .filter(Boolean);
   const body = bodyFacts.length ? bodyFacts.join("\n") : (property.ref ? `Referanse: ${property.ref}` : "Verifisert Inventory-bolig");
-  const base = PROPERTY_BASE_BY_BRAND[String(brief?.genome?.brandId ?? brief?.brandId ?? "")];
-  const propertyUrl = base && property.ref ? `${base}/${encodeURIComponent(property.ref)}` : null;
-  const cta = propertyUrl
-    ? `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`
-    : undefined;
+  const brandId = String(brief?.genome?.brandId ?? brief?.brandId ?? "");
+  const propertyUrl = propertyUrlForBrand(brandId, property);
+  if (!propertyUrl) {
+    throw new Error(`PROPERTY_WEB_URL_REQUIRED: konkret bolig mangler verifisert nettside-URL for ${brandId}`);
+  }
+  const cta = `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`;
 
   return {
     asset: {
@@ -147,8 +153,8 @@ export function makeDeterministicInventoryCreative(brief: any, property: Invento
       headline,
       body,
       cta,
-      media: { imageUrl: property.primaryImage, mediaType: "image" },
-      factSources: safeFacts,
+      media: { imageUrl: property.primaryImage, mediaType: "image", linkUrl: propertyUrl },
+      factSources: [...safeFacts, { claim: `Bolig-URL: ${propertyUrl}`, source: `RealtyFlow verified website route for ${brandId}` }],
       generator: { mode: "deterministic_inventory_fallback" },
     },
     provenance: {
@@ -385,10 +391,26 @@ export async function createCampaignDraft(
         reuseMode = "reuse_exact";
         sourceHumanApproved = !!candidate.humanApproved;
       } else if (inventoryProperty) {
+        const propertyUrl = propertyUrlForBrand(input.brandId, inventoryProperty);
+        if (!propertyUrl) {
+          throw new Error(`PROPERTY_WEB_URL_REQUIRED: konkret bolig mangler verifisert nettside-URL for ${input.brandId}`);
+        }
+        const inventoryFacts = [
+          ...inventoryProperty.factSources,
+          { claim: `Bolig-URL: ${propertyUrl}`, source: `RealtyFlow verified website route for ${input.brandId}` },
+        ];
         creative = input.deterministicInventoryCopy
           ? makeDeterministicInventoryCreative(brief, inventoryProperty)
-          : await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
-        creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
+          : await generator.generate({ brief, brand, recommendation, facts: inventoryFacts, propertyIds: [inventoryProperty.id] });
+        creative = {
+          ...creative,
+          asset: {
+            ...creative.asset,
+            factSources: inventoryFacts,
+            media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image", linkUrl: propertyUrl },
+          },
+          provenance: { ...creative.provenance, factSources: inventoryFacts },
+        };
         sourceType = "generated";
         sourceId = `property:${inventoryProperty.id}`;
         reuseMode = input.deterministicInventoryCopy ? "inventory_deterministic_fallback" : "inventory_grounded";

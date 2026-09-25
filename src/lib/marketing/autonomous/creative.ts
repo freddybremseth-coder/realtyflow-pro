@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.9";
+export const CREATIVE_PROMPT_VERSION = "cg-2.0";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -56,10 +56,13 @@ const FORMAT_INSTRUCTIONS: Partial<Record<string, string>> = {
   email: "E-post: personlig åpning, én verdi, tydelig neste steg.",
 };
 
-const ZENECO_PROPERTY_BASE = "https://www.zenecohomes.com/eiendommer";
+const PROPERTY_BASE_BY_BRAND: Record<string, string> = {
+  zeneco: "https://www.zenecohomes.com/eiendommer",
+  pinosoecolife: "https://www.pinosoecolife.com/eiendommer",
+};
 
-function zenEcoPropertyRef(req: CreativeRequest): string | null {
-  if (req.brief.genome.brandId !== "zeneco" || !req.propertyIds?.length) return null;
+function propertyRef(req: CreativeRequest): string | null {
+  if (!req.propertyIds?.length) return null;
   for (const fact of req.facts ?? []) {
     const match = String(fact.claim ?? "").match(/^Referanse:\s*([A-Za-z0-9._-]+)\s*$/i);
     if (match?.[1]) return match[1];
@@ -67,10 +70,22 @@ function zenEcoPropertyRef(req: CreativeRequest): string | null {
   return null;
 }
 
+function verifiedPropertyUrl(req: CreativeRequest): string | null {
+  for (const fact of req.facts ?? []) {
+    const match = String(fact.claim ?? "").match(/^Bolig-URL:\s*(https:\/\/\S+)\s*$/i);
+    if (match?.[1]) return match[1];
+  }
+  const ref = propertyRef(req);
+  const base = PROPERTY_BASE_BY_BRAND[req.brief.genome.brandId];
+  return ref && base ? `${base}/${encodeURIComponent(ref)}` : null;
+}
+
 function resolvedCta(req: CreativeRequest, generatedCta?: string): string | undefined {
-  const ref = zenEcoPropertyRef(req);
-  if (!ref) return generatedCta ?? req.brand.preferredCta;
-  const propertyUrl = `${ZENECO_PROPERTY_BASE}/${encodeURIComponent(ref)}`;
+  const propertyUrl = verifiedPropertyUrl(req);
+  if (req.propertyIds?.length && !propertyUrl) {
+    throw new Error(`PROPERTY_WEB_URL_REQUIRED: konkret bolig mangler verifisert nettside-URL for ${req.brief.genome.brandId}`);
+  }
+  if (!propertyUrl) return generatedCta ?? req.brand.preferredCta;
   return `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`;
 }
 
@@ -91,8 +106,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
   const spec = CHANNEL_SPECS[brief.channel as MarketingChannel];
   const favored = req.recommendation ? Object.entries(req.recommendation.favor).map(([d, v]) => `${d}=${v?.value}`).join(", ") : "";
   const avoided = req.recommendation ? req.recommendation.avoid.map((a) => `${a.dimension}=${a.value}`).join(", ") : "";
-  const propertyRef = zenEcoPropertyRef(req);
-  const propertyUrl = propertyRef ? `${ZENECO_PROPERTY_BASE}/${encodeURIComponent(propertyRef)}` : null;
+  const propertyUrl = verifiedPropertyUrl(req);
 
   const system = [
     `Du er markedsføringsforfatter for ${brand.brandName}.`,
@@ -113,7 +127,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     `Bevar geografiske factSources semantisk nøyaktig. «Region: Costa Blanca South» betyr at boligen ligger i den sørlige delen av Costa Blanca / Costa Blanca South — ALDRI «sør for Costa Blanca». Ikke bruk uverifiserte geografiske aliaser som «solkysten» når factSources sier Costa Blanca; det kan forveksles med Costa del Sol. Tilsvarende gjelder North/Inland: omskriv aldri en region til en annen geografisk relasjon.`,
     `En factSource kan være avkortet eller ende med «...». ALDRI fullfør, gjett eller rekonstruer den manglende delen. Bruk bare ordene og fakta som faktisk er synlige i factSource. Hvis en setning stopper midt i et stedsnavn, avstand, fasilitet eller annen påstand, utelat den delen helt.`,
     propertyUrl
-      ? `Denne posten gjelder en konkret Zen Eco Homes-bolig. Bruk den verifiserte boliglenken ${propertyUrl}. Kontaktskjemaet for akkurat denne boligen ligger på ${propertyUrl}#kontakt. Ikke bytt ut, forkort eller finn på andre URL-er.`
+      ? `Denne posten gjelder en konkret bolig. Den verifiserte direkte boliglenken ${propertyUrl} SKAL stå i den publiserte teksten/CTA-en. Kontaktskjemaet ligger på ${propertyUrl}#kontakt. Ikke bytt ut, forkort eller finn på andre URL-er.`
       : `Skriv aldri «lenke i bio», «link i bio», «se bio», «klikk på lenken i profilen» eller tilsvarende med mindre en eksplisitt verifisert factSource/channel-fact sier at en slik lenke finnes og peker til riktig destinasjon. Uten slik kilde: bruk CTA som «Book en gratis boligsamtale» eller «Kontakt oss».`,
     `Markeds-/trendpåstander og absolutte løfter er også FORBUDT uten uavhengig kilde. Skriv ikke «flere nordmenn ser mot Costa Blanca», «sol året rundt», «ingen skjulte overraskelser», «ingen språkbarrierer» eller tilsvarende. Bruk nøkternt, sant språk: «et hjem i solen», «norsktalende veiledning», «vi hjelper deg gjennom kjøpsprosessen».`,
     `Unngå absolutte ord som «alltid», «aldri», «ingen», «garantert» når de beskriver et resultat, marked, klima eller tjenesteløfte. Absolutter er bare tillatt når de er eksplisitt støttet av en verifiserbar factSource.`,
@@ -124,6 +138,9 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
 
   const user = [
     `Kanal: ${brief.channel} — ${spec?.adaptationNote ?? ""}`,
+    (brief.channel === "instagram" || brief.channel === "facebook")
+      ? `SEO SAM / SOCIAL SEARCH: følg gjeldende SEO/AEO-regler for brandet. Bruk verifiserte steds-, boligtype- og kjøpsintensjonsord naturlig i headline/body når de finnes i factSources. Prioriter menneskelig lesbar tekst og relevante, spesifikke søkeord; ikke keyword-stuffing, ikke oppdiktede hashtags eller geografi. Den direkte bolig-URL-en skal med i CTA for konkret bolig.`
+      : null,
     FORMAT_INSTRUCTIONS[brief.genome.format] && `Format: ${FORMAT_INSTRUCTIONS[brief.genome.format]}`,
     `Vinkel: ${brief.angle}`,
     `Mål: ${brief.goal.kind}.`,

@@ -12,6 +12,27 @@ import { normalizeBrandId } from "@/lib/realty/brand-rules";
 const execFileAsync = promisify(execFile);
 
 /** Brand contact emails — used in YouTube descriptions and CTA */
+const PROPERTY_BASE_BY_BRAND: Record<string, string> = {
+  zeneco: "https://www.zenecohomes.com/eiendommer",
+  pinosoecolife: "https://www.pinosoecolife.com/eiendommer",
+};
+
+function resolvePropertyWebUrl(property: Record<string, unknown>, brandId: string): string | null {
+  for (const value of [property.url, property.website_url, property.listing_url, property.detail_url]) {
+    const url = String(value || "").trim();
+    if (/^https:\/\//i.test(url)) return url;
+  }
+  const ref = String(property.ref || "").trim();
+  const base = PROPERTY_BASE_BY_BRAND[brandId];
+  return ref && base ? `${base}/${encodeURIComponent(ref)}` : null;
+}
+
+function withPropertyUrl(description: string, propertyUrl: string): string {
+  const clean = String(description || "").trim();
+  return clean.includes(propertyUrl) ? clean : `${clean}\n\nSe boligen: ${propertyUrl}`.trim();
+}
+
+/** Brand contact emails — used in YouTube descriptions and CTA */
 const BRAND_EMAILS: Record<string, string> = {
   zeneco: "freddy@zenecohomes.com",
   soleada: "freddy@soleada.no",
@@ -150,9 +171,17 @@ export async function POST(req: NextRequest) {
 
     if (action === "generate_seo") {
       const { property, brand, language = "en" } = body;
+      const seoBrandId = normalizeBrandId(String(body.brandId || ""));
+      const propertyUrl = property ? resolvePropertyWebUrl(property as Record<string, unknown>, seoBrandId) : null;
 
       if (!property) {
         return NextResponse.json({ error: "Property data required" }, { status: 400 });
+      }
+      if (!propertyUrl) {
+        return NextResponse.json(
+          { error: `PROPERTY_WEB_URL_REQUIRED: concrete property is missing a verified website URL for ${seoBrandId || "brand"}` },
+          { status: 400 },
+        );
       }
 
       const client = getAnthropicClient();
@@ -162,7 +191,7 @@ export async function POST(req: NextRequest) {
         const title = `${property.property_type || property.type || "Property"} for Sale in ${property.location || "Spain"} - ${property.bedrooms || 0} Bed, €${Number(property.price || 0).toLocaleString()}`;
         const result = {
           title,
-          description: `Beautiful ${property.property_type || property.type || "property"} in ${property.location}. ${property.bedrooms} bedrooms, ${property.bathrooms} bathrooms, ${property.built_area || property.area}m². Price: €${Number(property.price || 0).toLocaleString()}`,
+          description: withPropertyUrl(`${property.property_type || property.type || "Property"} in ${property.location}. ${property.bedrooms} bedrooms, ${property.bathrooms} bathrooms, ${property.built_area || property.area}m². Price: €${Number(property.price || 0).toLocaleString()}`, propertyUrl),
           tags: ["property", "spain", "real estate", property.location || "", property.property_type || property.type || ""].filter(Boolean),
         };
         console.log("[Property Video API] Fallback result:", JSON.stringify(result));
@@ -196,6 +225,7 @@ Property details:
 
 Brand: ${brand?.name || "Real Estate Agency"}
 Website: ${brand?.website || ""}
+DIRECT PROPERTY URL (MANDATORY in description): ${propertyUrl}
 Contact Email: ${brandEmail}
 
 Language: ${langMap[language] || "English"}
@@ -206,9 +236,11 @@ Generate:
    - Engaging intro paragraph
    - Property details in readable format
    - Location highlights
-   - CTA with EXACT email: ${brandEmail} and website: ${brand?.website || ""}
+   - CTA with EXACT email: ${brandEmail}
+   - ALWAYS include the exact direct property URL: ${propertyUrl}
    - "Like & Subscribe" call to action
    - Relevant hashtags at the bottom
+   - Follow Sam SEO/social-search rules: use verified location, property type and buyer-intent phrases naturally; avoid keyword stuffing, invented geography and generic hashtag spam
    IMPORTANT: Use ONLY this contact email: ${brandEmail} — do NOT use inquiry@ or info@ or any other email.
 3. tags: Array of 15-20 relevant YouTube SEO tags
 
@@ -227,6 +259,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
         if (jsonMatch) {
           try {
             const parsed = JSON.parse(jsonMatch[0]);
+            parsed.description = withPropertyUrl(String(parsed.description || ""), propertyUrl);
             return NextResponse.json(parsed);
           } catch (parseErr) {
             console.error("[Property Video API] JSON parse error:", parseErr);
@@ -240,7 +273,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
       // Fallback: generate template-based SEO (used when AI fails or key is invalid)
       const fallbackTitle = `${property.property_type || property.type || "Property"} for Sale in ${property.location || property.town || "Spain"} | ${property.bedrooms || 0} Bed, €${Number(property.price || 0).toLocaleString()}`;
       const loc = property.location || property.town || "Spain";
-      const fallbackDesc = `${property.property_type || property.type || "Property"} for sale in ${loc}. ${property.bedrooms || 0} bedrooms, ${property.bathrooms || 0} bathrooms, ${property.area || property.built_area || 0}m² built area. Price: €${Number(property.price || 0).toLocaleString()}. ${property.pool ? "Private pool. " : ""}${property.garage ? "Garage. " : ""}${brand?.name ? `Contact ${brand.name}` : ""}${brand?.website ? ` - ${brand.website}` : ""}`;
+      const fallbackDesc = withPropertyUrl(`${property.property_type || property.type || "Property"} for sale in ${loc}. ${property.bedrooms || 0} bedrooms, ${property.bathrooms || 0} bathrooms, ${property.area || property.built_area || 0}m² built area. Price: €${Number(property.price || 0).toLocaleString()}. ${property.pool ? "Private pool. " : ""}${property.garage ? "Garage. " : ""}${brand?.name ? `Contact ${brand.name}` : ""}`, propertyUrl);
       return NextResponse.json({
         title: fallbackTitle.substring(0, 70),
         description: fallbackDesc,
@@ -251,6 +284,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
     if (action === "render_and_upload") {
       const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public", property, brand } = body;
       const brandId = normalizeBrandId(String(body.brandId || ""));
+      const propertyUrl = property ? resolvePropertyWebUrl(property as Record<string, unknown>, brandId) : null;
 
       if (!imageUrls || imageUrls.length === 0) {
         return NextResponse.json({ error: "imageUrls required" }, { status: 400 });
@@ -261,6 +295,12 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
       if (!brandId) {
         return NextResponse.json(
           { error: "brandId required for YouTube upload (hindrer publisering til feil kanal)." },
+          { status: 400 },
+        );
+      }
+      if (!property || !propertyUrl) {
+        return NextResponse.json(
+          { error: `PROPERTY_WEB_URL_REQUIRED: YouTube-eiendomsvideo må ha verifisert direkte bolig-URL for ${brandId}` },
           { status: 400 },
         );
       }
@@ -385,7 +425,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
             try {
               uploadResult = await uploadVideo(renderResult.videoBuffer, {
                 title,
-                description: description || "",
+                description: withPropertyUrl(description || "", propertyUrl),
                 tags: tags || [],
                 categoryId: "22",
                 privacyStatus: privacyStatus as "public" | "private" | "unlisted",
