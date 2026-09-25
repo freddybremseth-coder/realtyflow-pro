@@ -6,6 +6,24 @@ export const revalidate = 0;
 const noStore = { "Cache-Control": "private, no-store" };
 const PAGE_SIZE = 50;
 const SAFE_CONTACT_COLUMNS = "id,name,email,phone,brand_id,brand,pipeline_status,source,updated_at";
+const CONTACT_UUID = /^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
+
+function safeContactRow(row: unknown, brandKey: string) {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const item = row as Record<string, unknown>;
+  if (typeof item.id !== "string" || !CONTACT_UUID.test(item.id) ||
+      item.brand_id !== brandKey || item.brand !== brandKey ||
+      typeof item.name !== "string") return null;
+  return {
+    id: item.id, name: item.name,
+    email: typeof item.email === "string" ? item.email : null,
+    phone: typeof item.phone === "string" ? item.phone : null,
+    brand_id: brandKey, brand: brandKey,
+    pipeline_status: typeof item.pipeline_status === "string" ? item.pipeline_status : null,
+    source: typeof item.source === "string" ? item.source : null,
+    updated_at: typeof item.updated_at === "string" ? item.updated_at : null,
+  };
+}
 
 /** Only brand-assigned contacts. No cross-brand fallbacks, duplicate search or inferred sharing. */
 export async function GET(
@@ -104,11 +122,26 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
   if (!writeRequestIsSafe(request)) return failWrite(403, "INVALID_REQUEST_ORIGIN");
   const input = validateContactInput(await request.json().catch(() => null), false);
   if (!input.value) return failWrite(400, input.error);
+  if (access.value.verifiedUserId) {
+    const { data, error } = await access.value.supabase.rpc("workspace_brand_contact_create", {
+      p_brand_key: brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_name: input.value.name,
+      p_contact_email: input.value.email ?? null,
+      p_phone: input.value.phone ?? null,
+    });
+    if (error) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+    const safe = safeContactRow(data, brandKey);
+    if (!safe) return data ? failWrite(503, "CRM_WRITE_UNAVAILABLE") : failWrite(404, "CONTACT_NOT_FOUND_OR_ACCESS_REVOKED");
+    return NextResponse.json({ ok: true, brand: brandKey, contact: safe }, { status: 201, headers: noStore });
+  }
   const { data, error } = await access.value.supabase.from("contacts")
     .insert({ ...input.value, brand_id: brandKey, brand: brandKey, pipeline_status: "NEW" })
     .select(SAFE_CONTACT_COLUMNS).single();
-  if (error || !data || data.brand_id !== brandKey || data.brand !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
-  return NextResponse.json({ ok: true, brand: brandKey, contact: data }, { status: 201, headers: noStore });
+  const safe = safeContactRow(data, brandKey);
+  if (error || !safe) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+  return NextResponse.json({ ok: true, brand: brandKey, contact: safe }, { status: 201, headers: noStore });
 }
 
 /**
@@ -124,16 +157,36 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
   const body: unknown = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return failWrite(400, "INVALID_CONTACT");
   const { id, ...fields } = body as Record<string, unknown>;
-  if (typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(id))
+  if (typeof id !== "string" || !CONTACT_UUID.test(id))
     return failWrite(400, "INVALID_CONTACT_ID");
   const input = validateContactInput(fields, true);
   if (!input.value) return failWrite(400, input.error);
+  if (access.value.verifiedUserId) {
+    const { data, error } = await access.value.supabase.rpc("workspace_brand_contact_update", {
+      p_brand_key: brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_contact_id: id,
+      p_set_name: Object.prototype.hasOwnProperty.call(input.value, "name"),
+      p_name: input.value.name ?? null,
+      p_set_email: Object.prototype.hasOwnProperty.call(input.value, "email"),
+      p_contact_email: input.value.email ?? null,
+      p_set_phone: Object.prototype.hasOwnProperty.call(input.value, "phone"),
+      p_phone: input.value.phone ?? null,
+    });
+    if (error) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+    const safe = safeContactRow(data, brandKey);
+    if (!safe) return data ? failWrite(503, "CRM_WRITE_UNAVAILABLE") : failWrite(404, "CONTACT_NOT_FOUND_OR_ACCESS_REVOKED");
+    if (safe.id !== id) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+    return NextResponse.json({ ok: true, brand: brandKey, contact: safe }, { headers: noStore });
+  }
   const { data, error } = await access.value.supabase.from("contacts")
     .update({ ...input.value, updated_at: new Date().toISOString() })
     .eq("id", id).eq("brand_id", brandKey).eq("brand", brandKey)
     .select(SAFE_CONTACT_COLUMNS).maybeSingle();
   if (error) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
   if (!data) return failWrite(404, "CONTACT_NOT_FOUND");
-  if (data.brand_id !== brandKey || data.brand !== brandKey) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
-  return NextResponse.json({ ok: true, brand: brandKey, contact: data }, { headers: noStore });
+  const safe = safeContactRow(data, brandKey);
+  if (!safe) return failWrite(503, "CRM_WRITE_UNAVAILABLE");
+  return NextResponse.json({ ok: true, brand: brandKey, contact: safe }, { headers: noStore });
 }
