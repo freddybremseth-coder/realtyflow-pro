@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminSession, isAdminEmail } from "@/lib/admin-auth";
 import { findAccessProfile } from "@/lib/access-control-server";
+import { admitWorkspaceMemberLogin } from "@/lib/workspaces/login-admission";
 
 const HOME_BY_ROLE: Record<string, string> = {
   OWNER: "/",
@@ -23,8 +24,9 @@ export async function POST(request: NextRequest) {
   if (!url || !anonKey) return NextResponse.json({ error: "Supabase er ikke konfigurert." }, { status: 500 });
 
   const supabase = createClient(url, anonKey);
-  const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-  if (error) return NextResponse.json({ error: "Feil e-post eller passord." }, { status: 401 });
+  const { data: authData, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+  if (error || !authData.user?.id)
+    return NextResponse.json({ error: "Feil e-post eller passord." }, { status: 401 });
 
   let role = "OWNER";
   if (!isAdminEmail(normalizedEmail)) {
@@ -32,8 +34,18 @@ export async function POST(request: NextRequest) {
     if (resolved.error) return NextResponse.json({ error: "Tilgangsprofilen kunne ikke kontrolleres." }, { status: 503 });
     if (!resolved.profile || !resolved.profile.active) return NextResponse.json({ error: "Denne e-posten har ikke aktiv tilgang til RealtyFlow." }, { status: 403 });
     role = resolved.profile.role;
-    if (role === "WORKSPACE_MEMBER" && process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") {
-      return NextResponse.json({ error: "Arbeidsområdet er ikke aktivert for medarbeidere ennå." }, { status: 403 });
+    if (role === "WORKSPACE_MEMBER") {
+      const admission = await admitWorkspaceMemberLogin(normalizedEmail, authData.user.id);
+      if (!admission.ok) {
+        if (admission.reason === "UNAVAILABLE") {
+          return NextResponse.json({ error: "Arbeidsområdet kunne ikke verifiseres akkurat nå." }, { status: 503 });
+        }
+        return NextResponse.json({
+          error: admission.reason === "DISABLED"
+            ? "Arbeidsområdet er ikke aktivert for medarbeidere ennå."
+            : "Denne kontoen har ingen aktiv, verifisert merkevaretilgang.",
+        }, { status: 403 });
+      }
     }
   }
 
