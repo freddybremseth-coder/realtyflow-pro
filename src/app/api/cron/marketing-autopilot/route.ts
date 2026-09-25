@@ -175,6 +175,14 @@ export async function GET(request: NextRequest) {
           });
           continue;
         }
+        if (!manualRun && dueTargetHour !== targetHours[0]) {
+          results.push({
+            brandId, channel, skipped: true,
+            reason: "reel_slot_reserved",
+            localHour, targetHours,
+          });
+          continue;
+        }
         const targetHour = dueTargetHour ?? localHour;
 
         try {
