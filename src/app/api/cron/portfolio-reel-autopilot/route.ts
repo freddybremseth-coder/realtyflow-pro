@@ -100,7 +100,7 @@ export async function GET(request:NextRequest){
       return NextResponse.json({
         success:true,
         processed:result.skipped?0:1,
-        timeZone,localHour,slotKey,
+        timeZone,
         ...details,
         considered,
       });
