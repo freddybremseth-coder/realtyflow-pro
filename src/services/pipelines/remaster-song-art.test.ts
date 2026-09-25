@@ -17,6 +17,8 @@ test('routes meditation, relaxing and alternative to art; leaves EDM untouched',
   assert.equal(classifyArtVisualMode({ genre: 'Alternative Rock' }), 'alternative');
   assert.equal(classifyArtVisualMode({ genre: 'EDM', mood: 'energetic', metadata: { energy: 'high' } }), null);
   assert.equal(classifyArtVisualMode({ genre: 'House' }, { genre: 'ambient', mood: 'relaxing' }), 'relaxing');
+  assert.equal(classifyArtVisualMode({ genre: 'Instrumental', mood: 'calm' }), 'relaxing');
+  assert.equal(classifyArtVisualMode({ genre: 'Zen' }), 'relaxing');
   assert.equal(classifyMixArtVisualMode([{ genre: 'Meditation' }, { mood: 'peaceful' }]), 'meditation');
   assert.equal(classifyMixArtVisualMode([{ genre: 'Meditation' }, { genre: 'EDM', mood: 'energetic' }]), null);
   assert.equal(classifyMixArtVisualMode([{ genre: 'Ambient' }, { genre: 'Relaxing' }, { genre: 'House' }]), 'relaxing');
