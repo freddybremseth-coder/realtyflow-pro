@@ -65,6 +65,18 @@ test("profile-only account with no active brand membership cannot log into works
   assert.deepEqual(result, { ok: false, reason: "NO_ACTIVE_GRANT" });
 });
 
+test("marketing-only membership does not admit staff before scoped marketing APIs exist", async () => {
+  rpcData = [{
+    brand: { id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
+    grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["marketing.read", "marketing.draft"],
+    },
+  }];
+  const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
+  assert.deepEqual(result, { ok: false, reason: "NO_ACTIVE_GRANT" });
+});
+
 test("stale grant for another Supabase Auth user fails closed even if email matches", async () => {
   rpcData = [{
     brand: { id: "brand-id", brand_key: "pinosoecolife" },
