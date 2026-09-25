@@ -177,7 +177,6 @@ export async function createAutonomousPortfolioReel(
   definition:AutonomousReelDefinition,
   slotKey:string,
 ){
-  if(definition.reelBrand==="freddybremseth") throw new Error("FREDDY_PERSONAL_AUTOPILOT_FORBIDDEN");
   const destinations=await activeDestinations(supabase,definition.growthBrandId);
   if(!destinations.length) return {skipped:true,reason:"no_connected_video_channels"} as const;
 
