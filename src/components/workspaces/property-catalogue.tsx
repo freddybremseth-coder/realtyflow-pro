@@ -25,6 +25,7 @@ export function WorkspacePropertyCatalogue({ brandKey }: { brandKey: string }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<Property[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
 
@@ -40,9 +41,15 @@ export function WorkspacePropertyCatalogue({ brandKey }: { brandKey: string }) {
             : "Eiendomskatalogen er ikke tilgjengelig ennå.");
         return body;
       })
-      .then((body) => setItems(body.properties || []))
+      .then((body) => {
+        setItems(Array.isArray(body.properties) ? body.properties : []);
+        setHasMore(body.hasMore === true);
+      })
       .catch((cause) => {
-        if (!abort.signal.aborted) { setItems([]); setError(cause instanceof Error ? cause.message : "Kunne ikke laste."); }
+        if (!abort.signal.aborted) {
+          setItems([]); setHasMore(false);
+          setError(cause instanceof Error ? cause.message : "Kunne ikke laste.");
+        }
       })
       .finally(() => { if (!abort.signal.aborted) setBusy(false); });
     return () => abort.abort();
@@ -75,7 +82,7 @@ export function WorkspacePropertyCatalogue({ brandKey }: { brandKey: string }) {
         <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-40"><ChevronLeft size={16} /> Forrige</button>
         <span className="text-xs text-slate-400">Side {page}</span>
-        <button type="button" onClick={() => setPage(p => p + 1)} disabled={items.length < 24 || page >= 100}
+        <button type="button" onClick={() => setPage(p => p + 1)} disabled={!hasMore || page >= 100}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-40">Neste <ChevronRight size={16} /></button>
       </div>}
     </section>
