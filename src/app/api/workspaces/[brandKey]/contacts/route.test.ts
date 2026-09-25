@@ -34,6 +34,9 @@ function fakeDatabase() {
       if (name === "workspace_brand_grant") {
         return Promise.resolve({ data: { brand: { id: "pinoso-uuid", brand_key: "pinosoecolife" }, grant: testGrant }, error: null });
       }
+      if (name === "workspace_brand_contacts") {
+        return Promise.resolve({ data: { contacts: scopedResult, hasMore: scopedResult.length > 50 }, error: null });
+      }
       if (name === "workspace_brand_contact_create" || name === "workspace_brand_contact_update") {
         return Promise.resolve({ data: scopedResult[0] || null, error: null });
       }
@@ -229,6 +232,8 @@ test("read-only brand member can search Pinoso CRM but cannot write or select an
     const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
     const readable = await GET(request(cookie) as any, context);
     assert.equal(readable.status, 200);
+    assert.equal(calls.some(c => c.method === "rpc" && c.args[0] === "workspace_brand_contacts"), true);
+    assert.equal(calls.some(c => c.method === "from"), false);
     const callsBeforeWrite = calls.filter(c => c.method === "from").length;
     const forbidden = await POST(mutation("POST", cookie, { name: "Forbidden write" }) as any, context);
     assert.equal(forbidden.status, 403);
@@ -332,4 +337,5 @@ test("response never serializes a row with conflicting legacy brand tags", async
   assert.equal(JSON.stringify(body).includes("PRIVATE CUSTOMER"), false);
   assert.equal(JSON.stringify(body).includes("hidden@example.test"), false);
   assert.equal(calls.some(row => row.method === "eq" && row.args[0] === "brand"), true);
+  assert.equal(Object.keys(body.contacts[0]).some(key => ["notes","interactions","commission_amount"].includes(key)), false);
 });
