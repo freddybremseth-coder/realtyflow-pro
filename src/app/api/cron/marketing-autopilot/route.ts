@@ -27,7 +27,23 @@ import {
 import { loadAutopilotSignalGuidance } from "@/services/marketing/autopilot-signal-guidance";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
-const EXCLUDED_BRANDS = new Set(["soleada", "freddyb"]);
+const EXCLUDED_BRANDS = new Set(["soleada"]);
+const FREDDY_PUBLIC_FACEBOOK_PAGE_ID = "1324025764122967";
+const REEL_AUTOPILOT_BRANDS = new Set(["zeneco","pinosoecolife","donaanna","freddyart","freddypublishing","chatgenius","freddyai","remasterfreddy"]);
+
+async function verifiedAutopilotDestination(supabase:any, brandId:string, channel:string) {
+  if (brandId !== "freddyb" || channel !== "facebook") return { ok:true as const };
+  const { data, error } = await supabase.from("social_channels")
+    .select("id,external_id,display_name,is_active")
+    .eq("brand_id","freddyb").eq("platform","facebook").eq("is_active",true);
+  if (error) return { ok:false as const, reason:"freddy_public_page_verification_failed", error:error.message };
+  if (!Array.isArray(data) || data.length !== 1)
+    return { ok:false as const, reason:"freddy_public_page_not_uniquely_bound" };
+  if (String(data[0].external_id) !== FREDDY_PUBLIC_FACEBOOK_PAGE_ID)
+    return { ok:false as const, reason:"freddy_private_or_wrong_facebook_destination_blocked", externalId:String(data[0].external_id||"") };
+  return { ok:true as const, pageId:FREDDY_PUBLIC_FACEBOOK_PAGE_ID, displayName:String(data[0].display_name||"Freddy Bremseth") };
+}
+
 const RECOVERABLE_PROPERTY_COPY_ERRORS = [
   "FACT_NOT_VERIFIED",
   "CLAIM_NOT_VERIFIED",
@@ -159,6 +175,11 @@ export async function GET(request: NextRequest) {
       if (!channels.length) { results.push({ brandId, skipped: true, reason: "No requested/preapproved autopilot channels" }); continue; }
 
       for (const channel of channels) {
+        const destination = await verifiedAutopilotDestination(supabase, brandId, channel);
+        if (!destination.ok) {
+          results.push({ brandId, channel, skipped:true, ...destination });
+          continue;
+        }
         // Portfolio autopilot is intentionally interval-based: two slots per day,
         // exactly 12 hours apart. Legacy weekday plans remain available for manual
         // and older callers but do not suppress this owner-authorized loop.
@@ -175,7 +196,7 @@ export async function GET(request: NextRequest) {
           });
           continue;
         }
-        if (!manualRun && dueTargetHour !== targetHours[0]) {
+        if (!manualRun && REEL_AUTOPILOT_BRANDS.has(brandId) && dueTargetHour !== targetHours[0]) {
           results.push({
             brandId, channel, skipped: true,
             reason: "reel_slot_reserved",
