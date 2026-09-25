@@ -13,6 +13,7 @@ import {
   type CreativeResult,
 } from "@/lib/marketing/autonomous";
 import type { ContentGenome, ContentGoal, MarketingChannel } from "@/lib/marketing/genome";
+import { selectPropertyCreativeStyle } from "@/lib/marketing/creative-style";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { makeCreativeGenerator, makeDryRunCreativeGenerator, persistAsset } from "@/services/marketing/creative-generator";
 import { ensureMarketingAgentRun, makeMarketingApprovalRequester } from "@/services/marketing/marketing-approval";
@@ -342,10 +343,18 @@ export async function createCampaignDraft(
   const campaignId = `camp_${run.marketingRunId}`;
   const fav = plan.favoredDimensions;
   const routedFormat = routeContentFormat(effectiveMediaUrl) ?? "post";
+  const creativeStyle = inventoryProperty
+    ? selectPropertyCreativeStyle({
+        channel: input.channel ?? "facebook",
+        seed: `${inventoryProperty.id}|${run.marketingRunId}`,
+        favoredStyle: fav.creativeStyle ?? null,
+      })
+    : undefined;
   const baseGenome: ContentGenome = {
     brandId: input.brandId, channel: input.channel ?? "instagram", format: routedFormat,
     hookType: (fav.hookType as any) ?? "price_first", ctaType: (fav.ctaType as any) ?? "book_viewing",
     goal: mapGoal(input.goal.kind), area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_"),
+    ...(creativeStyle ? { creativeStyle } : {}),
   };
   const campaign: CampaignPlan = { campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit", goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea };
   const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [], formatOverride: routedFormat });
