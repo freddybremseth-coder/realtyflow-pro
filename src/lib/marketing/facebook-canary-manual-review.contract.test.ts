@@ -92,7 +92,7 @@ test("Canary preserves fail-closed semantics after regeneration retries are exha
 test("Inventory-generated assets put property identity into the novelty and quality genome", () => {
   assert.match(creative, /propertyId: req\.propertyIds\[0\]/);
   assert.match(creative, /propertyType: genomeValue\(propertyType\)/);
-  assert.match(creative, /CREATIVE_PROMPT_VERSION = "cg-1\.9"/);
+  assert.match(creative, /CREATIVE_PROMPT_VERSION = "cg-2\.0"/);
   assert.match(quality, /inventoryBound/);
   assert.match(quality, /unsupportedOutcomeClaims\(caption, asset\.factSources, \{ inventoryBound \}\)/);
 });
