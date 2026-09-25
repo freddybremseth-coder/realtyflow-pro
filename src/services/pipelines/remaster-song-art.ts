@@ -34,13 +34,13 @@ export function classifyArtVisualMode(song: {
     song.metadata?.style, song.metadata?.tags, analysis?.genre, analysis?.style,
   ].map(normalized).join(' ');
   if (/\b(meditation|meditative|meditating|mindfulness|meditaci[oó]n)\b/i.test(source)) return 'meditation';
-  if (/\b(relaxing|relaxation|relax|ambient|chillout|chill-out|sleep music)\b/i.test(source)) return 'relaxing';
+  if (/\b(relaxing|relaxation|relax|ambient|chillout|chill-out|downtempo|sleep music|spa music|yoga|zen|new age)\b/i.test(source)) return 'relaxing';
   if (/\b(alternative|alternativo|alternativa)\b/i.test(source)) return 'alternative';
   // A calm AI mood is sufficient only for low-energy or unspecified-energy
   // tracks, never for high-energy dance/house music.
   const mood = [song.mood, analysis?.mood].map(normalized).join(' ');
   const energy = normalized(song.metadata?.energy);
-  if (!/\b(high|intense|energetic)\b/.test(energy) && /\b(meditative|meditation|relaxing|peaceful|ambient)\b/.test(mood)) {
+  if (!/\b(high|intense|energetic)\b/.test(energy) && /\b(meditative|meditation|relaxing|peaceful|ambient|calm|serene|tranquil|soothing|zen)\b/.test(mood)) {
     return 'relaxing';
   }
   return null;
