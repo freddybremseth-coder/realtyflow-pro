@@ -187,6 +187,8 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
       "/api/workspaces/zeneco/messages", "/api/workspaces/zeneco/tasks",
       "/api/workspaces/pinosoecolife/joint-tasks",
       "/api/workspaces/zeneco/joint-tasks/old-global-task",
+      "/api/workspaces/access-plans",
+      "/api/workspaces/access-readiness",
     ]) {
       const denied = await middleware(request(path, { cookie }));
       assert.equal(denied.status, 403, path);
