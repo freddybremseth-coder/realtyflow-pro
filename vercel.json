@@ -48,6 +48,7 @@
     { "path": "/api/cron/nexus-mission-autopilot", "schedule": "5,20,35,50 * * * *" },
     { "path": "/api/cron/remaster-source-sync", "schedule": "40 * * * *" },
     { "path": "/api/cron/remaster-health-monitor", "schedule": "50 * * * *" },
+    { "path": "/api/cron/remaster-mix-autopilot", "schedule": "5 * * * *" },
     { "path": "/api/cron/remaster-mix-worker", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/remaster-playlist-recovery", "schedule": "5,20,35,50 * * * *" },
     { "path": "/api/cron/remaster-youtube-public-reconcile", "schedule": "25 4 * * *" },
