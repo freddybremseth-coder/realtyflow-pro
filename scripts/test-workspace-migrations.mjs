@@ -466,6 +466,55 @@ try {
     [pinoso, member],
   );
 
+  // Race: an already-started customer creation must also lose to owner
+  // membership revocation and must leave no contact or audit row behind.
+  const pinosoCreateBlocker = new Client({
+    connectionString: localUrl,
+    application_name: "isolated_pinoso_membership_revoke_create_race",
+  });
+  await pinosoCreateBlocker.connect();
+  let pendingPinosoCreate;
+  let pinosoCreateCommitted = false;
+  try {
+    await pinosoCreateBlocker.query("begin");
+    await pinosoCreateBlocker.query(
+      "select user_id from core.brand_workspace_memberships where brand_id=$1 and user_id=$2 for update",
+      [pinoso, member],
+    );
+    pendingPinosoCreate = createBrandContact("pinosoecolife", "UNAUTHORIZED PINOSO RACE CREATE")
+      .catch(error => error);
+    let waiting = false;
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await pinosoCreateBlocker.query("select pg_sleep(0.05)");
+      const state = await pinosoCreateBlocker.query(
+        "select wait_event_type from pg_stat_activity where pid=$1", [activePid],
+      );
+      if (state.rows[0]?.wait_event_type === "Lock") { waiting = true; break; }
+    }
+    verify(waiting, "Pinoso contact create did not serialize against membership revocation");
+    await pinosoCreateBlocker.query(
+      "update core.brand_workspace_memberships set status='revoked' where brand_id=$1 and user_id=$2",
+      [pinoso, member],
+    );
+    await pinosoCreateBlocker.query("commit");
+    pinosoCreateCommitted = true;
+    verify((await pendingPinosoCreate) === null,
+      "Pinoso contact create succeeded after employee membership was revoked");
+  } finally {
+    if (!pinosoCreateCommitted) await pinosoCreateBlocker.query("rollback").catch(() => undefined);
+    await pinosoCreateBlocker.end();
+    if (pendingPinosoCreate) await pendingPinosoCreate.catch(() => undefined);
+  }
+  const forbiddenCreates = await sql(
+    "select count(*)::int as total from public.contacts where brand_id='pinosoecolife' and brand='pinosoecolife' and name='UNAUTHORIZED PINOSO RACE CREATE'",
+  );
+  verify(forbiddenCreates.rows[0].total === 0,
+    "Revoked Pinoso employee created a customer during membership revocation");
+  await sql(
+    "update core.brand_workspace_memberships set status='active' where brand_id=$1 and user_id=$2",
+    [pinoso, member],
+  );
+
   // Race: membership revocation wins over an already-started Pinoso update.
   const pinosoBlocker = new Client({
     connectionString: localUrl,
