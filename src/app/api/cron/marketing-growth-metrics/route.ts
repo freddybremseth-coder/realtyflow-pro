@@ -10,7 +10,7 @@ import { syncGrowthFacebookMetrics } from "@/services/marketing/growth-facebook-
 import { enrichPublishedGrowthGenomes } from "@/services/marketing/growth-genome-enrichment";
 import { resolveBrandInstagramAccessToken } from "@/services/marketing/instagram-token";
 
-const EXCLUDED_BRANDS = new Set(["soleada", "freddyb"]);
+const EXCLUDED_BRANDS = new Set(["soleada"]);
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 
 function configuredChannels(metadata: Record<string, unknown> | null | undefined): string[] {
