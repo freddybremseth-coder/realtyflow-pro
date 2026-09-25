@@ -143,10 +143,13 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
       ["crm.joint.read", "tasks.joint.read", "tasks.joint.write"]);
 
     currentBrand = "pinosoecolife";
-    currentPermissions = ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write", "properties.catalog.read"];
+    currentPermissions = ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
+      "properties.catalog.read", "marketing.read", "marketing.draft", "marketing.publish"];
     const otherBrand = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
     assert.equal(otherBrand.status, 200);
     assert.deepEqual((await otherBrand.json()).permissions, ["properties.catalog.read"]);
+    assert.equal(JSON.stringify(await GET(request(signed) as any,
+      { params: { brandKey: "pinosoecolife" } })).includes("marketing."), false);
   } finally {
     globalThis.fetch = previous.fetch;
     for (const [key, value] of [
