@@ -8,7 +8,7 @@ import * as path from "node:path";
 import ffmpegStatic from "ffmpeg-static";
 import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
 import {
-  buildPortfolioReelCaption,isApprovedReelAudioUrl,isApprovedReelImageUrl,renderPortfolioReel,
+  buildPortfolioReelCaption,isApprovedReelAudioUrl,isApprovedReelImageUrl,reelBrandProfileUrl,renderPortfolioReel,ZENECO_REMASTER_PROFILE_URL,
 } from "./remaster-portfolio-reels";
 
 test("Reels Studio source guards accept only permanent Re-Master audio and brand-appropriate images",()=>{
@@ -19,6 +19,11 @@ test("Reels Studio source guards accept only permanent Re-Master audio and brand
   assert.equal(isApprovedReelImageUrl("https://books.freddybremseth.com/assets/covers/book.jpg","books"),true);
   assert.equal(isApprovedReelImageUrl("https://images.example-cdn.com/property.jpg","zeneco"),true);
   assert.equal(isApprovedReelImageUrl("http://127.0.0.1/private.jpg","zeneco"),false);
+});
+test("Zen Eco Homes Reels use the canonical new brand profile",()=>{
+  assert.equal(reelBrandProfileUrl("zeneco"),ZENECO_REMASTER_PROFILE_URL);
+  assert.equal(ZENECO_REMASTER_PROFILE_URL,"https://realtyflow.chatgenius.pro/brand-logos/zeneco.png");
+  assert.equal(reelBrandProfileUrl("pinosoecolife"),null);
 });
 test("brand captions point to the correct site and explain what the viewer sees",()=>{
   const song={id:"s",title:"Sunset",audioUrl:"https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/song.mp3"};
