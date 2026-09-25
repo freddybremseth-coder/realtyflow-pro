@@ -85,8 +85,25 @@ test("malformed, inactive, unknown-brand and RPC-error grants fail closed", asyn
     [{ brand: { brand_key: "pinosoecolife" }, grant: {
       user_id: userId, email: "staff@example.test", status: "revoked", permissions: ["crm.read"],
     } }],
-    [{ brand: { brand_key: "pinosoecolife" }, grant: {
-      user_id: userId, email: "wrong@example.test", status: "active", permissions: ["crm.read"],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "wrong@example.test",
+      status: "active", permissions: ["crm.read"],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "another-brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["crm.read"],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: [],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["crm.read", "crm.read"],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["finance.read"],
     } }],
   ]) {
     rpcData = value;
