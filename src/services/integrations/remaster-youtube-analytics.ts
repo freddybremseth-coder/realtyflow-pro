@@ -49,7 +49,14 @@ function finite(value: unknown) {
   return Number.isFinite(number) ? number : 0;
 }
 
-export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterAnalyticsResult> {
+export async function readBrandYouTubeAnalytics(brandId: string, days = 28): Promise<RemasterAnalyticsResult> {
+  const safeBrand = String(brandId || "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{1,60}$/.test(safeBrand)) {
+    return {
+      state: "ERROR", analyticsReady: false, reconnectHref: "/connections",
+      startDate: "", endDate: "", videos: [], error: "Invalid YouTube brand id.",
+    };
+  }
   const safeDays = Math.min(90, Math.max(7, Math.floor(days || 28)));
   const end = new Date();
   end.setUTCDate(end.getUTCDate() - 1);
@@ -57,9 +64,9 @@ export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterA
   start.setUTCDate(start.getUTCDate() - (safeDays - 1));
   const startDate = isoDay(start);
   const endDate = isoDay(end);
-  const reconnectHref = "/api/oauth/google?brand_id=remasterfreddy&service=youtube&return_to=/remaster-freddy";
+  const reconnectHref = `/api/oauth/google?brand_id=${encodeURIComponent(safeBrand)}&service=youtube&return_to=/connections`;
 
-  const channels = await getChannelsByBrand("remasterfreddy", "youtube");
+  const channels = await getChannelsByBrand(safeBrand, "youtube");
   if (channels.length !== 1) {
     return {
       state: channels.length === 0 ? "NOT_READY" : "ERROR",
@@ -69,8 +76,8 @@ export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterA
       endDate,
       videos: [],
       error: channels.length === 0
-        ? "No active Re-Master YouTube channel is connected."
-        : "Multiple active Re-Master YouTube channels are connected.",
+        ? `No active YouTube channel is connected for ${safeBrand}.`
+        : `Multiple active YouTube channels are connected for ${safeBrand}.`,
     };
   }
 
@@ -145,4 +152,10 @@ export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterA
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+
+/** Backwards-compatible Re-Master reader used by the existing analytics cron. */
+export async function readRemasterYouTubeAnalytics(days = 28): Promise<RemasterAnalyticsResult> {
+  return readBrandYouTubeAnalytics("remasterfreddy", days);
 }
