@@ -59,7 +59,7 @@ test("owner catalogue excludes all private columns and requires explicit public 
   const result = await GET(req(cookie) as any, { params: { brandKey: "pinosoecolife" } });
   assert.equal(result.status, 200);
   const body = await result.json();
-  assert.equal(body.scope, "published_public_catalogue");
+  assert.equal(body.scope, "published_public_catalogue_owner");
   assert.equal(body.properties[0].id, "published-1");
   assert.deepEqual(Object.keys(body.properties[0]).sort(), [
     "area_m2", "bathrooms", "bedrooms", "id", "location", "plot_size",
@@ -116,4 +116,99 @@ test("search preserves Norwegian and Spanish letters while stripping PostgREST s
   // to inject a close-group + new PostgREST expression such as "),id.eq...".
   assert.equal(filter.includes("),"), false);
   assert.equal((filter.match(/,/g) || []).length, 3);
+});
+
+
+test("workspace member catalogue is exact-brand RPC scoped and never falls back to global properties", async () => {
+  const previous = {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    flag: process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED,
+    fetch: globalThis.fetch,
+  };
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://workspace-property.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
+  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
+  calls.length = 0;
+  let catalogue: unknown = {
+    properties: [{
+      id: "11111111-1111-4111-8111-111111111111",
+      ref: "PIN-101", title: "Pinoso villa", town: "Pinoso", location: "Alicante",
+      price: 365000, bedrooms: 3, bathrooms: 2, area_m2: 180, plot_size: 10000,
+      property_type: "villa", primary_image: "https://example.test/pinoso.jpg",
+      source: "SHOULD_NOT_LEAK", commission_amount: 12345, brand_id: "pinosoecolife",
+    }],
+    hasMore: false,
+  };
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async (name: string, args?: Record<string, unknown>) => {
+      calls.push({ method: "rpc", args: [name, args] });
+      if (name === "workspace_brand_grant") return {
+        data: {
+          brand: { id: "brand-uuid", brand_key: "pinosoecolife" },
+          grant: {
+            brand_id: "brand-uuid",
+            user_id: "22222222-2222-4222-8222-222222222222",
+            email: "staff@example.test",
+            status: "active",
+            permissions: ["properties.catalog.read"],
+          },
+        }, error: null,
+      };
+      if (name === "workspace_brand_property_catalogue") return { data: catalogue, error: null };
+      throw new Error("Unexpected RPC " + name);
+    },
+    auth: { admin: { getUserById: async (id: string) => ({
+      data: { user: { id, email: "staff@example.test" } }, error: null,
+    }) } },
+    from(table: string) {
+      calls.push({ method: "from", args: [table] });
+      throw new Error("Workspace member must not use direct global property table query");
+    },
+  } as unknown as SupabaseClient));
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    if (!String(input).includes("/rest/v1/brand_settings")) throw new Error("Unexpected fetch");
+    return new Response(JSON.stringify([{
+      settings: { profiles: [{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }] },
+    }]), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const cookie = "realtyflow_admin=" +
+      await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+    const response = await GET(req(cookie, "?page=2&q=" + encodeURIComponent("Pinoso),id.eq.hidden")) as any,
+      { params: { brandKey: "pinosoecolife" } });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.scope, "brand_scoped_published_catalogue");
+    assert.equal(body.brand, "pinosoecolife");
+    assert.equal(body.hasMore, false);
+    assert.deepEqual(body.properties.map((item: { id: string }) => item.id),
+      ["11111111-1111-4111-8111-111111111111"]);
+    assert.equal(JSON.stringify(body).includes("SHOULD_NOT_LEAK"), false);
+    assert.equal(JSON.stringify(body).includes("12345"), false);
+    const rpcCall = calls.find(row => row.method === "rpc" &&
+      row.args[0] === "workspace_brand_property_catalogue");
+    assert.deepEqual(rpcCall?.args[1], {
+      p_brand_key: "pinosoecolife",
+      p_user_id: "22222222-2222-4222-8222-222222222222",
+      p_email: "staff@example.test",
+      p_offset: 24,
+      p_search: "Pinoso id eq hidden",
+    });
+    assert.equal(calls.some(row => row.method === "from" && row.args[0] === "properties"), false);
+
+    catalogue = null;
+    const revoked = await GET(req(cookie) as any, { params: { brandKey: "pinosoecolife" } });
+    assert.equal(revoked.status, 403);
+    assert.equal((await revoked.json()).error.code, "CATALOGUE_ACCESS_REVOKED");
+  } finally {
+    globalThis.fetch = previous.fetch;
+    setPlatformSupabaseFactoryForTests(null);
+    if (previous.url === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previous.url;
+    if (previous.key === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previous.key;
+    if (previous.flag === undefined) delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
+    else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = previous.flag;
+  }
 });
