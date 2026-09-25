@@ -13,6 +13,21 @@ function goalFor(sourceType: string) {
   return "awareness" as const;
 }
 
+function remasterSocialReelUrl(source: any) {
+  if (source?.brand_id !== "remasterfreddy" || source?.source_type !== "song") return undefined;
+  const p = source.payload ?? {};
+  const ai = p.ai_metadata && typeof p.ai_metadata === "object" ? p.ai_metadata : {};
+  const candidates = [p.socialReelUrl, p.social_reel_url, ai.socialReelUrl, ai.social_reel_url];
+  for (const value of candidates) {
+    if (typeof value !== "string" || !value.startsWith("https://")) continue;
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:" && /\.mp4(?:$|\?)/i.test(url.href)) return url.href;
+    } catch {}
+  }
+  return undefined;
+}
+
 function masterIdea(source: any) {
   const p = source.payload ?? {};
   if (source.brand_id === "freddyb" && source.source_type === "creative_spotlight") {
@@ -41,7 +56,8 @@ function masterIdea(source: any) {
     return `Promote the ChatGenius.pro demo site "${source.title}" as an example for a small business that needs an affordable professional website. CTA: view demo or request a website. Verify features/pricing before making claims.`;
   }
   if (source.source_type === "song") {
-    return `Promote the Re-Master Freddy song "${source.title}" using its verified song metadata and existing YouTube URL ${p.youtube_url || source.source_url || ""}. Goal: qualified YouTube views, subscribers and social follows. Use the existing artwork when available. Do not invent streaming numbers, chart positions, reviews or ownership claims.`;
+    const youtube = p.youtube_url || source.source_url || "";
+    return `Promote the Re-Master Freddy song "${source.title}" using its verified song metadata. This is MUSIC-FIRST content. For Facebook and Instagram, prefer the approved Re-Master Reel/video with audible music whenever one is available; static artwork is fallback only. Always include the exact verified YouTube song URL ${youtube} as the primary listen/watch CTA, and optionally also point to https://remaster.freddybremseth.com/. Do not publish a text-only Re-Master post when a Reel asset exists. Do not invent streaming numbers, chart positions, reviews or ownership claims.`;
   }
   if (source.brand_id === "donaanna") {
     return `Create Doña Anna content that sends relevant users to donaanna.com. Focus on olive oil, farm, harvest, origin, food use or Mediterranean agriculture. Avoid medical/health claims unless independently verified.`;
@@ -157,8 +173,9 @@ export async function POST(request: NextRequest) {
       : source.source_type === "property"
         ? source.payload?.primary_image || undefined
         : source.source_type === "song"
-          ? source.payload?.thumbnail_url || source.payload?.image_url || undefined
+          ? remasterSocialReelUrl(source) || source.payload?.thumbnail_url || source.payload?.image_url || undefined
           : undefined;
+    const mediaType = source.source_type === "song" && remasterSocialReelUrl(source) ? "reel" as const : "image" as const;
 
     const result = await createCampaignDraft(supabase, {
       brandId: String(source.brand_id),
@@ -167,6 +184,7 @@ export async function POST(request: NextRequest) {
       channel: requestedChannel,
       language: source.payload?.language || undefined,
       mediaUrl,
+      mediaType,
       reuseCooldownDays: isUmbrellaStory ? 14 : undefined,
       requirePublicationHistory: isUmbrellaStory,
       useInventoryProperty: source.source_type === "property",
