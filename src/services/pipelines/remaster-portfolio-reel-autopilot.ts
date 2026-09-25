@@ -66,7 +66,13 @@ function learnedDuration(signalEvidence: {youtube: Record<string,unknown>|null})
   return 30;
 }
 
-async function activeDestinations(supabase:SupabaseLike,brandId:string){
+type AutonomousDestination={
+  channelId:string;
+  platform:"instagram"|"facebook"|"youtube";
+  displayName:string;
+};
+
+async function activeDestinations(supabase:SupabaseLike,brandId:string):Promise<AutonomousDestination[]>{
   const {data,error}=await supabase.from("social_channels")
     .select("id,platform,display_name,is_active")
     .eq("brand_id",brandId).eq("is_active",true)
