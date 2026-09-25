@@ -78,6 +78,7 @@ create table if not exists core.zeneco_joint_lead_review_audit (
 );
 alter table core.zeneco_joint_lead_review_audit enable row level security;
 revoke all on core.zeneco_joint_lead_review_audit from anon, authenticated;
+revoke all on core.zeneco_joint_lead_review_audit from service_role;
 grant select, insert on core.zeneco_joint_lead_review_audit to service_role;
 
 -- PREVIEW: names/identifiers returned only to the verified owner-session API.
@@ -266,6 +267,7 @@ create table if not exists core.zeneco_joint_contact_edit_audit (
 );
 alter table core.zeneco_joint_contact_edit_audit enable row level security;
 revoke all on core.zeneco_joint_contact_edit_audit from anon, authenticated;
+revoke all on core.zeneco_joint_contact_edit_audit from service_role;
 grant select, insert on core.zeneco_joint_contact_edit_audit to service_role;
 
 -- Atomic checked write: the membership AND approved joint cohort must be
