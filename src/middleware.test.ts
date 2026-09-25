@@ -121,3 +121,17 @@ test("middleware admits Re-Master Reels proxy only with its shared credential", 
     else process.env.REALTYFLOW_MIGRATION_SECRET = previous;
   }
 });
+
+test("public search-discovery collector reaches origin validation without a login session", async () => {
+  for (const method of ["OPTIONS", "POST"]) {
+    const response = await middleware(new NextRequest("https://realtyflow.test/api/public/search-discovery", {
+      method, headers: { origin: "https://www.zenecohomes.com" },
+    }));
+    assert.equal(response.headers.get("x-middleware-next"), "1");
+    assert.equal(response.headers.get("location"), null);
+  }
+  for (const path of ["/api/public/search-discovery/admin", "/api/public/search-discovery-export", "/api/agents/seo-priorities"]) {
+    const response = await middleware(request(path));
+    assert.equal(response.status, 307, path);
+  }
+});

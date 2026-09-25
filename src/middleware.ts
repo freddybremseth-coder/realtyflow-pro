@@ -9,6 +9,9 @@ import {
 
 const PUBLIC_EXACT_PATHS = new Set([
   "/api/properties",
+  // Exact public telemetry endpoint. Its handler enforces the portfolio origin
+  // allowlist; OPTIONS must reach it before any session/login redirect.
+  "/api/public/search-discovery",
 ]);
 
 const PUBLIC_PATHS = [
