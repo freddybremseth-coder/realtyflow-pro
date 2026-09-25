@@ -477,6 +477,17 @@ function getGenreFallbacks(genre: string): string[] {
     dream: ['nostalgic', 'romantic'],
     nostalgic: ['dream', 'romantic'],
     training: ['dance', 'rock'],
+    meditation: ['meditative', 'relaxing', 'ambient', 'dream'],
+    meditative: ['meditation', 'relaxing', 'ambient', 'dream'],
+    mindfulness: ['meditation', 'relaxing', 'ambient', 'dream'],
+    relaxing: ['meditation', 'ambient', 'dream'],
+    relaxation: ['relaxing', 'meditation', 'ambient', 'dream'],
+    ambient: ['meditation', 'relaxing', 'dream'],
+    calm: ['relaxing', 'meditation', 'ambient', 'dream'],
+    chillout: ['ambient', 'relaxing', 'dream'],
+    'chill-out': ['ambient', 'relaxing', 'dream'],
+    sleep: ['ambient', 'relaxing', 'meditation', 'dream'],
+    'sleep music': ['ambient', 'relaxing', 'meditation', 'dream'],
   };
   return fallbackMap[lower] || ['pop', 'dream'];
 }
