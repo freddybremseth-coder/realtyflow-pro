@@ -4,7 +4,7 @@
 -- No feed/source/commission/internal fields are exposed.
 create or replace function public.workspace_brand_property_catalogue(
   p_brand_key text, p_user_id uuid, p_email text, p_offset integer, p_search text
-) returns jsonb language plpgsql stable security invoker set search_path = '' as $workspace_property_catalogue$
+) returns jsonb language plpgsql volatile security invoker set search_path = '' as $workspace_property_catalogue$
 declare
   v_brand_id uuid;
   v_result jsonb;
