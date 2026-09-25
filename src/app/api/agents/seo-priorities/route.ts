@@ -4,14 +4,15 @@ export const maxDuration = 90;
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { SEO_AUDIT_TARGETS, auditSEOPortfolio } from "@/services/agents/seo-audit";
-import { getSEOObservedSignals } from "@/services/agents/seo-data";
-import { getSEOLeadSignals } from "@/services/agents/seo-leads";
+import { SEO_AUDIT_TARGETS } from "@/services/agents/seo-audit";
 import { planSEODiagnostics, type SEODiagnostic } from "@/services/agents/seo-diagnostics";
 import { getGSCConnectionStatus, isFreddyFamilyDomainProperty, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
 import { checkGithubSeoCapability } from "@/services/agents/seo-github-capability";
+
+import { runSEOControls } from "@/services/agents/seo-controls";
+import type { SEOControlReport } from "@/services/agents/seo-control-report";
 
 type StoredSearchConsole = { brandId: string; status: string; result: GSCBrandSnapshot | null; error?: string };
 const ACTIVE = ["TO_DO", "IN_PROGRESS", "REVIEW"];
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
     const liveStored = lastLiveRead.data?.details as {
       google_search_console?: StoredSearchConsole[];
       diagnostics?: SEODiagnostic[];
+      controlReport?: SEOControlReport;
       auditCheckedAt?: string | null;
     } | null;
     const explicitLive = request.nextUrl.searchParams.get("live") === "1";
@@ -120,16 +122,12 @@ export async function GET(request: NextRequest) {
     // The live button also runs bounded, read-only technical and measurement
     // checks, so sparse Google results no longer produce an empty action board.
     // A failed public audit must never hide successful Google measurements.
-    const extra = explicitLive ? await Promise.allSettled([
-      getSEOObservedSignals(), getSEOLeadSignals(), auditSEOPortfolio(),
-    ] as const) : null;
-    const signals = extra?.[0].status === "fulfilled" ? extra[0].value : null;
-    const leads = extra?.[1].status === "fulfilled" ? extra[1].value : null;
-    const audits = extra?.[2].status === "fulfilled" ? extra[2].value : [];
-    const diagnostics = explicitLive
-      ? planSEODiagnostics({ snapshots, signals, leads, audits })
-      : Array.isArray(liveStored?.diagnostics) && lastReadIsNewer
+    const controls = explicitLive ? await runSEOControls(snapshots) : null;
+    const diagnostics = controls ? controls.diagnostics
+      : Array.isArray(liveStored?.diagnostics)
         ? liveStored.diagnostics : planSEODiagnostics({ snapshots, signals: null, leads: null, audits: [] });
+    const controlReport = controls?.controlReport || liveStored?.controlReport || null;
+    let persistenceWarning: string | null = null;
     if (explicitLive) {
       const hadSuccess = snapshots.length > 0;
       const { error: recordError } = await supabase.from("automation_logs").insert({
@@ -138,11 +136,16 @@ export async function GET(request: NextRequest) {
         details: {
           google_search_console: readings,
           diagnostics,
-          auditCheckedAt: audits.length ? audits[0].checkedAt : null,
+          auditCheckedAt: controls?.audits[0]?.checkedAt || null,
+          controlReport,
+          collectorPreflight: controls?.collectorPreflight || null,
           diagnosticsMeasurement: "Public SEO checks and independent GSC/first-party aggregate measurements; no individual organic lead attribution or SEO publication.",
         },
       });
-      if (recordError) console.error("[SamSEO] Cannot persist latest GSC and diagnostic read", recordError.message);
+      if (recordError) {
+        console.error("[SamSEO] Cannot persist latest GSC and diagnostic read", recordError.message);
+        persistenceWarning = "Kontrollene er kjørt, men kunne ikke lagres. Ved ny åpning vises forrige lagrede rapport.";
+      }
     }
 
     const gscSuggestions = planGSCOpportunities(snapshots);
@@ -194,14 +197,15 @@ export async function GET(request: NextRequest) {
       period: item.period, totals: item.totals, quality: item.dataQuality.note,
     }));
     return NextResponse.json({
+      controlReport, persistenceWarning,
       actions, observations, diagnostics, changeEvaluations, publisherChecks, connections: connected, metrics,
       latestReviewAt: saved.data?.created_at || null,
       lastDiagnosticAt: explicitLive ? new Date().toISOString()
-        : lastReadIsNewer && Array.isArray(liveStored?.diagnostics) ? lastLiveRead.data?.created_at || null : null,
+        : Array.isArray(liveStored?.diagnostics) ? lastLiveRead.data?.created_at || null : null,
       seoPilot: pilotCycle.data ? {
         at: pilotCycle.data.created_at, status: pilotCycle.data.status,
         assessments: ((pilotCycle.data.details as { assessed?: unknown[] } | null)?.assessed || []),
-        websiteChangesPublished: ((pilotCycle.data.details as { website_changes_published?: number } | null)?.website_changes_published || 0),
+        websiteChangesPublished: pilotCycle.data.status === "error" ? null : ((pilotCycle.data.details as { website_changes_published?: number } | null)?.website_changes_published || 0),
         writeStatus: (pilotCycle.data.details as { public_write_status?: string } | null)?.public_write_status || "unverified",
         zenEcoMetadataPilot: (pilotCycle.data.details as {
           zeneco_metadata_pilot?: { status: string; reason: string; page: string | null; published: number }

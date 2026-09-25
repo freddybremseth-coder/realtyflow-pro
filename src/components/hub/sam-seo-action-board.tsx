@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, ExternalLink, Loader2, RefreshCw, SearchCheck } from "lucide-react";
 
+import type { SEOControlReport } from "@/services/agents/seo-control-report";
+
 type Action = {
   id: string; brandId: string | null; title: string; description: string; nextAction: string;
   priority: string; evidence: string; status: string; source: string; requiresApproval: boolean;
@@ -31,6 +33,8 @@ type Metric = {
   quality: string;
 };
 type Payload = {
+  controlReport?: SEOControlReport | null;
+  persistenceWarning?: string | null;
   actions: Action[]; diagnostics: Diagnostic[];
   observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
   connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
@@ -48,7 +52,7 @@ type Payload = {
   readingMode: "live" | "last_review" | "last_live_read"; readErrors: Array<{ brandId: string; error: string }>;
   connectionSummary: { registered: number; readable: number; measured: number };
   seoPilot: null | {
-    at: string; status: string; websiteChangesPublished: number; writeStatus: string;
+    at: string; status: string; websiteChangesPublished: number | null; writeStatus: string;
     assessments: Array<{ brandId: string; status: string; note: string;
       page: string | null; currentImpressions: number | null; currentClicks: number | null }>;
     zenEcoMetadataPilot: null | {
@@ -168,12 +172,12 @@ export function SamSEOActionBoard() {
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-emerald-800">
             <SearchCheck size={18} /> Sam SEO · synlighet og leads
           </div>
-          <h2 className="mt-2 text-2xl font-black text-slate-950">Anbefalinger og tiltak – synlige her</h2>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">Autopilot · utført, funn og neste steg</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
-            Søkeord, landingssider og tekniske funn kobles til konkrete oppgaver. Her ser du hvorfor
-            noe skal gjøres, hvilken måling som ligger bak, og hva neste steg er. Små, reversible
-            SEO-justeringer kan gjennomføres innenfor den godkjente pilotrammen når publiseringskanal
-            og tilbakeføring er kontrollert. Større endringer krever egen godkjenning.
+            Sam henter søketall og kontrollerer offentlige sider automatisk hver dag.
+            Du trenger ikke starte de daglige kontrollene. Publisering skjer foreløpig automatisk
+            bare for titler og metabeskrivelser på fire Zen Eco Homes-sider når kravene er oppfylt.
+            Et funn eller en anbefaling betyr ikke at nettsiden er endret.
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-600">
             {data?.latestReviewAt
@@ -185,9 +189,9 @@ export function SamSEOActionBoard() {
           </p>
         </div>
         <button type="button" onClick={() => void read(true)} disabled={loading || refreshing}
-          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-800 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-60">
+          className="inline-flex max-w-full items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-60">
           {refreshing || loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          {refreshing ? "Leser Google-data og kontrollerer nettstedene…" : "Hent Google-tall og konkrete kontroller"}
+          {refreshing ? "Leser Google-data og kontrollerer nettstedene…" : "Oppdater kontroller"}
         </button>
       </div>
       {oauthReturn && (
@@ -221,6 +225,34 @@ export function SamSEOActionBoard() {
       {loading && <p className="mt-4 text-sm text-slate-700">Henter Sams dokumenterte oppgaver og målinger…</p>}
       {data && (
         <>
+          <section aria-label="Hva Sam gjør automatisk" className="mt-4 rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4 text-emerald-950">
+            <h3 className="text-lg font-black">Dette gjør Sam for deg</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div><h4 className="font-bold">Kontrollerer automatisk</h4><p className="mt-1 text-sm">Daglig Google-innhenting, offentlig HTML, sitemap, metadata, tilgjengelighetssignaler, JSON-LD og kontaktmuligheter. Sideutvalget roterer daglig. Ukentlig analyse oppsummerer muligheter.</p></div>
+              <div><h4 className="font-bold">Kan endre automatisk</h4><p className="mt-1 text-sm">Fire Zen Eco Homes-metadatasider, med dokumentert søkegrunnlag, versjonering, kontroll av offentlig resultat og tilbakeføring. Andre nettsteder og innholdsfelt har ikke en aktiv automatisk skriver.</p></div>
+              <div><h4 className="font-bold">Din oppmerksomhet</h4><p className="mt-1 text-sm">Tilkoblingsfeil og uttrykkelige godkjenningsoppgaver vises separat. Funn uten publiseringskanal trenger teknisk oppfølging. Du skal ikke godkjenne hver måling.</p></div>
+            </div>
+            <p className="mt-3 text-sm font-semibold">Siste automatiske syklus: {data.seoPilot ? new Date(data.seoPilot.at).toLocaleString("nb-NO") : "Ingen lagret kjøring"}. Verifiserte publiseringer i denne syklusen: {data.seoPilot?.websiteChangesPublished ?? "ikke målt"}.</p>
+            {(!data.seoPilot || !Number.isFinite(Date.parse(data.seoPilot.at)) || Date.now() - Date.parse(data.seoPilot.at) > 36 * 3600_000) &&
+              <p role="status" className="mt-2 text-sm font-bold text-amber-950">Ingen fersk automatisk syklus er dokumentert siste 36 timer. Kontroller kjøringen i <Link href="/automation" className="underline">Automation Center</Link>. Manuell oppdatering bekrefter ikke at tidsplanen kjører.</p>}
+            {data.seoPilot?.status === "error" && <p role="alert" className="mt-2 text-sm font-bold text-rose-900">Siste automatiske syklus feilet. Kontroller Automation Center; tidligere målinger er ikke bevis for en vellykket ny kjøring.</p>}
+            {data.persistenceWarning && <p role="alert" className="mt-2 text-sm font-bold text-rose-900">{data.persistenceWarning}</p>}
+            {data.controlReport ? <details className="mt-3 rounded-lg border border-emerald-200 bg-white p-3">
+              <summary className="cursor-pointer font-bold">Faktisk utførte kontroller · {new Date(data.controlReport.checkedAt).toLocaleString("nb-NO")}</summary>
+              <p className="mt-2 text-sm">Henvisningsdata: {data.controlReport.referralsAvailable ? "lest" : "utilgjengelig"}. Henvendelsesdata: {data.controlReport.leadsAvailable ? "lest" : "utilgjengelig"}.
+                {data.controlReport.collector ? ` Collector: ${data.controlReport.collector.passed} bestått, ${data.controlReport.collector.blocked} avvist, ${data.controlReport.collector.unknown} ukjent.` : " Collector-kontroll ikke utført i denne rapporten."}</p>
+              {data.controlReport.sites.length === 0 && <p role="status" className="mt-2 text-sm font-bold">Ingen offentlig nettstedskontroll ble fullført i denne rapporten.</p>}
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {data.controlReport.sites.map(site => <div key={site.brandId} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-900">
+                  <p className="font-bold">{LABELS[site.brandId] || site.brandId} · {site.incomplete ? "delvis kontrollert" : "avgrenset kontroll utført"}</p>
+                  <p className="mt-1">{site.pagesChecked} sider svarte · {site.findings} tekniske observasjoner · {site.accessibilityFindings} tilgjengelighetsfunn · {site.invalidStructuredData} ugyldige JSON-LD-blokker.</p>
+                  <p className="mt-1">Kontaktlenke eller skjema funnet på {site.pagesWithContactOrForm}/{site.qualityPagesChecked} HTML-sider. Innsending og mobilvisning er ikke testet.</p>
+                  <p className="mt-1 break-words text-xs text-slate-600">Sideutvalg: {site.sampledPaths.join(", ") || "Ingen undersider kontrollert"}</p>
+                </div>)}
+              </div>
+              <p className="mt-2 text-xs">Dette er kontroller, ikke utførte reparasjoner, en full tilgjengelighetstest eller en rating. Google-klikk, henvisninger og leads måles separat. GEO/AEO-siteringer er ikke verifisert.</p>
+            </details> : <p className="mt-2 text-sm">Detaljert utførelsesrapport kommer ved neste daglige kjøring eller når du henter kontroller nå.</p>}
+          </section>
           <section aria-label="Freddy Bremseth nettstedfamilie" className="mt-4 rounded-xl border border-slate-300 bg-white p-4 text-slate-950">
             <h3 className="text-lg font-black">FreddyBremseth.com · fire egne nettsteder, én samlet strategi</h3>
             <p className="mt-1 text-sm leading-6 text-slate-700">
@@ -263,7 +295,7 @@ export function SamSEOActionBoard() {
             <p className="mt-1 text-sm">Automatisk Search Console-måling og intern prioritering for alle åtte godkjente offentlige nettsteder; Care kontrolleres kun teknisk. Automatisk publisering er foreløpig avgrenset til fire forhåndsgodkjente Zen Eco Homes-metadatasider. Andre små offentlige endringer kan bare gjennomføres når eksakt redigerbar side, publiseringskanal, tidligere versjon og reversering er kontrollert. Boligpriser, kundedata og større omskrivinger ligger utenfor piloten.</p>
             {data?.seoPilot ? (
               <>
-                <p className="mt-2 text-xs font-semibold">Sist målt: {new Date(data.seoPilot.at).toLocaleString("nb-NO")} · Automatisk publisert i denne syklusen: {data.seoPilot.websiteChangesPublished}</p>
+                <p className="mt-2 text-xs font-semibold">Sist målt: {new Date(data.seoPilot.at).toLocaleString("nb-NO")} · Automatisk publisert i denne syklusen: {data.seoPilot.websiteChangesPublished ?? "ikke målt"}</p>
                 <div className="mt-2 space-y-1">
                   {data.seoPilot.assessments.filter(item => ["zeneco", "freddyb"].includes(item.brandId)).map(item => (
                     <p key={item.brandId} className="text-xs leading-5">
@@ -359,8 +391,9 @@ export function SamSEOActionBoard() {
             </div>
           </div>
           {data.diagnostics?.length > 0 && (
-            <section aria-label="Sam SEO konkrete kontroller" className="mt-5 rounded-xl border-2 border-sky-200 bg-sky-50 p-4 text-sky-950">
-              <h3 className="text-lg font-black">Dette kan Sam kontrollere nå · {data.diagnostics.length} dokumenterte neste steg</h3>
+            <details aria-label="Sam SEO konkrete kontroller" className="mt-5 rounded-xl border-2 border-sky-200 bg-sky-50 p-4 text-sky-950">
+              <summary className="cursor-pointer text-lg font-black">Funn og videre undersøkelser · {data.diagnostics.length}</summary>
+              {data.lastDiagnosticAt && <p className="mt-1 text-xs">Kontrollgrunnlag fra {new Date(data.lastDiagnosticAt).toLocaleString("nb-NO")}. Kan være eldre enn Google-tallene.</p>}
               <p className="mt-1 text-sm leading-6">
                 Dette er avgrensede måle-, indeks- og kontaktveikontroller – ikke forslag som automatisk endrer nettsidene
                 eller krever godkjenning i Oppgave-HUB. Små søketall gir grunnlag for å undersøke,
@@ -373,6 +406,7 @@ export function SamSEOActionBoard() {
                       {LABELS[item.brandId || ""] || "Felles kontroll"} · {item.category === "technical" ? "Teknisk observasjon" :
                         item.category === "measurement" ? "Målegrunnlag" : item.category === "leads" ? "Henvendelser" : "Google-søkeside"}
                     </p>
+                    <p className="mt-1 text-xs font-semibold">{item.kind === "observed" ? "Kontrollert · funn ikke rettet automatisk" : "Anbefalt undersøkelse · ikke utført i sin helhet"}</p>
                     <h4 className="mt-1 font-black text-slate-950">{item.title}</h4>
                     <p className="mt-2 text-sm leading-6"><strong>Observert:</strong> {item.finding}</p>
                     <p className="mt-2 text-sm leading-6"><strong>Neste kontroll:</strong> {item.nextStep}</p>
@@ -380,7 +414,7 @@ export function SamSEOActionBoard() {
                   </article>
                 ))}
               </div>
-            </section>
+            </details>
           )}
           {savedButUnreadable.length > 0 && (
             <div role="alert" className="mt-4 rounded-xl border-2 border-rose-400 bg-rose-50 p-4 text-rose-950">

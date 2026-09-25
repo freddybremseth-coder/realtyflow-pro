@@ -73,3 +73,15 @@ test("automation registry derives health from runs and logs", () => {
   assert.equal(publishing?.health, "healthy");
   assert.equal(summary.attention, 1);
 });
+
+test("Sam daily autopilot maps its own cycle failures without mistaking manual reads for cron runs", () => {
+  const { items } = buildAutomationRegistry([], [
+    { action: "seo_autopilot_pilot_cycle", status: "error", created_at: "2026-09-25T07:40:00Z",
+      details: { error: "Cycle failed" } },
+    { action: "seo_gsc_live_read", status: "success", created_at: "2026-09-25T10:00:00Z", details: {} },
+  ], new Date("2026-09-25T11:00:00Z"));
+  const sam = items.find(item => item.path === "/api/cron/seo-autopilot");
+  assert.equal(sam?.lastStatus, "error");
+  assert.equal(sam?.health, "attention");
+  assert.equal(sam?.lastError, "Cycle failed");
+});
