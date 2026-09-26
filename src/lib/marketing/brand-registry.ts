@@ -16,6 +16,8 @@ export interface GrowthBrandDefinition {
   name: string;
   kind: "real_estate" | "food_agriculture" | "saas" | "personal" | "publishing" | "creator_media";
   website: string;
+  logoUrl?: string;
+  logoSvgUrl?: string;
   /** Channels that can currently use the controlled Growth OS pilot path. */
   pilotChannels: MarketingChannel[];
   /** Desired channel footprint. A channel may be planned before it is connected. */
@@ -33,6 +35,8 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Zen Eco Homes",
     kind: "real_estate",
     website: "https://www.zenecohomes.com",
+    logoUrl: "https://www.zenecohomes.com/api/brand-assets/zeneco-logo",
+    logoSvgUrl: "https://www.zenecohomes.com/assets/zeneco-logo.svg?v=20260926-2",
     pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["instagram", "facebook", "website", "email"],
     contentPillars: ["property_showcase", "area_and_lifestyle", "buyer_education", "new_build", "investment_and_value"],
