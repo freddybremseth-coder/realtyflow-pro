@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import ffmpegStatic from "ffmpeg-static";
 import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
+import { buildPortfolioReelPoster } from "@/services/integrations/art-thumbnail-panel";
 import {
   buildPortfolioReelCaption,isApprovedReelAudioUrl,isApprovedReelImageUrl,renderPortfolioReel,
 } from "./remaster-portfolio-reels";
@@ -59,6 +60,13 @@ test("production FFmpeg renders a real 15-second 1080x1920 Reel with two approve
     assert.match(probe.stderr,/1080x1920/);
     assert.match(probe.stderr,/Duration: 00:00:15/);
   }finally{globalThis.fetch=prior;await fs.rm(dir,{recursive:true,force:true});}
+});
+
+
+test("portfolio Reel branding is rasterized before ffmpeg with no ASS, drawtext or SVG dependency",()=>{
+  const poster=buildPortfolioReelPoster("ZEN ECO HOMES","Costa Blanca homes","zenecohomes.com",true);
+  assert.ok(poster.length>1080*1920);
+  assert.equal(poster.toString("ascii",0,2),"P6");
 });
 
 test("six-brand Reels use their own images and destinations", () => {
