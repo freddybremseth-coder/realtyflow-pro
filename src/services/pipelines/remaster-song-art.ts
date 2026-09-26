@@ -26,15 +26,18 @@ function normalized(input: unknown): string {
 }
 
 export function classifyArtVisualMode(song: {
-  genre?: string; style?: string; mood?: string;
+  title?: string; genre?: string; style?: string; mood?: string;
   metadata?: Record<string, unknown> | null;
 }, analysis?: { genre?: string; style?: string; mood?: string } | null): ArtVisualMode {
   const source = [
-    song.genre, song.style, song.metadata?.category, song.metadata?.genre,
+    song.title, song.genre, song.style, song.metadata?.category, song.metadata?.genre,
     song.metadata?.style, song.metadata?.tags, analysis?.genre, analysis?.style,
   ].map(normalized).join(' ');
-  if (/\b(meditation|meditative|meditating|mindfulness|meditaci[oó]n)\b/i.test(source)) return 'meditation';
-  if (/\b(relaxing|relaxation|relax|ambient|chillout|chill-out|downtempo|sleep music|spa music|yoga|zen|new age)\b/i.test(source)) return 'relaxing';
+  // Title intent is authoritative for explicitly calm/healing releases. This
+  // prevents stale generic EDM metadata from routing songs such as
+  // "Healing Waves of Light" or "Deep Ocean Stillness" into DJ/party visuals.
+  if (/\b(meditation|meditative|meditating|mindfulness|meditaci[oó]n|healing|stillness|inner peace|sound bath|breathwork)\b/i.test(source)) return 'meditation';
+  if (/\b(relaxing|relaxation|relax|ambient|chillout|chill-out|downtempo|sleep music|spa music|yoga|zen|new age|serenity|serene|tranquil|calm|peaceful|soothing)\b/i.test(source)) return 'relaxing';
   if (/\b(alternative|alternativo|alternativa)\b/i.test(source)) return 'alternative';
   // A calm AI mood is sufficient only for low-energy or unspecified-energy
   // tracks, never for high-energy dance/house music.

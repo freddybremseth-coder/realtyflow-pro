@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { generateArtShortFromAudio, generateShortFromAudio, buildShortsTitle } from '@/services/integrations/shorts-generator';
 import { getGenreImages } from '@/services/integrations/airtable-client';
-import { loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from './remaster-song-art';
+import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from './remaster-song-art';
 import { uploadVideo } from '@/services/integrations/youtube-client';
 
 const VALID_MODES = new Set(['meditation','relaxing','alternative']);
@@ -38,7 +38,11 @@ export async function publishMissingShort(songId: string): Promise<{
     .eq('id', songId).eq('brand', BRAND).single();
   if (error || !song) throw new Error('Re-Master Freddy song not found');
   const metadata = song.ai_metadata && typeof song.ai_metadata === 'object' ? song.ai_metadata : {};
-  const mode: ArtVisualMode = metadata.artVisualMode;
+  const storedMode: ArtVisualMode = metadata.artVisualMode;
+  const inferredMode = classifyArtVisualMode({
+    title: song.name, genre: song.genre || undefined, mood: song.mood || undefined, metadata,
+  });
+  const mode: ArtVisualMode = VALID_MODES.has(String(storedMode)) ? storedMode : inferredMode;
   const artMode = VALID_MODES.has(String(mode));
   // Owner-triggered Shorts can be released independently of the full video.
   // The daily follow-up cron still selects only songs with published full videos.
@@ -53,7 +57,11 @@ export async function publishMissingShort(songId: string): Promise<{
     return { status: 'processing', shortUrl: null, videoUrl: song.youtube_url };
   }
   const startedAt = new Date().toISOString();
-  const claimed = { ...metadata, shortsStatus: 'processing', shortsAttemptedAt: startedAt, shortsError: null };
+  const claimed = {
+    ...metadata,
+    ...(artMode ? { artVisualMode: mode } : {}),
+    shortsStatus: 'processing', shortsAttemptedAt: startedAt, shortsError: null,
+  };
   // Compare a small per-attempt token instead of passing the entire
   // (potentially very large) AI/artwork metadata JSON in the request URL.
   // Exactly one concurrent retry can claim a given previous attempt.
