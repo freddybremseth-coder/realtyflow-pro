@@ -132,7 +132,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
   if (path.startsWith("/api/audit-log")) return "audit.read";
   if (path.startsWith("/api/team-workload")) return write ? "access.manage" : "revenue.read";
 
-  if (path.startsWith("/api/contacts") || path.startsWith("/api/customers")) {
+  if (path.startsWith("/api/contacts") || path.startsWith("/api/customers") || path.startsWith("/api/corporate-homes")) {
     return write ? "customers.write" : "customers.read";
   }
   if (path.startsWith("/api/calendar")) return write ? "execution.write" : "execution.read";
@@ -174,7 +174,7 @@ export function permissionForNavHref(href: string): AccessPermission | "OWNER_ON
   if (href === "/access-control" || href === "/platform") return "OWNER_ONLY";
   if (href === "/audit-log") return "audit.read";
   if (href === "/team-workload") return "revenue.read";
-  if (href === "/customers" || href.startsWith("/customers/")) return "customers.read";
+  if (href === "/customers" || href.startsWith("/customers/") || href === "/corporate-homes") return "customers.read";
   if (["/billing", "/dona-anna", "/commissions", "/monthly-close", "/goals"].includes(href)) return "finance.read";
   if (["/attribution", "/ad-campaigns", "/analytics", "/ai-personal-brand", "/media-studio"].includes(href)) return "marketing.read";
   if (href === "/care" || href.startsWith("/care/")) return "keyholding.read";
