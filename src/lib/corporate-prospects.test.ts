@@ -55,3 +55,43 @@ test("Corporate Homes normalization adds default buying roles and normalizes dom
   assert.equal(result.domain, "example.no");
   assert.deepEqual(result.decision_roles, defaultDecisionRoles("company"));
 });
+
+
+test("Corporate Homes scoring rewards documented people-and-travel buying signals", () => {
+  const withoutSignals = scoreCorporateProspect({
+    organization_type: "company",
+    country_code: "NO",
+    industry: "Professional services",
+    employee_count: 30,
+    employee_band: null,
+    member_count: null,
+    domain: "signal.no",
+    website_url: "https://signal.no",
+    decision_roles: ["CEO / Managing Director", "HR / People & Culture", "CFO / Finance"],
+    source_url: "https://signal.no/about",
+    evidence: {},
+  });
+
+  const withSignals = scoreCorporateProspect({
+    organization_type: "company",
+    country_code: "NO",
+    industry: "Professional services",
+    employee_count: 30,
+    employee_band: null,
+    member_count: null,
+    domain: "signal.no",
+    website_url: "https://signal.no",
+    decision_roles: ["CEO / Managing Director", "HR / People & Culture", "CFO / Finance"],
+    source_url: "https://signal.no/about",
+    evidence: {
+      employee_benefit_signal: true,
+      remote_workforce_signal: "Hybrid work policy",
+      retreat_signal: "Annual team retreat",
+    },
+  });
+
+  assert.ok(withSignals.score >= withoutSignals.score);
+  assert.ok(withSignals.reasons.includes("Dokumentert signal om ansattgoder"));
+  assert.ok(withSignals.reasons.includes("Dokumentert signal om fjernarbeid / distribuert arbeidsstyrke"));
+  assert.ok(withSignals.reasons.includes("Dokumentert signal om samlinger / retreats"));
+});
