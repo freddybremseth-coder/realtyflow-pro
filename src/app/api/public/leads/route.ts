@@ -106,6 +106,11 @@ export async function POST(request: NextRequest) {
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
   const pipelineValue = incomingPipelineValue || (budget ? Number(budget.replace(/[^0-9]/g, "")) || 0 : 0);
+  const isCorporateHome = brandId === "zeneco" && (
+    requestType === "corporate-home" ||
+    source.toLowerCase().includes("corporate-homes") ||
+    pageUrl.toLowerCase().includes("/bedriftshytte-spania")
+  );
 
   const notes = [
     `Brand: ${brandLabel}`,
@@ -192,16 +197,18 @@ export async function POST(request: NextRequest) {
     title: `${existing?.id ? "Ny aktivitet fra" : `Ny ${brandLabel}-lead:`} ${name}`,
     description: `${email}${preferredArea || incomingPropertyInterest ? ` · ${preferredArea || incomingPropertyInterest}` : ""}${budget || pipelineValue ? ` · ${budget || `€${pipelineValue}`}` : ""}`,
     status: "TO_DO",
-    priority: pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM",
+    priority: isCorporateHome || pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM",
     due_date: new Date().toISOString().slice(0, 10),
     brand_id: brandId,
     source_type: "website_lead",
     source_id: data.id,
     assigned_agent: "sales",
-    next_action: existing?.id
-      ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
-      : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
-    ai_score: pipelineValue >= 500000 || propertyRef ? 86 : 68,
+    next_action: isCorporateHome
+      ? "Corporate Homes B2B: svar personlig, identifiser beslutningstaker(e) og avklar antall brukere, formål, budsjett, tidslinje og styre-/ledelsesprosess."
+      : existing?.id
+        ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
+        : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
+    ai_score: isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
     metadata: {
       page_url: pageUrl,
       property_ref: propertyRef,
@@ -209,6 +216,8 @@ export async function POST(request: NextRequest) {
       email,
       brand_id: brandId,
       brand_label: brandLabel,
+      request_type: requestType || null,
+      segment: isCorporateHome ? "corporate_homes" : null,
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
       created_from_public_endpoint: true,
@@ -236,7 +245,7 @@ export async function POST(request: NextRequest) {
     sourceType: "website_form",
     sourceId: revenueSourceId,
     actorType: "customer",
-    confidenceScore: pipelineValue >= 500000 || propertyRef ? 86 : 68,
+    confidenceScore: isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
     revenueImpactEur: pipelineValue || null,
     occurredAt: now,
     dedupeKey: buildRevenueEventDedupeKey(["public_leads", brandId, revenueSourceId]),
@@ -250,6 +259,7 @@ export async function POST(request: NextRequest) {
       budget,
       timeline,
       request_type: requestType,
+      segment: isCorporateHome ? "corporate_homes" : null,
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
       submission_id: submissionId || null,
