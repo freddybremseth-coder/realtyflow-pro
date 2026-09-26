@@ -125,7 +125,7 @@ export default function CorporateHomesDashboard() {
             <a href="https://www.zenecohomes.com/bedriftshytte-spania" target="_blank" rel="noreferrer" className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-800">
               Landingsside <ExternalLink size={15} className="ml-2" />
             </a>
-            <Link href="/ad-campaigns/new" className="inline-flex items-center rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-black text-white">
+            <Link href="/ad-campaigns/new?preset=corporate-homes" className="inline-flex items-center rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-black text-white">
               Lag annonsekampanje <Megaphone size={15} className="ml-2" />
             </Link>
             <button onClick={() => void load()} disabled={loading} className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">
