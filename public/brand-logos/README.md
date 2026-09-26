@@ -6,7 +6,7 @@ the rendered MP4.
 
 Naming: lowercase brandId, `.png` extension. The brandIds in use:
 
-- `zeneco.png` — Zen Eco Homes (and the `donaanna` brand uses this same logo today; create a separate `donaanna.png` if/when you have one)
+- Zen Eco Homes does **not** use a local `zeneco.png` fallback. Its canonical approved logo is `https://www.zenecohomes.com/api/brand-assets/zeneco-logo` (transparent PNG) and `https://www.zenecohomes.com/assets/zeneco-logo.svg` (website SVG).
 - `chatgenius.png` — Chat Genius
 - `soleada.png` — Soleada
 - `freddyb.png` — Freddybremseth.com
@@ -21,3 +21,7 @@ To override per-render, you can also pass `brandLogoUrl` in the
 file in this folder.
 
 If neither is provided, the video renders without a logo (no error).
+
+## Zen Eco Homes identity lock
+
+Do not recreate the former boxed ZE mark or the old “Presented by” sponsor card. Zen Eco Homes renderers must use the canonical approved villa / gold sun / deep-teal wave logo from zenecohomes.com. The local `zeneco-presented.svg` is only a transparent compatibility copy of that approved mark.
