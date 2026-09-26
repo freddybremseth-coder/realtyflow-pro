@@ -19,7 +19,9 @@ import {
   CORPORATE_GOOGLE_SEARCH,
   CORPORATE_HOMES_LANDING_URL,
   CORPORATE_LINKEDIN,
+  CORPORATE_META,
   CORPORATE_OUTBOUND,
+  CORPORATE_PAID_LAUNCH_PACK,
   CORPORATE_SUCCESS_METRICS,
 } from "@/lib/corporate-homes-growth";
 
@@ -562,7 +564,7 @@ export default function CorporateHomesGrowthPage() {
         </aside>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
+      <section className="grid gap-6 xl:grid-cols-3">
         <CampaignCard
           title={CORPORATE_GOOGLE_SEARCH.name}
           eyebrow="Google Search · klargjort"
@@ -601,6 +603,75 @@ export default function CorporateHomesGrowthPage() {
             ))}
           </div>
         </CampaignCard>
+
+        <CampaignCard
+          title={CORPORATE_META.name}
+          eyebrow="Meta · klargjort"
+          objective={CORPORATE_META.objective}
+          bullets={[
+            `Marked: ${CORPORATE_META.market}`,
+            `${CORPORATE_META.audiences.length} B2B-målgrupper`,
+            `${CORPORATE_META.creatives.length} norske kreative vinkler`,
+            "Landing: /bedriftshytte-spania",
+          ]}
+        >
+          <div className="mt-4 space-y-3">
+            {CORPORATE_META.creatives.map((angle) => (
+              <div key={angle.headline} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="font-bold text-slate-900">{angle.headline}</div>
+                <p className="mt-1 text-xs leading-5 text-slate-600">{angle.body}</p>
+              </div>
+            ))}
+          </div>
+        </CampaignCard>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-300">Paid launch pack</p>
+            <h2 className="mt-2 text-xl font-black">Klar for kontrollert pilot — ikke automatisk annonsering</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">
+              Hver kanal har sin egen sporbare landingslenke. Start én kanal av gangen eller med et lite pilotbudsjett,
+              og bruk kanalresultatene over til å avgjøre hva som fortjener mer investering.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-emerald-400/15 px-3 py-1.5 text-emerald-200">{CORPORATE_PAID_LAUNCH_PACK.status}</span>
+            <span className="rounded-full bg-rose-400/15 px-3 py-1.5 text-rose-200">Ingen automatisk spend</span>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          {Object.values(CORPORATE_PAID_LAUNCH_PACK.channels).map((channel) => (
+            <article key={channel.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="font-black text-white">{channel.label}</div>
+              <div className="mt-1 text-xs text-slate-400">{channel.objective}</div>
+              <a
+                href={channel.trackingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center gap-1 text-xs font-black text-amber-300 hover:underline"
+              >
+                Test sporingslenke <ExternalLink size={13} />
+              </a>
+              <div className="mt-3 break-all rounded-xl bg-black/20 p-3 text-[11px] leading-5 text-slate-400">
+                {channel.trackingUrl}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-6">
+          <div className="text-xs font-black uppercase tracking-wide text-slate-400">Før pilot</div>
+          <ol className="mt-3 grid gap-2 lg:grid-cols-5">
+            {CORPORATE_PAID_LAUNCH_PACK.launchChecklist.map((item, index) => (
+              <li key={item} className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-300">
+                <span className="mr-2 font-black text-amber-300">0{index + 1}</span>{item}
+              </li>
+            ))}
+          </ol>
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[.8fr_1.2fr]">

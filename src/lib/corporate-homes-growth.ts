@@ -11,6 +11,11 @@ export const CORPORATE_HOME_UTM = {
     medium: "paid_social",
     campaign: "zeneco_corporate_homes_no",
   },
+  meta: {
+    source: "meta",
+    medium: "paid_social",
+    campaign: "zeneco_corporate_homes_no",
+  },
   outbound: {
     source: "realtyflow",
     medium: "outbound",
@@ -59,7 +64,7 @@ export const CORPORATE_GOOGLE_SEARCH = {
       name: "Organisasjon og medlemmer",
       headlines: [
         "Medlemsbolig i Spania",
-        "Et medlemsfordel de kan bruke",
+        "En medlemsfordel de kan bruke",
         "Bolig på Costa Blanca for medlemmer",
       ],
       descriptions: [
@@ -134,3 +139,79 @@ export const CORPORATE_SUCCESS_METRICS = [
   "Corporate viewings",
   "Reservations / purchases",
 ] as const;
+
+
+function trackingUrl(params: { source: string; medium: string; campaign: string }, content: string) {
+  const url = new URL(CORPORATE_HOMES_LANDING_URL);
+  url.searchParams.set("utm_source", params.source);
+  url.searchParams.set("utm_medium", params.medium);
+  url.searchParams.set("utm_campaign", params.campaign);
+  url.searchParams.set("utm_content", content);
+  return url.toString();
+}
+
+export const CORPORATE_META = {
+  name: "Zen Corporate Homes · Norway · Meta",
+  objective: "Qualified B2B lead / assessment request",
+  market: "Norway",
+  audiences: [
+    "Business owners and founders",
+    "HR / People & Culture decision makers",
+    "Management and finance roles",
+    "Association and organisation leaders",
+  ],
+  creatives: [
+    {
+      headline: "Kan bedriftshytten ligge i Spania?",
+      body: "Utforsk hvordan en moderne bolig på Costa Blanca kan fungere som ansattgode eller felles bedriftsressurs. Start med en kostnadsfri bedriftsvurdering.",
+    },
+    {
+      headline: "50 ansatte. Én bolig på Costa Blanca.",
+      body: "Se hvordan bruk, booking, budsjett og lokal drift kan organiseres før dere vurderer konkrete boliger.",
+    },
+    {
+      headline: "Fra firmahytte til firmabolig i solen",
+      body: "Zen Corporate Homes hjelper norske virksomheter fra første business case til boligshortlist og lokal oppfølging.",
+    },
+  ],
+} as const;
+
+export const CORPORATE_PAID_LAUNCH_PACK = {
+  status: "READY_FOR_MANUAL_LAUNCH",
+  automaticSpendAllowed: false,
+  automaticPublishingAllowed: false,
+  landingPage: CORPORATE_HOMES_LANDING_URL,
+  channels: {
+    google: {
+      label: "Google Search",
+      trackingUrl: trackingUrl(CORPORATE_HOME_UTM.google, "search_high_intent"),
+      objective: CORPORATE_GOOGLE_SEARCH.objective,
+      keywords: CORPORATE_GOOGLE_SEARCH.keywords,
+      negativeKeywords: CORPORATE_GOOGLE_SEARCH.negativeKeywords,
+      ads: CORPORATE_GOOGLE_SEARCH.adGroups,
+    },
+    linkedin: {
+      label: "LinkedIn",
+      trackingUrl: trackingUrl(CORPORATE_HOME_UTM.linkedin, "decision_makers"),
+      objective: CORPORATE_LINKEDIN.objective,
+      companySizes: CORPORATE_LINKEDIN.companySizes,
+      roles: CORPORATE_LINKEDIN.roles,
+      sectors: CORPORATE_LINKEDIN.sectors,
+      creatives: CORPORATE_LINKEDIN.creativeAngles,
+    },
+    meta: {
+      label: "Meta",
+      trackingUrl: trackingUrl(CORPORATE_HOME_UTM.meta, "b2b_employee_benefit"),
+      objective: CORPORATE_META.objective,
+      audiences: CORPORATE_META.audiences,
+      creatives: CORPORATE_META.creatives,
+    },
+  },
+  launchChecklist: [
+    "Bekreft at landingssiden og bedriftsvurderingen fungerer i produksjon.",
+    "Send en testlead med kanalens UTM-lenke og kontroller at kanalen vises i Corporate-dashboardet.",
+    "Start med én kanal eller en liten pilot slik at attribution kan vurderes separat.",
+    "Mål kvalifiserte Corporate-leads og pipeline – ikke optimaliser bare mot klikk.",
+    "Ikke øk budsjett før det finnes faktiske lead- og kvalifiseringsdata.",
+  ],
+} as const;
