@@ -55,6 +55,30 @@ type Overview = {
     bTier: number;
     qualified: number;
     promoted: number;
+    focusRule: string;
+    focusProspects: Array<{
+      id: string;
+      companyName: string;
+      organizationNumber?: string | null;
+      domain?: string | null;
+      industry?: string | null;
+      size: string;
+      status: string;
+      fitTier: string;
+      fitScore: number;
+      fitReasons: string[];
+      evidenceGaps: string[];
+      nextAction?: string | null;
+      sourceUrl?: string | null;
+      readiness: {
+        score: number;
+        label: string;
+        qualificationReady: boolean;
+        suggestedStage: string;
+        reasons: string[];
+        missing: string[];
+      };
+    }>;
     statusCounts: Record<string, number>;
     tierCounts: Record<string, number>;
     discovery: {
@@ -232,6 +256,59 @@ export default function CorporateHomesGrowthPage() {
           >
             Åpne prospektmotor <ArrowRight size={15} />
           </Link>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Fokus nå</p>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Prospekter som er nærmest menneskelig kvalifisering</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              Dette er ikke en automatisk salgsbeslutning. Listen sorteres etter dokumentert readiness og Corporate Homes-fit,
+              og viser neste konto å undersøke — ikke hvem systemet skal kontakte automatisk.
+            </p>
+            <p className="mt-2 text-xs font-semibold text-slate-500">{data?.prospects.focusRule || ""}</p>
+          </div>
+          <Link href="/corporate-homes/prospects" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50">
+            Se hele køen <ArrowRight size={15} />
+          </Link>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-2 2xl:grid-cols-4">
+          {(data?.prospects.focusProspects || []).map((prospect) => (
+            <article key={prospect.id} className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Link href={`/corporate-homes/prospects/${encodeURIComponent(prospect.id)}`} className="font-black text-slate-950 hover:text-cyan-800 hover:underline">
+                    {prospect.companyName}
+                  </Link>
+                  <div className="mt-1 text-xs text-slate-500">{prospect.industry || "Bransje ikke kartlagt"} · {prospect.size}</div>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-black ${prospect.fitTier === "A" ? "bg-emerald-100 text-emerald-900" : "bg-cyan-100 text-cyan-900"}`}>
+                  {prospect.fitTier} · {prospect.fitScore}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-xs">
+                <span className={`rounded-full px-2.5 py-1 font-black ${prospect.readiness.qualificationReady ? "bg-emerald-100 text-emerald-900" : "bg-white text-slate-700"}`}>
+                  Klarhet {prospect.readiness.score}/100
+                </span>
+                <span className="font-semibold text-slate-500">{prospect.status}</span>
+              </div>
+              <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                {prospect.fitReasons.slice(0, 2).map((reason) => <div key={reason}>✓ {reason}</div>)}
+                {prospect.evidenceGaps.slice(0, 1).map((gap) => <div key={gap} className="text-amber-800">Mangler: {gap}</div>)}
+              </div>
+              <div className="mt-auto pt-4">
+                <Link href={`/corporate-homes/prospects/${encodeURIComponent(prospect.id)}`} className="inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                  Åpne dossier <ArrowRight size={13} />
+                </Link>
+              </div>
+            </article>
+          ))}
+          {!loading && (data?.prospects.focusProspects || []).length === 0 && (
+            <div className="text-sm text-slate-500">Ingen A/B-prospekter er klare for fokuslisten ennå.</div>
+          )}
         </div>
       </section>
 

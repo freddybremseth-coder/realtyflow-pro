@@ -11,6 +11,8 @@ test("Corporate Homes overview includes prospect and discovery command-center da
   assert.match(route, /nexus_runtime_controls/);
   assert.match(route, /progressPercent/);
   assert.match(route, /promotedProspects/);
+  assert.match(route, /focusProspects/);
+  assert.match(route, /evaluateCorporateProspectReadiness/);
 });
 
 test("Corporate Homes dashboard surfaces prospect progress and CRM promotion state", () => {
@@ -19,4 +21,6 @@ test("Corporate Homes dashboard surfaces prospect progress and CRM promotion sta
   assert.match(page, /B-fit/);
   assert.match(page, /Promotert til CRM/);
   assert.match(page, /Siste discovery/);
+  assert.match(page, /Fokus nå/);
+  assert.match(page, /Klarhet/);
 });

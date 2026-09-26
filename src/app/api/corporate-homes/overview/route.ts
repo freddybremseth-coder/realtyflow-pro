@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-readiness";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
       .limit(1500),
     supabase
       .from("corporate_prospects")
-      .select("id,status,fit_tier,fit_score,converted_contact_id,created_at,updated_at")
+      .select("id,company_name,organization_number,domain,industry,employee_count,employee_band,member_count,organization_type,status,fit_tier,fit_score,fit_reasons,evidence_gaps,decision_roles,source_url,next_action,converted_contact_id,created_at,updated_at")
       .eq("brand_id", "zeneco")
       .limit(1000),
     supabase
@@ -107,6 +108,46 @@ export async function GET(request: NextRequest) {
   }, {});
   const promotedProspects = prospectRows.filter((row: any) => Boolean(row.converted_contact_id)).length;
 
+  const focusProspects = prospectRows
+    .filter((row: any) => !row.converted_contact_id)
+    .filter((row: any) => String(row.status || "").toUpperCase() !== "DISQUALIFIED")
+    .map((row: any) => ({
+      ...row,
+      readiness: evaluateCorporateProspectReadiness(row),
+    }))
+    .filter((row: any) => ["A", "B"].includes(String(row.fit_tier || "").toUpperCase()))
+    .sort((a: any, b: any) => {
+      const qualificationDelta = Number(Boolean(b.readiness?.qualificationReady)) - Number(Boolean(a.readiness?.qualificationReady));
+      if (qualificationDelta) return qualificationDelta;
+      const tierRank = (value: string) => value === "A" ? 2 : value === "B" ? 1 : 0;
+      const tierDelta = tierRank(String(b.fit_tier || "").toUpperCase()) - tierRank(String(a.fit_tier || "").toUpperCase());
+      if (tierDelta) return tierDelta;
+      const readinessDelta = Number(b.readiness?.score || 0) - Number(a.readiness?.score || 0);
+      if (readinessDelta) return readinessDelta;
+      const fitDelta = Number(b.fit_score || 0) - Number(a.fit_score || 0);
+      if (fitDelta) return fitDelta;
+      return Date.parse(String(b.updated_at || "")) - Date.parse(String(a.updated_at || ""));
+    })
+    .slice(0, 8)
+    .map((row: any) => ({
+      id: row.id,
+      companyName: row.company_name,
+      organizationNumber: row.organization_number,
+      domain: row.domain,
+      industry: row.industry,
+      size: ["association", "member_organization"].includes(String(row.organization_type || "").toLowerCase())
+        ? row.member_count ? `${row.member_count.toLocaleString("nb-NO")} medlemmer` : "Medlemsbase ukjent"
+        : row.employee_count ? `${row.employee_count.toLocaleString("nb-NO")} ansatte` : row.employee_band || "Størrelse ukjent",
+      status: String(row.status || "DISCOVERED").toUpperCase(),
+      fitTier: String(row.fit_tier || "UNSCORED").toUpperCase(),
+      fitScore: Number(row.fit_score || 0),
+      fitReasons: Array.isArray(row.fit_reasons) ? row.fit_reasons.slice(0, 3) : [],
+      evidenceGaps: Array.isArray(row.evidence_gaps) ? row.evidence_gaps.slice(0, 3) : [],
+      nextAction: row.next_action || null,
+      sourceUrl: row.source_url || null,
+      readiness: row.readiness,
+    }));
+
   return NextResponse.json({
     corporateHomes: {
       generatedAt: new Date().toISOString(),
@@ -126,6 +167,8 @@ export async function GET(request: NextRequest) {
         bTier: prospectTierCounts.B || 0,
         qualified: (prospectStatusCounts.QUALIFIED || 0) + (prospectStatusCounts.CONTACT_READY || 0),
         promoted: promotedProspects,
+        focusProspects,
+        focusRule: "Klar for menneskelig kvalifisering → A-fit før B-fit → readiness-score → fit-score → sist oppdatert.",
         statusCounts: prospectStatusCounts,
         tierCounts: prospectTierCounts,
         discovery: {

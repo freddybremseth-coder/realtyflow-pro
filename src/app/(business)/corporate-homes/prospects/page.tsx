@@ -465,8 +465,8 @@ export default function CorporateProspectsPage() {
               <span className={`rounded-full px-2.5 py-1 font-bold ${discoveryStatus?.runtimeControl?.enabled ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>
                 Autopilot: {discoveryStatus?.runtimeControl?.enabled ? "På" : "Av"}
               </span>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Mandag 06:10 UTC</span>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Maks 25 per uke</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Daglig 06:10 UTC</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Maks 25 per dag</span>
               <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Ingen outreach</span>
             </div>
             {discoveryStatus?.lastRun?.created_at && (

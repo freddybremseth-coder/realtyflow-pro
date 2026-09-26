@@ -4,7 +4,7 @@ import { CORPORATE_PROSPECT_TARGET } from "@/lib/corporate-prospects";
 
 export const CORPORATE_DISCOVERY_ACTION = "corporate_homes_discovery";
 export const CORPORATE_DISCOVERY_PATH = "/api/cron/corporate-homes-discovery";
-export const CORPORATE_DISCOVERY_WEEKLY_BATCH = 25;
+export const CORPORATE_DISCOVERY_DAILY_BATCH = 25;
 
 function identity(row: Record<string, any>) {
   const org = String(row.organization_number || "").trim();
@@ -41,11 +41,11 @@ export async function runCorporateHomesDiscovery(
   supabase: SupabaseClient,
   options: CorporateDiscoveryRunOptions = {},
 ) {
-  const batchSize = Math.min(100, Math.max(1, Math.round(options.batchSize ?? CORPORATE_DISCOVERY_WEEKLY_BATCH)));
+  const batchSize = Math.min(100, Math.max(1, Math.round(options.batchSize ?? CORPORATE_DISCOVERY_DAILY_BATCH)));
   const minEmployees = Math.max(5, Math.round(options.minEmployees ?? 15));
   const maxEmployees = Math.max(minEmployees, Math.round(options.maxEmployees ?? 500));
   const profile = options.profile ?? "core";
-  const sourceType = options.sourceType || (options.trigger === "manual" ? "brreg_open_data_manual" : "brreg_open_data_weekly");
+  const sourceType = options.sourceType || (options.trigger === "manual" ? "brreg_open_data_manual" : "brreg_open_data_daily");
   const trigger = options.trigger || "cron";
 
   try {

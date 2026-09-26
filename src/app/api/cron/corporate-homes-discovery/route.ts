@@ -6,7 +6,7 @@ import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import {
   CORPORATE_DISCOVERY_PATH,
-  CORPORATE_DISCOVERY_WEEKLY_BATCH,
+  CORPORATE_DISCOVERY_DAILY_BATCH,
   runCorporateHomesDiscovery,
 } from "@/lib/corporate-homes-discovery-runner";
 
@@ -21,7 +21,7 @@ function getSupabase() {
 }
 
 /**
- * Weekly company-level prospect discovery.
+ * Daily company-level prospect discovery until the 250-account target is reached.
  * Uses only Brønnøysundregistrene public entity data.
  * It never enriches people, sends outreach, or promotes prospects to CRM.
  */
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       minEmployees: 15,
       maxEmployees: 500,
       profile: "core",
-      sourceType: "brreg_open_data_weekly",
+      sourceType: "brreg_open_data_daily",
     });
     return NextResponse.json(result);
   } catch (error) {
