@@ -84,6 +84,12 @@ export async function GET(request: NextRequest) {
         "50 ansatte. Én bolig i Spania.",
         "Et langsiktig medlemsfordel-konsept med lokal drift",
       ],
+      policyGuardrails: [
+        "Behandle kampanjen som bolig/eiendom når annonseplattformen krever kategorisering.",
+        "Ikke målrett eller ekskluder basert på beskyttede personopplysninger som kjønn, etnisitet, religion eller andre sensitive kjennetegn.",
+        "På LinkedIn: bruk profesjonelle kriterier som rolle, funksjon og virksomhetstype, og fullfør eventuell housing-sertifisering.",
+        "Ikke lov skattefrihet, avkastning eller juridisk godkjenning i annonseteksten.",
+      ],
       qualificationQuestions: [
         "Hvor mange ansatte eller medlemmer skal ha tilgang?",
         "Hvem tar investeringsbeslutningen, og når?",
