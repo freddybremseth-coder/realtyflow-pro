@@ -141,3 +141,75 @@ export const BRREG_OPEN_DATA_SOURCE = {
   docs: "https://data.brreg.no/enhetsregisteret/api/dokumentasjon/no/index.html",
   endpoint: "https://data.brreg.no/enhetsregisteret/api/enheter",
 } as const;
+
+
+export async function discoverBrregCandidates(input: {
+  minEmployees?: number;
+  maxEmployees?: number;
+  profile?: BrregIndustryProfile;
+  limit?: number;
+  scanPages?: number;
+}) {
+  const minEmployees = Math.max(5, Math.round(input.minEmployees ?? 15));
+  const maxEmployees = Math.max(minEmployees, Math.round(input.maxEmployees ?? 500));
+  const profile = input.profile ?? "core";
+  const limit = Math.min(100, Math.max(1, Math.round(input.limit ?? 50)));
+  const scanPages = Math.min(6, Math.max(1, Math.round(input.scanPages ?? 4)));
+  const collected: BrregEntity[] = [];
+  const warnings: string[] = [];
+
+  for (let page = 0; page < scanPages && collected.length < limit; page += 1) {
+    const query = new URLSearchParams({
+      fraAntallAnsatte: String(minEmployees),
+      tilAntallAnsatte: String(maxEmployees),
+      konkurs: "false",
+      registrertIForetaksregisteret: "true",
+      sort: "antallAnsatte,DESC",
+      size: "100",
+      page: String(page),
+    });
+
+    const url = `${BRREG_OPEN_DATA_SOURCE.endpoint}?${query.toString()}`;
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          Accept: "application/vnd.brreg.enhetsregisteret.enhet.v2+json",
+          "User-Agent": "RealtyFlow Corporate Homes/1.0",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000),
+      });
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : "Brønnøysund-kall feilet.");
+      break;
+    }
+
+    if (!response.ok) {
+      warnings.push(`Brønnøysund svarte ${response.status} på side ${page + 1}.`);
+      break;
+    }
+
+    const body = await response.json().catch(() => null);
+    const entities = Array.isArray(body?._embedded?.enheter)
+      ? body._embedded.enheter as BrregEntity[]
+      : [];
+
+    for (const entity of entities) {
+      if (!isUsableBrregCorporateEntity(entity)) continue;
+      if (!matchesBrregIndustryProfile(entity, profile)) continue;
+      collected.push(entity);
+      if (collected.length >= limit) break;
+    }
+
+    if (!entities.length) break;
+  }
+
+  return {
+    candidates: collected
+      .map((entity) => brregEntityToProspect(entity))
+      .sort((a, b) => Number(b.fit_score || 0) - Number(a.fit_score || 0)),
+    warnings,
+    query: { minEmployees, maxEmployees, profile, limit, scanPages },
+  };
+}
