@@ -28,6 +28,21 @@ function cleanText(value: unknown, max = 2000) {
   return String(value || "").trim().slice(0, max);
 }
 
+export function trackingFromPageUrl(value: string) {
+  if (!value) return {} as Record<string, string>;
+  try {
+    const url = new URL(value);
+    const out: Record<string, string> = {};
+    for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "publication_id", "visitor_id", "session_id"]) {
+      const found = url.searchParams.get(key);
+      if (found) out[key] = found;
+    }
+    return out;
+  } catch {
+    return {} as Record<string, string>;
+  }
+}
+
 function interactionSummary(params: {
   source: string;
   brandLabel: string;
@@ -87,6 +102,7 @@ export async function POST(request: NextRequest) {
   const brandLabel = PUBLIC_REAL_ESTATE_BRAND_LABELS[brandId];
   const source = rawSource || `${brandId}-public-lead`;
   const pageUrl = cleanText(body.page_url || body.pageUrl, 600);
+  const pageTracking = trackingFromPageUrl(pageUrl);
   const propertyRef = cleanText(body.property_ref || body.propertyRef, 120);
   const propertyTitle = cleanText(body.property_title || body.propertyTitle, 240);
   const preferredArea = cleanText(body.preferred_area || body.preferredArea, 160);
@@ -95,13 +111,13 @@ export async function POST(request: NextRequest) {
   const requestType = cleanText(body.request_type || body.requestType, 120);
   const message = cleanText(body.message, 3000);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
-  const visitorId = cleanText(body.visitor_id || body.visitorId, 160);
-  const sessionId = cleanText(body.session_id || body.sessionId, 160);
-  const publicationId = cleanText(body.publication_id || body.publicationId, 160);
-  const utmSource = cleanText(body.utm_source || body.utmSource, 80);
-  const utmMedium = cleanText(body.utm_medium || body.utmMedium, 80);
-  const utmCampaign = cleanText(body.utm_campaign || body.utmCampaign, 120);
-  const utmContent = cleanText(body.utm_content || body.utmContent, 160);
+  const visitorId = cleanText(body.visitor_id || body.visitorId || pageTracking.visitor_id, 160);
+  const sessionId = cleanText(body.session_id || body.sessionId || pageTracking.session_id, 160);
+  const publicationId = cleanText(body.publication_id || body.publicationId || pageTracking.publication_id, 160);
+  const utmSource = cleanText(body.utm_source || body.utmSource || pageTracking.utm_source, 80);
+  const utmMedium = cleanText(body.utm_medium || body.utmMedium || pageTracking.utm_medium, 80);
+  const utmCampaign = cleanText(body.utm_campaign || body.utmCampaign || pageTracking.utm_campaign, 120);
+  const utmContent = cleanText(body.utm_content || body.utmContent || pageTracking.utm_content, 160);
   const rawNotes = cleanText(body.notes, 5000);
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
