@@ -108,7 +108,9 @@ export async function runCorporateHomesDiscovery(
       .slice(0, wanted)
       .map((row: any) => ({
         ...row,
+        status: "RESEARCHED",
         source_type: sourceType,
+        next_action: row.next_action || "Åpne beslutningsgrunnlaget, bekreft target-account fit og kvalifiser menneskelig før CRM-promotering.",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));
@@ -134,6 +136,8 @@ export async function runCorporateHomesDiscovery(
       source: "Brønnøysundregistrene · Enhetsregisteret åpne data",
       personal_contact_enrichment: false,
       outreach_started: false,
+      auto_stage: "RESEARCHED",
+      human_qualification_required: true,
       filters: { minEmployees, maxEmployees, profile },
     };
 
