@@ -6,7 +6,7 @@ const route = fs.readFileSync("src/app/api/cron/corporate-homes-bootstrap/route.
 const vercel = fs.readFileSync("vercel.json", "utf8");
 const registry = fs.readFileSync("src/lib/automation/registry.ts", "utf8");
 
-test("Corporate Homes bootstrap runs hourly until the first batch exists", () => {
+test("Corporate Homes bootstrap runs frequently until the first batch exists", () => {
   assert.match(vercel, /\/api\/cron\/corporate-homes-bootstrap/);
   assert.match(vercel, /25 \* \* \* \*/);
   assert.match(route, /current > 0/);
