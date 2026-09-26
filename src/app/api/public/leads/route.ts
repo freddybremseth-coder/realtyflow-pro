@@ -9,6 +9,10 @@ import {
   buildRevenueEventDedupeKey,
   insertRevenueEvent,
 } from "@/lib/revenue/events";
+import {
+  normalizeCorporateProspect,
+  rescoreCorporateProspect,
+} from "@/lib/corporate-prospects";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,6 +32,45 @@ function cleanText(value: unknown, max = 2000) {
   return String(value || "").trim().slice(0, max);
 }
 
+function positiveInteger(value: unknown) {
+  const parsed = Number(String(value ?? "").replace(/\s/g, ""));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+}
+
+function budgetRange(value: string) {
+  const values = (value.match(/\d[\d\s.]*/g) || [])
+    .map((part) => Number(part.replace(/[\s.]/g, "")))
+    .filter((part) => Number.isFinite(part) && part > 0);
+  if (!values.length) return { min: null as number | null, max: null as number | null };
+  if (/^under\b/i.test(value)) return { min: null, max: values[0] };
+  if (/^over\b/i.test(value)) return { min: values[0], max: null };
+  return {
+    min: Math.min(...values),
+    max: values.length > 1 ? Math.max(...values) : values[0],
+  };
+}
+
+function isMemberOrganisationLabel(value: string) {
+  return /forening|medlems|association|member/i.test(value);
+}
+
+function objectValue(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, any>
+    : {};
+}
+
+function definedEntries(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== null && item !== undefined && item !== ""),
+  );
+}
+
+function inboundProspectStatus(current: unknown) {
+  const status = String(current || "").toUpperCase();
+  return ["MEETING", "OPPORTUNITY"].includes(status) ? status : "ENGAGED";
+}
+
 function interactionSummary(params: {
   source: string;
   brandLabel: string;
@@ -37,6 +80,11 @@ function interactionSummary(params: {
   timeline: string;
   propertyRef: string;
   propertyTitle: string;
+  organizationName?: string;
+  organizationType?: string;
+  contactRole?: string;
+  userCount?: number | null;
+  corporateModel?: string;
   message: string;
 }) {
   return [
@@ -47,6 +95,11 @@ function interactionSummary(params: {
     params.preferredArea ? `Område: ${params.preferredArea}` : "",
     params.budget ? `Budsjett: ${params.budget}` : "",
     params.timeline ? `Tidslinje: ${params.timeline}` : "",
+    params.organizationName ? `Virksomhet: ${params.organizationName}` : "",
+    params.organizationType ? `Organisasjonstype: ${params.organizationType}` : "",
+    params.contactRole ? `Kontaktrolle: ${params.contactRole}` : "",
+    params.userCount ? `Ansatte/medlemmer: ${params.userCount}` : "",
+    params.corporateModel ? `Corporate-modell: ${params.corporateModel}` : "",
     params.message ? `Melding: ${params.message}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -94,6 +147,11 @@ export async function POST(request: NextRequest) {
   const timeline = cleanText(body.timeline, 120);
   const requestType = cleanText(body.request_type || body.requestType, 120);
   const message = cleanText(body.message, 3000);
+  const organizationName = cleanText(body.organization_name || body.organizationName, 240);
+  const organizationType = cleanText(body.organization_type || body.organizationType, 120);
+  const contactRole = cleanText(body.contact_role || body.contactRole, 160);
+  const userCount = positiveInteger(body.user_count || body.userCount);
+  const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
   const visitorId = cleanText(body.visitor_id || body.visitorId, 160);
   const sessionId = cleanText(body.session_id || body.sessionId, 160);
@@ -123,6 +181,11 @@ export async function POST(request: NextRequest) {
     body.property_type ? `Boligtype: ${cleanText(body.property_type, 120)}` : "",
     body.bedrooms ? `Soverom: ${cleanText(body.bedrooms, 40)}` : "",
     timeline ? `Tidslinje: ${timeline}` : "",
+    organizationName ? `Virksomhet: ${organizationName}` : "",
+    organizationType ? `Organisasjonstype: ${organizationType}` : "",
+    contactRole ? `Kontaktrolle: ${contactRole}` : "",
+    userCount ? `Ansatte/medlemmer: ${userCount}` : "",
+    corporateModel ? `Corporate-modell: ${corporateModel}` : "",
     utmSource || utmCampaign || utmContent
       ? `UTM: ${utmSource} / ${utmCampaign} / ${utmContent}`
       : "",
@@ -142,7 +205,10 @@ export async function POST(request: NextRequest) {
   const incomingInteraction = {
     id: submissionId ? `website-${submissionId}` : `website-${Date.now()}`,
     type: "note",
-    content: interactionSummary({ source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle, message }),
+    content: interactionSummary({
+      source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle,
+      organizationName, organizationType, contactRole, userCount, corporateModel, message,
+    }),
     date: now,
     direction: "in",
     brand_id: brandId,
@@ -155,6 +221,11 @@ export async function POST(request: NextRequest) {
       visitor_id: visitorId || null,
       session_id: sessionId || null,
       page_url: pageUrl || null,
+      organization_name: organizationName || null,
+      organization_type: organizationType || null,
+      contact_role: contactRole || null,
+      user_count: userCount,
+      corporate_model: corporateModel || null,
     },
   };
   const existingInteractions = Array.isArray(existing?.interactions) ? existing.interactions : [];
@@ -193,6 +264,133 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  let corporateProspect: Record<string, any> | null = null;
+  if (isCorporateHome && organizationName) {
+    const range = budgetRange(budget);
+    const memberOrganisation = isMemberOrganisationLabel(organizationType);
+    const assessment = definedEntries({
+      model: corporateModel || null,
+      budget_label: budget || null,
+      budget_min_eur: range.min,
+      budget_max_eur: range.max,
+      expected_users: userCount,
+      preferred_area: preferredArea || null,
+      timeline: timeline || null,
+      contact_role: contactRole || null,
+      inbound_request: true,
+      updated_at: now,
+    });
+
+    const { data: candidateProspects, error: candidateError } = await supabase
+      .from("corporate_prospects")
+      .select("*")
+      .eq("brand_id", "zeneco")
+      .limit(1000);
+
+    if (candidateError) {
+      console.warn("[public-leads] corporate prospect lookup failed", candidateError.message);
+    } else {
+      const existingProspect = (candidateProspects || []).find(
+        (row: any) => String(row.company_name || "").trim().toLocaleLowerCase("nb-NO")
+          === organizationName.toLocaleLowerCase("nb-NO"),
+      ) || null;
+
+      if (existingProspect) {
+        const existingEvidence = objectValue(existingProspect.evidence);
+        const existingAssessment = objectValue(existingEvidence.corporate_assessment);
+        const mergedEvidence = {
+          ...existingEvidence,
+          inbound_request: true,
+          inbound_last_at: now,
+          inbound_contact_role: contactRole || existingEvidence.inbound_contact_role || null,
+          inbound_utm: definedEntries({
+            source: utmSource || null,
+            medium: utmMedium || null,
+            campaign: utmCampaign || null,
+            content: utmContent || null,
+          }),
+          corporate_assessment: { ...existingAssessment, ...assessment },
+        };
+        const mergedProspect = {
+          ...existingProspect,
+          status: inboundProspectStatus(existingProspect.status),
+          converted_contact_id: data.id,
+          employee_count: existingProspect.employee_count ?? (!memberOrganisation ? userCount : null),
+          member_count: existingProspect.member_count ?? (memberOrganisation ? userCount : null),
+          source_url: existingProspect.source_url || pageUrl || null,
+          evidence: mergedEvidence,
+          next_action: "Inbound Corporate Home Assessment: følg opp personlig og bruk assessment-data til discovery og boligmatch.",
+          updated_at: now,
+        };
+        const score = rescoreCorporateProspect(mergedProspect);
+        const { data: updatedProspect, error: updateProspectError } = await supabase
+          .from("corporate_prospects")
+          .update({
+            status: mergedProspect.status,
+            converted_contact_id: data.id,
+            employee_count: mergedProspect.employee_count,
+            member_count: mergedProspect.member_count,
+            source_url: mergedProspect.source_url,
+            evidence: mergedEvidence,
+            next_action: mergedProspect.next_action,
+            ...score,
+            updated_at: now,
+          })
+          .eq("id", existingProspect.id)
+          .select("*")
+          .single();
+
+        if (updateProspectError) {
+          console.warn("[public-leads] corporate prospect update failed", updateProspectError.message);
+        } else {
+          corporateProspect = updatedProspect;
+        }
+      } else {
+        const normalized = normalizeCorporateProspect({
+          company_name: organizationName,
+          organization_type: organizationType,
+          country_code: "NO",
+          employee_count: memberOrganisation ? null : userCount,
+          member_count: memberOrganisation ? userCount : null,
+          status: "ENGAGED",
+          source_type: "inbound_website",
+          source_url: pageUrl || null,
+          evidence: {
+            inbound_request: true,
+            inbound_first_at: now,
+            inbound_last_at: now,
+            inbound_contact_role: contactRole || null,
+            inbound_utm: definedEntries({
+              source: utmSource || null,
+              medium: utmMedium || null,
+              campaign: utmCampaign || null,
+              content: utmContent || null,
+            }),
+            corporate_assessment: assessment,
+          },
+          notes: "Inbound Corporate Home Assessment request from zenecohomes.com.",
+          next_action: "Følg opp personlig og bruk innsendt assessment til discovery og boligmatch.",
+        });
+        const { data: createdProspect, error: createProspectError } = await supabase
+          .from("corporate_prospects")
+          .insert({
+            ...normalized,
+            converted_contact_id: data.id,
+            created_at: now,
+            updated_at: now,
+          })
+          .select("*")
+          .single();
+
+        if (createProspectError) {
+          console.warn("[public-leads] corporate prospect create failed", createProspectError.message);
+        } else {
+          corporateProspect = createdProspect;
+        }
+      }
+    }
+  }
+
   await supabase.from("work_items").insert({
     title: `${existing?.id ? "Ny aktivitet fra" : `Ny ${brandLabel}-lead:`} ${name}`,
     description: `${email}${preferredArea || incomingPropertyInterest ? ` · ${preferredArea || incomingPropertyInterest}` : ""}${budget || pipelineValue ? ` · ${budget || `€${pipelineValue}`}` : ""}`,
@@ -229,6 +427,12 @@ export async function POST(request: NextRequest) {
       utm_medium: utmMedium || null,
       utm_campaign: utmCampaign || null,
       utm_content: utmContent || null,
+      organization_name: organizationName || null,
+      organization_type: organizationType || null,
+      contact_role: contactRole || null,
+      user_count: userCount,
+      corporate_model: corporateModel || null,
+      corporate_prospect_id: corporateProspect?.id || null,
     },
     created_at: now,
     updated_at: now,
@@ -238,7 +442,10 @@ export async function POST(request: NextRequest) {
   const eventResult = await insertRevenueEvent(supabase, {
     eventType: existing?.id ? "contact_updated" : "lead_created",
     title: existing?.id ? `Ny public aktivitet: ${name}` : `Ny public lead: ${name}`,
-    description: interactionSummary({ source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle, message }),
+    description: interactionSummary({
+      source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle,
+      organizationName, organizationType, contactRole, userCount, corporateModel, message,
+    }),
     contactId: data.id,
     brandId,
     sourceSystem: "public_leads",
@@ -270,6 +477,12 @@ export async function POST(request: NextRequest) {
       utm_medium: utmMedium || null,
       utm_campaign: utmCampaign || null,
       utm_content: utmContent || null,
+      organization_name: organizationName || null,
+      organization_type: organizationType || null,
+      contact_role: contactRole || null,
+      user_count: userCount,
+      corporate_model: corporateModel || null,
+      corporate_prospect_id: corporateProspect?.id || null,
     },
     createdBy: "api/public/leads",
   });
@@ -278,5 +491,12 @@ export async function POST(request: NextRequest) {
     console.warn("[public-leads] revenue event insert failed", eventResult.error);
   }
 
-  return NextResponse.json({ success: true, contact: data, brandId });
+  return NextResponse.json({
+    success: true,
+    contact: data,
+    brandId,
+    corporateProspect: corporateProspect
+      ? { id: corporateProspect.id, status: corporateProspect.status, fitTier: corporateProspect.fit_tier }
+      : null,
+  });
 }
