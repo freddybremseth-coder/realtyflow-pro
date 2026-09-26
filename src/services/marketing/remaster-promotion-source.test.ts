@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { pickRemasterPromotionSource, remasterPromotionMasterIdea, remasterPromotionMediaUrl, remasterPromotionTitleFamily, remasterYoutubeVideoId, type RemasterPromotionSource } from "./remaster-promotion-source";
+import { pickRemasterPromotionSource, remasterPromotionMasterIdea, remasterPromotionMediaType, remasterPromotionMediaUrl, remasterPromotionTitleFamily, remasterYoutubeVideoId, type RemasterPromotionSource } from "./remaster-promotion-source";
 
 function source(overrides: Partial<RemasterPromotionSource> = {}): RemasterPromotionSource {
   return {
@@ -82,6 +82,27 @@ describe("Re-Master promotion source", () => {
     assert.ok(idea.includes("Do not replace the selected song"));
     assert.equal(remasterYoutubeVideoId(row), "abc123");
     assert.equal(remasterPromotionMediaUrl(row), "https://i.ytimg.com/vi/abc123/hqdefault.jpg");
+  });
+
+  it("prefers the best scored social Reel variant over a silent thumbnail", () => {
+    const row = source({
+      payload: {
+        youtube_url: "https://www.youtube.com/watch?v=abc123",
+        ai_metadata: {
+          socialReelVariants: [
+            { url: "https://cdn.example.com/v1.mp4", rank: 1, score: 2 },
+            { url: "https://cdn.example.com/v2.mp4", rank: 2, score: 8 },
+          ],
+        },
+      },
+    });
+    assert.equal(remasterPromotionMediaUrl(row), "https://cdn.example.com/v2.mp4");
+    assert.equal(remasterPromotionMediaType(row), "reel");
+  });
+
+  it("keeps static YouTube artwork typed as image when no Reel exists", () => {
+    const row = source();
+    assert.equal(remasterPromotionMediaType(row), "image");
   });
 
   it("extracts verified YouTube ids from short and shorts URLs", () => {
