@@ -8,7 +8,7 @@ import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 import { buildRemasterMixGlobalAssOverlay, buildVisualConcatFile } from "./remaster-mix-video-compat";
-import { ZENECO_PRESENTED_PNG_BASE64 } from "./zeneco-brand-asset";
+import { ZENECO_LOGO_PNG_URL } from "@/lib/brand-assets";
 
 const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
@@ -189,12 +189,7 @@ async function downloadLogo(url: string | null | undefined, workingDirectory: st
 }
 
 async function resolveZenEcoPresentedLogo(url: string | null | undefined, workingDirectory: string) {
-  if (url) return downloadLogo(url, workingDirectory, "zeneco-presented.png");
-  const target = path.join(workingDirectory, "zeneco-presented.png");
-  await fs.writeFile(target, Buffer.from(ZENECO_PRESENTED_PNG_BASE64, "base64"));
-  const stat = await fs.stat(target);
-  if (stat.size <= 1024) throw new Error("Embedded ZenEcoHomes sponsor logo is unexpectedly small.");
-  return target;
+  return downloadLogo(url || ZENECO_LOGO_PNG_URL, workingDirectory, "zeneco-logo.png");
 }
 
 function escapeAssFilterPath(value: string) {

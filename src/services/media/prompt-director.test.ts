@@ -46,3 +46,21 @@ test("promptPlanHash is stable for idempotent plan caching", () => {
   });
   assert.equal(promptPlanHash(plan), promptPlanHash({ ...plan }));
 });
+
+
+test("Prompt Director locks the approved Zen Eco Homes visual identity", () => {
+  const plan = createMediaPromptPlan({
+    request: "Lag et Instagram-innlegg for Zen Eco Homes med en moderne villa på Costa Blanca.",
+    mode: "simple",
+    brandId: "zeneco",
+    sourceImageUrls: [],
+    allowText: false,
+  });
+
+  assert.equal(plan.brandId, "zeneco");
+  assert.match(plan.optimizedPrompt, /Modern Mediterranean Living/);
+  assert.match(plan.optimizedPrompt, /#0B4F59/);
+  assert.match(plan.optimizedPrompt, /#D4A84D/);
+  assert.match(plan.optimizedPrompt, /approved Zen Eco Homes logo asset/);
+  assert.match(plan.optimizedPrompt, /old black ZE identity/);
+});

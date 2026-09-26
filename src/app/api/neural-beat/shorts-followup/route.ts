@@ -8,7 +8,7 @@ import {
 } from '@/services/integrations/shorts-generator';
 import { uploadVideo } from '@/services/integrations/youtube-client';
 import { publishMissingShort } from '@/services/pipelines/remaster-art-short-publish';
-import { loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from '@/services/pipelines/remaster-song-art';
+import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from '@/services/pipelines/remaster-song-art';
 import {
   getGenreImages,
   getLatestLogoUrl,
@@ -79,9 +79,13 @@ export async function GET(request: NextRequest) {
     // failed after the full YouTube upload.
     const missingInitial = (songs || []).find((song) => {
       const meta = song.ai_metadata || {};
-      // Only retry ordinary music when its initial Short explicitly failed,
-      // so old completed tracks without Shorts are not mass-published.
-      const art = ['meditation','relaxing','alternative'].includes(meta.artVisualMode);
+      const inferredMode = classifyArtVisualMode({
+        title: song.name, genre: song.genre || undefined, mood: song.mood || undefined, metadata: meta,
+      });
+      // Calm/healing title intent can recover a missing Short even when an old
+      // run stored stale EDM metadata and never persisted artVisualMode.
+      const art = ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
+        || ['meditation','relaxing','alternative'].includes(String(inferredMode));
       return !meta.shortsUrl && meta.shortsStatus !== 'needs-reconciliation'
         && (art || meta.shortsStatus === 'failed');
     });
@@ -127,8 +131,12 @@ export async function GET(request: NextRequest) {
       ? Math.max(0, sections[0] - 3)
       : Math.max(0, usedStarts.length * 45); // spread heuristically if detection fails
 
-    const artMode: ArtVisualMode = ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
+    const storedMode: ArtVisualMode = ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
       ? meta.artVisualMode as ArtVisualMode : null;
+    const inferredMode = classifyArtVisualMode({
+      title: candidate.name, genre: candidate.genre || undefined, mood: candidate.mood || undefined, metadata: meta,
+    });
+    const artMode: ArtVisualMode = storedMode || inferredMode;
     // ── Artwork follow-ups reuse ONLY published public gallery previews.
     // Do not insert EDM/party imagery into a meditation artwork Short.
     const genreImages = artMode ? [] : await getGenreImages(candidate.genre || 'dance', 4).catch(() => []);
