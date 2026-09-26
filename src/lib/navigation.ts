@@ -23,7 +23,7 @@ const NEXUS_INBOX_NAV_ITEM: NavigationItem = { label: "Innboks", href: "/nexus-o
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id:"workspace", label:"Hjem", icon:"PanelsTopLeft", hrefs:["/nexus-os/today","/nexus-os/focus","/personal-intelligence","/nexus-os/inbox","/nexus-os/communications","/approvals","/","/today"] },
-  { id:"customers", label:"Kunder & salg", icon:"Users", hrefs:["/customers","/lead-intelligence","/execution","/automation/nurture","/recovery","/calendar","/booking-admin","/closing","/closing-pack","/after-sales","/communications"] },
+  { id:"customers", label:"Kunder & salg", icon:"Users", hrefs:["/customers","/corporate-homes","/lead-intelligence","/execution","/automation/nurture","/recovery","/calendar","/booking-admin","/closing","/closing-pack","/after-sales","/communications"] },
   { id:"properties", label:"Eiendom", icon:"Building2", hrefs:["/inventory","/inventory/property-360","/scanner","/tomtebase","/areas","/valuation","/document-hub"] },
   { id:"marketing", label:"Markedsføring & innhold", icon:"Megaphone", hrefs:["/growth-hub","/social-automation","/nexus-os/brand-brain","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
   { id:"publishing", label:"Bøker & media", icon:"BookOpen", hrefs:["/publishing","/publishing/forfatterstudio","/book-growth","/youtube-studio","/remaster-freddy"] },
