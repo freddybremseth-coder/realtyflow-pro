@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isLikelyBot } from "@/lib/spam";
+import { corporateLeadProfile, parseBudgetEstimate } from "@/lib/corporate-homes";
 import {
   PUBLIC_REAL_ESTATE_BRAND_LABELS,
   resolvePublicLeadBrand,
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
   const rawNotes = cleanText(body.notes, 5000);
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
-  const pipelineValue = incomingPipelineValue || (budget ? Number(budget.replace(/[^0-9]/g, "")) || 0 : 0);
+  const pipelineValue = incomingPipelineValue || parseBudgetEstimate(budget);
 
   const notes = [
     `Brand: ${brandLabel}`,
@@ -150,6 +151,9 @@ export async function POST(request: NextRequest) {
       visitor_id: visitorId || null,
       session_id: sessionId || null,
       page_url: pageUrl || null,
+      request_type: requestType || null,
+      source: source || null,
+      corporate_home: requestType === "corporate-home" || source.includes("corporate"),
     },
   };
   const existingInteractions = Array.isArray(existing?.interactions) ? existing.interactions : [];
@@ -162,6 +166,13 @@ export async function POST(request: NextRequest) {
   const canonicalBrandId = existing?.id
     ? resolvePublicLeadBrand(existing.brand_id || existing.brand, source)
     : brandId;
+  const corporateProfile = corporateLeadProfile({
+    source,
+    notes,
+    interactions: [incomingInteraction, ...existingInteractions],
+    pipeline_status: nextStatus,
+    pipeline_value: pipelineValue,
+  });
 
   const contactPayload = {
     name,
@@ -189,19 +200,23 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await supabase.from("work_items").insert({
-    title: `${existing?.id ? "Ny aktivitet fra" : `Ny ${brandLabel}-lead:`} ${name}`,
+    title: corporateProfile.isCorporate
+      ? `${existing?.id ? "Ny Corporate-aktivitet fra" : "Ny Zen Corporate-lead:"} ${name}`
+      : `${existing?.id ? "Ny aktivitet fra" : `Ny ${brandLabel}-lead:`} ${name}`,
     description: `${email}${preferredArea || incomingPropertyInterest ? ` · ${preferredArea || incomingPropertyInterest}` : ""}${budget || pipelineValue ? ` · ${budget || `€${pipelineValue}`}` : ""}`,
     status: "TO_DO",
-    priority: pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM",
+    priority: corporateProfile.isCorporate ? corporateProfile.priority : (pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM"),
     due_date: new Date().toISOString().slice(0, 10),
     brand_id: brandId,
     source_type: "website_lead",
     source_id: data.id,
     assigned_agent: "sales",
-    next_action: existing?.id
-      ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
-      : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
-    ai_score: pipelineValue >= 500000 || propertyRef ? 86 : 68,
+    next_action: corporateProfile.isCorporate
+      ? corporateProfile.nextAction
+      : existing?.id
+        ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
+        : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
+    ai_score: corporateProfile.isCorporate ? corporateProfile.score : (pipelineValue >= 500000 || propertyRef ? 86 : 68),
     metadata: {
       page_url: pageUrl,
       property_ref: propertyRef,
@@ -220,6 +235,15 @@ export async function POST(request: NextRequest) {
       utm_medium: utmMedium || null,
       utm_campaign: utmCampaign || null,
       utm_content: utmContent || null,
+      request_type: requestType || null,
+      corporate_home: corporateProfile.isCorporate,
+      corporate_score: corporateProfile.isCorporate ? corporateProfile.score : null,
+      corporate_stage: corporateProfile.isCorporate ? corporateProfile.stageLabel : null,
+      organization: corporateProfile.organization,
+      organization_type: corporateProfile.organizationType,
+      users: corporateProfile.users,
+      decision_role: corporateProfile.role,
+      corporate_model: corporateProfile.model,
     },
     created_at: now,
     updated_at: now,
@@ -236,7 +260,7 @@ export async function POST(request: NextRequest) {
     sourceType: "website_form",
     sourceId: revenueSourceId,
     actorType: "customer",
-    confidenceScore: pipelineValue >= 500000 || propertyRef ? 86 : 68,
+    confidenceScore: corporateProfile.isCorporate ? corporateProfile.score : (pipelineValue >= 500000 || propertyRef ? 86 : 68),
     revenueImpactEur: pipelineValue || null,
     occurredAt: now,
     dedupeKey: buildRevenueEventDedupeKey(["public_leads", brandId, revenueSourceId]),
