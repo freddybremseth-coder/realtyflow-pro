@@ -7,6 +7,7 @@ import { isApprovedArtPreviewUrl } from "./remaster-mix-art-thumbnail";
 import type { PromotionItem } from "./remaster-mix-promotions";
 import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
 import type { RemasterMixRegion, RemasterMixVisualType } from "./remaster-mix-planner";
+import { ZENECO_WATERMARK_SVG_URL } from "@/lib/brand-assets";
 
 export type ReelBrand = "art" | "books" | "zeneco" | "freddybremseth" | "pinosoecolife" | "donaanna";
 export type ReelChannel = "instagram"|"facebook";
@@ -143,7 +144,9 @@ export async function renderPortfolioReel(input:ReelRenderInput):Promise<ReelRen
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),"remaster-portfolio-reel-"));
   try{
     const audio=path.join(dir,"audio.mp3"),ass=path.join(dir,"overlay.ass"),out=path.join(dir,"reel.mp4");
+    const zenLogo=input.brand==="zeneco"?path.join(dir,"zeneco-watermark.svg"):null;
     await download(input.song.audioUrl,audio,50*1024*1024);
+    if(zenLogo) await download(ZENECO_WATERMARK_SVG_URL,zenLogo,2*1024*1024);
     await fs.writeFile(ass,buildAss(input));
     const files:string[]=[];
     for(let i=0;i<imageUrls.length;i++){
@@ -155,14 +158,22 @@ export async function renderPortfolioReel(input:ReelRenderInput):Promise<ReelRen
     const args=["-hide_banner","-loglevel","error"];
     for(const file of files)args.push("-loop","1","-framerate","24","-t",segment.toFixed(3),"-i",file);
     args.push("-stream_loop","-1","-ss","10","-i",audio);
+    if(zenLogo) args.push("-framerate","1","-i",zenLogo);
     const filters:string[]=[];
     for(let i=0;i<files.length;i++)filters.push(
       `[${i}:v]scale=1080:1540:force_original_aspect_ratio=decrease,pad=1080:1540:(ow-iw)/2:(oh-ih)/2:color=0x0a1724,fps=24,trim=duration=${segment.toFixed(3)},setsar=1,setpts=PTS-STARTPTS[v${i}]`
     );
     filters.push(files.map((_,i)=>"[v"+i+"]").join("")+`concat=n=${files.length}:v=1:a=0[gallery]`);
     filters.push(`[gallery]pad=1080:1920:0:190:color=0x07131f[canvas]`);
-    filters.push(`[canvas]ass=filename='${assPath(ass)}',format=yuv420p[vout]`);
+    filters.push(`[canvas]ass=filename='${assPath(ass)}'[texted]`);
     const audioIndex=files.length;
+    const zenLogoIndex=zenLogo?files.length+1:null;
+    if(zenLogoIndex!==null){
+      filters.push(`[${zenLogoIndex}:v]scale=410:-1:force_original_aspect_ratio=decrease[zenlogo]`);
+      filters.push(`[texted][zenlogo]overlay=W-w-34:H-h-150:format=auto,format=yuv420p[vout]`);
+    } else {
+      filters.push("[texted]format=yuv420p[vout]");
+    }
     args.push("-filter_complex",filters.join(";"),"-map","[vout]","-map",`${audioIndex}:a:0`,
       "-t",String(input.durationSeconds),"-r","24","-c:v","libx264","-preset","ultrafast","-crf","27",
       "-pix_fmt","yuv420p","-c:a","aac","-ar","48000","-b:a","128k","-movflags","+faststart","-y",out);
