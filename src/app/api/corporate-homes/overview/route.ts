@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-readiness";
+import { corporateArticleUrl, corporateOrganicTopicsForWeek } from "@/lib/corporate-organic-content";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -191,6 +192,13 @@ export async function GET(request: NextRequest) {
         draftsPerWeek: 3,
         platforms: ["linkedin", "facebook"],
         externalPublishing: false,
+        nextTopics: corporateOrganicTopicsForWeek(new Date()).map((topic) => ({
+          slug: topic.slug,
+          title: topic.title,
+          hook: topic.hook,
+          teaser: topic.teaser,
+          url: corporateArticleUrl(topic.slug),
+        })),
         lastRun: lastContentDraftRun || null,
       },
       stages,
