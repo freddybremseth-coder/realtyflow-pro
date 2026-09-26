@@ -306,7 +306,7 @@ export function normalizeCorporateProspect(input: CorporateProspectInput) {
     source_url: nullableText(input.source_url, 700),
     evidence:
       input.evidence && typeof input.evidence === "object" && !Array.isArray(input.evidence)
-        ? input.evidence
+        ? input.evidence as Record<string, unknown>
         : {},
     notes: nullableText(input.notes, 5000),
     next_action: nullableText(input.next_action, 1000),
