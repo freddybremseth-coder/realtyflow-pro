@@ -18,6 +18,7 @@ export type CorporateDecisionBriefInput = {
   source_url?: string | null;
   status?: string | null;
   next_action?: string | null;
+  evidence?: Record<string, unknown> | null;
 };
 
 function nonEmpty(values: Array<string | null | undefined>) {
@@ -35,6 +36,48 @@ function sizeLabel(input: CorporateDecisionBriefInput) {
     return `${input.employee_count.toLocaleString("nb-NO")} ansatte`;
   }
   return input.employee_band || "Antall ansatte ikke kartlagt";
+}
+
+type CorporateAssessment = {
+  model: string | null;
+  budgetMinEur: number | null;
+  budgetMaxEur: number | null;
+  expectedUsers: number | null;
+  usageWeeksPerYear: number | null;
+  preferredArea: string | null;
+  bedroomsMin: number | null;
+  propertyType: string | null;
+  ownershipYears: number | null;
+  airportMaxMinutes: number | null;
+};
+
+function numberValue(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function stringValue(value: unknown) {
+  const s = String(value ?? "").trim();
+  return s || null;
+}
+
+function assessmentFromEvidence(input: CorporateDecisionBriefInput): CorporateAssessment {
+  const root = input.evidence && typeof input.evidence === "object" ? input.evidence : {};
+  const raw = root.corporate_assessment && typeof root.corporate_assessment === "object"
+    ? root.corporate_assessment as Record<string, unknown>
+    : {};
+  return {
+    model: stringValue(raw.model),
+    budgetMinEur: numberValue(raw.budget_min_eur),
+    budgetMaxEur: numberValue(raw.budget_max_eur),
+    expectedUsers: numberValue(raw.expected_users),
+    usageWeeksPerYear: numberValue(raw.usage_weeks_per_year),
+    preferredArea: stringValue(raw.preferred_area),
+    bedroomsMin: numberValue(raw.bedrooms_min),
+    propertyType: stringValue(raw.property_type),
+    ownershipYears: numberValue(raw.ownership_years),
+    airportMaxMinutes: numberValue(raw.airport_max_minutes),
+  };
 }
 
 function workingModel(input: CorporateDecisionBriefInput) {
@@ -66,7 +109,10 @@ function workingModel(input: CorporateDecisionBriefInput) {
 }
 
 export function buildCorporateDecisionBrief(input: CorporateDecisionBriefInput) {
-  const model = workingModel(input);
+  const assessment = assessmentFromEvidence(input);
+  const model = assessment.model
+    ? { label: assessment.model, rationale: "Modellen er valgt i Corporate Home Assessment og brukes videre i boligmatching." }
+    : workingModel(input);
   const fitReasons = Array.isArray(input.fit_reasons) ? input.fit_reasons : [];
   const gaps = Array.isArray(input.evidence_gaps) ? input.evidence_gaps : [];
   const roles = Array.isArray(input.decision_roles) && input.decision_roles.length
@@ -90,11 +136,20 @@ export function buildCorporateDecisionBrief(input: CorporateDecisionBriefInput) 
     "Hvordan skal booking, renhold, nøkkelhold, vedlikehold og årlig kontroll organiseres?",
   ];
 
+  const assessmentReady = Boolean(
+    assessment.budgetMaxEur &&
+    assessment.expectedUsers &&
+    assessment.usageWeeksPerYear &&
+    assessment.preferredArea &&
+    assessment.bedroomsMin &&
+    assessment.propertyType,
+  );
+
   const boardChecklist = [
-    { label: "Formål og målgruppe", status: "open", note: "Må bekreftes i discovery." },
-    { label: "Bruks- og bookingmodell", status: "open", note: "Antall brukere, uker og fordelingsregler må avklares." },
-    { label: "Investeringsramme", status: "open", note: "Kjøpsbudsjett og årlige driftskostnader er ikke fastsatt." },
-    { label: "Bolig- og områdekriterier", status: "open", note: "Shortlist bør først lages når bruk og budsjett er avklart." },
+    { label: "Formål og målgruppe", status: assessment.expectedUsers ? "ready" : "open", note: assessment.expectedUsers ? `${assessment.expectedUsers} forventede brukere er registrert.` : "Må bekreftes i discovery." },
+    { label: "Bruks- og bookingmodell", status: assessment.usageWeeksPerYear ? "ready" : "open", note: assessment.usageWeeksPerYear ? `${assessment.usageWeeksPerYear} planlagte bruksuker per år.` : "Antall brukere, uker og fordelingsregler må avklares." },
+    { label: "Investeringsramme", status: assessment.budgetMaxEur ? "ready" : "open", note: assessment.budgetMaxEur ? `Budsjett opptil €${assessment.budgetMaxEur.toLocaleString("nb-NO")}.` : "Kjøpsbudsjett og årlige driftskostnader er ikke fastsatt." },
+    { label: "Bolig- og områdekriterier", status: assessmentReady ? "ready" : "open", note: assessmentReady ? `${assessment.propertyType}, minimum ${assessment.bedroomsMin} soverom, område: ${assessment.preferredArea}.` : "Shortlist bør først lages når bruk og budsjett er avklart." },
     { label: "Skatt og juridisk struktur", status: "external", note: "Må kvalitetssikres av kvalifiserte norske/spanske rådgivere." },
     { label: "Lokal drift", status: "available", note: "Zen Care kan brukes som operativ modell etter kjøp." },
     { label: "Beslutningsprosess", status: "open", note: "Kartlegg beslutningstakere, styrebehandling og ønsket tidslinje." },
@@ -121,10 +176,28 @@ export function buildCorporateDecisionBrief(input: CorporateDecisionBriefInput) 
       facts,
     },
     workingModel: model,
+    assessment: {
+      ...assessment,
+      readyForPropertyMatch: assessmentReady,
+    },
+    propertyMatchCriteria: nonEmpty([
+      assessment.budgetMinEur || assessment.budgetMaxEur
+        ? `Budsjett: ${assessment.budgetMinEur ? `€${assessment.budgetMinEur.toLocaleString("nb-NO")}` : "åpent"}–${assessment.budgetMaxEur ? `€${assessment.budgetMaxEur.toLocaleString("nb-NO")}` : "åpent"}`
+        : null,
+      assessment.preferredArea ? `Område: ${assessment.preferredArea}` : null,
+      assessment.propertyType ? `Boligtype: ${assessment.propertyType}` : null,
+      assessment.bedroomsMin ? `Minimum ${assessment.bedroomsMin} soverom` : null,
+      assessment.expectedUsers ? `${assessment.expectedUsers} forventede brukere` : null,
+      assessment.usageWeeksPerYear ? `${assessment.usageWeeksPerYear} planlagte bruksuker per år` : null,
+      assessment.ownershipYears ? `Eierhorisont: ${assessment.ownershipYears} år` : null,
+      assessment.airportMaxMinutes ? `Maks ${assessment.airportMaxMinutes} min til flyplass` : null,
+    ]),
     buyingCommittee: roles,
     discoveryQuestions,
     boardChecklist,
-    nextStep: input.next_action || "Gjennomfør en 20–30 minutters Corporate Homes discovery før boligmatching eller økonomisk forslag.",
+    nextStep: input.next_action || (assessmentReady
+      ? "Corporate Home Assessment er klar nok til at RealtyFlow kan lage en konkret boligshortlist."
+      : "Gjennomfør en 20–30 minutters Corporate Homes discovery og fyll ut assessment før boligmatching."),
     guardrails: [
       "Dette er et internt arbeidsgrunnlag, ikke skatte-, juridisk- eller investeringsråd.",
       "Ukjente forhold skal stå som åpne spørsmål; de skal ikke fylles med antakelser.",
