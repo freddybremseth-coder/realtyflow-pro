@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { generateArtShortFromAudio, generateShortFromAudio, buildShortsTitle } from '@/services/integrations/shorts-generator';
+import { generateArtShortFromAudio, generateShortFromAudio, buildShortsTitle, detectTopSections } from '@/services/integrations/shorts-generator';
 import { getGenreImages } from '@/services/integrations/airtable-client';
 import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from './remaster-song-art';
 import { uploadVideo } from '@/services/integrations/youtube-client';
@@ -77,6 +77,9 @@ export async function publishMissingShort(songId: string): Promise<{
   if (!claim) return { status: 'processing', shortUrl: null, videoUrl: song.youtube_url };
   try {
     const audioBuffer = await loadBuffer(song.file_url);
+    let standardImages: Buffer[] = [];
+    let artVariantArtwork: Buffer | null = null;
+    let socialVariantStarts: number[] = [];
     // Artwork uses curated public previews; ordinary music uses saved genre
     // images and the existing MP3. Never upload the main YouTube video again.
     const short = artMode
@@ -84,9 +87,11 @@ export async function publishMissingShort(songId: string): Promise<{
           const gallery = await loadSongArtGallery(songId, mode!);
           if (gallery.length === 0) throw new Error('No published public art previews for Short');
           const artworkBuffer = await loadBuffer(gallery[0].imageUrl);
+          artVariantArtwork = artworkBuffer;
           const result = await generateArtShortFromAudio({
             audioBuffer, artworkBuffer, title: song.name, category: mode!, targetDuration: 35,
           });
+          socialVariantStarts = [result.startSeconds, result.startSeconds + 45, result.startSeconds + 90];
           return { videoBuffer: result.videoBuffer, startSeconds: result.startSeconds };
         })()
       : await (async () => {
@@ -111,7 +116,12 @@ export async function publishMissingShort(songId: string): Promise<{
           if (!images.length) {
             throw new Error('No downloadable genre images for this music Short (checked ' + records.length + ' image records)');
           }
-          const startSeconds = 0;
+          standardImages = images;
+          const ranked = await detectTopSections(audioBuffer).catch(() => [] as number[]);
+          socialVariantStarts = (ranked.length ? ranked : [0])
+            .map((t) => Math.max(0, t - 3))
+            .slice(0, 3);
+          const startSeconds = socialVariantStarts[0] ?? 0;
           const result = await generateShortFromAudio({
             audioBuffer, imageBuffers: images, startTime: startSeconds,
             hook: song.ai_metadata?.shortsHook || song.mood?.toUpperCase() || 'NEW MUSIC',
@@ -137,20 +147,67 @@ export async function publishMissingShort(songId: string): Promise<{
       categoryId: '10', privacyStatus: 'public', defaultAudioLanguage: 'zxx',
     }, BRAND, { requireBrandToken: true });
 
-    // Keep the rendered MP4 as a reusable social asset. This lets Facebook use
-    // the actual music Reel instead of falling back to a silent thumbnail post.
+    // Keep 2-3 reusable social variants without creating duplicate YouTube
+    // uploads. Variant 1 is the published Short; extra variants use different
+    // strong song sections so Growth OS can learn which hook performs best.
     let socialReelUrl: string | null = null;
     let socialReelStorageError: string | null = null;
+    const socialReelVariants: Array<{ url: string; startSeconds: number; rank: number; score: number }> = [];
     try {
-      const socialPath = `remaster/${songId}/short.mp4`;
-      const { error: socialUploadError } = await supabase.storage.from('remaster-reels').upload(
-        socialPath,
-        short.videoBuffer,
-        { contentType: 'video/mp4', cacheControl: '3600', upsert: true },
-      );
-      if (socialUploadError) throw socialUploadError;
-      const candidate = supabase.storage.from('remaster-reels').getPublicUrl(socialPath).data.publicUrl;
-      if (candidate?.startsWith('https://')) socialReelUrl = candidate;
+      const variantBuffers: Array<{ buffer: Buffer; startSeconds: number }> = [
+        { buffer: short.videoBuffer, startSeconds: short.startSeconds },
+      ];
+      const extraStarts = socialVariantStarts
+        .filter((start) => Math.abs(start - short.startSeconds) >= 20)
+        .slice(0, 2);
+      for (const startTime of extraStarts) {
+        try {
+          if (artMode && artVariantArtwork) {
+            const rendered = await generateArtShortFromAudio({
+              audioBuffer,
+              artworkBuffer: artVariantArtwork,
+              title: song.name,
+              category: mode!,
+              startTime,
+              targetDuration: 35,
+            });
+            variantBuffers.push({ buffer: rendered.videoBuffer, startSeconds: rendered.startSeconds });
+          } else if (!artMode && standardImages.length) {
+            const rendered = await generateShortFromAudio({
+              audioBuffer,
+              imageBuffers: standardImages,
+              startTime,
+              hook: song.ai_metadata?.shortsHook || song.mood?.toUpperCase() || 'NEW MUSIC',
+              titleText: song.name,
+              targetDuration: 35,
+            });
+            variantBuffers.push({ buffer: rendered.videoBuffer, startSeconds: startTime });
+          }
+        } catch (variantError) {
+          console.warn('[ShortRetry] Social Reel variant render failed:', variantError instanceof Error ? variantError.message : variantError);
+        }
+      }
+
+      for (let index = 0; index < variantBuffers.length; index++) {
+        const variant = variantBuffers[index];
+        const socialPath = `remaster/${songId}/short-v${index + 1}.mp4`;
+        const { error: socialUploadError } = await supabase.storage.from('remaster-reels').upload(
+          socialPath,
+          variant.buffer,
+          { contentType: 'video/mp4', cacheControl: '3600', upsert: true },
+        );
+        if (socialUploadError) throw socialUploadError;
+        const candidate = supabase.storage.from('remaster-reels').getPublicUrl(socialPath).data.publicUrl;
+        if (candidate?.startsWith('https://')) {
+          socialReelVariants.push({
+            url: candidate,
+            startSeconds: variant.startSeconds,
+            rank: index + 1,
+            score: 0,
+          });
+        }
+      }
+      socialReelUrl = socialReelVariants[0]?.url ?? null;
     } catch (storageError) {
       socialReelStorageError = storageError instanceof Error ? storageError.message : String(storageError);
     }
@@ -163,6 +220,8 @@ export async function publishMissingShort(songId: string): Promise<{
       shortsDetectionMethod: artMode ? 'art-calm-section' : 'audio-retry',
       shortsPublishedAt: new Date().toISOString(),
       socialReelUrl,
+      socialReelVariants,
+      socialReelVariantStrategy: artMode ? 'calm-section-exploration' : 'ranked-loudness-sections',
       socialReelStorageError,
     };
     const { data: saved, error: saveError } = await supabase.from('songs').update({ ai_metadata: finished })
