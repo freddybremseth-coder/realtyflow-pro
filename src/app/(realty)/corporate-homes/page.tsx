@@ -53,6 +53,7 @@ type Payload = {
     decisionRoles: string[];
     searchThemes: string[];
     linkedinAngles: string[];
+    policyGuardrails: string[];
     qualificationQuestions: string[];
   };
 };
@@ -201,6 +202,7 @@ export default function CorporateHomesDashboard() {
               <PlaybookList title="Beslutningstakere" items={data?.playbook.decisionRoles || []} />
               <PlaybookList title="Google Search" items={data?.playbook.searchThemes || []} />
               <PlaybookList title="LinkedIn-vinkler" items={data?.playbook.linkedinAngles || []} />
+              <PlaybookList title="Policy guardrails" items={data?.playbook.policyGuardrails || []} />
             </div>
           </section>
 
