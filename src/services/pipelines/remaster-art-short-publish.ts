@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { generateArtShortFromAudio, generateShortFromAudio, buildShortsTitle, detectTopSections } from '@/services/integrations/shorts-generator';
-import { getGenreImages, REMASTER_SONG_READ_BRANDS } from '@/services/integrations/airtable-client';
 import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from './remaster-song-art';
 import { uploadVideo } from '@/services/integrations/youtube-client';
 
 const VALID_MODES = new Set(['meditation','relaxing','alternative']);
 const BRAND = process.env.NEURAL_BEAT_BRAND_ID || 'remasterfreddy';
+const REMASTER_SONG_READ_BRANDS = new Set(['remasterfreddy','neuralbeat','neural-beat']);
 
 function getClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -34,7 +34,7 @@ export async function publishMissingShort(songId: string): Promise<{
   if (!/^[0-9a-f-]{36}$/i.test(songId)) throw new Error('Invalid song ID');
   const supabase = getClient();
   const { data: song, error } = await supabase.from('songs')
-    .select('id,name,brand,file_url,youtube_url,genre,mood,ai_metadata')
+    .select('id,name,brand,file_url,youtube_url,genre,mood,image_url,thumbnail_url,ai_metadata')
     .eq('id', songId).in('brand', [...REMASTER_SONG_READ_BRANDS]).single();
   if (error || !song) throw new Error('Re-Master Freddy song not found');
   const metadata = song.ai_metadata && typeof song.ai_metadata === 'object' ? song.ai_metadata : {};
@@ -95,26 +95,25 @@ export async function publishMissingShort(songId: string): Promise<{
           return { videoBuffer: result.videoBuffer, startSeconds: result.startSeconds };
         })()
       : await (async () => {
-          const records = await getGenreImages(
-            !song.genre || song.genre.toLowerCase() === 'edm' ? 'dance' : song.genre, 18,
-          );
           const images: Buffer[] = [];
-          // Try more than the first three records: old Airtable links may
-          // have expired. Fetch small batches so one broken URL cannot block
-          // the whole render, and stop as soon as three images are usable.
-          for (let i = 0; i < records.length && images.length < 3; i += 4) {
-            const batch = await Promise.allSettled(records.slice(i, i + 4).map(
-              (image) => loadBuffer(image.imageUrl, 8_000),
-            ));
-            for (const result of batch) {
-              if (result.status === 'fulfilled' && images.length < 3) images.push(result.value);
-              else if (result.status === 'rejected') {
-                console.warn('[ShortRetry] Skipping inaccessible genre image:', result.reason);
-              }
+          const ownedUrls = [
+            ...(Array.isArray(metadata.thumbnailVariantUrls) ? metadata.thumbnailVariantUrls : []),
+            song.image_url,
+            song.thumbnail_url,
+          ].filter((value): value is string => typeof value === 'string' && value.startsWith('https://'));
+          for (const url of ownedUrls) {
+            if (images.length >= 3) break;
+            try { images.push(await loadBuffer(url, 8_000)); } catch {}
+          }
+          if (images.length < 3) {
+            const gallery = await loadSongArtGallery(songId, 'alternative', 6).catch(() => []);
+            for (const artwork of gallery) {
+              if (images.length >= 3) break;
+              try { images.push(await loadBuffer(artwork.imageUrl, 8_000)); } catch {}
             }
           }
           if (!images.length) {
-            throw new Error('No downloadable genre images for this music Short (checked ' + records.length + ' image records)');
+            throw new Error('No owned Re-Master or Freddy Art images available for this music Short');
           }
           standardImages = images;
           const ranked = await detectTopSections(audioBuffer).catch(() => [] as number[]);
@@ -261,7 +260,7 @@ export async function backfillSocialReels(songId: string): Promise<{
   const supabase = getClient();
   const { data: song, error } = await supabase.from('songs')
     .select('id,name,brand,file_url,youtube_url,genre,mood,image_url,thumbnail_url,ai_metadata')
-    .eq('id', songId).eq('brand', BRAND).single();
+    .eq('id', songId).in('brand', [...REMASTER_SONG_READ_BRANDS]).single();
   if (error || !song) throw new Error('Re-Master Freddy song not found');
 
   const metadata = song.ai_metadata && typeof song.ai_metadata === 'object' ? song.ai_metadata : {};
@@ -323,22 +322,24 @@ export async function backfillSocialReels(songId: string): Promise<{
         }
       }
     } else {
-      const records = await getGenreImages(!song.genre || song.genre.toLowerCase() === 'edm' ? 'dance' : song.genre, 18).catch(() => []);
       const images: Buffer[] = [];
-      for (let i = 0; i < records.length && images.length < 3; i += 4) {
-        const batch = await Promise.allSettled(records.slice(i, i + 4).map((image) => loadBuffer(image.imageUrl, 8_000)));
-        for (const result of batch) if (result.status === 'fulfilled' && images.length < 3) images.push(result.value);
-      }
-      const fallbackUrls = [
+      const ownedUrls = [
         ...(Array.isArray(metadata.thumbnailVariantUrls) ? metadata.thumbnailVariantUrls : []),
         song.image_url,
         song.thumbnail_url,
       ].filter((value): value is string => typeof value === 'string' && value.startsWith('https://'));
-      for (const url of fallbackUrls) {
+      for (const url of ownedUrls) {
         if (images.length >= 3) break;
         try { images.push(await loadBuffer(url, 8_000)); } catch {}
       }
-      if (!images.length) throw new Error('No downloadable images available for social Reel backfill');
+      if (images.length < 3) {
+        const gallery = await loadSongArtGallery(songId, 'alternative', 6).catch(() => []);
+        for (const artwork of gallery) {
+          if (images.length >= 3) break;
+          try { images.push(await loadBuffer(artwork.imageUrl, 8_000)); } catch {}
+        }
+      }
+      if (!images.length) throw new Error('No owned Re-Master or Freddy Art images available for social Reel backfill');
 
       const ranked = await detectTopSections(audioBuffer).catch(() => [] as number[]);
       const existingStart = typeof metadata.shortsDropStartSeconds === 'number' ? metadata.shortsDropStartSeconds : 0;
