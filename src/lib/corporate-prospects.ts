@@ -165,6 +165,7 @@ export function scoreCorporateProspect(input: {
   website_url: string | null;
   decision_roles: string[];
   source_url: string | null;
+  evidence?: Record<string, unknown> | null;
 }) {
   let score = 0;
   const reasons: string[] = [];
@@ -256,6 +257,21 @@ export function scoreCorporateProspect(input: {
     gaps.push("Kildelenke mangler");
   }
 
+  const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : {};
+  const signalMap: Array<[string, string]> = [
+    ["employee_benefit_signal", "Dokumentert signal om ansattgoder"],
+    ["remote_workforce_signal", "Dokumentert signal om fjernarbeid / distribuert arbeidsstyrke"],
+    ["retreat_signal", "Dokumentert signal om samlinger / retreats"],
+    ["existing_cabin_signal", "Dokumentert eksisterende hytte-, reise- eller personalordning"],
+  ];
+  for (const [key, reason] of signalMap) {
+    const value = evidence[key];
+    const present = value === true || (typeof value === "string" && value.trim().length > 0);
+    if (!present) continue;
+    score += 4;
+    reasons.push(reason);
+  }
+
   score = Math.min(100, Math.max(0, score));
   const tier = score >= 75 ? "A" : score >= 55 ? "B" : score > 0 ? "C" : "UNSCORED";
 
@@ -297,7 +313,7 @@ export function normalizeCorporateProspect(input: CorporateProspectInput) {
     next_followup: nullableText(input.next_followup, 80),
   };
 
-  const fit = scoreCorporateProspect(normalized);
+  const fit = scoreCorporateProspect({ ...normalized, evidence: normalized.evidence });
   return {
     ...normalized,
     fit_score: fit.score,
@@ -321,6 +337,7 @@ export function rescoreCorporateProspect(row: Record<string, unknown>) {
     website_url: nullableText(row.website_url, 500),
     decision_roles: decisionRoles.length ? decisionRoles : defaultDecisionRoles(organizationType),
     source_url: nullableText(row.source_url, 700),
+    evidence: row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence) ? row.evidence as Record<string, unknown> : {},
   });
   return {
     fit_score: fit.score,
