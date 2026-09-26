@@ -6,7 +6,7 @@ const route = fs.readFileSync("src/app/api/cron/corporate-homes-discovery/route.
 const vercel = fs.readFileSync("vercel.json", "utf8");
 const registry = fs.readFileSync("src/lib/automation/registry.ts", "utf8");
 
-test("Corporate Homes discovery is scheduled weekly and registered", () => {
+test("Corporate Homes discovery is scheduled daily and registered", () => {
   assert.match(vercel, /\/api\/cron\/corporate-homes-discovery/);
   assert.match(vercel, /10 6 \* \* 1/);
   assert.match(registry, /Corporate Homes discovery/);
