@@ -75,3 +75,11 @@ test("Publisher capability requires exact verified service, readable RLS and sam
   assert.equal(zenEcoReadinessValid({ ...ready, service: "unknown" },
     "correct.supabase.co"), false);
 });
+
+test("previously changed or rolled-back first page does not starve another eligible page", () => {
+  const input = snapshot();
+  input.topPages.push({ ...input.topPages[0], path: "/nybygg-i-spania" });
+  input.topQueryPages.push({ ...input.topQueryPages[0], page: "/nybygg-i-spania", query: "nybygg i spania" });
+  assert.equal(selectZenEcoMetadataCandidate(input, now, new Set(["/bolig-i-spania"]))?.path, "/nybygg-i-spania");
+  assert.equal(selectZenEcoMetadataCandidate(input, now, new Set(["/bolig-i-spania", "/nybygg-i-spania"])), null);
+});
