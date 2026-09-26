@@ -123,7 +123,7 @@ function knownBookingConfig(brandId: string) {
       domain: "ZenEcoHomes.com",
       siteName: "Zen Eco Homes",
       bookingUrl: "zenecohomes.com/book",
-      logoUrl: "https://www.zenecohomes.com/assets/logoZEH.png?v=20260925-approved",
+      logoUrl: "https://www.zenecohomes.com/api/brand-assets/zeneco-logo",
       accent: "leaf",
       profile: {
         name: "Zen Eco Homes",
