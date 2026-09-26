@@ -14,7 +14,7 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 6;
 const DEFAULT_REMASTER_LOGO_URL = "https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/1780843951381-logo-Gemini_Generated_Image_9rr3k69rr3k69rr3__1_.png";
-const DEFAULT_ZENECO_LOGO_URL = "https://www.zenecohomes.com/assets/logoZEH.png?v=20260925-approved";
+const DEFAULT_ZENECO_LOGO_URL = "https://www.zenecohomes.com/api/brand-assets/zeneco-logo";
 
 export interface RemasterMixVideoV4Input {
   audioPath: string;
