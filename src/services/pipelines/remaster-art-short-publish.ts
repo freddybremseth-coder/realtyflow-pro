@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { generateArtShortFromAudio, generateShortFromAudio, buildShortsTitle, detectTopSections } from '@/services/integrations/shorts-generator';
-import { getGenreImages } from '@/services/integrations/airtable-client';
+import { getGenreImages, REMASTER_SONG_READ_BRANDS } from '@/services/integrations/airtable-client';
 import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from './remaster-song-art';
 import { uploadVideo } from '@/services/integrations/youtube-client';
 
@@ -35,7 +35,7 @@ export async function publishMissingShort(songId: string): Promise<{
   const supabase = getClient();
   const { data: song, error } = await supabase.from('songs')
     .select('id,name,brand,file_url,youtube_url,genre,mood,ai_metadata')
-    .eq('id', songId).eq('brand', BRAND).single();
+    .eq('id', songId).in('brand', [...REMASTER_SONG_READ_BRANDS]).single();
   if (error || !song) throw new Error('Re-Master Freddy song not found');
   const metadata = song.ai_metadata && typeof song.ai_metadata === 'object' ? song.ai_metadata : {};
   const storedMode: ArtVisualMode = metadata.artVisualMode;
