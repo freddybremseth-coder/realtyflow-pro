@@ -53,6 +53,22 @@ type Payload = {
     decisionRoles: string[];
     searchThemes: string[];
     linkedinAngles: string[];
+    trackedLandingPages: Record<string, string>;
+    googleSearchDraft: {
+      campaign: string;
+      adGroups: Array<{ name: string; keywords: string[] }>;
+      headlines: string[];
+      descriptions: string[];
+      negatives: string[];
+    };
+    linkedinDraft: {
+      market: string;
+      companySizes: string[];
+      professionalFunctions: string[];
+      seniority: string[];
+      primaryCopy: string;
+      cta: string;
+    };
     policyGuardrails: string[];
     qualificationQuestions: string[];
   };
@@ -203,6 +219,30 @@ export default function CorporateHomesDashboard() {
               <PlaybookList title="Google Search" items={data?.playbook.searchThemes || []} />
               <PlaybookList title="LinkedIn-vinkler" items={data?.playbook.linkedinAngles || []} />
               <PlaybookList title="Policy guardrails" items={data?.playbook.policyGuardrails || []} />
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-teal-700"><Target size={16} /> Kampanjeutkast</div>
+            <h2 className="mt-2 text-lg font-black">Google + LinkedIn klare for oppsett</h2>
+            <div className="mt-4 space-y-4 text-sm text-slate-700">
+              <div>
+                <div className="font-black text-slate-900">{data?.playbook.googleSearchDraft?.campaign || "Google Search"}</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  {(data?.playbook.googleSearchDraft?.adGroups || []).length} annonsegrupper · {(data?.playbook.googleSearchDraft?.headlines || []).length} headlines · UTM-sporet landingsside.
+                </p>
+              </div>
+              <div>
+                <div className="font-black text-slate-900">LinkedIn · {data?.playbook.linkedinDraft?.market || "Norge"}</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{data?.playbook.linkedinDraft?.primaryCopy}</p>
+              </div>
+              <div className="grid gap-2">
+                {Object.entries(data?.playbook.trackedLandingPages || {}).map(([channel, href]) => (
+                  <a key={channel} href={href} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+                    <span>{channel}</span><ExternalLink size={13} />
+                  </a>
+                ))}
+              </div>
             </div>
           </section>
 
