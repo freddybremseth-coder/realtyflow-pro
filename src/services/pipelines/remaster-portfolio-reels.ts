@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ensureFFmpeg, ensureFont } from "@/services/integrations/ffmpeg-renderer";
+import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
+import { buildPortfolioReelPoster } from "@/services/integrations/art-thumbnail-panel";
 import { isApprovedArtPreviewUrl } from "./remaster-mix-art-thumbnail";
 import type { PromotionItem } from "./remaster-mix-promotions";
 import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
@@ -31,44 +32,11 @@ const BOOK_HOST="books.freddybremseth.com";
 function safeText(value:string,max:number) {
   return String(value||"").replace(/[{}\\\r\n]+/g," ").replace(/\s+/g," ").trim().slice(0,max);
 }
-function ffmpegText(value:string,max:number){
-  return safeText(value,max)
-    .replace(/\\/g,"\\\\")
-    .replace(/'/g,"\\'")
-    .replace(/:/g,"\\:")
-    .replace(/%/g,"\\%");
-}
-function ffmpegFontPath(value:string){
-  return String(value||"").replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'");
-}
 function brandLabel(brand:ReelBrand) {
   return ({art:"FREDDY BREMSETH ART",books:"FREDDY BREMSETH BOOKS",zeneco:"ZEN ECO HOMES",freddybremseth:"FREDDY BREMSETH",pinosoecolife:"PINOSO ECO LIFE",donaanna:"DOÑA ANNA"} as const)[brand];
 }
 function brandWebsite(brand:ReelBrand) {
   return ({art:"art.freddybremseth.com",books:"books.freddybremseth.com",zeneco:"zenecohomes.com",freddybremseth:"freddybremseth.com",pinosoecolife:"pinosoecolife.com",donaanna:"donaanna.com"} as const)[brand];
-}
-export function buildPortfolioReelTextFilters(input:ReelRenderInput,fontPath:string){
-  const font=ffmpegFontPath(fontPath);
-  if(!font) throw new Error("REEL_FONT_UNAVAILABLE");
-  const brand=ffmpegText(brandLabel(input.brand),50);
-  const title=ffmpegText(input.title,78);
-  const site=ffmpegText(brandWebsite(input.brand),80);
-  const music="Music by Re-Master Freddy";
-  const base=[
-    `drawbox=x=0:y=0:w=iw:h=176:color=0x07131f@0.74:t=fill`,
-    `drawtext=fontfile='${font}':text='${brand}':fontsize=38:fontcolor=white:x=(w-text_w)/2:y=46`,
-    `drawtext=fontfile='${font}':text='${title}':fontsize=52:fontcolor=0xE8F6FF:x=(w-text_w)/2:y=98`,
-    `drawbox=x=0:y=h-126:w=iw:h=126:color=0x07131f@0.74:t=fill`,
-    `drawtext=fontfile='${font}':text='${site}':fontsize=33:fontcolor=white:x=(w-text_w)/2:y=h-82`,
-    `drawtext=fontfile='${font}':text='${music}':fontsize=26:fontcolor=0xB9E8FF:x=(w-text_w)/2:y=h-44`,
-  ];
-  if(input.brand==="zeneco"){
-    base.push(
-      `drawbox=x=w-430:y=h-220:w=396:h=62:color=0x083D43@0.82:t=fill`,
-      `drawtext=fontfile='${font}':text='ZEN ECO HOMES · COSTA BLANCA':fontsize=24:fontcolor=0xF2C14E:x=w-text_w-52:y=h-198`,
-    );
-  }
-  return base.join(",");
 }
 function privateHost(host:string){
   return host==="localhost" || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
@@ -156,28 +124,29 @@ export async function renderPortfolioReel(input:ReelRenderInput):Promise<ReelRen
   if(imageUrls.length<2)throw new Error("REEL_NEEDS_AT_LEAST_TWO_APPROVED_VISUALS");
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),"remaster-portfolio-reel-"));
   try{
-    const audio=path.join(dir,"audio.mp3"),out=path.join(dir,"reel.mp4");
+    const audio=path.join(dir,"audio.mp3"),poster=path.join(dir,"poster.ppm"),out=path.join(dir,"reel.mp4");
     await download(input.song.audioUrl,audio,50*1024*1024);
+    await fs.writeFile(poster,buildPortfolioReelPoster(brandLabel(input.brand),input.title,brandWebsite(input.brand),input.brand==="zeneco"));
     const files:string[]=[];
     for(let i=0;i<imageUrls.length;i++){
       let ext=".jpg";try{const candidate=path.extname(new URL(imageUrls[i]).pathname).toLowerCase();if([".jpg",".jpeg",".png",".webp"].includes(candidate))ext=candidate;}catch{}
       const target=path.join(dir,"visual-"+i+ext);await download(imageUrls[i],target,10*1024*1024);files.push(target);
     }
     const binary=await ensureFFmpeg();
-    const fontPath=await ensureFont();
-    if(!fontPath) throw new Error("REEL_FONT_UNAVAILABLE");
     const segment=input.durationSeconds/files.length;
     const args=["-hide_banner","-loglevel","error"];
     for(const file of files)args.push("-loop","1","-framerate","24","-t",segment.toFixed(3),"-i",file);
+    args.push("-loop","1","-framerate","24","-t",String(input.durationSeconds),"-i",poster);
     args.push("-stream_loop","-1","-ss","10","-i",audio);
     const filters:string[]=[];
     for(let i=0;i<files.length;i++)filters.push(
       `[${i}:v]scale=1080:1540:force_original_aspect_ratio=decrease,pad=1080:1540:(ow-iw)/2:(oh-ih)/2:color=0x0a1724,fps=24,trim=duration=${segment.toFixed(3)},setsar=1,setpts=PTS-STARTPTS[v${i}]`
     );
     filters.push(files.map((_,i)=>"[v"+i+"]").join("")+`concat=n=${files.length}:v=1:a=0[gallery]`);
-    filters.push(`[gallery]pad=1080:1920:0:190:color=0x07131f[canvas]`);
-    filters.push(`[canvas]${buildPortfolioReelTextFilters(input,fontPath)},format=yuv420p[vout]`);
-    const audioIndex=files.length;
+    const posterIndex=files.length;
+    const audioIndex=files.length+1;
+    filters.push(`[${posterIndex}:v]format=rgb24[poster]`);
+    filters.push(`[poster][gallery]overlay=0:190:shortest=1,format=yuv420p[vout]`);
     args.push("-filter_complex",filters.join(";"),"-map","[vout]","-map",`${audioIndex}:a:0`,
       "-t",String(input.durationSeconds),"-r","24","-c:v","libx264","-preset","ultrafast","-crf","27",
       "-pix_fmt","yuv420p","-c:a","aac","-ar","48000","-b:a","128k","-movflags","+faststart","-y",out);
