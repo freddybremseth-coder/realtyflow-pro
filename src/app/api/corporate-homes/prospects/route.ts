@@ -30,7 +30,12 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured", prospects: [] }, { status: 500 });
 
-  const [{ data: prospects, error }, { data: contacts, error: contactsError }] = await Promise.all([
+  const [
+    { data: prospects, error },
+    { data: contacts, error: contactsError },
+    { data: lastRun, error: lastRunError },
+    { data: runtimeControl, error: runtimeControlError },
+  ] = await Promise.all([
     supabase
       .from("corporate_prospects")
       .select("*")
@@ -42,6 +47,18 @@ export async function GET(request: NextRequest) {
       .from("corporate_prospect_contacts")
       .select("prospect_id,status,is_primary,confidence")
       .limit(5000),
+    supabase
+      .from("automation_logs")
+      .select("id,action,status,details,created_at")
+      .eq("action", "corporate_homes_discovery")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("nexus_runtime_controls")
+      .select("control_key,label,enabled,risk_level,config,updated_at")
+      .eq("control_key", "cron:/api/cron/corporate-homes-discovery")
+      .maybeSingle(),
   ]);
 
   if (error) return NextResponse.json({ error: error.message, prospects: [] }, { status: 500 });
@@ -103,7 +120,11 @@ export async function GET(request: NextRequest) {
       statusCounts,
       tierCounts,
     },
-    warnings: contactsError ? [contactsError.message] : [],
+    discovery: {
+      lastRun: lastRun || null,
+      runtimeControl: runtimeControl || null,
+    },
+    warnings: [contactsError, lastRunError, runtimeControlError].filter(Boolean).map((item: any) => item.message),
     note: "Prospect records are company-level and remain separate from CRM contacts until explicitly promoted. No outreach is executed by this endpoint.",
   });
 }
