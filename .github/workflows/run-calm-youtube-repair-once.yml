@@ -1,0 +1,35 @@
+name: Run calm YouTube repair once
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'Run calm YouTube repair once'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Invoke fixed production repair endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --max-time 300 \
+            https://realtyflow.chatgenius.pro/api/neural-beat/calm-youtube-repair-20260926 \
+            -o repair.json
+          cat repair.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("repair.json").read_text())
+          if not data.get("success"):
+              raise SystemExit("Repair endpoint did not report success")
+          bad = [r for r in data.get("results", []) if r.get("status") not in ("applied", "already-applied")]
+          if bad:
+              raise SystemExit(f"Repair returned incomplete rows: {bad}")
+          print(f"Verified {len(data.get('results', []))} calm YouTube repairs")
+          PY
