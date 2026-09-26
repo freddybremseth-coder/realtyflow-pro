@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-readiness";
+import { corporateArticleUrl, corporateOrganicTopicsForWeek } from "@/lib/corporate-organic-content";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,6 +68,14 @@ export async function GET(request: NextRequest) {
   if (contactsError) {
     return NextResponse.json({ error: contactsError.message, corporateHomes: null }, { status: 500 });
   }
+
+  const { data: lastContentDraftRun, error: lastContentDraftRunError } = await supabase
+    .from("automation_logs")
+    .select("id,status,details,created_at")
+    .eq("action", "corporate_homes_content_drafts")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const rows = contacts || [];
   const prospectRows = prospects || [];
@@ -178,6 +187,20 @@ export async function GET(request: NextRequest) {
           lastRun: lastDiscovery || null,
         },
       },
+      contentEngine: {
+        cadence: "Mandag 06:40 UTC",
+        draftsPerWeek: 3,
+        platforms: ["linkedin", "facebook"],
+        externalPublishing: false,
+        nextTopics: corporateOrganicTopicsForWeek(new Date()).map((topic) => ({
+          slug: topic.slug,
+          title: topic.title,
+          hook: topic.hook,
+          teaser: topic.teaser,
+          url: corporateArticleUrl(topic.slug),
+        })),
+        lastRun: lastContentDraftRun || null,
+      },
       stages,
       contacts: rows.slice(0, 100).map((row: any) => ({
         id: row.id,
@@ -194,6 +217,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError].filter(Boolean).map((item: any) => item.message),
   });
 }

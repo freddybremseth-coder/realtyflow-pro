@@ -92,6 +92,24 @@ type Overview = {
       } | null;
     };
   };
+  contentEngine: {
+    cadence: string;
+    draftsPerWeek: number;
+    platforms: string[];
+    externalPublishing: boolean;
+    nextTopics: Array<{
+      slug: string;
+      title: string;
+      hook: string;
+      teaser: string;
+      url: string;
+    }>;
+    lastRun?: {
+      status?: string | null;
+      details?: Record<string, any> | null;
+      created_at?: string | null;
+    } | null;
+  };
   stages: Record<string, number>;
   contacts: Contact[];
   workItems: Array<Record<string, unknown>>;
@@ -132,6 +150,8 @@ export default function CorporateHomesGrowthPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [contentBusy, setContentBusy] = useState(false);
+  const [contentNotice, setContentNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -164,6 +184,33 @@ export default function CorporateHomesGrowthPage() {
         .includes(normalized),
     );
   }, [data?.contacts, query]);
+
+  async function createCorporateContentDrafts() {
+    setContentBusy(true);
+    setContentNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/content/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lage Corporate Homes-utkast.");
+      const created = Number(body?.result?.created || 0);
+      const skipped = Number(body?.result?.skipped || 0);
+      setContentNotice(created
+        ? `${created} nye Corporate Homes-utkast er lagt i Content Hub.`
+        : skipped
+          ? "Ukens Corporate Homes-utkast finnes allerede i Content Hub."
+          : "Ingen nye utkast ble opprettet.");
+      await load();
+    } catch (contentError) {
+      setError(contentError instanceof Error ? contentError.message : "Kunne ikke lage Corporate Homes-utkast.");
+    } finally {
+      setContentBusy(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-[1650px] space-y-6 p-4 sm:p-6">
@@ -310,6 +357,55 @@ export default function CorporateHomesGrowthPage() {
             <div className="text-sm text-slate-500">Ingen A/B-prospekter er klare for fokuslisten ennå.</div>
           )}
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Corporate Content Engine</p>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Tre norske B2B-poster per uke</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              RealtyFlow roterer gjennom de 23 Corporate-guidene og lager ferdige norske utkast med artikkellenke og bedriftsvurdering som CTA.
+              Utkastene legges i Content Hub for LinkedIn og Facebook. Ingenting publiseres eksternt av denne motoren.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">{data?.contentEngine.cadence || "Mandag 06:40 UTC"}</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">{data?.contentEngine.draftsPerWeek ?? 3} utkast / uke</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">LinkedIn + Facebook</span>
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-800">Draft-first</span>
+            </div>
+          </div>
+          <button
+            onClick={() => void createCorporateContentDrafts()}
+            disabled={contentBusy}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {contentBusy ? <Loader2 size={16} className="animate-spin" /> : <BriefcaseBusiness size={16} />}
+            Lag ukens 3 utkast
+          </button>
+        </div>
+
+        {contentNotice && <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{contentNotice}</div>}
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          {(data?.contentEngine.nextTopics || []).map((topic, index) => (
+            <article key={topic.slug} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-amber-700">Post {index + 1}</div>
+              <h3 className="mt-2 font-black text-slate-950">{topic.title}</h3>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">{topic.hook}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">{topic.teaser}</p>
+              <a href={topic.url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                Åpne artikkel <ExternalLink size={13} />
+              </a>
+            </article>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs text-slate-500">
+          {data?.contentEngine.lastRun?.created_at
+            ? `Siste draft-kjøring: ${new Date(data.contentEngine.lastRun.created_at).toLocaleString("nb-NO")} · ${data.contentEngine.lastRun.details?.created ?? 0} opprettet`
+            : "Ingen Corporate Content Engine-kjøring registrert ennå."}
+        </p>
       </section>
 
       <section className="grid gap-6 2xl:grid-cols-[1.2fr_.8fr]">
