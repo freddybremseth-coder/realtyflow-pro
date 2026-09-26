@@ -27,6 +27,8 @@
     { "path": "/api/cron/weekly-report", "schedule": "0 21 * * 1" },
     { "path": "/api/cron/growth-engine", "schedule": "0 15 * * *" },
     { "path": "/api/cron/saas-scanner", "schedule": "0 22 * * 1" },
+    { "path": "/api/cron/corporate-homes-discovery", "schedule": "10 6 * * 1" },
+    { "path": "/api/cron/corporate-homes-bootstrap", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/saas-entitlements", "schedule": "30 6 * * *" },
     { "path": "/api/cron/property-scanner", "schedule": "0 18 * * 0" },
     { "path": "/api/cron/property-marketing", "schedule": "0 16 * * *" },

@@ -18,6 +18,7 @@ import { loadZenEcoHomesVisualUrls } from "./remaster-mix-visual-source";
 import { diagnoseExplicitMixSelection, MixSelectionValidationError } from "./remaster-mix-selection-validation";
 import { buildRemasterPartnerComment, type PartnerCommentStyle } from "./remaster-mix-partner-comment";
 import { renderArtLoungeThumbnail } from "./remaster-mix-art-thumbnail";
+import { renderZenEcoYoutubeThumbnail } from "./remaster-mix-zeneco-thumbnail";
 import { classifyMixArtVisualMode, loadSongArtGallery } from "./remaster-song-art";
 import { loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionBrand, type PromotionSelection, type PromotionItem } from "./remaster-mix-promotions";
 import {
@@ -443,6 +444,13 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
         });
       } catch (error) {
         console.warn("[RemasterMixWorker] Art Lounge thumbnail unavailable; YouTube default will be used:",
+          error instanceof Error ? error.message : error);
+      }
+    } else if (brand === "zeneco" && imageUrls.length) {
+      try {
+        thumbnailJpeg = await renderZenEcoYoutubeThumbnail(imageUrls[0]);
+      } catch (error) {
+        console.warn("[RemasterMixWorker] Zen Eco Homes thumbnail unavailable; YouTube default will be used:",
           error instanceof Error ? error.message : error);
       }
     }

@@ -35,14 +35,14 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Zen Eco Homes",
     kind: "real_estate",
     website: "https://www.zenecohomes.com",
-    logoUrl: "https://www.zenecohomes.com/api/brand-assets/zeneco-logo",
-    logoSvgUrl: "https://www.zenecohomes.com/assets/zeneco-logo.svg?v=20260926-2",
+    logoUrl: "https://www.zenecohomes.com/assets/zeneco-header-dark.svg?v=20260926-3",
+    logoSvgUrl: "https://www.zenecohomes.com/assets/zeneco-header-dark.svg?v=20260926-3",
     pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["instagram", "facebook", "website", "email"],
     contentPillars: ["property_showcase", "area_and_lifestyle", "buyer_education", "new_build", "investment_and_value"],
     conversionGoals: ["property_lead", "viewing_request", "guide_download", "website_visit"],
     primaryCtas: ["view_property", "book_viewing", "contact", "download_guide"],
-    notes: "Inventory-grounded property marketing. Property facts must come from canonical inventory and material outbound changes remain approval-gated. Approved visual identity: Zen Eco Homes wordmark with modern Mediterranean villa, gold sun, deep teal waves/details and restrained Mediterranean greenery; palette deep teal, warm gold and off-white; positioning Modern Mediterranean Living / Costa Blanca. Use the approved logo asset and never substitute the old black ZE identity or invent/redraw the logo."
+    notes: "Inventory-grounded property marketing. Property facts must come from canonical inventory and material outbound changes remain approval-gated. Approved visual identity: Zen Eco Homes uses a logo system, not one oversized mark everywhere. Header/light surfaces use the compact horizontal wordmark; dark hero surfaces use the light horizontal wordmark; favicons/avatars use the compact architectural mark; reels, videos, social posts and YouTube use the dedicated transparent watermark. Palette deep teal, warm gold and off-white; positioning Modern Mediterranean Living / Costa Blanca. Never use the old boxed ZE identity, the oversized detailed full logo as a small UI mark, or an AI-redrawn logo."
   },
   {
     id: "pinosoecolife",

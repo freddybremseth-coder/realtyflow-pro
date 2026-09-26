@@ -10,7 +10,7 @@ import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media
 import { getDefaultMediaOrganizationId } from "@/services/media/organization";
 import { createMediaPromptPlan } from "@/services/media/prompt-director";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
-import { ZENECO_LOGO_PNG_URL } from "@/lib/brand-assets";
+import { ZENECO_WATERMARK_SVG_URL } from "@/lib/brand-assets";
 
 const execFileAsync = promisify(execFile);
 
@@ -89,7 +89,7 @@ async function applyZenEcoLogo(
 
   const digest = crypto
     .createHash("sha256")
-    .update(`${input.contentKey}|${imageUrl}|zeneco-approved-logo-v2`)
+    .update(`${input.contentKey}|${imageUrl}|zeneco-watermark-v3`)
     .digest("hex")
     .slice(0, 28);
   const storagePath = `growth/zeneco/branded-${digest}.png`;
@@ -106,13 +106,13 @@ async function applyZenEcoLogo(
 
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "zeneco-social-"));
   const sourcePath = path.join(workDir, "source-image");
-  const logoPath = path.join(workDir, "zeneco-logo.png");
+  const logoPath = path.join(workDir, "zeneco-watermark.svg");
   const outputPath = path.join(workDir, "branded.png");
 
   try {
     const [imageResponse, logoResponse] = await Promise.all([
       fetch(imageUrl, { redirect: "follow" }),
-      fetch(ZENECO_LOGO_PNG_URL, { redirect: "follow" }),
+      fetch(ZENECO_WATERMARK_SVG_URL, { redirect: "follow" }),
     ]);
     if (!imageResponse.ok) throw new Error(`source image download failed (${imageResponse.status})`);
     if (!logoResponse.ok) throw new Error(`Zen Eco Homes logo download failed (${logoResponse.status})`);
@@ -127,7 +127,7 @@ async function applyZenEcoLogo(
       "-i", sourcePath,
       "-i", logoPath,
       "-filter_complex",
-      "[1:v]scale=300:-1:force_original_aspect_ratio=decrease[logo];[0:v][logo]overlay=W-w-32:H-h-28:format=auto",
+      "[1:v]scale=420:-1:force_original_aspect_ratio=decrease[logo];[0:v][logo]overlay=W-w-36:H-h-30:format=auto",
       "-frames:v", "1",
       "-compression_level", "7",
       "-y", outputPath,

@@ -8,7 +8,7 @@ import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 import { buildRemasterMixGlobalAssOverlay, buildVisualConcatFile } from "./remaster-mix-video-compat";
-import { ZENECO_LOGO_PNG_URL } from "@/lib/brand-assets";
+import { ZENECO_WATERMARK_SVG_URL } from "@/lib/brand-assets";
 
 const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
@@ -189,7 +189,7 @@ async function downloadLogo(url: string | null | undefined, workingDirectory: st
 }
 
 async function resolveZenEcoPresentedLogo(url: string | null | undefined, workingDirectory: string) {
-  return downloadLogo(url || ZENECO_LOGO_PNG_URL, workingDirectory, "zeneco-logo.png");
+  return downloadLogo(url || ZENECO_WATERMARK_SVG_URL, workingDirectory, "zeneco-watermark.svg");
 }
 
 function escapeAssFilterPath(value: string) {
