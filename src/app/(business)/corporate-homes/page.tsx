@@ -47,6 +47,27 @@ type Overview = {
     openWorkItems: number;
     pipelineValue: number;
   };
+  prospects: {
+    total: number;
+    target: number;
+    progressPercent: number;
+    aTier: number;
+    bTier: number;
+    qualified: number;
+    promoted: number;
+    statusCounts: Record<string, number>;
+    tierCounts: Record<string, number>;
+    discovery: {
+      enabled: boolean | null;
+      riskLevel?: string | null;
+      config?: Record<string, any> | null;
+      lastRun?: {
+        status?: string | null;
+        details?: Record<string, any> | null;
+        created_at?: string | null;
+      } | null;
+    };
+  };
   stages: Record<string, number>;
   contacts: Contact[];
   workItems: Array<Record<string, unknown>>;
@@ -173,6 +194,45 @@ export default function CorporateHomesGrowthPage() {
         <Metric icon={<RefreshCw size={18} />} label="Må følges opp" value={data?.summary.dueNow ?? "—"} />
         <Metric icon={<BriefcaseBusiness size={18} />} label="Åpne oppgaver" value={data?.summary.openWorkItems ?? "—"} />
         <Metric icon={<CircleDollarSign size={18} />} label="Aktiv pipeline" value={data ? money(data.summary.pipelineValue) : "—"} />
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Prospektmotor</p>
+              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${data?.prospects.discovery.enabled ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                Discovery {data?.prospects.discovery.enabled ? "på" : "av"}
+              </span>
+            </div>
+            <div className="mt-2 flex items-end gap-3">
+              <h2 className="text-2xl font-black text-slate-950">
+                {data?.prospects.total ?? "—"} / {data?.prospects.target ?? 250}
+              </h2>
+              <span className="pb-0.5 text-sm font-semibold text-slate-500">norske selskapsprospekter</span>
+            </div>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${data?.prospects.progressPercent || 0}%` }} />
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <MiniStat label="A-fit" value={data?.prospects.aTier ?? "—"} />
+              <MiniStat label="B-fit" value={data?.prospects.bTier ?? "—"} />
+              <MiniStat label="Kvalifisert" value={data?.prospects.qualified ?? "—"} />
+              <MiniStat label="Promotert til CRM" value={data?.prospects.promoted ?? "—"} />
+            </div>
+            <p className="mt-4 text-xs text-slate-500">
+              {data?.prospects.discovery.lastRun?.created_at
+                ? `Siste discovery: ${new Date(data.prospects.discovery.lastRun.created_at).toLocaleString("nb-NO")} · ${data.prospects.discovery.lastRun.details?.imported ?? 0} importert`
+                : "Ingen discovery-kjøring registrert ennå."}
+            </p>
+          </div>
+          <Link
+            href="/corporate-homes/prospects"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white hover:bg-teal-700"
+          >
+            Åpne prospektmotor <ArrowRight size={15} />
+          </Link>
+        </div>
       </section>
 
       <section className="grid gap-6 2xl:grid-cols-[1.2fr_.8fr]">
@@ -337,6 +397,15 @@ export default function CorporateHomesGrowthPage() {
           </p>
         </div>
       </section>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-black text-slate-950">{value}</div>
     </div>
   );
 }
