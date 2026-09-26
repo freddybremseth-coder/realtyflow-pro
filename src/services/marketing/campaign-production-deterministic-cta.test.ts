@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeDeterministicInventoryCreative } from "./campaign-production";
+import { addGrowthAttributionToCreative, makeDeterministicInventoryCreative } from "./campaign-production";
 
 const brief = {
   contentId: "test_content",
@@ -84,4 +84,67 @@ test("unrecognized brand fails closed rather than redirecting to a different pro
     factSources: [{ claim: "Tittel: Bolig", source: "Inventory" }],
   } as any);
   assert.equal(creative.asset.cta, undefined);
+});
+
+
+test("owned website CTAs receive deterministic growth attribution", () => {
+  const creative = addGrowthAttributionToCreative({
+    asset: {
+      contentId: "content-123",
+      creativeVariantId: "variant-1",
+      campaignId: "campaign-123",
+      channel: "facebook",
+      genome: brief.genome,
+      cta: "Se boligen: https://www.zenecohomes.com/eiendommer/N5667#kontakt",
+      body: "Kort tekst",
+      generator: {},
+      factSources: [],
+    },
+    provenance: {
+      generatedBy: "test",
+      model: "test",
+      promptVersion: "test",
+      learningRulesUsed: [],
+      factSources: [],
+      propertyIds: [],
+      createdAt: "2026-09-26T00:00:00.000Z",
+      approvedBy: null,
+      approvedAt: null,
+    },
+  } as any);
+  const url = (creative.asset.cta || "").match(/https:\/\/\S+/)?.[0] || "";
+  const parsed = new URL(url);
+  assert.equal(parsed.searchParams.get("utm_source"), "facebook");
+  assert.equal(parsed.searchParams.get("utm_campaign"), "campaign-123");
+  assert.equal(parsed.searchParams.get("utm_content"), "content-123");
+  assert.equal(parsed.hash, "#kontakt");
+});
+
+test("external CTAs are not rewritten", () => {
+  const original = "Listen: https://www.youtube.com/watch?v=abc123";
+  const creative = addGrowthAttributionToCreative({
+    asset: {
+      contentId: "song-1",
+      creativeVariantId: "variant-1",
+      campaignId: "campaign-1",
+      channel: "instagram",
+      genome: { ...brief.genome, channel: "instagram" },
+      cta: original,
+      body: "Music",
+      generator: {},
+      factSources: [],
+    },
+    provenance: {
+      generatedBy: "test",
+      model: "test",
+      promptVersion: "test",
+      learningRulesUsed: [],
+      factSources: [],
+      propertyIds: [],
+      createdAt: "2026-09-26T00:00:00.000Z",
+      approvedBy: null,
+      approvedAt: null,
+    },
+  } as any);
+  assert.equal(creative.asset.cta, original);
 });
