@@ -80,12 +80,16 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await supabase.from("automation_logs").insert({
-      action: "remaster_social_reel_backfill",
-      agent_name: "nexus_remaster_social_reel_backfill",
-      status: "error",
-      details: { error: message },
-    }).catch(() => undefined);
+    try {
+      await supabase.from("automation_logs").insert({
+        action: "remaster_social_reel_backfill",
+        agent_name: "nexus_remaster_social_reel_backfill",
+        status: "error",
+        details: { error: message },
+      });
+    } catch {
+      // Best-effort observability must never hide the original backfill error.
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
