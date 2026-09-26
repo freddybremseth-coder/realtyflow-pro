@@ -358,7 +358,22 @@ export class NeuralBeatPipeline {
           audioUrl: audioUrl!,
           metadata: songRecord.metadata || undefined,
         });
-        artMode = classifyArtVisualMode(songRecord, songAnalysis);
+        artMode = classifyArtVisualMode({ ...songRecord, title: songRecord.title }, songAnalysis);
+        if (artMode === 'meditation' || artMode === 'relaxing') {
+          // A clearly calm/healing title must not inherit stale EDM metadata.
+          // Normalize downstream SEO, playlists, thumbnails and persisted song
+          // fields to the same low-energy lane used by the visual selector.
+          songAnalysis = {
+            ...songAnalysis,
+            genre: artMode === 'meditation' ? 'Meditation Ambient' : 'Ambient',
+            subGenre: artMode === 'meditation' ? 'Healing Meditation' : 'Relaxing Ambient',
+            style: artMode === 'meditation' ? 'meditative ambient' : 'soft ambient',
+            mood: artMode === 'meditation' ? 'meditative peaceful' : 'calm peaceful',
+            energy: 'low',
+            visualStyle: 'Serene still water, mist, soft dawn light, peaceful nature and zen calm; no DJs, parties, dancing, cars, boats, nightlife or neon.',
+            imageGenre: 'dream',
+          };
+        }
         stepCompleted(steps[currentStepIndex]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -376,6 +391,7 @@ export class NeuralBeatPipeline {
           genre: songAnalysis!.genre,
           style: songAnalysis!.style,
           mood: songAnalysis!.mood,
+          visualMode: artMode,
         });
 
         // Merge up to 3 currently-trending YouTube Music tags that the weekly
