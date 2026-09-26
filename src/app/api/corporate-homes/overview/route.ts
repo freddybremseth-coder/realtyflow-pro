@@ -68,6 +68,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: contactsError.message, corporateHomes: null }, { status: 500 });
   }
 
+  const { data: lastContentDraftRun, error: lastContentDraftRunError } = await supabase
+    .from("automation_logs")
+    .select("id,status,details,created_at")
+    .eq("action", "corporate_homes_content_drafts")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const rows = contacts || [];
   const prospectRows = prospects || [];
   const ids = new Set(rows.map((row: any) => String(row.id)));
@@ -178,6 +186,13 @@ export async function GET(request: NextRequest) {
           lastRun: lastDiscovery || null,
         },
       },
+      contentEngine: {
+        cadence: "Mandag 06:40 UTC",
+        draftsPerWeek: 3,
+        platforms: ["linkedin", "facebook"],
+        externalPublishing: false,
+        lastRun: lastContentDraftRun || null,
+      },
       stages,
       contacts: rows.slice(0, 100).map((row: any) => ({
         id: row.id,
@@ -194,6 +209,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError].filter(Boolean).map((item: any) => item.message),
   });
 }
