@@ -136,6 +136,25 @@ export async function publishMissingShort(songId: string): Promise<{
         : ['Shorts','Re-Master Freddy','EDM',song.genre || 'dance',song.name],
       categoryId: '10', privacyStatus: 'public', defaultAudioLanguage: 'zxx',
     }, BRAND, { requireBrandToken: true });
+
+    // Keep the rendered MP4 as a reusable social asset. This lets Facebook use
+    // the actual music Reel instead of falling back to a silent thumbnail post.
+    let socialReelUrl: string | null = null;
+    let socialReelStorageError: string | null = null;
+    try {
+      const socialPath = `remaster/${songId}/short.mp4`;
+      const { error: socialUploadError } = await supabase.storage.from('remaster-reels').upload(
+        socialPath,
+        short.videoBuffer,
+        { contentType: 'video/mp4', cacheControl: '3600', upsert: true },
+      );
+      if (socialUploadError) throw socialUploadError;
+      const candidate = supabase.storage.from('remaster-reels').getPublicUrl(socialPath).data.publicUrl;
+      if (candidate?.startsWith('https://')) socialReelUrl = candidate;
+    } catch (storageError) {
+      socialReelStorageError = storageError instanceof Error ? storageError.message : String(storageError);
+    }
+
     const finished = {
       ...claimed, shortsStatus: 'published', shortsError: null,
       shortsUrl: uploaded.youtubeUrl, shortsVideoId: uploaded.videoId,
@@ -143,6 +162,8 @@ export async function publishMissingShort(songId: string): Promise<{
       shortsDropStartSeconds: short.startSeconds,
       shortsDetectionMethod: artMode ? 'art-calm-section' : 'audio-retry',
       shortsPublishedAt: new Date().toISOString(),
+      socialReelUrl,
+      socialReelStorageError,
     };
     const { data: saved, error: saveError } = await supabase.from('songs').update({ ai_metadata: finished })
       .eq('id', songId).filter('ai_metadata->>shortsAttemptedAt', 'eq', startedAt)

@@ -141,13 +141,13 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     id: "remasterfreddy",
     name: "Re-Master Freddy",
     kind: "creator_media",
-    website: "https://freddybremseth.com",
+    website: "https://remaster.freddybremseth.com",
     pilotChannels: ["instagram", "facebook"],
     plannedChannels: ["youtube", "instagram", "facebook", "website"],
     contentPillars: ["song_release", "music_video", "youtube_catalog", "creative_process", "short_form_music", "website_discovery"],
     conversionGoals: ["youtube_view", "subscriber", "website_visit", "social_follow"],
     primaryCtas: ["watch_on_youtube", "subscribe", "visit_site", "follow"],
-    notes: "Push original/authorized Re-Master Freddy songs, YouTube videos, website and social profiles. Never infer ownership or licensing of third-party media. Meta channels remain planned until connected.",
+    notes: "Re-Master Freddy is music-first. Facebook and Instagram should prefer an approved Re-Master video/Reel with audible music over a static image or text-only post whenever a public video asset exists. Every song promotion must keep the verified YouTube song URL as the primary listen/watch CTA and may also link to remaster.freddybremseth.com. Static artwork is fallback only when no approved video exists. Never infer ownership or licensing of third-party media.",
   },
 ] as const;
 

@@ -178,6 +178,7 @@ export interface CreateCampaignDraftInput {
   legacyPublicationId?: string;
   channel?: "instagram" | "facebook";
   mediaUrl?: string;
+  mediaType?: "image" | "video" | "reel";
   useInventoryProperty?: boolean;
   propertyId?: string;
   /** Manual-review recovery only: bypass AI prose and compose only from whitelisted Inventory facts. */
@@ -416,7 +417,12 @@ export async function createCampaignDraft(
           sourceHumanApproved = !!decision.chosen.humanApproved;
         } else {
           creative = await generator.generate({ brief, brand, recommendation });
-          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: input.mediaUrl, mediaType: "image" } } };
+          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) {
+            const mediaType = input.mediaType ?? "image";
+            creative = { ...creative, asset: { ...creative.asset, media: mediaType === "image"
+              ? { imageUrl: input.mediaUrl, mediaType }
+              : { videoUrl: input.mediaUrl, mediaType } } };
+          }
         }
       }
     } catch (err) {
