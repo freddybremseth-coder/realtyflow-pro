@@ -6,7 +6,7 @@ the rendered MP4.
 
 Naming: lowercase brandId, `.png` extension. The brandIds in use:
 
-- Zen Eco Homes does **not** use a local `zeneco.png` fallback. Its canonical approved logo is `https://www.zenecohomes.com/api/brand-assets/zeneco-logo` (transparent PNG) and `https://www.zenecohomes.com/assets/zeneco-logo.svg` (website SVG).
+- Zen Eco Homes uses purpose-built assets from zenecohomes.com: `zeneco-header-dark.svg` for light UI surfaces, `zeneco-header-light.svg` over dark hero imagery, `zeneco-mark.svg` for avatars/favicons, and `zeneco-watermark.svg` for reels/video/social/YouTube. The detailed full logo is reserved for large brand surfaces.
 - `chatgenius.png` — Chat Genius
 - `soleada.png` — Soleada
 - `freddyb.png` — Freddybremseth.com
@@ -24,4 +24,4 @@ If neither is provided, the video renders without a logo (no error).
 
 ## Zen Eco Homes identity lock
 
-Do not recreate the former boxed ZE mark or the old “Presented by” sponsor card. Zen Eco Homes renderers must use the canonical approved villa / gold sun / deep-teal wave logo from zenecohomes.com. The local `zeneco-presented.svg` is only a transparent compatibility copy of that approved mark.
+Do not recreate the former boxed ZE mark or the old “Presented by” sponsor card. Do not shrink the detailed full logo into a tiny UI or watermark. Reels, videos, social posts and YouTube assets must use the dedicated transparent Zen Eco Homes watermark. `zeneco-presented.svg` remains only as a compatibility copy of that watermark.
