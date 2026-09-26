@@ -7,7 +7,9 @@ import {
   Building2,
   CheckCircle2,
   CircleHelp,
+  Copy,
   ExternalLink,
+  Mail,
   FileText,
   Loader2,
   RefreshCw,
@@ -15,6 +17,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
+import { corporateOutreachTemplates, personalizeCorporateOutreach } from "@/lib/corporate-outreach";
 
 type Brief = {
   title: string;
@@ -58,6 +61,8 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [warnings, setWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState("initial");
+  const [copyNotice, setCopyNotice] = useState("");
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -86,6 +91,28 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     () => contacts.filter((contact) => ["VERIFIED", "CONTACT_READY"].includes(String(contact.status || "").toUpperCase())),
     [contacts],
   );
+
+  const primaryContact = useMemo(
+    () => verifiedContacts.find((contact) => contact.is_primary) || verifiedContacts[0] || null,
+    [verifiedContacts],
+  );
+
+  const outreach = useMemo(() => {
+    const template = corporateOutreachTemplates.find((item) => item.key === selectedTemplate) || corporateOutreachTemplates[0];
+    const firstName = String(primaryContact?.name || "").trim().split(/\s+/)[0] || null;
+    return personalizeCorporateOutreach(template, { firstName, companyName: brief.company.name });
+  }, [brief.company.name, primaryContact, selectedTemplate]);
+
+  async function copyOutreach() {
+    const text = `Emne: ${outreach.subject}\n\n${outreach.body}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyNotice("Kopiert til utklippstavlen.");
+      window.setTimeout(() => setCopyNotice(""), 2200);
+    } catch {
+      setCopyNotice("Kunne ikke kopiere automatisk.");
+    }
+  }
 
   if (loading || !brief) {
     return (
@@ -217,6 +244,61 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
               <span className="mt-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-600">{item.status}</span>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-teal-800">
+              <Mail size={16} /> Godkjent norsk kontaktsekvens
+            </div>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Klargjør riktig e-post før kontakt</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Tekstene er godkjent for Zen Corporate Homes. RealtyFlow sender ikke automatisk fra denne visningen;
+              meldingen kopieres for kontrollert første kontakt og oppfølging.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {corporateOutreachTemplates.map((template) => (
+              <button
+                key={template.key}
+                onClick={() => setSelectedTemplate(template.key)}
+                className={`rounded-xl px-3 py-2 text-xs font-bold ${selectedTemplate === template.key ? "bg-teal-800 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+              >
+                {template.dayOffset === 0 ? "Første e-post" : `Dag ${template.dayOffset}`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-[.72fr_1.28fr]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Mottakergrunnlag</div>
+            <div className="mt-3 text-sm font-bold text-slate-950">{primaryContact?.name || "Ingen verifisert kontakt valgt ennå"}</div>
+            <div className="mt-1 text-xs text-slate-500">{primaryContact?.title || primaryContact?.buying_role || "Beslutningstakerrolle må verifiseres"}</div>
+            {primaryContact?.email && <div className="mt-2 text-xs font-semibold text-cyan-900">{primaryContact.email}</div>}
+            <div className="mt-4 rounded-xl bg-white p-3 text-xs leading-5 text-slate-600">
+              {primaryContact
+                ? "Bruk verifisert kontaktinformasjon og kontroller at personen fortsatt har relevant rolle før utsendelse."
+                : "Finn og verifiser beslutningstaker før første kontakt. Ikke send til generiske eller usikre persondata automatisk."}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-slate-500">Emne</div>
+              <div className="mt-1 font-bold text-slate-950">{outreach.subject}</div>
+            </div>
+            <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap p-4 font-sans text-sm leading-6 text-slate-700">{outreach.body}</pre>
+            <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 p-4">
+              <button onClick={() => void copyOutreach()} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
+                <Copy size={16} /> Kopier e-post
+              </button>
+              {copyNotice && <span className="text-xs font-semibold text-emerald-800">{copyNotice}</span>}
+              <span className="text-xs text-slate-500">Ingen automatisk utsendelse.</span>
+            </div>
+          </div>
         </div>
       </section>
 
