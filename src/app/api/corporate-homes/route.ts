@@ -78,12 +78,56 @@ export async function GET(request: NextRequest) {
         "bolig i Spania for ansatte",
         "medlemsbolig Spania",
       ],
+      trackedLandingPages: {
+        google: "https://www.zenecohomes.com/bedriftshytte-spania?utm_source=google&utm_medium=cpc&utm_campaign=corporate_homes_no",
+        linkedin: "https://www.zenecohomes.com/bedriftshytte-spania?utm_source=linkedin&utm_medium=paid_social&utm_campaign=corporate_homes_no",
+        organicLinkedIn: "https://www.zenecohomes.com/bedriftshytte-spania?utm_source=linkedin&utm_medium=organic&utm_campaign=corporate_homes_no",
+        outreach: "https://www.zenecohomes.com/bedriftshytte-spania?utm_source=outreach&utm_medium=email&utm_campaign=corporate_homes_no",
+      },
+      googleSearchDraft: {
+        campaign: "Zen Corporate Homes | Norway | Search",
+        adGroups: [
+          {
+            name: "Bedriftshytte Spania",
+            keywords: ["bedriftshytte spania", "firmahytte spania", "firmahytte utlandet", "kjøpe firmahytte"],
+          },
+          {
+            name: "Bolig for ansatte",
+            keywords: ["bolig i spania for ansatte", "bedriftsleilighet spania", "feriebolig ansatte"],
+          },
+          {
+            name: "Organisasjon og medlemmer",
+            keywords: ["medlemsbolig spania", "leilighet spania forening", "feriebolig forening"],
+          },
+        ],
+        headlines: [
+          "Bedriftshytte i Spania",
+          "Firmahytte på Costa Blanca",
+          "Bolig for ansatte i Spania",
+          "Zen Corporate Homes",
+          "Få en bedriftsvurdering",
+          "Fra idé til nøkkel i Spania",
+        ],
+        descriptions: [
+          "Vi hjelper bedrifter å finne, kjøpe og følge opp bolig i Spania for ansatte.",
+          "Se modeller, kalkulator og lokal drift. Få en uforpliktende bedriftsvurdering.",
+        ],
+        negatives: ["langtidsleie", "airbnb", "billig ferie", "hotell", "privat utleie"],
+      },
       linkedinAngles: [
         "Et ansattgode som faktisk blir brukt",
         "Fra norsk firmahytte til Costa Blanca",
         "50 ansatte. Én bolig i Spania.",
         "Et langsiktig medlemsfordel-konsept med lokal drift",
       ],
+      linkedinDraft: {
+        market: "Norway",
+        companySizes: ["11–50", "51–200", "201–500", "501–1 000"],
+        professionalFunctions: ["Ledelse", "HR / People", "Økonomi / Finance", "Administrasjon"],
+        seniority: ["Owner", "CXO", "Director", "Manager"],
+        primaryCopy: "50 ansatte. Én bolig i Spania. Zen Corporate Homes hjelper bedrifter og organisasjoner med boligvalg, kjøpsprosess, beslutningsgrunnlag og lokal oppfølging på Costa Blanca.",
+        cta: "Få en bedriftsvurdering",
+      },
       policyGuardrails: [
         "Behandle kampanjen som bolig/eiendom når annonseplattformen krever kategorisering.",
         "Ikke målrett eller ekskluder basert på beskyttede personopplysninger som kjønn, etnisitet, religion eller andre sensitive kjennetegn.",
