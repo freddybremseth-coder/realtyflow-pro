@@ -182,6 +182,12 @@ export interface CreateCampaignDraftInput {
   propertyId?: string;
   /** Manual-review recovery only: bypass AI prose and compose only from whitelisted Inventory facts. */
   deterministicInventoryCopy?: boolean;
+  /**
+   * Canary/manual-review recovery only. After novelty retries are exhausted,
+   * the final attempt may continue through all remaining gates but is forced
+   * to manual-review and can never publish live.
+   */
+  allowNoveltyManualReviewFallback?: boolean;
   /** Autopilot-only: an exact reusable source cannot be selected inside this window. */
   reuseCooldownDays?: number;
   /** Fail closed if recent publication history cannot be loaded. */
@@ -446,6 +452,7 @@ export async function createCampaignDraft(
     const d = await dispatchGeneratedAsset(orchestratorDeps, {
       asset: creative.asset, brief, run, brand, history, account: account ? { accountId: account.accountId } : null,
       service: input.service ?? null, sourceType, sourceId, reuseMode, preapprovedFormat, propertyIds: creative.provenance.propertyIds ?? [],
+      allowNoveltyManualReviewFallback: input.allowNoveltyManualReviewFallback === true,
     });
 
     results.push({
