@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { requireAdminApi } from '@/lib/api-admin';
 
 /**
@@ -39,27 +40,21 @@ export async function POST(request: NextRequest) {
 
     const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-180);
     const storagePath = `neural-beat/${Date.now()}-${safeFileName}`;
+    const bucket = 'assets';
 
-    const signedUrlResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/upload/sign/assets/${storagePath}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${serviceKey}`,
-          apikey: serviceKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ expiresIn: 600 }),
-        cache: 'no-store',
-      }
-    );
+    // Use the supported Supabase Storage SDK flow instead of constructing a
+    // raw signed-upload REST URL by hand. Safari/iOS could surface the old
+    // cross-origin PUT failure only as "Load failed".
+    const serviceClient = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: signedData, error: signedError } = await serviceClient.storage
+      .from(bucket)
+      .createSignedUploadUrl(storagePath);
 
-    const signedData = await signedUrlResponse.json().catch(() => ({}));
-
-    if (!signedUrlResponse.ok || !signedData.url || !signedData.token) {
+    if (signedError || !signedData?.token) {
       console.error('[NeuralBeatUpload] Could not create signed upload URL', {
-        status: signedUrlResponse.status,
-        message: signedData.message || signedData.error || 'Unknown Supabase Storage error',
+        message: signedError?.message || 'Unknown Supabase Storage error',
       });
       return NextResponse.json(
         { error: 'Could not create a secure upload URL. Try again.' },
@@ -67,12 +62,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const publicUrl = serviceClient.storage.from(bucket).getPublicUrl(storagePath).data.publicUrl;
+
     return NextResponse.json({
-      uploadUrl: `${supabaseUrl}/storage/v1${signedData.url}`,
+      bucket,
+      storagePath,
       token: signedData.token,
-      publicUrl: `${supabaseUrl}/storage/v1/object/public/assets/${storagePath}`,
-      method: 'signed',
-      expiresIn: 600,
+      uploadUrl: signedData.signedUrl || null,
+      publicUrl,
+      method: 'supabase-signed-upload',
+      expiresIn: 7200,
     });
   } catch (error) {
     return NextResponse.json(
