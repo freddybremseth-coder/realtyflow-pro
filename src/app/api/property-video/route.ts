@@ -8,7 +8,7 @@ import * as os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
-import { ZENECO_LOGO_PNG_URL } from "@/lib/brand-assets";
+import { ZENECO_WATERMARK_SVG_URL } from "@/lib/brand-assets";
 
 const execFileAsync = promisify(execFile);
 
@@ -110,8 +110,8 @@ async function resolveBrandLogo(
   }
 
   if (brandId === "zeneco") {
-    const dest = path.join(destDir, "zeneco-logo.png");
-    if (await downloadImage(ZENECO_LOGO_PNG_URL, dest)) {
+    const dest = path.join(destDir, "zeneco-watermark.svg");
+    if (await downloadImage(ZENECO_WATERMARK_SVG_URL, dest)) {
       console.log("[Property Video] Using canonical Zen Eco Homes logo.");
       return dest;
     }
@@ -155,7 +155,7 @@ async function buildYouTubeThumbnail(
     "-i", imagePath,
     "-i", logoPath,
     "-filter_complex",
-    "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720[bg];[1:v]scale=330:-1:force_original_aspect_ratio=decrease[logo];[bg][logo]overlay=W-w-36:H-h-30:format=auto",
+    "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720[bg];[1:v]scale=410:-1:force_original_aspect_ratio=decrease[logo];[bg][logo]overlay=W-w-38:H-h-32:format=auto",
     "-frames:v", "1",
     "-q:v", "2",
     "-y", outputPath,
