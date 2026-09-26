@@ -135,6 +135,12 @@ export default function CorporateHomesGrowthPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/corporate-homes/prospects"
+              className="inline-flex items-center gap-2 rounded-xl bg-teal-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700"
+            >
+              Prospektmotor <Target size={15} />
+            </Link>
             <a
               href={CORPORATE_HOMES_LANDING_URL}
               target="_blank"
