@@ -24,3 +24,26 @@ test("Corporate Homes dashboard surfaces prospect progress and CRM promotion sta
   assert.match(page, /Fokus nå/);
   assert.match(page, /Klarhet/);
 });
+
+
+test("Corporate Homes overview attributes actual leads by acquisition channel", () => {
+  assert.match(route, /acquisitionIdentity/);
+  assert.match(route, /acquisitionChannel/);
+  assert.match(route, /utm_source/);
+  assert.match(route, /utm_medium/);
+  assert.match(route, /utm_campaign/);
+  assert.match(route, /leadToQualifiedRate/);
+  assert.match(route, /pipelineValue/);
+  assert.match(route, /Google/);
+  assert.match(route, /LinkedIn/);
+  assert.match(route, /Meta/);
+  assert.match(route, /Outbound/);
+  assert.match(route, /Organisk \/ direkte/);
+});
+
+test("Corporate Homes dashboard surfaces channel performance before paid scaling", () => {
+  assert.match(page, /Kanalresultater/);
+  assert.match(page, /Lead → kval\./);
+  assert.match(page, /Aktiv pipeline/);
+  assert.match(page, /før annonsebudsjett skaleres/);
+});

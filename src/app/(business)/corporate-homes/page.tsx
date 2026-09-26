@@ -47,6 +47,21 @@ type Overview = {
     openWorkItems: number;
     pipelineValue: number;
   };
+  acquisition: {
+    periodDays: number;
+    attributionRule: string;
+    channels: Array<{
+      key: string;
+      label: string;
+      leads: number;
+      new30d: number;
+      active: number;
+      qualified: number;
+      pipelineValue: number;
+      leadToQualifiedRate: number;
+      topCampaigns: Array<{ campaign: string; leads: number }>;
+    }>;
+  };
   prospects: {
     total: number;
     target: number;
@@ -265,6 +280,60 @@ export default function CorporateHomesGrowthPage() {
         <Metric icon={<RefreshCw size={18} />} label="Må følges opp" value={data?.summary.dueNow ?? "—"} />
         <Metric icon={<BriefcaseBusiness size={18} />} label="Åpne oppgaver" value={data?.summary.openWorkItems ?? "—"} />
         <Metric icon={<CircleDollarSign size={18} />} label="Aktiv pipeline" value={data ? money(data.summary.pipelineValue) : "—"} />
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Kanalresultater</p>
+          <h2 className="mt-2 text-xl font-black text-slate-950">Mål Corporate-kanalene på leads og pipeline</h2>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+            Google, LinkedIn, Meta, outbound og organisk/direct sammenlignes på faktiske Corporate-leads,
+            kvalifisering og aktiv pipelineverdi. Dette er styringsgrunnlaget før annonsebudsjett skaleres.
+          </p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">{data?.acquisition.attributionRule || ""}</p>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[850px] text-left text-sm">
+            <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-3">Kanal</th>
+                <th className="px-3 py-3">Leads</th>
+                <th className="px-3 py-3">Nye 30d</th>
+                <th className="px-3 py-3">Aktive</th>
+                <th className="px-3 py-3">Kvalifisert+</th>
+                <th className="px-3 py-3">Lead → kval.</th>
+                <th className="px-3 py-3">Aktiv pipeline</th>
+                <th className="px-3 py-3">Kampanjer</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(data?.acquisition.channels || []).map((channel) => (
+                <tr key={channel.key} className="hover:bg-slate-50">
+                  <td className="px-3 py-4 font-black text-slate-950">{channel.label}</td>
+                  <td className="px-3 py-4 font-bold text-slate-800">{channel.leads}</td>
+                  <td className="px-3 py-4 text-slate-700">{channel.new30d}</td>
+                  <td className="px-3 py-4 text-slate-700">{channel.active}</td>
+                  <td className="px-3 py-4 text-slate-700">{channel.qualified}</td>
+                  <td className="px-3 py-4">
+                    <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-black text-teal-900">
+                      {channel.leadToQualifiedRate}%
+                    </span>
+                  </td>
+                  <td className="px-3 py-4 font-bold text-slate-800">{money(channel.pipelineValue)}</td>
+                  <td className="max-w-[280px] px-3 py-4 text-xs text-slate-500">
+                    {channel.topCampaigns.length
+                      ? channel.topCampaigns.map((item) => `${item.campaign} (${item.leads})`).join(" · ")
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+              {!loading && (data?.acquisition.channels || []).length === 0 && (
+                <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-500">Ingen attribuerte Corporate-leads ennå.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">

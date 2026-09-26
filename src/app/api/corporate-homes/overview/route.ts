@@ -16,6 +16,35 @@ function getSupabase() {
 }
 
 const ACTIVE = new Set(["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "ON_HOLD"]);
+const QUALIFIED_STAGES = new Set(["QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "WON"]);
+
+function acquisitionIdentity(row: any) {
+  const interactions = Array.isArray(row?.interactions) ? [...row.interactions].reverse() : [];
+  const website = interactions.find((item: any) => {
+    const metadata = item?.metadata && typeof item.metadata === "object" ? item.metadata : {};
+    const page = String(metadata.page_url || "").toLowerCase();
+    return Boolean(metadata.utm_source || metadata.utm_campaign || page.includes("/bedriftshytte-spania"));
+  });
+  const metadata = website?.metadata && typeof website.metadata === "object" ? website.metadata : {};
+  return {
+    source: String(metadata.utm_source || row?.source || "").trim().toLowerCase(),
+    medium: String(metadata.utm_medium || "").trim().toLowerCase(),
+    campaign: String(metadata.utm_campaign || "").trim(),
+  };
+}
+
+function acquisitionChannel(row: any) {
+  const attribution = acquisitionIdentity(row);
+  const signal = `${attribution.source} ${attribution.medium}`.toLowerCase();
+  if (signal.includes("google")) return { key: "google", label: "Google", ...attribution };
+  if (signal.includes("linkedin")) return { key: "linkedin", label: "LinkedIn", ...attribution };
+  if (/facebook|instagram|meta/.test(signal)) return { key: "meta", label: "Meta", ...attribution };
+  if (/realtyflow|outbound|email/.test(signal)) return { key: "outbound", label: "Outbound", ...attribution };
+  if (!attribution.source || /organic|direct|zeneco-corporate-homes/.test(signal)) {
+    return { key: "organic", label: "Organisk / direkte", ...attribution };
+  }
+  return { key: "other", label: "Andre kilder", ...attribution };
+}
 
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request, { corporateHomes: null });
@@ -105,6 +134,64 @@ export async function GET(request: NextRequest) {
     return Number.isFinite(value) && value <= now;
   }).length;
 
+  const channelOrder = ["google", "linkedin", "meta", "outbound", "organic", "other"];
+  const channelMap = new Map<string, {
+    key: string;
+    label: string;
+    leads: number;
+    new30d: number;
+    active: number;
+    qualified: number;
+    pipelineValue: number;
+    campaigns: Map<string, number>;
+  }>();
+  for (const row of rows) {
+    const attribution = acquisitionChannel(row);
+    const current = channelMap.get(attribution.key) || {
+      key: attribution.key,
+      label: attribution.label,
+      leads: 0,
+      new30d: 0,
+      active: 0,
+      qualified: 0,
+      pipelineValue: 0,
+      campaigns: new Map<string, number>(),
+    };
+    current.leads += 1;
+    const created = Date.parse(String(row.created_at || row.updated_at || ""));
+    if (Number.isFinite(created) && created >= thirtyDaysAgo) current.new30d += 1;
+    const stage = String(row.pipeline_status || "NEW").toUpperCase();
+    if (ACTIVE.has(stage)) current.active += 1;
+    if (QUALIFIED_STAGES.has(stage)) current.qualified += 1;
+    if (ACTIVE.has(stage)) current.pipelineValue += Number(row.pipeline_value || 0);
+    if (attribution.campaign) {
+      current.campaigns.set(attribution.campaign, (current.campaigns.get(attribution.campaign) || 0) + 1);
+    }
+    channelMap.set(attribution.key, current);
+  }
+  const acquisitionChannels = [...channelMap.values()]
+    .map((channel) => ({
+      key: channel.key,
+      label: channel.label,
+      leads: channel.leads,
+      new30d: channel.new30d,
+      active: channel.active,
+      qualified: channel.qualified,
+      pipelineValue: channel.pipelineValue,
+      leadToQualifiedRate: channel.leads ? Math.round((channel.qualified / channel.leads) * 100) : 0,
+      topCampaigns: [...channel.campaigns.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([campaign, leads]) => ({ campaign, leads })),
+    }))
+    .sort((a, b) => {
+      const rank = (key: string) => {
+        const index = channelOrder.indexOf(key);
+        return index === -1 ? 99 : index;
+      };
+      return rank(a.key) - rank(b.key);
+    });
+
   const prospectTierCounts = prospectRows.reduce<Record<string, number>>((acc, row: any) => {
     const tier = String(row.fit_tier || "UNSCORED").toUpperCase();
     acc[tier] = (acc[tier] || 0) + 1;
@@ -167,6 +254,11 @@ export async function GET(request: NextRequest) {
         dueNow,
         openWorkItems: corporateWorkItems.filter((item: any) => !["DONE", "CANCELLED"].includes(String(item.status || "").toUpperCase())).length,
         pipelineValue,
+      },
+      acquisition: {
+        channels: acquisitionChannels,
+        attributionRule: "Første Corporate-sideinteraksjon med UTM brukes som acquisition-kilde; ellers brukes kontaktens kilde og faller tilbake til organisk/direkte.",
+        periodDays: 30,
       },
       prospects: {
         total: prospectRows.length,
