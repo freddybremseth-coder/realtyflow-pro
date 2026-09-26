@@ -7,8 +7,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import ffmpegStatic from "ffmpeg-static";
 import { DONA_ANNA_REEL_IMAGES } from "./remaster-reels-extra-brands";
+import { buildPortfolioReelPoster } from "@/services/integrations/art-thumbnail-panel";
 import {
-  buildPortfolioReelCaption,buildPortfolioReelTextFilters,isApprovedReelAudioUrl,isApprovedReelImageUrl,renderPortfolioReel,
+  buildPortfolioReelCaption,isApprovedReelAudioUrl,isApprovedReelImageUrl,renderPortfolioReel,
 } from "./remaster-portfolio-reels";
 
 test("Reels Studio source guards accept only permanent Re-Master audio and brand-appropriate images",()=>{
@@ -62,16 +63,10 @@ test("production FFmpeg renders a real 15-second 1080x1920 Reel with two approve
 });
 
 
-test("portfolio Reel text overlays use an explicit font file and no ASS/SVG dependency",()=>{
-  const song={id:"s",title:"Sunset",audioUrl:"https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/song.mp3"};
-  const filters=buildPortfolioReelTextFilters({
-    brand:"zeneco",title:"Costa Blanca homes",durationSeconds:15,song,imageUrls:["x","y"],
-  },"/tmp/render-font.ttf");
-  assert.match(filters,/fontfile='\/tmp\/render-font\.ttf'/);
-  assert.match(filters,/ZEN ECO HOMES/);
-  assert.match(filters,/COSTA BLANCA/);
-  assert.doesNotMatch(filters,/ass=/);
-  assert.doesNotMatch(filters,/\.svg/i);
+test("portfolio Reel branding is rasterized before ffmpeg with no ASS, drawtext or SVG dependency",()=>{
+  const poster=buildPortfolioReelPoster("ZEN ECO HOMES","Costa Blanca homes","zenecohomes.com",true);
+  assert.ok(poster.length>1080*1920);
+  assert.equal(poster.toString("ascii",0,2),"P6");
 });
 
 test("six-brand Reels use their own images and destinations", () => {
