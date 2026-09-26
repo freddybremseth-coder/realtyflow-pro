@@ -28,7 +28,7 @@ function cleanText(value: unknown, max = 2000) {
   return String(value || "").trim().slice(0, max);
 }
 
-export function trackingFromPageUrl(value: string) {
+function trackingFromPageUrl(value: string) {
   if (!value) return {} as Record<string, string>;
   try {
     const url = new URL(value);
