@@ -22,6 +22,22 @@ test("UTM: utm_content bærer content_id", () => {
   assert.match(withUtm("https://x.no/a", utm), /utm_content=ig_483/);
 });
 
+
+test("UTM preserves existing query and contact hash fragment", () => {
+  const url = withUtm("https://www.zenecohomes.com/eiendommer/N5667?lang=no#kontakt", buildContentUtm({
+    channel: "facebook",
+    contentId: "content-123",
+    campaign: "camp-123",
+  }));
+  const parsed = new URL(url);
+  assert.equal(parsed.searchParams.get("lang"), "no");
+  assert.equal(parsed.searchParams.get("utm_source"), "facebook");
+  assert.equal(parsed.searchParams.get("utm_medium"), "organic");
+  assert.equal(parsed.searchParams.get("utm_campaign"), "camp-123");
+  assert.equal(parsed.searchParams.get("utm_content"), "content-123");
+  assert.equal(parsed.hash, "#kontakt");
+});
+
 test("confidence: exact når content + identitet finnes", () => {
   assert.equal(touchConfidence(tp({ contentId: "ig_1", contactId: "c1" })), "exact");
   assert.equal(touchConfidence(tp({ contentId: "ig_1" })), "strong");
