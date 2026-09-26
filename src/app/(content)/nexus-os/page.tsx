@@ -20,6 +20,22 @@ type PortfolioBrand = {
   learning: { rules: number; actionable: number };
 };
 type PortfolioPayload = { summary?: { brands?: number; activeBrands?: number; setupBrands?: number; sources?: number; readySources?: number; blockedSources?: number; publications30d?: number; published30d?: number; learningRules?: number; connectedChannels?: number }; brands?: PortfolioBrand[] };
+type GrowthScoreRow = {
+  brandId: string;
+  channel: string;
+  unifiedScore: number;
+  businessValue: number;
+  attributionCoveragePct: number;
+  evidence: string;
+  funnel: { impressions: number; views: number; clicks: number; leads: number; qualifiedLeads: number; viewings: number; offers: number; sales: number; commissionEur: number };
+  rates: { engagementRatePct: number; clickThroughRatePct: number; leadRatePer1000: number; qualificationRatePct: number; closeRatePct: number };
+};
+type GrowthScorePayload = {
+  portfolio?: GrowthScoreRow;
+  brands?: GrowthScoreRow[];
+  channels?: GrowthScoreRow[];
+  diagnostics?: { portfolioAttributionCoveragePct?: number; marketingMetricRows?: number; canonicalLeads?: number; attributedLeadTouches?: number };
+};
 type SourceState<T> = { data: T | null; error: string | null };
 
 function countApprovals(data: ApprovalPayload | null) {
@@ -39,6 +55,7 @@ export default function NexusOsPage() {
   const [agents, setAgents] = useState<SourceState<AgentPayload>>({ data: null, error: null });
   const [portfolio, setPortfolio] = useState<SourceState<PortfolioPayload>>({ data: null, error: null });
   const [attentionSource, setAttentionSource] = useState<SourceState<AttentionPayload>>({ data: null, error: null });
+  const [growthScore, setGrowthScore] = useState<SourceState<GrowthScorePayload>>({ data: null, error: null });
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
@@ -53,15 +70,16 @@ export default function NexusOsPage() {
         return { data: null, error: e instanceof Error ? e.message : String(e) };
       }
     };
-    const [m, b, a, ag, p, os] = await Promise.all([
+    const [m, b, a, ag, p, os, gs] = await Promise.all([
       fetchOne<MarketingPayload>("/api/marketing/readiness"),
       fetchOne<BookPayload>("/api/book-growth/overview"),
       fetchOne<ApprovalPayload>("/api/approvals"),
       fetchOne<AgentPayload>("/api/agents"),
       fetchOne<PortfolioPayload>("/api/nexus/portfolio"),
       fetchOne<AttentionPayload>("/api/os/status"),
+      fetchOne<GrowthScorePayload>("/api/marketing/unified-growth-score?days=30"),
     ]);
-    setMarketing(m); setBooks(b); setApprovals(a); setAgents(ag); setPortfolio(p); setAttentionSource(os); setLoading(false);
+    setMarketing(m); setBooks(b); setApprovals(a); setAgents(ag); setPortfolio(p); setAttentionSource(os); setGrowthScore(gs); setLoading(false);
   };
 
   useEffect(() => { void load(); }, []);
@@ -69,7 +87,9 @@ export default function NexusOsPage() {
   const readinessRows = marketing.data?.rows ?? [];
   const portfolioByBrand = useMemo(() => new Map((portfolio.data?.brands ?? []).map((b) => [b.brand_id, b])), [portfolio.data]);
   const attention = attentionSource.data?.attention ?? [];
-  const secondarySourceErrors = [marketing, books, approvals, agents, portfolio].map((source) => source.error).filter((value): value is string => Boolean(value));
+  const secondarySourceErrors = [marketing, books, approvals, agents, portfolio, growthScore].map((source) => source.error).filter((value): value is string => Boolean(value));
+  const growthPortfolio = growthScore.data?.portfolio;
+  const growthBrands = growthScore.data?.brands ?? [];
 
   return <div className="mx-auto max-w-[1600px] space-y-6 p-6">
     <header className="rounded-3xl border border-cyan-900/30 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-7 text-white shadow-2xl">
@@ -87,6 +107,54 @@ export default function NexusOsPage() {
       <Link href="/book-growth" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">BOOKS</div><div className="mt-2 text-3xl font-black">{books.data?.summary?.totalBooks ?? "—"}</div><div className="text-sm text-slate-500">publiserte titler</div></Link>
       <Link href="/approvals" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">APPROVALS</div><div className="mt-2 text-3xl font-black">{approvals.data ? countApprovals(approvals.data) : "—"}</div><div className="text-sm text-slate-500">venter kontroll</div></Link>
       <Link href="/agents" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">AI AGENTS</div><div className="mt-2 text-3xl font-black">{agents.data?.agents?.length ?? "—"}</div><div className="text-sm text-slate-500">capabilities</div></Link>
+    </section>
+
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-xs font-black uppercase tracking-wider text-slate-400">Unified Growth Score · 30 dager</div>
+          <h2 className="mt-1 text-xl font-black">Fra synlighet til lead og inntekt</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">Brand-totaler bruker canonical Revenue OS. Kanal- og content-score får bare kommersiell kreditt når attribusjonen er dokumentert.</p>
+        </div>
+        <div className="text-right">
+          <div className="text-4xl font-black text-cyan-700">{growthPortfolio?.unifiedScore ?? "—"}</div>
+          <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">portfolio score / 100</div>
+        </div>
+      </div>
+      {growthScore.error ? (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Growth Score kan ikke leses: {growthScore.error}</div>
+      ) : (
+        <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            {[
+              ["Views", growthPortfolio?.funnel.views ?? 0],
+              ["Klikk", growthPortfolio?.funnel.clicks ?? 0],
+              ["Leads", growthPortfolio?.funnel.leads ?? 0],
+              ["Kvalifiserte", growthPortfolio?.funnel.qualifiedLeads ?? 0],
+              ["Salg", growthPortfolio?.funnel.sales ?? 0],
+              ["Attribusjon", String(growthScore.data?.diagnostics?.portfolioAttributionCoveragePct ?? 0) + "%"],
+            ].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</div><div className="mt-1 text-2xl font-black text-slate-900">{value}</div></div>)}
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {growthBrands.slice(0, 9).map((row) => {
+              const brand = OWNED_GROWTH_BRANDS.find((item) => item.id === row.brandId);
+              return <div key={row.brandId} className="rounded-xl border border-slate-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><div className="font-black text-slate-900">{brand?.name ?? row.brandId}</div><div className="mt-1 text-[11px] text-slate-500">{row.evidence} evidence · {row.attributionCoveragePct}% attribusjon</div></div>
+                  <div className="rounded-lg bg-cyan-50 px-3 py-2 text-xl font-black text-cyan-800">{row.unifiedScore}</div>
+                </div>
+                <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                  <div className="rounded-lg bg-slate-50 p-2"><div className="font-black">{row.funnel.views}</div><div className="text-[9px] uppercase text-slate-400">views</div></div>
+                  <div className="rounded-lg bg-slate-50 p-2"><div className="font-black">{row.funnel.clicks}</div><div className="text-[9px] uppercase text-slate-400">clicks</div></div>
+                  <div className="rounded-lg bg-slate-50 p-2"><div className="font-black">{row.funnel.leads}</div><div className="text-[9px] uppercase text-slate-400">leads</div></div>
+                  <div className="rounded-lg bg-slate-50 p-2"><div className="font-black">{row.funnel.sales}</div><div className="text-[9px] uppercase text-slate-400">sales</div></div>
+                </div>
+              </div>;
+            })}
+            {!loading && growthBrands.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">Ingen målte Growth Score-data ennå.</div>}
+          </div>
+        </>
+      )}
     </section>
 
     <section className="grid gap-5 xl:grid-cols-[1fr_2fr]">
