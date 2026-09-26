@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Mail,
   FileText,
+  Save,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -40,6 +41,20 @@ type Brief = {
     facts: string[];
   };
   workingModel: { label: string; rationale: string };
+  assessment: {
+    model: string | null;
+    budgetMinEur: number | null;
+    budgetMaxEur: number | null;
+    expectedUsers: number | null;
+    usageWeeksPerYear: number | null;
+    preferredArea: string | null;
+    bedroomsMin: number | null;
+    propertyType: string | null;
+    ownershipYears: number | null;
+    airportMaxMinutes: number | null;
+    readyForPropertyMatch: boolean;
+  };
+  propertyMatchCriteria: string[];
   buyingCommittee: string[];
   discoveryQuestions: string[];
   boardChecklist: Array<{ label: string; status: string; note: string }>;
@@ -51,6 +66,7 @@ type Prospect = {
   id: string;
   converted_contact_id?: string | null;
   status?: string | null;
+  evidence?: Record<string, unknown> | null;
 };
 
 export default function CorporateProspectBriefPage({ params }: { params: Promise<{ id: string }> }) {
@@ -63,6 +79,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [error, setError] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("initial");
   const [copyNotice, setCopyNotice] = useState("");
+  const [savingAssessment, setSavingAssessment] = useState(false);
+  const [assessmentNotice, setAssessmentNotice] = useState("");
+  const [assessment, setAssessment] = useState({
+    model: "",
+    budget_min_eur: "",
+    budget_max_eur: "",
+    expected_users: "",
+    usage_weeks_per_year: "",
+    preferred_area: "Costa Blanca / åpen for forslag",
+    bedrooms_min: "3",
+    property_type: "Leilighet eller villa",
+    ownership_years: "10",
+    airport_max_minutes: "60",
+  });
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -74,6 +104,15 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       if (!response.ok) throw new Error(body?.error || "Kunne ikke hente beslutningsgrunnlaget.");
       setBrief(body?.brief || null);
       setProspect(body?.prospect || null);
+      const savedAssessment = body?.prospect?.evidence?.corporate_assessment;
+      if (savedAssessment && typeof savedAssessment === "object") {
+        setAssessment((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            Object.entries(savedAssessment).map(([key, value]) => [key, value == null ? "" : String(value)]),
+          ),
+        }));
+      }
       setContacts(body?.contacts || []);
       setWarnings(body?.warnings || []);
     } catch (loadError) {
@@ -111,6 +150,45 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       window.setTimeout(() => setCopyNotice(""), 2200);
     } catch {
       setCopyNotice("Kunne ikke kopiere automatisk.");
+    }
+  }
+
+  async function saveAssessment() {
+    if (!prospect) return;
+    setSavingAssessment(true);
+    setAssessmentNotice("");
+    setError("");
+    try {
+      const currentEvidence = prospect.evidence && typeof prospect.evidence === "object" ? prospect.evidence : {};
+      const normalizedAssessment = {
+        model: assessment.model || null,
+        budget_min_eur: assessment.budget_min_eur ? Number(assessment.budget_min_eur) : null,
+        budget_max_eur: assessment.budget_max_eur ? Number(assessment.budget_max_eur) : null,
+        expected_users: assessment.expected_users ? Number(assessment.expected_users) : null,
+        usage_weeks_per_year: assessment.usage_weeks_per_year ? Number(assessment.usage_weeks_per_year) : null,
+        preferred_area: assessment.preferred_area || null,
+        bedrooms_min: assessment.bedrooms_min ? Number(assessment.bedrooms_min) : null,
+        property_type: assessment.property_type || null,
+        ownership_years: assessment.ownership_years ? Number(assessment.ownership_years) : null,
+        airport_max_minutes: assessment.airport_max_minutes ? Number(assessment.airport_max_minutes) : null,
+        updated_at: new Date().toISOString(),
+      };
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evidence: { ...currentEvidence, corporate_assessment: normalizedAssessment },
+          next_action: "Bruk Corporate Home Assessment til å lage konkret boligshortlist.",
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lagre bedriftsvurderingen.");
+      setAssessmentNotice("Bedriftsvurderingen er lagret.");
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Kunne ikke lagre bedriftsvurderingen.");
+    } finally {
+      setSavingAssessment(false);
     }
   }
 
@@ -234,6 +312,62 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Corporate Home Assessment</div>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Gjør prospektet klart for boligmatching</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Lagre de viktigste kommersielle kriteriene fra discovery. Når kjernefeltene er på plass kan dossieret
+              brukes som bestilling til en konkret boligshortlist.
+            </p>
+          </div>
+          <span className={`inline-flex rounded-full px-3 py-1.5 text-xs font-black ${brief.assessment.readyForPropertyMatch ? "bg-emerald-100 text-emerald-900" : "bg-amber-100 text-amber-900"}`}>
+            {brief.assessment.readyForPropertyMatch ? "Klar for boligmatch" : "Trenger flere kriterier"}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <AssessmentInput label="Budsjett fra EUR" type="number" value={assessment.budget_min_eur} onChange={(value) => setAssessment((row) => ({ ...row, budget_min_eur: value }))} placeholder="300000" />
+          <AssessmentInput label="Budsjett til EUR" type="number" value={assessment.budget_max_eur} onChange={(value) => setAssessment((row) => ({ ...row, budget_max_eur: value }))} placeholder="600000" />
+          <AssessmentInput label="Forventede brukere" type="number" value={assessment.expected_users} onChange={(value) => setAssessment((row) => ({ ...row, expected_users: value }))} placeholder="50" />
+          <AssessmentInput label="Bruksuker per år" type="number" value={assessment.usage_weeks_per_year} onChange={(value) => setAssessment((row) => ({ ...row, usage_weeks_per_year: value }))} placeholder="40" />
+          <AssessmentInput label="Ønsket område" value={assessment.preferred_area} onChange={(value) => setAssessment((row) => ({ ...row, preferred_area: value }))} />
+          <AssessmentInput label="Min. soverom" type="number" value={assessment.bedrooms_min} onChange={(value) => setAssessment((row) => ({ ...row, bedrooms_min: value }))} />
+          <AssessmentInput label="Boligtype" value={assessment.property_type} onChange={(value) => setAssessment((row) => ({ ...row, property_type: value }))} />
+          <AssessmentInput label="Eierhorisont år" type="number" value={assessment.ownership_years} onChange={(value) => setAssessment((row) => ({ ...row, ownership_years: value }))} />
+          <AssessmentInput label="Maks min. til flyplass" type="number" value={assessment.airport_max_minutes} onChange={(value) => setAssessment((row) => ({ ...row, airport_max_minutes: value }))} />
+          <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600 md:col-span-2">
+            Modell
+            <select value={assessment.model} onChange={(event) => setAssessment((row) => ({ ...row, model: event.target.value }))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900">
+              <option value="">Bruk anbefalt arbeidsmodell</option>
+              <option value="Ansattbolig">Ansattbolig</option>
+              <option value="Bedriftsvilla">Bedriftsvilla</option>
+              <option value="Delt bedriftsbolig">Delt bedriftsbolig</option>
+              <option value="Medlemsbolig">Medlemsbolig</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button onClick={() => void saveAssessment()} disabled={savingAssessment} className="inline-flex items-center gap-2 rounded-xl bg-teal-800 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+            {savingAssessment ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Lagre bedriftsvurdering
+          </button>
+          {assessmentNotice && <span className="text-xs font-bold text-emerald-800">{assessmentNotice}</span>}
+        </div>
+
+        {brief.propertyMatchCriteria.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="text-xs font-black uppercase tracking-wide text-emerald-900">Boligmatch-profil</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {brief.propertyMatchCriteria.map((criterion) => (
+                <span key={criterion} className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-emerald-950">{criterion}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Styre-/ledercase</div>
         <h2 className="mt-2 text-xl font-black text-slate-950">Beslutningspunkter</h2>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -311,5 +445,33 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
         </ul>
       </section>
     </div>
+  );
+}
+
+
+function AssessmentInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  return (
+    <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+      {label}
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+      />
+    </label>
   );
 }
