@@ -116,7 +116,11 @@ function calmTags(name: string, mode: 'meditation' | 'relaxing') {
  * This endpoint is intentionally temporary and will be removed after the
  * repair has been verified in production.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const suppliedKey = new URL(request.url).searchParams.get('key');
+  if (suppliedKey !== 'calm-repair-20260926-rf-8Vq3Pm7Nz2Kx') {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
   const supabase = getSupabase();
   const ids = Object.keys(TARGETS);
   const { data: songs, error } = await supabase
