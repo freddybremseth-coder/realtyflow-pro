@@ -120,6 +120,32 @@ export default function NewAdCampaignPage() {
   const selectedProvider = providers.find((provider) => provider.id === providerMode);
   const selectedGrowthGoal = GROWTH_GOALS.find((goal) => goal.id === growthGoal);
 
+  useEffect(() => {
+    const preset = new URLSearchParams(window.location.search).get("preset");
+    if (preset !== "corporate-homes") return;
+
+    setBrandId("zeneco");
+    setName("Zen Corporate Homes — Norge");
+    setProductName("Zen Corporate Homes");
+    setProductImageUrl("https://www.zenecohomes.com/assets/social-profile-zeneco.png");
+    setLabelDescription(
+      "B2B service for Norwegian companies, associations and member organisations considering a modern apartment or villa on Costa Blanca for shared employee or member use. Use premium modern Mediterranean architecture, calm professional business context and credible real-estate imagery. Never imply guaranteed tax exemption, guaranteed return, or legal approval."
+    );
+    setTargetMarkets("NO");
+    setAudienceSegments("Daglig leder / CEO, HR / People, CFO / økonomi, styreleder, organisasjonsleder, medlemsorganisasjoner");
+    setBrandVoice("premium, calm, credible, consultative, modern Mediterranean, B2B decision-oriented");
+    setFunnelStage("cold");
+    setGrowthGoal("lead_generation");
+    setDefaultLanguage("nb-NO");
+    setOffer("Gratis første bedriftsvurdering: behov, modell, budsjett og relevant bolig-shortlist");
+    setTargetTotal(25);
+    setAspectRatios(["1:1", "4:5", "1.91:1"]);
+    setProviderMode("auto");
+    setCampaignStyle("scandinavian_clean");
+    setOverlayMode("suggestions");
+    setPreserveProductIdentity(false);
+  }, []);
+
   const previewPlan = useMemo(() => planAdCampaign({
     productName: productName || "produktet",
     productImageUrl: productImageUrl || "https://example.com/product.png",
