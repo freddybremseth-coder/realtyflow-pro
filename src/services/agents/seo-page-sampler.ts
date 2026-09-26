@@ -1,3 +1,5 @@
+import { inspectPageQuality, type SEOPageQuality } from "./seo-page-quality";
+
 /**
  * Choose up to three inspectable PUBLIC pages already declared by a brand's
  * bounded sitemap response. No arbitrary URLs, site search, or internal APIs.
@@ -75,6 +77,11 @@ export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 
         artworks[(day * limit + i) % artworks.length].href);
     }
   }
+  // Rotate every content group, not just Books/Art. Keep the request bound.
+  for (const [name, candidates] of groups) {
+    const offset = day % candidates.length;
+    groups.set(name, [...candidates.slice(offset), ...candidates.slice(0, offset)]);
+  }
   const picked: Candidate[] = [];
   for (const group of ["property", "editorial", "local", "other"]) {
     const candidate = groups.get(group)?.shift();
@@ -92,6 +99,7 @@ export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 
 }
 
 export type SampledPage = {
+  quality?: SEOPageQuality;
   path: string; status: number | null; titlePresent: boolean | null;
   descriptionPresent: boolean | null; canonical: string | null;
   h1Count: number | null; noindex: boolean | null; issue: string | null;
@@ -112,6 +120,7 @@ export function inspectPublicSample(
     return result;
   }
   const html = snapshot.body;
+  result.quality = inspectPageQuality(html);
   result.titlePresent = /<title(?:\s[^>]*)?>[\s\S]*?\S[\s\S]*?<\/title>/i.test(html);
   result.descriptionPresent = [...html.matchAll(/<meta\b[^>]*>/gi)].some(match =>
     /\bname\s*=\s*(?:"description"|'description'|description)(?:\s|>)/i.test(match[0]) &&

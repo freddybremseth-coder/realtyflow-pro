@@ -118,8 +118,7 @@ export function planSEODiagnostics(input: {
   for (const brandId of BRANDS) {
     const audit = auditsByBrand.get(brandId);
     if (!audit) continue;
-    const explicit = audit.observations.filter(observation =>
-      /noindex|site-wide disallow|canonical refers to a different host|canonical pointing to|non-HTTPS canonical|has no canonical link|has no HTML meta description|unparsable JSON-LD|did not return HTTP 200|has no server-rendered <title>/i.test(observation));
+    const explicit = audit.observations;
     if (explicit.length > 0) checks.push(diagnostic({
       id: "check-public-audit:" + brandId, brandId, category: "technical",
       title: "Et konkret offentlig SEO-avvik må bekreftes",
@@ -127,6 +126,30 @@ export function planSEODiagnostics(input: {
       nextStep: "Gjenta HTTP-kontrollen på eksakt offentlig URL; bekreft ønsket canonical og om siden er ment å indekseres. Rett bare dokumenterte feil i godkjent, reversibel publiseringsflyt.",
       evidence: audit.base + " · begrenset offentlig SEO-audit " + audit.checkedAt, kind: "observed",
     }));
+  }
+  // HTML defects do not need a minimum Google impression count. Findings
+  // carry exact paths and remain repair candidates until a writer verifies them.
+  for (const audit of audits) {
+    if (!BRANDS.some(brand => brand === audit.brandId)) continue;
+    for (const page of [{ path: "/", quality: audit.home?.quality }, ...(audit.samples || [])]) {
+      const quality = page.quality;
+      if (!quality) continue;
+      const findings: string[] = [];
+      if (!quality.language) findings.push("HTML mangler språkangivelse (lang)");
+      if (!quality.mobileViewport) findings.push("ingen viewport med width=device-width funnet");
+      if (quality.imagesWithoutAlt) findings.push(quality.imagesWithoutAlt + " bilder mangler alt-attributt");
+      if (quality.invalidStructuredDataBlocks) findings.push(quality.invalidStructuredDataBlocks + " JSON-LD-blokker kan ikke parses");
+      if (!findings.length) continue;
+      checks.push(diagnostic({
+        id: "check-page-quality:" + audit.brandId + ":" + page.path,
+        brandId: audit.brandId, category: "technical", kind: "observed",
+        title: "Sam fant konkrete HTML-avvik på " + page.path,
+        finding: findings.join("; ") + ". Kontrollert automatisk, ikke rettet.",
+        nextStep: "Rett i nettstedets publiseringskanal og kontroller offentlig HTML etterpå. Språk og bildebeskrivelser må stemme med innholdet; dekorative bilder kan ha tom alt. Strukturert data må beskrive synlig, dokumentert innhold. Sam har foreløpig ingen automatisk skriver for disse feltene.",
+        evidence: audit.base + page.path + " · " + audit.checkedAt +
+          " · statisk HTML; ingen full WCAG-test, skjemainnsending eller dokumentert AI-sitering.",
+      }));
+    }
   }
   // Care is a technical-only satellite. Public service information may be
   // inspected, while private customer routes must retain intended auth/noindex.
