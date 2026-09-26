@@ -24,7 +24,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Supabase not configured", corporateHomes: null }, { status: 500 });
   }
 
-  const [{ data: contacts, error: contactsError }, { data: workItems, error: workItemsError }] = await Promise.all([
+  const [
+    { data: contacts, error: contactsError },
+    { data: workItems, error: workItemsError },
+    { data: prospects, error: prospectsError },
+    { data: lastDiscovery, error: lastDiscoveryError },
+    { data: discoveryControl, error: discoveryControlError },
+  ] = await Promise.all([
     supabase
       .from("contacts")
       .select("id,name,email,phone,source,pipeline_status,pipeline_value,property_interest,next_followup,last_contact,updated_at,created_at,interactions,notes,brand_id")
@@ -36,9 +42,25 @@ export async function GET(request: NextRequest) {
       .from("work_items")
       .select("id,title,description,status,priority,source_id,next_action,metadata,created_at,updated_at")
       .eq("brand_id", "zeneco")
-      .eq("source_type", "website_lead")
       .order("updated_at", { ascending: false })
       .limit(1500),
+    supabase
+      .from("corporate_prospects")
+      .select("id,status,fit_tier,fit_score,converted_contact_id,created_at,updated_at")
+      .eq("brand_id", "zeneco")
+      .limit(1000),
+    supabase
+      .from("automation_logs")
+      .select("id,status,details,created_at")
+      .eq("action", "corporate_homes_discovery")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("nexus_runtime_controls")
+      .select("enabled,risk_level,config,updated_at")
+      .eq("control_key", "cron:/api/cron/corporate-homes-discovery")
+      .maybeSingle(),
   ]);
 
   if (contactsError) {
@@ -46,6 +68,7 @@ export async function GET(request: NextRequest) {
   }
 
   const rows = contacts || [];
+  const prospectRows = prospects || [];
   const ids = new Set(rows.map((row: any) => String(row.id)));
   const corporateWorkItems = (workItems || []).filter((item: any) => {
     if (ids.has(String(item.source_id || ""))) return true;
@@ -72,6 +95,18 @@ export async function GET(request: NextRequest) {
     return Number.isFinite(value) && value <= now;
   }).length;
 
+  const prospectTierCounts = prospectRows.reduce<Record<string, number>>((acc, row: any) => {
+    const tier = String(row.fit_tier || "UNSCORED").toUpperCase();
+    acc[tier] = (acc[tier] || 0) + 1;
+    return acc;
+  }, {});
+  const prospectStatusCounts = prospectRows.reduce<Record<string, number>>((acc, row: any) => {
+    const status = String(row.status || "DISCOVERED").toUpperCase();
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const promotedProspects = prospectRows.filter((row: any) => Boolean(row.converted_contact_id)).length;
+
   return NextResponse.json({
     corporateHomes: {
       generatedAt: new Date().toISOString(),
@@ -82,6 +117,23 @@ export async function GET(request: NextRequest) {
         dueNow,
         openWorkItems: corporateWorkItems.filter((item: any) => !["DONE", "CANCELLED"].includes(String(item.status || "").toUpperCase())).length,
         pipelineValue,
+      },
+      prospects: {
+        total: prospectRows.length,
+        target: 250,
+        progressPercent: Math.min(100, Math.round((prospectRows.length / 250) * 100)),
+        aTier: prospectTierCounts.A || 0,
+        bTier: prospectTierCounts.B || 0,
+        qualified: (prospectStatusCounts.QUALIFIED || 0) + (prospectStatusCounts.CONTACT_READY || 0),
+        promoted: promotedProspects,
+        statusCounts: prospectStatusCounts,
+        tierCounts: prospectTierCounts,
+        discovery: {
+          enabled: discoveryControl?.enabled ?? null,
+          riskLevel: discoveryControl?.risk_level || null,
+          config: discoveryControl?.config || null,
+          lastRun: lastDiscovery || null,
+        },
       },
       stages,
       contacts: rows.slice(0, 100).map((row: any) => ({
@@ -99,6 +151,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: workItemsError ? [workItemsError.message] : [],
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError].filter(Boolean).map((item: any) => item.message),
   });
 }
