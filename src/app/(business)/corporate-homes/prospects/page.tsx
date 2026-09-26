@@ -7,12 +7,14 @@ import {
   ArrowLeft,
   Building2,
   CheckCircle2,
+  Database,
   FileUp,
   Loader2,
   Plus,
   RefreshCw,
   Search,
   Target,
+  UserPlus,
   Users,
 } from "lucide-react";
 
@@ -40,6 +42,7 @@ type Prospect = {
   next_action?: string | null;
   next_followup?: string | null;
   contact_coverage?: { total: number; verified: number; primary: number };
+  converted_contact_id?: string | null;
 };
 
 type Summary = {
@@ -77,6 +80,8 @@ const STATUS_LABELS: Record<string, string> = {
   OPPORTUNITY: "Mulighet",
   DISQUALIFIED: "Ikke aktuell",
 };
+
+const PROMOTABLE_STATUSES = new Set(["QUALIFIED", "CONTACT_READY", "CONTACTED", "ENGAGED", "MEETING", "OPPORTUNITY"]);
 
 const EXPECTED_HEADERS = [
   "company_name",
@@ -149,6 +154,11 @@ export default function CorporateProspectsPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [importing, setImporting] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryCandidates, setDiscoveryCandidates] = useState<Array<Record<string, any>>>([]);
+  const [discoveryProfile, setDiscoveryProfile] = useState("core");
+  const [minEmployees, setMinEmployees] = useState("15");
+  const [maxEmployees, setMaxEmployees] = useState("500");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [manual, setManual] = useState({
@@ -241,6 +251,72 @@ export default function CorporateProspectsPage() {
     }
   }
 
+  async function discoverFromBrreg() {
+    setDiscovering(true);
+    setNotice("");
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        profile: discoveryProfile,
+        minEmployees: minEmployees || "15",
+        maxEmployees: maxEmployees || "500",
+        limit: "50",
+        scanPages: "4",
+      });
+      const response = await fetch(`/api/corporate-homes/discovery/brreg?${params.toString()}`, { cache: "no-store" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke hente Brønnøysund-data.");
+      setDiscoveryCandidates(body?.candidates || []);
+      const count = body?.candidates?.length || 0;
+      setNotice(`Fant ${count} virksomheter i det avgrensede Brønnøysund-uttrekket.`);
+    } catch (discoveryError) {
+      setError(discoveryError instanceof Error ? discoveryError.message : "Kunne ikke hente Brønnøysund-data.");
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  async function importDiscoveryBatch() {
+    if (!discoveryCandidates.length) return;
+    setImporting(true);
+    setNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/prospects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: discoveryCandidates }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke importere Brønnøysund-batch.");
+      setNotice(`Importert ${body.createdCount || 0}. Duplikater: ${body.duplicateCount || 0}. Ugyldige: ${body.invalid?.length || 0}.`);
+      await load();
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Kunne ikke importere Brønnøysund-batch.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function promoteToCrm(prospect: Prospect) {
+    setBusyId(prospect.id);
+    setNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${prospect.id}/promote`, {
+        method: "POST",
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke promotere prospektet til CRM.");
+      setNotice(`${prospect.company_name} er lagt i Zen Eco Homes CRM. Automatisk nurture er pauset.`);
+      await load();
+    } catch (promotionError) {
+      setError(promotionError instanceof Error ? promotionError.message : "Kunne ikke promotere prospektet til CRM.");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   async function importCsv(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -321,6 +397,78 @@ export default function CorporateProspectsPage() {
         <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
           <div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${progress}%` }} />
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-teal-800">
+              <Database size={16} /> Offentlig selskapsdata
+            </div>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Finn bedrifter i Brønnøysundregistrene</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Henter kun virksomhetsdata fra Enhetsregisterets åpne API: navn, organisasjonsnummer, bransje,
+              antall ansatte, adresse og eventuelt nettsted. Ingen personlige e-poster eller telefonnumre hentes her.
+            </p>
+          </div>
+          <a
+            href="https://data.brreg.no/enhetsregisteret/api/dokumentasjon/no/index.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-bold text-cyan-800 hover:underline"
+          >
+            API-dokumentasjon
+          </a>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-[1.1fr_.7fr_.7fr_auto]">
+          <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+            Bransjeprofil
+            <select value={discoveryProfile} onChange={(event) => setDiscoveryProfile(event.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900">
+              <option value="core">Kjernebransjer</option>
+              <option value="technology">Teknologi / software</option>
+              <option value="consulting">Rådgivning / engineering</option>
+              <option value="construction">Bygg / anlegg</option>
+              <option value="energy">Energi</option>
+              <option value="finance">Finans / regnskap</option>
+              <option value="industry">Industri</option>
+              <option value="all">Alle bransjer</option>
+            </select>
+          </label>
+          <Input label="Min. ansatte" type="number" value={minEmployees} onChange={setMinEmployees} />
+          <Input label="Maks ansatte" type="number" value={maxEmployees} onChange={setMaxEmployees} />
+          <button onClick={() => void discoverFromBrreg()} disabled={discovering} className="self-end inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 text-sm font-bold text-white disabled:opacity-50">
+            {discovering ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} Finn virksomheter
+          </button>
+        </div>
+
+        {discoveryCandidates.length > 0 && (
+          <div className="mt-5">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-semibold text-slate-700">
+                {discoveryCandidates.length} kandidater · sortert etter Corporate Homes-fit
+              </p>
+              <button onClick={() => void importDiscoveryBatch()} disabled={importing} className="inline-flex items-center gap-2 rounded-xl border border-teal-700 px-4 py-2 text-sm font-bold text-teal-900 disabled:opacity-50">
+                {importing ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Legg hele batchen i kø
+              </button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {discoveryCandidates.slice(0, 12).map((candidate) => (
+                <article key={candidate.organization_number || candidate.company_name} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-bold text-slate-950">{candidate.company_name}</div>
+                      <div className="mt-1 text-xs text-slate-500">{candidate.organization_number} · {candidate.employee_count ?? "?"} ansatte</div>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-teal-900">{candidate.fit_tier} · {candidate.fit_score}</span>
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-slate-600">{candidate.industry || "Bransje ikke oppgitt"}</p>
+                </article>
+              ))}
+            </div>
+            {discoveryCandidates.length > 12 && <p className="mt-3 text-xs text-slate-500">Viser de 12 øverste av {discoveryCandidates.length}. Hele batchen importeres med knappen over.</p>}
+          </div>
+        )}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[.7fr_1.3fr]">
@@ -407,6 +555,7 @@ export default function CorporateProspectsPage() {
                 <th className="px-3 py-3">Beslutningsroller</th>
                 <th className="px-3 py-3">Fase</th>
                 <th className="px-3 py-3">Datagap</th>
+                <th className="px-3 py-3">CRM</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -447,9 +596,22 @@ export default function CorporateProspectsPage() {
                   <td className="max-w-[260px] px-3 py-4 text-xs leading-5 text-amber-900">
                     {(prospect.evidence_gaps || []).slice(0, 3).join(" · ") || "Ingen store gap"}
                   </td>
+                  <td className="px-3 py-4">
+                    {prospect.converted_contact_id ? (
+                      <Link href={`/customers?contactId=${encodeURIComponent(prospect.converted_contact_id)}&tab=all`} className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-2 text-xs font-bold text-emerald-800 hover:underline">
+                        <CheckCircle2 size={14} /> I CRM
+                      </Link>
+                    ) : PROMOTABLE_STATUSES.has(prospect.status) ? (
+                      <button onClick={() => void promoteToCrm(prospect)} disabled={busyId === prospect.id} className="inline-flex items-center gap-1 rounded-lg bg-slate-950 px-2.5 py-2 text-xs font-bold text-white disabled:opacity-50">
+                        {busyId === prospect.id ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />} Promoter
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-slate-400">Kvalifiser først</span>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {!loading && prospects.length === 0 && <tr><td colSpan={7} className="px-3 py-12 text-center text-slate-500">Ingen prospekter matcher filteret.</td></tr>}
+              {!loading && prospects.length === 0 && <tr><td colSpan={8} className="px-3 py-12 text-center text-slate-500">Ingen prospekter matcher filteret.</td></tr>}
             </tbody>
           </table>
         </div>
