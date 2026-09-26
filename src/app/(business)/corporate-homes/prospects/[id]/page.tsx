@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -51,21 +51,13 @@ type Prospect = {
 };
 
 export default function CorporateProspectBriefPage({ params }: { params: Promise<{ id: string }> }) {
-  const [id, setId] = useState("");
+  const { id } = use(params);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [prospect, setProspect] = useState<Prospect | null>(null);
   const [contacts, setContacts] = useState<Array<Record<string, any>>>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    void params.then((value) => {
-      if (!cancelled) setId(value.id);
-    });
-    return () => { cancelled = true; };
-  }, [params]);
 
   const load = useCallback(async () => {
     if (!id) return;
