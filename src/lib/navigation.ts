@@ -25,7 +25,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
   { id:"workspace", label:"Hjem", icon:"PanelsTopLeft", hrefs:["/nexus-os/today","/nexus-os/focus","/personal-intelligence","/nexus-os/inbox","/nexus-os/communications","/approvals","/","/today"] },
   { id:"customers", label:"Kunder & salg", icon:"Users", hrefs:["/customers","/lead-intelligence","/execution","/automation/nurture","/recovery","/calendar","/booking-admin","/closing","/closing-pack","/after-sales","/communications"] },
   { id:"properties", label:"Eiendom", icon:"Building2", hrefs:["/inventory","/inventory/property-360","/scanner","/tomtebase","/areas","/valuation","/document-hub"] },
-  { id:"marketing", label:"Markedsføring & innhold", icon:"Megaphone", hrefs:["/growth-hub","/social-automation","/nexus-os/brand-brain","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
+  { id:"marketing", label:"Markedsføring & innhold", icon:"Megaphone", hrefs:["/growth-hub","/corporate-homes","/social-automation","/nexus-os/brand-brain","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
   { id:"publishing", label:"Bøker & media", icon:"BookOpen", hrefs:["/publishing","/publishing/forfatterstudio","/book-growth","/youtube-studio","/remaster-freddy"] },
   { id:"care", label:"Care", icon:"KeyRound", hrefs:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/service-revenue"] },
   { id:"revenue", label:"Drift, økonomi & ledelse", icon:"Handshake", hrefs:["/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/team-workload","/revenue-data-health"] },
@@ -38,7 +38,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
   SALES:["/today","/customers","/communications","/execution","/lead-intelligence","/recovery"],
   CLOSING:["/today","/closing","/closing-pack","/execution","/customers","/approvals"],
   FINANCE:["/billing","/dona-anna","/revenue-command","/monthly-close","/commissions","/forecast","/goals","/internal-alerts"],
-  MARKETING:["/social-automation","/growth-hub","/marketing-readiness","/analytics","/ad-campaigns","/content-studio"],
+  MARKETING:["/social-automation","/growth-hub","/corporate-homes","/marketing-readiness","/analytics","/ad-campaigns","/content-studio"],
   KEYHOLDING:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/communications"],
   VIEWER:["/revenue-command","/today","/customers","/executive-briefing","/monthly-close","/forecast"],
 };
