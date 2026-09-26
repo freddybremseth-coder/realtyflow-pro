@@ -14,6 +14,7 @@ import {
   Save,
   Loader2,
   RefreshCw,
+  Search,
   ShieldCheck,
   UserRound,
   Users,
@@ -81,6 +82,9 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [copyNotice, setCopyNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
+  const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
+  const [matching, setMatching] = useState(false);
+  const [matchNotice, setMatchNotice] = useState("");
   const [assessment, setAssessment] = useState({
     model: "",
     budget_min_eur: "",
@@ -150,6 +154,26 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       window.setTimeout(() => setCopyNotice(""), 2200);
     } catch {
       setCopyNotice("Kunne ikke kopiere automatisk.");
+    }
+  }
+
+  async function loadPropertyMatch() {
+    setMatching(true);
+    setMatchNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/property-match`, { cache: "no-store" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lage boligshortlist.");
+      setMatchingProperties(body?.properties || []);
+      setMatchNotice(body?.properties?.length
+        ? `${body.properties.length} aktuelle boliger funnet.`
+        : "Ingen boliger traff kriteriene godt nok.");
+    } catch (matchError) {
+      setMatchingProperties([]);
+      setError(matchError instanceof Error ? matchError.message : "Kunne ikke lage boligshortlist.");
+    } finally {
+      setMatching(false);
     }
   }
 
@@ -361,6 +385,47 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
             <div className="mt-3 flex flex-wrap gap-2">
               {brief.propertyMatchCriteria.map((criterion) => (
                 <span key={criterion} className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-emerald-950">{criterion}</span>
+              ))}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => void loadPropertyMatch()}
+                disabled={matching || !brief.assessment.readyForPropertyMatch}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {matching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                Lag boligshortlist
+              </button>
+              {matchNotice && <span className="text-xs font-bold text-emerald-900">{matchNotice}</span>}
+            </div>
+          </div>
+        )}
+
+        {matchingProperties.length > 0 && (
+          <div className="mt-6">
+            <div className="mb-3 text-xs font-black uppercase tracking-wide text-slate-500">Intern shortlist · kvalitetssikres før deling</div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {matchingProperties.map((property) => (
+                <article key={property.id || property.ref} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-bold text-slate-950">{property.title || property.ref || "Eiendom"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{property.location || "Område ikke oppgitt"}</div>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-emerald-900">
+                      {property.corporate_match_score}/100
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-700">
+                    {property.price ? <span>€{Number(property.price).toLocaleString("nb-NO")}</span> : null}
+                    {property.bedrooms ? <span>{property.bedrooms} soverom</span> : null}
+                    {property.property_type ? <span>{property.property_type}</span> : null}
+                  </div>
+                  <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                    {(property.corporate_match_reasons || []).slice(0, 3).map((reason: string) => <div key={reason}>✓ {reason}</div>)}
+                    {(property.corporate_match_cautions || []).slice(0, 2).map((caution: string) => <div key={caution} className="text-amber-800">• {caution}</div>)}
+                  </div>
+                </article>
               ))}
             </div>
           </div>
