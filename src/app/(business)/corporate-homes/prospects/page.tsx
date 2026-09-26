@@ -637,7 +637,9 @@ export default function CorporateProspectsPage() {
               {prospects.map((prospect) => (
                 <tr key={prospect.id} className="align-top hover:bg-slate-50">
                   <td className="px-3 py-4">
-                    <div className="font-bold text-slate-950">{prospect.company_name}</div>
+                    <Link href={`/corporate-homes/prospects/${encodeURIComponent(prospect.id)}`} className="font-bold text-slate-950 hover:text-cyan-800 hover:underline">
+                      {prospect.company_name}
+                    </Link>
                     <div className="mt-1 text-xs text-slate-500">{prospect.domain || prospect.organization_number || "Ingen domene/org.nr."}</div>
                     {prospect.source_url && <a href={prospect.source_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs font-bold text-cyan-800 hover:underline">Kilde</a>}
                   </td>
