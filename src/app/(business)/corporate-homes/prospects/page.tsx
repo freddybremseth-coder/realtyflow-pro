@@ -10,6 +10,7 @@ import {
   Database,
   FileUp,
   Loader2,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -43,6 +44,20 @@ type Prospect = {
   next_followup?: string | null;
   contact_coverage?: { total: number; verified: number; primary: number };
   converted_contact_id?: string | null;
+};
+
+type DiscoveryStatus = {
+  lastRun?: {
+    status?: string | null;
+    details?: Record<string, any> | null;
+    created_at?: string | null;
+  } | null;
+  runtimeControl?: {
+    enabled?: boolean;
+    risk_level?: string | null;
+    updated_at?: string | null;
+    config?: Record<string, any> | null;
+  } | null;
 };
 
 type Summary = {
@@ -148,6 +163,7 @@ export default function CorporateProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [tierFilter, setTierFilter] = useState("");
@@ -184,6 +200,7 @@ export default function CorporateProspectsPage() {
       if (!response.ok) throw new Error(body?.error || "Kunne ikke hente prospektkøen.");
       setProspects(body?.prospects || []);
       setSummary(body?.summary || null);
+      setDiscoveryStatus(body?.discovery || null);
       setWarnings(body?.warnings || []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Kunne ikke hente prospektkøen.");
@@ -248,6 +265,38 @@ export default function CorporateProspectsPage() {
       setError(createError instanceof Error ? createError.message : "Kunne ikke opprette prospekt.");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function runDiscoveryNow() {
+    setDiscovering(true);
+    setNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/discovery/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile: discoveryProfile,
+          minEmployees: minEmployees || "15",
+          maxEmployees: maxEmployees || "500",
+          batchSize: 25,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre Corporate Homes discovery.");
+      const result = body?.result || {};
+      setNotice(
+        result.skipped
+          ? `Discovery hoppet over: ${result.reason || "ingen endring"}.`
+          : `Discovery ferdig: ${result.imported || 0} nye prospekter lagt i køen. Totalt nå: ${result.current_after ?? "—"}.`,
+      );
+      setDiscoveryCandidates([]);
+      await load();
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "Kunne ikke kjøre Corporate Homes discovery.");
+    } finally {
+      setDiscovering(false);
     }
   }
 
@@ -387,15 +436,41 @@ export default function CorporateProspectsPage() {
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-xl font-black text-slate-950">Fremdrift mot første 250</h2>
-            <p className="mt-1 text-sm text-slate-500">Bygg listen i kontrollerte batcher og research A/B-fit før personlig kontakt.</p>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex-1">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-950">Fremdrift mot første 250</h2>
+                <p className="mt-1 text-sm text-slate-500">Ukentlig autopilot fyller bare A/B-fit selskapsprospekter og stopper ved 250.</p>
+              </div>
+              <div className="text-2xl font-black text-teal-800">{progress}%</div>
+            </div>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${progress}%` }} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <span className={`rounded-full px-2.5 py-1 font-bold ${discoveryStatus?.runtimeControl?.enabled ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>
+                Autopilot: {discoveryStatus?.runtimeControl?.enabled ? "På" : "Av"}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Mandag 06:10 UTC</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Maks 25 per uke</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Ingen outreach</span>
+            </div>
+            {discoveryStatus?.lastRun?.created_at && (
+              <p className="mt-3 text-xs text-slate-500">
+                Siste kjøring: {new Date(discoveryStatus.lastRun.created_at).toLocaleString("nb-NO")}
+                {typeof discoveryStatus.lastRun.details?.imported === "number" ? ` · ${discoveryStatus.lastRun.details.imported} importert` : ""}
+              </p>
+            )}
           </div>
-          <div className="text-2xl font-black text-teal-800">{progress}%</div>
-        </div>
-        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
-          <div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${progress}%` }} />
+          <button
+            onClick={() => void runDiscoveryNow()}
+            disabled={discovering || discoveryStatus?.runtimeControl?.enabled === false || (summary?.total || 0) >= (summary?.target || 250)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {discovering ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+            Kjør discovery nå
+          </button>
         </div>
       </section>
 
