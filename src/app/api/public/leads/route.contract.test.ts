@@ -18,3 +18,13 @@ test("submission id makes CRM interaction and revenue event idempotent", () => {
   assert.match(source, /const revenueSourceId = submissionId \|\| propertyRef \|\| pageUrl \|\| String\(incomingInteraction\.id\)/);
   assert.match(source, /buildRevenueEventDedupeKey\(\["public_leads", brandId, revenueSourceId\]\)/);
 });
+
+
+test("public lead recovers UTM attribution from page_url when fields are not posted separately", () => {
+  assert.match(source, /trackingFromPageUrl\(pageUrl\)/);
+  assert.match(source, /pageTracking\.utm_source/);
+  assert.match(source, /pageTracking\.utm_campaign/);
+  assert.match(source, /pageTracking\.utm_content/);
+  assert.match(source, /pageTracking\.visitor_id/);
+  assert.match(source, /pageTracking\.session_id/);
+});
