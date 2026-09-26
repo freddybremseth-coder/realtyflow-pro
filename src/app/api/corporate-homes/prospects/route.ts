@@ -5,6 +5,7 @@ import {
   CORPORATE_PROSPECT_TARGET,
   normalizeCorporateProspect,
 } from "@/lib/corporate-prospects";
+import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-readiness";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -94,7 +95,11 @@ export async function GET(request: NextRequest) {
         row.organization_type,
       ].filter(Boolean).join(" ").toLowerCase().includes(q);
     })
-    .map((row: any) => ({ ...row, contact_coverage: contactMap.get(String(row.id)) || { total: 0, verified: 0, primary: 0 } }));
+    .map((row: any) => ({
+      ...row,
+      contact_coverage: contactMap.get(String(row.id)) || { total: 0, verified: 0, primary: 0 },
+      readiness: evaluateCorporateProspectReadiness(row),
+    }));
 
   const statusCounts = all.reduce<Record<string, number>>((acc: Record<string, number>, row: any) => {
     const value = String(row.status || "DISCOVERED").toUpperCase();
@@ -117,6 +122,8 @@ export async function GET(request: NextRequest) {
       bTier: tierCounts.B || 0,
       qualified: (statusCounts.QUALIFIED || 0) + (statusCounts.CONTACT_READY || 0),
       engaged: (statusCounts.CONTACTED || 0) + (statusCounts.ENGAGED || 0) + (statusCounts.MEETING || 0) + (statusCounts.OPPORTUNITY || 0),
+      researched: statusCounts.RESEARCHED || 0,
+      qualificationReady: all.filter((row: any) => evaluateCorporateProspectReadiness(row).qualificationReady).length,
       statusCounts,
       tierCounts,
     },
