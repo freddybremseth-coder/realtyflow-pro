@@ -44,6 +44,15 @@ type Prospect = {
   next_followup?: string | null;
   contact_coverage?: { total: number; verified: number; primary: number };
   converted_contact_id?: string | null;
+  readiness?: {
+    score: number;
+    label: string;
+    suggestedStage: string;
+    autoAdvanceAllowed: boolean;
+    qualificationReady: boolean;
+    reasons: string[];
+    missing: string[];
+  };
 };
 
 type DiscoveryStatus = {
@@ -67,6 +76,8 @@ type Summary = {
   aTier: number;
   bTier: number;
   qualified: number;
+  researched: number;
+  qualificationReady: number;
   engaged: number;
   statusCounts: Record<string, number>;
   tierCounts: Record<string, number>;
@@ -426,11 +437,13 @@ export default function CorporateProspectsPage() {
       {error && <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm font-semibold text-rose-900">{error}</div>}
       {warnings.map((warning) => <div key={warning} className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{warning}</div>)}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-8">
         <Metric label="I kø" value={summary?.total ?? "—"} icon={<Users size={18} />} />
         <Metric label="Mål" value={summary?.target ?? 250} icon={<Target size={18} />} />
         <Metric label="A-fit" value={summary?.aTier ?? "—"} icon={<CheckCircle2 size={18} />} />
         <Metric label="B-fit" value={summary?.bTier ?? "—"} icon={<Building2 size={18} />} />
+        <Metric label="Research" value={summary?.researched ?? "—"} icon={<Search size={18} />} />
+        <Metric label="Klar kvalifisering" value={summary?.qualificationReady ?? "—"} icon={<Target size={18} />} />
         <Metric label="Kvalifisert" value={summary?.qualified ?? "—"} icon={<CheckCircle2 size={18} />} />
         <Metric label="I salgsdialog" value={summary?.engaged ?? "—"} icon={<Users size={18} />} />
       </section>
@@ -625,6 +638,7 @@ export default function CorporateProspectsPage() {
               <tr>
                 <th className="px-3 py-3">Prospekt</th>
                 <th className="px-3 py-3">Fit</th>
+                <th className="px-3 py-3">Klarhet</th>
                 <th className="px-3 py-3">Størrelse</th>
                 <th className="px-3 py-3">Bransje</th>
                 <th className="px-3 py-3">Beslutningsroller</th>
@@ -648,6 +662,12 @@ export default function CorporateProspectsPage() {
                       {prospect.fit_tier} · {prospect.fit_score}
                     </span>
                     <div className="mt-2 max-w-[220px] text-xs leading-5 text-slate-500">{(prospect.fit_reasons || []).slice(0, 2).join(" · ")}</div>
+                  </td>
+                  <td className="px-3 py-4">
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${prospect.readiness?.qualificationReady ? "bg-emerald-100 text-emerald-900" : prospect.readiness?.suggestedStage === "RESEARCHED" ? "bg-cyan-100 text-cyan-900" : "bg-slate-100 text-slate-700"}`}>
+                      {prospect.readiness?.score ?? 0}/100
+                    </span>
+                    <div className="mt-2 max-w-[180px] text-xs leading-5 text-slate-600">{prospect.readiness?.label || "Ikke vurdert"}</div>
                   </td>
                   <td className="px-3 py-4 text-slate-700">
                     {["association", "member_organization"].includes(prospect.organization_type)
@@ -688,7 +708,7 @@ export default function CorporateProspectsPage() {
                   </td>
                 </tr>
               ))}
-              {!loading && prospects.length === 0 && <tr><td colSpan={8} className="px-3 py-12 text-center text-slate-500">Ingen prospekter matcher filteret.</td></tr>}
+              {!loading && prospects.length === 0 && <tr><td colSpan={9} className="px-3 py-12 text-center text-slate-500">Ingen prospekter matcher filteret.</td></tr>}
             </tbody>
           </table>
         </div>

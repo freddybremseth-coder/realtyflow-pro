@@ -82,11 +82,25 @@ function buildPropertyTextSlides(property: Record<string, unknown>, brand: { nam
   ];
 }
 
-async function downloadImage(url: string, destPath: string): Promise<boolean> {
+function bufferLooksLikeSvg(buffer: Buffer): boolean {
+  const head = buffer.subarray(0, 1024).toString("utf8").trimStart().toLowerCase();
+  return head.startsWith("<svg") || (head.startsWith("<?xml") && head.includes("<svg"));
+}
+
+async function downloadImage(url: string, destPath: string, options?: { rejectSvg?: boolean }): Promise<boolean> {
   try {
     const res = await fetch(url);
     if (!res.ok) return false;
     const buffer = Buffer.from(await res.arrayBuffer());
+
+    // ffmpeg-static does not include an SVG decoder in production. A remote
+    // SVG can also be saved under a misleading .png filename, so inspect the
+    // bytes instead of trusting the extension.
+    if (options?.rejectSvg && bufferLooksLikeSvg(buffer)) {
+      console.warn(`[Property Video] Skipping SVG asset unsupported by FFmpeg: ${url}`);
+      return false;
+    }
+
     await fs.writeFile(destPath, buffer);
     return true;
   } catch {
@@ -106,16 +120,20 @@ async function resolveBrandLogo(
 ): Promise<string | undefined> {
   if (brandLogoUrl) {
     const dest = path.join(destDir, "logo.png");
-    if (await downloadImage(brandLogoUrl, dest)) return dest;
+    if (await downloadImage(brandLogoUrl, dest, { rejectSvg: true })) return dest;
   }
 
   if (brandId === "zeneco") {
-    const dest = path.join(destDir, "zeneco-watermark.svg");
-    if (await downloadImage(ZENECO_WATERMARK_SVG_URL, dest)) {
-      console.log("[Property Video] Using canonical Zen Eco Homes logo.");
-      return dest;
+    // The approved Zen Eco Homes watermark is currently SVG-only. The
+    // production ffmpeg-static build cannot decode SVG (exit 234), so do not
+    // pass it into the video graph. Rendering continues without a watermark
+    // until a raster canonical asset is available.
+    const probe = path.join(destDir, "zeneco-watermark.png");
+    if (await downloadImage(ZENECO_WATERMARK_SVG_URL, probe, { rejectSvg: true })) {
+      console.log("[Property Video] Using canonical Zen Eco Homes raster logo.");
+      return probe;
     }
-    console.warn("[Property Video] Canonical Zen Eco Homes logo could not be downloaded; no legacy ZE fallback will be used.");
+    console.warn("[Property Video] Canonical Zen Eco Homes watermark is SVG; rendering safely without logo.");
     return undefined;
   }
 
