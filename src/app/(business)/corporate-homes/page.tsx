@@ -98,6 +98,20 @@ type Overview = {
       created_at?: string | null;
     } | null;
   };
+  genericContacts: {
+    researched: number;
+    genericEmails: number;
+    contactPages: number;
+    dailyBatch: number;
+    companyLevelOnly: boolean;
+    personalDataCollected: boolean;
+    automaticOutreach: boolean;
+    lastRun?: {
+      status?: string | null;
+      details?: Record<string, any> | null;
+      created_at?: string | null;
+    } | null;
+  };
   prospects: {
     total: number;
     target: number;
@@ -106,6 +120,14 @@ type Overview = {
     bTier: number;
     qualified: number;
     promoted: number;
+    signalsResearched: number;
+    signalBacked: number;
+    signalBackedATier: number;
+    lastSignalResearch?: {
+      status?: string | null;
+      details?: Record<string, any> | null;
+      created_at?: string | null;
+    } | null;
     focusRule: string;
     focusProspects: Array<{
       id: string;
@@ -125,7 +147,12 @@ type Overview = {
         score: number;
         label: string;
         qualificationReady: boolean;
+        manualContactReady: boolean;
         suggestedStage: string;
+        genericCompanyChannel: {
+          email?: string | null;
+          contactPageUrl?: string | null;
+        };
         reasons: string[];
         missing: string[];
       };
@@ -205,6 +232,10 @@ export default function CorporateHomesGrowthPage() {
   const [contentNotice, setContentNotice] = useState("");
   const [partnerBusy, setPartnerBusy] = useState(false);
   const [partnerNotice, setPartnerNotice] = useState("");
+  const [signalBusy, setSignalBusy] = useState(false);
+  const [signalNotice, setSignalNotice] = useState("");
+  const [genericContactBusy, setGenericContactBusy] = useState(false);
+  const [genericContactNotice, setGenericContactNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -259,6 +290,59 @@ export default function CorporateHomesGrowthPage() {
       setError(partnerError instanceof Error ? partnerError.message : "Kunne ikke kjøre partnerdiscovery.");
     } finally {
       setPartnerBusy(false);
+    }
+  }
+
+  async function runCompanySignalResearch() {
+    setSignalBusy(true);
+    setSignalNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/signals/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre selskaps-signalresearch.");
+      const result = body?.result || {};
+      setSignalNotice(
+        `${Number(result?.researched || 0)} selskaper undersøkt · ${Number(result?.signals_found || 0)} signaler funnet · ${Number(result?.changed_to_a_fit || 0)} nye A-fit.`
+      );
+      await load();
+    } catch (signalError) {
+      setError(signalError instanceof Error ? signalError.message : "Kunne ikke kjøre selskaps-signalresearch.");
+    } finally {
+      setSignalBusy(false);
+    }
+  }
+
+  async function runGenericContactResearch() {
+    setGenericContactBusy(true);
+    setGenericContactNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/generic-contacts/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre selskapskontakt-research.");
+      const result = body?.result || {};
+      setGenericContactNotice(
+        Number(result?.researched || 0) +
+        " selskaper undersøkt · " +
+        Number(result?.generic_emails_found || 0) +
+        " generelle adresser · " +
+        Number(result?.contact_pages_found || 0) +
+        " kontaktsider."
+      );
+      await load();
+    } catch (contactError) {
+      setError(contactError instanceof Error ? contactError.message : "Kunne ikke kjøre selskapskontakt-research.");
+    } finally {
+      setGenericContactBusy(false);
     }
   }
 
@@ -416,9 +500,11 @@ export default function CorporateHomesGrowthPage() {
             <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
               <div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${data?.prospects.progressPercent || 0}%` }} />
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <MiniStat label="A-fit" value={data?.prospects.aTier ?? "—"} />
               <MiniStat label="B-fit" value={data?.prospects.bTier ?? "—"} />
+              <MiniStat label="Signalresearch" value={data?.prospects.signalsResearched ?? "—"} />
+              <MiniStat label="Med signal" value={data?.prospects.signalBacked ?? "—"} />
               <MiniStat label="Kvalifisert" value={data?.prospects.qualified ?? "—"} />
               <MiniStat label="Promotert til CRM" value={data?.prospects.promoted ?? "—"} />
             </div>
@@ -428,13 +514,33 @@ export default function CorporateHomesGrowthPage() {
                 : "Ingen discovery-kjøring registrert ennå."}
             </p>
           </div>
-          <Link
-            href="/corporate-homes/prospects"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white hover:bg-teal-700"
-          >
-            Åpne prospektmotor <ArrowRight size={15} />
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void runCompanySignalResearch()}
+              disabled={signalBusy}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-teal-800 px-4 py-3 text-sm font-black text-teal-900 hover:bg-teal-50 disabled:opacity-50"
+            >
+              {signalBusy ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              Undersøk selskaps-signaler
+            </button>
+            <Link
+              href="/corporate-homes/prospects"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white hover:bg-teal-700"
+            >
+              Åpne prospektmotor <ArrowRight size={15} />
+            </Link>
+          </div>
         </div>
+        {signalNotice && (
+          <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{signalNotice}</div>
+        )}
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          Signalresearch leser maks fire offentlige sider per selskap og lagrer kun bedriftsnivå-signaler og kilde-URL.
+          Ingen personnavn, e-post eller telefon samles inn.
+          {data?.prospects.lastSignalResearch?.created_at
+            ? ` Siste kjøring: ${new Date(data.prospects.lastSignalResearch.created_at).toLocaleString("nb-NO")}.`
+            : ""}
+        </p>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -526,6 +632,42 @@ export default function CorporateHomesGrowthPage() {
         </div>
       </section>
 
+      <section className="rounded-3xl border border-cyan-200 bg-cyan-50/50 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex-1">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-900">Selskapskontakt · uten personberikelse</p>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Offisielle kontaktkanaler på selskapsnivå</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              RealtyFlow kan finne generelle bedriftsadresser og offisielle kontaktsider fra selskapenes egne nettsteder.
+              Personlige adresser filtreres bort, og denne motoren sender aldri noe automatisk.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <MiniStat label="Undersøkt" value={data?.genericContacts.researched ?? "—"} />
+              <MiniStat label="Generell adresse" value={data?.genericContacts.genericEmails ?? "—"} />
+              <MiniStat label="Kontaktside" value={data?.genericContacts.contactPages ?? "—"} />
+              <MiniStat label="Maks per dag" value={data?.genericContacts.dailyBatch ?? 10} />
+            </div>
+            <p className="mt-4 text-xs leading-5 text-slate-500">
+              Kun selskapsnivå · ingen personnavn · ingen personlige adresser · ingen telefon · ingen utsendelse.
+              {data?.genericContacts.lastRun?.created_at
+                ? " Siste kjøring: " + new Date(data.genericContacts.lastRun.created_at).toLocaleString("nb-NO") + "."
+                : ""}
+            </p>
+          </div>
+          <button
+            onClick={() => void runGenericContactResearch()}
+            disabled={genericContactBusy}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
+          >
+            {genericContactBusy ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+            Oppdater selskapskontakt
+          </button>
+        </div>
+        {genericContactNotice && (
+          <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{genericContactNotice}</div>
+        )}
+      </section>
+
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
@@ -556,12 +698,19 @@ export default function CorporateHomesGrowthPage() {
                   {prospect.fitTier} · {prospect.fitScore}
                 </span>
               </div>
-              <div className="mt-3 flex items-center gap-2 text-xs">
-                <span className={`rounded-full px-2.5 py-1 font-black ${prospect.readiness.qualificationReady ? "bg-emerald-100 text-emerald-900" : "bg-white text-slate-700"}`}>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <span className={`rounded-full px-2.5 py-1 font-black ${prospect.readiness.manualContactReady ? "bg-emerald-100 text-emerald-900" : prospect.readiness.qualificationReady ? "bg-cyan-100 text-cyan-900" : "bg-white text-slate-700"}`}>
                   Klarhet {prospect.readiness.score}/100
                 </span>
+                {prospect.readiness.manualContactReady && (
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-black text-emerald-900">Manuell kontakt klar</span>
+                )}
                 <span className="font-semibold text-slate-500">{prospect.status}</span>
               </div>
+              <div className="mt-2 text-xs font-semibold text-slate-600">{prospect.readiness.label}</div>
+              {prospect.readiness.genericCompanyChannel?.email && (
+                <div className="mt-1 text-xs font-semibold text-cyan-800">{prospect.readiness.genericCompanyChannel.email}</div>
+              )}
               <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
                 {prospect.fitReasons.slice(0, 2).map((reason) => <div key={reason}>✓ {reason}</div>)}
                 {prospect.evidenceGaps.slice(0, 1).map((gap) => <div key={gap} className="text-amber-800">Mangler: {gap}</div>)}

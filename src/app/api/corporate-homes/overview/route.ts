@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       .limit(1500),
     supabase
       .from("corporate_prospects")
-      .select("id,company_name,organization_number,domain,industry,employee_count,employee_band,member_count,organization_type,status,fit_tier,fit_score,fit_reasons,evidence_gaps,decision_roles,source_url,next_action,converted_contact_id,created_at,updated_at")
+      .select("id,company_name,organization_number,domain,website_url,industry,employee_count,employee_band,member_count,organization_type,status,fit_tier,fit_score,fit_reasons,evidence_gaps,decision_roles,source_url,next_action,converted_contact_id,evidence,created_at,updated_at")
       .eq("brand_id", "zeneco")
       .limit(1000),
     supabase
@@ -106,13 +106,29 @@ export async function GET(request: NextRequest) {
     .limit(1)
     .maybeSingle();
 
+  const { data: lastSignalResearchRun, error: lastSignalResearchRunError } = await supabase
+    .from("automation_logs")
+    .select("id,status,details,created_at")
+    .eq("action", "corporate_homes_company_signals")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: lastGenericContactRun, error: lastGenericContactRunError } = await supabase
+    .from("automation_logs")
+    .select("id,status,details,created_at")
+    .eq("action", "corporate_homes_generic_contacts")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const [
     { data: partnerRows, error: partnerError },
     { data: lastPartnerDiscovery, error: lastPartnerDiscoveryError },
   ] = await Promise.all([
     supabase
       .from("corporate_partner_prospects")
-      .select("id,company_name,organization_number,domain,partner_type,city,industry,employee_count,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,source_url,next_action,created_at,updated_at")
+      .select("id,company_name,organization_number,domain,website_url,partner_type,city,industry,employee_count,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,source_url,next_action,evidence,created_at,updated_at")
       .eq("brand_id", "zeneco")
       .order("fit_score", { ascending: false })
       .order("updated_at", { ascending: false })
@@ -257,6 +273,32 @@ export async function GET(request: NextRequest) {
   }, {});
   const promotedProspects = prospectRows.filter((row: any) => Boolean(row.converted_contact_id)).length;
 
+  const signalResearchRows = prospectRows.filter((row: any) => {
+    const evidence = row.evidence && typeof row.evidence === "object" ? row.evidence : {};
+    const research = evidence.company_signal_research;
+    return Boolean(research && typeof research === "object" && research.checked_at);
+  });
+  const signalBackedProspects = prospectRows.filter((row: any) => {
+    const evidence = row.evidence && typeof row.evidence === "object" ? row.evidence : {};
+    return Boolean(
+      evidence.employee_benefit_signal ||
+      evidence.remote_workforce_signal ||
+      evidence.retreat_signal ||
+      evidence.existing_cabin_signal
+    );
+  });
+  const signalBackedATier = signalBackedProspects.filter((row: any) => String(row.fit_tier || "").toUpperCase() === "A").length;
+
+  const genericContactFor = (row: any) => {
+    const evidence = row?.evidence && typeof row.evidence === "object" ? row.evidence : {};
+    const contact = evidence.generic_company_contact;
+    return contact && typeof contact === "object" ? contact : null;
+  };
+  const allCompanyRows = [...partners, ...prospectRows];
+  const genericContactRows = allCompanyRows.filter((row: any) => Boolean(genericContactFor(row)?.checked_at));
+  const genericEmailRows = allCompanyRows.filter((row: any) => Boolean(genericContactFor(row)?.generic_email));
+  const contactPageRows = allCompanyRows.filter((row: any) => Boolean(genericContactFor(row)?.contact_page_url));
+
   const focusProspects = prospectRows
     .filter((row: any) => !row.converted_contact_id)
     .filter((row: any) => String(row.status || "").toUpperCase() !== "DISQUALIFIED")
@@ -266,6 +308,8 @@ export async function GET(request: NextRequest) {
     }))
     .filter((row: any) => ["A", "B"].includes(String(row.fit_tier || "").toUpperCase()))
     .sort((a: any, b: any) => {
+      const manualContactDelta = Number(Boolean(b.readiness?.manualContactReady)) - Number(Boolean(a.readiness?.manualContactReady));
+      if (manualContactDelta) return manualContactDelta;
       const qualificationDelta = Number(Boolean(b.readiness?.qualificationReady)) - Number(Boolean(a.readiness?.qualificationReady));
       if (qualificationDelta) return qualificationDelta;
       const tierRank = (value: string) => value === "A" ? 2 : value === "B" ? 1 : 0;
@@ -327,6 +371,16 @@ export async function GET(request: NextRequest) {
         personalEnrichmentStarted: false,
         automaticOutreach: false,
       },
+      genericContacts: {
+        researched: genericContactRows.length,
+        genericEmails: genericEmailRows.length,
+        contactPages: contactPageRows.length,
+        dailyBatch: 10,
+        companyLevelOnly: true,
+        personalDataCollected: false,
+        automaticOutreach: false,
+        lastRun: lastGenericContactRun || null,
+      },
       prospects: {
         total: prospectRows.length,
         target: 250,
@@ -335,8 +389,12 @@ export async function GET(request: NextRequest) {
         bTier: prospectTierCounts.B || 0,
         qualified: (prospectStatusCounts.QUALIFIED || 0) + (prospectStatusCounts.CONTACT_READY || 0),
         promoted: promotedProspects,
+        signalsResearched: signalResearchRows.length,
+        signalBacked: signalBackedProspects.length,
+        signalBackedATier,
+        lastSignalResearch: lastSignalResearchRun || null,
         focusProspects,
-        focusRule: "Klar for menneskelig kvalifisering → A-fit før B-fit → readiness-score → fit-score → sist oppdatert.",
+        focusRule: "Klar for manuell kontakt via selskapskanal → klar for menneskelig kvalifisering → A-fit før B-fit → readiness-score → fit-score → sist oppdatert.",
         statusCounts: prospectStatusCounts,
         tierCounts: prospectTierCounts,
         discovery: {
@@ -376,6 +434,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError].filter(Boolean).map((item: any) => item.message),
   });
 }

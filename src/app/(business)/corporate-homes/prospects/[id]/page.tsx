@@ -80,6 +80,8 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [error, setError] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("initial");
   const [copyNotice, setCopyNotice] = useState("");
+  const [contactLogging, setContactLogging] = useState(false);
+  const [contactLogNotice, setContactLogNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -108,6 +110,13 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       if (!response.ok) throw new Error(body?.error || "Kunne ikke hente beslutningsgrunnlaget.");
       setBrief(body?.brief || null);
       setProspect(body?.prospect || null);
+      const savedPropertyMatch = body?.prospect?.evidence?.corporate_property_match;
+      if (savedPropertyMatch && typeof savedPropertyMatch === "object" && Array.isArray(savedPropertyMatch.shortlist)) {
+        setMatchingProperties(savedPropertyMatch.shortlist);
+        setMatchNotice(savedPropertyMatch.shortlist.length
+          ? `Lagret intern shortlist: ${savedPropertyMatch.shortlist.length} boliger.`
+          : "");
+      }
       const savedAssessment = body?.prospect?.evidence?.corporate_assessment;
       if (savedAssessment && typeof savedAssessment === "object") {
         setAssessment((current) => ({
@@ -140,6 +149,18 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     [verifiedContacts],
   );
 
+  const genericCompanyContact = useMemo(() => {
+    const evidence = prospect?.evidence && typeof prospect.evidence === "object" ? prospect.evidence : {};
+    const contact = (evidence as Record<string, any>).generic_company_contact;
+    return contact && typeof contact === "object"
+      ? {
+          genericEmail: String(contact.generic_email || "").trim() || null,
+          contactPageUrl: String(contact.contact_page_url || "").trim() || null,
+          checkedAt: String(contact.checked_at || "").trim() || null,
+        }
+      : { genericEmail: null, contactPageUrl: null, checkedAt: null };
+  }, [prospect?.evidence]);
+
   const companyName = brief?.company.name || "";
 
   const outreach = useMemo(() => {
@@ -159,18 +180,66 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     }
   }
 
+  async function logManualCompanyContact() {
+    const method = genericCompanyContact.genericEmail
+      ? "generic_email"
+      : genericCompanyContact.contactPageUrl
+        ? "contact_form"
+        : null;
+
+    if (!method) {
+      setContactLogNotice("Ingen offisiell selskapskanal er registrert.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Bekreft kun etter at du selv har sendt eller levert henvendelsen. RealtyFlow sender ingenting fra denne handlingen.",
+    );
+    if (!confirmed) return;
+
+    setContactLogging(true);
+    setContactLogNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/contact-log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          method,
+          template_key: selectedTemplate,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke loggføre manuell kontakt.");
+      setProspect(body?.prospect || prospect);
+      setContactLogNotice("Manuell kontakt er loggført. Ingen melding ble sendt av RealtyFlow.");
+      await load();
+    } catch (contactError) {
+      setError(contactError instanceof Error ? contactError.message : "Kunne ikke loggføre manuell kontakt.");
+    } finally {
+      setContactLogging(false);
+    }
+  }
+
   async function loadPropertyMatch() {
     setMatching(true);
     setMatchNotice("");
     setError("");
     try {
-      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/property-match`, { cache: "no-store" });
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/property-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        cache: "no-store",
+      });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke lage boligshortlist.");
       setMatchingProperties(body?.properties || []);
-      setMatchNotice(body?.properties?.length
-        ? `${body.properties.length} aktuelle boliger funnet.`
-        : "Ingen boliger traff kriteriene godt nok.");
+      setMatchNotice(body?.persistedShortlist?.length
+        ? `Topp ${body.persistedShortlist.length} er lagret internt. ${body.properties.length} kandidater ble vurdert.`
+        : body?.properties?.length
+          ? `${body.properties.length} aktuelle boliger funnet.`
+          : "Ingen boliger traff kriteriene godt nok.");
     } catch (matchError) {
       setMatchingProperties([]);
       setError(matchError instanceof Error ? matchError.message : "Kunne ikke lage boligshortlist.");
@@ -275,6 +344,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
             {brief.company.website && <a href={brief.company.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-bold text-cyan-800 hover:underline">Nettsted <ExternalLink size={14} /></a>}
             {brief.company.sourceUrl && <a href={brief.company.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-bold text-cyan-800 hover:underline">Registerkilde <ExternalLink size={14} /></a>}
           </div>
+          {(genericCompanyContact.genericEmail || genericCompanyContact.contactPageUrl) && (
+            <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-cyan-900">Offisiell selskapskontakt</div>
+              {genericCompanyContact.genericEmail && (
+                <div className="mt-2 break-all text-sm font-bold text-slate-900">{genericCompanyContact.genericEmail}</div>
+              )}
+              {genericCompanyContact.contactPageUrl && (
+                <a href={genericCompanyContact.contactPageUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                  Åpne kontaktside <ExternalLink size={12} />
+                </a>
+              )}
+              <div className="mt-2 text-xs text-slate-500">Kun selskapsnivå. Ingen personlig kontakt er lagt til.</div>
+            </div>
+          )}
         </article>
 
         <article className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
@@ -396,7 +479,7 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {matching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                Lag boligshortlist
+                Lag og lagre boligshortlist
               </button>
               {matchNotice && <span className="text-xs font-bold text-emerald-900">{matchNotice}</span>}
             </div>
@@ -423,10 +506,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                     {property.bedrooms ? <span>{property.bedrooms} soverom</span> : null}
                     {property.property_type ? <span>{property.property_type}</span> : null}
                   </div>
+                  {property.corporate_use_classification && (
+                    <div className="mt-3 inline-flex rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-black text-teal-900">
+                      {property.corporate_use_classification}
+                    </div>
+                  )}
                   <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
                     {(property.corporate_match_reasons || []).slice(0, 3).map((reason: string) => <div key={reason}>✓ {reason}</div>)}
                     {(property.corporate_match_cautions || []).slice(0, 2).map((caution: string) => <div key={caution} className="text-amber-800">• {caution}</div>)}
                   </div>
+                  {property.website_url && (
+                    <a href={property.website_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                      Åpne bolig <ExternalLink size={12} />
+                    </a>
+                  )}
                 </article>
               ))}
             </div>
@@ -479,10 +572,15 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
             <div className="mt-3 text-sm font-bold text-slate-950">{primaryContact?.name || "Ingen verifisert kontakt valgt ennå"}</div>
             <div className="mt-1 text-xs text-slate-500">{primaryContact?.title || primaryContact?.buying_role || "Beslutningstakerrolle må verifiseres"}</div>
             {primaryContact?.email && <div className="mt-2 text-xs font-semibold text-cyan-900">{primaryContact.email}</div>}
+            {!primaryContact?.email && genericCompanyContact.genericEmail && (
+              <div className="mt-2 text-xs font-semibold text-cyan-900">Generell selskapsadresse: {genericCompanyContact.genericEmail}</div>
+            )}
             <div className="mt-4 rounded-xl bg-white p-3 text-xs leading-5 text-slate-600">
               {primaryContact
                 ? "Bruk verifisert kontaktinformasjon og kontroller at personen fortsatt har relevant rolle før utsendelse."
-                : "Finn og verifiser beslutningstaker før første kontakt. Ikke send til generiske eller usikre persondata automatisk."}
+                : genericCompanyContact.genericEmail || genericCompanyContact.contactPageUrl
+                  ? "Ingen person er verifisert ennå. Den offisielle selskapskanalen kan brukes til en manuelt kontrollert første henvendelse; ingen automatisk utsendelse."
+                  : "Finn og verifiser beslutningstaker eller en offisiell selskapskanal før første kontakt. Ingen automatisk utsendelse."}
             </div>
           </div>
 
@@ -496,7 +594,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
               <button onClick={() => void copyOutreach()} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
                 <Copy size={16} /> Kopier e-post
               </button>
+              {(genericCompanyContact.genericEmail || genericCompanyContact.contactPageUrl) && (
+                <button
+                  onClick={() => void logManualCompanyContact()}
+                  disabled={contactLogging}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-900 disabled:opacity-60"
+                >
+                  {contactLogging ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  {String(prospect?.status || "").toUpperCase() === "CONTACTED"
+                    ? "Loggfør ny manuell oppfølging"
+                    : "Jeg har kontaktet selskapet manuelt"}
+                </button>
+              )}
               {copyNotice && <span className="text-xs font-semibold text-emerald-800">{copyNotice}</span>}
+              {contactLogNotice && <span className="text-xs font-semibold text-emerald-800">{contactLogNotice}</span>}
               <span className="text-xs text-slate-500">Ingen automatisk utsendelse.</span>
             </div>
           </div>

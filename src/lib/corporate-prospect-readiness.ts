@@ -13,6 +13,7 @@ export type CorporateReadinessInput = {
   source_url?: string | null;
   decision_roles?: string[] | null;
   evidence_gaps?: string[] | null;
+  evidence?: Record<string, unknown> | null;
 };
 
 const SALES_ACTIVE = new Set([
@@ -31,6 +32,13 @@ export function evaluateCorporateProspectReadiness(input: CorporateReadinessInpu
   const isMemberOrganisation = ["association", "member_organization"].includes(type);
   const roles = Array.isArray(input.decision_roles) ? input.decision_roles.filter(Boolean) : [];
   const gaps = Array.isArray(input.evidence_gaps) ? input.evidence_gaps.filter(Boolean) : [];
+  const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence as Record<string, unknown> : {};
+  const genericCompanyContact = evidence.generic_company_contact && typeof evidence.generic_company_contact === "object"
+    ? evidence.generic_company_contact as Record<string, unknown>
+    : {};
+  const genericCompanyEmail = String(genericCompanyContact.generic_email || "").trim() || null;
+  const genericCompanyContactPage = String(genericCompanyContact.contact_page_url || "").trim() || null;
+  const hasGenericCompanyChannel = Boolean(genericCompanyEmail || genericCompanyContactPage);
 
   if (status === "DISQUALIFIED") {
     return {
@@ -120,19 +128,30 @@ export function evaluateCorporateProspectReadiness(input: CorporateReadinessInpu
     roles.length >= 3 &&
     gaps.length <= 2;
 
+  const manualContactReady = qualificationReady && hasGenericCompanyChannel;
+  if (hasGenericCompanyChannel) {
+    reasons.push("Offisiell selskapskanal tilgjengelig");
+  } else if (qualificationReady) {
+    missing.push("Offisiell selskapskanal mangler");
+  }
+
   const suggestedStage = SALES_ACTIVE.has(status)
     ? status
-    : companyResearchReady
-      ? "RESEARCHED"
-      : "DISCOVERED";
+    : manualContactReady
+      ? "CONTACT_READY"
+      : companyResearchReady
+        ? "RESEARCHED"
+        : "DISCOVERED";
 
   const label = SALES_ACTIVE.has(status)
     ? "I salgsprosess"
-    : qualificationReady
-      ? "Klar for menneskelig kvalifisering"
-      : companyResearchReady
-        ? "Research komplett"
-        : "Trenger mer selskapsdata";
+    : manualContactReady
+      ? "Klar for manuell kontakt via selskapskanal"
+      : qualificationReady
+        ? "Klar for menneskelig kvalifisering"
+        : companyResearchReady
+          ? "Research komplett"
+          : "Trenger mer selskapsdata";
 
   return {
     score,
@@ -140,6 +159,11 @@ export function evaluateCorporateProspectReadiness(input: CorporateReadinessInpu
     suggestedStage,
     autoAdvanceAllowed: status === "DISCOVERED" && suggestedStage === "RESEARCHED",
     qualificationReady,
+    manualContactReady,
+    genericCompanyChannel: {
+      email: genericCompanyEmail,
+      contactPageUrl: genericCompanyContactPage,
+    },
     reasons,
     missing: [...new Set(missing)],
   };
