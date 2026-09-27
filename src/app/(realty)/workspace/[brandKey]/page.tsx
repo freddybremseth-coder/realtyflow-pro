@@ -2,21 +2,26 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, Users } from "lucide-react";
+import { Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
+import { GrowthCorporatePanel } from "@/components/workspaces/growth-corporate-panel";
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; pipeline_status: string | null };
-type Tab = "overview" | "crm" | "joint-tasks" | "properties" | "marketing";
+type Tab = "overview" | "crm" | "joint-tasks" | "properties" | "marketing" | "growth";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
   { id: "overview", label: "Oversikt", icon: Building2 },
   { id: "crm", label: "Leads & CRM", icon: Users, permitted: ["crm.read", "crm.joint.read"] },
   { id: "joint-tasks", label: "Felles oppgaver", icon: Users, permitted: ["tasks.joint.read"] },
   { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
   { id: "marketing", label: "Markedsføring", icon: Megaphone, permitted: ["marketing.read", "marketing.draft", "marketing.publish"] },
+  { id: "growth", label: "Growth & Corporate", icon: TrendingUp, permitted: [
+    "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
+    "ads.read", "ads.draft", "events.plan",
+  ] },
 ];
 
 export default function FocusedWorkspacePage() {
@@ -91,6 +96,10 @@ export default function FocusedWorkspacePage() {
   const canEditCrm = canCreateCrm || (isJointCrm && permissions.includes("crm.joint.write"));
   const showProperties = permissions.includes("properties.catalog.read");
   const showMarketing = permissions.some(p => p.startsWith("marketing."));
+  const showGrowth = permissions.some(p => [
+    "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
+    "ads.read", "ads.draft", "events.plan",
+  ].includes(p));
 
   function resetContactForm() {
     setEditingId(null); setFormName(""); setFormEmail(""); setFormPhone("");
@@ -166,6 +175,10 @@ export default function FocusedWorkspacePage() {
               <Clapperboard size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Markedsføring</h2>
               <p className="mt-1 text-sm text-slate-400">Kanalstatus, nylig innhold og brand-avgrensede innholdsutkast.</p>
             </button>}
+            {showGrowth && <button onClick={() => setTab("growth")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
+              <TrendingUp size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Growth & Corporate</h2>
+              <p className="mt-1 text-sm text-slate-400">Corporate, SEO/GEO/AEO, søkeord, annonser, video og informasjonsmøter.</p>
+            </button>}
           </section>
         )}
         {!loading && !error && showCrm && tab === "crm" && (
@@ -224,6 +237,8 @@ export default function FocusedWorkspacePage() {
           <WorkspacePropertyCatalogue brandKey={brandKey} />}
         {!loading && !error && showMarketing && tab === "marketing" &&
           <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />}
+        {!loading && !error && showGrowth && tab === "growth" &&
+          <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
       </main>
     </div>
   );
