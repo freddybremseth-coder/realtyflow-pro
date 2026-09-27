@@ -138,7 +138,10 @@ test("public search-discovery collector reaches origin validation without a logi
   }
 });
 
-function mockLiveProfiles(profiles: Array<{ email: string; role: string; active: boolean }>) {
+function mockLiveProfiles(
+  profiles: Array<{ email: string; role: string; active: boolean }>,
+  workspaceEnabled = true,
+) {
   const oldFetch = globalThis.fetch;
   const oldUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const oldKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -158,6 +161,10 @@ function mockLiveProfiles(profiles: Array<{ email: string; role: string; active:
       } : null), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (String(url).includes("/rest/v1/brand_settings")) {
+      const parsed = new URL(String(url));
+      if (parsed.searchParams.get("brand_id") === "eq.workspace-auth:runtime") {
+        return new Response(JSON.stringify([{ settings: { enabled: workspaceEnabled } }]), { status: 200 });
+      }
       return new Response(JSON.stringify([{ settings: { profiles } }]), { status: 200 });
     }
     return oldFetch(url, init);
@@ -171,9 +178,11 @@ function mockLiveProfiles(profiles: Array<{ email: string; role: string; active:
   };
 }
 
-test("workspace-only role is disabled by default and does not enter legacy CRM", async () => {
-  delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-  const restore = mockLiveProfiles([{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }]);
+test("workspace-only role is disabled by database runtime control and does not enter legacy CRM", async () => {
+  const restore = mockLiveProfiles(
+    [{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }],
+    false,
+  );
   try {
     const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
     const denied = await middleware(request("/workspace/pinosoecolife", { cookie }));
@@ -182,9 +191,8 @@ test("workspace-only role is disabled by default and does not enter legacy CRM",
   } finally { restore(); }
 });
 
-test("when explicitly enabled workspace role can enter only narrow shell and scoped reads", async () => {
-  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
-  const restore = mockLiveProfiles([{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }]);
+test("when database runtime is enabled workspace role can enter only narrow shell and scoped reads", async () => {
+  const restore = mockLiveProfiles([{ email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true }], true);
   try {
     const cookie = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
     for (const path of [
@@ -245,7 +253,7 @@ test("when explicitly enabled workspace role can enter only narrow shell and sco
       ));
       assert.equal(result.status, expected, path + " " + method);
     }
-  } finally { restore(); delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED; }
+  } finally { restore(); }
 });
 
 test("stale SALES session is rejected immediately after profile is reduced to workspace-only", async () => {
