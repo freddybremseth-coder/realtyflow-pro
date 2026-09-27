@@ -322,8 +322,10 @@ export async function middleware(request: NextRequest) {
       // Deny by default BEFORE legacy special-cases such as internal-alerts.
       // No legacy customer 360, tasks, messages, files, exports or finance API
       // can be opened merely by switching to a WORKSPACE_MEMBER session.
-      if (session.role === "WORKSPACE_MEMBER" && pathname.startsWith("/api/") &&
-          !workspaceMemberProtectedApiAllowed(pathname, request.method)) {
+      const workspaceScopedApi = session.role === "WORKSPACE_MEMBER" &&
+        pathname.startsWith("/api/") &&
+        workspaceMemberProtectedApiAllowed(pathname, request.method);
+      if (session.role === "WORKSPACE_MEMBER" && pathname.startsWith("/api/") && !workspaceScopedApi) {
         return roleDenied(request, session.role, "scoped-workspace-route");
       }
       const internalAlertsApi = pathname === "/api/internal-alerts";
@@ -342,7 +344,7 @@ export async function middleware(request: NextRequest) {
       }
 
       if (pathname.startsWith("/api/")) {
-        if (!internalAlertsApi) {
+        if (!internalAlertsApi && !workspaceScopedApi) {
           const requirement = accessRequirementForApi(pathname, request.method);
           if (requirement === "OWNER_ONLY" || (requirement !== "AUTHENTICATED" && !hasPermission(session.role, requirement))) return roleDenied(request, session.role, requirement);
         }
