@@ -14,6 +14,7 @@ declare
   v_private_buckets_present boolean := false;
   v_private_buckets_private boolean := false;
   v_private_bucket_auth_policies integer := 0;
+  v_operational_storage_auth_write_policies integer := 0;
   v_direct_customer_policy_risk integer := 0;
   v_direct_internal_policy_risk integer := 0;
 begin
@@ -73,6 +74,25 @@ begin
       or coalesce(p.with_check,'') ilike '%caecv-documents%'
     );
 
+  -- A generic workspace Auth token must also not inherit unrelated write
+  -- privileges to operational/public asset buckets. These buckets may remain
+  -- publicly readable by design, but a workspace member has no reason to
+  -- upload, update or delete plot/ad/farm assets directly through Supabase.
+  select count(*)::integer into v_operational_storage_auth_write_policies
+  from pg_catalog.pg_policies p
+  where p.schemaname = 'storage'
+    and p.tablename = 'objects'
+    and p.cmd in ('ALL','INSERT','UPDATE','DELETE')
+    and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
+    and (
+      coalesce(p.qual,'') ilike '%plot-assets%'
+      or coalesce(p.with_check,'') ilike '%plot-assets%'
+      or coalesce(p.qual,'') ilike '%ad-creatives%'
+      or coalesce(p.with_check,'') ilike '%ad-creatives%'
+      or coalesce(p.qual,'') ilike '%olivia-field-observations%'
+      or coalesce(p.with_check,'') ilike '%olivia-field-observations%'
+    );
+
   -- For the four core customer surfaces, fail if a public/authenticated policy
   -- appears permissive rather than an explicit deny. This is intentionally
   -- conservative; server/service-role access is unaffected.
@@ -107,6 +127,7 @@ begin
     'private_document_buckets_present', v_private_buckets_present,
     'private_document_buckets_private', v_private_buckets_private,
     'private_document_authenticated_policies', v_private_bucket_auth_policies,
+    'operational_storage_authenticated_write_policies', v_operational_storage_auth_write_policies,
     'direct_customer_policy_risk', v_direct_customer_policy_risk,
     'direct_internal_policy_risk', v_direct_internal_policy_risk,
     'safe_for_workspace_auth',
@@ -114,6 +135,7 @@ begin
       and v_private_buckets_present
       and v_private_buckets_private
       and v_private_bucket_auth_policies = 0
+      and v_operational_storage_auth_write_policies = 0
       and v_direct_customer_policy_risk = 0
       and v_direct_internal_policy_risk = 0
   );
