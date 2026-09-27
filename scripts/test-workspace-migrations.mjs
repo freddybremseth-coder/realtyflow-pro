@@ -97,6 +97,7 @@ try {
   await sql("alter role service_role bypassrls");
   await sql("drop schema if exists core cascade");
   await sql("drop schema if exists auth cascade");
+  await sql("drop schema if exists storage cascade");
   await sql("drop schema if exists public cascade");
   await sql("create schema public");
   await sql("grant all on schema public to public");
