@@ -48,7 +48,8 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
           typeof permission === "string" &&
           WORKSPACE_PERMISSIONS.includes(permission as WorkspacePermission))) return null;
     const typed = permissions as WorkspacePermission[];
-    if (typed.some(permission => permission.startsWith("marketing."))) return null;
+    if (typed.includes("marketing.publish")) return null;
+    if (typed.includes("marketing.draft") && !typed.includes("marketing.read")) return null;
     if (brandKey === "zeneco") {
       if (typed.some(permission => permission === "crm.read" || permission === "crm.write") ||
           (typed.includes("crm.joint.write") && !typed.includes("crm.joint.read")) ||
