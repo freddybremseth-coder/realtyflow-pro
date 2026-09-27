@@ -59,6 +59,9 @@ export async function admitWorkspaceMemberLogin(
     const brandKey = brand.brand_key;
     const invalidScope = permissions.includes("marketing.publish") ||
       (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) ||
+      (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) ||
+      (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) ||
+      (permissions.includes("ads.draft") && !permissions.includes("ads.read")) ||
       (brandKey === "zeneco"
       ? permissions.some(permission => permission === "crm.read" || permission === "crm.write") ||
         (permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) ||
@@ -66,7 +69,8 @@ export async function admitWorkspaceMemberLogin(
           !permissions.includes("crm.joint.read")) ||
         (permissions.includes("tasks.joint.write") && !permissions.includes("tasks.joint.read"))
       : permissions.some(permission =>
-        ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)));
+        ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
+         "corporate.read", "corporate.plan"].includes(permission)));
     if (invalidScope) return { ok: false, reason: "IDENTITY_MISMATCH" };
 
     // Social publishing is still withheld, but brand-scoped marketing read/draft
