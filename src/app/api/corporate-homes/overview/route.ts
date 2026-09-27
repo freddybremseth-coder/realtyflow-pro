@@ -445,6 +445,7 @@ export async function GET(request: NextRequest) {
             status: lastCorporateGrowthReview.status,
             at: lastCorporateGrowthReview.created_at,
             review: (lastCorporateGrowthReview.details as any)?.review || null,
+            comparison: (lastCorporateGrowthReview.details as any)?.comparison || null,
           }
         : null,
       acquisition: {

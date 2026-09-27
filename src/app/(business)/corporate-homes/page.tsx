@@ -73,6 +73,14 @@ type Overview = {
   growthReview?: {
     status: string;
     at?: string | null;
+    comparison?: {
+      previousBottleneckStage?: string | null;
+      previousRatePct?: number | null;
+      rateDeltaPctPoints?: number | null;
+      sameBottleneckStreak: number;
+      continuousImprovementCandidate: boolean;
+      note: string;
+    } | null;
     review?: {
       status: "READY" | "LEARNING" | "DATA_GAP";
       minimumDenominator: number;
@@ -552,6 +560,7 @@ export default function CorporateHomesGrowthPage() {
         </div>
 
         {data?.growthReview?.review ? (
+          <>
           <div className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.6fr]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-black uppercase tracking-wide text-slate-500">Målt flaskehals</div>
@@ -581,6 +590,45 @@ export default function CorporateHomesGrowthPage() {
               </div>
             </div>
           </div>
+
+          {data.growthReview.comparison && (
+            <div className={`mt-4 rounded-2xl border p-4 ${
+              data.growthReview.comparison.continuousImprovementCandidate
+                ? "border-amber-300 bg-amber-50"
+                : "border-slate-200 bg-slate-50"
+            }`}>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-wide text-slate-500">Uketrend</div>
+                  <div className="mt-1 text-sm font-black text-slate-950">
+                    Samme flaskehals i {data.growthReview.comparison.sameBottleneckStreak} ukentlige snapshot
+                    {data.growthReview.comparison.sameBottleneckStreak === 1 ? "" : "s"} på rad
+                  </div>
+                  {data.growthReview.comparison.rateDeltaPctPoints !== null &&
+                    data.growthReview.comparison.rateDeltaPctPoints !== undefined && (
+                      <p className="mt-1 text-sm text-slate-700">
+                        Endring siden forrige snapshot:{" "}
+                        <span className="font-black">
+                          {data.growthReview.comparison.rateDeltaPctPoints > 0 ? "+" : ""}
+                          {data.growthReview.comparison.rateDeltaPctPoints} prosentpoeng
+                        </span>
+                      </p>
+                    )}
+                  <p className="mt-2 max-w-4xl text-xs leading-5 text-slate-600">{data.growthReview.comparison.note}</p>
+                </div>
+                {data.growthReview.comparison.continuousImprovementCandidate && (
+                  <Link
+                    href="/continuous-improvement"
+                    className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-amber-900 px-4 py-2.5 text-sm font-black text-white hover:bg-amber-800"
+                  >
+                    Vurder i Kontinuerlig forbedring
+                    <ArrowRight size={16} />
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+          </>
         ) : (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
             Første ukentlige Corporate Growth Review er ikke lagret ennå. Reviewen opprettes automatisk når cron-jobben kjører.
