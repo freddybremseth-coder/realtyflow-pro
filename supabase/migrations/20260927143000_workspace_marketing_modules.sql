@@ -343,6 +343,7 @@ declare
   v_permissions text[];
   v_corporate jsonb := null;
   v_visibility jsonb := null;
+  v_seo_sam jsonb := null;
   v_ads jsonb := null;
   v_planned jsonb := '[]'::jsonb;
 begin
@@ -444,6 +445,33 @@ begin
         ) w
       ),'[]'::jsonb)
     ) into v_visibility;
+
+    select jsonb_build_object(
+      'collectedAt',l.created_at,
+      'gsc',(
+        select jsonb_build_object(
+          'status',g.item->>'status',
+          'error',g.item->>'error',
+          'result',g.item->'result'
+        )
+        from jsonb_array_elements(coalesce(l.details->'google_search_console','[]'::jsonb)) g(item)
+        where g.item->>'brandId'=p_brand_key
+        limit 1
+      ),
+      'diagnostics',coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'kind',d.item->>'kind','title',d.item->>'title',
+          'category',d.item->>'category','finding',d.item->>'finding',
+          'evidence',d.item->>'evidence','nextStep',d.item->>'nextStep'
+        ))
+        from jsonb_array_elements(coalesce(l.details->'diagnostics','[]'::jsonb)) d(item)
+        where d.item->>'brandId'=p_brand_key
+      ),'[]'::jsonb)
+    ) into v_seo_sam
+    from public.automation_logs l
+    where l.action='seo_gsc_live_read'
+    order by l.created_at desc
+    limit 1;
   end if;
 
   if 'ads.read'=any(v_permissions) then
@@ -492,7 +520,7 @@ begin
       'eventsPlan','events.plan'=any(v_permissions)
     ),
     'corporate',v_corporate,
-    'visibility',v_visibility,
+    'visibility',case when v_visibility is null then null else v_visibility || jsonb_build_object('seoSam',v_seo_sam) end,
     'ads',v_ads,
     'plannedWork',v_planned
   );
