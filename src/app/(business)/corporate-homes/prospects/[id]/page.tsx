@@ -92,6 +92,12 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [decisionPack, setDecisionPack] = useState<Record<string, any> | null>(null);
   const [buildingDecisionPack, setBuildingDecisionPack] = useState(false);
   const [decisionPackNotice, setDecisionPackNotice] = useState("");
+  const [decisionOutcome, setDecisionOutcome] = useState<Record<string, any> | null>(null);
+  const [decisionOutcomeType, setDecisionOutcomeType] = useState("APPROVE_VIEWINGS");
+  const [decisionPropertyRef, setDecisionPropertyRef] = useState("");
+  const [decisionNote, setDecisionNote] = useState("");
+  const [savingDecisionOutcome, setSavingDecisionOutcome] = useState(false);
+  const [decisionOutcomeNotice, setDecisionOutcomeNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -122,6 +128,13 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       setProspect(body?.prospect || null);
       const savedDecisionPack = body?.prospect?.evidence?.corporate_decision_pack;
       if (savedDecisionPack && typeof savedDecisionPack === "object") setDecisionPack(savedDecisionPack);
+      const savedDecisionOutcome = body?.prospect?.evidence?.corporate_decision_outcome;
+      if (savedDecisionOutcome && typeof savedDecisionOutcome === "object") {
+        setDecisionOutcome(savedDecisionOutcome);
+        if (savedDecisionOutcome.outcome) setDecisionOutcomeType(String(savedDecisionOutcome.outcome));
+        if (savedDecisionOutcome.selected_property_ref) setDecisionPropertyRef(String(savedDecisionOutcome.selected_property_ref));
+        if (savedDecisionOutcome.note) setDecisionNote(String(savedDecisionOutcome.note));
+      }
       const savedPropertyMatch = body?.prospect?.evidence?.corporate_property_match;
       if (savedPropertyMatch && typeof savedPropertyMatch === "object" && Array.isArray(savedPropertyMatch.shortlist)) {
         setMatchingProperties(savedPropertyMatch.shortlist);
@@ -334,6 +347,47 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       setError(packError instanceof Error ? packError.message : "Kunne ikke bygge Corporate Decision Pack.");
     } finally {
       setBuildingDecisionPack(false);
+    }
+  }
+
+  async function saveDecisionOutcome() {
+    if (!decisionPack) {
+      setDecisionOutcomeNotice("Bygg Decision Pack først.");
+      return;
+    }
+    if (decisionOutcomeType === "APPROVE_OFFER_PREP" && !decisionPropertyRef) {
+      setDecisionOutcomeNotice("Velg bolig før tilbudsforberedelse godkjennes.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Registrer dette som internt styre-/lederutfall? RealtyFlow sender ingen kundemelding, oppretter ingen kalenderavtale og sender ingen reservasjon eller tilbud.",
+    );
+    if (!confirmed) return;
+
+    setSavingDecisionOutcome(true);
+    setDecisionOutcomeNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/decision-outcome`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outcome: decisionOutcomeType,
+          selected_property_ref: decisionOutcomeType === "APPROVE_OFFER_PREP" ? decisionPropertyRef : null,
+          note: decisionNote || null,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke registrere beslutningsutfallet.");
+      setDecisionOutcome(body?.outcome || null);
+      setProspect(body?.prospect || prospect);
+      setDecisionOutcomeNotice("Internt beslutningsutfall er registrert. Ingen ekstern handling ble utført.");
+      await load();
+    } catch (decisionError) {
+      setError(decisionError instanceof Error ? decisionError.message : "Kunne ikke registrere beslutningsutfallet.");
+    } finally {
+      setSavingDecisionOutcome(false);
     }
   }
 
@@ -660,8 +714,73 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
               </div>
             </div>
           )}
+          {decisionPack && (
+            <div className="mt-5 rounded-2xl border border-emerald-200 bg-white p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-emerald-900">Styre-/lederutfall</div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Registrer hva som faktisk er besluttet. Dette oppretter kun intern neste handling og arbeidsoppgave.
+              </p>
+              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1.4fr]">
+                <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Beslutning
+                  <select
+                    value={decisionOutcomeType}
+                    onChange={(event) => setDecisionOutcomeType(event.target.value)}
+                    className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+                  >
+                    <option value="APPROVE_VIEWINGS">Gå videre til visningsplan</option>
+                    <option value="APPROVE_OFFER_PREP">Forbered tilbud på valgt bolig</option>
+                    <option value="NEEDS_CHANGES">Decision Pack må revideres</option>
+                    <option value="HOLD">Sett Opportunity på hold</option>
+                  </select>
+                </label>
+                <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Valgt bolig
+                  <select
+                    value={decisionPropertyRef}
+                    onChange={(event) => setDecisionPropertyRef(event.target.value)}
+                    disabled={decisionOutcomeType !== "APPROVE_OFFER_PREP"}
+                    className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+                  >
+                    <option value="">Velg fra Decision Pack</option>
+                    {(decisionPack.shortlist || []).map((property: Record<string, any>) => (
+                      <option key={String(property.ref)} value={String(property.ref)}>
+                        {property.ref} · {property.title || property.location || "Bolig"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Intern merknad
+                  <input
+                    value={decisionNote}
+                    onChange={(event) => setDecisionNote(event.target.value)}
+                    placeholder="Valgfri begrunnelse eller forbehold"
+                    className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => void saveDecisionOutcome()}
+                  disabled={savingDecisionOutcome}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {savingDecisionOutcome ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  Registrer beslutning
+                </button>
+                {decisionOutcomeNotice && <span className="text-xs font-bold text-emerald-900">{decisionOutcomeNotice}</span>}
+              </div>
+              {decisionOutcome && (
+                <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                  Sist registrert: <strong>{decisionOutcome.label || decisionOutcome.outcome}</strong>
+                  {decisionOutcome.selected_property_ref ? ` · bolig ${decisionOutcome.selected_property_ref}` : ""}
+                </div>
+              )}
+            </div>
+          )}
           <div className="mt-3 text-xs text-slate-600">
-            Ingen kundedeling · ingen automatisk utsendelse · skatt, juridisk struktur og drift krever separat kvalitetssikring.
+            Ingen kundedeling · ingen automatisk utsendelse · ingen kalenderbooking eller tilbud/reservasjon · skatt, juridisk struktur og drift krever separat kvalitetssikring.
           </div>
         </section>
       )}
