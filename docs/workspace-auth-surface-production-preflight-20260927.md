@@ -64,3 +64,16 @@ Required next check:
 ## Activation rule
 
 A workspace employee must not be invited or enabled while the production preflight reports any of the direct-Auth blockers above. The feature flag remains off, access plans remain drafts, and PR #1028 remains unmerged until the remaining document/Olivia consumers are understood and the final rollout is explicitly approved.
+
+
+## Activity snapshot used to assess policy-removal risk
+
+Read-only Storage metadata showed:
+
+- `ad-creatives`: 123 objects; latest object timestamp 2026-08-02.
+- `plot-assets`: 2 objects; latest object timestamp 2026-05-02.
+- `property-documents`: 1 object; latest object timestamp 2026-06-05.
+- `caecv-documents`: no current objects returned by the aggregate query.
+- `olivia-field-observations`: no current objects returned by the aggregate query.
+
+The last-24-hour Storage log aggregate found only two GET requests involving these five buckets, both for `ad-creatives`; no authenticated write for the private-document, plot, ad or Olivia buckets appeared in that 24-hour window. This is useful evidence but **not** proof that older, infrequent or external clients are unused, so it does not justify dropping the eight private-document or three Olivia write policies without their own consumer review.
