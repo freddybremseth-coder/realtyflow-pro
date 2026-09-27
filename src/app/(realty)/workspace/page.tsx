@@ -5,6 +5,17 @@ import { ArrowRight, Building2, LockKeyhole } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type Workspace = { brandKey: string; name: string; permissions: string[] };
+
+function workSummary(permissions: string[]) {
+  const areas: string[] = [];
+  if (permissions.some(p => p.startsWith("crm.") || p.startsWith("tasks."))) areas.push("leads og oppfølging");
+  if (permissions.some(p => p.startsWith("corporate."))) areas.push("Corporate");
+  if (permissions.some(p => p.startsWith("visibility.") || p.startsWith("marketing."))) areas.push("innhold og synlighet");
+  if (permissions.some(p => p.startsWith("ads.") || p === "events.plan")) areas.push("kampanjer og møter");
+  if (permissions.includes("properties.catalog.read")) areas.push("eiendommer");
+  return areas.length ? areas.slice(0, 4).join(" · ") : "arbeidsoppgaver";
+}
+
 export default function MyWorkspacesPage() {
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -35,8 +46,8 @@ export default function MyWorkspacesPage() {
       <div className="mx-auto max-w-3xl space-y-6">
         <header className="flex items-start justify-between gap-4">
           <div><p className="text-xs font-semibold uppercase tracking-wider text-cyan-400">RealtyFlow</p>
-            <h1 className="mt-2 text-3xl font-bold">Mine arbeidsområder</h1>
-            <p className="mt-2 text-sm text-slate-400">Her finner du kun virksomhetene og oppgavene du har tilgang til.</p></div>
+            <h1 className="mt-2 text-3xl font-bold">Hva skal du jobbe med?</h1>
+            <p className="mt-2 text-sm text-slate-400">Velg virksomhet. RealtyFlow viser bare verktøyene du trenger for jobben din.</p></div>
           <button type="button" className="rounded-lg border border-slate-700 px-3 py-2 text-sm" onClick={async () => {
             await fetch("/api/auth/logout", { method: "POST" });
             window.location.assign("/login");
@@ -54,7 +65,7 @@ export default function MyWorkspacesPage() {
             className="flex items-center justify-between gap-4 rounded-2xl border border-slate-700 bg-slate-900 p-5 hover:border-cyan-500">
             <span className="flex items-center gap-3"><Building2 className="text-cyan-400" size={25}/>
               <span><span className="block text-lg font-semibold">{workspace.name}</span>
-                <span className="text-sm text-slate-400">{workspace.permissions.length} tildelte rettigheter</span></span></span>
+                <span className="text-sm text-slate-400">{workSummary(workspace.permissions)}</span></span></span>
             <ArrowRight size={19} className="text-cyan-300"/>
           </Link>)}
       </div>
