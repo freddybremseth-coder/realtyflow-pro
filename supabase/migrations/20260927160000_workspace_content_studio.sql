@@ -360,6 +360,8 @@ create or replace function public.workspace_brand_content_publish_payload(
 declare
   v_brand_id uuid;
   d core.brand_workspace_content_drafts%rowtype;
+  v_version integer;
+  v_snapshot jsonb;
 begin
   select b.id into v_brand_id
   from core.brand_workspace_memberships m
@@ -370,10 +372,29 @@ begin
   if v_brand_id is null then return null; end if;
 
   select * into d from core.brand_workspace_content_drafts
-  where id=p_draft_id and brand_id=v_brand_id;
+  where id=p_draft_id and brand_id=v_brand_id
+  for update;
   if d.id is null then return null; end if;
 
+  select coalesce(max(version_no),0)+1 into v_version
+  from core.brand_workspace_content_versions where draft_id=d.id;
+
+  v_snapshot := jsonb_build_object(
+    'destinationId',d.destination_id,'destinationLabel',d.destination_label,
+    'destinationPath',d.destination_path,'contentType',d.content_type,
+    'title',d.title,'slug',d.slug,'summary',d.summary,'markdown',d.markdown,
+    'imageUrl',d.image_url,'tags',d.tags,'primaryKeyword',d.primary_keyword,
+    'supportingKeywords',d.supporting_keywords,'audience',d.audience
+  );
+
+  insert into core.brand_workspace_content_versions(
+    brand_id,draft_id,publication_id,version_no,snapshot,actor_user_id,actor_email
+  ) values (
+    v_brand_id,d.id,d.source_publication_id,v_version,v_snapshot,p_user_id,p_email
+  );
+
   return jsonb_build_object(
+    'version',v_version,
     'id',d.id,'destinationId',d.destination_id,'destinationLabel',d.destination_label,
     'destinationPath',d.destination_path,'contentType',d.content_type,
     'title',d.title,'slug',d.slug,'summary',d.summary,'markdown',d.markdown,
@@ -398,7 +419,6 @@ declare
   v_publication_id uuid;
   v_version integer;
   v_tags text[];
-  v_snapshot jsonb;
 begin
   select b.id into v_brand_id
   from core.brand_workspace_memberships m
@@ -459,20 +479,9 @@ begin
     ) returning id into v_publication_id;
   end if;
 
-  select coalesce(max(version_no),0)+1 into v_version
+  select max(version_no) into v_version
   from core.brand_workspace_content_versions where draft_id=d.id;
-
-  v_snapshot := jsonb_build_object(
-    'destinationId',d.destination_id,'destinationLabel',d.destination_label,
-    'destinationPath',d.destination_path,'contentType',d.content_type,
-    'title',d.title,'slug',d.slug,'summary',d.summary,'markdown',d.markdown,
-    'imageUrl',d.image_url,'tags',d.tags,'primaryKeyword',d.primary_keyword,
-    'supportingKeywords',d.supporting_keywords,'audience',d.audience
-  );
-
-  insert into core.brand_workspace_content_versions(
-    brand_id,draft_id,publication_id,version_no,snapshot,actor_user_id,actor_email
-  ) values (v_brand_id,d.id,v_publication_id,v_version,v_snapshot,p_user_id,p_email);
+  if v_version is null then return null; end if;
 
   update core.brand_workspace_content_drafts set
     source_publication_id=v_publication_id,published_at=now(),last_publish_error=null,
