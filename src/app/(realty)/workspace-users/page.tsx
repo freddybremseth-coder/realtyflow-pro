@@ -28,11 +28,14 @@ type BrandChoice = {
   properties: boolean;
   tasksRead: boolean;
   tasksWrite: boolean;
+  marketingRead: boolean;
+  marketingDraft: boolean;
 };
 
 const emptyChoice = (): BrandChoice => ({
   enabled: false, crmRead: false, crmWrite: false,
   properties: false, tasksRead: false, tasksWrite: false,
+  marketingRead: false, marketingDraft: false,
 });
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -75,6 +78,8 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       properties: permissions.includes("properties.catalog.read"),
       tasksRead: permissions.includes("tasks.joint.read"),
       tasksWrite: permissions.includes("tasks.joint.write"),
+      marketingRead: permissions.includes("marketing.read"),
+      marketingDraft: permissions.includes("marketing.draft"),
     };
   }
   return next;
@@ -144,6 +149,7 @@ export default function WorkspaceUsersPage() {
       if (!next.enabled) return { ...current, [brandKey]: emptyChoice() };
       if (next.crmWrite) next.crmRead = true;
       if (next.tasksWrite) next.tasksRead = true;
+      if (next.marketingDraft) next.marketingRead = true;
       if (brandKey === "zeneco" && (next.tasksRead || next.tasksWrite)) next.crmRead = true;
       return { ...current, [brandKey]: next };
     });
@@ -160,6 +166,8 @@ export default function WorkspaceUsersPage() {
         properties: choice.properties,
         jointTasksRead: choice.tasksRead,
         jointTasksWrite: choice.tasksWrite,
+        marketingRead: choice.marketingRead,
+        marketingDraft: choice.marketingDraft,
       });
       return permissions.length ? [{ brandKey: brand.brandKey, permissions }] : [];
     });
@@ -402,11 +410,11 @@ export default function WorkspaceUsersPage() {
                 </label>
                 {choice.enabled && <div className="mt-4 grid gap-3 md:grid-cols-3">
                   <div className="rounded-lg border border-slate-800 p-3">
-                    <strong className="text-sm">{isZen ? "CRM · nye felleskunder" : "CRM & kunder"}</strong>
+                    <strong className="text-sm">{isZen ? "Leads · nye felleskunder" : "Leads & CRM"}</strong>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.crmRead}
-                      onChange={e => updateChoice(brand.brandKey, { crmRead: e.target.checked, ...(e.target.checked ? {} : { crmWrite: false, tasksRead: false, tasksWrite: false }) })}/> Se kunder</label>
+                      onChange={e => updateChoice(brand.brandKey, { crmRead: e.target.checked, ...(e.target.checked ? {} : { crmWrite: false, tasksRead: false, tasksWrite: false }) })}/> Se leads og kunder</label>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.crmWrite}
-                      onChange={e => updateChoice(brand.brandKey, { crmWrite: e.target.checked })}/> Endre kontaktopplysninger</label>
+                      onChange={e => updateChoice(brand.brandKey, { crmWrite: e.target.checked })}/> Opprette og redigere leads</label>
                   </div>
                   <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Eiendommer</strong>
@@ -420,6 +428,14 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.tasksWrite}
                       onChange={e => updateChoice(brand.brandKey, { tasksWrite: e.target.checked })}/> Opprette/fullføre</label>
                   </div>}
+                  <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">Markedsføring</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingRead}
+                      onChange={e => updateChoice(brand.brandKey, { marketingRead: e.target.checked, ...(e.target.checked ? {} : { marketingDraft: false }) })}/> Se markedsoversikt og innhold</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingDraft}
+                      onChange={e => updateChoice(brand.brandKey, { marketingDraft: e.target.checked })}/> Lage innholdsutkast</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Publisering er en separat rettighet og er ikke åpnet for medarbeidere ennå.</p>
+                  </div>
                 </div>}
               </article>;
             })}
