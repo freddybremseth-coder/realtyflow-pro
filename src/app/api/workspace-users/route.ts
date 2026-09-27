@@ -160,9 +160,32 @@ export async function POST(request: NextRequest) {
     const displayName = String(body.displayName || "").trim();
     const password = body.password;
     const brandAccess = validBrandAccess(body.brandAccess);
-    if (!usernamePattern.test(username) || !emailPattern.test(email) || email.length > 254 ||
-        !displayName || displayName.length > 120 || !strongPassword(password) || !brandAccess) {
-      return reply({ error: "INVALID_USER_CONFIGURATION" }, 400);
+    if (!usernamePattern.test(username)) {
+      return reply({
+        error: "INVALID_USERNAME",
+        field: "username",
+        message: "Brukernavn må være 3–32 tegn og kan bare inneholde a–z, 0–9, punktum, bindestrek eller understrek.",
+      }, 400);
+    }
+    if (!emailPattern.test(email) || email.length > 254) {
+      return reply({ error: "INVALID_EMAIL", field: "email", message: "Oppgi en gyldig e-postadresse." }, 400);
+    }
+    if (!displayName || displayName.length > 120) {
+      return reply({ error: "INVALID_DISPLAY_NAME", field: "displayName", message: "Navn må være mellom 1 og 120 tegn." }, 400);
+    }
+    if (!strongPassword(password)) {
+      return reply({
+        error: "WEAK_PASSWORD",
+        field: "password",
+        message: "Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.",
+      }, 400);
+    }
+    if (!brandAccess) {
+      return reply({
+        error: "INVALID_BRAND_ACCESS",
+        field: "brandAccess",
+        message: "Velg minst én gyldig merkevare og minst ett tillatt program for hver valgt merkevare.",
+      }, 400);
     }
 
     const { snapshot: beforeCreate, error: beforeCreateError } = await loadSnapshot(supabase);
@@ -222,8 +245,22 @@ export async function POST(request: NextRequest) {
     const username = String(body.username || existing.username).trim().toLowerCase();
     const displayName = String(body.displayName || existing.displayName).trim();
     const brandAccess = validBrandAccess(body.brandAccess);
-    if (!usernamePattern.test(username) || !displayName || displayName.length > 120 || !brandAccess) {
-      return reply({ error: "INVALID_USER_CONFIGURATION" }, 400);
+    if (!usernamePattern.test(username)) {
+      return reply({
+        error: "INVALID_USERNAME",
+        field: "username",
+        message: "Brukernavn må være 3–32 tegn og kan bare inneholde a–z, 0–9, punktum, bindestrek eller understrek.",
+      }, 400);
+    }
+    if (!displayName || displayName.length > 120) {
+      return reply({ error: "INVALID_DISPLAY_NAME", field: "displayName", message: "Navn må være mellom 1 og 120 tegn." }, 400);
+    }
+    if (!brandAccess) {
+      return reply({
+        error: "INVALID_BRAND_ACCESS",
+        field: "brandAccess",
+        message: "Velg minst én gyldig merkevare og minst ett tillatt program for hver valgt merkevare.",
+      }, 400);
     }
     const knownBrands = new Set(snapshot.brands.map((brand: any) => brand.brandKey));
     if (brandAccess.some(item => !knownBrands.has(item.brandKey))) {

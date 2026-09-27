@@ -115,27 +115,58 @@ test("create user sends password only to Supabase Auth and configures safe multi
   assert.equal(configure?.args?.p_username, "andrea");
 });
 
-test("unsafe brand/program combinations and weak passwords are rejected before Auth mutation", async () => {
+test("invalid workspace-user input returns the exact field before Auth mutation", async () => {
   const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
-  for (const body of [
+  const cases = [
     {
-      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
-      displayName: "Andrea", password: "weak",
-      brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
+      body: {
+        action: "CREATE_USER", username: "an", email: "andrea@example.test",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
+      },
+      error: "INVALID_USERNAME", field: "username",
     },
     {
-      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
-      displayName: "Andrea", password: "Strong!Workspace7Password",
-      brandAccess: [{ brandKey: "zeneco", permissions: ["crm.read"] }],
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "not-an-email",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
+      },
+      error: "INVALID_EMAIL", field: "email",
     },
     {
-      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
-      displayName: "Andrea", password: "Strong!Workspace7Password",
-      brandAccess: [{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }],
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea", password: "weak",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
+      },
+      error: "WEAK_PASSWORD", field: "password",
     },
-  ]) {
-    const response = await POST(req("POST", owner, body) as any);
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
+        brandAccess: [{ brandKey: "zeneco", permissions: ["crm.read"] }],
+      },
+      error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+    },
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }],
+      },
+      error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+    },
+  ];
+  for (const testCase of cases) {
+    const response = await POST(req("POST", owner, testCase.body) as any);
     assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.error, testCase.error);
+    assert.equal(body.field, testCase.field);
+    assert.equal(typeof body.message, "string");
+    assert.ok(body.message.length > 0);
   }
   assert.equal(authCalls.length, 0);
 });
