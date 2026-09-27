@@ -123,6 +123,7 @@ try {
   await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
   await sql("create table public.work_items (id uuid primary key default gen_random_uuid(), title text not null, description text, status text not null default 'TO_DO' check (status in ('TO_DO','IN_PROGRESS','REVIEW','DONE','CANCELLED')), priority text not null default 'MEDIUM' check (priority in ('CRITICAL','HIGH','MEDIUM','LOW')), due_date date, brand_id text, source_type text not null default 'manual' check (source_type in ('manual','ai_agent','content','automation','market_intelligence')), source_id text, assigned_agent text, next_action text, metadata jsonb default '{}'::jsonb, created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.search_discovery_events (id uuid primary key default gen_random_uuid(), brand_id text not null, source text not null, path text not null, occurred_at timestamptz not null default now())");
+  await sql("create table public.automation_logs (id uuid primary key default gen_random_uuid(), action text not null, agent_name text, status text not null, details jsonb, created_at timestamptz default now())");
   await sql("create table public.corporate_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, organization_type text not null default 'company', country_code text not null default 'NO', city text, industry text, employee_count integer, member_count integer, website_url text, linkedin_company_url text, status text not null default 'RESEARCHED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', decision_roles text[] not null default '{}', source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
   await sql("create table public.corporate_partner_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, partner_type text not null default 'other', country_code text not null default 'NO', city text, industry text, employee_count integer, website_url text, status text not null default 'DISCOVERED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', referral_angle text, source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
   await sql("create table public.ad_campaigns (id uuid primary key default gen_random_uuid(), brand_id text, name text not null, product_name text not null, target_markets text[], audience_segments text[], funnel_stage text, offer text, status text not null default 'draft', total_creatives integer default 0, estimated_cost_usd numeric, growth_goal text default 'unspecified', created_at timestamptz default now(), updated_at timestamptz default now())");
@@ -169,7 +170,7 @@ try {
   await sql("grant select on core.brands to service_role");
   await sql("grant select, insert, update on public.contacts to service_role");
   await sql("grant select, insert, update on public.work_items to service_role");
-  await sql("grant select on public.search_discovery_events, public.corporate_prospects, public.corporate_partner_prospects, public.ad_campaigns to service_role");
+  await sql("grant select on public.search_discovery_events, public.automation_logs, public.corporate_prospects, public.corporate_partner_prospects, public.ad_campaigns to service_role");
   await sql("grant select on public.properties, public.property_brand_visibility to service_role");
   for (const filename of files) {
     const contents = await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8");
@@ -1014,6 +1015,7 @@ try {
   await sql("insert into public.corporate_prospects(brand_id,company_name,organization_type,country_code,city,industry,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,next_action) values ('zeneco','Nordic Growth AS','company','NO','Oslo','Technology','RESEARCHED',88,'A',array['distributed workforce'],array['benefit policy'],array['HR','CEO'],'https://example.test/nordic','Verify employee-benefit fit')");
   await sql("insert into public.corporate_partner_prospects(brand_id,company_name,partner_type,country_code,city,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,next_action) values ('zeneco','Partner Advisory AS','management_consulting','NO','Bergen','DISCOVERED',75,'B',array['corporate clients'],array['Spain demand'],'Employee benefit introductions','Prepare referral brief')");
   await sql("insert into public.search_discovery_events(brand_id,source,path,occurred_at) values ('zeneco','google','/bedriftshytte-spania',now()),('zeneco','chatgpt','/corporate-homes',now()),('pinosoecolife','google','/pinoso-private',now())");
+  await sql("insert into public.automation_logs(action,agent_name,status,details) values ('seo_gsc_live_read','Sam SEO Expert','partial',jsonb_build_object('google_search_console',jsonb_build_array(jsonb_build_object('brandId','zeneco','status','error','error','ZEN_GSC_STATUS'),jsonb_build_object('brandId','pinosoecolife','status','success','result',jsonb_build_object('clicks',99))), 'diagnostics',jsonb_build_array(jsonb_build_object('brandId','zeneco','kind','check','title','Zen measurement','category','measurement','finding','ZEN_DIAGNOSTIC','evidence','zen-only evidence','nextStep','Reconnect GSC'),jsonb_build_object('brandId','pinosoecolife','kind','check','title','Private Pinoso','category','measurement','finding','PINOSO_PRIVATE_DIAGNOSTIC','evidence','private','nextStep','private'))))");
   await sql("insert into public.work_items(title,description,status,priority,brand_id,source_type,assigned_agent,next_action) values ('Zen SEO priority','Improve Corporate Homes landing page','TO_DO','HIGH','zeneco','ai_agent','seo','Add HR-benefit search intent'),('Private Pinoso SEO','Must not leak','TO_DO','HIGH','pinosoecolife','ai_agent','seo','Private next action')");
   await sql("insert into public.ad_campaigns(brand_id,name,product_name,target_markets,status,total_creatives,estimated_cost_usd,growth_goal) values ('zeneco','Corporate HR campaign','Zen Corporate Homes',array['Norway'],'completed',5,120,'lead_generation'),('pinosoecolife','Private Pinoso Ad','Pinoso EcoLife',array['Norway'],'completed',3,75,'lead_generation')");
 
@@ -1029,7 +1031,11 @@ try {
     growth.visibility.seoWork[0].title === "Zen SEO priority" &&
     growth?.ads?.length === 1 &&
     growth.ads[0].name === "Corporate HR campaign" &&
-    !JSON.stringify(growth).includes("Private Pinoso"),
+    growth?.visibility?.seoSam?.gsc?.error === "ZEN_GSC_STATUS" &&
+    growth?.visibility?.seoSam?.diagnostics?.[0]?.finding === "ZEN_DIAGNOSTIC" &&
+    !JSON.stringify(growth).includes("Private Pinoso") &&
+    !JSON.stringify(growth).includes("PINOSO_PRIVATE_DIAGNOSTIC") &&
+    !JSON.stringify(growth).includes('"clicks":99'),
     "Growth snapshot leaked another brand or omitted granted Zen modules");
 
   for (const [kind,title] of [
