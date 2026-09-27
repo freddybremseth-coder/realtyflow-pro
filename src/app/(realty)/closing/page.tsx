@@ -6,7 +6,7 @@ import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, CircleDollarSig
 import { Button } from "@/components/ui/button";
 
 type Risk = "HIGH" | "MEDIUM" | "LOW";
-type Stage = "QUALIFIED" | "VIEWING" | "NEGOTIATION";
+type Stage = "QUALIFIED" | "VIEWING" | "NEGOTIATION" | "RESERVED";
 
 interface Opportunity {
   id: string;
@@ -28,14 +28,14 @@ interface Opportunity {
 
 interface Payload {
   generatedAt: string;
-  summary: { activeDeals: number; highRisk: number; viewings: number; negotiations: number; blockedDeals: number; pipelineValue: number };
+  summary: { activeDeals: number; highRisk: number; viewings: number; negotiations: number; reserved: number; blockedDeals: number; pipelineValue: number };
   opportunities: Opportunity[];
 }
 
-type Filter = "all" | "high" | "viewing" | "negotiation" | "blocked";
+type Filter = "all" | "high" | "viewing" | "negotiation" | "reserved" | "blocked";
 
 const BRAND_LABELS: Record<string, string> = { zeneco: "Zen Eco Homes", soleada: "Soleada.no", pinosoecolife: "Pinoso EcoLife" };
-const STAGE_LABELS: Record<Stage, string> = { QUALIFIED: "Kvalifisert", VIEWING: "Visning", NEGOTIATION: "Forhandling" };
+const STAGE_LABELS: Record<Stage, string> = { QUALIFIED: "Kvalifisert", VIEWING: "Visning", NEGOTIATION: "Forhandling", RESERVED: "Reservert" };
 
 function money(value: number) {
   return new Intl.NumberFormat("nb-NO", { style: "currency", currency: "EUR", maximumFractionDigits: 0, notation: value >= 1_000_000 ? "compact" : "standard" }).format(value || 0);
@@ -82,6 +82,7 @@ export default function ClosingPage() {
     if (filter === "high") return item.risk === "HIGH";
     if (filter === "viewing") return item.stage === "VIEWING";
     if (filter === "negotiation") return item.stage === "NEGOTIATION";
+    if (filter === "reserved") return item.stage === "RESERVED";
     if (filter === "blocked") return item.blockers.length > 0;
     return true;
   }), [data?.opportunities, filter]);
@@ -109,7 +110,7 @@ export default function ClosingPage() {
   }
 
   const filters: Array<{ id: Filter; label: string }> = [
-    { id: "all", label: "Alle" }, { id: "high", label: "Høy risiko" }, { id: "viewing", label: "Visning" }, { id: "negotiation", label: "Forhandling" }, { id: "blocked", label: "Blokkert" },
+    { id: "all", label: "Alle" }, { id: "high", label: "Høy risiko" }, { id: "viewing", label: "Visning" }, { id: "negotiation", label: "Forhandling" }, { id: "reserved", label: "Reservert" }, { id: "blocked", label: "Blokkert" },
   ];
 
   const summaryCards: Array<{ label: string; value: string | number; icon: LucideIcon }> = data ? [
@@ -117,6 +118,7 @@ export default function ClosingPage() {
     { label: "Høy risiko", value: data.summary.highRisk, icon: ShieldAlert },
     { label: "Visninger", value: data.summary.viewings, icon: CalendarClock },
     { label: "Forhandlinger", value: data.summary.negotiations, icon: Target },
+    { label: "Reservert", value: data.summary.reserved, icon: CheckCircle2 },
     { label: "Blokkert", value: data.summary.blockedDeals, icon: AlertTriangle },
     { label: "Pipeline", value: money(data.summary.pipelineValue), icon: CircleDollarSign },
   ] : [];
@@ -139,7 +141,7 @@ export default function ClosingPage() {
       {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle size={18} />{error}</div>}
       {feedback && <div className="flex gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200"><CheckCircle2 size={17} />{feedback}</div>}
 
-      {data && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {data && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
         {summaryCards.map((card) => {
           const Icon = card.icon;
           return <article key={card.label} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Icon size={20} className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">{card.label}</p><strong className="mt-1 block text-2xl text-white">{card.value}</strong></article>;
