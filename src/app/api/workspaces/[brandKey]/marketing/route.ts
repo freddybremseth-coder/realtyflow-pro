@@ -5,11 +5,6 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const noStore = { "Cache-Control": "private, no-store" };
-const SAFE_PUBLICATION_COLUMNS = [
-  "id","brand_id","content_type","title","description","tags","thumbnail_url",
-  "scheduled_platforms","status","scheduled_at","published_at","created_at","updated_at",
-  "total_views","total_likes","total_comments","total_shares",
-].join(",");
 const ALLOWED_DRAFT_PLATFORMS = new Set([
   "facebook","instagram","linkedin","youtube","tiktok","pinterest",
 ]);
