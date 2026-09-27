@@ -11,17 +11,11 @@ test("owner is allowed, but legacy global roles never become scoped staff member
   }
 });
 
-test("narrow member role is disabled by default and gates every module", () => {
-  const previous = process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-  delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-  try {
-    for (const permission of ["crm.read", "crm.write", "properties.catalog.read", "marketing.publish"] as const) {
-      assert.equal(roleAllowsWorkspacePermission("WORKSPACE_MEMBER", permission), false);
-    }
-    process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
-    assert.equal(roleAllowsWorkspacePermission("WORKSPACE_MEMBER", "crm.read"), true);
-  } finally {
-    if (previous === undefined) delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-    else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = previous;
+test("narrow member role is eligible for scoped modules; runtime admission is enforced separately", () => {
+  for (const permission of [
+    "crm.read", "crm.write", "properties.catalog.read",
+    "marketing.read", "marketing.draft", "marketing.publish",
+  ] as const) {
+    assert.equal(roleAllowsWorkspacePermission("WORKSPACE_MEMBER", permission), true, permission);
   }
 });
