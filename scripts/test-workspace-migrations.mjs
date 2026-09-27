@@ -100,11 +100,19 @@ try {
   await sql("drop schema if exists core cascade");
   await sql("drop schema if exists auth cascade");
   await sql("drop schema if exists storage cascade");
+  await sql("drop schema if exists olivia_private cascade");
+  await sql("drop schema if exists olivia cascade");
   await sql("drop schema if exists public cascade");
   await sql("create schema public");
   await sql("grant all on schema public to public");
-  await sql("create schema auth; create schema core; create schema storage");
+  await sql("create schema auth; create schema core; create schema storage; create schema olivia; create schema olivia_private");
   await sql("create table auth.users (id uuid primary key, email text)");
+  await sql("create or replace function auth.uid() returns uuid language sql stable set search_path='' as $ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $");
+  await sql("create table olivia.user_profiles (id uuid primary key, role text not null)");
+  await sql("alter table olivia.user_profiles enable row level security");
+  await sql("create or replace function olivia_private.is_internal_user() returns boolean language sql stable security definer set search_path='' as $ select exists (select 1 from olivia.user_profiles p where p.id=(select auth.uid()) and p.role in ('farmer','super_admin')) $");
+  await sql("revoke execute on function olivia_private.is_internal_user() from public, anon; grant execute on function olivia_private.is_internal_user() to authenticated");
+  await sql("grant usage on schema olivia_private to authenticated");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
   await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
@@ -118,9 +126,11 @@ try {
   await sql("create table storage.buckets (id text primary key, name text not null, public boolean not null default false)");
   await sql("create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text)");
   await sql("alter table storage.objects enable row level security");
-  // Match production: service_role can inspect Storage metadata, but this
-  // privilege comes from the platform, not from the workspace migration.
-  await sql("grant usage on schema storage to service_role");
+  // Match production Storage role capabilities closely enough to exercise RLS.
+  await sql("grant usage on schema storage to authenticated, service_role");
+  await sql("grant select, insert, update, delete on storage.objects to authenticated");
+  // Production service_role can inspect Storage metadata; this privilege comes
+  // from the platform, not from the workspace migration.
   await sql("grant select on storage.buckets to service_role");
   await sql("insert into storage.buckets(id,name,public) values ('property-documents','property-documents',false),('caecv-documents','caecv-documents',false),('plot-assets','plot-assets',true),('ad-creatives','ad-creatives',true),('olivia-field-observations','olivia-field-observations',true)");
   await sql("create policy \"agentic_approvals_read\" on public.agentic_approvals for select to authenticated using (true)");
@@ -129,10 +139,11 @@ try {
   await sql("create policy \"Authenticated delete plot-assets\" on storage.objects for delete to public using (bucket_id='plot-assets' and current_user in ('authenticated','service_role'))");
   await sql("create policy \"Authenticated write ad-creatives\" on storage.objects for insert to public with check (bucket_id='ad-creatives' and current_user in ('authenticated','service_role'))");
   for (const bucket of ["property-documents","caecv-documents"]) {
-    await sql(`create policy "${bucket} auth select" on storage.objects for select to authenticated using (bucket_id='${bucket}')`);
-    await sql(`create policy "${bucket} auth insert" on storage.objects for insert to authenticated with check (bucket_id='${bucket}')`);
-    await sql(`create policy "${bucket} auth update" on storage.objects for update to authenticated using (bucket_id='${bucket}') with check (bucket_id='${bucket}')`);
-    await sql(`create policy "${bucket} auth delete" on storage.objects for delete to authenticated using (bucket_id='${bucket}')`);
+    const label = bucket === "property-documents" ? "property documents" : "caecv documents";
+    await sql(`create policy "Allow authenticated read ${label} storage" on storage.objects for select to authenticated using (bucket_id='${bucket}')`);
+    await sql(`create policy "Allow authenticated insert ${label} storage" on storage.objects for insert to authenticated with check (bucket_id='${bucket}')`);
+    await sql(`create policy "Allow authenticated update ${label} storage" on storage.objects for update to authenticated using (bucket_id='${bucket}') with check (bucket_id='${bucket}')`);
+    await sql(`create policy "Allow authenticated delete ${label} storage" on storage.objects for delete to authenticated using (bucket_id='${bucket}')`);
   }
   await sql("create policy \"Olivia authenticated users can upload field observation images\" on storage.objects for insert to authenticated with check (bucket_id='olivia-field-observations')");
   await sql("create policy \"Olivia authenticated users can update field observation images\" on storage.objects for update to authenticated using (bucket_id='olivia-field-observations') with check (bucket_id='olivia-field-observations')");
@@ -765,18 +776,61 @@ try {
     security?.private_document_buckets_present === true &&
     security?.private_document_buckets_private === true,
     "Staff security preflight did not validate required RLS/private buckets");
-  verify(security?.private_document_authenticated_policies === 8 &&
-    security?.operational_storage_authenticated_write_policies === 3 &&
+  verify(security?.private_document_authenticated_policies === 0 &&
+    security?.operational_storage_authenticated_write_policies === 0 &&
     security?.direct_customer_policy_risk === 0 &&
     security?.direct_internal_policy_risk === 0 &&
-    security?.safe_for_workspace_auth === false,
-    "Known server-only hardening should remove internal/plot/ad direct Auth risk while leaving unresolved document/Olivia blockers explicit");
+    security?.safe_for_workspace_auth === true,
+    "Identity-bound Olivia Storage plus server-only hardening should satisfy the workspace Auth preflight");
   const removedPolicies = await sql(
     "select policyname from pg_policies where (schemaname='public' and policyname in ('agentic_approvals_read','plot_assets authenticated full access')) or " +
     "(schemaname='storage' and policyname in ('Authenticated write plot-assets','Authenticated delete plot-assets','Authenticated write ad-creatives'))",
   );
   verify(removedPolicies.rowCount === 0,
     "Server-only Auth hardening migration left a broad direct policy behind");
+
+  const oliviaStoragePolicies = await sql(
+    "select policyname,cmd,coalesce(qual,'') as qual,coalesce(with_check,'') as with_check from pg_policies " +
+    "where schemaname='storage' and tablename='objects' and (" +
+    "coalesce(qual,'') ilike any(array['%property-documents%','%caecv-documents%','%olivia-field-observations%']) or " +
+    "coalesce(with_check,'') ilike any(array['%property-documents%','%caecv-documents%','%olivia-field-observations%']))",
+  );
+  verify(oliviaStoragePolicies.rowCount === 11 &&
+    oliviaStoragePolicies.rows.every(row =>
+      (!["ALL","SELECT","UPDATE","DELETE"].includes(row.cmd) || row.qual.includes("olivia_private.is_internal_user")) &&
+      (!["ALL","INSERT","UPDATE"].includes(row.cmd) || row.with_check.includes("olivia_private.is_internal_user"))),
+    "Every retained Olivia direct-Auth Storage policy must require the internal-user gate");
+
+  const oliviaInternal = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  await sql("insert into olivia.user_profiles(id,role) values ($1,'super_admin')", [oliviaInternal]);
+  await sql("set role authenticated");
+  let workspaceStorageBlocked = false;
+  try {
+    await sql("select set_config('request.jwt.claim.sub',$1,false)", [oliviaInternal]);
+    await sql("insert into storage.objects(bucket_id) values ('property-documents'),('olivia-field-observations')");
+    const internalVisible = await sql(
+      "select count(*)::int as total from storage.objects where bucket_id in ('property-documents','olivia-field-observations')",
+    );
+    verify(internalVisible.rows[0].total === 2,
+      "Existing Olivia internal user lost private document/field-image Storage access");
+
+    await sql("select set_config('request.jwt.claim.sub',$1,false)", [member]);
+    const workspaceVisible = await sql(
+      "select count(*)::int as total from storage.objects where bucket_id in ('property-documents','olivia-field-observations')",
+    );
+    verify(workspaceVisible.rows[0].total === 0,
+      "Workspace identity could directly read Olivia Storage");
+    try {
+      await sql("insert into storage.objects(bucket_id) values ('property-documents')");
+    } catch (error) {
+      workspaceStorageBlocked = /row-level security|policy/i.test(String(error?.message || error));
+    }
+    verify(workspaceStorageBlocked,
+      "Workspace identity could directly write Olivia private Storage");
+  } finally {
+    await sql("reset role");
+    await sql("select set_config('request.jwt.claim.sub','',false)");
+  }
 
 
   // Owner-managed username/password access module. Passwords remain entirely
