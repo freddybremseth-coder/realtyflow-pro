@@ -95,6 +95,18 @@ test("marketing-only read/draft membership admits the scoped workspace shell", a
   assert.deepEqual(result, { ok: true, activeBrands: ["pinosoecolife"] });
 });
 
+test("marketing publish membership admits with complete read and draft dependencies", async () => {
+  rpcData = [{
+    brand: { id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
+    grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["marketing.read", "marketing.draft", "marketing.publish"],
+    },
+  }];
+  const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
+  assert.deepEqual(result, { ok: true, activeBrands: ["pinosoecolife"] });
+});
+
 test("content-only membership admits when read, edit and publish dependencies are complete", async () => {
   rpcData = [{
     brand: { id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
