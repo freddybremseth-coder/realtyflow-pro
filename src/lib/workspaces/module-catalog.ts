@@ -5,6 +5,7 @@ export type WorkspaceProgramId =
   | "properties"
   | "jointTasks"
   | "marketing"
+  | "socialPublish"
   | "reels"
   | "seo"
   | "youtube"
@@ -25,8 +26,8 @@ export type WorkspaceProgramDefinition = {
 export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   {
     id: "crm",
-    label: "CRM & kunder",
-    description: "Se kunder for valgt merkevare. Skrivetilgang er begrenset til sikre kontaktfelt.",
+    label: "Leads & CRM",
+    description: "Se og følge opp leads/kunder for valgt merkevare. Zen er fortsatt begrenset til godkjente nye fellesleads.",
     status: "ready",
     brandScope: "all",
     readPermissions: ["crm.read"],
@@ -52,12 +53,21 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   },
   {
     id: "marketing",
-    label: "Markedsføring",
-    description: "Merkevareavgrenset innholdsarbeid. Teknisk staff-rute er ikke ferdig ennå.",
-    status: "planned",
+    label: "Markedsføring & innholdsutkast",
+    description: "Se kanalstatus og brand-avgrenset innhold, og lagre nye utkast uten å publisere.",
+    status: "ready",
     brandScope: "all",
     readPermissions: ["marketing.read"],
-    writePermissions: ["marketing.draft", "marketing.publish"],
+    writePermissions: ["marketing.draft"],
+  },
+  {
+    id: "socialPublish",
+    label: "Publisere til sosiale medier",
+    description: "Egen høyere rettighet. Åpnes først når konto-, kanal- og publiseringssperrer er verifisert for medarbeidere.",
+    status: "planned",
+    brandScope: "all",
+    readPermissions: [],
+    writePermissions: ["marketing.publish"],
   },
   {
     id: "reels",
@@ -126,6 +136,8 @@ export function programPermissions(params: {
   properties: boolean;
   jointTasksRead: boolean;
   jointTasksWrite: boolean;
+  marketingRead: boolean;
+  marketingDraft: boolean;
 }): WorkspacePermission[] {
   const result = new Set<WorkspacePermission>();
   if (params.brandKey === "zeneco") {
@@ -140,5 +152,7 @@ export function programPermissions(params: {
     if (params.crmWrite) result.add("crm.write");
   }
   if (params.properties) result.add("properties.catalog.read");
+  if (params.marketingRead || params.marketingDraft) result.add("marketing.read");
+  if (params.marketingDraft) result.add("marketing.draft");
   return Array.from(result);
 }
