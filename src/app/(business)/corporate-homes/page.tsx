@@ -70,6 +70,30 @@ type Overview = {
     latestConfirmedOutcomeAt?: string | null;
     revenueEventsReady: boolean;
   };
+  growthReview?: {
+    status: string;
+    at?: string | null;
+    review?: {
+      status: "READY" | "LEARNING" | "DATA_GAP";
+      minimumDenominator: number;
+      bottleneck?: {
+        stage: string;
+        label: string;
+        numerator: number;
+        denominator: number;
+        ratePct: number;
+        confidence: "LOW" | "MEDIUM" | "HIGH";
+      } | null;
+      nextFocus: string;
+      evidenceNote: string;
+      guardrails: {
+        readOnly: boolean;
+        automaticBudgetChanges: boolean;
+        automaticOutreach: boolean;
+        inferredOutcomes: boolean;
+      };
+    } | null;
+  } | null;
   acquisition: {
     periodDays: number;
     attributionRule: string;
@@ -509,6 +533,65 @@ export default function CorporateHomesGrowthPage() {
             : "Ingen bekreftet Corporate-visning eller Corporate-tilbud er registrert ennå."}
           {" "}Tallene er observasjoner, ikke prognoser.
         </p>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Ukentlig Growth Review</p>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Hvor lekker Corporate-funnelen nå?</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              Mandagsreviewen bruker bare dokumenterte Corporate-statusdata og bekreftede Revenue OS-utfall.
+              Den peker på målt flaskehals og neste analysefokus, men endrer aldri annonsebudsjett eller kontakter kunder automatisk.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">Mandag 07:30 UTC</span>
+            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800">Read-only</span>
+          </div>
+        </div>
+
+        {data?.growthReview?.review ? (
+          <div className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.6fr]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-slate-500">Målt flaskehals</div>
+              {data.growthReview.review.bottleneck ? (
+                <>
+                  <div className="mt-2 text-lg font-black text-slate-950">{data.growthReview.review.bottleneck.label}</div>
+                  <div className="mt-1 text-3xl font-black text-teal-900">{data.growthReview.review.bottleneck.ratePct}%</div>
+                  <div className="mt-2 text-xs text-slate-600">
+                    {data.growthReview.review.bottleneck.numerator} av {data.growthReview.review.bottleneck.denominator} ·
+                    {" "}evidens {data.growthReview.review.bottleneck.confidence.toLowerCase()}
+                  </div>
+                </>
+              ) : (
+                <div className="mt-2 text-sm font-bold text-slate-700">
+                  {data.growthReview.review.status === "DATA_GAP"
+                    ? "Revenue OS-data mangler."
+                    : "For lite datagrunnlag til å velge flaskehals."}
+                </div>
+              )}
+            </div>
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-slate-500">Neste analysefokus</div>
+              <p className="mt-2 text-sm font-bold leading-6 text-slate-900">{data.growthReview.review.nextFocus}</p>
+              <p className="mt-3 text-xs leading-5 text-slate-500">{data.growthReview.review.evidenceNote}</p>
+              <div className="mt-3 text-xs font-semibold text-emerald-800">
+                Ingen automatisk spend-endring · ingen automatisk outreach · ingen antatte kommersielle utfall
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+            Første ukentlige Corporate Growth Review er ikke lagret ennå. Reviewen opprettes automatisk når cron-jobben kjører.
+          </div>
+        )}
+
+        {data?.growthReview?.at && (
+          <p className="mt-4 text-xs text-slate-500">
+            Sist lagret: {new Date(data.growthReview.at).toLocaleString("nb-NO")}.
+          </p>
+        )}
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
