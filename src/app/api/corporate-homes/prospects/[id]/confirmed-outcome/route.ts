@@ -43,6 +43,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (prospectError) return NextResponse.json({ error: prospectError.message }, { status: 500 });
   if (!prospect) return NextResponse.json({ error: "Prospect not found" }, { status: 404 });
 
+  if (!prospect.converted_contact_id) {
+    return NextResponse.json({ error: "Prospektet må være promotert til CRM først." }, { status: 409 });
+  }
+
+  const { data: crmContact, error: crmError } = await supabase
+    .from("contacts")
+    .select("id,brand_id,pipeline_status")
+    .eq("id", prospect.converted_contact_id)
+    .eq("brand_id", "zeneco")
+    .maybeSingle();
+
+  if (crmError) return NextResponse.json({ error: crmError.message }, { status: 500 });
+  if (!crmContact) {
+    return NextResponse.json({ error: "Koblet Zen Eco Homes CRM-kontakt finnes ikke lenger." }, { status: 409 });
+  }
+
   let outcome;
   try {
     outcome = buildCorporateConfirmedOutcome({
