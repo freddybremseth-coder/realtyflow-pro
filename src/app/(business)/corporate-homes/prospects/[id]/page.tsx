@@ -111,6 +111,8 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [confirmedOutcomeNote, setConfirmedOutcomeNote] = useState("");
   const [recordingConfirmedOutcome, setRecordingConfirmedOutcome] = useState(false);
   const [confirmedOutcomeNotice, setConfirmedOutcomeNotice] = useState("");
+  const [promotingCrm, setPromotingCrm] = useState(false);
+  const [crmNotice, setCrmNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -502,6 +504,26 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     }
   }
 
+  async function promoteProspectToCrm() {
+    setPromotingCrm(true);
+    setCrmNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/promote`, {
+        method: "POST",
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke legge prospektet i CRM.");
+      if (body?.prospect) setProspect(body.prospect);
+      setCrmNotice("Prospektet er koblet til Zen Eco Homes CRM. Automatisk nurture er fortsatt pauset.");
+      await load();
+    } catch (promotionError) {
+      setError(promotionError instanceof Error ? promotionError.message : "Kunne ikke legge prospektet i CRM.");
+    } finally {
+      setPromotingCrm(false);
+    }
+  }
+
   async function loadPropertyMatch() {
     setMatching(true);
     setMatchNotice("");
@@ -599,10 +621,19 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {prospect?.converted_contact_id && (
+            {prospect?.converted_contact_id ? (
               <Link href={`/customers?contactId=${encodeURIComponent(prospect.converted_contact_id)}&tab=all`} className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-900">
                 <CheckCircle2 size={16} /> Åpne CRM
               </Link>
+            ) : (
+              <button
+                onClick={() => void promoteProspectToCrm()}
+                disabled={promotingCrm}
+                className="inline-flex items-center gap-2 rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2.5 text-sm font-bold text-cyan-900 disabled:opacity-50"
+              >
+                {promotingCrm ? <Loader2 size={16} className="animate-spin" /> : <Users size={16} />}
+                Legg i CRM
+              </button>
             )}
             <button onClick={() => void load()} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
               <RefreshCw size={16} /> Oppdater
@@ -612,6 +643,7 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       </header>
 
       {warnings.map((warning) => <div key={warning} className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{warning}</div>)}
+      {crmNotice && <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm font-bold text-emerald-900">{crmNotice}</div>}
 
       <section className="grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -939,7 +971,15 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                       </p>
                       {!prospect?.converted_contact_id ? (
                         <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-950">
-                          Prospektet må promoteres til CRM først. Gå tilbake til prospektlisten og bruk «Promoter til CRM» før outcome registreres.
+                          Prospektet må ligge i Zen Eco Homes CRM før outcome registreres.
+                          <button
+                            onClick={() => void promoteProspectToCrm()}
+                            disabled={promotingCrm}
+                            className="ml-2 inline-flex items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 font-bold text-white disabled:opacity-50"
+                          >
+                            {promotingCrm ? <Loader2 size={12} className="animate-spin" /> : <Users size={12} />}
+                            Legg i CRM nå
+                          </button>
                         </div>
                       ) : (
                         <>
@@ -1015,6 +1055,22 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                           Sist bekreftet: <strong>{confirmedOutcome.event_type || confirmedOutcome.type}</strong>
                           {confirmedOutcome.property_ref ? ` · ${confirmedOutcome.property_ref}` : ""}
                           {confirmedOutcome.crm_pipeline_status ? ` · CRM ${confirmedOutcome.crm_pipeline_status}` : ""}
+                        </div>
+                      )}
+                      {confirmedOutcome && prospect?.converted_contact_id && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Link
+                            href="/closing"
+                            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white"
+                          >
+                            <ArrowLeft size={16} className="rotate-180" /> Fortsett i Closing
+                          </Link>
+                          <Link
+                            href={`/customers?contactId=${encodeURIComponent(prospect.converted_contact_id)}&tab=all`}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800"
+                          >
+                            <Users size={16} /> Åpne CRM-kunde
+                          </Link>
                         </div>
                       )}
                       <div className="mt-3 text-xs text-slate-600">
