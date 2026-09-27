@@ -18,6 +18,7 @@ type WorkspaceUser = {
 };
 type Snapshot = {
   users: WorkspaceUser[]; brands: Brand[]; featureEnabled: boolean;
+  featureStatus?: "ready" | "unavailable";
   passwordStorage: string;
 };
 type BrandChoice = {
@@ -164,6 +165,28 @@ export default function WorkspaceUsersPage() {
     });
   }
 
+  async function toggleLogin() {
+    if (!snapshot || busy) return;
+    const enabled = !snapshot.featureEnabled;
+    if (!enabled && !window.confirm("Deaktivere medarbeiderinnlogging globalt? Eksisterende workspace-sesjoner blir avvist ved neste beskyttede request.")) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/workspace-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "SET_LOGIN_ENABLED", enabled }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(apiError(body, "Kunne ikke oppdatere medarbeiderinnloggingen."));
+      setNotice(body.featureEnabled
+        ? "Medarbeiderinnlogging er aktivert. Kun aktive brukere med verifiserte merkevarer og programmer slipper inn."
+        : "Medarbeiderinnlogging er deaktivert globalt.");
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kunne ikke oppdatere medarbeiderinnloggingen.");
+    } finally { setBusy(false); }
+  }
+
   async function submitUser() {
     const access = brandAccess();
     const normalizedUsername = username.trim().toLowerCase();
@@ -271,13 +294,22 @@ export default function WorkspaceUsersPage() {
       </button>
     </header>
 
-    {snapshot && <div className={`rounded-xl border p-4 text-sm ${snapshot.featureEnabled
+    {snapshot && <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-sm ${snapshot.featureEnabled
       ? "border-emerald-700 bg-emerald-950/20 text-emerald-200"
       : "border-amber-700 bg-amber-950/20 text-amber-200"}`}>
-      <ShieldCheck size={17} className="mr-2 inline"/>
-      {snapshot.featureEnabled
-        ? "Medarbeiderinnlogging er aktivert. Hver rute kontrollerer fortsatt bruker, merkevare og programrettighet."
-        : "Medarbeiderinnlogging er fortsatt globalt deaktivert. Du kan forberede brukere og tilgang, men de kan ikke logge inn før utrulling er godkjent."}
+      <div>
+        <ShieldCheck size={17} className="mr-2 inline"/>
+        {snapshot.featureStatus === "unavailable"
+          ? "Status for medarbeiderinnlogging kunne ikke verifiseres. Tilgang forblir fail-closed."
+          : snapshot.featureEnabled
+            ? "Medarbeiderinnlogging er aktivert. Hver rute kontrollerer fortsatt bruker, merkevare og programrettighet."
+            : "Medarbeiderinnlogging er globalt deaktivert. Opprettede brukere kan ikke komme inn før du aktiverer den."}
+      </div>
+      <button type="button" onClick={() => void toggleLogin()}
+        disabled={busy || snapshot.featureStatus === "unavailable"}
+        className="rounded-lg border border-current px-3 py-2 text-xs font-semibold disabled:opacity-50">
+        {snapshot.featureEnabled ? "Deaktiver innlogging" : "Aktiver innlogging"}
+      </button>
     </div>}
 
     {error && <p role="alert" className="rounded-xl border border-rose-800 bg-rose-950/30 p-4 text-sm text-rose-200">{error}</p>}

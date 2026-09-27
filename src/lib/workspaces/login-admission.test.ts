@@ -9,15 +9,28 @@ const otherUserId = "22222222-2222-4222-8222-222222222222";
 let rpcData: unknown = [];
 let rpcError: unknown = null;
 let calls = 0;
-let previousFlag: string | undefined;
+let runtimeEnabled = true;
+let runtimeError: unknown = null;
 
 test.beforeEach(() => {
-  previousFlag = process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
   rpcData = [];
   rpcError = null;
   calls = 0;
+  runtimeEnabled = true;
+  runtimeError = null;
   setPlatformSupabaseFactoryForTests(() => ({
+    from: (table: string) => {
+      assert.equal(table, "brand_settings");
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => runtimeError
+              ? { data: null, error: runtimeError }
+              : { data: { settings: { enabled: runtimeEnabled }, updated_at: null }, error: null },
+          }),
+        }),
+      };
+    },
     rpc: async (name: string, args?: Record<string, unknown>) => {
       calls += 1;
       assert.equal(name, "workspace_user_brand_grants");
@@ -29,14 +42,19 @@ test.beforeEach(() => {
 
 test.afterEach(() => {
   setPlatformSupabaseFactoryForTests(null);
-  if (previousFlag === undefined) delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-  else process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = previousFlag;
 });
 
-test("feature flag blocks member login before database access", async () => {
-  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "false";
+test("database runtime switch blocks member login before grant lookup", async () => {
+  runtimeEnabled = false;
   const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
   assert.deepEqual(result, { ok: false, reason: "DISABLED" });
+  assert.equal(calls, 0);
+});
+
+test("unavailable runtime switch fails closed before grant lookup", async () => {
+  runtimeError = { message: "runtime unavailable" };
+  const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
+  assert.deepEqual(result, { ok: false, reason: "UNAVAILABLE" });
   assert.equal(calls, 0);
 });
 

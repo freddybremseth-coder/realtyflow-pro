@@ -312,7 +312,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
   }
-  if (session && (session.role !== "WORKSPACE_MEMBER" || process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true")) {
+  if (session) {
     requestHeaders.set("x-admin-authenticated", "true");
     requestHeaders.set("x-access-role", session.role);
     requestHeaders.set("x-access-email", session.email);

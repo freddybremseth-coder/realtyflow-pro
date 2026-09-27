@@ -16,7 +16,20 @@ export async function liveRoleForMiddleware(email: string, expectedRole?: Access
 
   try {
     if (expectedRole === "WORKSPACE_MEMBER") {
-      if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
+      const runtime = new URL("/rest/v1/brand_settings", url);
+      runtime.searchParams.set("select", "settings");
+      runtime.searchParams.set("brand_id", "eq.workspace-auth:runtime");
+      runtime.searchParams.set("limit", "1");
+      const runtimeResponse = await fetch(runtime, {
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(4_000),
+      });
+      if (!runtimeResponse.ok) return null;
+      const runtimeRows: unknown = await runtimeResponse.json();
+      if (!Array.isArray(runtimeRows) || runtimeRows.length !== 1 ||
+          runtimeRows[0]?.settings?.enabled !== true) return null;
+
       const rpc = new URL("/rest/v1/rpc/workspace_login_directory", url);
       const response = await fetch(rpc, {
         method: "POST",
