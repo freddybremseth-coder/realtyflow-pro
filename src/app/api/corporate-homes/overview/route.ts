@@ -122,6 +122,14 @@ export async function GET(request: NextRequest) {
     .limit(1)
     .maybeSingle();
 
+  const { data: lastCorporateGrowthReview, error: lastCorporateGrowthReviewError } = await supabase
+    .from("automation_logs")
+    .select("id,status,details,created_at")
+    .eq("action", "corporate_homes_growth_review")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const [
     { data: partnerRows, error: partnerError },
     { data: lastPartnerDiscovery, error: lastPartnerDiscoveryError },
@@ -432,6 +440,13 @@ export async function GET(request: NextRequest) {
         pipelineValue,
       },
       revenueFunnel: corporateRevenueFunnel,
+      growthReview: lastCorporateGrowthReview
+        ? {
+            status: lastCorporateGrowthReview.status,
+            at: lastCorporateGrowthReview.created_at,
+            review: (lastCorporateGrowthReview.details as any)?.review || null,
+          }
+        : null,
       acquisition: {
         channels: acquisitionChannelsWithRevenue,
         attributionRule: "Første Corporate-sideinteraksjon med UTM brukes som acquisition-kilde; ellers brukes kontaktens kilde og faller tilbake til organisk/direkte.",
@@ -514,6 +529,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError, corporateRevenueEventsError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError, lastCorporateGrowthReviewError, corporateRevenueEventsError].filter(Boolean).map((item: any) => item.message),
   });
 }
