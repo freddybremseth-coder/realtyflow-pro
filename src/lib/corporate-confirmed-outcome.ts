@@ -40,6 +40,8 @@ export function buildCorporateConfirmedOutcome(input: {
   const propertyRef = text(input.propertyRef);
   const when = input.occurredAt ? new Date(input.occurredAt) : new Date();
   if (Number.isNaN(when.getTime())) throw new Error("Ugyldig tidspunkt for utfallet.");
+  const nextFollowup = new Date(when);
+  nextFollowup.setUTCDate(nextFollowup.getUTCDate() + 1);
 
   if (input.type === "VIEWING_COMPLETED") {
     if (planKind !== "VIEWING_PLAN") throw new Error("En lagret visningsplan kreves før fullført visning kan registreres.");
@@ -55,6 +57,7 @@ export function buildCorporateConfirmedOutcome(input: {
       eventType: "viewing_completed" as const,
       crmPipelineStatus: "VIEWING" as const,
       occurredAt: when.toISOString(),
+      nextFollowupAt: nextFollowup.toISOString(),
       propertyRef,
       pipelineValueEur: positive(selected.price),
       offerAmountEur: null,
@@ -75,6 +78,7 @@ export function buildCorporateConfirmedOutcome(input: {
     eventType: "offer_made" as const,
     crmPipelineStatus: "NEGOTIATION" as const,
     occurredAt: when.toISOString(),
+    nextFollowupAt: nextFollowup.toISOString(),
     propertyRef: selectedRef,
     pipelineValueEur: offerAmountEur || positive(selected.price),
     offerAmountEur,
