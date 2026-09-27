@@ -15,6 +15,7 @@ const files = [
   "20260924180000_workspace_brand_property_catalogue.sql",
   "20260924190000_workspace_staff_security_preflight.sql",
   "20260924200000_workspace_known_server_only_auth_hardening.sql",
+  "20260924210000_workspace_user_directory_and_admin.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -26,6 +27,7 @@ assert(!process.env.SUPABASE_DB_URL && !process.env.POSTGRES_URL && !process.env
 const zen = "11111111-1111-4111-8111-111111111111";
 const pinoso = "22222222-2222-4222-8222-222222222222";
 const member = "33333333-3333-4333-8333-333333333333";
+const managedUser = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const old = "44444444-4444-4444-8444-444444444444";
 const newId = "55555555-5555-4555-8555-555555555555";
 const importedOld = "66666666-6666-4666-8666-666666666666";
@@ -203,6 +205,7 @@ try {
   }
   for (const table of ["brand_workspace_memberships", "brand_workspace_membership_audit",
     "brand_workspace_access_plans", "brand_workspace_access_plan_audit",
+    "workspace_user_directory", "workspace_user_directory_audit",
     "zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
     "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
     "brand_workspace_contact_write_audit"]) {
@@ -226,6 +229,7 @@ try {
     !planAuditPrivileges.rows[0].upd && !planAuditPrivileges.rows[0].del,
     "brand_workspace_access_plan_audit must be trigger-owned and read-only to service_role");
   await sql("insert into auth.users(id,email) values ($1,'staff@example.test')", [member]);
+  await sql("insert into auth.users(id,email) values ($1,'managed@example.test')", [managedUser]);
   await sql("insert into core.brands(id,brand_key,display_name) values ($1,'zeneco','Zen Eco Homes'),($2,'pinosoecolife','Pinoso EcoLife')", [zen, pinoso]);
   await sql(
     "insert into public.contacts (id,name,brand_id,brand,created_at,source) values ($1,'Historical Zen','zeneco','zeneco',$5,'website'),($2,'New Zen','zeneco','zeneco',$6,'website'),($3,'Reimported historical','zeneco','zeneco',$6,'old export'),($4,'Other brand','pinosoecolife','pinosoecolife',$6,'website')",
