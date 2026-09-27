@@ -1,11 +1,9 @@
--- PRE-ACTIVATION hardening for direct Supabase Auth surfaces that this repo
--- demonstrably accesses through server/service-role routes only.
+-- PRE-ACTIVATION hardening for direct Supabase Auth surfaces.
 --
--- This migration is intentionally partial. It does NOT touch:
---   * property-documents / caecv-documents authenticated Storage policies
---   * olivia-field-observations authenticated Storage write policies
--- because those may be consumed outside this RealtyFlow repo and require a
--- separate regression review before production changes.
+-- RealtyFlow operational/admin writes are server-mediated. Olivia still has a
+-- legitimate browser-authenticated workflow, so its Storage access is kept but
+-- aligned with the same olivia_private.is_internal_user() gate already used by
+-- Olivia table RLS (farmer/super_admin only).
 --
 -- No workspace member is created or activated by this migration.
 
@@ -15,19 +13,79 @@ drop policy if exists "agentic_approvals_read" on public.agentic_approvals;
 
 -- Plot metadata contains customer visibility/distribution controls. RealtyFlow
 -- plot asset create/update/delete runs through authenticated server API routes
--- backed by the service-role client, so the generic authenticated table policy
--- is unnecessary and unsafe for a future WORKSPACE_MEMBER Auth identity.
+-- backed by the service-role client, so generic authenticated table access is
+-- unnecessary and unsafe for a future WORKSPACE_MEMBER Auth identity.
 drop policy if exists "plot_assets authenticated full access" on public.plot_assets;
 
--- Keep the bucket public-read behavior unchanged. Only remove direct browser
--- write/delete grants; server upload/delete uses the service-role client.
+-- Keep plot/ad public-read delivery unchanged. Only direct browser writes are
+-- removed; server upload/delete continues through the service-role client.
 drop policy if exists "Authenticated write plot-assets" on storage.objects;
 drop policy if exists "Authenticated delete plot-assets" on storage.objects;
-
--- Ad creative uploads are performed by server-side campaign generation using
--- the service-role client. Public asset delivery is unchanged; only generic
--- authenticated direct uploads are removed.
 drop policy if exists "Authenticated write ad-creatives" on storage.objects;
+
+-- Olivia private documents: preserve the existing authenticated client flow,
+-- but require the same internal identity gate as olivia.property_documents and
+-- olivia.caecv_documents. A normal RealtyFlow workspace account is not an
+-- Olivia farmer/super_admin and therefore receives no direct Storage access.
+drop policy if exists "Allow authenticated read property documents storage" on storage.objects;
+create policy "Allow authenticated read property documents storage"
+  on storage.objects for select to authenticated
+  using (bucket_id = 'property-documents' and olivia_private.is_internal_user());
+
+drop policy if exists "Allow authenticated insert property documents storage" on storage.objects;
+create policy "Allow authenticated insert property documents storage"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'property-documents' and olivia_private.is_internal_user());
+
+drop policy if exists "Allow authenticated update property documents storage" on storage.objects;
+create policy "Allow authenticated update property documents storage"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'property-documents' and olivia_private.is_internal_user())
+  with check (bucket_id = 'property-documents' and olivia_private.is_internal_user());
+
+drop policy if exists "Allow authenticated delete property documents storage" on storage.objects;
+create policy "Allow authenticated delete property documents storage"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'property-documents' and olivia_private.is_internal_user());
+
+drop policy if exists "Allow authenticated read caecv documents storage" on storage.objects;
+create policy "Allow authenticated read caecv documents storage"
+  on storage.objects for select to authenticated
+  using (bucket_id = 'caecv-documents' and olivia_private.is_internal_user());
+
+drop policy if exists "Allow authenticated insert caecv documents storage" on storage.objects;
+create policy "Allow authenticated insert caecv documents storage"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'caecv-documents' and olivia_private.is_internal_user());
+
+drop policy if exists "Allow authenticated update caecv documents storage" on storage.objects;
+create policy "Allow authenticated update caecv documents storage"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'caecv-documents' and olivia_private.is_internal_user())
+  with check (bucket_id = 'caecv-documents' and olivia_private.is_internal_user());
+
+drop policy if exists "Allow authenticated delete caecv documents storage" on storage.objects;
+create policy "Allow authenticated delete caecv documents storage"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'caecv-documents' and olivia_private.is_internal_user());
+
+-- Olivia field images stay available to the existing Olivia internal roles,
+-- while generic authenticated workspace users cannot upload, replace or delete.
+drop policy if exists "Olivia authenticated users can upload field observation images" on storage.objects;
+create policy "Olivia authenticated users can upload field observation images"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'olivia-field-observations' and olivia_private.is_internal_user());
+
+drop policy if exists "Olivia authenticated users can update field observation images" on storage.objects;
+create policy "Olivia authenticated users can update field observation images"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'olivia-field-observations' and olivia_private.is_internal_user())
+  with check (bucket_id = 'olivia-field-observations' and olivia_private.is_internal_user());
+
+drop policy if exists "Olivia authenticated users can delete field observation images" on storage.objects;
+create policy "Olivia authenticated users can delete field observation images"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'olivia-field-observations' and olivia_private.is_internal_user());
 
 comment on table public.agentic_approvals is
   'Approval queue is server-mediated; generic authenticated direct reads are intentionally disabled.';
