@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ExternalLink, Handshake, Loader2, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, Handshake, Loader2, RefreshCw, Search } from "lucide-react";
 
 type Partner = {
   id: string;
@@ -178,6 +178,9 @@ export default function CorporatePartnersPage() {
             </div>
 
             <div className="mt-auto flex flex-wrap gap-3 pt-5">
+              <Link href={"/corporate-homes/partners/" + encodeURIComponent(partner.id)} className="inline-flex items-center gap-1 text-xs font-black text-teal-800 hover:underline">
+                Åpne dossier <ArrowRight size={12} />
+              </Link>
               {partner.domain && (
                 <a href={partner.domain} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
                   Nettside <ExternalLink size={12} />
