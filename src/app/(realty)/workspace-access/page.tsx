@@ -29,6 +29,7 @@ type Readiness = {
       operational_storage_authenticated_write_policies: number;
       direct_customer_policy_risk: number;
       direct_internal_policy_risk: number;
+      direct_security_definer_risk: number;
       safe_for_workspace_auth: boolean;
     } | null;
     featureFlagEnabled: boolean;
@@ -43,7 +44,7 @@ const readinessLabels: Record<string, string> = {
   INVALID_DRAFT_PERMISSIONS: "Utkastet inneholder en ukjent eller ugyldig rettighet.",
   EMPTY_PERMISSIONS: "Utkastet har ingen rettigheter.",
   INVALID_BRAND_SCOPE: "Rettighetene passer ikke med denne merkevarens avgrensning.",
-  MARKETING_SCOPE_NOT_IMPLEMENTED: "Markedsføringsrettigheter er fortsatt planlagt og har ingen sikker medarbeiderrute ennå.",
+  MARKETING_PUBLISH_NOT_IMPLEMENTED: "Direkte publisering er fortsatt sperret for medarbeidere. Markedsoversikt og innholdsutkast kan brukes.",
   AUTH_USER_MISSING: "Supabase Auth-brukeren finnes ikke ennå.",
   ACCESS_PROFILE_MISSING: "RealtyFlow-profilen WORKSPACE_MEMBER finnes ikke ennå.",
   ACCESS_PROFILE_WRONG_ROLE: "Eksisterende RealtyFlow-profil har feil rolle.",
@@ -51,18 +52,18 @@ const readinessLabels: Record<string, string> = {
   ACTIVE_MEMBERSHIP_ALREADY_PRESENT: "Et aktivt medlemskap finnes allerede; dette må gjennomgås, ikke overskrives.",
   SECURITY_PREFLIGHT_NOT_INSTALLED: "Sikkerhetskontrollen for direkte Supabase Auth og private dokumenter er ikke installert ennå.",
   DIRECT_AUTH_SECURITY_BLOCKER: "Direkte Supabase Auth/storage er ikke sikkert nok for medarbeiderkontoer ennå. Private dokumentpolicyer eller kunde-RLS må strammes inn før aktivering.",
-  FEATURE_FLAG_DISABLED: "Medarbeiderfunksjonen er fortsatt slått av globalt, som forventet før godkjent utrulling.",
+  FEATURE_FLAG_DISABLED: "Medarbeiderinnlogging er deaktivert i RealtyFlow sin runtime-kontroll.",
 };
 const permissionLabels: Record<WorkspacePermission, { title: string; description: string }> = {
   "properties.catalog.read": { title: "Eiendomskatalog", description: "Se vanlige boligoppføringer. Ikke intern pris-/importdata." },
-  "crm.read": { title: "Kunder og CRM – se", description: "Les kun kunder som er knyttet til valgt merkevare." },
-  "crm.write": { title: "Kunder og CRM – endre", description: "Opprette kontakter og endre navn, e-post og telefon i egen merkevare. Oppfølging og status kommer senere." },
+  "crm.read": { title: "Leads & CRM – se", description: "Les kun leads og kunder som er knyttet til valgt merkevare." },
+  "crm.write": { title: "Leads & CRM – opprette og redigere", description: "Opprette leads og endre sikre kontaktfelt i egen merkevare. Økonomi og provisjon er ikke tilgjengelig." },
   "crm.joint.read": { title: "Zen · kun nye felles kunder", description: "Les bare manuelt godkjente nye Zen Eco Homes-kunder. Ingen eldre Zen-kunder." },
   "crm.joint.write": { title: "Zen · endre nye felles kunder", description: "Endre kun navn, e-post og telefon på manuelt godkjente felles Zen-kunder. Ingen tilgang til eldre kunder eller økonomi." },
   "tasks.joint.read": { title: "Zen · lese nye felles oppgaver", description: "Kun nye oppgaver som opprettes særskilt for manuelt godkjente felleskunder. Ingen eldre CRM-oppgaver, meldinger eller vedlegg." },
   "tasks.joint.write": { title: "Zen · opprette og fullføre felles oppgaver", description: "Opprette egne, nye oppgaver og merke dem fullført. Ingen kundemeldinger, gamle oppgaver eller globale oppfølgingsrutiner." },
-  "marketing.read": { title: "Markedsføring – se (planlagt)", description: "Kan lagres som utkast, men åpner ingen medarbeiderfunksjon før egne merkevareavgrensede markedsførings-API-er er ferdige." },
-  "marketing.draft": { title: "Markedsføring – lage utkast (planlagt)", description: "Kan lagres som utkast, men gir foreløpig ingen tilgang til Reels, videoutkast, tekst eller innholdskalender." },
+  "marketing.read": { title: "Markedsføring – oversikt", description: "Se aktive kanaler, nylig innhold og resultater kun for valgt merkevare." },
+  "marketing.draft": { title: "Markedsføring – lage innholdsutkast", description: "Lagre brand-avgrensede tekstutkast i Content Hub. Gir ikke publiseringsrettighet." },
   "marketing.publish": { title: "Publisere i sosiale medier (planlagt)", description: "Ikke aktivert for medarbeidere. Krever egne kontoområder, publiseringssperrer og separat teknisk kontroll." },
 };
 const suggested: WorkspacePermission[] = ["properties.catalog.read", "crm.read", "crm.write"];
@@ -78,6 +79,7 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
       next.add("crm.joint.read");
       next.add("tasks.joint.read");
     }
+    if (permission === "marketing.draft") next.add("marketing.read");
   } else {
     next.delete(permission);
     if (permission === "crm.joint.read") {
@@ -86,6 +88,7 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
       next.delete("tasks.joint.write");
     }
     if (permission === "tasks.joint.read") next.delete("tasks.joint.write");
+    if (permission === "marketing.read") next.delete("marketing.draft");
   }
   return WORKSPACE_PERMISSIONS.filter(candidate => next.has(candidate));
 }
@@ -176,7 +179,7 @@ export default function WorkspaceAccessPage() {
       </header>
       <div className="flex gap-3 rounded-xl border border-amber-600/60 bg-amber-950/30 p-4 text-sm text-amber-100" role="status">
         <ShieldAlert className="mt-0.5 shrink-0" size={22} />
-        <p><strong>Utkastmodus – ingen ny bruker får tilgang ennå.</strong> De eksisterende CRM-, eiendoms- og markedsføringsrutene må sikres før en merkevarebruker kan aktiveres. Dette skjermbildet oppretter ikke innlogging eller invitasjoner. Bruk ikke den gamle globale rolleadministrasjonen til å gi Andrea tilgang i mellomtiden.</p>
+        <p><strong>Denne siden er kun for tilgangsutkast.</strong> Aktive medarbeiderkontoer, passord, merkevarer og faktiske modulrettigheter administreres nå under <Link href="/workspace-users" className="font-semibold underline">Brukere & tilgang</Link>. Her kan du fortsatt planlegge og sikkerhetskontrollere rettighetskombinasjoner uten å endre en aktiv bruker.</p>
       </div>
       {error && <p role="alert" className="rounded-xl border border-red-700 bg-red-950/50 p-3 text-red-200">{error}</p>}
       {notice && <p role="status" className="flex items-center gap-2 rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200"><CheckCircle2 size={16} />{notice}</p>}
@@ -264,7 +267,7 @@ export default function WorkspaceAccessPage() {
                 <span>Direkte intern-policy-risiko: <strong>{readiness.checks.securityPreflight.direct_internal_policy_risk}</strong></span>
               </div>}
             </div>}
-            <p className="flex items-center gap-2 text-xs text-slate-400"><LockKeyhole size={14} /> Aktivering og invitasjoner er deaktivert inntil sikkerhetskontrollene er bestått.</p>
+            <p className="flex items-center gap-2 text-xs text-slate-400"><LockKeyhole size={14} /> Dette skjermbildet aktiverer aldri en bruker. Bruk Brukere & tilgang for live medlemskap.</p>
           </section>
           <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
             <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Lagrede utkast</h2>
