@@ -106,7 +106,7 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
       "",
       "Jeg tar kontakt fra Zen Corporate Homes, en del av Zen Eco Homes på Costa Blanca.",
       "",
-      \`Vi arbeider med norske bedrifter og organisasjoner som vurderer å eie bolig i Spania for ansatte, ledelse, gjester eller medlemmer. Jeg tror \${company} kan være et relevant miljø å samarbeide med fordi dere allerede arbeider tett med virksomheter som kan ha nytte av en slik løsning.\`,
+      "Vi arbeider med norske bedrifter og organisasjoner som vurderer å eie bolig i Spania for ansatte, ledelse, gjester eller medlemmer. Jeg tror " + company + " kan være et relevant miljø å samarbeide med fordi dere allerede arbeider tett med virksomheter som kan ha nytte av en slik løsning.",
       "",
       "Tanken er enkel: dere beholder deres rådgiver- og kunderelasjon, mens vi håndterer behovsavklaring, områdevalg, boligshortlist, visninger og den praktiske eiendomsprosessen i Spania.",
       "",
@@ -118,11 +118,11 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
       "Freddy Bremseth",
       "Zen Corporate Homes",
       "Zen Eco Homes",
-    ].join("\\n"),
+    ].join("\n"),
   };
 
   return {
-    title: \`\${company} · partnerdossier\`,
+    title: company + " · partnerdossier",
     generatedAt: new Date().toISOString(),
     company: {
       name: company,
