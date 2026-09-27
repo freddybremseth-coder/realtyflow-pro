@@ -99,7 +99,10 @@ export async function POST(request: NextRequest) {
     (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) ||
     (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) ||
     (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) ||
-    (permissions.includes("ads.draft") && !permissions.includes("ads.read")))) {
+    (permissions.includes("ads.draft") && !permissions.includes("ads.read")) ||
+    (permissions.includes("content.edit") && !permissions.includes("content.read")) ||
+    (permissions.includes("content.publish") &&
+      (!permissions.includes("content.read") || !permissions.includes("content.edit"))))) {
     return response({ error: "INVALID_BRAND_CRM_SCOPE" }, 400);
   }
   const supabase = getPlatformSupabase();
