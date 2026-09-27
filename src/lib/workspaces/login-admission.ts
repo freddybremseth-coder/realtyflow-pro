@@ -62,6 +62,9 @@ export async function admitWorkspaceMemberLogin(
       (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) ||
       (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) ||
       (permissions.includes("ads.draft") && !permissions.includes("ads.read")) ||
+      (permissions.includes("content.edit") && !permissions.includes("content.read")) ||
+      (permissions.includes("content.publish") &&
+        (!permissions.includes("content.read") || !permissions.includes("content.edit"))) ||
       (brandKey === "zeneco"
       ? permissions.some(permission => permission === "crm.read" || permission === "crm.write") ||
         (permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) ||
