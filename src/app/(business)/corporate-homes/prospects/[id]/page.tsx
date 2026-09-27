@@ -5,6 +5,7 @@ import { use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Building2,
+  CalendarClock,
   CheckCircle2,
   CircleHelp,
   Copy,
@@ -82,6 +83,10 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [copyNotice, setCopyNotice] = useState("");
   const [contactLogging, setContactLogging] = useState(false);
   const [contactLogNotice, setContactLogNotice] = useState("");
+  const [meetingAt, setMeetingAt] = useState("");
+  const [meetingMethod, setMeetingMethod] = useState("video");
+  const [schedulingMeeting, setSchedulingMeeting] = useState(false);
+  const [meetingNotice, setMeetingNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -116,6 +121,17 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
         setMatchNotice(savedPropertyMatch.shortlist.length
           ? `Lagret intern shortlist: ${savedPropertyMatch.shortlist.length} boliger.`
           : "");
+      }
+      const savedMeeting = body?.prospect?.evidence?.corporate_meeting;
+      if (savedMeeting && typeof savedMeeting === "object" && savedMeeting.scheduled_at) {
+        const scheduled = new Date(String(savedMeeting.scheduled_at));
+        if (!Number.isNaN(scheduled.getTime())) {
+          const local = new Date(scheduled.getTime() - scheduled.getTimezoneOffset() * 60_000)
+            .toISOString()
+            .slice(0, 16);
+          setMeetingAt(local);
+        }
+        if (savedMeeting.method) setMeetingMethod(String(savedMeeting.method));
       }
       const savedAssessment = body?.prospect?.evidence?.corporate_assessment;
       if (savedAssessment && typeof savedAssessment === "object") {
@@ -218,6 +234,38 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       setError(contactError instanceof Error ? contactError.message : "Kunne ikke loggføre manuell kontakt.");
     } finally {
       setContactLogging(false);
+    }
+  }
+
+  async function scheduleDiscoveryMeeting() {
+    if (!meetingAt) {
+      setMeetingNotice("Velg dato og klokkeslett først.");
+      return;
+    }
+
+    setSchedulingMeeting(true);
+    setMeetingNotice("");
+    setError("");
+    try {
+      const scheduledAt = new Date(meetingAt);
+      if (Number.isNaN(scheduledAt.getTime())) throw new Error("Ugyldig møtetidspunkt.");
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/meeting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduled_at: scheduledAt.toISOString(),
+          method: meetingMethod,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke registrere discovery-møtet.");
+      setProspect(body?.prospect || prospect);
+      setMeetingNotice("Discovery-møtet er registrert internt. Ingen invitasjon eller melding ble sendt.");
+      await load();
+    } catch (meetingError) {
+      setError(meetingError instanceof Error ? meetingError.message : "Kunne ikke registrere discovery-møtet.");
+    } finally {
+      setSchedulingMeeting(false);
     }
   }
 
@@ -419,6 +467,53 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
           </ol>
         </article>
       </section>
+
+      {["ENGAGED", "MEETING"].includes(String(prospect?.status || "").toUpperCase()) && (
+        <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm sm:p-6">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-900">
+            <CalendarClock size={16} /> Discovery-møte
+          </div>
+          <h2 className="mt-2 text-xl font-black text-slate-950">
+            {String(prospect?.status || "").toUpperCase() === "MEETING" ? "Oppdater avtalt møte" : "Registrer avtalt discovery-møte"}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+            Dette er kun intern registrering i Corporate-pipelinen. RealtyFlow sender ingen kalenderinvitasjon,
+            e-post eller annen melding fra denne handlingen.
+          </p>
+          <div className="mt-5 grid gap-3 md:grid-cols-[1fr_.7fr_auto] md:items-end">
+            <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+              Dato og klokkeslett
+              <input
+                type="datetime-local"
+                value={meetingAt}
+                onChange={(event) => setMeetingAt(event.target.value)}
+                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+              Møteform
+              <select
+                value={meetingMethod}
+                onChange={(event) => setMeetingMethod(event.target.value)}
+                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+              >
+                <option value="video">Videomøte</option>
+                <option value="phone">Telefon</option>
+                <option value="in_person">Fysisk møte</option>
+              </select>
+            </label>
+            <button
+              onClick={() => void scheduleDiscoveryMeeting()}
+              disabled={schedulingMeeting || !meetingAt}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {schedulingMeeting ? <Loader2 size={16} className="animate-spin" /> : <CalendarClock size={16} />}
+              {String(prospect?.status || "").toUpperCase() === "MEETING" ? "Oppdater møte" : "Registrer møte"}
+            </button>
+          </div>
+          {meetingNotice && <div className="mt-3 text-xs font-bold text-emerald-900">{meetingNotice}</div>}
+        </section>
+      )}
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
