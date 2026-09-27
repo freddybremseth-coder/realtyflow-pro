@@ -1,5 +1,6 @@
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { isCanonicalBrandKey, WORKSPACE_PERMISSIONS } from "@/lib/workspaces/brand-policy";
+import { getWorkspaceRuntimeState } from "@/lib/workspaces/runtime-control";
 
 export type WorkspaceLoginAdmission =
   | { ok: true; activeBrands: string[] }
@@ -17,9 +18,6 @@ export async function admitWorkspaceMemberLogin(
   authenticatedUserId: string,
 ): Promise<WorkspaceLoginAdmission> {
   const normalizedEmail = String(email || "").trim().toLowerCase();
-  if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") {
-    return { ok: false, reason: "DISABLED" };
-  }
   if (!normalizedEmail || !normalizedEmail.includes("@") ||
       !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(authenticatedUserId)) {
     return { ok: false, reason: "IDENTITY_MISMATCH" };
@@ -27,6 +25,9 @@ export async function admitWorkspaceMemberLogin(
 
   const supabase = getPlatformSupabase();
   if (!supabase) return { ok: false, reason: "UNAVAILABLE" };
+  const runtime = await getWorkspaceRuntimeState(supabase);
+  if (runtime.error) return { ok: false, reason: "UNAVAILABLE" };
+  if (!runtime.enabled) return { ok: false, reason: "DISABLED" };
 
   const { data, error } = await supabase.rpc("workspace_user_brand_grants", {
     p_email: normalizedEmail,
