@@ -11,6 +11,9 @@ const userId = "11111111-1111-4111-8111-111111111111";
 let rpcCalls: Array<{ name: string; args?: Record<string, unknown> }> = [];
 let authCalls: Array<{ method: string; args: unknown[] }> = [];
 let snapshot: unknown;
+let runtimeEnabled = false;
+let runtimeWrites: unknown[] = [];
+let preflightSafe = true;
 
 function req(method: string, cookie?: string, body?: unknown, headers: Record<string,string> = {}) {
   return new NextRequest(endpoint, {
@@ -30,6 +33,9 @@ test.beforeEach(() => {
   process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "false";
   rpcCalls = [];
   authCalls = [];
+  runtimeEnabled = false;
+  runtimeWrites = [];
+  preflightSafe = true;
   snapshot = {
     users: [],
     brands: [
@@ -38,9 +44,30 @@ test.beforeEach(() => {
     ],
   };
   setPlatformSupabaseFactoryForTests(() => ({
+    from: (table: string) => {
+      assert.equal(table, "brand_settings");
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: { settings: { enabled: runtimeEnabled }, updated_at: null },
+              error: null,
+            }),
+          }),
+        }),
+        upsert: async (row: any) => {
+          runtimeWrites.push(row);
+          runtimeEnabled = row?.settings?.enabled === true;
+          return { error: null };
+        },
+      };
+    },
     rpc: async (name: string, args?: Record<string, unknown>) => {
       rpcCalls.push({ name, args });
       if (name === "workspace_user_admin_snapshot") return { data: snapshot, error: null };
+      if (name === "workspace_staff_security_preflight") {
+        return { data: { safe_for_workspace_auth: preflightSafe }, error: null };
+      }
       if (name === "workspace_user_configure") return { data: true, error: null };
       if (name === "workspace_user_disable") return { data: true, error: null };
       throw new Error("Unexpected RPC " + name);
@@ -87,6 +114,35 @@ test("owner snapshot exposes brands/users but never password storage", async () 
   assert.equal(body.passwordStorage, "supabase-auth-only");
   assert.equal(body.featureEnabled, false);
   assert.equal(JSON.stringify(body).toLowerCase().includes("password_hash"), false);
+});
+
+test("owner can enable database-backed workspace login only after green security preflight", async () => {
+  const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+
+  preflightSafe = false;
+  const blocked = await POST(req("POST", owner, {
+    action: "SET_LOGIN_ENABLED", enabled: true,
+  }) as any);
+  assert.equal(blocked.status, 409);
+  assert.equal((await blocked.json()).error, "WORKSPACE_SECURITY_PREFLIGHT_FAILED");
+  assert.equal(runtimeEnabled, false);
+  assert.equal(runtimeWrites.length, 0);
+
+  preflightSafe = true;
+  const enabled = await POST(req("POST", owner, {
+    action: "SET_LOGIN_ENABLED", enabled: true,
+  }) as any);
+  assert.equal(enabled.status, 200);
+  assert.equal((await enabled.json()).featureEnabled, true);
+  assert.equal(runtimeEnabled, true);
+  assert.equal(runtimeWrites.length, 1);
+
+  const disabled = await POST(req("POST", owner, {
+    action: "SET_LOGIN_ENABLED", enabled: false,
+  }) as any);
+  assert.equal(disabled.status, 200);
+  assert.equal((await disabled.json()).featureEnabled, false);
+  assert.equal(runtimeEnabled, false);
 });
 
 test("create user sends password only to Supabase Auth and configures safe multi-brand permissions", async () => {
