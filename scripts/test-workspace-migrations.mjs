@@ -107,10 +107,10 @@ try {
   await sql("grant all on schema public to public");
   await sql("create schema auth; create schema core; create schema storage; create schema olivia; create schema olivia_private");
   await sql("create table auth.users (id uuid primary key, email text)");
-  await sql("create or replace function auth.uid() returns uuid language sql stable set search_path='' as $ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $");
+  await sql("create or replace function auth.uid() returns uuid language sql stable set search_path='' as $authuid$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $authuid$");
   await sql("create table olivia.user_profiles (id uuid primary key, role text not null)");
   await sql("alter table olivia.user_profiles enable row level security");
-  await sql("create or replace function olivia_private.is_internal_user() returns boolean language sql stable security definer set search_path='' as $ select exists (select 1 from olivia.user_profiles p where p.id=(select auth.uid()) and p.role in ('farmer','super_admin')) $");
+  await sql("create or replace function olivia_private.is_internal_user() returns boolean language sql stable security definer set search_path='' as $internal$ select exists (select 1 from olivia.user_profiles p where p.id=(select auth.uid()) and p.role in ('farmer','super_admin')) $internal$");
   await sql("revoke execute on function olivia_private.is_internal_user() from public, anon; grant execute on function olivia_private.is_internal_user() to authenticated");
   await sql("grant usage on schema olivia_private to authenticated");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
