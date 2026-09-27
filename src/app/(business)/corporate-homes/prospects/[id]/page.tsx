@@ -98,6 +98,9 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [decisionNote, setDecisionNote] = useState("");
   const [savingDecisionOutcome, setSavingDecisionOutcome] = useState(false);
   const [decisionOutcomeNotice, setDecisionOutcomeNotice] = useState("");
+  const [executionPlan, setExecutionPlan] = useState<Record<string, any> | null>(null);
+  const [buildingExecutionPlan, setBuildingExecutionPlan] = useState(false);
+  const [executionPlanNotice, setExecutionPlanNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -135,6 +138,8 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
         if (savedDecisionOutcome.selected_property_ref) setDecisionPropertyRef(String(savedDecisionOutcome.selected_property_ref));
         if (savedDecisionOutcome.note) setDecisionNote(String(savedDecisionOutcome.note));
       }
+      const savedExecutionPlan = body?.prospect?.evidence?.corporate_execution_plan;
+      if (savedExecutionPlan && typeof savedExecutionPlan === "object") setExecutionPlan(savedExecutionPlan);
       const savedPropertyMatch = body?.prospect?.evidence?.corporate_property_match;
       if (savedPropertyMatch && typeof savedPropertyMatch === "object" && Array.isArray(savedPropertyMatch.shortlist)) {
         setMatchingProperties(savedPropertyMatch.shortlist);
@@ -388,6 +393,34 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       setError(decisionError instanceof Error ? decisionError.message : "Kunne ikke registrere beslutningsutfallet.");
     } finally {
       setSavingDecisionOutcome(false);
+    }
+  }
+
+  async function buildExecutionPlan() {
+    if (!decisionOutcome || !["APPROVE_VIEWINGS", "APPROVE_OFFER_PREP"].includes(String(decisionOutcome.outcome || ""))) {
+      setExecutionPlanNotice("Registrer først en beslutning om visning eller tilbudsforberedelse.");
+      return;
+    }
+
+    setBuildingExecutionPlan(true);
+    setExecutionPlanNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/execution-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke bygge gjennomføringsplan.");
+      setExecutionPlan(body?.executionPlan || null);
+      setProspect(body?.prospect || prospect);
+      setExecutionPlanNotice("Intern gjennomføringsplan er bygget. Ingen booking, tilbud eller reservasjon ble sendt.");
+      await load();
+    } catch (executionError) {
+      setError(executionError instanceof Error ? executionError.message : "Kunne ikke bygge gjennomføringsplan.");
+    } finally {
+      setBuildingExecutionPlan(false);
     }
   }
 
@@ -775,6 +808,51 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                 <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
                   Sist registrert: <strong>{decisionOutcome.label || decisionOutcome.outcome}</strong>
                   {decisionOutcome.selected_property_ref ? ` · bolig ${decisionOutcome.selected_property_ref}` : ""}
+                </div>
+              )}
+              {decisionOutcome && ["APPROVE_VIEWINGS", "APPROVE_OFFER_PREP"].includes(String(decisionOutcome.outcome || "")) && (
+                <div className="mt-4 rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-wide text-cyan-900">Neste interne steg</div>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {String(decisionOutcome.outcome) === "APPROVE_VIEWINGS"
+                          ? "Lag preflight og rekkefølge for de godkjente visningskandidatene."
+                          : "Lag tilbudspreflight for den valgte boligen før pris, reservasjon eller tilbud diskuteres eksternt."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => void buildExecutionPlan()}
+                      disabled={buildingExecutionPlan}
+                      className="inline-flex items-center gap-2 rounded-xl bg-cyan-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                    >
+                      {buildingExecutionPlan ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                      {executionPlan ? "Oppdater gjennomføringsplan" : "Bygg gjennomføringsplan"}
+                    </button>
+                  </div>
+                  {executionPlanNotice && <div className="mt-3 text-xs font-bold text-cyan-950">{executionPlanNotice}</div>}
+                  {executionPlan && (
+                    <div className="mt-4 rounded-xl bg-white p-4">
+                      <div className="text-sm font-black text-slate-950">
+                        {executionPlan.kind === "VIEWING_PLAN" ? "Intern visningsplan" : "Intern tilbudspreflight"}
+                      </div>
+                      {executionPlan.kind === "VIEWING_PLAN" ? (
+                        <div className="mt-3 grid gap-2 md:grid-cols-3">
+                          {(executionPlan.properties || []).map((property: Record<string, any>) => (
+                            <div key={String(property.ref)} className="rounded-xl border border-slate-200 p-3">
+                              <div className="text-xs font-black text-slate-500">#{property.order} · {property.ref}</div>
+                              <div className="mt-1 text-sm font-bold text-slate-950">{property.title || property.location || "Bolig"}</div>
+                              <div className="mt-1 text-xs text-slate-600">{property.preflight?.length || 0} kontrollpunkter før visning</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-sm text-slate-700">
+                          Valgt bolig: <strong>{executionPlan.property?.ref}</strong> · {executionPlan.preflight?.length || 0} obligatoriske preflight-punkter.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
