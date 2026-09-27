@@ -62,6 +62,7 @@ test.beforeEach(() => {
     operational_storage_authenticated_write_policies: 0,
     direct_customer_policy_risk: 0,
     direct_internal_policy_risk: 0,
+    direct_security_definer_risk: 0,
     safe_for_workspace_auth: true,
   };
   securityMissing = false;
