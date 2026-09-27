@@ -34,6 +34,23 @@ const emptyChoice = (): BrandChoice => ({
   properties: false, tasksRead: false, tasksWrite: false,
 });
 
+const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function strongPassword(value: string) {
+  if (value.length < 12 || value.length > 128) return false;
+  const groups = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(pattern => pattern.test(value)).length;
+  return groups >= 3 && !/[\r\n\0]/.test(value);
+}
+
+function apiError(body: any, fallback: string) {
+  return typeof body?.message === "string" && body.message.trim()
+    ? body.message
+    : typeof body?.error === "string" && body.error.trim()
+      ? body.error
+      : fallback;
+}
+
 function strongGeneratedPassword() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*+-_=?.";
   const random = new Uint32Array(20);
@@ -149,12 +166,26 @@ export default function WorkspaceUsersPage() {
 
   async function submitUser() {
     const access = brandAccess();
-    if (!displayName.trim() || !username.trim() || !email.trim() || access.length === 0) {
-      setError("Fyll inn navn, brukernavn og e-post, og velg minst én merkevare med minst ett program.");
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!displayName.trim()) {
+      setError("Skriv inn navn på brukeren.");
       return;
     }
-    if (!selectedUser && !password) {
-      setError("Sett et førstegangspassord eller generer et sikkert passord.");
+    if (!usernamePattern.test(normalizedUsername)) {
+      setError("Brukernavn må være 3–32 tegn og kan bare inneholde a–z, 0–9, punktum, bindestrek eller understrek.");
+      return;
+    }
+    if (!selectedUser && (!emailPattern.test(normalizedEmail) || normalizedEmail.length > 254)) {
+      setError("Oppgi en gyldig e-postadresse.");
+      return;
+    }
+    if (access.length === 0) {
+      setError("Velg minst én merkevare og minst ett program for brukeren.");
+      return;
+    }
+    if (!selectedUser && !strongPassword(password)) {
+      setError("Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.");
       return;
     }
     setBusy(true); setError(""); setNotice("");
@@ -175,7 +206,7 @@ export default function WorkspaceUsersPage() {
             }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Brukeren kunne ikke lagres.");
+      if (!response.ok) throw new Error(apiError(body, "Brukeren kunne ikke lagres."));
       setNotice(selectedUser
         ? "Tilgangen er oppdatert. Endringen er avgrenset til valgte merkevarer og programmer."
         : body.loginEnabled
@@ -198,7 +229,7 @@ export default function WorkspaceUsersPage() {
         body: JSON.stringify({ action: "SET_PASSWORD", userId: selectedUser.userId, password }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Passordet kunne ikke endres.");
+      if (!response.ok) throw new Error(apiError(body, "Passordet kunne ikke endres."));
       setNotice("Nytt passord er satt i Supabase Auth. RealtyFlow lagrer ikke passordet.");
       setPassword("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Passordet kunne ikke endres."); }
@@ -215,7 +246,7 @@ export default function WorkspaceUsersPage() {
         body: JSON.stringify({ action: "DISABLE_USER", userId: selectedUser.userId }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Brukeren kunne ikke deaktiveres.");
+      if (!response.ok) throw new Error(apiError(body, "Brukeren kunne ikke deaktiveres."));
       setNotice("Brukeren er deaktivert og alle merkevaretilganger er tilbakekalt.");
       await reload();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Brukeren kunne ikke deaktiveres."); }
