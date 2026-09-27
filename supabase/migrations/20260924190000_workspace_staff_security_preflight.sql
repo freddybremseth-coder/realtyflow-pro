@@ -17,6 +17,7 @@ declare
   v_operational_storage_auth_write_policies integer := 0;
   v_direct_customer_policy_risk integer := 0;
   v_direct_internal_policy_risk integer := 0;
+  v_direct_security_definer_risk integer := 0;
 begin
   -- Customer/task/message/settings tables used by RealtyFlow must all keep RLS.
   select count(*) = 4 and bool_and(c.relrowsecurity)
@@ -156,6 +157,21 @@ begin
         and coalesce(regexp_replace(lower(p.with_check),'[()[:space:]]','','g'),'') not in ('','false'))
     );
 
+  -- A newly authenticated workspace identity must not inherit callable
+  -- SECURITY DEFINER RPCs that bypass RLS. The art-gallery master-status RPC is
+  -- the one reviewed exception: it performs its own auth.uid()-bound lookup in
+  -- art_gallery_admin_users and returns no rows to non-admin identities.
+  select count(*)::integer into v_direct_security_definer_risk
+  from pg_catalog.pg_proc pr
+  join pg_catalog.pg_namespace n on n.oid = pr.pronamespace
+  where n.nspname = 'public'
+    and pr.prosecdef
+    and pr.proname <> 'art_gallery_admin_master_status'
+    and (
+      pg_catalog.has_function_privilege('anon', pr.oid, 'EXECUTE')
+      or pg_catalog.has_function_privilege('authenticated', pr.oid, 'EXECUTE')
+    );
+
   return jsonb_build_object(
     'required_customer_tables_rls', v_required_tables_rls,
     'private_document_buckets_present', v_private_buckets_present,
@@ -164,6 +180,7 @@ begin
     'operational_storage_authenticated_write_policies', v_operational_storage_auth_write_policies,
     'direct_customer_policy_risk', v_direct_customer_policy_risk,
     'direct_internal_policy_risk', v_direct_internal_policy_risk,
+    'direct_security_definer_risk', v_direct_security_definer_risk,
     'safe_for_workspace_auth',
       v_required_tables_rls
       and v_private_buckets_present
@@ -172,6 +189,7 @@ begin
       and v_operational_storage_auth_write_policies = 0
       and v_direct_customer_policy_risk = 0
       and v_direct_internal_policy_risk = 0
+      and v_direct_security_definer_risk = 0
   );
 end;
 $workspace_staff_security_preflight$;
