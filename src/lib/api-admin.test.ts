@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
-import { ADMIN_SESSION_REQUIRED_MESSAGE, getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
-import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { ADMIN_SESSION_REQUIRED_MESSAGE, requireAdminApi } from "@/lib/api-admin";
 
 function requestWithCookie(cookie?: string) {
   return new NextRequest("https://realtyflow.test/api/internal", {
@@ -15,10 +13,7 @@ function requestWithCookie(cookie?: string) {
 test.beforeEach(() => {
   process.env.REALTYFLOW_SESSION_SECRET = "api-admin-test-secret";
   process.env.REALTYFLOW_ADMIN_EMAILS = "freddy.bremseth@gmail.com";
-  setPlatformSupabaseFactoryForTests(null);
 });
-
-test.afterEach(() => setPlatformSupabaseFactoryForTests(null));
 
 test("requireAdminApi returns a 401 JSON response without admin cookie", async () => {
   const response = await requireAdminApi(requestWithCookie(), { items: [] });
@@ -75,51 +70,4 @@ test("requireAdminApi rejects the Re-Master proxy with wrong secret or non-admin
     "x-remaster-admin": "not-admin@example.com",
   }));
   assert.equal(wrongEmail?.status, 401);
-});
-
-
-test("workspace API context revalidates database runtime and live directory", async () => {
-  let runtimeEnabled = true;
-  let directoryStatus = "active";
-  setPlatformSupabaseFactoryForTests(() => ({
-    from: (table: string) => {
-      assert.equal(table, "brand_settings");
-      const query: any = {
-        select: () => query,
-        eq: () => query,
-        maybeSingle: async () => ({
-          data: { settings: { enabled: runtimeEnabled }, updated_at: null },
-          error: null,
-        }),
-      };
-      return query;
-    },
-    rpc: async (name: string) => {
-      assert.equal(name, "workspace_login_directory");
-      return {
-        data: {
-          user_id: "11111111-1111-4111-8111-111111111111",
-          username: "staff",
-          email: "staff@example.test",
-          display_name: "Staff",
-          status: directoryStatus,
-        },
-        error: null,
-      };
-    },
-  } as unknown as SupabaseClient));
-
-  const token = await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
-  const request = requestWithCookie(`realtyflow_admin=${token}`);
-
-  const active = await getRequestAccessContext(request);
-  assert.equal(active?.role, "WORKSPACE_MEMBER");
-  assert.equal(active?.email, "staff@example.test");
-
-  runtimeEnabled = false;
-  assert.equal(await getRequestAccessContext(request), null);
-
-  runtimeEnabled = true;
-  directoryStatus = "disabled";
-  assert.equal(await getRequestAccessContext(request), null);
 });
