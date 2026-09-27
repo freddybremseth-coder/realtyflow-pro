@@ -116,6 +116,9 @@ try {
   await sql("grant usage on schema olivia_private to authenticated");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
   await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("create table public.content_publications (id uuid primary key default gen_random_uuid(), brand_id text not null, content_type text not null, title text, description text, tags text[], thumbnail_url text, scheduled_platforms text[], status text default 'draft' check (status in ('draft','processing','published','scheduled','failed')), scheduled_at timestamptz, published_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), total_views integer default 0, total_likes integer default 0, total_comments integer default 0, total_shares integer default 0, ai_generated boolean default false, content_features jsonb not null default '{}'::jsonb)");
+  await sql("create table public.social_channels (id uuid primary key default gen_random_uuid(), brand_id text not null, platform text not null, external_id text not null, display_name text not null, metadata jsonb not null default '{}'::jsonb, is_active boolean not null default true, created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("grant select,insert,update on public.content_publications to service_role; grant select on public.social_channels to service_role");
   await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
   await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
   await sql("create table public.work_items (id uuid primary key default gen_random_uuid())");
@@ -216,7 +219,8 @@ try {
     "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
     "workspace_zeneco_joint_task_complete", "workspace_brand_contacts",
     "workspace_brand_contact_create", "workspace_brand_contact_update",
-    "workspace_brand_property_catalogue", "workspace_staff_security_preflight"]) {
+    "workspace_brand_property_catalogue", "workspace_staff_security_preflight",
+    "workspace_brand_marketing_snapshot", "workspace_brand_marketing_draft_create"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -229,12 +233,12 @@ try {
     "workspace_user_directory", "workspace_user_directory_audit",
     "zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
     "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
-    "brand_workspace_contact_write_audit"]) {
+    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
   for (const auditTable of ["zeneco_joint_lead_review_audit", "zeneco_joint_contact_edit_audit",
-    "brand_workspace_contact_write_audit"]) {
+    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit"]) {
     const privileges = await sql(
       "select has_table_privilege('service_role',$1,'SELECT') as sel, has_table_privilege('service_role',$1,'INSERT') as ins, has_table_privilege('service_role',$1,'UPDATE') as upd, has_table_privilege('service_role',$1,'DELETE') as del",
       ["core." + auditTable],
@@ -940,6 +944,46 @@ try {
     "Workspace user configure rejected implemented marketing draft access");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.publish"] }]) === false,
     "Workspace user configure accepted workspace social publishing before scoped publish safety exists");
+
+  await sql("insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','social','Pinoso draft','Safe Pinoso content','draft'),('zeneco','social','Private Zen','Must not leak','published')");
+  await sql("insert into public.social_channels(brand_id,platform,external_id,display_name,is_active) values ('pinosoecolife','facebook','fb-pinoso','Pinoso Facebook',true),('pinosoecolife','youtube','yt-pinoso','Pinoso YouTube',false),('zeneco','facebook','fb-zen','Zen Facebook',true)");
+  const marketingSnapshot = await serviceSql(
+    "select public.workspace_brand_marketing_snapshot($1::text,$2::uuid,$3::text) as result",
+    ["pinosoecolife", managedUser, "managed@example.test"],
+  );
+  verify(marketingSnapshot.rows[0].result?.publications?.length === 1 &&
+    marketingSnapshot.rows[0].result.publications[0].title === "Pinoso draft" &&
+    marketingSnapshot.rows[0].result.channels?.length === 1 &&
+    marketingSnapshot.rows[0].result.channels[0].platform === "facebook" &&
+    !JSON.stringify(marketingSnapshot.rows[0].result).includes("Private Zen") &&
+    !JSON.stringify(marketingSnapshot.rows[0].result).includes("fb-pinoso"),
+    "Marketing snapshot leaked another brand or private channel identifier");
+
+  const createdMarketingDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[]) as result",
+    ["pinosoecolife", managedUser, "managed@example.test", "Staff draft", "Draft only body",
+      ["pinoso","villa"], ["facebook"]],
+  );
+  verify(createdMarketingDraft.rows[0].result?.ok === true &&
+    createdMarketingDraft.rows[0].result?.publication?.brand_id === "pinosoecolife" &&
+    createdMarketingDraft.rows[0].result?.publication?.status === "draft",
+    "Scoped marketing draft creation failed or escaped draft status");
+  const marketingAudit = await sql(
+    "select count(*)::int as total from core.brand_workspace_marketing_draft_audit where actor_user_id=$1",
+    [managedUser],
+  );
+  verify(marketingAudit.rows[0].total === 1,
+    "Marketing draft audit did not record the managed workspace actor");
+
+  const inactiveChannelDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[]) as result",
+    ["pinosoecolife", managedUser, "managed@example.test", "Blocked draft", "Inactive channel",
+      [], ["youtube"]],
+  );
+  verify(inactiveChannelDraft.rows[0].result?.ok === false &&
+    inactiveChannelDraft.rows[0].result?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND",
+    "Marketing draft accepted an inactive brand channel");
+
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["crm.joint.read"] }]) === false,
     "Workspace user configure accepted Zen-only scope on Pinoso");
 
