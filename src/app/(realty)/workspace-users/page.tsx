@@ -37,6 +37,9 @@ type BrandChoice = {
   adsRead: boolean;
   adsDraft: boolean;
   eventsPlan: boolean;
+  contentRead: boolean;
+  contentEdit: boolean;
+  contentPublish: boolean;
 };
 
 const emptyChoice = (): BrandChoice => ({
@@ -46,6 +49,7 @@ const emptyChoice = (): BrandChoice => ({
   corporateRead: false, corporatePlan: false,
   visibilityRead: false, visibilityPlan: false,
   adsRead: false, adsDraft: false, eventsPlan: false,
+  contentRead: false, contentEdit: false, contentPublish: false,
 });
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -97,6 +101,9 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       adsRead: permissions.includes("ads.read"),
       adsDraft: permissions.includes("ads.draft"),
       eventsPlan: permissions.includes("events.plan"),
+      contentRead: permissions.includes("content.read"),
+      contentEdit: permissions.includes("content.edit"),
+      contentPublish: permissions.includes("content.publish"),
     };
   }
   return next;
@@ -170,6 +177,8 @@ export default function WorkspaceUsersPage() {
       if (next.corporatePlan) next.corporateRead = true;
       if (next.visibilityPlan) next.visibilityRead = true;
       if (next.adsDraft) next.adsRead = true;
+      if (next.contentEdit) next.contentRead = true;
+      if (next.contentPublish) { next.contentRead = true; next.contentEdit = true; }
       if (brandKey !== "zeneco") { next.corporateRead = false; next.corporatePlan = false; }
       if (brandKey === "zeneco" && (next.tasksRead || next.tasksWrite)) next.crmRead = true;
       return { ...current, [brandKey]: next };
@@ -196,6 +205,9 @@ export default function WorkspaceUsersPage() {
         adsRead: choice.adsRead,
         adsDraft: choice.adsDraft,
         eventsPlan: choice.eventsPlan,
+        contentRead: choice.contentRead,
+        contentEdit: choice.contentEdit,
+        contentPublish: choice.contentPublish,
       });
       return permissions.length ? [{ brandKey: brand.brandKey, permissions }] : [];
     });
@@ -491,6 +503,16 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.eventsPlan}
                       onChange={e => updateChoice(brand.brandKey, { eventsPlan: e.target.checked })}/> Planlegge videoer, webinarer og informasjonsmøter</label>
                     <p className="mt-2 text-[11px] text-slate-500">Oppretter arbeidsoppgaver, ikke invitasjoner eller utsendinger.</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">Nettside & innhold</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.contentRead}
+                      onChange={e => updateChoice(brand.brandKey, { contentRead: e.target.checked, ...(e.target.checked ? {} : { contentEdit: false, contentPublish: false }) })}/> Se artikler og guider</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.contentEdit}
+                      onChange={e => updateChoice(brand.brandKey, { contentEdit: e.target.checked, ...(e.target.checked ? {} : { contentPublish: false }) })}/> Lage og redigere</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.contentPublish}
+                      onChange={e => updateChoice(brand.brandKey, { contentPublish: e.target.checked })}/> Publisere til nettsiden</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Publisering er brand-låst og lagrer versjon for rollback.</p>
                   </div>
                 </div>}
               </article>;
