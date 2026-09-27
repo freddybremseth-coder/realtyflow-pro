@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await runCorporateHomesDiscovery(supabase, {
       trigger: "cron",
-      batchSize: CORPORATE_DISCOVERY_WEEKLY_BATCH,
+      batchSize: CORPORATE_DISCOVERY_DAILY_BATCH,
       minEmployees: 15,
       maxEmployees: 500,
       profile: "core",
