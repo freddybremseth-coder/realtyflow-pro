@@ -129,12 +129,12 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   },
   {
     id: "content",
-    label: "Content Studio",
-    description: "Innholdsproduksjon per merkevare. Ikke åpnet for medarbeidere ennå.",
-    status: "planned",
+    label: "Nettside & innhold",
+    description: "Lag, rediger og publiser brand-avgrensede artikler/guider med versjonshistorikk og rollback.",
+    status: "ready",
     brandScope: "all",
-    readPermissions: [],
-    writePermissions: [],
+    readPermissions: ["content.read"],
+    writePermissions: ["content.edit", "content.publish"],
   },
   {
     id: "email",
@@ -176,6 +176,9 @@ export function programPermissions(params: {
   adsRead: boolean;
   adsDraft: boolean;
   eventsPlan: boolean;
+  contentRead: boolean;
+  contentEdit: boolean;
+  contentPublish: boolean;
 }): WorkspacePermission[] {
   const result = new Set<WorkspacePermission>();
   if (params.brandKey === "zeneco") {
@@ -199,5 +202,8 @@ export function programPermissions(params: {
   if (params.adsRead || params.adsDraft) result.add("ads.read");
   if (params.adsDraft) result.add("ads.draft");
   if (params.eventsPlan) result.add("events.plan");
+  if (params.contentRead || params.contentEdit || params.contentPublish) result.add("content.read");
+  if (params.contentEdit || params.contentPublish) result.add("content.edit");
+  if (params.contentPublish) result.add("content.publish");
   return Array.from(result);
 }
