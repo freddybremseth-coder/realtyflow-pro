@@ -48,20 +48,15 @@ export async function POST(request: NextRequest) {
 
   let role = "OWNER";
   if (!isAdminEmail(normalizedEmail)) {
-    const legacy = await findAccessProfile(normalizedEmail);
-    if (legacy.error) return NextResponse.json({ error: "Tilgangsprofilen kunne ikke kontrolleres." }, { status: 503 });
+    let directoryError: string | null = null;
+    if (!directoryUser) {
+      const resolvedDirectory = await resolveWorkspaceLogin(normalizedEmail);
+      directoryUser = resolvedDirectory.user;
+      directoryError = resolvedDirectory.error;
+    }
 
-    if (legacy.profile?.active && legacy.profile.role !== "WORKSPACE_MEMBER") {
-      role = legacy.profile.role;
-    } else {
-      if (!directoryUser) {
-        const resolvedDirectory = await resolveWorkspaceLogin(normalizedEmail);
-        if (resolvedDirectory.error) {
-          return NextResponse.json({ error: "Arbeidsområdet kunne ikke verifiseres akkurat nå." }, { status: 503 });
-        }
-        directoryUser = resolvedDirectory.user;
-      }
-      if (!directoryUser || directoryUser.status !== "active" ||
+    if (directoryUser) {
+      if (directoryUser.status !== "active" ||
           directoryUser.email !== normalizedEmail ||
           directoryUser.userId !== authData.user.id) {
         return NextResponse.json({ error: "Denne kontoen har ikke aktiv tilgang til RealtyFlow." }, { status: 403 });
@@ -78,6 +73,21 @@ export async function POST(request: NextRequest) {
             : "Denne kontoen har ingen aktiv, verifisert merkevaretilgang.",
         }, { status: 403 });
       }
+    } else {
+      // Legacy global roles remain supported, but a managed workspace account
+      // no longer depends on the old access-control profile store.
+      const legacy = await findAccessProfile(normalizedEmail);
+      if (legacy.error) {
+        return NextResponse.json({
+          error: directoryError
+            ? "Tilgangstjenestene kunne ikke kontrolleres akkurat nå."
+            : "Tilgangsprofilen kunne ikke kontrolleres.",
+        }, { status: 503 });
+      }
+      if (!legacy.profile?.active || legacy.profile.role === "WORKSPACE_MEMBER") {
+        return NextResponse.json({ error: "Denne kontoen har ikke aktiv tilgang til RealtyFlow." }, { status: 403 });
+      }
+      role = legacy.profile.role;
     }
   }
 
