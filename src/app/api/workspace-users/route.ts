@@ -4,6 +4,10 @@ import { getPlatformSupabase } from "@/lib/platform/supabase";
 import {
   WORKSPACE_PERMISSIONS, isCanonicalBrandKey, type WorkspacePermission,
 } from "@/lib/workspaces/brand-policy";
+import {
+  getWorkspaceRuntimeState,
+  setWorkspaceRuntimeEnabled,
+} from "@/lib/workspaces/runtime-control";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -135,9 +139,11 @@ export async function GET(request: NextRequest) {
   if (!supabase) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
   const { snapshot, error } = await loadSnapshot(supabase);
   if (error || !snapshot) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
+  const runtime = await getWorkspaceRuntimeState(supabase);
   return reply({
     ok: true, ...snapshot,
-    featureEnabled: process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true",
+    featureEnabled: runtime.enabled,
+    featureStatus: runtime.error ? "unavailable" : "ready",
     passwordStorage: "supabase-auth-only",
   });
 }
@@ -153,6 +159,26 @@ export async function POST(request: NextRequest) {
   const action = String(body.action || "");
   const supabase = getPlatformSupabase();
   if (!supabase) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
+
+  if (action === "SET_LOGIN_ENABLED") {
+    if (typeof body.enabled !== "boolean") {
+      return reply({ error: "INVALID_RUNTIME_CONFIGURATION" }, 400);
+    }
+    const runtime = await setWorkspaceRuntimeEnabled({
+      client: supabase,
+      enabled: body.enabled,
+      actor: owner.context.email,
+    });
+    if (!runtime.ok) {
+      return reply({
+        error: runtime.error,
+        message: runtime.error === "WORKSPACE_SECURITY_PREFLIGHT_FAILED"
+          ? "Sikkerhetskontrollen er ikke grønn, så medarbeiderinnlogging kan ikke aktiveres."
+          : "Kunne ikke oppdatere medarbeiderinnloggingen.",
+      }, runtime.error === "WORKSPACE_SECURITY_PREFLIGHT_FAILED" ? 409 : 503);
+    }
+    return reply({ ok: true, featureEnabled: runtime.enabled });
+  }
 
   if (action === "CREATE_USER") {
     const username = String(body.username || "").trim().toLowerCase();
@@ -226,11 +252,12 @@ export async function POST(request: NextRequest) {
       }
       return reply({ error: "WORKSPACE_USER_CONFIGURE_FAILED" }, configureError ? 503 : 409);
     }
+    const runtime = await getWorkspaceRuntimeState(supabase);
     return reply({
       ok: true,
       user: { userId: created.user.id, username, email, displayName, status: "active" },
       passwordStoredInRealtyFlow: false,
-      loginEnabled: process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true",
+      loginEnabled: runtime.enabled,
     }, 201);
   }
 
