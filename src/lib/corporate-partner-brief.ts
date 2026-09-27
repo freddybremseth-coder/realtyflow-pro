@@ -17,6 +17,7 @@ export type CorporatePartnerBriefInput = {
   source_url?: string | null;
   notes?: string | null;
   next_action?: string | null;
+  evidence?: Record<string, unknown> | null;
 };
 
 const typeLabel: Record<string, string> = {
@@ -98,6 +99,11 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
   const website = input.website_url || input.domain || null;
   const firstAngle = input.referral_angle || values[0];
   const company = input.company_name;
+  const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : {};
+  const genericCompanyContact =
+    evidence.generic_company_contact && typeof evidence.generic_company_contact === "object"
+      ? evidence.generic_company_contact as Record<string, unknown>
+      : {};
 
   const email = {
     subject: "Mulig samarbeid om norske bedriftskunder som vurderer bolig i Spania",
@@ -139,6 +145,13 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
       score: Number(input.fit_score || 0),
       reasons: Array.isArray(input.fit_reasons) ? input.fit_reasons : [],
       gaps: Array.isArray(input.evidence_gaps) ? input.evidence_gaps : [],
+    },
+    companyContact: {
+      genericEmail: String(genericCompanyContact.generic_email || "").trim() || null,
+      contactPageUrl: String(genericCompanyContact.contact_page_url || "").trim() || null,
+      checkedAt: String(genericCompanyContact.checked_at || "").trim() || null,
+      companyLevelOnly: true,
+      personalDataCollected: false,
     },
     partner: {
       type: input.partner_type,
