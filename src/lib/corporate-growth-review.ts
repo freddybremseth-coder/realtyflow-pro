@@ -19,7 +19,7 @@ export type CorporateGrowthReview = {
   version: 1;
   kind: "corporate_growth_review";
   status: "READY" | "LEARNING" | "DATA_GAP";
-  periodDays: 30;
+  window: "current_pipeline_snapshot";
   minimumDenominator: number;
   bottleneck: null | {
     stage: CorporateGrowthReviewStage;
@@ -116,7 +116,7 @@ export function buildCorporateGrowthReview(
       version: 1,
       kind: "corporate_growth_review",
       status: "DATA_GAP",
-      periodDays: 30,
+      window: "current_pipeline_snapshot",
       minimumDenominator,
       bottleneck: null,
       measuredStages: stages,
@@ -135,7 +135,7 @@ export function buildCorporateGrowthReview(
       version: 1,
       kind: "corporate_growth_review",
       status: "LEARNING",
-      periodDays: 30,
+      window: "current_pipeline_snapshot",
       minimumDenominator,
       bottleneck: null,
       measuredStages: stages,
@@ -155,7 +155,7 @@ export function buildCorporateGrowthReview(
     version: 1,
     kind: "corporate_growth_review",
     status: "READY",
-    periodDays: 30,
+    window: "current_pipeline_snapshot",
     minimumDenominator,
     bottleneck: {
       stage: selected.stage,
