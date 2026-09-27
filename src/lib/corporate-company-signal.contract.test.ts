@@ -7,6 +7,7 @@ const runner = fs.readFileSync("src/lib/corporate-company-signal-runner.ts", "ut
 const cron = fs.readFileSync("src/app/api/cron/corporate-homes-company-signals/route.ts", "utf8");
 const page = fs.readFileSync("src/app/(business)/corporate-homes/page.tsx", "utf8");
 const vercel = fs.readFileSync("vercel.json", "utf8");
+const bootstrap = fs.readFileSync("src/app/api/cron/corporate-homes-bootstrap/route.ts", "utf8");
 
 test("Company signal research is SSRF guarded and same-host bounded", () => {
   assert.match(research, /validatePublicWebsiteUrl/);
@@ -32,4 +33,22 @@ test("Company signal research is scheduled behind safe mode and visible in the d
   assert.match(cron, /evaluateCronSafeMode/);
   assert.match(page, /Undersøk selskaps-signaler/);
   assert.match(page, /Ingen personnavn, e-post eller telefon samles inn/);
+});
+
+
+test("Corporate bootstrap stages first partner and signal runs without outreach", () => {
+  assert.match(bootstrap, /CORPORATE_PARTNER_DISCOVERY_ACTION/);
+  assert.match(bootstrap, /CORPORATE_SIGNAL_RESEARCH_ACTION/);
+  assert.match(bootstrap, /batchSize: 5/);
+  assert.match(bootstrap, /batchSize: 2/);
+  assert.match(bootstrap, /bootstrap_stage: "partners"/);
+  assert.match(bootstrap, /bootstrap_stage: "company_signals"/);
+  assert.match(bootstrap, /personal_enrichment_started: false/);
+  assert.match(bootstrap, /outreach_started: false/);
+  assert.doesNotMatch(bootstrap, /sendEmail\s*\(|sendMessage\s*\(|publish[A-Z_a-z0-9]*\s*\(/);
+});
+
+test("Corporate bootstrap remains on the existing five-minute cadence", () => {
+  assert.match(vercel, /\/api\/cron\/corporate-homes-bootstrap/);
+  assert.match(vercel, /\*\/5 \* \* \* \*/);
 });
