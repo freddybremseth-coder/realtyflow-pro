@@ -232,7 +232,7 @@ export default function CorporatePartnerBriefPage({ params }: { params: Promise<
           </div>
           <h2 className="mt-2 text-xl font-black text-slate-950">Dag 0 · 7 · 21 — kun utkast</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Sekvensen har sporbare lenker til den norske partnersiden. Riktig kontaktperson skal identifiseres og kontrolleres før første kontakt. Ingen melding sendes automatisk.
+            Sekvensen har sporbare lenker til den norske partnersiden. Riktig kontaktperson skal identifiseres og kontrolleres før første kontakt. Det er ingen automatisk utsendelse.
           </p>
         </div>
 
