@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
+import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
@@ -12,7 +13,7 @@ type Contact = { id: string; name: string | null; email: string | null; phone: s
 type Tab = "overview" | "crm" | "joint-tasks" | "properties" | "marketing";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
   { id: "overview", label: "Oversikt", icon: Building2 },
-  { id: "crm", label: "Kunder", icon: Users, permitted: ["crm.read", "crm.joint.read"] },
+  { id: "crm", label: "Leads & CRM", icon: Users, permitted: ["crm.read", "crm.joint.read"] },
   { id: "joint-tasks", label: "Felles oppgaver", icon: Users, permitted: ["tasks.joint.read"] },
   { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
   { id: "marketing", label: "Markedsføring", icon: Megaphone, permitted: ["marketing.read", "marketing.draft", "marketing.publish"] },
@@ -150,8 +151,8 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && tab === "overview" && (
           <section className="grid gap-4 md:grid-cols-3">
             {showCrm && <button onClick={() => setTab("crm")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
-              <Users size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Kunder</h2>
-              <p className="mt-1 text-sm text-slate-400">Åpne CRM og kundene i dette arbeidsområdet.</p>
+              <Users size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Leads & CRM</h2>
+              <p className="mt-1 text-sm text-slate-400">Åpne leads og kunder som tilhører dette arbeidsområdet.</p>
             </button>}
             {showJointTasks && <button onClick={() => setTab("joint-tasks")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
               <Users size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Felles oppgaver</h2>
@@ -163,14 +164,14 @@ export default function FocusedWorkspacePage() {
             </button>}
             {showMarketing && <button onClick={() => setTab("marketing")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
               <Clapperboard size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Markedsføring</h2>
-              <p className="mt-1 text-sm text-slate-400">Reels og publisering kobles til valgt merkevare senere.</p>
+              <p className="mt-1 text-sm text-slate-400">Kanalstatus, nylig innhold og brand-avgrensede innholdsutkast.</p>
             </button>}
           </section>
         )}
         {!loading && !error && showCrm && tab === "crm" && (
           <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold">Kunder · kun {title}</h2>
+              <h2 className="text-xl font-semibold">Leads & CRM · kun {title}</h2>
               <button className="inline-flex items-center gap-2 text-sm text-cyan-300" onClick={() => void loadCrm()}><RefreshCw size={15}/> Oppdater</button>
             </div>
             <form className="relative mt-4 flex gap-2" onSubmit={event => { event.preventDefault(); setCrmPage(1); setCrmQuery(search.trim()); }}>
@@ -222,10 +223,7 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && showProperties && tab === "properties" &&
           <WorkspacePropertyCatalogue brandKey={brandKey} />}
         {!loading && !error && showMarketing && tab === "marketing" &&
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <h2 className="text-xl font-semibold">Markedsføring</h2>
-            <p className="mt-2 max-w-xl text-slate-400">Innholdsproduksjon og publisering er under utvikling. Ingen globale kanaler eller andre merkevarers innhold er koblet til denne arbeidsflaten.</p>
-          </section>}
+          <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />}
       </main>
     </div>
   );
