@@ -25,6 +25,7 @@ import {
   CORPORATE_PAID_LAUNCH_PACK,
   CORPORATE_SUCCESS_METRICS,
 } from "@/lib/corporate-homes-growth";
+import { corporateGrowthCandidateId } from "@/lib/corporate-growth-improvement";
 
 type Contact = {
   id: string;
@@ -618,7 +619,9 @@ export default function CorporateHomesGrowthPage() {
                 </div>
                 {data.growthReview.comparison.continuousImprovementCandidate && (
                   <Link
-                    href="/continuous-improvement"
+                    href={`/continuous-improvement?candidate=${encodeURIComponent(
+                      corporateGrowthCandidateId(data.growthReview.review?.bottleneck?.stage || "unknown"),
+                    )}`}
                     className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-amber-900 px-4 py-2.5 text-sm font-black text-white hover:bg-amber-800"
                   >
                     Vurder i Kontinuerlig forbedring
