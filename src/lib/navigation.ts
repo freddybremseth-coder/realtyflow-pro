@@ -32,7 +32,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
   { id:"care", label:"Care", icon:"KeyRound", hrefs:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/service-revenue"] },
   { id:"revenue", label:"Drift, økonomi & ledelse", icon:"Handshake", hrefs:["/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/team-workload","/revenue-data-health"] },
   { id:"business", label:"Virksomheter", icon:"Briefcase", hrefs:["/business-hub","/mondeo","/dona-anna","/platform","/demosites","/saas","/revenue-engine","/nexus-os/account-launch"] },
-  { id:"admin", label:"System & autopilot", icon:"Settings", hrefs:["/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/automation","/agents","/data-health","/access-control","/workspace-access","/audit-log"] },
+  { id:"admin", label:"System & autopilot", icon:"Settings", hrefs:["/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/automation","/agents","/data-health","/workspace-users","/access-control","/workspace-access","/audit-log"] },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
