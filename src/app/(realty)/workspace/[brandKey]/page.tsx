@@ -252,7 +252,15 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
             {showGrowth && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
-            {showMarketing && <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />}
+            {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
+              <summary className="cursor-pointer list-none p-5">
+                <strong className="text-lg">Lag innhold til sosiale medier</strong>
+                <p className="mt-1 text-sm text-slate-400">Åpne bare når du skal skrive, se tidligere innhold eller velge kanal.</p>
+              </summary>
+              <div className="border-t border-slate-800 p-5">
+                <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />
+              </div>
+            </details>}
           </section>}
       </main>
     </div>
