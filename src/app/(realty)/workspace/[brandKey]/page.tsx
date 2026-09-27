@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
+import { Building2, LockKeyhole, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
@@ -11,23 +11,22 @@ import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; pipeline_status: string | null };
-type Tab = "overview" | "crm" | "joint-tasks" | "properties" | "marketing" | "growth";
+type Tab = "today" | "leads" | "growth" | "properties";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
-  { id: "overview", label: "Oversikt", icon: Building2 },
-  { id: "crm", label: "Leads & CRM", icon: Users, permitted: ["crm.read", "crm.joint.read"] },
-  { id: "joint-tasks", label: "Felles oppgaver", icon: Users, permitted: ["tasks.joint.read"] },
-  { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
-  { id: "marketing", label: "Markedsføring", icon: Megaphone, permitted: ["marketing.read", "marketing.draft", "marketing.publish"] },
-  { id: "growth", label: "Growth & Corporate", icon: TrendingUp, permitted: [
+  { id: "today", label: "I dag", icon: Building2 },
+  { id: "leads", label: "Leads", icon: Users, permitted: ["crm.read", "crm.joint.read", "tasks.joint.read"] },
+  { id: "growth", label: "Vekst & innhold", icon: TrendingUp, permitted: [
+    "marketing.read", "marketing.draft", "marketing.publish",
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
   ] },
+  { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
 ];
 
 export default function FocusedWorkspacePage() {
   const params = useParams();
   const brandKey = String(params.brandKey || "");
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>("today");
   const [permissions, setPermissions] = useState<WorkspacePermission[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +53,7 @@ export default function FocusedWorkspacePage() {
 
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setError(""); setTab("overview"); setPermissions([]); setContacts([]);
+    setLoading(true); setError(""); setTab("today"); setPermissions([]); setContacts([]);
     fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/capabilities`, {
       cache: "no-store", signal: abort.signal,
     }).then(async res => {
@@ -135,7 +134,9 @@ export default function FocusedWorkspacePage() {
           <div><p className="text-xs uppercase tracking-wider text-cyan-400">RealtyFlow · Arbeidsområde</p>
             <h1 className="text-2xl font-bold">{title}</h1></div>
           <div className="flex items-center gap-2">
-            {owner && <Link href="/workspaces" className="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Arbeidsområder</Link>}
+            <Link href={owner ? "/workspaces" : "/workspace"} className="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">
+              {owner ? "Arbeidsområder" : "Bytt virksomhet"}
+            </Link>
             <button type="button" className="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800"
               onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.assign("/login"); }}>Logg ut</button>
           </div>
@@ -157,39 +158,52 @@ export default function FocusedWorkspacePage() {
           <LockKeyhole size={18} className="mr-2 inline"/>{error}
           <Link href="/login" className="ml-3 underline">Innlogging</Link>
         </div>}
-        {!loading && !error && tab === "overview" && (
-          <section className="grid gap-4 md:grid-cols-3">
-            {showCrm && <button onClick={() => setTab("crm")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
-              <Users size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Leads & CRM</h2>
-              <p className="mt-1 text-sm text-slate-400">Åpne leads og kunder som tilhører dette arbeidsområdet.</p>
-            </button>}
-            {showJointTasks && <button onClick={() => setTab("joint-tasks")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
-              <Users size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Felles oppgaver</h2>
-              <p className="mt-1 text-sm text-slate-400">Kun nye oppgaver for individuelt godkjente felleskunder.</p>
-            </button>}
-            {showProperties && <button onClick={() => setTab("properties")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
-              <Building2 size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Eiendommer</h2>
-              <p className="mt-1 text-sm text-slate-400">Søk i publiserte boliger på tvers av områder.</p>
-            </button>}
-            {showMarketing && <button onClick={() => setTab("marketing")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
-              <Clapperboard size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Markedsføring</h2>
-              <p className="mt-1 text-sm text-slate-400">Kanalstatus, nylig innhold og brand-avgrensede innholdsutkast.</p>
-            </button>}
-            {showGrowth && <button onClick={() => setTab("growth")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
-              <TrendingUp size={25} className="text-cyan-400" /><h2 className="mt-3 text-lg font-semibold">Growth & Corporate</h2>
-              <p className="mt-1 text-sm text-slate-400">Corporate, SEO/GEO/AEO, søkeord, annonser, video og informasjonsmøter.</p>
-            </button>}
+        {!loading && !error && tab === "today" && (
+          <section className="space-y-5">
+            <div className="rounded-2xl border border-cyan-900/60 bg-cyan-950/15 p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Start her</p>
+              <h2 className="mt-2 text-2xl font-bold">Hva skal du få gjort i dag?</h2>
+              <p className="mt-2 max-w-2xl text-sm text-slate-400">
+                Velg en oppgave. RealtyFlow finner riktig verktøy og holder deg innenfor {title}.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {showCrm && <button onClick={() => setTab("leads")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
+                <Users size={25} className="text-cyan-400"/>
+                <h3 className="mt-3 text-lg font-semibold">Følg opp leads</h3>
+                <p className="mt-1 text-sm text-slate-400">Finn kunde, registrer kontakt og se hva som må følges opp.</p>
+              </button>}
+              {showGrowth && <button onClick={() => setTab("growth")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
+                <TrendingUp size={25} className="text-cyan-400"/>
+                <h3 className="mt-3 text-lg font-semibold">{brandKey === "zeneco" && permissions.includes("corporate.read") ? "Jobb med Corporate og vekst" : "Skap mer synlighet og leads"}</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  {brandKey === "zeneco" && permissions.includes("corporate.read")
+                    ? "Bedrifter, SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."
+                    : "SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."}
+                </p>
+              </button>}
+              {showProperties && <button onClick={() => setTab("properties")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
+                <Building2 size={25} className="text-cyan-400"/>
+                <h3 className="mt-3 text-lg font-semibold">Finn riktig bolig</h3>
+                <p className="mt-1 text-sm text-slate-400">Søk i publiserte boliger når et lead trenger konkrete forslag.</p>
+              </button>}
+              {showJointTasks && <button onClick={() => setTab("leads")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
+                <Users size={25} className="text-cyan-400"/>
+                <h3 className="mt-3 text-lg font-semibold">Se oppfølgingen min</h3>
+                <p className="mt-1 text-sm text-slate-400">Åpne lead-arbeidet og fellesoppgavene på nye Zen-kunder.</p>
+              </button>}
+            </div>
           </section>
         )}
-        {!loading && !error && showCrm && tab === "crm" && (
+        {!loading && !error && showCrm && tab === "leads" && (
           <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold">Leads & CRM · kun {title}</h2>
+              <h2 className="text-xl font-semibold">Leads · {title}</h2>
               <button className="inline-flex items-center gap-2 text-sm text-cyan-300" onClick={() => void loadCrm()}><RefreshCw size={15}/> Oppdater</button>
             </div>
             <form className="relative mt-4 flex gap-2" onSubmit={event => { event.preventDefault(); setCrmPage(1); setCrmQuery(search.trim()); }}>
               <label className="relative block flex-1"><Search size={17} className="absolute left-3 top-3 text-slate-500" />
-              <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Søk i kundene her"
+              <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Søk etter navn, e-post eller telefon"
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm" /></label>
               <button type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Søk</button>
             </form>
@@ -231,14 +245,23 @@ export default function FocusedWorkspacePage() {
             <p className="mt-4 text-xs text-slate-500">Søk og visning er avgrenset til merkevaren. Opprettelse og redigering er begrenset til kontaktopplysninger; status, notater, avtaler og økonomi er ikke åpnet for medarbeidere.</p>
           </section>
         )}
-        {!loading && !error && showJointTasks && tab === "joint-tasks" &&
+        {!loading && !error && showJointTasks && tab === "leads" &&
           <ZenJointTasks contacts={contacts} canWrite={canWriteJointTasks} />}
         {!loading && !error && showProperties && tab === "properties" &&
           <WorkspacePropertyCatalogue brandKey={brandKey} />}
-        {!loading && !error && showMarketing && tab === "marketing" &&
-          <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />}
-        {!loading && !error && showGrowth && tab === "growth" &&
-          <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
+        {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
+          <section className="space-y-5">
+            {showGrowth && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
+            {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
+              <summary className="cursor-pointer list-none p-5">
+                <strong className="text-lg">Lag innhold til sosiale medier</strong>
+                <p className="mt-1 text-sm text-slate-400">Åpne bare når du skal skrive, se tidligere innhold eller velge kanal.</p>
+              </summary>
+              <div className="border-t border-slate-800 p-5">
+                <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />
+              </div>
+            </details>}
+          </section>}
       </main>
     </div>
   );

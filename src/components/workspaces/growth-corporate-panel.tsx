@@ -33,6 +33,7 @@ type GrowthData = {
   ads: AdRow[] | null;
   plannedWork: Planned[];
 };
+type WorkArea = "corporate" | "visibility" | "ads" | "plan";
 
 const kindLabels: Record<string, string> = {
   corporate: "Corporate research / neste steg",
@@ -65,6 +66,7 @@ export function GrowthCorporatePanel({
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("MEDIUM");
   const [sourceId, setSourceId] = useState("");
+  const [area, setArea] = useState<WorkArea>("corporate");
 
   const allowedKinds = useMemo(() => {
     const values: string[] = [];
@@ -75,9 +77,24 @@ export function GrowthCorporatePanel({
     return values;
   }, [brandKey, permissions]);
 
+  const availableAreas = useMemo(() => {
+    const values: WorkArea[] = [];
+    if (brandKey === "zeneco" && permissions.includes("corporate.read")) values.push("corporate");
+    if (permissions.includes("visibility.read")) values.push("visibility");
+    if (permissions.includes("ads.read")) values.push("ads");
+    if (allowedKinds.length > 0) values.push("plan");
+    return values;
+  }, [brandKey, permissions, allowedKinds]);
+
   useEffect(() => {
     if (!allowedKinds.includes(kind)) setKind(allowedKinds[0] || "");
   }, [allowedKinds, kind]);
+
+  useEffect(() => {
+    if (!availableAreas.includes(area)) {
+      setArea(availableAreas[0] || "plan");
+    }
+  }, [availableAreas, area]);
 
   async function load() {
     setLoading(true); setError("");
@@ -134,7 +151,33 @@ export function GrowthCorporatePanel({
     {error && <p role="alert" className="rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">{error}</p>}
     {notice && <p role="status" className="rounded-xl border border-emerald-800 bg-emerald-950/25 p-4 text-sm text-emerald-200">{notice}</p>}
 
-    {data?.corporate && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+      <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Velg hva du vil gjøre</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {availableAreas.includes("corporate") && <button type="button" onClick={() => setArea("corporate")}
+          className={`rounded-xl border p-4 text-left ${area === "corporate" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
+          <Building2 size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Finn og jobb med bedrifter</strong>
+          <span className="mt-1 block text-xs text-slate-500">Corporate Homes og partnerkanaler</span>
+        </button>}
+        {availableAreas.includes("visibility") && <button type="button" onClick={() => setArea("visibility")}
+          className={`rounded-xl border p-4 text-left ${area === "visibility" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
+          <Search size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Forbedre Google & AI-søk</strong>
+          <span className="mt-1 block text-xs text-slate-500">SEO, GEO, AEO, søkeord og tekster</span>
+        </button>}
+        {availableAreas.includes("ads") && <button type="button" onClick={() => setArea("ads")}
+          className={`rounded-xl border p-4 text-left ${area === "ads" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
+          <Megaphone size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Jobb med annonser</strong>
+          <span className="mt-1 block text-xs text-slate-500">Se kampanjer og lag neste annonsebrief</span>
+        </button>}
+        {availableAreas.includes("plan") && <button type="button" onClick={() => setArea("plan")}
+          className={`rounded-xl border p-4 text-left ${area === "plan" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
+          <Video size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Planlegg neste aktivitet</strong>
+          <span className="mt-1 block text-xs text-slate-500">Video, webinar, møte, SEO eller Corporate</span>
+        </button>}
+      </div>
+    </div>
+
+    {area === "corporate" && data?.corporate && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-semibold"><Building2 size={19}/> Corporate Homes</h2>
@@ -151,7 +194,7 @@ export function GrowthCorporatePanel({
               <p className="mt-1 text-xs text-slate-400">{[row.city,row.industry,row.status].filter(Boolean).join(" · ")}</p>
               {row.nextAction && <p className="mt-2 text-xs text-slate-300">Neste: {row.nextAction}</p>}
               {permissions.includes("corporate.plan") && <button type="button" className="mt-2 text-xs text-cyan-300 underline"
-                onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate · ${row.companyName}`); setNextAction(row.nextAction || ""); }}>
+                onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
                 Lag arbeidsoppgave
               </button>}
             </article>)}
@@ -165,7 +208,7 @@ export function GrowthCorporatePanel({
               <p className="mt-1 text-xs text-slate-400">{[row.partnerType,row.city,row.status].filter(Boolean).join(" · ")}</p>
               {row.referralAngle && <p className="mt-2 text-xs text-slate-300">{row.referralAngle}</p>}
               {permissions.includes("corporate.plan") && <button type="button" className="mt-2 text-xs text-cyan-300 underline"
-                onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate partner · ${row.companyName}`); setNextAction(row.nextAction || ""); }}>
+                onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate partner · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
                 Lag arbeidsoppgave
               </button>}
             </article>)}
@@ -174,9 +217,14 @@ export function GrowthCorporatePanel({
       </div>
     </div>}
 
-    {data?.visibility && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+    {area === "visibility" && data?.visibility && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><Search size={19}/> SEO · GEO · AEO · søkeord</h2>
       <p className="mt-1 text-xs text-slate-400">Førsteparts søke-/AI-henvisninger og aktive SEO-oppgaver for denne merkevaren.</p>
+      {permissions.includes("visibility.plan") && <button type="button"
+        onClick={() => { setKind("seo"); setTitle("Forbedre synlighet"); setArea("plan"); }}
+        className="mt-3 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white">
+        Lag SEO / GEO / AEO-oppgave
+      </button>}
       {data.visibility.seoSam && <div className="mt-4 rounded-xl border border-cyan-900/60 bg-cyan-950/15 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-cyan-200">SEO Sam · siste brand-status</h3>
@@ -219,7 +267,7 @@ export function GrowthCorporatePanel({
       </div>
     </div>}
 
-    {data?.ads && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+    {area === "ads" && data?.ads && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><Megaphone size={19}/> Annonser</h2>
       <p className="mt-1 text-xs text-slate-400">Kampanjeoversikt. Denne medarbeiderflaten kan ikke starte spend eller publisering.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2">{data.ads.map(row =>
@@ -227,7 +275,7 @@ export function GrowthCorporatePanel({
           <div className="flex justify-between gap-3"><strong>{row.name}</strong><span className="text-xs text-cyan-300">{row.status}</span></div>
           <p className="mt-1 text-xs text-slate-400">{row.productName}{row.growthGoal ? ` · ${row.growthGoal}` : ""}</p>
           {permissions.includes("ads.draft") && <button type="button" className="mt-2 text-xs text-cyan-300 underline"
-            onClick={() => { setKind("ads"); setSourceId(row.id); setTitle(`Annonse · ${row.name}`); }}>
+            onClick={() => { setKind("ads"); setSourceId(row.id); setTitle(`Annonse · ${row.name}`); setArea("plan"); }}>
             Lag ny annonseoppgave
           </button>}
         </article>)}
@@ -235,10 +283,10 @@ export function GrowthCorporatePanel({
       </div>
     </div>}
 
-    {allowedKinds.length > 0 && <form onSubmit={event => { event.preventDefault(); void createWork(); }}
+    {area === "plan" && allowedKinds.length > 0 && <form onSubmit={event => { event.preventDefault(); void createWork(); }}
       className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-      <h2 className="flex items-center gap-2 text-xl font-semibold"><Video size={19}/> Ny Growth-oppgave</h2>
-      <p className="mt-1 text-xs text-slate-400">Brukes til Corporate, SEO/GEO/AEO, søkeord/tekst, annonsebrief, video og informasjonsmøter.</p>
+      <h2 className="flex items-center gap-2 text-xl font-semibold"><Video size={19}/> Hva skal gjøres?</h2>
+      <p className="mt-1 text-xs text-slate-400">Beskriv neste konkrete aktivitet. RealtyFlow legger den i arbeidslisten din.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <label className="text-xs text-slate-300">Type
           <select value={kind} onChange={e => setKind(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
@@ -273,8 +321,8 @@ export function GrowthCorporatePanel({
       </button>
     </form>}
 
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-      <h2 className="text-xl font-semibold">Mine planlagte Growth-oppgaver</h2>
+    {area === "plan" && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+      <h2 className="text-xl font-semibold">Mine neste oppgaver</h2>
       <div className="mt-3 space-y-2">{(data?.plannedWork || []).map(row =>
         <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
           <div className="flex justify-between gap-3"><strong className="text-sm">{row.title}</strong><span className="text-xs text-cyan-300">{kindLabels[row.kind] || row.kind}</span></div>
@@ -283,6 +331,6 @@ export function GrowthCorporatePanel({
         </article>)}
         {!data?.plannedWork.length && <p className="text-sm text-slate-500">Ingen egne Growth-oppgaver ennå.</p>}
       </div>
-    </div>
+    </div>}
   </section>;
 }
