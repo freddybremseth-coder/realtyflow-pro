@@ -13,6 +13,11 @@ type Visibility = {
   searchDiscovery?: Array<{ source: string; arrivals: number }>;
   topPaths?: Array<{ path: string; arrivals: number }>;
   seoWork?: Array<{ id: string; title: string; status: string; priority: string; nextAction?: string | null }>;
+  seoSam?: {
+    collectedAt?: string | null;
+    gsc?: { status?: string | null; error?: string | null; result?: unknown } | null;
+    diagnostics?: Array<{ kind?: string; title?: string; category?: string; finding?: string; evidence?: string; nextStep?: string }>;
+  } | null;
 };
 type AdRow = {
   id: string; name: string; productName: string; status: string; growthGoal?: string | null;
@@ -172,6 +177,23 @@ export function GrowthCorporatePanel({
     {data?.visibility && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><Search size={19}/> SEO · GEO · AEO · søkeord</h2>
       <p className="mt-1 text-xs text-slate-400">Førsteparts søke-/AI-henvisninger og aktive SEO-oppgaver for denne merkevaren.</p>
+      {data.visibility.seoSam && <div className="mt-4 rounded-xl border border-cyan-900/60 bg-cyan-950/15 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-cyan-200">SEO Sam · siste brand-status</h3>
+          {data.visibility.seoSam.collectedAt && <span className="text-[11px] text-slate-500">{new Date(data.visibility.seoSam.collectedAt).toLocaleString("no-NO")}</span>}
+        </div>
+        {data.visibility.seoSam.gsc && <p className={`mt-2 text-xs ${data.visibility.seoSam.gsc.status === "success" ? "text-emerald-300" : "text-amber-300"}`}>
+          Google Search Console: {data.visibility.seoSam.gsc.status || "ukjent"}
+          {data.visibility.seoSam.gsc.error ? ` · ${data.visibility.seoSam.gsc.error}` : ""}
+        </p>}
+        <div className="mt-3 space-y-2">
+          {(data.visibility.seoSam.diagnostics || []).map((item, index) => <article key={index} className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-xs">
+            <strong>{item.title || item.category || "SEO-funn"}</strong>
+            {item.finding && <p className="mt-1 text-slate-300">{item.finding}</p>}
+            {item.nextStep && <p className="mt-1 text-cyan-300">Neste: {item.nextStep}</p>}
+          </article>)}
+        </div>
+      </div>}
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
           <h3 className="text-sm font-semibold">Søk/AI siste 30 dager</h3>
