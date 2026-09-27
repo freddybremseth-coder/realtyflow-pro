@@ -3,6 +3,7 @@ import { getRequestAccessContext } from "@/lib/api-admin";
 import { findAccessProfile } from "@/lib/access-control-server";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { isCanonicalBrandKey, WORKSPACE_PERMISSIONS, type WorkspacePermission } from "@/lib/workspaces/brand-policy";
+import { getWorkspaceRuntimeState } from "@/lib/workspaces/runtime-control";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,6 +11,7 @@ const noStore = { "Cache-Control": "private, no-store" };
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: noStore });
 
 function planScopeValid(brandKey: string, permissions: WorkspacePermission[]) {
+  if (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) return false;
   if (brandKey === "zeneco") {
     if (permissions.includes("crm.read") || permissions.includes("crm.write")) return false;
     if (permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) return false;
@@ -43,18 +45,19 @@ export async function GET(request: NextRequest) {
   const supabase = getPlatformSupabase();
   if (!supabase) return reply({ error: "WORKSPACE_UNAVAILABLE" }, 503);
 
-  const [snapshot, grants, securitySnapshot, profileResult, authResult] = await Promise.all([
+  const [snapshot, grants, securitySnapshot, profileResult, authResult, runtime] = await Promise.all([
     supabase.rpc("workspace_access_snapshot"),
     supabase.rpc("workspace_user_brand_grants", { p_email: email }),
     supabase.rpc("workspace_staff_security_preflight"),
     findAccessProfile(email),
     supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    getWorkspaceRuntimeState(supabase),
   ]);
   const securityError = securitySnapshot.error;
   const securityRpcMissing = Boolean(securityError &&
     (securityError.code === "PGRST202" || securityError.code === "42883") &&
     /workspace_staff_security_preflight/i.test(securityError.message || ""));
-  if (snapshot.error || grants.error || profileResult.error || authResult.error ||
+  if (snapshot.error || grants.error || profileResult.error || authResult.error || runtime.error ||
       (securityError && !securityRpcMissing) ||
       !snapshot.data || !Array.isArray(snapshot.data.brands) || !Array.isArray(snapshot.data.plans) ||
       !Array.isArray(grants.data)) {
@@ -70,7 +73,8 @@ export async function GET(request: NextRequest) {
       !Number.isSafeInteger(securityPreflight.private_document_authenticated_policies) ||
       !Number.isSafeInteger(securityPreflight.operational_storage_authenticated_write_policies) ||
       !Number.isSafeInteger(securityPreflight.direct_customer_policy_risk) ||
-      !Number.isSafeInteger(securityPreflight.direct_internal_policy_risk))) {
+      !Number.isSafeInteger(securityPreflight.direct_internal_policy_risk) ||
+      !Number.isSafeInteger(securityPreflight.direct_security_definer_risk))) {
     return reply({ error: "WORKSPACE_UNAVAILABLE" }, 503);
   }
 
@@ -98,8 +102,8 @@ export async function GET(request: NextRequest) {
   if (plan && permissions.length !== plan.permissions.length) blockers.push("INVALID_DRAFT_PERMISSIONS");
   if (plan && permissions.length === 0) blockers.push("EMPTY_PERMISSIONS");
   if (plan && !planScopeValid(brandKey, permissions)) blockers.push("INVALID_BRAND_SCOPE");
-  if (permissions.some((permission: WorkspacePermission) => permission.startsWith("marketing.")))
-    blockers.push("MARKETING_SCOPE_NOT_IMPLEMENTED");
+  if (permissions.includes("marketing.publish"))
+    blockers.push("MARKETING_PUBLISH_NOT_IMPLEMENTED");
   if (!authUser) blockers.push("AUTH_USER_MISSING");
   if (!profile) blockers.push("ACCESS_PROFILE_MISSING");
   else {
@@ -109,8 +113,7 @@ export async function GET(request: NextRequest) {
   if (activeMembership) blockers.push("ACTIVE_MEMBERSHIP_ALREADY_PRESENT");
   if (securityRpcMissing) blockers.push("SECURITY_PREFLIGHT_NOT_INSTALLED");
   else if (!securityPreflight?.safe_for_workspace_auth) blockers.push("DIRECT_AUTH_SECURITY_BLOCKER");
-  if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true")
-    blockers.push("FEATURE_FLAG_DISABLED");
+  if (!runtime.enabled) blockers.push("FEATURE_FLAG_DISABLED");
 
   const reviewBlockers = blockers.filter(code => code !== "FEATURE_FLAG_DISABLED");
   return reply({
@@ -123,7 +126,7 @@ export async function GET(request: NextRequest) {
       workspaceProfile: profile ? { role: profile.role, active: profile.active } : null,
       activeMembershipExists: Boolean(activeMembership),
       securityPreflight,
-      featureFlagEnabled: process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true",
+      featureFlagEnabled: runtime.enabled,
     },
     blockers,
     readyForOwnerReview: reviewBlockers.length === 0,
