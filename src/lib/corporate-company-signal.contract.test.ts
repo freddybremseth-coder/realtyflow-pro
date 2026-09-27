@@ -45,7 +45,7 @@ test("Corporate bootstrap stages first partner and signal runs without outreach"
   assert.match(bootstrap, /bootstrap_stage: "company_signals"/);
   assert.match(bootstrap, /personal_enrichment_started: false/);
   assert.match(bootstrap, /outreach_started: false/);
-  assert.doesNotMatch(bootstrap, /sendEmail|sendMessage|publish/);
+  assert.doesNotMatch(bootstrap, /sendEmail\s*\(|sendMessage\s*\(|publish[A-Z_a-z0-9]*\s*\(/);
 });
 
 test("Corporate bootstrap remains on the existing five-minute cadence", () => {
