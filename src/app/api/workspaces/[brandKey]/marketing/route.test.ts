@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
-import { GET, POST } from "./route";
+import { GET, PATCH, POST } from "./route";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const calls: Array<{ table?: string; method: string; args: unknown[] }> = [];
@@ -37,6 +37,25 @@ function fakeDatabase() {
           },
           error: null,
         });
+      }
+      if (name === "workspace_brand_marketing_publish_queue") {
+        const publication = publications.find(row =>
+          row.id === args?.p_publication_id && row.brand_id === args?.p_brand_key);
+        const requested = Array.isArray(args?.p_platforms) ? args?.p_platforms as string[] : [];
+        if (!publication || !["draft", "failed"].includes(String(publication.status))) {
+          return Promise.resolve({ data: { ok: false, error: "PUBLICATION_NOT_PUBLISHABLE" }, error: null });
+        }
+        const active = channels.filter(row => row.brand_id === args?.p_brand_key && row.is_active === true);
+        for (const platform of requested) {
+          const matches = active.filter(row => row.platform === platform);
+          if (matches.length === 0) return Promise.resolve({ data: { ok: false, error: "CHANNEL_NOT_ACTIVE_FOR_BRAND" }, error: null });
+          if (matches.length !== 1) return Promise.resolve({ data: { ok: false, error: "CHANNEL_NOT_UNIQUE_FOR_BRAND" }, error: null });
+        }
+        publication.status = "scheduled";
+        publication.scheduled_platforms = requested;
+        publication.scheduled_at = "2026-09-27T20:00:00Z";
+        publication.updated_at = "2026-09-27T20:00:00Z";
+        return Promise.resolve({ data: { ok: true, publication }, error: null });
       }
       if (name === "workspace_brand_marketing_draft_create") {
         const requested = Array.isArray(args?.p_platforms) ? args?.p_platforms as string[] : [];
@@ -194,4 +213,46 @@ test("other-brand workspace is denied before marketing table access", async () =
   const response = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
   assert.equal(response.status, 403);
   assert.equal(calls.some(call => call.method === "rpc" && ["workspace_brand_marketing_snapshot","workspace_brand_marketing_draft_create"].includes(String(call.args[0]))), false);
+});
+
+
+test("marketing publish queues only an exact-brand stored draft with explicit publish permission", async () => {
+  const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  permissions = ["marketing.read", "marketing.draft", "marketing.publish"];
+  const response = await PATCH(request(cookie, "PATCH", {
+    publicationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    platforms: ["facebook"],
+    brand_id: "zeneco",
+    content: "request body must never replace stored content",
+  }) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.queued, true);
+  assert.equal(body.publication.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  assert.equal(body.publication.status, "scheduled");
+  assert.deepEqual(body.publication.scheduledPlatforms, ["facebook"]);
+  const call = calls.find(item => item.method === "rpc" && item.args[0] === "workspace_brand_marketing_publish_queue");
+  assert.ok(call);
+  const args = call?.args[1] as any;
+  assert.equal(args.p_brand_key, "pinosoecolife");
+  assert.equal(args.p_publication_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  assert.equal(JSON.stringify(args).includes("zeneco"), false);
+  assert.equal(JSON.stringify(args).includes("request body must never replace stored content"), false);
+});
+
+test("marketing publish requires complete permission and supported active platform", async () => {
+  const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  permissions = ["marketing.read", "marketing.draft"];
+  let response = await PATCH(request(cookie, "PATCH", {
+    publicationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    platforms: ["facebook"],
+  }) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(response.status, 403);
+
+  permissions = ["marketing.read", "marketing.draft", "marketing.publish"];
+  response = await PATCH(request(cookie, "PATCH", {
+    publicationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    platforms: ["youtube"],
+  }) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(response.status, 400);
 });
