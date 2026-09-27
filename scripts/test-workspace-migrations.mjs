@@ -804,29 +804,35 @@ try {
   const oliviaInternal = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   await sql("insert into olivia.user_profiles(id,role) values ($1,'super_admin')", [oliviaInternal]);
   await sql("set role authenticated");
-  let workspaceStorageBlocked = false;
+  let workspaceDocumentWriteBlocked = false;
+  let workspaceObservationWriteBlocked = false;
   try {
     await sql("select set_config('request.jwt.claim.sub',$1,false)", [oliviaInternal]);
     await sql("insert into storage.objects(bucket_id) values ('property-documents'),('olivia-field-observations')");
     const internalVisible = await sql(
-      "select count(*)::int as total from storage.objects where bucket_id in ('property-documents','olivia-field-observations')",
+      "select count(*)::int as total from storage.objects where bucket_id='property-documents'",
     );
-    verify(internalVisible.rows[0].total === 2,
-      "Existing Olivia internal user lost private document/field-image Storage access");
+    verify(internalVisible.rows[0].total === 1,
+      "Existing Olivia internal user lost private document Storage read/write access");
 
     await sql("select set_config('request.jwt.claim.sub',$1,false)", [member]);
     const workspaceVisible = await sql(
-      "select count(*)::int as total from storage.objects where bucket_id in ('property-documents','olivia-field-observations')",
+      "select count(*)::int as total from storage.objects where bucket_id='property-documents'",
     );
     verify(workspaceVisible.rows[0].total === 0,
-      "Workspace identity could directly read Olivia Storage");
+      "Workspace identity could directly read Olivia private documents");
     try {
       await sql("insert into storage.objects(bucket_id) values ('property-documents')");
     } catch (error) {
-      workspaceStorageBlocked = /row-level security|policy/i.test(String(error?.message || error));
+      workspaceDocumentWriteBlocked = /row-level security|policy/i.test(String(error?.message || error));
     }
-    verify(workspaceStorageBlocked,
-      "Workspace identity could directly write Olivia private Storage");
+    try {
+      await sql("insert into storage.objects(bucket_id) values ('olivia-field-observations')");
+    } catch (error) {
+      workspaceObservationWriteBlocked = /row-level security|policy/i.test(String(error?.message || error));
+    }
+    verify(workspaceDocumentWriteBlocked && workspaceObservationWriteBlocked,
+      "Workspace identity could directly write an Olivia Storage surface");
   } finally {
     await sql("reset role");
     await sql("select set_config('request.jwt.claim.sub','',false)");
