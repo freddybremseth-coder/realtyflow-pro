@@ -605,18 +605,52 @@ function viewForImprovement(snapshot: ImprovementSnapshot, events: ImprovementEv
   };
 }
 
+function mergeAdditionalImprovementCandidates(
+  baseCandidates: ImprovementCandidate[],
+  additionalCandidates: ImprovementCandidate[],
+  settings: ContinuousImprovementSettings,
+  role: AccessRole,
+) {
+  const tracked = new Map<string, string>();
+  for (const snapshot of currentSnapshots(settings.events).values()) {
+    tracked.set(snapshot.candidateId, snapshot.id);
+  }
+  const merged = new Map(baseCandidates.map((candidate) => [candidate.id, candidate]));
+  for (const candidate of additionalCandidates) {
+    if (role !== "OWNER" && candidate.role !== role) continue;
+    if (merged.has(candidate.id)) continue;
+    merged.set(candidate.id, {
+      ...candidate,
+      existingImprovementId: tracked.get(candidate.id) || candidate.existingImprovementId || null,
+    });
+  }
+  return [...merged.values()].sort(
+    (a, b) =>
+      severityRank(b.severity) - severityRank(a.severity) ||
+      b.occurrenceWeeks - a.occurrenceWeeks ||
+      b.repeatedDeferrals - a.repeatedDeferrals ||
+      a.subject.localeCompare(b.subject),
+  );
+}
+
 export function buildContinuousImprovementRegister(
   settings: ContinuousImprovementSettings,
   weeklySettings: WeeklyManagementSettings,
   role: AccessRole,
   now = new Date(),
+  additionalCandidates: ImprovementCandidate[] = [],
 ): ContinuousImprovementRegister {
   const today = now.toISOString().slice(0, 10);
   const snapshots = [...currentSnapshots(settings.events).values()].filter((snapshot) => role === "OWNER" || snapshot.role === role);
   const improvements = snapshots
     .map((snapshot) => viewForImprovement(snapshot, settings.events, weeklySettings, today, now))
     .sort((a, b) => Number(a.closed) - Number(b.closed) || Number(b.overdue) - Number(a.overdue) || b.createdAt.localeCompare(a.createdAt));
-  const candidates = buildImprovementCandidates(weeklySettings, role, now, settings);
+  const candidates = mergeAdditionalImprovementCandidates(
+    buildImprovementCandidates(weeklySettings, role, now, settings),
+    additionalCandidates,
+    settings,
+    role,
+  );
   return {
     generatedAt: now.toISOString(),
     role,
