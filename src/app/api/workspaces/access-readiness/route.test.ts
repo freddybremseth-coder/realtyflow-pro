@@ -17,6 +17,7 @@ let securityResult: Record<string, unknown> | null = {
   private_document_buckets_private: true,
   private_document_authenticated_policies: 0,
   direct_customer_policy_risk: 0,
+  direct_internal_policy_risk: 0,
   safe_for_workspace_auth: true,
 };
 let securityMissing = false;
@@ -56,6 +57,7 @@ test.beforeEach(() => {
     private_document_buckets_private: true,
     private_document_authenticated_policies: 0,
     direct_customer_policy_risk: 0,
+    direct_internal_policy_risk: 0,
     safe_for_workspace_auth: true,
   };
   securityMissing = false;
@@ -135,6 +137,7 @@ test("unsafe direct Supabase Auth or private Storage access blocks owner review"
     private_document_buckets_private: true,
     private_document_authenticated_policies: 8,
     direct_customer_policy_risk: 0,
+    direct_internal_policy_risk: 1,
     safe_for_workspace_auth: false,
   };
   const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
@@ -142,6 +145,7 @@ test("unsafe direct Supabase Auth or private Storage access blocks owner review"
   assert.equal(body.blockers.includes("DIRECT_AUTH_SECURITY_BLOCKER"), true);
   assert.equal(body.readyForOwnerReview, false);
   assert.equal(body.checks.securityPreflight.private_document_authenticated_policies, 8);
+  assert.equal(body.checks.securityPreflight.direct_internal_policy_risk, 1);
   assert.equal(body.activationAvailable, false);
 });
 
