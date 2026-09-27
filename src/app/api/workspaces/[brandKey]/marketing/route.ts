@@ -78,9 +78,11 @@ export async function GET(
     return publication ? [publication] : [];
   });
   const channels = snapshot.channels.flatMap((row: unknown) => {
-    if (!row || typeof row.platform !== "string" || !ALLOWED_DRAFT_PLATFORMS.has(row.platform) ||
-        typeof row.display_name !== "string" || row.is_active !== true) return [];
-    return [{ platform: row.platform, name: row.display_name }];
+    if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+    const item = row as Record<string, unknown>;
+    if (typeof item.platform !== "string" || !ALLOWED_DRAFT_PLATFORMS.has(item.platform) ||
+        typeof item.display_name !== "string" || item.is_active !== true) return [];
+    return [{ platform: item.platform, name: item.display_name }];
   });
   const summary = { draft: 0, scheduled: 0, published: 0, failed: 0 };
   for (const publication of publications) {
