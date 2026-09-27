@@ -57,20 +57,21 @@ export async function admitWorkspaceMemberLogin(
     }
     const permissions = grant.permissions as string[];
     const brandKey = brand.brand_key;
-    const invalidScope = brandKey === "zeneco"
+    const invalidScope = permissions.includes("marketing.publish") ||
+      (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) ||
+      (brandKey === "zeneco"
       ? permissions.some(permission => permission === "crm.read" || permission === "crm.write") ||
         (permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) ||
         (permissions.some(permission => permission === "tasks.joint.read" || permission === "tasks.joint.write") &&
           !permissions.includes("crm.joint.read")) ||
         (permissions.includes("tasks.joint.write") && !permissions.includes("tasks.joint.read"))
       : permissions.some(permission =>
-        ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission));
+        ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)));
     if (invalidScope) return { ok: false, reason: "IDENTITY_MISMATCH" };
 
-    // Draftable marketing permissions are deliberately not an admission path
-    // until dedicated brand-scoped marketing APIs exist. A user with only
-    // planned marketing rights must not receive an authenticated workspace shell.
-    const implementedPermissions = permissions.filter(permission => !permission.startsWith("marketing."));
+    // Social publishing is still withheld, but brand-scoped marketing read/draft
+    // is now an implemented workspace capability.
+    const implementedPermissions = permissions.filter(permission => permission !== "marketing.publish");
     if (implementedPermissions.length === 0) continue;
     activeBrands.push(brandKey);
   }
