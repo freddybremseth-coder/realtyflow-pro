@@ -108,6 +108,13 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       if (!response.ok) throw new Error(body?.error || "Kunne ikke hente beslutningsgrunnlaget.");
       setBrief(body?.brief || null);
       setProspect(body?.prospect || null);
+      const savedPropertyMatch = body?.prospect?.evidence?.corporate_property_match;
+      if (savedPropertyMatch && typeof savedPropertyMatch === "object" && Array.isArray(savedPropertyMatch.shortlist)) {
+        setMatchingProperties(savedPropertyMatch.shortlist);
+        setMatchNotice(savedPropertyMatch.shortlist.length
+          ? `Lagret intern shortlist: ${savedPropertyMatch.shortlist.length} boliger.`
+          : "");
+      }
       const savedAssessment = body?.prospect?.evidence?.corporate_assessment;
       if (savedAssessment && typeof savedAssessment === "object") {
         setAssessment((current) => ({
@@ -164,13 +171,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     setMatchNotice("");
     setError("");
     try {
-      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/property-match`, { cache: "no-store" });
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/property-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        cache: "no-store",
+      });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke lage boligshortlist.");
       setMatchingProperties(body?.properties || []);
-      setMatchNotice(body?.properties?.length
-        ? `${body.properties.length} aktuelle boliger funnet.`
-        : "Ingen boliger traff kriteriene godt nok.");
+      setMatchNotice(body?.persistedShortlist?.length
+        ? `Topp ${body.persistedShortlist.length} er lagret internt. ${body.properties.length} kandidater ble vurdert.`
+        : body?.properties?.length
+          ? `${body.properties.length} aktuelle boliger funnet.`
+          : "Ingen boliger traff kriteriene godt nok.");
     } catch (matchError) {
       setMatchingProperties([]);
       setError(matchError instanceof Error ? matchError.message : "Kunne ikke lage boligshortlist.");
@@ -396,7 +410,7 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {matching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                Lag boligshortlist
+                Lag og lagre boligshortlist
               </button>
               {matchNotice && <span className="text-xs font-bold text-emerald-900">{matchNotice}</span>}
             </div>
@@ -423,10 +437,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                     {property.bedrooms ? <span>{property.bedrooms} soverom</span> : null}
                     {property.property_type ? <span>{property.property_type}</span> : null}
                   </div>
+                  {property.corporate_use_classification && (
+                    <div className="mt-3 inline-flex rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-black text-teal-900">
+                      {property.corporate_use_classification}
+                    </div>
+                  )}
                   <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
                     {(property.corporate_match_reasons || []).slice(0, 3).map((reason: string) => <div key={reason}>✓ {reason}</div>)}
                     {(property.corporate_match_cautions || []).slice(0, 2).map((caution: string) => <div key={caution} className="text-amber-800">• {caution}</div>)}
                   </div>
+                  {property.website_url && (
+                    <a href={property.website_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                      Åpne bolig <ExternalLink size={12} />
+                    </a>
+                  )}
                 </article>
               ))}
             </div>
