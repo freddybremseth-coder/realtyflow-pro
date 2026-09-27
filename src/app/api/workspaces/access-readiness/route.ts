@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
   const plan = snapshot.data.plans.find((item: any) =>
     item?.brand_id === brand.id && item?.email === email && item?.status === "draft") || null;
 
-  const permissions = plan && Array.isArray(plan.permissions)
+  const permissions: WorkspacePermission[] = plan && Array.isArray(plan.permissions)
     ? plan.permissions.filter((permission: unknown): permission is WorkspacePermission =>
         typeof permission === "string" &&
         WORKSPACE_PERMISSIONS.includes(permission as WorkspacePermission))
