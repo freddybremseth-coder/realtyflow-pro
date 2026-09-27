@@ -312,6 +312,35 @@ export default function CorporateHomesGrowthPage() {
     }
   }
 
+  async function runGenericContactResearch() {
+    setGenericContactBusy(true);
+    setGenericContactNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/generic-contacts/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre selskapskontakt-research.");
+      const result = body?.result || {};
+      setGenericContactNotice(
+        Number(result?.researched || 0) +
+        " selskaper undersøkt · " +
+        Number(result?.generic_emails_found || 0) +
+        " generelle adresser · " +
+        Number(result?.contact_pages_found || 0) +
+        " kontaktsider."
+      );
+      await load();
+    } catch (contactError) {
+      setError(contactError instanceof Error ? contactError.message : "Kunne ikke kjøre selskapskontakt-research.");
+    } finally {
+      setGenericContactBusy(false);
+    }
+  }
+
   async function createCorporateContentDrafts() {
     setContentBusy(true);
     setContentNotice("");
