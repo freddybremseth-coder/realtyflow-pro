@@ -65,26 +65,24 @@ export async function GET(
   const access = await requireBrandWorkspace(request, params.brandKey, "marketing.read");
   if (!access.value) return access.response;
 
-  const [publicationsResult, channelsResult] = await Promise.all([
-    access.value.supabase
-      .from("content_publications")
-      .select(SAFE_PUBLICATION_COLUMNS)
-      .eq("brand_id", params.brandKey)
-      .order("updated_at", { ascending: false })
-      .limit(60),
-    access.value.supabase
-      .from("social_channels")
-      .select("platform,display_name,is_active")
-      .eq("brand_id", params.brandKey)
-      .eq("is_active", true)
-      .order("platform", { ascending: true }),
-  ]);
-  if (publicationsResult.error || channelsResult.error) return fail(503, "MARKETING_UNAVAILABLE");
+  if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
+  const { data: snapshot, error: snapshotError } = await access.value.supabase.rpc(
+    "workspace_brand_marketing_snapshot",
+    {
+      p_brand_key: params.brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+    },
+  );
+  if (snapshotError || !snapshot || !Array.isArray(snapshot.publications) || !Array.isArray(snapshot.channels)) {
+    return fail(503, "MARKETING_UNAVAILABLE");
+  }
 
-  const publications = (publicationsResult.data || [])
-    .map(row => safePublication(row, params.brandKey))
-    .filter(Boolean);
-  const channels = (channelsResult.data || []).flatMap(row => {
+  const publications = snapshot.publications.flatMap((row: unknown) => {
+    const publication = safePublication(row, params.brandKey);
+    return publication ? [publication] : [];
+  });
+  const channels = snapshot.channels.flatMap((row: unknown) => {
     if (!row || typeof row.platform !== "string" || !ALLOWED_DRAFT_PLATFORMS.has(row.platform) ||
         typeof row.display_name !== "string" || row.is_active !== true) return [];
     return [{ platform: row.platform, name: row.display_name }];
@@ -133,36 +131,25 @@ export async function POST(
     return fail(400, "INVALID_DRAFT");
   }
 
-  if (platforms.length) {
-    const { data: activeRows, error: activeError } = await access.value.supabase
-      .from("social_channels")
-      .select("platform")
-      .eq("brand_id", params.brandKey)
-      .eq("is_active", true)
-      .in("platform", platforms);
-    if (activeError) return fail(503, "MARKETING_UNAVAILABLE");
-    const active = new Set((activeRows || []).map(row => row.platform).filter(Boolean));
-    if (platforms.some(platform => !active.has(platform))) return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
+  if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
+  const { data, error } = await access.value.supabase.rpc(
+    "workspace_brand_marketing_draft_create",
+    {
+      p_brand_key: params.brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_title: title,
+      p_description: description,
+      p_tags: tags,
+      p_platforms: platforms,
+    },
+  );
+  if (error) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+  if (data?.ok === false && data?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND") {
+    return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
   }
-
-  const { data, error } = await access.value.supabase
-    .from("content_publications")
-    .insert({
-      brand_id: params.brandKey,
-      content_type: "social",
-      title: title || null,
-      description,
-      tags,
-      scheduled_platforms: platforms,
-      status: "draft",
-      ai_generated: false,
-      content_features: { workspace_draft: true },
-    })
-    .select(SAFE_PUBLICATION_COLUMNS)
-    .single();
-
-  const publication = safePublication(data, params.brandKey);
-  if (error || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+  const publication = safePublication(data?.publication, params.brandKey);
+  if (!data?.ok || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
   return NextResponse.json({
     ok: true,
     brand: params.brandKey,
