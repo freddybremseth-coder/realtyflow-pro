@@ -25,6 +25,7 @@ import {
   WEEKLY_MANAGEMENT_SETTINGS_KEY,
   parseWeeklyManagementSettings,
 } from "@/lib/revenue/weekly-management-review";
+import { buildCorporateGrowthImprovementCandidate } from "@/lib/corporate-growth-improvement";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,15 +68,24 @@ async function sessionFor(request: NextRequest) {
 }
 
 async function loadSettings(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
-  const [improvementResult, weeklyResult] = await Promise.all([
+  const [improvementResult, weeklyResult, corporateGrowthResult] = await Promise.all([
     supabase.from("brand_settings").select("settings,updated_at").eq("brand_id", CONTINUOUS_IMPROVEMENT_SETTINGS_KEY).maybeSingle(),
     supabase.from("brand_settings").select("settings,updated_at").eq("brand_id", WEEKLY_MANAGEMENT_SETTINGS_KEY).maybeSingle(),
+    supabase
+      .from("automation_logs")
+      .select("created_at,status,details")
+      .eq("action", "corporate_homes_growth_review")
+      .in("status", ["success", "partial"])
+      .order("created_at", { ascending: false })
+      .limit(8),
   ]);
   return {
     improvement: parseContinuousImprovementSettings(improvementResult.data?.settings, improvementResult.data?.updated_at),
     weekly: parseWeeklyManagementSettings(weeklyResult.data?.settings, weeklyResult.data?.updated_at),
+    corporateCandidate: buildCorporateGrowthImprovementCandidate(corporateGrowthResult.data || []),
     improvementError: improvementResult.error?.message || null,
     weeklyError: weeklyResult.error?.message || null,
+    corporateGrowthError: corporateGrowthResult.error?.message || null,
   };
 }
 
@@ -126,10 +136,18 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured", register: null }, { status: 500 });
   const loaded = await loadSettings(supabase);
   if (loaded.improvementError) return NextResponse.json({ error: loaded.improvementError, register: null }, { status: 500 });
-  const register = buildContinuousImprovementRegister(loaded.improvement, loaded.weekly, session.role);
+  const additionalCandidates = loaded.corporateCandidate ? [loaded.corporateCandidate] : [];
+  const register = buildContinuousImprovementRegister(
+    loaded.improvement,
+    loaded.weekly,
+    session.role,
+    new Date(),
+    additionalCandidates,
+  );
   return NextResponse.json({
     register,
     weeklyWarning: loaded.weeklyError,
+    corporateGrowthWarning: loaded.corporateGrowthError,
     user: { email: session.email, role: session.role },
     canWrite: canWriteContinuousImprovement(session.role),
     storage: { table: "brand_settings", key: CONTINUOUS_IMPROVEMENT_SETTINGS_KEY },
@@ -148,7 +166,14 @@ export async function POST(request: NextRequest) {
   const loaded = await loadSettings(supabase);
   if (loaded.improvementError) return NextResponse.json({ error: loaded.improvementError }, { status: 500 });
   if (loaded.weeklyError) return NextResponse.json({ error: `Weekly Management Review-data kunne ikke hentes: ${loaded.weeklyError}` }, { status: 503 });
-  const register = buildContinuousImprovementRegister(loaded.improvement, loaded.weekly, session.role);
+  const additionalCandidates = loaded.corporateCandidate ? [loaded.corporateCandidate] : [];
+  const register = buildContinuousImprovementRegister(
+    loaded.improvement,
+    loaded.weekly,
+    session.role,
+    new Date(),
+    additionalCandidates,
+  );
   let event: ImprovementEvent | null = null;
 
   if (action === "CREATE_IMPROVEMENT") {
