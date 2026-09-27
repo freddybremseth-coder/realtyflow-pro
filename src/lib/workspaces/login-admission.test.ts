@@ -83,7 +83,7 @@ test("profile-only account with no active brand membership cannot log into works
   assert.deepEqual(result, { ok: false, reason: "NO_ACTIVE_GRANT" });
 });
 
-test("marketing-only membership does not admit staff before scoped marketing APIs exist", async () => {
+test("marketing-only read/draft membership admits the scoped workspace shell", async () => {
   rpcData = [{
     brand: { id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
     grant: {
@@ -92,7 +92,7 @@ test("marketing-only membership does not admit staff before scoped marketing API
     },
   }];
   const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
-  assert.deepEqual(result, { ok: false, reason: "NO_ACTIVE_GRANT" });
+  assert.deepEqual(result, { ok: true, activeBrands: ["pinosoecolife"] });
 });
 
 test("stale grant for another Supabase Auth user fails closed even if email matches", async () => {
@@ -138,6 +138,10 @@ test("malformed, inactive, invalid-brand and RPC-error grants fail closed", asyn
     [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
       brand_id: "brand-id", user_id: userId, email: "staff@example.test",
       status: "active", permissions: ["crm.joint.read"],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["marketing.read", "marketing.publish"],
     } }],
     [{ brand: { id: "zen-id", brand_key: "zeneco" }, grant: {
       brand_id: "zen-id", user_id: userId, email: "staff@example.test",
