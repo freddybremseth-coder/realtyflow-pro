@@ -4,7 +4,6 @@ import { getRequestAccessContext } from "@/lib/api-admin";
 import { type AccessRole } from "@/lib/access-control";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { hasVerifiedBrandGrant, isCanonicalBrandKey, type WorkspacePermission } from "./brand-policy";
-import { getWorkspaceRuntimeState } from "./runtime-control";
 
 type Rejection = { value: null; response: NextResponse };
 type Access = { value: { brandKey: string; brandId: string; verifiedUserId: string | null; verifiedEmail: string; supabase: NonNullable<ReturnType<typeof getPlatformSupabase>> }; response: null };
@@ -53,11 +52,6 @@ export async function requireBrandWorkspace(
   }
   const supabase = getPlatformSupabase();
   if (!supabase) return reject(503, "WORKSPACE_UNAVAILABLE");
-  if (context.role === "WORKSPACE_MEMBER") {
-    const runtime = await getWorkspaceRuntimeState(supabase);
-    if (runtime.error) return reject(503, "WORKSPACE_UNAVAILABLE");
-    if (!runtime.enabled) return reject(403, "WORKSPACE_DISABLED");
-  }
 
   // The public-schema RPC is service-role-only; core is NOT exposed to PostgREST clients.
   const { data: scope, error: scopeError } = await supabase.rpc("workspace_brand_grant", {
