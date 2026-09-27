@@ -121,6 +121,9 @@ begin
   where p.schemaname = 'public'
     and p.tablename in ('agentic_approvals','plot_assets')
     and p.cmd in ('ALL','SELECT','INSERT','UPDATE','DELETE')
+    -- Published plot assets are intentionally public-read; only non-SELECT or
+    -- ALL policies are operational Auth risk for that table.
+    and not (p.tablename = 'plot_assets' and p.cmd = 'SELECT')
     and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
     and (
       (p.cmd in ('ALL','SELECT','UPDATE','DELETE')
