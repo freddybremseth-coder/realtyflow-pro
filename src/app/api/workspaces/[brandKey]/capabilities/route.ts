@@ -40,7 +40,8 @@ export async function GET(
       permission !== "marketing.publish" &&
       (brandKey === "zeneco"
         ? permission !== "crm.read" && permission !== "crm.write"
-        : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)) &&
+        : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
+            "corporate.read", "corporate.plan"].includes(permission)) &&
       (!["tasks.joint.read", "tasks.joint.write"].includes(permission) ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
       (permission !== "tasks.joint.write" ||
@@ -49,6 +50,12 @@ export async function GET(
         (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
       (permission !== "marketing.draft" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("marketing.read"))) &&
+      (permission !== "corporate.plan" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("corporate.read"))) &&
+      (permission !== "visibility.plan" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("visibility.read"))) &&
+      (permission !== "ads.draft" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("ads.read"))) &&
       roleAllowsWorkspacePermission(context.role, permission) &&
       hasVerifiedBrandGrant({
         grant, brandId: scope.brand.id, sessionEmail: context.email,
