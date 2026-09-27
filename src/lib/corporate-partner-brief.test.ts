@@ -32,5 +32,5 @@ test("Corporate partner brief stays company-level and draft-first", () => {
   assert.ok(brief.guardrails.some((item) => item.includes("Ingen personnavn")));
   assert.ok(brief.guardrails.some((item) => item.includes("sendes ikke automatisk")));
   assert.doesNotMatch(brief.email.body, /@/);
-  assert.doesNotMatch(brief.email.body, /+47/);
+  assert.equal(brief.email.body.includes("+47"), false);
 });
