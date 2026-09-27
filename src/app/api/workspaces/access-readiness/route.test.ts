@@ -140,7 +140,7 @@ test("unsafe direct Supabase Auth or private Storage access blocks owner review"
     private_document_authenticated_policies: 8,
     operational_storage_authenticated_write_policies: 6,
     direct_customer_policy_risk: 0,
-    direct_internal_policy_risk: 1,
+    direct_internal_policy_risk: 2,
     safe_for_workspace_auth: false,
   };
   const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
@@ -149,7 +149,7 @@ test("unsafe direct Supabase Auth or private Storage access blocks owner review"
   assert.equal(body.readyForOwnerReview, false);
   assert.equal(body.checks.securityPreflight.private_document_authenticated_policies, 8);
   assert.equal(body.checks.securityPreflight.operational_storage_authenticated_write_policies, 6);
-  assert.equal(body.checks.securityPreflight.direct_internal_policy_risk, 1);
+  assert.equal(body.checks.securityPreflight.direct_internal_policy_risk, 2);
   assert.equal(body.activationAvailable, false);
 });
 
