@@ -132,6 +132,20 @@ function matchedTerms(text: string, patterns: RegExp[]) {
   return terms.slice(0, 4);
 }
 
+export function detectCorporateCompanySignals(text: string, sourceUrl: string, checkedAt = new Date().toISOString()) {
+  const signals: Partial<Record<CorporateCompanySignal, CorporateSignalEvidence>> = {};
+  for (const [signal, patterns] of Object.entries(SIGNAL_PATTERNS) as Array<[CorporateCompanySignal, RegExp[]]>) {
+    const terms = matchedTerms(text, patterns);
+    if (!terms.length) continue;
+    signals[signal] = {
+      source_url: sourceUrl,
+      matched_terms: terms,
+      checked_at: checkedAt,
+    };
+  }
+  return signals;
+}
+
 async function safeFetchHtml(initialUrl: string, startHost: string) {
   let current = String(await validatePublicWebsiteUrl(initialUrl));
 
@@ -195,15 +209,9 @@ export async function researchCorporateCompanySignals(websiteUrl: string): Promi
     const text = visibleText(page.html).slice(0, 250_000);
     const checkedAt = new Date().toISOString();
 
-    for (const [signal, patterns] of Object.entries(SIGNAL_PATTERNS) as Array<[CorporateCompanySignal, RegExp[]]>) {
-      if (signals[signal]) continue;
-      const terms = matchedTerms(text, patterns);
-      if (!terms.length) continue;
-      signals[signal] = {
-        source_url: page.url,
-        matched_terms: terms,
-        checked_at: checkedAt,
-      };
+    const detected = detectCorporateCompanySignals(text, page.url, checkedAt);
+    for (const [signal, evidence] of Object.entries(detected) as Array<[CorporateCompanySignal, CorporateSignalEvidence]>) {
+      if (!signals[signal]) signals[signal] = evidence;
     }
 
     if (pagesChecked.length === 1) {
