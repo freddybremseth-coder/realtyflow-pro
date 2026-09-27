@@ -1,0 +1,172 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server";
+import { createAdminSession } from "@/lib/admin-auth";
+import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
+import { GET, POST } from "./route";
+
+const endpoint = "https://realtyflow.test/api/workspace-users";
+const userId = "11111111-1111-4111-8111-111111111111";
+let rpcCalls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+let authCalls: Array<{ method: string; args: unknown[] }> = [];
+let snapshot: unknown;
+
+function req(method: string, cookie?: string, body?: unknown, headers: Record<string,string> = {}) {
+  return new NextRequest(endpoint, {
+    method,
+    headers: {
+      ...(cookie ? { cookie } : {}),
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...headers,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+test.beforeEach(() => {
+  process.env.REALTYFLOW_SESSION_SECRET = "workspace-user-route-tests";
+  process.env.REALTYFLOW_ADMIN_EMAILS = "owner@example.test";
+  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "false";
+  rpcCalls = [];
+  authCalls = [];
+  snapshot = {
+    users: [],
+    brands: [
+      { id: "brand-pinoso", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
+      { id: "brand-zen", brand_key: "zeneco", display_name: "Zen Eco Homes" },
+    ],
+  };
+  setPlatformSupabaseFactoryForTests(() => ({
+    rpc: async (name: string, args?: Record<string, unknown>) => {
+      rpcCalls.push({ name, args });
+      if (name === "workspace_user_admin_snapshot") return { data: snapshot, error: null };
+      if (name === "workspace_user_configure") return { data: true, error: null };
+      if (name === "workspace_user_disable") return { data: true, error: null };
+      throw new Error("Unexpected RPC " + name);
+    },
+    auth: { admin: {
+      createUser: async (args: unknown) => {
+        authCalls.push({ method: "createUser", args: [args] });
+        return { data: { user: { id: userId, email: "andrea@example.test" } }, error: null };
+      },
+      deleteUser: async (...args: unknown[]) => {
+        authCalls.push({ method: "deleteUser", args });
+        return { data: {}, error: null };
+      },
+      getUserById: async (...args: unknown[]) => {
+        authCalls.push({ method: "getUserById", args });
+        return { data: { user: { id: userId, email: "andrea@example.test" } }, error: null };
+      },
+      updateUserById: async (...args: unknown[]) => {
+        authCalls.push({ method: "updateUserById", args });
+        return { data: { user: { id: userId, email: "andrea@example.test" } }, error: null };
+      },
+    } },
+  } as unknown as SupabaseClient));
+});
+
+test.afterEach(() => setPlatformSupabaseFactoryForTests(null));
+
+test("workspace user administration is owner-only and same-origin for writes", async () => {
+  assert.equal((await GET(req("GET") as any)).status, 401);
+  const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const forged = await POST(req("POST", owner, { action: "CREATE_USER" }, {
+    origin: "https://evil.example.test",
+  }) as any);
+  assert.equal(forged.status, 403);
+  assert.deepEqual(rpcCalls, []);
+  assert.deepEqual(authCalls, []);
+});
+
+test("owner snapshot exposes brands/users but never password storage", async () => {
+  const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const response = await GET(req("GET", owner) as any);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.passwordStorage, "supabase-auth-only");
+  assert.equal(body.featureEnabled, false);
+  assert.equal(JSON.stringify(body).toLowerCase().includes("password_hash"), false);
+});
+
+test("create user sends password only to Supabase Auth and configures safe multi-brand permissions", async () => {
+  const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const password = "Strong!Workspace7Password";
+  const response = await POST(req("POST", owner, {
+    action: "CREATE_USER",
+    username: "andrea",
+    email: "andrea@example.test",
+    displayName: "Andrea",
+    password,
+    brandAccess: [
+      { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read"] },
+      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read"] },
+    ],
+  }) as any);
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.passwordStoredInRealtyFlow, false);
+  assert.equal(body.loginEnabled, false);
+  const create = authCalls.find(call => call.method === "createUser");
+  assert.equal((create?.args[0] as any).password, password);
+  const configure = rpcCalls.find(call => call.name === "workspace_user_configure");
+  assert.ok(configure);
+  assert.equal(JSON.stringify(configure?.args).includes(password), false);
+  assert.equal(configure?.args?.p_username, "andrea");
+});
+
+test("unsafe brand/program combinations and weak passwords are rejected before Auth mutation", async () => {
+  const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  for (const body of [
+    {
+      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+      displayName: "Andrea", password: "weak",
+      brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
+    },
+    {
+      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+      displayName: "Andrea", password: "Strong!Workspace7Password",
+      brandAccess: [{ brandKey: "zeneco", permissions: ["crm.read"] }],
+    },
+    {
+      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+      displayName: "Andrea", password: "Strong!Workspace7Password",
+      brandAccess: [{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }],
+    },
+  ]) {
+    const response = await POST(req("POST", owner, body) as any);
+    assert.equal(response.status, 400);
+  }
+  assert.equal(authCalls.length, 0);
+});
+
+test("existing managed user can update access, reset password and disable without password persistence", async () => {
+  snapshot = {
+    users: [{
+      user_id: userId, username: "andrea", email: "andrea@example.test",
+      display_name: "Andrea", status: "active", created_at: null, updated_at: null,
+      memberships: [],
+    }],
+    brands: [{ id: "brand-pinoso", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" }],
+  };
+  const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+
+  const updated = await POST(req("POST", owner, {
+    action: "UPDATE_ACCESS", userId, username: "andrea", displayName: "Andrea T.",
+    brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read"] }],
+  }) as any);
+  assert.equal(updated.status, 200);
+  assert.ok(rpcCalls.some(call => call.name === "workspace_user_configure"));
+
+  const password = "Another!Strong8Password";
+  const reset = await POST(req("POST", owner, {
+    action: "SET_PASSWORD", userId, password,
+  }) as any);
+  assert.equal(reset.status, 200);
+  assert.equal((authCalls.find(call => call.method === "updateUserById")?.args[1] as any).password, password);
+  assert.equal(JSON.stringify(rpcCalls).includes(password), false);
+
+  const disabled = await POST(req("POST", owner, { action: "DISABLE_USER", userId }) as any);
+  assert.equal(disabled.status, 200);
+  assert.ok(rpcCalls.some(call => call.name === "workspace_user_disable"));
+});
