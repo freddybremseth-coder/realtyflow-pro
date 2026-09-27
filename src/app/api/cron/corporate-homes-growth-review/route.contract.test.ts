@@ -17,7 +17,7 @@ test("Corporate growth review cron is read-only decision support", () => {
   assert.match(source, /automaticOutreach: false/);
   assert.doesNotMatch(source, /sendEmail|sendMessage|publishPost|updateCampaignBudget|createReservation|initiatePayment/);
   assert.match(schedule, /corporate-homes-growth-review/);
-  assert.match(schedule, /30 7 \\* \\* 1/);
+  assert.match(schedule, /30 7 \* \* 1/);
   assert.match(registry, /Corporate Homes Growth Review/);
   assert.match(registry, /ingen utsendelse, publisering eller automatisk budsjettendring/i);
   assert.match(overview, /corporate_homes_growth_review/);
