@@ -15,6 +15,15 @@ export type CorporateGrowthReviewStage =
   | "opportunity_to_viewing"
   | "viewing_to_offer";
 
+export type CorporateGrowthReviewComparison = {
+  previousBottleneckStage: CorporateGrowthReviewStage | null;
+  previousRatePct: number | null;
+  rateDeltaPctPoints: number | null;
+  sameBottleneckStreak: number;
+  continuousImprovementCandidate: boolean;
+  note: string;
+};
+
 export type CorporateGrowthReview = {
   version: 1;
   kind: "corporate_growth_review";
@@ -170,5 +179,58 @@ export function buildCorporateGrowthReview(
     evidenceNote:
       "Flaskehalsen er valgt deterministisk blant målte overganger med tilstrekkelig utvalg. Faktisk visning og tilbud kommer kun fra bekreftede Revenue OS-events.",
     guardrails,
+  };
+}
+
+
+function validHistoricalReview(value: unknown): CorporateGrowthReview | null {
+  if (!value || typeof value !== "object") return null;
+  const review = value as CorporateGrowthReview;
+  if (review.kind !== "corporate_growth_review") return null;
+  if (!["READY", "LEARNING", "DATA_GAP"].includes(review.status)) return null;
+  return review;
+}
+
+export function compareCorporateGrowthReview(
+  current: CorporateGrowthReview,
+  previousReviews: unknown[],
+): CorporateGrowthReviewComparison {
+  const history = previousReviews
+    .map(validHistoricalReview)
+    .filter((review): review is CorporateGrowthReview => review !== null);
+
+  const previous = history[0] || null;
+  const currentStage = current.status === "READY" ? current.bottleneck?.stage || null : null;
+  const previousStage = previous?.status === "READY" ? previous.bottleneck?.stage || null : null;
+  const previousRatePct =
+    currentStage && previousStage === currentStage && previous?.bottleneck
+      ? previous.bottleneck.ratePct
+      : null;
+  const rateDeltaPctPoints =
+    currentStage && previousRatePct !== null && current.bottleneck
+      ? current.bottleneck.ratePct - previousRatePct
+      : null;
+
+  let sameBottleneckStreak = currentStage ? 1 : 0;
+  if (currentStage) {
+    for (const review of history) {
+      const stage = review.status === "READY" ? review.bottleneck?.stage || null : null;
+      if (stage !== currentStage) break;
+      sameBottleneckStreak += 1;
+    }
+  }
+
+  const continuousImprovementCandidate =
+    Boolean(currentStage) && sameBottleneckStreak >= 2;
+
+  return {
+    previousBottleneckStage: previousStage,
+    previousRatePct,
+    rateDeltaPctPoints,
+    sameBottleneckStreak,
+    continuousImprovementCandidate,
+    note: continuousImprovementCandidate
+      ? "Samme målte flaskehals er gjentatt i minst to ukentlige snapshots. Dette er en kandidat for menneskelig vurdering i Kontinuerlig forbedring, ikke en automatisk oppgave eller årsakskonklusjon."
+      : "Snapshot-sammenligningen er et retningssignal. Den dokumenterer ikke årsakssammenheng og oppretter ingen forbedringssak automatisk.",
   };
 }
