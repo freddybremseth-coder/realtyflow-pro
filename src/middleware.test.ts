@@ -200,6 +200,7 @@ test("when database runtime is enabled workspace role can enter only narrow shel
       "/api/workspaces/pinosoecolife/capabilities",
       "/api/workspaces/pinosoecolife/contacts", "/api/workspaces/pinosoecolife/properties",
       "/api/workspaces/pinosoecolife/marketing",
+      "/api/workspaces/pinosoecolife/content",
       "/api/workspaces/zeneco/joint-contacts",
       "/api/workspaces/zeneco/joint-tasks",
       "/api/auth/me",
@@ -237,6 +238,8 @@ test("when database runtime is enabled workspace role can enter only narrow shel
     for (const [path, method, expected] of [
       ["/api/workspaces/pinosoecolife/marketing", "POST", 200],
       ["/api/workspaces/pinosoecolife/marketing", "DELETE", 403],
+      ["/api/workspaces/pinosoecolife/content", "POST", 200],
+      ["/api/workspaces/pinosoecolife/content", "DELETE", 403],
       ["/api/workspaces/zeneco/joint-contacts", "PATCH", 200],
       ["/api/workspaces/zeneco/joint-tasks", "POST", 200],
       ["/api/workspaces/zeneco/joint-tasks", "PATCH", 200],

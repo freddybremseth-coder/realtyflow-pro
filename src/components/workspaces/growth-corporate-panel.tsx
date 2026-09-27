@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Megaphone, RefreshCw, Search, Video } from "lucide-react";
+import { Building2, FileText, Megaphone, RefreshCw, Search, Video } from "lucide-react";
+import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type CorporateRow = {
@@ -33,7 +34,7 @@ type GrowthData = {
   ads: AdRow[] | null;
   plannedWork: Planned[];
 };
-type WorkArea = "corporate" | "visibility" | "ads" | "plan";
+type WorkArea = "corporate" | "content" | "visibility" | "ads" | "plan";
 
 const kindLabels: Record<string, string> = {
   corporate: "Corporate research / neste steg",
@@ -80,6 +81,7 @@ export function GrowthCorporatePanel({
   const availableAreas = useMemo(() => {
     const values: WorkArea[] = [];
     if (brandKey === "zeneco" && permissions.includes("corporate.read")) values.push("corporate");
+    if (permissions.includes("content.read")) values.push("content");
     if (permissions.includes("visibility.read")) values.push("visibility");
     if (permissions.includes("ads.read")) values.push("ads");
     if (allowedKinds.length > 0) values.push("plan");
@@ -159,6 +161,11 @@ export function GrowthCorporatePanel({
           <Building2 size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Finn og jobb med bedrifter</strong>
           <span className="mt-1 block text-xs text-slate-500">Corporate Homes og partnerkanaler</span>
         </button>}
+        {availableAreas.includes("content") && <button type="button" onClick={() => setArea("content")}
+          className={`rounded-xl border p-4 text-left ${area === "content" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
+          <FileText size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Lag eller forbedre nettsideinnhold</strong>
+          <span className="mt-1 block text-xs text-slate-500">Artikler, guider, søkeord og publisering</span>
+        </button>}
         {availableAreas.includes("visibility") && <button type="button" onClick={() => setArea("visibility")}
           className={`rounded-xl border p-4 text-left ${area === "visibility" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
           <Search size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Forbedre Google & AI-søk</strong>
@@ -216,6 +223,12 @@ export function GrowthCorporatePanel({
         </div>
       </div>
     </div>}
+
+    {area === "content" && <WorkspaceWebsiteContentStudio
+      brandKey={brandKey}
+      canEdit={permissions.includes("content.edit")}
+      canPublish={permissions.includes("content.publish")}
+    />}
 
     {area === "visibility" && data?.visibility && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><Search size={19}/> SEO · GEO · AEO · søkeord</h2>

@@ -16,6 +16,9 @@ export const WORKSPACE_PERMISSIONS = [
   "ads.read",
   "ads.draft",
   "events.plan",
+  "content.read",
+  "content.edit",
+  "content.publish",
 ] as const;
 
 export type WorkspacePermission = (typeof WORKSPACE_PERMISSIONS)[number];

@@ -20,6 +20,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
     "marketing.read", "marketing.draft", "marketing.publish",
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
+    "content.read", "content.edit", "content.publish",
   ] },
   { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
 ];
@@ -100,6 +101,7 @@ export default function FocusedWorkspacePage() {
   const showGrowth = permissions.some(p => [
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
+    "content.read", "content.edit", "content.publish",
   ].includes(p));
 
   function resetContactForm() {

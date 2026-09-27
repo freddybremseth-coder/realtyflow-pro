@@ -51,6 +51,12 @@ export async function GET(request: NextRequest) {
         (Array.isArray(grant.permissions) && grant.permissions.includes("visibility.read"))) &&
       (permission !== "ads.draft" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("ads.read"))) &&
+      (permission !== "content.edit" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("content.read"))) &&
+      (permission !== "content.publish" ||
+        (Array.isArray(grant.permissions) &&
+         grant.permissions.includes("content.read") &&
+         grant.permissions.includes("content.edit"))) &&
       roleAllowsWorkspacePermission(context.role, permission) &&
       hasVerifiedBrandGrant({
         grant, brandId: brand.id, sessionEmail: context.email,
