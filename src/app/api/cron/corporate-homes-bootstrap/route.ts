@@ -13,6 +13,10 @@ import {
   CORPORATE_SIGNAL_RESEARCH_ACTION,
   runCorporateCompanySignalResearch,
 } from "@/lib/corporate-company-signal-runner";
+import {
+  CORPORATE_GENERIC_CONTACT_ACTION,
+  runCorporateGenericContactResearch,
+} from "@/lib/corporate-generic-contact-runner";
 
 export const maxDuration = 120;
 
@@ -48,7 +52,8 @@ async function hasSuccessfulRun(supabase: ReturnType<typeof getSupabase>, action
  * successful run:
  *   1) buyer-company discovery when the queue is empty,
  *   2) referral-partner discovery,
- *   3) company-level signal research.
+ *   3) company-level signal research,
+ *   4) company-level generic contact channel research.
  *
  * Person enrichment, cold outreach and external publishing are never started
  * here. Normal daily crons own ongoing work after bootstrap.
@@ -123,6 +128,19 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const contactsBootstrapped = await hasSuccessfulRun(supabase, CORPORATE_GENERIC_CONTACT_ACTION);
+    if (!contactsBootstrapped) {
+      const result = await runCorporateGenericContactResearch(supabase, {
+        trigger: "cron",
+        batchSize: 3,
+      });
+      return NextResponse.json({
+        ...result,
+        bootstrap: true,
+        bootstrap_stage: "generic_company_contacts",
+      });
+    }
+
     return NextResponse.json({
       success: true,
       skipped: true,
@@ -130,6 +148,7 @@ export async function GET(request: NextRequest) {
       current_prospects: current,
       partner_bootstrap_complete: true,
       signal_bootstrap_complete: true,
+      company_contact_bootstrap_complete: true,
       personal_enrichment_started: false,
       outreach_started: false,
     });
