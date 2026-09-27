@@ -218,8 +218,6 @@ begin
     status='scheduled',
     scheduled_at=now(),
     scheduled_platforms=v_platforms,
-    publish_attempts=0,
-    last_publish_error=null,
     updated_at=now()
   where id=v_publication.id
   returning id,brand_id,content_type,title,description,tags,thumbnail_url,
