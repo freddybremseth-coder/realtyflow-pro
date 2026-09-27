@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     const { data: authResult, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !authResult?.user) continue;
     const permissions = WORKSPACE_PERMISSIONS.filter(permission =>
-      permission !== "marketing.publish" &&
       (brand.brand_key === "zeneco"
         ? permission !== "crm.read" && permission !== "crm.write"
         : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
@@ -45,6 +44,10 @@ export async function GET(request: NextRequest) {
         (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
       (permission !== "marketing.draft" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("marketing.read"))) &&
+      (permission !== "marketing.publish" ||
+        (Array.isArray(grant.permissions) &&
+         grant.permissions.includes("marketing.read") &&
+         grant.permissions.includes("marketing.draft"))) &&
       (permission !== "corporate.plan" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("corporate.read"))) &&
       (permission !== "visibility.plan" ||
