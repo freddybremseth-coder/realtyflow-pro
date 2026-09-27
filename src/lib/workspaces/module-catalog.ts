@@ -5,6 +5,10 @@ export type WorkspaceProgramId =
   | "properties"
   | "jointTasks"
   | "marketing"
+  | "corporate"
+  | "visibility"
+  | "ads"
+  | "events"
   | "socialPublish"
   | "reels"
   | "seo"
@@ -61,6 +65,42 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
     writePermissions: ["marketing.draft"],
   },
   {
+    id: "corporate",
+    label: "Corporate Homes",
+    description: "Bedrifts- og partnerprospekter, research og planlagte neste steg for Zen Eco Homes.",
+    status: "ready",
+    brandScope: "zeneco-only",
+    readPermissions: ["corporate.read"],
+    writePermissions: ["corporate.plan"],
+  },
+  {
+    id: "visibility",
+    label: "SEO · GEO · AEO · søkeord",
+    description: "Brand-avgrenset søkesynlighet, SEO-oppgaver, søkeord og tekstforbedringer uten global agenttilgang.",
+    status: "ready",
+    brandScope: "all",
+    readPermissions: ["visibility.read"],
+    writePermissions: ["visibility.plan"],
+  },
+  {
+    id: "ads",
+    label: "Annonser",
+    description: "Se brandets annonsekampanjer og forberede annonsebrief/utkast uten budsjettbruk eller publisering.",
+    status: "ready",
+    brandScope: "all",
+    readPermissions: ["ads.read"],
+    writePermissions: ["ads.draft"],
+  },
+  {
+    id: "events",
+    label: "Video & informasjonsmøter",
+    description: "Planlegg videoer, webinarer og informasjonsmøter som arbeidsoppgaver. Ingen automatisk invitasjon eller utsending.",
+    status: "ready",
+    brandScope: "all",
+    readPermissions: [],
+    writePermissions: ["events.plan"],
+  },
+  {
     id: "socialPublish",
     label: "Publisere til sosiale medier",
     description: "Egen høyere rettighet. Åpnes først når konto-, kanal- og publiseringssperrer er verifisert for medarbeidere.",
@@ -73,15 +113,6 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
     id: "reels",
     label: "Reels Studio",
     description: "RealtyFlow/Re-Master produksjon for valgt merkevare. Krever egen kanal- og publiseringsavgrensning.",
-    status: "planned",
-    brandScope: "all",
-    readPermissions: [],
-    writePermissions: [],
-  },
-  {
-    id: "seo",
-    label: "SEO Sam",
-    description: "SEO-analyse og tiltak per merkevare. Staff-rute må avgrenses før aktivering.",
     status: "planned",
     brandScope: "all",
     readPermissions: [],
@@ -138,6 +169,13 @@ export function programPermissions(params: {
   jointTasksWrite: boolean;
   marketingRead: boolean;
   marketingDraft: boolean;
+  corporateRead: boolean;
+  corporatePlan: boolean;
+  visibilityRead: boolean;
+  visibilityPlan: boolean;
+  adsRead: boolean;
+  adsDraft: boolean;
+  eventsPlan: boolean;
 }): WorkspacePermission[] {
   const result = new Set<WorkspacePermission>();
   if (params.brandKey === "zeneco") {
@@ -154,5 +192,12 @@ export function programPermissions(params: {
   if (params.properties) result.add("properties.catalog.read");
   if (params.marketingRead || params.marketingDraft) result.add("marketing.read");
   if (params.marketingDraft) result.add("marketing.draft");
+  if (params.brandKey === "zeneco" && (params.corporateRead || params.corporatePlan)) result.add("corporate.read");
+  if (params.brandKey === "zeneco" && params.corporatePlan) result.add("corporate.plan");
+  if (params.visibilityRead || params.visibilityPlan) result.add("visibility.read");
+  if (params.visibilityPlan) result.add("visibility.plan");
+  if (params.adsRead || params.adsDraft) result.add("ads.read");
+  if (params.adsDraft) result.add("ads.draft");
+  if (params.eventsPlan) result.add("events.plan");
   return Array.from(result);
 }
