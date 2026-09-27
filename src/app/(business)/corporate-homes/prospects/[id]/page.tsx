@@ -101,6 +101,16 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [executionPlan, setExecutionPlan] = useState<Record<string, any> | null>(null);
   const [buildingExecutionPlan, setBuildingExecutionPlan] = useState(false);
   const [executionPlanNotice, setExecutionPlanNotice] = useState("");
+  const [confirmedOutcome, setConfirmedOutcome] = useState<Record<string, any> | null>(null);
+  const [confirmedPropertyRef, setConfirmedPropertyRef] = useState("");
+  const [confirmedOccurredAt, setConfirmedOccurredAt] = useState(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  });
+  const [confirmedOfferAmount, setConfirmedOfferAmount] = useState("");
+  const [confirmedOutcomeNote, setConfirmedOutcomeNote] = useState("");
+  const [recordingConfirmedOutcome, setRecordingConfirmedOutcome] = useState(false);
+  const [confirmedOutcomeNotice, setConfirmedOutcomeNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -139,7 +149,17 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
         if (savedDecisionOutcome.note) setDecisionNote(String(savedDecisionOutcome.note));
       }
       const savedExecutionPlan = body?.prospect?.evidence?.corporate_execution_plan;
-      if (savedExecutionPlan && typeof savedExecutionPlan === "object") setExecutionPlan(savedExecutionPlan);
+      if (savedExecutionPlan && typeof savedExecutionPlan === "object") {
+        setExecutionPlan(savedExecutionPlan);
+        if (savedExecutionPlan.kind === "VIEWING_PLAN" && Array.isArray(savedExecutionPlan.properties) && savedExecutionPlan.properties[0]?.ref) {
+          setConfirmedPropertyRef(String(savedExecutionPlan.properties[0].ref));
+        }
+        if (savedExecutionPlan.kind === "OFFER_PREP" && savedExecutionPlan.property?.ref) {
+          setConfirmedPropertyRef(String(savedExecutionPlan.property.ref));
+        }
+      }
+      const savedConfirmedOutcome = body?.prospect?.evidence?.latest_corporate_confirmed_outcome;
+      if (savedConfirmedOutcome && typeof savedConfirmedOutcome === "object") setConfirmedOutcome(savedConfirmedOutcome);
       const savedPropertyMatch = body?.prospect?.evidence?.corporate_property_match;
       if (savedPropertyMatch && typeof savedPropertyMatch === "object" && Array.isArray(savedPropertyMatch.shortlist)) {
         setMatchingProperties(savedPropertyMatch.shortlist);
@@ -421,6 +441,64 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       setError(executionError instanceof Error ? executionError.message : "Kunne ikke bygge gjennomføringsplan.");
     } finally {
       setBuildingExecutionPlan(false);
+    }
+  }
+
+  async function recordConfirmedOutcome() {
+    if (!executionPlan) {
+      setConfirmedOutcomeNotice("Bygg gjennomføringsplan først.");
+      return;
+    }
+    if (!prospect?.converted_contact_id) {
+      setConfirmedOutcomeNotice("Prospektet må promoteres til Zen Eco Homes CRM før et bekreftet Revenue Outcome kan registreres.");
+      return;
+    }
+
+    const type = executionPlan.kind === "VIEWING_PLAN" ? "VIEWING_COMPLETED" : "OFFER_MADE";
+    if (!confirmedPropertyRef) {
+      setConfirmedOutcomeNotice("Velg bolig først.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      type === "VIEWING_COMPLETED"
+        ? "Bekreft bare dersom visningen faktisk er gjennomført. Dette registrerer et kanonisk Revenue Outcome og flytter CRM-kontakten til VIEWING. RealtyFlow sender ingenting."
+        : "Bekreft bare dersom et faktisk tilbud/bud allerede er gitt. Dette registrerer et kanonisk Revenue Outcome og flytter CRM-kontakten til NEGOTIATION. RealtyFlow sender ikke tilbudet.",
+    );
+    if (!confirmed) return;
+
+    setRecordingConfirmedOutcome(true);
+    setConfirmedOutcomeNotice("");
+    setError("");
+    try {
+      const occurred = new Date(confirmedOccurredAt);
+      if (Number.isNaN(occurred.getTime())) throw new Error("Ugyldig tidspunkt.");
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/confirmed-outcome`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          property_ref: confirmedPropertyRef,
+          occurred_at: occurred.toISOString(),
+          offer_amount_eur: type === "OFFER_MADE" && confirmedOfferAmount ? Number(confirmedOfferAmount) : null,
+          note: confirmedOutcomeNote || null,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke registrere bekreftet Revenue Outcome.");
+      setConfirmedOutcome(body?.outcome || null);
+      setProspect(body?.prospect || prospect);
+      setConfirmedOutcomeNotice(
+        type === "VIEWING_COMPLETED"
+          ? "Fullført visning er registrert i Revenue OS og CRM står nå i VIEWING."
+          : "Faktisk tilbud er registrert i Revenue OS og CRM står nå i NEGOTIATION.",
+      );
+      setConfirmedOutcomeNote("");
+      await load();
+    } catch (outcomeError) {
+      setError(outcomeError instanceof Error ? outcomeError.message : "Kunne ikke registrere bekreftet Revenue Outcome.");
+    } finally {
+      setRecordingConfirmedOutcome(false);
     }
   }
 
@@ -851,6 +929,97 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
                           Valgt bolig: <strong>{executionPlan.property?.ref}</strong> · {executionPlan.preflight?.length || 0} obligatoriske preflight-punkter.
                         </div>
                       )}
+                    </div>
+                  )}
+                  {executionPlan && (
+                    <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
+                      <div className="text-xs font-black uppercase tracking-wide text-violet-900">Bekreftet kommersielt outcome</div>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                        Registrer kun noe som faktisk har skjedd. Da kobles Corporate-caset til Revenue OS og vanlig CRM-pipeline.
+                      </p>
+                      {!prospect?.converted_contact_id ? (
+                        <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-950">
+                          Prospektet må promoteres til CRM først. Gå tilbake til prospektlisten og bruk «Promoter til CRM» før outcome registreres.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                              Bolig
+                              {executionPlan.kind === "VIEWING_PLAN" ? (
+                                <select
+                                  value={confirmedPropertyRef}
+                                  onChange={(event) => setConfirmedPropertyRef(event.target.value)}
+                                  className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+                                >
+                                  {(executionPlan.properties || []).map((property: Record<string, any>) => (
+                                    <option key={String(property.ref)} value={String(property.ref)}>
+                                      {property.ref} · {property.title || property.location || "Bolig"}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  value={confirmedPropertyRef}
+                                  readOnly
+                                  className="h-10 rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+                                />
+                              )}
+                            </label>
+                            <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                              Faktisk tidspunkt
+                              <input
+                                type="datetime-local"
+                                value={confirmedOccurredAt}
+                                onChange={(event) => setConfirmedOccurredAt(event.target.value)}
+                                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+                              />
+                            </label>
+                            {executionPlan.kind === "OFFER_PREP" && (
+                              <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                                Tilbudsbeløp EUR · valgfritt
+                                <input
+                                  type="number"
+                                  value={confirmedOfferAmount}
+                                  onChange={(event) => setConfirmedOfferAmount(event.target.value)}
+                                  placeholder="475000"
+                                  className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+                                />
+                              </label>
+                            )}
+                            <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                              Kort dokumentasjon
+                              <input
+                                value={confirmedOutcomeNote}
+                                onChange={(event) => setConfirmedOutcomeNote(event.target.value)}
+                                placeholder="Valgfritt notat"
+                                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900"
+                              />
+                            </label>
+                          </div>
+                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <button
+                              onClick={() => void recordConfirmedOutcome()}
+                              disabled={recordingConfirmedOutcome}
+                              className="inline-flex items-center gap-2 rounded-xl bg-violet-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                            >
+                              {recordingConfirmedOutcome ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                              {executionPlan.kind === "VIEWING_PLAN" ? "Loggfør fullført visning" : "Loggfør faktisk tilbud gitt"}
+                            </button>
+                            {confirmedOutcomeNotice && <span className="text-xs font-bold text-violet-950">{confirmedOutcomeNotice}</span>}
+                          </div>
+                        </>
+                      )}
+                      {confirmedOutcome && (
+                        <div className="mt-4 rounded-xl bg-white p-3 text-sm text-slate-700">
+                          Sist bekreftet: <strong>{confirmedOutcome.event_type || confirmedOutcome.type}</strong>
+                          {confirmedOutcome.property_ref ? ` · ${confirmedOutcome.property_ref}` : ""}
+                          {confirmedOutcome.crm_pipeline_status ? ` · CRM ${confirmedOutcome.crm_pipeline_status}` : ""}
+                        </div>
+                      )}
+                      <div className="mt-3 text-xs text-slate-600">
+                        Dette er logging av en allerede utført menneskelig handling. Ingen e-post, kalenderbooking, tilbud, reservasjon eller betaling utføres av RealtyFlow.
+                      </div>
                     </div>
                   )}
                 </div>
