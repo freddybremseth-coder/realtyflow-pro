@@ -19,9 +19,11 @@ let securityResult: Record<string, unknown> | null = {
   operational_storage_authenticated_write_policies: 0,
   direct_customer_policy_risk: 0,
   direct_internal_policy_risk: 0,
+  direct_security_definer_risk: 0,
   safe_for_workspace_auth: true,
 };
 let securityMissing = false;
+let runtimeEnabled = true;
 let users: Array<{ id: string; email: string }> = [{ id: "auth-user", email: "staff@example.test" }];
 let profiles: unknown[] = [{
   email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true,
@@ -48,7 +50,7 @@ test.beforeEach(() => {
   process.env.REALTYFLOW_ADMIN_EMAILS = "owner@example.test";
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://readiness.test";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
-  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "false";
+  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "legacy-unused";
   planPermissions = ["crm.read", "crm.write", "properties.catalog.read"];
   plansEnabled = true;
   activeGrants = [];
@@ -63,6 +65,7 @@ test.beforeEach(() => {
     safe_for_workspace_auth: true,
   };
   securityMissing = false;
+  runtimeEnabled = true;
   users = [{ id: "auth-user", email: "staff@example.test" }];
   profiles = [{
     email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true,
@@ -70,6 +73,27 @@ test.beforeEach(() => {
   }];
 
   setPlatformSupabaseFactoryForTests(() => ({
+    from: (table: string) => {
+      assert.equal(table, "brand_settings");
+      let key = "";
+      const query: any = {
+        select: () => query,
+        eq: (_column: string, value: string) => { key = value; return query; },
+        maybeSingle: async () => {
+          if (key === "workspace-auth:runtime") {
+            return { data: { settings: { enabled: runtimeEnabled }, updated_at: null }, error: null };
+          }
+          if (key === "access-control:profiles") {
+            return { data: {
+              settings: { version: 1, profiles, audit: [], updatedAt: "2026-09-25T06:00:00Z" },
+              updated_at: "2026-09-25T06:00:00Z",
+            }, error: null };
+          }
+          return { data: null, error: null };
+        },
+      };
+      return query;
+    },
     rpc: async (name: string) => {
       if (name === "workspace_access_snapshot") return {
         data: {
@@ -125,11 +149,12 @@ test("readiness is owner-only and never acts as an activation endpoint", async (
   const body = await response.json();
   assert.equal(body.activationAvailable, false);
   assert.equal(body.readyForOwnerReview, true);
-  assert.deepEqual(body.blockers, ["FEATURE_FLAG_DISABLED"]);
+  assert.deepEqual(body.blockers, []);
   assert.equal(body.checks.authUserExists, true);
   assert.deepEqual(body.checks.workspaceProfile, { role: "WORKSPACE_MEMBER", active: true });
   assert.equal(body.checks.activeMembershipExists, false);
   assert.equal(body.checks.securityPreflight.safe_for_workspace_auth, true);
+  assert.equal(body.checks.featureFlagEnabled, true);
 });
 
 test("unsafe direct Supabase Auth or private Storage access blocks owner review", async () => {
@@ -141,6 +166,7 @@ test("unsafe direct Supabase Auth or private Storage access blocks owner review"
     operational_storage_authenticated_write_policies: 6,
     direct_customer_policy_risk: 0,
     direct_internal_policy_risk: 2,
+    direct_security_definer_risk: 0,
     safe_for_workspace_auth: false,
   };
   const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
@@ -165,13 +191,27 @@ test("missing security-preflight migration is an explicit fail-closed blocker, n
   assert.equal(body.activationAvailable, false);
 });
 
-test("unfinished marketing draft is a blocker rather than an implied staff capability", async () => {
+test("marketing read and draft are implemented while publishing remains blocked", async () => {
   planPermissions = ["crm.read", "marketing.read", "marketing.draft"];
   const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
-  const body = await (await GET(request(cookie) as any)).json();
+  let body = await (await GET(request(cookie) as any)).json();
+  assert.equal(body.readyForOwnerReview, true);
+  assert.equal(body.blockers.includes("MARKETING_PUBLISH_NOT_IMPLEMENTED"), false);
+
+  planPermissions = ["crm.read", "marketing.read", "marketing.publish"];
+  body = await (await GET(request(cookie) as any)).json();
   assert.equal(body.readyForOwnerReview, false);
-  assert.equal(body.blockers.includes("MARKETING_SCOPE_NOT_IMPLEMENTED"), true);
+  assert.equal(body.blockers.includes("MARKETING_PUBLISH_NOT_IMPLEMENTED"), true);
   assert.equal(body.activationAvailable, false);
+});
+
+test("database runtime switch is reported instead of the retired Vercel flag", async () => {
+  runtimeEnabled = false;
+  const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const body = await (await GET(request(cookie) as any)).json();
+  assert.equal(body.blockers.includes("FEATURE_FLAG_DISABLED"), true);
+  assert.equal(body.checks.featureFlagEnabled, false);
+  assert.equal(body.readyForOwnerReview, true);
 });
 
 test("missing Auth user, profile and draft are explicit blockers without creating anything", async () => {
@@ -180,7 +220,7 @@ test("missing Auth user, profile and draft are explicit blockers without creatin
   plansEnabled = false;
   const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
   const body = await (await GET(request(cookie) as any)).json();
-  for (const blocker of ["NO_DRAFT", "AUTH_USER_MISSING", "ACCESS_PROFILE_MISSING", "FEATURE_FLAG_DISABLED"]) {
+  for (const blocker of ["NO_DRAFT", "AUTH_USER_MISSING", "ACCESS_PROFILE_MISSING"]) {
     assert.equal(body.blockers.includes(blocker), true, blocker);
   }
   assert.equal(body.draft, null);
@@ -204,6 +244,27 @@ test("existing active membership is surfaced as a blocker, never silently overwr
 test("Zen draft with generic CRM is rejected by preflight even if stored outside the UI", async () => {
   planPermissions = ["crm.read", "crm.write"];
   setPlatformSupabaseFactoryForTests(() => ({
+    from: (table: string) => {
+      assert.equal(table, "brand_settings");
+      let key = "";
+      const query: any = {
+        select: () => query,
+        eq: (_column: string, value: string) => { key = value; return query; },
+        maybeSingle: async () => {
+          if (key === "workspace-auth:runtime") {
+            return { data: { settings: { enabled: runtimeEnabled }, updated_at: null }, error: null };
+          }
+          if (key === "access-control:profiles") {
+            return { data: {
+              settings: { version: 1, profiles, audit: [], updatedAt: "2026-09-25T06:00:00Z" },
+              updated_at: "2026-09-25T06:00:00Z",
+            }, error: null };
+          }
+          return { data: null, error: null };
+        },
+      };
+      return query;
+    },
     rpc: async (name: string) => {
       if (name === "workspace_access_snapshot") return {
         data: {
