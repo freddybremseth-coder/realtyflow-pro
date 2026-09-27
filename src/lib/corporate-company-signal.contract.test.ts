@@ -36,13 +36,16 @@ test("Company signal research is scheduled behind safe mode and visible in the d
 });
 
 
-test("Corporate bootstrap stages first partner and signal runs without outreach", () => {
+test("Corporate bootstrap stages first partner, signal and company-contact runs without outreach", () => {
   assert.match(bootstrap, /CORPORATE_PARTNER_DISCOVERY_ACTION/);
   assert.match(bootstrap, /CORPORATE_SIGNAL_RESEARCH_ACTION/);
+  assert.match(bootstrap, /CORPORATE_GENERIC_CONTACT_ACTION/);
   assert.match(bootstrap, /batchSize: 5/);
   assert.match(bootstrap, /batchSize: 2/);
+  assert.match(bootstrap, /batchSize: 3/);
   assert.match(bootstrap, /bootstrap_stage: "partners"/);
   assert.match(bootstrap, /bootstrap_stage: "company_signals"/);
+  assert.match(bootstrap, /bootstrap_stage: "generic_company_contacts"/);
   assert.match(bootstrap, /personal_enrichment_started: false/);
   assert.match(bootstrap, /outreach_started: false/);
   assert.doesNotMatch(bootstrap, /sendEmail\s*\(|sendMessage\s*\(|publish[A-Z_a-z0-9]*\s*\(/);
