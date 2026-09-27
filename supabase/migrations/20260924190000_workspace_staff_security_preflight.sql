@@ -28,31 +28,49 @@ begin
   -- A workspace user's Supabase Auth token must not directly unlock the
   -- private document buckets. Current workspace functionality has NO need for
   -- browser-level access to either bucket.
-  if pg_catalog.to_regclass('storage.buckets') is not null then
-    execute $q$
-      select count(*) = 2,
-             count(*) = 2 and bool_and(not public)
-      from storage.buckets
-      where id in ('property-documents','caecv-documents')
-    $q$ into v_private_buckets_present, v_private_buckets_private;
+  --
+  -- IMPORTANT: do not resolve storage.buckets with to_regclass as the caller:
+  -- a deliberately narrow CI service_role may have no USAGE on schema storage.
+  -- Inspect existence via pg_catalog, then fail CLOSED if metadata cannot be
+  -- read. Production service_role may read storage metadata, but that privilege
+  -- is never granted by this migration merely to satisfy the preflight.
+  if exists (
+    select 1
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'storage' and c.relname = 'buckets'
+      and c.relkind in ('r','p')
+  ) then
+    begin
+      execute $q$
+        select count(*) = 2,
+               count(*) = 2 and bool_and(not public)
+        from storage.buckets
+        where id in ('property-documents','caecv-documents')
+      $q$ into v_private_buckets_present, v_private_buckets_private;
+    exception
+      when insufficient_privilege or undefined_table or invalid_schema_name then
+        v_private_buckets_present := false;
+        v_private_buckets_private := false;
+    end;
   end if;
 
   -- Conservative rule: any authenticated storage.objects policy explicitly
   -- targeting these two private buckets blocks staff rollout. Access must be
   -- redesigned first through scoped server routes or identity-bound policies.
-  if pg_catalog.to_regclass('storage.objects') is not null then
-    select count(*)::integer into v_private_bucket_auth_policies
-    from pg_catalog.pg_policies p
-    where p.schemaname = 'storage'
-      and p.tablename = 'objects'
-      and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
-      and (
-        coalesce(p.qual,'') ilike '%property-documents%'
-        or coalesce(p.with_check,'') ilike '%property-documents%'
-        or coalesce(p.qual,'') ilike '%caecv-documents%'
-        or coalesce(p.with_check,'') ilike '%caecv-documents%'
-      );
-  end if;
+  -- pg_policies is catalog-backed, so this remains readable even when the
+  -- caller intentionally lacks direct storage schema privileges.
+  select count(*)::integer into v_private_bucket_auth_policies
+  from pg_catalog.pg_policies p
+  where p.schemaname = 'storage'
+    and p.tablename = 'objects'
+    and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
+    and (
+      coalesce(p.qual,'') ilike '%property-documents%'
+      or coalesce(p.with_check,'') ilike '%property-documents%'
+      or coalesce(p.qual,'') ilike '%caecv-documents%'
+      or coalesce(p.with_check,'') ilike '%caecv-documents%'
+    );
 
   -- For the four core customer surfaces, fail if a public/authenticated policy
   -- appears permissive rather than an explicit deny. This is intentionally
