@@ -40,9 +40,11 @@ const platformLabel: Record<string, string> = {
 export function WorkspaceMarketingPanel({
   brandKey,
   canDraft,
+  canPublish,
 }: {
   brandKey: string;
   canDraft: boolean;
+  canPublish: boolean;
 }) {
   const [data, setData] = useState<MarketingPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,6 +55,8 @@ export function WorkspaceMarketingPanel({
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [platforms, setPlatforms] = useState<string[]>([]);
+  const [publishSelections, setPublishSelections] = useState<Record<string, string[]>>({});
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -85,6 +89,67 @@ export function WorkspaceMarketingPanel({
   useEffect(() => { void load(); }, [brandKey]);
 
   const activePlatforms = useMemo(() => new Set(data?.channels.map(channel => channel.platform) || []), [data]);
+
+  const publishablePlatforms = useMemo(() =>
+    (data?.channels || [])
+      .map(channel => channel.platform)
+      .filter(platform => ["facebook", "instagram", "linkedin"].includes(platform)),
+    [data],
+  );
+
+  function selectedPublishPlatforms(item: Publication) {
+    const current = publishSelections[item.id];
+    if (current) return current;
+    return item.scheduledPlatforms.filter(platform => publishablePlatforms.includes(platform));
+  }
+
+  function togglePublishPlatform(item: Publication, platform: string, checked: boolean) {
+    setPublishSelections(current => {
+      const prior = selectedPublishPlatforms(item);
+      const next = checked
+        ? Array.from(new Set([...prior, platform]))
+        : prior.filter(value => value !== platform);
+      return { ...current, [item.id]: next };
+    });
+  }
+
+  async function queuePublish(item: Publication) {
+    if (!canPublish || publishingId) return;
+    const selected = selectedPublishPlatforms(item);
+    if (selected.length === 0) {
+      setError("Velg minst én aktiv kanal før publisering.");
+      return;
+    }
+    if (!window.confirm(`Legge «${item.title || "Uten tittel"}» i publiseringskø for ${selected.map(platform => platformLabel[platform] || platform).join(", ")}?`)) return;
+    setPublishingId(item.id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/marketing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicationId: item.id, platforms: selected }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(
+        body?.error?.code === "CHANNEL_NOT_ACTIVE_FOR_BRAND"
+          ? "En valgt kanal er ikke aktiv for denne merkevaren."
+          : body?.error?.code === "CHANNEL_NOT_UNIQUE_FOR_BRAND"
+            ? "Merkevaren har flere aktive kontoer på samme plattform. Eier må velge én entydig kanal før medarbeiderpublisering kan brukes."
+            : body?.error?.code === "INSTAGRAM_IMAGE_REQUIRED"
+              ? "Instagram-publisering krever et publiserbart bilde på dette innholdet."
+              : body?.error?.code === "PUBLICATION_NOT_PUBLISHABLE"
+                ? "Innholdet kan ikke publiseres i nåværende status. Kontroller utkastet og prøv igjen."
+                : "Publiseringskøen avviste forespørselen.",
+      );
+      setNotice(`Innholdet er lagt i kontrollert publiseringskø for ${selected.map(platform => platformLabel[platform] || platform).join(", ")}. RealtyFlow verifiserer kanal og innhold igjen ved utsending.`);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Publisering kunne ikke kølegges.");
+    } finally {
+      setPublishingId(null);
+    }
+  }
 
   async function createDraft() {
     if (!canDraft || !description.trim() || busy) return;
@@ -163,7 +228,7 @@ export function WorkspaceMarketingPanel({
     {canDraft && <form onSubmit={event => { event.preventDefault(); void createDraft(); }}
       className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><FilePlus2 size={19}/> Nytt innholdsutkast</h2>
-      <p className="mt-1 text-xs text-slate-400">Lagrer bare utkast. Denne arbeidsflaten kan ikke publisere til sosiale medier.</p>
+      <p className="mt-1 text-xs text-slate-400">Lagrer først som utkast. Med egen publiseringsrettighet kan et ferdig utkast deretter legges i den kontrollerte publiseringskøen.</p>
       <div className="mt-4 grid gap-3">
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={200}
@@ -217,6 +282,23 @@ export function WorkspaceMarketingPanel({
             {item.scheduledPlatforms.map(platform => <span key={platform}>{platformLabel[platform] || platform}</span>)}
             {item.status === "published" && <span>{item.views} visninger · {item.likes} liker · {item.comments} kommentarer</span>}
           </div>
+          {canPublish && ["draft", "failed"].includes(item.status) && publishablePlatforms.length > 0 && <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-xs font-medium text-slate-300">Publiser dette utkastet</p>
+            <div className="mt-2 flex flex-wrap gap-3">
+              {publishablePlatforms.map(platform => <label key={platform} className="flex items-center gap-2 text-xs text-slate-300">
+                <input type="checkbox"
+                  checked={selectedPublishPlatforms(item).includes(platform)}
+                  onChange={event => togglePublishPlatform(item, platform, event.target.checked)} />
+                {platformLabel[platform] || platform}
+              </label>)}
+            </div>
+            <button type="button" disabled={publishingId === item.id || selectedPublishPlatforms(item).length === 0}
+              onClick={() => void queuePublish(item)}
+              className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
+              {publishingId === item.id ? "Legger i kø…" : "Legg i publiseringskø"}
+            </button>
+            <p className="mt-2 text-[11px] text-slate-500">Kun Facebook, Instagram og LinkedIn kan publiseres her. YouTube håndteres fortsatt i egen videomodul. Instagram krever bilde.</p>
+          </div>}
         </article>)}
         {!data?.publications.length && <p className="text-sm text-slate-500">Ingen markedsføringsinnhold funnet for merkevaren.</p>}
       </div>
