@@ -323,8 +323,9 @@ try {
   verify(doneTask?.status === "done" && doneTask.finished_by_email === "staff@example.test" &&
     doneTask.created_at, "Scoped task completion actor/status missing");
   verify(await finishTask(newId, taskId) === null, "Completed task could be finished twice");
-  const legacyTasks = await sql("select to_regclass('public.work_items') as name");
-  verify(legacyTasks.rows[0].name === null, "Joint tasks must not use legacy work_items");
+  const legacyTasks = await sql("select count(*)::int as total from public.work_items");
+  verify(legacyTasks.rows[0].total === 0,
+    "Joint task create/complete must never insert into legacy public.work_items");
   verify(await review(newId, "REVOKE") === true, "Owner could not revoke existing joint approval");
   verify((await tasks()).tasks.length === 0, "Revoked joint customer tasks remained visible");
   verify(await createTask() === null, "Revoked joint customer accepted a new task");
