@@ -9,6 +9,7 @@ import {
   CalendarClock,
   CircleDollarSign,
   ExternalLink,
+  Handshake,
   Loader2,
   RefreshCw,
   Search,
@@ -63,6 +64,39 @@ type Overview = {
       leadToQualifiedRate: number;
       topCampaigns: Array<{ campaign: string; leads: number }>;
     }>;
+  };
+  partners: {
+    total: number;
+    target: number;
+    progressPercent: number;
+    aTier: number;
+    bTier: number;
+    engaged: number;
+    personalEnrichmentStarted: boolean;
+    automaticOutreach: boolean;
+    focusPartners: Array<{
+      id: string;
+      companyName: string;
+      organizationNumber?: string | null;
+      domain?: string | null;
+      partnerType: string;
+      city?: string | null;
+      industry?: string | null;
+      employeeCount?: number | null;
+      status: string;
+      fitTier: string;
+      fitScore: number;
+      fitReasons: string[];
+      evidenceGaps: string[];
+      referralAngle?: string | null;
+      sourceUrl?: string | null;
+      nextAction?: string | null;
+    }>;
+    lastDiscovery?: {
+      status?: string | null;
+      details?: Record<string, any> | null;
+      created_at?: string | null;
+    } | null;
   };
   prospects: {
     total: number;
@@ -169,6 +203,8 @@ export default function CorporateHomesGrowthPage() {
   const [query, setQuery] = useState("");
   const [contentBusy, setContentBusy] = useState(false);
   const [contentNotice, setContentNotice] = useState("");
+  const [partnerBusy, setPartnerBusy] = useState(false);
+  const [partnerNotice, setPartnerNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -201,6 +237,30 @@ export default function CorporateHomesGrowthPage() {
         .includes(normalized),
     );
   }, [data?.contacts, query]);
+
+  async function runPartnerDiscovery() {
+    setPartnerBusy(true);
+    setPartnerNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/partners/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre partnerdiscovery.");
+      const result = body?.result || {};
+      setPartnerNotice(result?.reason === "target_reached"
+        ? "Partnermålet på 100 virksomheter er nådd."
+        : `${Number(result?.created || 0)} nye partnerbedrifter lagt til.`);
+      await load();
+    } catch (partnerError) {
+      setError(partnerError instanceof Error ? partnerError.message : "Kunne ikke kjøre partnerdiscovery.");
+    } finally {
+      setPartnerBusy(false);
+    }
+  }
 
   async function createCorporateContentDrafts() {
     setContentBusy(true);
@@ -374,6 +434,95 @@ export default function CorporateHomesGrowthPage() {
           >
             Åpne prospektmotor <ArrowRight size={15} />
           </Link>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-teal-800">
+              <Handshake size={16} /> Partnerkanal
+            </div>
+            <div className="mt-2 flex items-end gap-3">
+              <h2 className="text-2xl font-black text-slate-950">
+                {data?.partners.total ?? "—"} / {data?.partners.target ?? 100}
+              </h2>
+              <span className="pb-0.5 text-sm font-semibold text-slate-500">mulige henvisningspartnere</span>
+            </div>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              Regnskap, juss, bedriftsrådgivning, HR/rekruttering, medlemsorganisasjoner og relaterte rådgivermiljøer.
+              Discovery bruker kun offentlig virksomhetsdata. Ingen personer hentes inn og ingen kontakt sendes automatisk.
+            </p>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${data?.partners.progressPercent || 0}%` }} />
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <MiniStat label="A-fit" value={data?.partners.aTier ?? "—"} />
+              <MiniStat label="B-fit" value={data?.partners.bTier ?? "—"} />
+              <MiniStat label="Engasjert / partner" value={data?.partners.engaged ?? "—"} />
+            </div>
+            <p className="mt-4 text-xs text-slate-500">
+              {data?.partners.lastDiscovery?.created_at
+                ? `Siste partnerdiscovery: ${new Date(data.partners.lastDiscovery.created_at).toLocaleString("nb-NO")} · ${data.partners.lastDiscovery.details?.created ?? 0} nye`
+                : "Ingen partnerdiscovery registrert ennå."}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/corporate-homes/partners"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50"
+            >
+              Åpne partnerkø <ArrowRight size={15} />
+            </Link>
+            <button
+              onClick={() => void runPartnerDiscovery()}
+              disabled={partnerBusy}
+              className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950 disabled:opacity-50"
+            >
+              {partnerBusy ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              Finn flere partnerbedrifter
+            </button>
+          </div>
+        </div>
+
+        {partnerNotice && (
+          <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{partnerNotice}</div>
+        )}
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {(data?.partners.focusPartners || []).slice(0, 8).map((partner) => (
+            <article key={partner.id} className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-black text-slate-950">{partner.companyName}</div>
+                  <div className="mt-1 text-xs text-slate-500">{partner.industry || partner.partnerType}</div>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-black ${partner.fitTier === "A" ? "bg-emerald-100 text-emerald-900" : "bg-cyan-100 text-cyan-900"}`}>
+                  {partner.fitTier} · {partner.fitScore}
+                </span>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-600">{partner.referralAngle || "Henvisningsvinkel må vurderes."}</p>
+              <div className="mt-3 space-y-1 text-xs text-slate-500">
+                {partner.fitReasons.slice(0, 2).map((reason) => <div key={reason}>✓ {reason}</div>)}
+              </div>
+              <div className="mt-auto flex flex-wrap gap-3 pt-4">
+                {partner.domain && (
+                  <a href={partner.domain} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                    Nettside <ExternalLink size={12} />
+                  </a>
+                )}
+                {partner.sourceUrl && (
+                  <a href={partner.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-black text-slate-600 hover:underline">
+                    Kilde <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-950">
+          Neste personsteg er bevisst sperret: identifisering eller berikelse av konkrete kontaktpersoner krever eksplisitt godkjenning.
         </div>
       </section>
 
