@@ -140,11 +140,13 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     [verifiedContacts],
   );
 
+  const companyName = brief?.company.name || "";
+
   const outreach = useMemo(() => {
     const template = corporateOutreachTemplates.find((item) => item.key === selectedTemplate) || corporateOutreachTemplates[0];
     const firstName = String(primaryContact?.name || "").trim().split(/\s+/)[0] || null;
-    return personalizeCorporateOutreach(template, { firstName, companyName: brief.company.name });
-  }, [brief.company.name, primaryContact, selectedTemplate]);
+    return personalizeCorporateOutreach(template, { firstName, companyName });
+  }, [companyName, primaryContact, selectedTemplate]);
 
   async function copyOutreach() {
     const text = `Emne: ${outreach.subject}\n\n${outreach.body}`;
