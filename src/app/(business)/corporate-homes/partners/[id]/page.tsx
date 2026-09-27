@@ -47,6 +47,12 @@ type Brief = {
     subject: string;
     body: string;
   };
+  outreachSequence: Array<{
+    key: string;
+    dayOffset: number;
+    subject: string;
+    body: string;
+  }>;
   guardrails: string[];
 };
 
@@ -77,12 +83,11 @@ export default function CorporatePartnerBriefPage({ params }: { params: Promise<
     void load();
   }, [load]);
 
-  async function copyEmail() {
-    if (!brief) return;
-    const text = "Emne: " + brief.email.subject + "\n\n" + brief.email.body;
+  async function copyEmail(step: { key: string; subject: string; body: string }) {
+    const text = "Emne: " + step.subject + "\n\n" + step.body;
     try {
       await navigator.clipboard.writeText(text);
-      setCopyNotice("E-postutkast kopiert.");
+      setCopyNotice(step.key + " kopiert.");
       window.setTimeout(() => setCopyNotice(""), 2200);
     } catch {
       setCopyNotice("Kunne ikke kopiere automatisk.");
@@ -221,27 +226,31 @@ export default function CorporatePartnerBriefPage({ params }: { params: Promise<
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-teal-800">
-              <Mail size={16} /> Norsk partnerhenvendelse
-            </div>
-            <h2 className="mt-2 text-xl font-black text-slate-950">Ferdig utkast · ingen automatisk utsendelse</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Utkastet er laget for første partnerkontakt. Det skal først brukes etter at riktig kontaktperson er identifisert og kontrollert.
-            </p>
+        <div>
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-teal-800">
+            <Mail size={16} /> Norsk partnersekvens
           </div>
-          <button onClick={() => void copyEmail()} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
-            <Copy size={16} /> Kopier e-post
-          </button>
+          <h2 className="mt-2 text-xl font-black text-slate-950">Dag 0 · 7 · 21 — kun utkast</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            Sekvensen har sporbare lenker til den norske partnersiden. Riktig kontaktperson skal identifiseres og kontrolleres før første kontakt. Ingen melding sendes automatisk.
+          </p>
         </div>
 
-        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-          <div className="border-b border-slate-200 bg-slate-50 p-4">
-            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Emne</div>
-            <div className="mt-1 font-bold text-slate-950">{brief.email.subject}</div>
-          </div>
-          <pre className="whitespace-pre-wrap p-4 font-sans text-sm leading-6 text-slate-700">{brief.email.body}</pre>
+        <div className="mt-5 grid gap-4 xl:grid-cols-3">
+          {brief.outreachSequence.map((step) => (
+            <article key={step.key} className="overflow-hidden rounded-2xl border border-slate-200">
+              <div className="border-b border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-black uppercase tracking-wide text-teal-800">Dag {step.dayOffset}</div>
+                <div className="mt-1 font-bold text-slate-950">{step.subject}</div>
+              </div>
+              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap p-4 font-sans text-xs leading-5 text-slate-700">{step.body}</pre>
+              <div className="border-t border-slate-200 p-3">
+                <button onClick={() => void copyEmail(step)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-bold text-white">
+                  <Copy size={14} /> Kopier utkast
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
         {copyNotice && <div className="mt-3 text-xs font-bold text-emerald-800">{copyNotice}</div>}
       </section>
