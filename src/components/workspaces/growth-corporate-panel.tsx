@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, FileText, Megaphone, RefreshCw, Search, Video } from "lucide-react";
+import { Building2, FileText, Mail, Megaphone, RefreshCw, Search, Video } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
+import { WorkspaceEmailReachPanel } from "@/components/workspaces/email-reach-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type CorporateRow = {
@@ -34,7 +35,7 @@ type GrowthData = {
   ads: AdRow[] | null;
   plannedWork: Planned[];
 };
-type WorkArea = "corporate" | "content" | "visibility" | "ads" | "plan";
+type WorkArea = "corporate" | "content" | "email" | "visibility" | "ads" | "plan";
 
 const kindLabels: Record<string, string> = {
   corporate: "Corporate research / neste steg",
@@ -82,6 +83,7 @@ export function GrowthCorporatePanel({
     const values: WorkArea[] = [];
     if (brandKey === "zeneco" && permissions.includes("corporate.read")) values.push("corporate");
     if (permissions.includes("content.read")) values.push("content");
+    if (permissions.includes("email.read")) values.push("email");
     if (permissions.includes("visibility.read")) values.push("visibility");
     if (permissions.includes("ads.read")) values.push("ads");
     if (allowedKinds.length > 0) values.push("plan");
@@ -98,8 +100,18 @@ export function GrowthCorporatePanel({
     }
   }, [availableAreas, area]);
 
+  const needsGrowthSnapshot = permissions.some(permission => [
+    "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
+    "ads.read", "ads.draft", "events.plan",
+  ].includes(permission));
+
   async function load() {
     setLoading(true); setError("");
+    if (!needsGrowthSnapshot) {
+      setData({ corporate: null, visibility: null, ads: null, plannedWork: [] });
+      setLoading(false);
+      return;
+    }
     try {
       const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/growth`, { cache: "no-store" });
       const body = await response.json();
@@ -118,7 +130,7 @@ export function GrowthCorporatePanel({
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, [brandKey]);
+  useEffect(() => { void load(); }, [brandKey, needsGrowthSnapshot]);
 
   async function createWork() {
     if (!kind || !title.trim() || busy) return;
@@ -165,6 +177,11 @@ export function GrowthCorporatePanel({
           className={`rounded-xl border p-4 text-left ${area === "content" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
           <FileText size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Lag eller forbedre nettsideinnhold</strong>
           <span className="mt-1 block text-xs text-slate-500">Artikler, guider, søkeord og publisering</span>
+        </button>}
+        {availableAreas.includes("email") && <button type="button" onClick={() => setArea("email")}
+          className={`rounded-xl border p-4 text-left ${area === "email" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
+          <Mail size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Følg opp med e-post / Reach</strong>
+          <span className="mt-1 block text-xs text-slate-500">Godkjente leads, Corporate og kampanjeutkast</span>
         </button>}
         {availableAreas.includes("visibility") && <button type="button" onClick={() => setArea("visibility")}
           className={`rounded-xl border p-4 text-left ${area === "visibility" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
@@ -228,6 +245,12 @@ export function GrowthCorporatePanel({
       brandKey={brandKey}
       canEdit={permissions.includes("content.edit")}
       canPublish={permissions.includes("content.publish")}
+    />}
+
+    {area === "email" && <WorkspaceEmailReachPanel
+      brandKey={brandKey}
+      canDraft={permissions.includes("email.draft")}
+      canSend={permissions.includes("email.send")}
     />}
 
     {area === "visibility" && data?.visibility && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">

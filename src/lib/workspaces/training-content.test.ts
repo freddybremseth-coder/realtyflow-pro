@@ -37,6 +37,20 @@ test("brand and role training stays focused on the user's actual work", () => {
   assert.equal(ids.includes("visibility-content"), false);
 });
 
+test("email Reach guide appears only when email work is assigned", () => {
+  const withoutEmail = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["crm.read"],
+  });
+  assert.equal(withoutEmail.some(article => article.id === "email-reach"), false);
+
+  const withEmail = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["email.read", "email.draft", "email.send"],
+  });
+  assert.equal(withEmail.some(article => article.id === "email-reach"), true);
+});
+
 test("visibility and campaigns guides appear when those tools are available", () => {
   const articles = trainingArticlesFor({
     brandKey: "zeneco",

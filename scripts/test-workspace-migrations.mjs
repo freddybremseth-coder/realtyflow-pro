@@ -18,6 +18,7 @@ const files = [
   "20260924210000_workspace_user_directory_and_admin.sql",
   "20260927143000_workspace_marketing_modules.sql",
   "20260927160000_workspace_content_studio.sql",
+  "20260927190000_workspace_email_reach.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -116,7 +117,7 @@ try {
   await sql("revoke execute on function olivia_private.is_internal_user() from public, anon; grant execute on function olivia_private.is_internal_user() to authenticated");
   await sql("grant usage on schema olivia_private to authenticated");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
-  await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', do_not_contact boolean not null default false, email_suppressed boolean not null default false, created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.content_publications (id uuid primary key default gen_random_uuid(), brand_id text not null, content_type text not null, title text, description text, tags text[], media_urls text[], thumbnail_url text, scheduled_platforms text[], status text default 'draft' check (status in ('draft','processing','published','scheduled','failed')), scheduled_at timestamptz, published_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), total_views integer default 0, total_likes integer default 0, total_comments integer default 0, total_shares integer default 0, ai_generated boolean default false, ai_title text, ai_description text, ai_tags text[], ai_image_url text, last_publish_error text, content_features jsonb not null default '{}'::jsonb)");
   await sql("create table public.social_channels (id uuid primary key default gen_random_uuid(), brand_id text not null, platform text not null, external_id text not null, display_name text not null, metadata jsonb not null default '{}'::jsonb, is_active boolean not null default true, created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("grant select,insert,update on public.content_publications to service_role; grant select on public.social_channels to service_role");
@@ -125,8 +126,8 @@ try {
   await sql("create table public.work_items (id uuid primary key default gen_random_uuid(), title text not null, description text, status text not null default 'TO_DO' check (status in ('TO_DO','IN_PROGRESS','REVIEW','DONE','CANCELLED')), priority text not null default 'MEDIUM' check (priority in ('CRITICAL','HIGH','MEDIUM','LOW')), due_date date, brand_id text, source_type text not null default 'manual' check (source_type in ('manual','ai_agent','content','automation','market_intelligence')), source_id text, assigned_agent text, next_action text, metadata jsonb default '{}'::jsonb, created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.search_discovery_events (id uuid primary key default gen_random_uuid(), brand_id text not null, source text not null, path text not null, occurred_at timestamptz not null default now())");
   await sql("create table public.automation_logs (id uuid primary key default gen_random_uuid(), action text not null, agent_name text, status text not null, details jsonb, created_at timestamptz default now())");
-  await sql("create table public.corporate_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, organization_type text not null default 'company', country_code text not null default 'NO', city text, industry text, employee_count integer, member_count integer, website_url text, linkedin_company_url text, status text not null default 'RESEARCHED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', decision_roles text[] not null default '{}', source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
-  await sql("create table public.corporate_partner_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, partner_type text not null default 'other', country_code text not null default 'NO', city text, industry text, employee_count integer, website_url text, status text not null default 'DISCOVERED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', referral_angle text, source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
+  await sql("create table public.corporate_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, organization_type text not null default 'company', country_code text not null default 'NO', city text, industry text, employee_count integer, member_count integer, website_url text, linkedin_company_url text, status text not null default 'RESEARCHED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', decision_roles text[] not null default '{}', source_url text, evidence jsonb not null default '{}'::jsonb, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
+  await sql("create table public.corporate_partner_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, partner_type text not null default 'other', country_code text not null default 'NO', city text, industry text, employee_count integer, website_url text, status text not null default 'DISCOVERED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', referral_angle text, source_url text, evidence jsonb not null default '{}'::jsonb, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
   await sql("create table public.ad_campaigns (id uuid primary key default gen_random_uuid(), brand_id text, name text not null, product_name text not null, target_markets text[], audience_segments text[], funnel_stage text, offer text, status text not null default 'draft', total_creatives integer default 0, estimated_cost_usd numeric, growth_goal text default 'unspecified', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.portal_messages (id uuid primary key default gen_random_uuid())");
   await sql("create table public.brand_settings (brand_id text primary key, settings jsonb)");
@@ -232,7 +233,10 @@ try {
     "workspace_brand_growth_snapshot", "workspace_brand_growth_work_create",
     "workspace_brand_content_snapshot", "workspace_brand_content_draft_save",
     "workspace_brand_content_publish_payload", "workspace_brand_content_publish_finalize",
-    "workspace_brand_content_versions", "workspace_brand_content_restore_version"]) {
+    "workspace_brand_content_versions", "workspace_brand_content_restore_version",
+    "workspace_brand_email_target_resolve", "workspace_brand_email_snapshot",
+    "workspace_brand_email_draft_save", "workspace_brand_email_send_prepare",
+    "workspace_brand_email_send_finalize"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -247,7 +251,8 @@ try {
     "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
     "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit",
     "brand_workspace_growth_work_audit",
-    "brand_workspace_content_drafts", "brand_workspace_content_versions"]) {
+    "brand_workspace_content_drafts", "brand_workspace_content_versions",
+    "brand_workspace_email_drafts"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
@@ -280,6 +285,16 @@ try {
   verify(contentVersionPrivileges.rows[0].sel && contentVersionPrivileges.rows[0].ins &&
     !contentVersionPrivileges.rows[0].upd && !contentVersionPrivileges.rows[0].del,
     "Content versions must be append-only for service_role");
+
+  const emailDraftPrivileges = await sql(
+    "select has_table_privilege('service_role','core.brand_workspace_email_drafts','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.brand_workspace_email_drafts','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.brand_workspace_email_drafts','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.brand_workspace_email_drafts','DELETE') as del",
+  );
+  verify(emailDraftPrivileges.rows[0].sel && emailDraftPrivileges.rows[0].ins &&
+    emailDraftPrivileges.rows[0].upd && !emailDraftPrivileges.rows[0].del,
+    "Email drafts must be editable but never hard-deletable by service_role");
 
   const planAuditPrivileges = await sql(
     "select has_table_privilege('service_role','core.brand_workspace_access_plan_audit','SELECT') as sel, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','INSERT') as ins, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','UPDATE') as upd, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','DELETE') as del",
@@ -1036,8 +1051,8 @@ try {
     ],
   }]) === true, "Valid Zen Corporate/Growth workspace configuration failed");
 
-  await sql("insert into public.corporate_prospects(brand_id,company_name,organization_type,country_code,city,industry,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,next_action) values ('zeneco','Nordic Growth AS','company','NO','Oslo','Technology','RESEARCHED',88,'A',array['distributed workforce'],array['benefit policy'],array['HR','CEO'],'https://example.test/nordic','Verify employee-benefit fit')");
-  await sql("insert into public.corporate_partner_prospects(brand_id,company_name,partner_type,country_code,city,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,next_action) values ('zeneco','Partner Advisory AS','management_consulting','NO','Bergen','DISCOVERED',75,'B',array['corporate clients'],array['Spain demand'],'Employee benefit introductions','Prepare referral brief')");
+  await sql("insert into public.corporate_prospects(brand_id,company_name,organization_type,country_code,city,industry,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,evidence,next_action) values ('zeneco','Nordic Growth AS','company','NO','Oslo','Technology','RESEARCHED',88,'A',array['distributed workforce'],array['benefit policy'],array['HR','CEO'],'https://example.test/nordic',jsonb_build_object('generic_company_contact',jsonb_build_object('generic_email','company@example.test','company_level_only',true,'personal_data_collected',false)),'Verify employee-benefit fit')");
+  await sql("insert into public.corporate_partner_prospects(brand_id,company_name,partner_type,country_code,city,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,evidence,next_action) values ('zeneco','Partner Advisory AS','management_consulting','NO','Bergen','DISCOVERED',75,'B',array['corporate clients'],array['Spain demand'],'Employee benefit introductions',jsonb_build_object('generic_company_contact',jsonb_build_object('generic_email','partner@example.test','company_level_only',true,'personal_data_collected',false)),'Prepare referral brief')");
   await sql("insert into public.search_discovery_events(brand_id,source,path,occurred_at) values ('zeneco','google','/bedriftshytte-spania',now()),('zeneco','chatgpt','/corporate-homes',now()),('pinosoecolife','google','/pinoso-private',now())");
   await sql("insert into public.automation_logs(action,agent_name,status,details) values ('seo_gsc_live_read','Sam SEO Expert','partial',jsonb_build_object('google_search_console',jsonb_build_array(jsonb_build_object('brandId','zeneco','status','error','error','ZEN_GSC_STATUS'),jsonb_build_object('brandId','pinosoecolife','status','success','result',jsonb_build_object('clicks',99))), 'diagnostics',jsonb_build_array(jsonb_build_object('brandId','zeneco','kind','check','title','Zen measurement','category','measurement','finding','ZEN_DIAGNOSTIC','evidence','zen-only evidence','nextStep','Reconnect GSC'),jsonb_build_object('brandId','pinosoecolife','kind','check','title','Private Pinoso','category','measurement','finding','PINOSO_PRIVATE_DIAGNOSTIC','evidence','private','nextStep','private'))))");
   await sql("insert into public.work_items(title,description,status,priority,brand_id,source_type,assigned_agent,next_action) values ('Zen SEO priority','Improve Corporate Homes landing page','TO_DO','HIGH','zeneco','ai_agent','seo','Add HR-benefit search intent'),('Private Pinoso SEO','Must not leak','TO_DO','HIGH','pinosoecolife','ai_agent','seo','Private next action')");
@@ -1189,6 +1204,106 @@ try {
   );
   verify(afterRestorePublication.rows[0].title === "Living in Pinoso",
     "Restoring a version changed the live publication before explicit publish");
+
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["email.draft"] }]) === false,
+    "Workspace user configure accepted email draft without email read");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["email.read","email.send"] }]) === false,
+    "Workspace user configure accepted email send without draft");
+
+  await sql("update public.contacts set email='pinoso.email@example.test',do_not_contact=false,email_suppressed=false where id=$1", [other]);
+  verify(await configureManaged([{
+    brandKey: "pinosoecolife",
+    permissions: ["crm.read","email.read","email.draft","email.send"],
+  }]) === true, "Valid Pinoso email workspace configuration failed");
+
+  const pinosoEmailSnapshot = await serviceSql(
+    "select public.workspace_brand_email_snapshot($1::text,$2::uuid,$3::text,$4::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",""],
+  );
+  const pinosoEmailTargets = pinosoEmailSnapshot.rows[0].result?.targets || [];
+  const validPinosoEmailIds = new Set((await sql(
+    "select id::text as id from public.contacts where brand_id='pinosoecolife' and brand='pinosoecolife' " +
+    "and email is not null and do_not_contact=false and email_suppressed=false",
+  )).rows.map(row => row.id));
+  verify(pinosoEmailTargets.some(row =>
+      row.id === other && row.email === "pinoso.email@example.test") &&
+    pinosoEmailTargets.length > 0 &&
+    pinosoEmailTargets.every(row =>
+      row.type === "lead" && validPinosoEmailIds.has(row.id)) &&
+    !JSON.stringify(pinosoEmailSnapshot.rows[0].result).includes("New Zen") &&
+    !JSON.stringify(pinosoEmailSnapshot.rows[0].result).includes("zeneco"),
+    "Pinoso email snapshot leaked another brand or omitted exact-brand lead");
+
+  const savedEmailDraft = await serviceSql(
+    "select public.workspace_brand_email_draft_save($1::text,$2::uuid,$3::text,$4::uuid,$5::text,$6::uuid,$7::text,$8::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",null,"lead",other,
+      "Pinoso follow-up","Useful exact-brand follow-up"],
+  );
+  const emailDraftId = savedEmailDraft.rows[0].result?.id;
+  verify(Boolean(emailDraftId) &&
+    savedEmailDraft.rows[0].result?.recipientEmail === "pinoso.email@example.test",
+    "Pinoso email draft did not resolve recipient server-side");
+
+  await sql("update public.contacts set email_suppressed=true where id=$1", [other]);
+  const suppressedTarget = await serviceSql(
+    "select public.workspace_brand_email_target_resolve($1::text,$2::uuid,$3::text,$4::text,$5::uuid) as result",
+    ["pinosoecolife",managedUser,"managed@example.test","lead",other],
+  );
+  verify(suppressedTarget.rows[0].result === null,
+    "Suppressed CRM recipient remained a valid workspace email target");
+  await sql("update public.contacts set email_suppressed=false where id=$1", [other]);
+
+  const preparedEmail = await serviceSql(
+    "select public.workspace_brand_email_send_prepare($1::text,$2::uuid,$3::text,$4::uuid) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",emailDraftId],
+  );
+  verify(preparedEmail.rows[0].result?.recipientEmail === "pinoso.email@example.test" &&
+    preparedEmail.rows[0].result?.targetId === other,
+    "Email send preparation did not re-resolve exact target");
+  const failedFinalize = await serviceSql(
+    "select public.workspace_brand_email_send_finalize($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::text,$7::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",emailDraftId,false,null,"SMTP test failure"],
+  );
+  verify(failedFinalize.rows[0].result?.status === "failed",
+    "Failed email send was not recorded as failed");
+
+  const preparedRetry = await serviceSql(
+    "select public.workspace_brand_email_send_prepare($1::text,$2::uuid,$3::text,$4::uuid) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",emailDraftId],
+  );
+  verify(Boolean(preparedRetry.rows[0].result), "Failed email draft could not be safely retried");
+  const sentFinalize = await serviceSql(
+    "select public.workspace_brand_email_send_finalize($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::text,$7::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",emailDraftId,true,"<test@example.test>",null],
+  );
+  verify(sentFinalize.rows[0].result?.status === "sent",
+    "Successful email send was not finalized");
+
+  verify(await configureManaged([{
+    brandKey: "zeneco",
+    permissions: ["corporate.read","email.read","email.draft","email.send"],
+  }]) === true, "Valid Zen Corporate email workspace configuration failed");
+  const zenEmailSnapshot = await serviceSql(
+    "select public.workspace_brand_email_snapshot($1::text,$2::uuid,$3::text,$4::text) as result",
+    ["zeneco",managedUser,"managed@example.test",""],
+  );
+  verify(zenEmailSnapshot.rows[0].result?.targets?.length === 2 &&
+    zenEmailSnapshot.rows[0].result.targets.every(row => ["corporate","partner"].includes(row.type)) &&
+    JSON.stringify(zenEmailSnapshot.rows[0].result).includes("company@example.test") &&
+    JSON.stringify(zenEmailSnapshot.rows[0].result).includes("partner@example.test") &&
+    !JSON.stringify(zenEmailSnapshot.rows[0].result).includes("pinoso.email@example.test"),
+    "Zen Corporate email scope leaked Pinoso or omitted verified company-level channels");
+
+  const corporateId = (await sql(
+    "select id from public.corporate_prospects where company_name='Nordic Growth AS'",
+  )).rows[0].id;
+  const corporateDraft = await serviceSql(
+    "select public.workspace_brand_email_draft_save($1::text,$2::uuid,$3::text,$4::uuid,$5::text,$6::uuid,$7::text,$8::text) as result",
+    ["zeneco",managedUser,"managed@example.test",null,"corporate",corporateId,
+      "Employee benefit concept","A short company-level introduction"],
+  );
+  verify(corporateDraft.rows[0].result?.recipientEmail === "company@example.test",
+    "Zen Corporate draft did not use verified generic company channel");
 
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["crm.joint.read"] }]) === false,
     "Workspace user configure accepted Zen-only scope on Pinoso");

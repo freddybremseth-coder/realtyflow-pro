@@ -75,6 +75,9 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "content.read": { title: "Nettside & innhold – se", description: "Se brandets nettsideutkast og registrerte publiseringer." },
   "content.edit": { title: "Nettside & innhold – redigere", description: "Lage og forbedre artikler og guider som utkast." },
   "content.publish": { title: "Nettside & innhold – publisere", description: "Publisere til riktig brand-nettside med versjonshistorikk og rollback." },
+  "email.read": { title: "E-post / Reach – se", description: "Se bare brand-godkjente mottakere og egne e-postutkast." },
+  "email.draft": { title: "E-post / Reach – utkast", description: "Lage én-til-én e-post og Reach-kampanjeutkast uten automatisk abonnement." },
+  "email.send": { title: "E-post / Reach – sende", description: "Sende én-til-én til godkjent mottaker fra riktig brand-konto med suppression-kontroll." },
 };
 const suggested: WorkspacePermission[] = ["properties.catalog.read", "crm.read", "crm.write"];
 
@@ -95,6 +98,8 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
     if (permission === "ads.draft") next.add("ads.read");
     if (permission === "content.edit") next.add("content.read");
     if (permission === "content.publish") { next.add("content.read"); next.add("content.edit"); }
+    if (permission === "email.draft") next.add("email.read");
+    if (permission === "email.send") { next.add("email.read"); next.add("email.draft"); }
   } else {
     next.delete(permission);
     if (permission === "crm.joint.read") {
@@ -109,6 +114,8 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
     if (permission === "ads.read") next.delete("ads.draft");
     if (permission === "content.read") { next.delete("content.edit"); next.delete("content.publish"); }
     if (permission === "content.edit") next.delete("content.publish");
+    if (permission === "email.read") { next.delete("email.draft"); next.delete("email.send"); }
+    if (permission === "email.draft") next.delete("email.send");
   }
   return WORKSPACE_PERMISSIONS.filter(candidate => next.has(candidate));
 }

@@ -19,6 +19,9 @@ export const WORKSPACE_PERMISSIONS = [
   "content.read",
   "content.edit",
   "content.publish",
+  "email.read",
+  "email.draft",
+  "email.send",
 ] as const;
 
 export type WorkspacePermission = (typeof WORKSPACE_PERMISSIONS)[number];

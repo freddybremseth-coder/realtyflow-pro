@@ -416,6 +416,67 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
     ],
   },
   {
+    id: "email-reach",
+    title: "E-post & Reach – oppfølging som skaper samtaler",
+    shortTitle: "E-post & Reach",
+    summary: "Når du skal sende én personlig oppfølging, når Reach passer bedre, og hvordan vi unngår både spam og tapte muligheter.",
+    readMinutes: 9,
+    brands: "all",
+    anyPermissions: ["email.read", "email.draft", "email.send"],
+    sections: [
+      {
+        heading: "To forskjellige jobber",
+        paragraphs: [
+          "Én-til-én e-post brukes når vi kjenner mottakeren eller har en konkret, lovlig selskapskanal og et relevant neste steg. Reach brukes for kampanjer og nyhetsbrev til mottakere som hører hjemme i en kontrollert abonnentliste.",
+          "RealtyFlow holder disse flytene adskilt. Medarbeiderverktøyet legger ikke automatisk CRM-kunder inn som abonnenter i Reach.",
+        ],
+        emphasis: "Målet er svar og fremdrift – ikke flest mulig sendte e-poster.",
+      },
+      {
+        heading: "God lead-oppfølging",
+        bullets: [
+          "Referer til det kunden faktisk har spurt om eller vist interesse for.",
+          "Svar på det viktigste først og hold meldingen enkel å lese.",
+          "Gi ett tydelig neste steg: kort samtale, spørsmål, boligforslag eller avtale om visning.",
+          "Ikke send samme standardtekst til alle. Bruk CRM-informasjonen til å gjøre oppfølgingen relevant.",
+          "Når kunden svarer eller blir konkret, oppdater neste handling slik at momentum ikke forsvinner.",
+        ],
+      },
+      {
+        heading: "Corporate outreach",
+        paragraphs: [
+          "Corporate-e-post skal åpne en forretningssamtale, ikke selge en tilfeldig villa. Start med hvorfor konseptet kan være relevant for akkurat virksomheten: ansattgode, workation, retention, medlemsfordel, leder-/teamopphold eller en annen dokumentert hypotese.",
+        ],
+        bullets: [
+          "Bruk bare den verifiserte selskapskanalen RealtyFlow viser.",
+          "Hold første melding kort nok til at den kan videresendes internt til riktig HR-/lederrolle.",
+          "Be om en kort avklaring eller samtale – ikke om et stort kjøpsvedtak.",
+          "Når det kommer reell interesse, få Freddy inn i den kommersielle samtalen.",
+        ],
+      },
+      {
+        heading: "Når Reach passer",
+        bullets: [
+          "Nyhetsbrev til en eksisterende, kontrollert abonnentliste.",
+          "Invitasjon til informasjonsmøte eller webinar når mottakergrunnlaget er riktig.",
+          "Nyttige marked-/områdeoppdateringer som folk faktisk har bedt om eller meldt seg på.",
+          "Kampanjer der vi vil måle åpning, klikk og respons over tid.",
+        ],
+        emphasis: "Et Reach-utkast er ikke en tillatelse til å abonnere noen. Mottakerlisten og samtykket må være riktig før masseutsending.",
+      },
+      {
+        heading: "Hva RealtyFlow kontrollerer før én-til-én sending",
+        bullets: [
+          "At du fortsatt har sendetilgang til akkurat denne merkevaren.",
+          "At mottakeren fortsatt er innenfor ditt CRM-/Corporate-scope.",
+          "At mottakeradressen kommer fra serverdata og ikke er skrevet inn fritt i requesten.",
+          "At CRM ikke har do-not-contact eller e-postsperre registrert.",
+          "At riktig brand-e-postkonto brukes.",
+        ],
+      },
+    ],
+  },
+  {
     id: "campaigns-events",
     title: "Annonser, video og informasjonsmøter – skap etterspørsel, ikke bare rekkevidde",
     shortTitle: "Kampanjer & møter",
