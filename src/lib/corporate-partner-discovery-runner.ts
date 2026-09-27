@@ -8,6 +8,39 @@ import {
 export const CORPORATE_PARTNER_DISCOVERY_ACTION = "corporate_homes_partner_discovery";
 export const CORPORATE_PARTNER_DISCOVERY_PATH = "/api/cron/corporate-homes-partner-discovery";
 
+export function selectBalancedPartnerCandidates<
+  T extends { partner_type: string; fit_score: number }
+>(candidates: T[], limit: number): T[] {
+  const max = Math.max(0, Math.round(limit));
+  if (!max || !candidates.length) return [];
+
+  const ordered = [...candidates].sort((a, b) => Number(b.fit_score || 0) - Number(a.fit_score || 0));
+  const buckets = new Map<string, T[]>();
+  for (const candidate of ordered) {
+    const key = String(candidate.partner_type || "other");
+    const bucket = buckets.get(key) || [];
+    bucket.push(candidate);
+    buckets.set(key, bucket);
+  }
+
+  const result: T[] = [];
+  const types = [...buckets.keys()];
+  let round = 0;
+  while (result.length < max) {
+    let added = false;
+    for (const type of types) {
+      const candidate = buckets.get(type)?.[round];
+      if (!candidate) continue;
+      result.push(candidate);
+      added = true;
+      if (result.length >= max) break;
+    }
+    if (!added) break;
+    round += 1;
+  }
+  return result;
+}
+
 export async function runCorporatePartnerDiscovery(
   supabase: SupabaseClient,
   options: { trigger?: "cron" | "manual"; batchSize?: number } = {},
@@ -65,13 +98,12 @@ export async function runCorporatePartnerDiscovery(
   );
 
   const discovered = await discoverCorporatePartnerCandidates({ perProfile: 10 });
-  const selected = discovered.candidates
-    .filter((candidate) => {
-      const orgKey = candidate.organization_number ? `org:${candidate.organization_number}` : null;
-      const domainKey = candidate.domain ? `domain:${candidate.domain.toLowerCase()}` : null;
-      return !(orgKey && existing.has(orgKey)) && !(domainKey && existing.has(domainKey));
-    })
-    .slice(0, remaining);
+  const eligible = discovered.candidates.filter((candidate) => {
+    const orgKey = candidate.organization_number ? `org:${candidate.organization_number}` : null;
+    const domainKey = candidate.domain ? `domain:${candidate.domain.toLowerCase()}` : null;
+    return !(orgKey && existing.has(orgKey)) && !(domainKey && existing.has(domainKey));
+  });
+  const selected = selectBalancedPartnerCandidates(eligible, remaining);
 
   let created = 0;
   const inserted: Array<{ id: string; company_name: string; partner_type: string; fit_score: number }> = [];
