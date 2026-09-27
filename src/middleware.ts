@@ -300,7 +300,7 @@ export async function middleware(request: NextRequest) {
     // Signed role is historical. Revalidate the CURRENT active profile on
     // every protected request, before trusting role headers or legacy routes.
     // If the user was downgraded/revoked, their old signed cookie cannot widen access.
-    const currentRole = await liveRoleForMiddleware(session.email);
+    const currentRole = await liveRoleForMiddleware(session.email, session.role);
     if (!currentRole || currentRole !== session.role) {
       if (pathname.startsWith("/api/")) {
         return NextResponse.json({ error: "Session access changed. Sign in again." }, {
