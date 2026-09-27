@@ -177,7 +177,8 @@ function scorePartner(entity: BrregEntity, profile: (typeof corporatePartnerProf
   }
 
   score = Math.max(0, Math.min(100, score));
-  const tier = score >= 75 ? "A" : score >= 58 ? "B" : score >= 40 ? "C" : "UNSCORED";
+  const tier: CorporatePartnerCandidate["fit_tier"] =
+    score >= 75 ? "A" : score >= 58 ? "B" : score >= 40 ? "C" : "UNSCORED";
   return { score, tier, reasons, gaps };
 }
 
