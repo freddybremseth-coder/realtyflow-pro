@@ -49,7 +49,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   const { data: crmContact, error: crmError } = await supabase
     .from("contacts")
-    .select("id,brand_id,pipeline_status")
+    .select("id,brand_id,pipeline_status,pipeline_value")
     .eq("id", prospect.converted_contact_id)
     .eq("brand_id", "zeneco")
     .maybeSingle();
@@ -122,6 +122,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     occurred_at: outcome.occurredAt,
     property_ref: outcome.propertyRef,
     offer_amount_eur: outcome.offerAmountEur,
+    pipeline_value_eur: outcome.pipelineValueEur,
     note: outcome.note,
     crm_pipeline_status: outcome.crmPipelineStatus,
     revenue_event_id: (revenue.event as any)?.id || null,
@@ -134,6 +135,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     .from("contacts")
     .update({
       pipeline_status: outcome.crmPipelineStatus,
+      pipeline_value: outcome.pipelineValueEur || Number(crmContact.pipeline_value || 0),
       next_followup: now,
       updated_at: now,
     })
