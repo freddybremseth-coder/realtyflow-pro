@@ -46,7 +46,8 @@ export function buildCorporateConfirmedOutcome(input: {
     const properties = Array.isArray(plan.properties)
       ? plan.properties.filter((item) => item && typeof item === "object") as Obj[]
       : [];
-    if (!propertyRef || !properties.some((property) => text(property.ref) === propertyRef)) {
+    const selected = properties.find((property) => text(property.ref) === propertyRef);
+    if (!propertyRef || !selected) {
       throw new Error("Velg en bolig fra den lagrede visningsplanen.");
     }
 
@@ -55,6 +56,7 @@ export function buildCorporateConfirmedOutcome(input: {
       crmPipelineStatus: "VIEWING" as const,
       occurredAt: when.toISOString(),
       propertyRef,
+      pipelineValueEur: positive(selected.price),
       offerAmountEur: null,
       note: text(input.note) || null,
       nextAction: "Registrer konkret visningsfeedback og avklar om selskapet vil gå videre med en bolig, se flere alternativer eller revidere shortlisten.",
@@ -68,12 +70,14 @@ export function buildCorporateConfirmedOutcome(input: {
     throw new Error("Tilbudet må gjelde boligen som er valgt i tilbudspreflighten.");
   }
 
+  const offerAmountEur = positive(input.offerAmountEur);
   return {
     eventType: "offer_made" as const,
     crmPipelineStatus: "NEGOTIATION" as const,
     occurredAt: when.toISOString(),
     propertyRef: selectedRef,
-    offerAmountEur: positive(input.offerAmountEur),
+    pipelineValueEur: offerAmountEur || positive(selected.price),
+    offerAmountEur,
     note: text(input.note) || null,
     nextAction: "Følg tilbudet aktivt: avklar respons, pris/vilkår, reservasjon, beslutningsmyndighet og konkret neste steg mot avtale.",
   };
