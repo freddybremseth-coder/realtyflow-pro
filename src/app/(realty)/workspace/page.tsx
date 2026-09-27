@@ -11,6 +11,7 @@ function workSummary(permissions: string[]) {
   if (permissions.some(p => p.startsWith("crm.") || p.startsWith("tasks."))) areas.push("leads og oppfølging");
   if (permissions.some(p => p.startsWith("corporate."))) areas.push("Corporate");
   if (permissions.some(p => p.startsWith("visibility.") || p.startsWith("marketing.") || p.startsWith("content."))) areas.push("innhold og synlighet");
+  if (permissions.some(p => p.startsWith("email."))) areas.push("e-post og oppfølging");
   if (permissions.some(p => p.startsWith("ads.") || p === "events.plan")) areas.push("kampanjer og møter");
   if (permissions.includes("properties.catalog.read")) areas.push("eiendommer");
   return areas.length ? areas.slice(0, 4).join(" · ") : "arbeidsoppgaver";

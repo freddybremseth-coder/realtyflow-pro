@@ -107,6 +107,18 @@ test("content-only membership admits when read, edit and publish dependencies ar
   assert.deepEqual(result, { ok: true, activeBrands: ["pinosoecolife"] });
 });
 
+test("email-only membership admits only with complete read draft send dependencies", async () => {
+  rpcData = [{
+    brand: { id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
+    grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["email.read", "email.draft", "email.send"],
+    },
+  }];
+  const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
+  assert.deepEqual(result, { ok: true, activeBrands: ["pinosoecolife"] });
+});
+
 test("stale grant for another Supabase Auth user fails closed even if email matches", async () => {
   rpcData = [{
     brand: { id: "brand-id", brand_key: "pinosoecolife" },
@@ -162,6 +174,14 @@ test("malformed, inactive, invalid-brand and RPC-error grants fail closed", asyn
     [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
       brand_id: "brand-id", user_id: userId, email: "staff@example.test",
       status: "active", permissions: ["content.read", "content.publish"],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["email.draft"],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["email.read", "email.send"],
     } }],
     [{ brand: { id: "zen-id", brand_key: "zeneco" }, grant: {
       brand_id: "zen-id", user_id: userId, email: "staff@example.test",

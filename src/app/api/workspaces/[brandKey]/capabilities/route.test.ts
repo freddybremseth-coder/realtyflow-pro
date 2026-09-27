@@ -151,6 +151,16 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
     assert.deepEqual(otherBrandBody.permissions,
       ["properties.catalog.read", "marketing.read", "marketing.draft"]);
     assert.equal(JSON.stringify(otherBrandBody).includes("marketing.publish"), false);
+
+    currentPermissions = ["email.read", "email.send"];
+    const incompleteEmail = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
+    assert.equal(incompleteEmail.status, 200);
+    assert.deepEqual((await incompleteEmail.json()).permissions, ["email.read"]);
+
+    currentPermissions = ["email.read", "email.draft", "email.send"];
+    const completeEmail = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
+    assert.equal(completeEmail.status, 200);
+    assert.deepEqual((await completeEmail.json()).permissions, ["email.read", "email.draft", "email.send"]);
   } finally {
     globalThis.fetch = previous.fetch;
     for (const [key, value] of [

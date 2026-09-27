@@ -21,6 +21,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
+    "email.read", "email.draft", "email.send",
   ] },
   { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
 ];
@@ -102,6 +103,7 @@ export default function FocusedWorkspacePage() {
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
+    "email.read", "email.draft", "email.send",
   ].includes(p));
 
   function resetContactForm() {
@@ -182,8 +184,8 @@ export default function FocusedWorkspacePage() {
                 <h3 className="mt-3 text-lg font-semibold">{brandKey === "zeneco" && permissions.includes("corporate.read") ? "Jobb med Corporate og vekst" : "Skap mer synlighet og leads"}</h3>
                 <p className="mt-1 text-sm text-slate-400">
                   {brandKey === "zeneco" && permissions.includes("corporate.read")
-                    ? "Bedrifter, SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."
-                    : "SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."}
+                    ? "Bedrifter, e-post, SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."
+                    : "E-post, SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."}
                 </p>
               </button>}
               {showProperties && <button onClick={() => setTab("properties")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">

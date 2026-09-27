@@ -122,6 +122,23 @@ test("website content publishing is advertised only with complete read/edit/publ
   assert.deepEqual(body.workspaces[0].permissions, ["content.read", "content.edit", "content.publish"]);
 });
 
+test("email send is advertised only with complete read and draft scope", async () => {
+  const cookie = "realtyflow_admin=" +
+    await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+
+  permissions = ["email.read", "email.send"];
+  let response = await GET(request(cookie) as any);
+  assert.equal(response.status, 200);
+  let body = await response.json();
+  assert.deepEqual(body.workspaces[0].permissions, ["email.read"]);
+
+  permissions = ["email.read", "email.draft", "email.send"];
+  response = await GET(request(cookie) as any);
+  assert.equal(response.status, 200);
+  body = await response.json();
+  assert.deepEqual(body.workspaces[0].permissions, ["email.read", "email.draft", "email.send"]);
+});
+
 test("Zen available workspace never inherits generic CRM or workspace publishing rights", async () => {
   currentBrand = "zeneco";
   permissions = ["crm.read", "crm.write", "crm.joint.read", "properties.catalog.read",

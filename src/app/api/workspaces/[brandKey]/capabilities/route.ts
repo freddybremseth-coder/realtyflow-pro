@@ -62,6 +62,12 @@ export async function GET(
         (Array.isArray(grant.permissions) &&
          grant.permissions.includes("content.read") &&
          grant.permissions.includes("content.edit"))) &&
+      (permission !== "email.draft" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("email.read"))) &&
+      (permission !== "email.send" ||
+        (Array.isArray(grant.permissions) &&
+         grant.permissions.includes("email.read") &&
+         grant.permissions.includes("email.draft"))) &&
       roleAllowsWorkspacePermission(context.role, permission) &&
       hasVerifiedBrandGrant({
         grant, brandId: scope.brand.id, sessionEmail: context.email,

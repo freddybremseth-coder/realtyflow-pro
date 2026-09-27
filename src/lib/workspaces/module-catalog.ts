@@ -139,11 +139,11 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   {
     id: "email",
     label: "E-post / Reach",
-    description: "Utgående kommunikasjon krever egne kundescope- og kanalrettigheter.",
-    status: "planned",
+    description: "Følg opp godkjente leads og Zen Corporate-selskapskanaler fra riktig brand-avsender. Reach brukes til kampanjeutkast uten automatisk abonnement.",
+    status: "ready",
     brandScope: "all",
-    readPermissions: [],
-    writePermissions: [],
+    readPermissions: ["email.read"],
+    writePermissions: ["email.draft", "email.send"],
   },
   {
     id: "nexus",
@@ -179,6 +179,9 @@ export function programPermissions(params: {
   contentRead: boolean;
   contentEdit: boolean;
   contentPublish: boolean;
+  emailRead: boolean;
+  emailDraft: boolean;
+  emailSend: boolean;
 }): WorkspacePermission[] {
   const result = new Set<WorkspacePermission>();
   if (params.brandKey === "zeneco") {
@@ -205,5 +208,8 @@ export function programPermissions(params: {
   if (params.contentRead || params.contentEdit || params.contentPublish) result.add("content.read");
   if (params.contentEdit || params.contentPublish) result.add("content.edit");
   if (params.contentPublish) result.add("content.publish");
+  if (params.emailRead || params.emailDraft || params.emailSend) result.add("email.read");
+  if (params.emailDraft || params.emailSend) result.add("email.draft");
+  if (params.emailSend) result.add("email.send");
   return Array.from(result);
 }

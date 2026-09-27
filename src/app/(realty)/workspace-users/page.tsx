@@ -40,6 +40,9 @@ type BrandChoice = {
   contentRead: boolean;
   contentEdit: boolean;
   contentPublish: boolean;
+  emailRead: boolean;
+  emailDraft: boolean;
+  emailSend: boolean;
 };
 
 const emptyChoice = (): BrandChoice => ({
@@ -50,6 +53,7 @@ const emptyChoice = (): BrandChoice => ({
   visibilityRead: false, visibilityPlan: false,
   adsRead: false, adsDraft: false, eventsPlan: false,
   contentRead: false, contentEdit: false, contentPublish: false,
+  emailRead: false, emailDraft: false, emailSend: false,
 });
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -104,6 +108,9 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       contentRead: permissions.includes("content.read"),
       contentEdit: permissions.includes("content.edit"),
       contentPublish: permissions.includes("content.publish"),
+      emailRead: permissions.includes("email.read"),
+      emailDraft: permissions.includes("email.draft"),
+      emailSend: permissions.includes("email.send"),
     };
   }
   return next;
@@ -179,6 +186,8 @@ export default function WorkspaceUsersPage() {
       if (next.adsDraft) next.adsRead = true;
       if (next.contentEdit) next.contentRead = true;
       if (next.contentPublish) { next.contentRead = true; next.contentEdit = true; }
+      if (next.emailDraft) next.emailRead = true;
+      if (next.emailSend) { next.emailRead = true; next.emailDraft = true; }
       if (brandKey !== "zeneco") { next.corporateRead = false; next.corporatePlan = false; }
       if (brandKey === "zeneco" && (next.tasksRead || next.tasksWrite)) next.crmRead = true;
       return { ...current, [brandKey]: next };
@@ -208,6 +217,9 @@ export default function WorkspaceUsersPage() {
         contentRead: choice.contentRead,
         contentEdit: choice.contentEdit,
         contentPublish: choice.contentPublish,
+        emailRead: choice.emailRead,
+        emailDraft: choice.emailDraft,
+        emailSend: choice.emailSend,
       });
       return permissions.length ? [{ brandKey: brand.brandKey, permissions }] : [];
     });
@@ -513,6 +525,16 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.contentPublish}
                       onChange={e => updateChoice(brand.brandKey, { contentPublish: e.target.checked })}/> Publisere til nettsiden</label>
                     <p className="mt-2 text-[11px] text-slate-500">Publisering er brand-låst og lagrer versjon for rollback.</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">E-post / Reach</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.emailRead}
+                      onChange={e => updateChoice(brand.brandKey, { emailRead: e.target.checked, ...(e.target.checked ? {} : { emailDraft: false, emailSend: false }) })}/> Se godkjente mottakere og egne utkast</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.emailDraft}
+                      onChange={e => updateChoice(brand.brandKey, { emailDraft: e.target.checked, ...(e.target.checked ? {} : { emailSend: false }) })}/> Lage e-post og Reach-kampanjeutkast</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.emailSend}
+                      onChange={e => updateChoice(brand.brandKey, { emailSend: e.target.checked })}/> Sende én-til-én fra merkevarens e-postkonto</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Bare brand-godkjente leads/Corporate-kanaler. Avmelding og suppression kontrolleres før sending. Reach-abonnement opprettes ikke automatisk.</p>
                   </div>
                 </div>}
               </article>;
