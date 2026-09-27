@@ -87,6 +87,8 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [meetingMethod, setMeetingMethod] = useState("video");
   const [schedulingMeeting, setSchedulingMeeting] = useState(false);
   const [meetingNotice, setMeetingNotice] = useState("");
+  const [opportunityPromoting, setOpportunityPromoting] = useState(false);
+  const [opportunityNotice, setOpportunityNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -185,6 +187,13 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     return personalizeCorporateOutreach(template, { firstName, companyName });
   }, [companyName, primaryContact, selectedTemplate]);
 
+  const opportunityUiReady = useMemo(() => {
+    if (String(prospect?.status || "").toUpperCase() !== "MEETING") return false;
+    if (!brief?.assessment.readyForPropertyMatch || !meetingAt) return false;
+    const meetingTime = Date.parse(meetingAt);
+    return Number.isFinite(meetingTime) && meetingTime <= Date.now();
+  }, [brief?.assessment.readyForPropertyMatch, meetingAt, prospect?.status]);
+
   async function copyOutreach() {
     const text = `Emne: ${outreach.subject}\n\n${outreach.body}`;
     try {
@@ -266,6 +275,38 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       setError(meetingError instanceof Error ? meetingError.message : "Kunne ikke registrere discovery-møtet.");
     } finally {
       setSchedulingMeeting(false);
+    }
+  }
+
+  async function promoteToOpportunity() {
+    if (!opportunityUiReady) {
+      setOpportunityNotice("Discovery må være gjennomført og assessment må være komplett først.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Bekreft at discovery-møtet er gjennomført og de viktigste kommersielle kriteriene er dokumentert. Dette flytter prospektet til Opportunity, men sender ingenting til kunden.",
+    );
+    if (!confirmed) return;
+
+    setOpportunityPromoting(true);
+    setOpportunityNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/opportunity`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke opprette Opportunity.");
+      setProspect(body?.prospect || prospect);
+      setOpportunityNotice("Discovery er fullført og prospektet er flyttet til Opportunity. Ingen kundemelding ble sendt.");
+      await load();
+    } catch (opportunityError) {
+      setError(opportunityError instanceof Error ? opportunityError.message : "Kunne ikke opprette Opportunity.");
+    } finally {
+      setOpportunityPromoting(false);
     }
   }
 
@@ -512,6 +553,31 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
             </button>
           </div>
           {meetingNotice && <div className="mt-3 text-xs font-bold text-emerald-900">{meetingNotice}</div>}
+
+          {String(prospect?.status || "").toUpperCase() === "MEETING" && (
+            <div className="mt-5 rounded-2xl border border-emerald-300 bg-white p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-emerald-900">Opportunity gate</div>
+              <p className="mt-2 text-sm leading-6 text-slate-700">
+                {opportunityUiReady
+                  ? "Møtet er gjennomført og minimumskriteriene er dokumentert. Prospektet kan løftes til en aktiv Opportunity."
+                  : brief.assessment.readyForPropertyMatch
+                    ? "Assessment er komplett, men registrert møtetid må være passert før discovery kan markeres fullført."
+                    : "Fyll ut budsjett, forventede brukere, bruksuker, område, minimum soverom og boligtype før Opportunity."}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => void promoteToOpportunity()}
+                  disabled={opportunityPromoting || !opportunityUiReady}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {opportunityPromoting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  Discovery fullført · opprett Opportunity
+                </button>
+                {opportunityNotice && <span className="text-xs font-bold text-emerald-900">{opportunityNotice}</span>}
+                <span className="text-xs text-slate-500">Kun intern pipeline-endring. Ingen automatisk kundekontakt.</span>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
