@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ExternalLink, Handshake, Loader2, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, Check, Copy, ExternalLink, Handshake, Loader2, Mail, RefreshCw, Search } from "lucide-react";
+
+type OutreachDraft = {
+  key: string;
+  dayOffset: number;
+  subject: string;
+  body: string;
+};
 
 type Partner = {
   id: string;
@@ -43,6 +50,9 @@ export default function CorporatePartnersPage() {
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
+  const [draftsByPartner, setDraftsByPartner] = useState<Record<string, OutreachDraft[]>>({});
+  const [draftLoadingId, setDraftLoadingId] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +87,40 @@ export default function CorporatePartnersPage() {
       ].filter(Boolean).join(" ").toLowerCase().includes(normalized);
     });
   }, [partners, query, type]);
+
+  async function loadDrafts(partnerId: string) {
+    if (draftsByPartner[partnerId]) {
+      setDraftsByPartner((current) => {
+        const next = { ...current };
+        delete next[partnerId];
+        return next;
+      });
+      return;
+    }
+
+    setDraftLoadingId(partnerId);
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/partners/${encodeURIComponent(partnerId)}/outreach-drafts`, {
+        cache: "no-store",
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke hente e-postutkast.");
+      setDraftsByPartner((current) => ({ ...current, [partnerId]: body?.drafts || [] }));
+    } catch (draftError) {
+      setError(draftError instanceof Error ? draftError.message : "Kunne ikke hente e-postutkast.");
+    } finally {
+      setDraftLoadingId(null);
+    }
+  }
+
+  async function copyDraft(partnerId: string, draft: OutreachDraft) {
+    const value = `Emne: ${draft.subject}\n\n${draft.body}`;
+    await navigator.clipboard.writeText(value);
+    const key = `${partnerId}:${draft.key}`;
+    setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey((current) => current === key ? "" : current), 1800);
+  }
 
   async function discover() {
     setDiscovering(true);
@@ -188,7 +232,46 @@ export default function CorporatePartnersPage() {
                   Brønnøysund <ExternalLink size={12} />
                 </a>
               )}
+              <button
+                type="button"
+                onClick={() => void loadDrafts(partner.id)}
+                disabled={draftLoadingId === partner.id}
+                className="inline-flex items-center gap-1 text-xs font-black text-amber-800 hover:underline disabled:opacity-50"
+              >
+                {draftLoadingId === partner.id ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                {draftsByPartner[partner.id] ? "Skjul utkast" : "Vis e-postutkast"}
+              </button>
             </div>
+
+            {draftsByPartner[partner.id]?.length ? (
+              <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                  Kun utkast · ingen automatisk utsendelse
+                </div>
+                {draftsByPartner[partner.id].map((draft) => {
+                  const key = `${partner.id}:${draft.key}`;
+                  return (
+                    <div key={draft.key} className="rounded-2xl border border-slate-200 bg-white p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-black uppercase tracking-wide text-teal-800">Dag {draft.dayOffset}</div>
+                          <div className="mt-1 text-sm font-black text-slate-950">{draft.subject}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void copyDraft(partner.id, draft)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-black text-slate-700 hover:bg-slate-50"
+                        >
+                          {copiedKey === key ? <Check size={12} /> : <Copy size={12} />}
+                          {copiedKey === key ? "Kopiert" : "Kopier"}
+                        </button>
+                      </div>
+                      <pre className="mt-3 whitespace-pre-wrap font-sans text-xs leading-5 text-slate-600">{draft.body}</pre>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </article>
         ))}
       </section>
