@@ -147,6 +147,18 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
     [verifiedContacts],
   );
 
+  const genericCompanyContact = useMemo(() => {
+    const evidence = prospect?.evidence && typeof prospect.evidence === "object" ? prospect.evidence : {};
+    const contact = (evidence as Record<string, any>).generic_company_contact;
+    return contact && typeof contact === "object"
+      ? {
+          genericEmail: String(contact.generic_email || "").trim() || null,
+          contactPageUrl: String(contact.contact_page_url || "").trim() || null,
+          checkedAt: String(contact.checked_at || "").trim() || null,
+        }
+      : { genericEmail: null, contactPageUrl: null, checkedAt: null };
+  }, [prospect?.evidence]);
+
   const companyName = brief?.company.name || "";
 
   const outreach = useMemo(() => {
@@ -289,6 +301,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
             {brief.company.website && <a href={brief.company.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-bold text-cyan-800 hover:underline">Nettsted <ExternalLink size={14} /></a>}
             {brief.company.sourceUrl && <a href={brief.company.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-bold text-cyan-800 hover:underline">Registerkilde <ExternalLink size={14} /></a>}
           </div>
+          {(genericCompanyContact.genericEmail || genericCompanyContact.contactPageUrl) && (
+            <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-cyan-900">Offisiell selskapskontakt</div>
+              {genericCompanyContact.genericEmail && (
+                <div className="mt-2 break-all text-sm font-bold text-slate-900">{genericCompanyContact.genericEmail}</div>
+              )}
+              {genericCompanyContact.contactPageUrl && (
+                <a href={genericCompanyContact.contactPageUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                  Åpne kontaktside <ExternalLink size={12} />
+                </a>
+              )}
+              <div className="mt-2 text-xs text-slate-500">Kun selskapsnivå. Ingen personlig kontakt er lagt til.</div>
+            </div>
+          )}
         </article>
 
         <article className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
@@ -503,10 +529,15 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
             <div className="mt-3 text-sm font-bold text-slate-950">{primaryContact?.name || "Ingen verifisert kontakt valgt ennå"}</div>
             <div className="mt-1 text-xs text-slate-500">{primaryContact?.title || primaryContact?.buying_role || "Beslutningstakerrolle må verifiseres"}</div>
             {primaryContact?.email && <div className="mt-2 text-xs font-semibold text-cyan-900">{primaryContact.email}</div>}
+            {!primaryContact?.email && genericCompanyContact.genericEmail && (
+              <div className="mt-2 text-xs font-semibold text-cyan-900">Generell selskapsadresse: {genericCompanyContact.genericEmail}</div>
+            )}
             <div className="mt-4 rounded-xl bg-white p-3 text-xs leading-5 text-slate-600">
               {primaryContact
                 ? "Bruk verifisert kontaktinformasjon og kontroller at personen fortsatt har relevant rolle før utsendelse."
-                : "Finn og verifiser beslutningstaker før første kontakt. Ikke send til generiske eller usikre persondata automatisk."}
+                : genericCompanyContact.genericEmail || genericCompanyContact.contactPageUrl
+                  ? "Ingen person er verifisert ennå. Den offisielle selskapskanalen kan brukes til en manuelt kontrollert første henvendelse; ingen automatisk utsendelse."
+                  : "Finn og verifiser beslutningstaker eller en offisiell selskapskanal før første kontakt. Ingen automatisk utsendelse."}
             </div>
           </div>
 

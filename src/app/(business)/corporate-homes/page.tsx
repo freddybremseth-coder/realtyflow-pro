@@ -98,6 +98,20 @@ type Overview = {
       created_at?: string | null;
     } | null;
   };
+  genericContacts: {
+    researched: number;
+    genericEmails: number;
+    contactPages: number;
+    dailyBatch: number;
+    companyLevelOnly: boolean;
+    personalDataCollected: boolean;
+    automaticOutreach: boolean;
+    lastRun?: {
+      status?: string | null;
+      details?: Record<string, any> | null;
+      created_at?: string | null;
+    } | null;
+  };
   prospects: {
     total: number;
     target: number;
@@ -215,6 +229,8 @@ export default function CorporateHomesGrowthPage() {
   const [partnerNotice, setPartnerNotice] = useState("");
   const [signalBusy, setSignalBusy] = useState(false);
   const [signalNotice, setSignalNotice] = useState("");
+  const [genericContactBusy, setGenericContactBusy] = useState(false);
+  const [genericContactNotice, setGenericContactNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -293,6 +309,35 @@ export default function CorporateHomesGrowthPage() {
       setError(signalError instanceof Error ? signalError.message : "Kunne ikke kjøre selskaps-signalresearch.");
     } finally {
       setSignalBusy(false);
+    }
+  }
+
+  async function runGenericContactResearch() {
+    setGenericContactBusy(true);
+    setGenericContactNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/generic-contacts/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre selskapskontakt-research.");
+      const result = body?.result || {};
+      setGenericContactNotice(
+        Number(result?.researched || 0) +
+        " selskaper undersøkt · " +
+        Number(result?.generic_emails_found || 0) +
+        " generelle adresser · " +
+        Number(result?.contact_pages_found || 0) +
+        " kontaktsider."
+      );
+      await load();
+    } catch (contactError) {
+      setError(contactError instanceof Error ? contactError.message : "Kunne ikke kjøre selskapskontakt-research.");
+    } finally {
+      setGenericContactBusy(false);
     }
   }
 
@@ -580,6 +625,42 @@ export default function CorporateHomesGrowthPage() {
         <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-950">
           Neste personsteg er bevisst sperret: identifisering eller berikelse av konkrete kontaktpersoner krever eksplisitt godkjenning.
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-cyan-200 bg-cyan-50/50 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex-1">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-900">Selskapskontakt · uten personberikelse</p>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Offisielle kontaktkanaler på selskapsnivå</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              RealtyFlow kan finne generelle bedriftsadresser og offisielle kontaktsider fra selskapenes egne nettsteder.
+              Personlige adresser filtreres bort, og denne motoren sender aldri noe automatisk.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <MiniStat label="Undersøkt" value={data?.genericContacts.researched ?? "—"} />
+              <MiniStat label="Generell adresse" value={data?.genericContacts.genericEmails ?? "—"} />
+              <MiniStat label="Kontaktside" value={data?.genericContacts.contactPages ?? "—"} />
+              <MiniStat label="Maks per dag" value={data?.genericContacts.dailyBatch ?? 10} />
+            </div>
+            <p className="mt-4 text-xs leading-5 text-slate-500">
+              Kun selskapsnivå · ingen personnavn · ingen personlige adresser · ingen telefon · ingen utsendelse.
+              {data?.genericContacts.lastRun?.created_at
+                ? " Siste kjøring: " + new Date(data.genericContacts.lastRun.created_at).toLocaleString("nb-NO") + "."
+                : ""}
+            </p>
+          </div>
+          <button
+            onClick={() => void runGenericContactResearch()}
+            disabled={genericContactBusy}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
+          >
+            {genericContactBusy ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+            Oppdater selskapskontakt
+          </button>
+        </div>
+        {genericContactNotice && (
+          <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{genericContactNotice}</div>
+        )}
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">

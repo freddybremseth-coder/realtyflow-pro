@@ -19,6 +19,7 @@ export type CorporatePartnerBriefInput = {
   source_url?: string | null;
   notes?: string | null;
   next_action?: string | null;
+  evidence?: Record<string, unknown> | null;
 };
 
 const typeLabel: Record<string, string> = {
@@ -100,6 +101,11 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
   const website = input.website_url || input.domain || null;
   const firstAngle = input.referral_angle || values[0];
   const company = input.company_name;
+  const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : {};
+  const genericCompanyContact =
+    evidence.generic_company_contact && typeof evidence.generic_company_contact === "object"
+      ? evidence.generic_company_contact as Record<string, unknown>
+      : {};
 
   const outreachSequence = buildCorporatePartnerOutreach({
     company_name: company,
@@ -121,6 +127,13 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
       industry: input.industry || null,
       employeeCount: input.employee_count ?? null,
       status: input.status || "DISCOVERED",
+    },
+    companyContact: {
+      genericEmail: String(genericCompanyContact.generic_email || "").trim() || null,
+      contactPageUrl: String(genericCompanyContact.contact_page_url || "").trim() || null,
+      checkedAt: String(genericCompanyContact.checked_at || "").trim() || null,
+      companyLevelOnly: true,
+      personalDataCollected: false,
     },
     fit: {
       tier: input.fit_tier || "UNSCORED",
