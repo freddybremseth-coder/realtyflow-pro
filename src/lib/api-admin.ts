@@ -8,7 +8,6 @@ import {
   type AccessRole,
 } from "@/lib/access-control";
 import { findAccessProfile } from "@/lib/access-control-server";
-import { verifyWorkspaceDirectorySession } from "@/lib/workspaces/user-directory";
 
 export const ADMIN_SESSION_REQUIRED_MESSAGE = "Admin session required";
 export const ACCESS_PERMISSION_REQUIRED_MESSAGE = "Access permission required";
@@ -40,11 +39,12 @@ export async function getRequestAccessContext(request: NextRequest): Promise<Req
     return { email: session.email, role: "OWNER", permissions: permissionsForRole("OWNER"), source: "owner-session" };
   }
   if (session?.role === "WORKSPACE_MEMBER") {
+    // Edge middleware revalidates the owner-managed directory on every real
+    // request. Scoped workspace APIs then independently re-check the exact
+    // live brand membership + Auth UUID before any data access.
     if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
-    const verified = await verifyWorkspaceDirectorySession(session.email);
-    if (verified.error || !verified.user || verified.user.email !== session.email.trim().toLowerCase()) return null;
     return {
-      email: verified.user.email,
+      email: session.email,
       role: "WORKSPACE_MEMBER",
       permissions: permissionsForRole("WORKSPACE_MEMBER"),
       source: "role-profile",
