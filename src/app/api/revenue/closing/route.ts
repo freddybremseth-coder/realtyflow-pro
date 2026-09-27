@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("contacts")
     .select("id,name,email,phone,pipeline_status,pipeline_value,property_interest,notes,interactions,brand_id,brand,last_contact,next_followup,updated_at")
-    .in("pipeline_status", ["QUALIFIED", "VIEWING", "NEGOTIATION"])
+    .in("pipeline_status", ["QUALIFIED", "VIEWING", "NEGOTIATION", "RESERVED"])
     .order("updated_at", { ascending: false })
     .limit(250);
 
@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
       highRisk: opportunities.filter((item) => item.risk === "HIGH").length,
       viewings: opportunities.filter((item) => item.stage === "VIEWING").length,
       negotiations: opportunities.filter((item) => item.stage === "NEGOTIATION").length,
+      reserved: opportunities.filter((item) => item.stage === "RESERVED").length,
       blockedDeals: opportunities.filter((item) => item.blockers.length > 0).length,
       pipelineValue: opportunities.reduce((sum, item) => sum + item.value, 0),
     },
