@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
-import { buildCorporateGrowthReview } from "@/lib/corporate-growth-review";
+import { buildCorporateGrowthReview, compareCorporateGrowthReview } from "@/lib/corporate-growth-review";
 
 const ACTION = "corporate_homes_growth_review";
 const PATH = "/api/cron/corporate-homes-growth-review";
@@ -34,16 +34,16 @@ export async function GET(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: last, error: lastError } = await supabase
+  const { data: recentReviews, error: lastError } = await supabase
     .from("automation_logs")
-    .select("created_at,status")
+    .select("created_at,status,details")
     .eq("action", ACTION)
     .in("status", ["success", "partial"])
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(8);
 
   if (lastError) return NextResponse.json({ error: lastError.message }, { status: 500 });
+  const last = recentReviews?.[0] || null;
   if (last?.created_at && Date.now() - Date.parse(last.created_at) < 6 * 86_400_000) {
     return NextResponse.json({
       success: true,
@@ -106,6 +106,10 @@ export async function GET(request: NextRequest) {
     offerCompanies,
     revenueEventsReady: !revenueEventsError,
   });
+  const previousReviews = (recentReviews || [])
+    .map((row: any) => row?.details && typeof row.details === "object" ? row.details.review : null)
+    .filter(Boolean);
+  const comparison = compareCorporateGrowthReview(review, previousReviews);
 
   const status = review.status === "READY" ? "success" : "partial";
   const { error: insertError } = await supabase.from("automation_logs").insert({
@@ -114,6 +118,7 @@ export async function GET(request: NextRequest) {
     status,
     details: {
       review,
+      comparison,
       source_of_truth: {
         prospects: "corporate_prospects",
         commercial_outcomes: "revenue_events",
@@ -134,6 +139,7 @@ export async function GET(request: NextRequest) {
     success: true,
     status,
     review,
+    comparison,
     published: false,
     automaticBudgetChanges: false,
     automaticOutreach: false,
