@@ -53,7 +53,7 @@
     "test:executive-briefing": "tsx --test src/lib/revenue/executive-briefing.test.ts",
     "test:operating-review": "tsx --test src/lib/revenue/operating-review.test.ts",
     "test:weekly-management-review": "tsx --test src/lib/revenue/weekly-management-review.test.ts",
-    "test:continuous-improvement": "tsx --test src/lib/revenue/continuous-improvement.test.ts",
+    "test:continuous-improvement": "tsx --test src/lib/revenue/continuous-improvement.test.ts src/lib/corporate-growth-improvement.test.ts src/app/api/revenue/command/continuous-improvement/corporate-growth.contract.test.ts",
     "test:navigation": "tsx --test src/lib/navigation.test.ts src/lib/constants.test.ts",
     "test:demosites-design": "tsx --test src/lib/demosites-design.test.ts src/lib/demosites-local-industries.test.ts src/lib/demosites-hero-assets.test.ts src/lib/demosites-domains.test.ts",
     "test:observability": "tsx --test src/lib/observability.test.ts",
