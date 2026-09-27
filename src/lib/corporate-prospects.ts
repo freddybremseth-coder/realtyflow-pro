@@ -241,11 +241,9 @@ export function scoreCorporateProspect(input: {
   }
 
   if (input.decision_roles.length >= 3) {
-    score += 12;
-    reasons.push("Relevant buying committee er definert");
+    reasons.push("Relevante beslutningstakerroller er definert som researchmål");
   } else if (input.decision_roles.length > 0) {
-    score += 6;
-    reasons.push("Minst én relevant beslutningstakerrolle er definert");
+    reasons.push("Minst én beslutningstakerrolle er definert som researchmål");
   } else {
     gaps.push("Beslutningstakerroller mangler");
   }
@@ -273,7 +271,7 @@ export function scoreCorporateProspect(input: {
   }
 
   score = Math.min(100, Math.max(0, score));
-  const tier = score >= 75 ? "A" : score >= 55 ? "B" : score > 0 ? "C" : "UNSCORED";
+  const tier = score >= 85 ? "A" : score >= 60 ? "B" : score > 0 ? "C" : "UNSCORED";
 
   return { score, tier, reasons, gaps };
 }
