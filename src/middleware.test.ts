@@ -145,6 +145,18 @@ function mockLiveProfiles(profiles: Array<{ email: string; role: string; active:
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://supabase-workspace.test";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "middleware-test-service-key";
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/rest/v1/rpc/workspace_login_directory")) {
+      const profile = profiles.find(item =>
+        item.email.toLowerCase() === "staff@example.test" &&
+        item.role === "WORKSPACE_MEMBER");
+      return new Response(JSON.stringify(profile ? {
+        user_id: "11111111-1111-4111-8111-111111111111",
+        username: "staff",
+        email: profile.email,
+        display_name: "Staff User",
+        status: profile.active ? "active" : "disabled",
+      } : null), { status: 200, headers: { "content-type": "application/json" } });
+    }
     if (String(url).includes("/rest/v1/brand_settings")) {
       return new Response(JSON.stringify([{ settings: { profiles } }]), { status: 200 });
     }
