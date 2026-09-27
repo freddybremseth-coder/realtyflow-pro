@@ -32,6 +32,7 @@
     { "path": "/api/cron/corporate-homes-company-signals", "schedule": "55 6 * * *" },
     { "path": "/api/cron/corporate-homes-generic-contacts", "schedule": "5 7 * * *" },
     { "path": "/api/cron/corporate-homes-content-drafts", "schedule": "40 6 * * 1" },
+    { "path": "/api/cron/corporate-homes-growth-review", "schedule": "30 7 * * 1" },
     { "path": "/api/cron/corporate-homes-bootstrap", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/saas-entitlements", "schedule": "30 6 * * *" },
     { "path": "/api/cron/property-scanner", "schedule": "0 18 * * 0" },
