@@ -82,6 +82,10 @@ type Overview = {
       qualified: number;
       pipelineValue: number;
       leadToQualifiedRate: number;
+      viewingCompanies: number;
+      offerCompanies: number;
+      leadToViewingRate: number;
+      viewingToOfferRate: number;
       topCampaigns: Array<{ campaign: string; leads: number }>;
     }>;
   };
@@ -510,16 +514,17 @@ export default function CorporateHomesGrowthPage() {
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Kanalresultater</p>
-          <h2 className="mt-2 text-xl font-black text-slate-950">Mål Corporate-kanalene på leads og pipeline</h2>
+          <h2 className="mt-2 text-xl font-black text-slate-950">Mål Corporate-kanalene helt til faktisk visning og tilbud</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
             Google, LinkedIn, Meta, outbound og organisk/direct sammenlignes på faktiske Corporate-leads,
-            kvalifisering og aktiv pipelineverdi. Dette er styringsgrunnlaget før annonsebudsjett skaleres.
+            kvalifisering, pipelineverdi og dokumenterte kommersielle utfall. Visning og tilbud kommer kun fra bekreftede Revenue OS-events.
+            Dette er styringsgrunnlaget før annonsebudsjett skaleres; RealtyFlow endrer ikke spend automatisk.
           </p>
           <p className="mt-2 text-xs font-semibold text-slate-500">{data?.acquisition.attributionRule || ""}</p>
         </div>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[850px] text-left text-sm">
+          <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-3">Kanal</th>
@@ -528,6 +533,9 @@ export default function CorporateHomesGrowthPage() {
                 <th className="px-3 py-3">Aktive</th>
                 <th className="px-3 py-3">Kvalifisert+</th>
                 <th className="px-3 py-3">Lead → kval.</th>
+                <th className="px-3 py-3">Faktisk visning</th>
+                <th className="px-3 py-3">Faktisk tilbud</th>
+                <th className="px-3 py-3">Lead → visning</th>
                 <th className="px-3 py-3">Aktiv pipeline</th>
                 <th className="px-3 py-3">Kampanjer</th>
               </tr>
@@ -545,6 +553,13 @@ export default function CorporateHomesGrowthPage() {
                       {channel.leadToQualifiedRate}%
                     </span>
                   </td>
+                  <td className="px-3 py-4 font-bold text-slate-800">{channel.viewingCompanies}</td>
+                  <td className="px-3 py-4 font-bold text-slate-800">{channel.offerCompanies}</td>
+                  <td className="px-3 py-4">
+                    <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-black text-cyan-900">
+                      {channel.leadToViewingRate}%
+                    </span>
+                  </td>
                   <td className="px-3 py-4 font-bold text-slate-800">{money(channel.pipelineValue)}</td>
                   <td className="max-w-[280px] px-3 py-4 text-xs text-slate-500">
                     {channel.topCampaigns.length
@@ -554,7 +569,7 @@ export default function CorporateHomesGrowthPage() {
                 </tr>
               ))}
               {!loading && (data?.acquisition.channels || []).length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-500">Ingen attribuerte Corporate-leads ennå.</td></tr>
+                <tr><td colSpan={11} className="px-3 py-10 text-center text-slate-500">Ingen attribuerte Corporate-leads ennå.</td></tr>
               )}
             </tbody>
           </table>
