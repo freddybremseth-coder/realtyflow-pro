@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createAdminSession, isAdminEmail } from "@/lib/admin-auth";
 import { findAccessProfile } from "@/lib/access-control-server";
 import { admitWorkspaceMemberLogin } from "@/lib/workspaces/login-admission";
+import { resolveWorkspaceLogin } from "@/lib/workspaces/user-directory";
 
 const HOME_BY_ROLE: Record<string, string> = {
   OWNER: "/",
@@ -16,8 +17,25 @@ const HOME_BY_ROLE: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
-  const { email, password } = await request.json();
-  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const { login, email, password } = await request.json();
+  const suppliedLogin = String(login || email || "").trim().toLowerCase();
+  if (!suppliedLogin || !password) {
+    return NextResponse.json({ error: "Brukernavn/e-post og passord er påkrevd." }, { status: 400 });
+  }
+
+  let normalizedEmail = suppliedLogin;
+  let directoryUser: Awaited<ReturnType<typeof resolveWorkspaceLogin>>["user"] = null;
+  if (!suppliedLogin.includes("@")) {
+    const resolvedLogin = await resolveWorkspaceLogin(suppliedLogin);
+    if (resolvedLogin.error) {
+      return NextResponse.json({ error: "Innloggingstjenesten kunne ikke verifiseres akkurat nå." }, { status: 503 });
+    }
+    if (!resolvedLogin.user || resolvedLogin.user.status !== "active") {
+      return NextResponse.json({ error: "Feil brukernavn/e-post eller passord." }, { status: 401 });
+    }
+    directoryUser = resolvedLogin.user;
+    normalizedEmail = resolvedLogin.user.email;
+  }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -26,15 +44,29 @@ export async function POST(request: NextRequest) {
   const supabase = createClient(url, anonKey);
   const { data: authData, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
   if (error || !authData.user?.id)
-    return NextResponse.json({ error: "Feil e-post eller passord." }, { status: 401 });
+    return NextResponse.json({ error: "Feil brukernavn/e-post eller passord." }, { status: 401 });
 
   let role = "OWNER";
   if (!isAdminEmail(normalizedEmail)) {
-    const resolved = await findAccessProfile(normalizedEmail);
-    if (resolved.error) return NextResponse.json({ error: "Tilgangsprofilen kunne ikke kontrolleres." }, { status: 503 });
-    if (!resolved.profile || !resolved.profile.active) return NextResponse.json({ error: "Denne e-posten har ikke aktiv tilgang til RealtyFlow." }, { status: 403 });
-    role = resolved.profile.role;
-    if (role === "WORKSPACE_MEMBER") {
+    const legacy = await findAccessProfile(normalizedEmail);
+    if (legacy.error) return NextResponse.json({ error: "Tilgangsprofilen kunne ikke kontrolleres." }, { status: 503 });
+
+    if (legacy.profile?.active && legacy.profile.role !== "WORKSPACE_MEMBER") {
+      role = legacy.profile.role;
+    } else {
+      if (!directoryUser) {
+        const resolvedDirectory = await resolveWorkspaceLogin(normalizedEmail);
+        if (resolvedDirectory.error) {
+          return NextResponse.json({ error: "Arbeidsområdet kunne ikke verifiseres akkurat nå." }, { status: 503 });
+        }
+        directoryUser = resolvedDirectory.user;
+      }
+      if (!directoryUser || directoryUser.status !== "active" ||
+          directoryUser.email !== normalizedEmail ||
+          directoryUser.userId !== authData.user.id) {
+        return NextResponse.json({ error: "Denne kontoen har ikke aktiv tilgang til RealtyFlow." }, { status: 403 });
+      }
+      role = "WORKSPACE_MEMBER";
       const admission = await admitWorkspaceMemberLogin(normalizedEmail, authData.user.id);
       if (!admission.ok) {
         if (admission.reason === "UNAVAILABLE") {
