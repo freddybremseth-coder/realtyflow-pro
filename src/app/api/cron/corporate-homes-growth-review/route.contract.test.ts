@@ -11,11 +11,14 @@ test("Corporate growth review cron is read-only decision support", () => {
   assert.match(source, /requireCronApi/);
   assert.match(source, /evaluateCronSafeMode/);
   assert.match(source, /corporate_homes_growth_review/);
+  assert.match(source, /compareCorporateGrowthReview/);
+  assert.match(source, /\.limit\(8\)/);
   assert.match(source, /revenue_events/);
   assert.match(source, /corporate_prospects/);
   assert.match(source, /automaticBudgetChanges: false/);
   assert.match(source, /automaticOutreach: false/);
   assert.doesNotMatch(source, /sendEmail|sendMessage|publishPost|updateCampaignBudget|createReservation|initiatePayment/);
+  assert.doesNotMatch(source, /from\("work_items"\)|continuous-improvement:register/);
   assert.match(schedule, /corporate-homes-growth-review/);
   assert.match(schedule, /30 7 \* \* 1/);
   assert.match(registry, /Corporate Homes Growth Review/);
