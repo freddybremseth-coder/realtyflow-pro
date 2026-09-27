@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, LockKeyhole, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
+import { BookOpen, Building2, LockKeyhole, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import { GrowthCorporatePanel } from "@/components/workspaces/growth-corporate-panel";
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
+import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; pipeline_status: string | null };
@@ -45,6 +46,7 @@ export default function FocusedWorkspacePage() {
   const [savingContact, setSavingContact] = useState(false);
   const [contactNotice, setContactNotice] = useState("");
   const [contactError, setContactError] = useState("");
+  const [showTraining, setShowTraining] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
@@ -53,7 +55,7 @@ export default function FocusedWorkspacePage() {
 
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setError(""); setTab("today"); setPermissions([]); setContacts([]);
+    setLoading(true); setError(""); setTab("today"); setShowTraining(false); setPermissions([]); setContacts([]);
     fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/capabilities`, {
       cache: "no-store", signal: abort.signal,
     }).then(async res => {
@@ -145,7 +147,7 @@ export default function FocusedWorkspacePage() {
       {!loading && !error && <nav className="border-b border-slate-800 px-4" aria-label="Arbeidsområdet">
         <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto py-2">
           {visibleTabs.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setTab(id)} type="button" aria-current={tab === id ? "page" : undefined}
+            <button key={id} onClick={() => { setShowTraining(false); setTab(id); }} type="button" aria-current={tab === id ? "page" : undefined}
               className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm ${tab === id ? "bg-cyan-600 font-semibold text-white" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>
               <Icon size={16}/>{label}
             </button>
@@ -158,7 +160,7 @@ export default function FocusedWorkspacePage() {
           <LockKeyhole size={18} className="mr-2 inline"/>{error}
           <Link href="/login" className="ml-3 underline">Innlogging</Link>
         </div>}
-        {!loading && !error && tab === "today" && (
+        {!loading && !error && tab === "today" && !showTraining && (
           <section className="space-y-5">
             <div className="rounded-2xl border border-cyan-900/60 bg-cyan-950/15 p-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Start her</p>
@@ -192,7 +194,19 @@ export default function FocusedWorkspacePage() {
                 <h3 className="mt-3 text-lg font-semibold">Se oppfølgingen min</h3>
                 <p className="mt-1 text-sm text-slate-400">Åpne lead-arbeidet og fellesoppgavene på nye Zen-kunder.</p>
               </button>}
+              <button onClick={() => setShowTraining(true)} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
+                <BookOpen size={25} className="text-cyan-400"/>
+                <h3 className="mt-3 text-lg font-semibold">Slik jobber vi</h3>
+                <p className="mt-1 text-sm text-slate-400">Forstå merkevaren, arbeidsmåten og hvordan aktivitet blir til leads, møter og salg.</p>
+              </button>
             </div>
+          </section>
+        )}
+        {!loading && !error && tab === "today" && showTraining && (
+          <section className="space-y-4">
+            <button type="button" onClick={() => setShowTraining(false)}
+              className="text-sm text-cyan-300 hover:text-cyan-200">← Tilbake til I dag</button>
+            <WorkspaceTrainingPanel brandKey={brandKey} permissions={permissions} />
           </section>
         )}
         {!loading && !error && showCrm && tab === "leads" && (
