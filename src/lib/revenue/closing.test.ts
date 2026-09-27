@@ -47,3 +47,33 @@ test("sorting puts high risk before low risk", () => {
   assert.ok(high && low);
   assert.equal(sortClosingOpportunities([low, high])[0].id, "h");
 });
+
+
+test("reserved deal remains visible and moves into closing delivery", () => {
+  const deal = buildClosingOpportunity({
+    id: "reserved-1",
+    pipeline_status: "RESERVED",
+    pipeline_value: 620000,
+    property_interest: "Villa in Finestrat",
+    notes: "Reservation signed. Deposit paid. Preferred property selected. Lawyer engaged. Cash buyer. Timeline within 2 months.",
+    next_followup: "2026-07-12T09:00:00.000Z",
+  }, NOW);
+  assert.ok(deal);
+  assert.equal(deal.stage, "RESERVED");
+  assert.equal(deal.checklist.find((item) => item.id === "reservation")?.complete, true);
+  assert.match(deal.nextAction, /closing-plan/i);
+});
+
+test("reserved deal with missing legal and payment context is still visible but blocked", () => {
+  const deal = buildClosingOpportunity({
+    id: "reserved-2",
+    pipeline_status: "RESERVED",
+    pipeline_value: 450000,
+    property_interest: "Apartment in Benidorm",
+    notes: "Reservation signed.",
+    next_followup: "2026-07-12T09:00:00.000Z",
+  }, NOW);
+  assert.ok(deal);
+  assert.ok(deal.blockers.some((item) => /advokat/i.test(item)));
+  assert.ok(deal.blockers.some((item) => /betalingsmåte/i.test(item)));
+});
