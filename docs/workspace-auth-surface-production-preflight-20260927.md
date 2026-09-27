@@ -40,6 +40,19 @@ Read-only production checks found:
 
 This establishes a safe compatibility boundary: Olivia browser Storage access can remain, but it must use the same internal-user gate as Olivia table RLS. A RealtyFlow workspace employee is not admitted by that gate merely because they have a Supabase Auth account.
 
+## Additional SECURITY DEFINER finding
+
+A fresh Supabase security-advisor pass found four public-schema `SECURITY DEFINER` functions callable by browser roles.
+
+Three are not browser APIs and are now included in staged hardening:
+- `nexus_commercial_activation_contact_guard(...)` — dedicated Lead Intelligence runtime only.
+- `ensure_nexus_commercial_activation_work_item(...)` — dedicated Lead Intelligence runtime only.
+- `sync_email_admission_review_work_item()` — trigger function, not a client RPC.
+
+Their PUBLIC/anon/authenticated EXECUTE grants are removed while the dedicated Nexus runtime grant remains untouched.
+
+`art_gallery_admin_master_status()` is the reviewed exception. It is intentionally authenticated but performs its own `auth.uid()` membership lookup against `art_gallery_admin_users` and returns no rows to non-admin identities. The workspace preflight explicitly allowlists only this reviewed function and fails closed if any other public-schema SECURITY DEFINER function is executable by anon/authenticated roles.
+
 ## Hardening staged in this PR
 
 `20260924200000_workspace_known_server_only_auth_hardening.sql` is still **not applied to production**. It now stages both parts of the required pre-activation hardening:
@@ -67,7 +80,8 @@ The isolated workspace migration suite now verifies all of the following:
 - all 11 retained Olivia Storage policies are identity-bound;
 - an Olivia `super_admin` fixture can still read/write the retained Storage surfaces;
 - an ordinary workspace identity can neither read nor write them;
-- the final workspace Auth preflight becomes green only after these protections are present.
+- the final workspace Auth preflight becomes green only after these protections are present;
+- server/trigger-only SECURITY DEFINER functions are not executable by anon/authenticated roles.
 
 The test database is explicitly local and isolated; it never connects to production.
 
