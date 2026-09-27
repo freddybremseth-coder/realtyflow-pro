@@ -356,6 +356,28 @@ export async function GET(request: NextRequest) {
     revenueEventsReady: !corporateRevenueEventsError,
   };
 
+  const outcomeByChannel = new Map<string, { viewingCompanies: number; offerCompanies: number }>();
+  for (const row of rows) {
+    const contactId = String(row.id || "");
+    if (!contactId || (!viewingContactIds.has(contactId) && !offerContactIds.has(contactId))) continue;
+    const channel = acquisitionChannel(row);
+    const current = outcomeByChannel.get(channel.key) || { viewingCompanies: 0, offerCompanies: 0 };
+    if (viewingContactIds.has(contactId)) current.viewingCompanies += 1;
+    if (offerContactIds.has(contactId)) current.offerCompanies += 1;
+    outcomeByChannel.set(channel.key, current);
+  }
+
+  const acquisitionChannelsWithRevenue = acquisitionChannels.map((channel) => {
+    const outcome = outcomeByChannel.get(channel.key) || { viewingCompanies: 0, offerCompanies: 0 };
+    return {
+      ...channel,
+      viewingCompanies: outcome.viewingCompanies,
+      offerCompanies: outcome.offerCompanies,
+      leadToViewingRate: channel.leads ? Math.round((outcome.viewingCompanies / channel.leads) * 100) : 0,
+      viewingToOfferRate: outcome.viewingCompanies ? Math.round((outcome.offerCompanies / outcome.viewingCompanies) * 100) : 0,
+    };
+  });
+
   const focusProspects = prospectRows
     .filter((row: any) => !row.converted_contact_id)
     .filter((row: any) => String(row.status || "").toUpperCase() !== "DISQUALIFIED")
@@ -411,7 +433,7 @@ export async function GET(request: NextRequest) {
       },
       revenueFunnel: corporateRevenueFunnel,
       acquisition: {
-        channels: acquisitionChannels,
+        channels: acquisitionChannelsWithRevenue,
         attributionRule: "Første Corporate-sideinteraksjon med UTM brukes som acquisition-kilde; ellers brukes kontaktens kilde og faller tilbake til organisk/direkte.",
         periodDays: 30,
       },
