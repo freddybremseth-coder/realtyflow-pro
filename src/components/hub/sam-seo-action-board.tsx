@@ -94,6 +94,21 @@ const GSC_FAILURES: Record<string, string> = {
 function gscFailure(code: string) {
   return GSC_FAILURES[code] || "Google-tilkoblingen ble ikke fullført. Start tilkoblingen på nytt, og kontroller feilstatusen i RealtyFlow.";
 }
+function gscReadErrorText(error: string) {
+  if (error.startsWith("GSC_REFRESH_TOKEN_EXPIRED_OR_REVOKED:")) {
+    return error.replace("GSC_REFRESH_TOKEN_EXPIRED_OR_REVOKED:", "").trim();
+  }
+  if (error.startsWith("GSC_OAUTH_CLIENT_CONFIGURATION:")) {
+    return error.replace("GSC_OAUTH_CLIENT_CONFIGURATION:", "").trim();
+  }
+  if (error.startsWith("GSC_GOOGLE_TEMPORARY:")) {
+    return error.replace("GSC_GOOGLE_TEMPORARY:", "").trim();
+  }
+  if (error.startsWith("GSC_GOOGLE_OAUTH_ERROR:")) {
+    return error.replace("GSC_GOOGLE_OAUTH_ERROR:", "").trim();
+  }
+  return error;
+}
 
 
 export function SamSEOActionBoard() {
@@ -466,15 +481,24 @@ export function SamSEOActionBoard() {
               </a>
             </div>
           ))}
-          {data.readErrors.length > 0 && <p role="status" className="mt-3 text-sm text-amber-900">
+          {data.readErrors.length > 0 && <div role="status" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
             <strong>Google-data kunne ikke leses:</strong>
             {data.readErrors.map(item => (
               <span key={item.brandId} className="mt-1 block">
-                {LABELS[item.brandId] || item.brandId}: {item.error}
+                {LABELS[item.brandId] || item.brandId}: {gscReadErrorText(item.error)}
               </span>
             ))}
-            Ingen tall er estimert. En lagret Google-tilkobling trenger ikke ny godkjenning når feilen ligger i RealtyFlow.
-          </p>}
+            <p className="mt-3 font-semibold">Ingen tall er estimert.</p>
+            {data.readErrors.some(item => item.error.startsWith("GSC_OAUTH_CLIENT_CONFIGURATION:")) ? (
+              <p className="mt-1">Ikke koble Google til på nytt nå. Dette er en OAuth-klientfeil i RealtyFlow/Google-oppsettet og må rettes i klient-ID/secret først.</p>
+            ) : data.readErrors.some(item => item.error.startsWith("GSC_REFRESH_TOKEN_EXPIRED_OR_REVOKED:")) ? (
+              <p className="mt-1">Google har avvist den lagrede fornyelsesnøkkelen. Hvis OAuth-samtykkeskjermen fortsatt står i Testing, utløper slike testnøkler etter sju dager. Sett OAuth-appen i produksjonsmodus før de berørte Search Console-grantene kobles til på nytt én gang.</p>
+            ) : data.readErrors.some(item => item.error.startsWith("GSC_GOOGLE_TEMPORARY:")) ? (
+              <p className="mt-1">Dette er en midlertidig Google-feil. Behold den lagrede tilkoblingen og prøv lesingen på nytt senere.</p>
+            ) : (
+              <p className="mt-1">Den lagrede tilkoblingen beholdes. Årsaken må identifiseres før RealtyFlow ber om ny Google-godkjenning.</p>
+            )}
+          </div>}
           {data.metrics.length > 0 && (
             <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
               {data.metrics.map(metric => (
