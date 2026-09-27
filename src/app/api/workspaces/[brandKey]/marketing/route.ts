@@ -8,6 +8,8 @@ const noStore = { "Cache-Control": "private, no-store" };
 const ALLOWED_DRAFT_PLATFORMS = new Set([
   "facebook","instagram","linkedin","youtube","tiktok","pinterest",
 ]);
+const ALLOWED_PUBLISH_PLATFORMS = new Set(["facebook","instagram","linkedin"]);
+const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 
 function fail(status: number, code: string) {
   return NextResponse.json({ ok: false, error: { code } }, { status, headers: noStore });
@@ -153,4 +155,60 @@ export async function POST(
     publication,
     published: false,
   }, { status: 201, headers: noStore });
+}
+
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { brandKey: string } },
+) {
+  const access = await requireBrandWorkspace(request, params.brandKey, "marketing.publish");
+  if (!access.value) return access.response;
+  if (!safeWrite(request)) return fail(403, "INVALID_REQUEST_ORIGIN");
+  if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
+
+  const input: unknown = await request.json().catch(() => null);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return fail(400, "INVALID_PUBLISH_REQUEST");
+  }
+  const body = input as Record<string, unknown>;
+  const publicationId = typeof body.publicationId === "string" ? body.publicationId.trim() : "";
+  const platforms = Array.isArray(body.platforms)
+    ? body.platforms.map(platform => String(platform).trim().toLowerCase()).filter(Boolean)
+    : [];
+
+  if (!uuid.test(publicationId) || platforms.length < 1 || platforms.length > 3 ||
+      new Set(platforms).size !== platforms.length ||
+      platforms.some(platform => !ALLOWED_PUBLISH_PLATFORMS.has(platform))) {
+    return fail(400, "INVALID_PUBLISH_REQUEST");
+  }
+
+  const { data, error } = await access.value.supabase.rpc(
+    "workspace_brand_marketing_publish_queue",
+    {
+      p_brand_key: params.brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_publication_id: publicationId,
+      p_platforms: platforms,
+    },
+  );
+  if (error) return fail(503, "PUBLISH_QUEUE_UNAVAILABLE");
+  if (data?.ok === false) {
+    if (data.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND") return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
+    if (data.error === "CHANNEL_NOT_UNIQUE_FOR_BRAND") return fail(409, "CHANNEL_NOT_UNIQUE_FOR_BRAND");
+    if (data.error === "INSTAGRAM_IMAGE_REQUIRED") return fail(409, "INSTAGRAM_IMAGE_REQUIRED");
+    if (data.error === "PUBLICATION_NOT_PUBLISHABLE") return fail(409, "PUBLICATION_NOT_PUBLISHABLE");
+    return fail(409, "PUBLISH_QUEUE_REJECTED");
+  }
+  const publication = safePublication(data?.publication, params.brandKey);
+  if (!data?.ok || !publication || publication.status !== "scheduled") {
+    return fail(503, "PUBLISH_QUEUE_UNAVAILABLE");
+  }
+  return NextResponse.json({
+    ok: true,
+    brand: params.brandKey,
+    queued: true,
+    publication,
+  }, { headers: noStore });
 }
