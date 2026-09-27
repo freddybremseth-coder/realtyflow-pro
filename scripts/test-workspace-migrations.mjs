@@ -14,6 +14,7 @@ const files = [
   "20260924170000_brand_workspace_contact_writes.sql",
   "20260924180000_workspace_brand_property_catalogue.sql",
   "20260924190000_workspace_staff_security_preflight.sql",
+  "20260924200000_workspace_known_server_only_auth_hardening.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -99,12 +100,36 @@ try {
   await sql("drop schema if exists public cascade");
   await sql("create schema public");
   await sql("grant all on schema public to public");
-  await sql("create schema auth; create schema core");
+  await sql("create schema auth; create schema core; create schema storage");
   await sql("create table auth.users (id uuid primary key, email text)");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
   await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
   await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
+  await sql("create table public.work_items (id uuid primary key default gen_random_uuid())");
+  await sql("create table public.portal_messages (id uuid primary key default gen_random_uuid())");
+  await sql("create table public.brand_settings (brand_id text primary key, settings jsonb)");
+  await sql("create table public.agentic_approvals (id uuid primary key default gen_random_uuid(), title text)");
+  await sql("create table public.plot_assets (id uuid primary key default gen_random_uuid(), show_on_website boolean default false)");
+  await sql("alter table public.contacts enable row level security; alter table public.work_items enable row level security; alter table public.portal_messages enable row level security; alter table public.brand_settings enable row level security; alter table public.agentic_approvals enable row level security; alter table public.plot_assets enable row level security");
+  await sql("create table storage.buckets (id text primary key, name text not null, public boolean not null default false)");
+  await sql("create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text)");
+  await sql("alter table storage.objects enable row level security");
+  await sql("insert into storage.buckets(id,name,public) values ('property-documents','property-documents',false),('caecv-documents','caecv-documents',false),('plot-assets','plot-assets',true),('ad-creatives','ad-creatives',true),('olivia-field-observations','olivia-field-observations',true)");
+  await sql("create policy \"agentic_approvals_read\" on public.agentic_approvals for select to authenticated using (true)");
+  await sql("create policy \"plot_assets authenticated full access\" on public.plot_assets for all to public using (current_user in ('authenticated','service_role')) with check (current_user in ('authenticated','service_role'))");
+  await sql("create policy \"Authenticated write plot-assets\" on storage.objects for insert to public with check (bucket_id='plot-assets' and current_user in ('authenticated','service_role'))");
+  await sql("create policy \"Authenticated delete plot-assets\" on storage.objects for delete to public using (bucket_id='plot-assets' and current_user in ('authenticated','service_role'))");
+  await sql("create policy \"Authenticated write ad-creatives\" on storage.objects for insert to public with check (bucket_id='ad-creatives' and current_user in ('authenticated','service_role'))");
+  for (const bucket of ["property-documents","caecv-documents"]) {
+    await sql(`create policy "${bucket} auth select" on storage.objects for select to authenticated using (bucket_id='${bucket}')`);
+    await sql(`create policy "${bucket} auth insert" on storage.objects for insert to authenticated with check (bucket_id='${bucket}')`);
+    await sql(`create policy "${bucket} auth update" on storage.objects for update to authenticated using (bucket_id='${bucket}') with check (bucket_id='${bucket}')`);
+    await sql(`create policy "${bucket} auth delete" on storage.objects for delete to authenticated using (bucket_id='${bucket}')`);
+  }
+  await sql("create policy \"Olivia authenticated users can upload field observation images\" on storage.objects for insert to authenticated with check (bucket_id='olivia-field-observations')");
+  await sql("create policy \"Olivia authenticated users can update field observation images\" on storage.objects for update to authenticated using (bucket_id='olivia-field-observations') with check (bucket_id='olivia-field-observations')");
+  await sql("create policy \"Olivia authenticated users can delete field observation images\" on storage.objects for delete to authenticated using (bucket_id='olivia-field-observations')");
   await sql("grant usage on schema core to service_role");
   await sql("grant select on core.brands to service_role");
   await sql("grant select, insert, update on public.contacts to service_role");
@@ -725,9 +750,23 @@ try {
   const staffSecurityPreflight = await serviceSql(
     "select public.workspace_staff_security_preflight() as result",
   );
-  verify(staffSecurityPreflight.rows[0].result?.safe_for_workspace_auth === false &&
-    staffSecurityPreflight.rows[0].result?.private_document_buckets_present === false,
-    "Staff security preflight must fail closed when private Storage metadata is unavailable");
+  const security = staffSecurityPreflight.rows[0].result;
+  verify(security?.required_customer_tables_rls === true &&
+    security?.private_document_buckets_present === true &&
+    security?.private_document_buckets_private === true,
+    "Staff security preflight did not validate required RLS/private buckets");
+  verify(security?.private_document_authenticated_policies === 8 &&
+    security?.operational_storage_authenticated_write_policies === 3 &&
+    security?.direct_customer_policy_risk === 0 &&
+    security?.direct_internal_policy_risk === 0 &&
+    security?.safe_for_workspace_auth === false,
+    "Known server-only hardening should remove internal/plot/ad direct Auth risk while leaving unresolved document/Olivia blockers explicit");
+  const removedPolicies = await sql(
+    "select policyname from pg_policies where (schemaname='public' and policyname in ('agentic_approvals_read','plot_assets authenticated full access')) or " +
+    "(schemaname='storage' and policyname in ('Authenticated write plot-assets','Authenticated delete plot-assets','Authenticated write ad-creatives'))",
+  );
+  verify(removedPolicies.rowCount === 0,
+    "Server-only Auth hardening migration left a broad direct policy behind");
 
   process.stdout.write("Isolated workspace migration checks passed: " + checks + "\n");
 } finally {
