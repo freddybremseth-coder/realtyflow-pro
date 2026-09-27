@@ -15,6 +15,7 @@ declare
   v_private_buckets_private boolean := false;
   v_private_bucket_auth_policies integer := 0;
   v_direct_customer_policy_risk integer := 0;
+  v_direct_internal_policy_risk integer := 0;
 begin
   -- Customer/task/message/settings tables used by RealtyFlow must all keep RLS.
   select count(*) = 4 and bool_and(c.relrowsecurity)
@@ -88,18 +89,33 @@ begin
         and coalesce(regexp_replace(lower(p.with_check),'[()[:space:]]','','g'),'') not in ('','false'))
     );
 
+  -- A workspace Supabase Auth identity also inherits the generic authenticated
+  -- role outside the workspace routes. Explicitly block known internal
+  -- operational tables that must never become readable merely because a user
+  -- can authenticate. Public catalogue tables (properties/plots/books/rates)
+  -- are intentionally not part of this internal-only list.
+  select count(*)::integer into v_direct_internal_policy_risk
+  from pg_catalog.pg_policies p
+  where p.schemaname = 'public'
+    and p.tablename in ('agentic_approvals')
+    and p.cmd in ('ALL','SELECT')
+    and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
+    and coalesce(regexp_replace(lower(p.qual),'[()[:space:]]','','g'),'') not in ('','false');
+
   return jsonb_build_object(
     'required_customer_tables_rls', v_required_tables_rls,
     'private_document_buckets_present', v_private_buckets_present,
     'private_document_buckets_private', v_private_buckets_private,
     'private_document_authenticated_policies', v_private_bucket_auth_policies,
     'direct_customer_policy_risk', v_direct_customer_policy_risk,
+    'direct_internal_policy_risk', v_direct_internal_policy_risk,
     'safe_for_workspace_auth',
       v_required_tables_rls
       and v_private_buckets_present
       and v_private_buckets_private
       and v_private_bucket_auth_policies = 0
       and v_direct_customer_policy_risk = 0
+      and v_direct_internal_policy_risk = 0
   );
 end;
 $workspace_staff_security_preflight$;
