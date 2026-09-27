@@ -7,6 +7,7 @@ import {
 import { decideHotLeadSla, responseDueAt } from "@/lib/nexus/hot-lead-sla";
 import { recordPipelineTransition } from "@/lib/revenue/pipeline-transition";
 import { requireNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
+import { syncCorporateProspectFromInboundReply } from "@/services/email/corporate-inbound-engagement";
 
 export interface InboundCrmActionResult {
   contactId: string | null;
@@ -178,13 +179,22 @@ export async function applyInboundCrmActions(
         .maybeSingle()
     : { data: null };
 
+  const corporateInbound = await syncCorporateProspectFromInboundReply(supabase, {
+    emailMessageId: params.emailMessageId,
+    brandId: params.brandId,
+    fromAddress,
+    contactId: contact?.id ? String(contact.id) : null,
+    classification: classification.intent,
+    terminalAutoAllowed: governance.canApplyAutomatically,
+  });
+
   if (!contact?.id) {
     return {
       contactId: null,
       classification: classification.intent,
       suppressed: classification.intent === "do_not_contact" || isTerminalSalesOutcome(classification.intent),
       pipelineStatus: null,
-      workItemCreated: false,
+      workItemCreated: corporateInbound.workItemCreated,
       governanceTier: governance.safety.tier,
     };
   }
@@ -338,6 +348,9 @@ export async function applyInboundCrmActions(
     buyer_profile_id: buyerProfile.profileId,
     buyer_profile_status: buyerProfile.profileStatus,
     purchase_readiness: buyerProfile.purchaseReadiness,
+    corporate_prospect_id: corporateInbound.prospect?.prospectId || null,
+    corporate_prospect_status: corporateInbound.prospect?.status || null,
+    corporate_match_method: corporateInbound.prospect?.matchedBy || null,
     stage_readiness_href: buyerProfile.profileId
       ? `/lead-intelligence?buyerProfileId=${encodeURIComponent(buyerProfile.profileId)}&brand=${encodeURIComponent(params.brandId)}`
       : `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
