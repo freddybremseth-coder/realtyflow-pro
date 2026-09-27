@@ -116,6 +116,10 @@ try {
   await sql("create table storage.buckets (id text primary key, name text not null, public boolean not null default false)");
   await sql("create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text)");
   await sql("alter table storage.objects enable row level security");
+  // Match production: service_role can inspect Storage metadata, but this
+  // privilege comes from the platform, not from the workspace migration.
+  await sql("grant usage on schema storage to service_role");
+  await sql("grant select on storage.buckets to service_role");
   await sql("insert into storage.buckets(id,name,public) values ('property-documents','property-documents',false),('caecv-documents','caecv-documents',false),('plot-assets','plot-assets',true),('ad-creatives','ad-creatives',true),('olivia-field-observations','olivia-field-observations',true)");
   await sql("create policy \"agentic_approvals_read\" on public.agentic_approvals for select to authenticated using (true)");
   await sql("create policy \"plot_assets authenticated full access\" on public.plot_assets for all to public using (current_user in ('authenticated','service_role')) with check (current_user in ('authenticated','service_role'))");
