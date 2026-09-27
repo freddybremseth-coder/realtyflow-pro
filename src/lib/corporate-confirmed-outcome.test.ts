@@ -9,7 +9,7 @@ import {
 const viewingEvidence = {
   corporate_execution_plan: {
     kind: "VIEWING_PLAN",
-    properties: [{ ref: "A1" }, { ref: "A2" }],
+    properties: [{ ref: "A1", price: 510000 }, { ref: "A2", price: 540000 }],
   },
 };
 
@@ -25,6 +25,7 @@ test("confirmed completed viewing requires CRM identity and a planned property",
   assert.equal(outcome.eventType, "viewing_completed");
   assert.equal(outcome.crmPipelineStatus, "VIEWING");
   assert.equal(outcome.propertyRef, "A2");
+  assert.equal(outcome.pipelineValueEur, 540000);
   assert.throws(() => buildCorporateConfirmedOutcome({
     status: "OPPORTUNITY",
     evidence: viewingEvidence,
@@ -37,7 +38,7 @@ test("confirmed offer must match the property selected in offer preflight", () =
   const evidence = {
     corporate_execution_plan: {
       kind: "OFFER_PREP",
-      property: { ref: "B7" },
+      property: { ref: "B7", price: 500000 },
     },
   };
   const outcome = buildCorporateConfirmedOutcome({
@@ -51,6 +52,7 @@ test("confirmed offer must match the property selected in offer preflight", () =
   assert.equal(outcome.eventType, "offer_made");
   assert.equal(outcome.crmPipelineStatus, "NEGOTIATION");
   assert.equal(outcome.offerAmountEur, 475000);
+  assert.equal(outcome.pipelineValueEur, 475000);
   assert.throws(() => buildCorporateConfirmedOutcome({
     status: "OPPORTUNITY",
     convertedContactId: "contact-2",
