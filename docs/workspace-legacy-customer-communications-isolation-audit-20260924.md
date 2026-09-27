@@ -77,3 +77,8 @@ Migrasjonsutkastet `20260924190000_workspace_staff_security_preflight.sql` er ku
 - ingen permissiv public/authenticated-policy åpner de sentrale kundetabellene.
 
 Owner-siden markerer `SECURITY_PREFLIGHT_NOT_INSTALLED` dersom kontrollen mangler, og `DIRECT_AUTH_SECURITY_BLOCKER` dersom kontrollen finner eksponering. Begge stopper `readyForOwnerReview`; de kan ikke aktivere en bruker.
+
+
+En videre read-only gjennomgang av alle enkle `SELECT ... USING (true)`-policyer for `authenticated`/`public` fant også `public.agentic_approvals` med generell lesetilgang for enhver autentisert Supabase-bruker. Tabellen inneholder operative godkjenningsfelt som blant annet action class, subject/customer reference, begrunnelse, risiko, estimert mulighet, beslutningsstatus og execution metadata; den hadde 71 rader ved kontrollen. Dette er ikke en nødvendig workspace-overflate og er derfor lagt inn som en egen direkte Auth-blokkering i preflighten. Bevisst offentlig innhold som publiserte eiendommer, tomter, bokmetadata, sjangerbilder og valutakurser regnes ikke som intern blokkering.
+
+Storage-gjennomgangen fant i tillegg seks brede skrivepolicyer som en generisk `authenticated`-bruker kan arve uten workspace-behov: INSERT/DELETE mot `plot-assets`, INSERT mot `ad-creatives`, og INSERT/UPDATE/DELETE mot `olivia-field-observations`. Preflighten teller nå også slike operative Storage-skriverettigheter som en aktiveringsblokkering. Ingen av policyene er endret i produksjon; eksisterende Olivia, markedsførings- og tomteflyter må dependency-testes før eventuell innsnevring.
