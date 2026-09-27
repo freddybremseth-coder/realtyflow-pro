@@ -243,7 +243,7 @@ export function Sidebar() {
   const simpleOwnerHrefs = new Set([
     "/workspaces", "/nexus-os/today", "/customers", "/inventory",
     "/growth-hub", "/remaster-freddy", "/billing", "/nexus-os",
-    "/workspace-access",
+    "/workspace-access", "/workspace-users",
   ]);
   const visibleSections = useMemo(() => (
     user?.role === "OWNER" && simpleMode
