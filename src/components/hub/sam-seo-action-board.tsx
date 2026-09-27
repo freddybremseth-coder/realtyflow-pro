@@ -433,8 +433,8 @@ export function SamSEOActionBoard() {
           )}
           {savedButUnreadable.length > 0 && (
             <div role="alert" className="mt-4 rounded-xl border-2 border-rose-400 bg-rose-50 p-4 text-rose-950">
-              <h3 className="font-black">Google-tilkoblingene er lagret, men Sam får ikke lest dem</h3>
-              <p className="mt-1 text-sm">Dette er en feil i RealtyFlows kontroll eller lesing av de lagrede tilkoblingene. Ikke godkjenn alle nettstedene på nytt. Se detaljer nedenfor.</p>
+              <h3 className="font-black">Google-tilkoblingene er lagret, men lesetilgangen er ikke bekreftet</h3>
+              <p className="mt-1 text-sm">Ikke koble alle nettstedene til på nytt blindt. Årsaken kan være en utløpt eller tilbakekalt Google-nøkkel, OAuth-klientkonfigurasjon eller intern tokenlesing. Bruk den konkrete Google-lesefeilen nedenfor før ny godkjenning.</p>
               <div className="mt-3 space-y-2">
                 {savedButUnreadable.map(item => (
                   <p key={item.brandId} className="rounded-lg border border-rose-200 bg-white p-3 text-sm">
