@@ -6,7 +6,7 @@ import {
   scoreCorporateProspect,
 } from "@/lib/corporate-prospects";
 
-test("Corporate Homes scoring rewards Norwegian target-size companies with evidence", () => {
+test("Corporate Homes scoring keeps a strong baseline target company at B-fit until extra signals exist", () => {
   const result = scoreCorporateProspect({
     organization_type: "company",
     country_code: "NO",
@@ -20,9 +20,10 @@ test("Corporate Homes scoring rewards Norwegian target-size companies with evide
     source_url: "https://example.no/about",
   });
 
-  assert.equal(result.tier, "A");
-  assert.ok(result.score >= 75);
+  assert.equal(result.tier, "B");
+  assert.equal(result.score, 78);
   assert.equal(result.gaps.length, 0);
+  assert.ok(result.reasons.includes("Relevante beslutningstakerroller er definert som researchmål"));
 });
 
 test("Corporate Homes scoring keeps missing evidence visible", () => {
@@ -90,7 +91,9 @@ test("Corporate Homes scoring rewards documented people-and-travel buying signal
     },
   });
 
-  assert.ok(withSignals.score >= withoutSignals.score);
+  assert.equal(withoutSignals.tier, "B");
+  assert.equal(withSignals.tier, "A");
+  assert.ok(withSignals.score > withoutSignals.score);
   assert.ok(withSignals.reasons.includes("Dokumentert signal om ansattgoder"));
   assert.ok(withSignals.reasons.includes("Dokumentert signal om fjernarbeid / distribuert arbeidsstyrke"));
   assert.ok(withSignals.reasons.includes("Dokumentert signal om samlinger / retreats"));
