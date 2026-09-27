@@ -11,6 +11,15 @@ const brandId = "11111111-1111-4111-8111-111111111111";
 let planPermissions: string[] = ["crm.read", "crm.write", "properties.catalog.read"];
 let plansEnabled = true;
 let activeGrants: unknown[] = [];
+let securityResult: Record<string, unknown> | null = {
+  required_customer_tables_rls: true,
+  private_document_buckets_present: true,
+  private_document_buckets_private: true,
+  private_document_authenticated_policies: 0,
+  direct_customer_policy_risk: 0,
+  safe_for_workspace_auth: true,
+};
+let securityMissing = false;
 let users: Array<{ id: string; email: string }> = [{ id: "auth-user", email: "staff@example.test" }];
 let profiles: unknown[] = [{
   email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true,
@@ -41,6 +50,15 @@ test.beforeEach(() => {
   planPermissions = ["crm.read", "crm.write", "properties.catalog.read"];
   plansEnabled = true;
   activeGrants = [];
+  securityResult = {
+    required_customer_tables_rls: true,
+    private_document_buckets_present: true,
+    private_document_buckets_private: true,
+    private_document_authenticated_policies: 0,
+    direct_customer_policy_risk: 0,
+    safe_for_workspace_auth: true,
+  };
+  securityMissing = false;
   users = [{ id: "auth-user", email: "staff@example.test" }];
   profiles = [{
     email: "staff@example.test", role: "WORKSPACE_MEMBER", active: true,
@@ -60,6 +78,12 @@ test.beforeEach(() => {
         }, error: null,
       };
       if (name === "workspace_user_brand_grants") return { data: activeGrants, error: null };
+      if (name === "workspace_staff_security_preflight") {
+        return securityMissing
+          ? { data: null, error: { code: "PGRST202",
+              message: "Could not find the function public.workspace_staff_security_preflight() in the schema cache" } }
+          : { data: securityResult, error: null };
+      }
       throw new Error("Unexpected RPC " + name);
     },
     auth: { admin: { listUsers: async () => ({ data: { users }, error: null }) } },
@@ -101,6 +125,36 @@ test("readiness is owner-only and never acts as an activation endpoint", async (
   assert.equal(body.checks.authUserExists, true);
   assert.deepEqual(body.checks.workspaceProfile, { role: "WORKSPACE_MEMBER", active: true });
   assert.equal(body.checks.activeMembershipExists, false);
+  assert.equal(body.checks.securityPreflight.safe_for_workspace_auth, true);
+});
+
+test("unsafe direct Supabase Auth or private Storage access blocks owner review", async () => {
+  securityResult = {
+    required_customer_tables_rls: true,
+    private_document_buckets_present: true,
+    private_document_buckets_private: true,
+    private_document_authenticated_policies: 8,
+    direct_customer_policy_risk: 0,
+    safe_for_workspace_auth: false,
+  };
+  const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const body = await (await GET(request(cookie) as any)).json();
+  assert.equal(body.blockers.includes("DIRECT_AUTH_SECURITY_BLOCKER"), true);
+  assert.equal(body.readyForOwnerReview, false);
+  assert.equal(body.checks.securityPreflight.private_document_authenticated_policies, 8);
+  assert.equal(body.activationAvailable, false);
+});
+
+test("missing security-preflight migration is an explicit fail-closed blocker, not a fabricated green check", async () => {
+  securityMissing = true;
+  const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
+  const response = await GET(request(cookie) as any);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.blockers.includes("SECURITY_PREFLIGHT_NOT_INSTALLED"), true);
+  assert.equal(body.readyForOwnerReview, false);
+  assert.equal(body.checks.securityPreflight, null);
+  assert.equal(body.activationAvailable, false);
 });
 
 test("unfinished marketing draft is a blocker rather than an implied staff capability", async () => {
@@ -150,6 +204,7 @@ test("Zen draft with generic CRM is rejected by preflight even if stored outside
         }, error: null,
       };
       if (name === "workspace_user_brand_grants") return { data: [], error: null };
+      if (name === "workspace_staff_security_preflight") return { data: securityResult, error: null };
       throw new Error("Unexpected RPC");
     },
     auth: { admin: { listUsers: async () => ({ data: { users }, error: null }) } },
