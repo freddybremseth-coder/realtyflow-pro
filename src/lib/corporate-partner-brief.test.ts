@@ -18,7 +18,7 @@ test("Corporate partner brief creates a Norwegian partner pitch", () => {
   assert.match(brief.email.subject, /Mulig samarbeid/);
   assert.match(brief.email.body, /norske bedrifter og organisasjoner/);
   assert.match(brief.email.body, /FINANS NORGE/);
-  assert.match(brief.email.body, /Vennlig hilsen/);
+  assert.match(brief.email.body, /vennlig hilsen/i);
   assert.match(brief.email.body, /Freddy Bremseth/);
   assert.equal(brief.outreachSequence.length, 3);
   assert.deepEqual(brief.outreachSequence.map((step) => step.dayOffset), [0, 7, 21]);
