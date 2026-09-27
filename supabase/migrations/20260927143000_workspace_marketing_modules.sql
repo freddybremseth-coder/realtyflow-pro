@@ -14,6 +14,19 @@ alter table core.brand_workspace_memberships
     'ads.read','ads.draft','events.plan'
   ]::text[]);
 
+alter table core.brand_workspace_access_plans
+  drop constraint if exists brand_workspace_access_plans_permissions_check;
+alter table core.brand_workspace_access_plans
+  add constraint brand_workspace_access_plans_permissions_check
+  check (permissions <@ array[
+    'crm.read','crm.write','crm.joint.read','crm.joint.write',
+    'tasks.joint.read','tasks.joint.write','properties.catalog.read',
+    'marketing.read','marketing.draft','marketing.publish',
+    'corporate.read','corporate.plan',
+    'visibility.read','visibility.plan',
+    'ads.read','ads.draft','events.plan'
+  ]::text[]);
+
 create or replace function public.workspace_user_configure(
   p_user_id uuid, p_username text, p_email text, p_display_name text,
   p_brand_access jsonb, p_actor text
