@@ -1,4 +1,4 @@
-export type ClosingStage = "QUALIFIED" | "VIEWING" | "NEGOTIATION";
+export type ClosingStage = "QUALIFIED" | "VIEWING" | "NEGOTIATION" | "RESERVED";
 
 export interface ClosingContact {
   id: string;
@@ -61,7 +61,7 @@ function overdue(value: string | null | undefined, now: Date) {
 
 export function buildClosingOpportunity(contact: ClosingContact, now = new Date()): ClosingOpportunity | null {
   const stage = String(contact.pipeline_status || "").toUpperCase();
-  if (!["QUALIFIED", "VIEWING", "NEGOTIATION"].includes(stage)) return null;
+  if (!["QUALIFIED", "VIEWING", "NEGOTIATION", "RESERVED"].includes(stage)) return null;
 
   const haystack = text(contact);
   const hasBudget = Number(contact.pipeline_value || 0) > 0 || has(haystack, /budsjett|budget|finansiering|financing/);
@@ -69,10 +69,10 @@ export function buildClosingOpportunity(contact: ClosingContact, now = new Date(
   const hasTimeline = has(haystack, /innen|måned|uke|timeline|nå|now|2026|2027/);
   const hasDecisionMakers = has(haystack, /ektefelle|partner|wife|husband|begge|decision maker/);
   const hasViewing = stage !== "QUALIFIED" || has(haystack, /visning|viewing|besøk|visit/);
-  const hasPreferredProperty = stage === "NEGOTIATION" || has(haystack, /favoritt|preferred|førstevalg|best likte|ønsker denne/);
+  const hasPreferredProperty = ["NEGOTIATION", "RESERVED"].includes(stage) || has(haystack, /favoritt|preferred|førstevalg|best likte|ønsker denne/);
   const hasLegal = has(haystack, /advokat|lawyer|legal|due diligence|nie|notar/);
   const hasFinance = has(haystack, /finansiering|mortgage|bank|valuta|currency|egenkapital|cash buyer/);
-  const hasReservation = has(haystack, /reservasjon|reservation|depositum|deposit|tilbud|offer/);
+  const hasReservation = stage === "RESERVED" || has(haystack, /reservasjon|reservation|depositum|deposit|tilbud|offer/);
 
   const checklist: ClosingChecklistItem[] = [
     { id: "budget", label: "Budsjett og finansiering avklart", complete: hasBudget, critical: true },
@@ -80,15 +80,15 @@ export function buildClosingOpportunity(contact: ClosingContact, now = new Date(
     { id: "timeline", label: "Kjøpstidslinje bekreftet", complete: hasTimeline, critical: true },
     { id: "decision-makers", label: "Alle beslutningstakere involvert", complete: hasDecisionMakers, critical: false },
     { id: "viewing", label: "Visning planlagt eller gjennomført", complete: hasViewing, critical: stage !== "QUALIFIED" },
-    { id: "preferred-property", label: "Foretrukket bolig identifisert", complete: hasPreferredProperty, critical: stage === "NEGOTIATION" },
-    { id: "legal", label: "Advokat og juridisk prosess avklart", complete: hasLegal, critical: stage === "NEGOTIATION" },
-    { id: "finance", label: "Betalingsmåte og valuta avklart", complete: hasFinance, critical: stage === "NEGOTIATION" },
-    { id: "reservation", label: "Reservasjon eller tilbud diskutert", complete: hasReservation, critical: stage === "NEGOTIATION" },
+    { id: "preferred-property", label: "Foretrukket bolig identifisert", complete: hasPreferredProperty, critical: ["NEGOTIATION", "RESERVED"].includes(stage) },
+    { id: "legal", label: "Advokat og juridisk prosess avklart", complete: hasLegal, critical: ["NEGOTIATION", "RESERVED"].includes(stage) },
+    { id: "finance", label: "Betalingsmåte og valuta avklart", complete: hasFinance, critical: ["NEGOTIATION", "RESERVED"].includes(stage) },
+    { id: "reservation", label: stage === "RESERVED" ? "Reservasjon registrert" : "Reservasjon eller tilbud diskutert", complete: hasReservation, critical: ["NEGOTIATION", "RESERVED"].includes(stage) },
   ];
 
   const blockers = checklist.filter((item) => item.critical && !item.complete).map((item) => item.label);
   const isOverdue = overdue(contact.next_followup, now);
-  let score = stage === "NEGOTIATION" ? 70 : stage === "VIEWING" ? 55 : 40;
+  let score = stage === "RESERVED" ? 82 : stage === "NEGOTIATION" ? 70 : stage === "VIEWING" ? 55 : 40;
   score += checklist.filter((item) => item.complete).length * 4;
   score += Number(contact.pipeline_value || 0) >= 500_000 ? 8 : 0;
   score -= blockers.length * 5;
@@ -100,9 +100,11 @@ export function buildClosingOpportunity(contact: ClosingContact, now = new Date(
     ? "Kontakt kunden i dag og avtal ett konkret neste steg."
     : blockers[0]
       ? `Avklar: ${blockers[0]}.`
-      : stage === "NEGOTIATION"
-        ? "Be om beslutning på reservasjon eller konkret tilbud."
-        : stage === "VIEWING"
+      : stage === "RESERVED"
+        ? "Sikre dokumenter, betaling/depositum, advokat og konkret closing-plan frem til gjennomføring."
+        : stage === "NEGOTIATION"
+          ? "Be om beslutning på reservasjon eller konkret tilbud."
+          : stage === "VIEWING"
           ? "Oppsummer visningen og identifiser kundens førstevalg."
           : "Bekreft kjøperprofil og bygg en kort, godkjent shortlist.";
 
