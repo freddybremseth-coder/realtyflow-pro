@@ -87,7 +87,7 @@ test("marketing-only Pinoso membership is advertised with implemented rights onl
   const body = await response.json();
   assert.deepEqual(body.workspaces, [{
     brandKey: "pinosoecolife", name: "Pinoso EcoLife",
-    permissions: ["marketing.read", "marketing.draft"],
+    permissions: ["marketing.read", "marketing.draft", "marketing.publish"],
   }]);
 });
 
