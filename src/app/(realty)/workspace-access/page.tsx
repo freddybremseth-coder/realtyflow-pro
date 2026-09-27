@@ -65,6 +65,13 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "marketing.read": { title: "Markedsføring – oversikt", description: "Se aktive kanaler, nylig innhold og resultater kun for valgt merkevare." },
   "marketing.draft": { title: "Markedsføring – lage innholdsutkast", description: "Lagre brand-avgrensede tekstutkast i Content Hub. Gir ikke publiseringsrettighet." },
   "marketing.publish": { title: "Publisere i sosiale medier (planlagt)", description: "Ikke aktivert for medarbeidere. Krever egne kontoområder, publiseringssperrer og separat teknisk kontroll." },
+  "corporate.read": { title: "Corporate Homes – se", description: "Se Zen Eco Homes bedrifts- og partnerprospekter uten historisk CRM eller personberikelse." },
+  "corporate.plan": { title: "Corporate Homes – planlegge", description: "Lage interne research- og neste-steg-oppgaver. Ingen automatisk kontakt eller statusendring." },
+  "visibility.read": { title: "SEO · GEO · AEO – se", description: "Se brand-avgrensede søke-/AI-henvisninger og SEO-oppgaver." },
+  "visibility.plan": { title: "SEO · GEO · AEO – planlegge", description: "Lage SEO-, GEO-, AEO-, søkeord- og tekstoppgaver for valgt merkevare." },
+  "ads.read": { title: "Annonser – se", description: "Se kampanjer for valgt merkevare uten tilgang til kontotokens eller budsjettutførelse." },
+  "ads.draft": { title: "Annonser – utkast", description: "Lage interne annonsebrief og oppgaver. Starter ikke spend eller publisering." },
+  "events.plan": { title: "Video & informasjonsmøter", description: "Planlegge video, webinar og informasjonsmøte som intern oppgave. Sender ingen invitasjon." },
 };
 const suggested: WorkspacePermission[] = ["properties.catalog.read", "crm.read", "crm.write"];
 
@@ -80,6 +87,9 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
       next.add("tasks.joint.read");
     }
     if (permission === "marketing.draft") next.add("marketing.read");
+    if (permission === "corporate.plan") next.add("corporate.read");
+    if (permission === "visibility.plan") next.add("visibility.read");
+    if (permission === "ads.draft") next.add("ads.read");
   } else {
     next.delete(permission);
     if (permission === "crm.joint.read") {
@@ -89,6 +99,9 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
     }
     if (permission === "tasks.joint.read") next.delete("tasks.joint.write");
     if (permission === "marketing.read") next.delete("marketing.draft");
+    if (permission === "corporate.read") next.delete("corporate.plan");
+    if (permission === "visibility.read") next.delete("visibility.plan");
+    if (permission === "ads.read") next.delete("ads.draft");
   }
   return WORKSPACE_PERMISSIONS.filter(candidate => next.has(candidate));
 }
@@ -231,7 +244,8 @@ export default function WorkspaceAccessPage() {
             <div className="space-y-2">
               {WORKSPACE_PERMISSIONS.filter(permission => brandKey === "zeneco"
                 ? permission !== "crm.read" && permission !== "crm.write"
-                : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)).map((permission) => (
+                : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
+                    "corporate.read", "corporate.plan"].includes(permission)).map((permission) => (
                 <label key={permission} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                   <input type="checkbox" className="mt-1 accent-cyan-500" checked={permissions.includes(permission)}
                     onChange={(event) => setPermissions((current) => togglePermission(current, permission, event.target.checked))} />
