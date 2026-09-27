@@ -1,3 +1,5 @@
+import { buildCorporatePartnerOutreach } from "@/lib/corporate-partner-outreach";
+
 export type CorporatePartnerBriefInput = {
   id: string;
   company_name: string;
@@ -99,27 +101,13 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
   const firstAngle = input.referral_angle || values[0];
   const company = input.company_name;
 
-  const email = {
-    subject: "Mulig samarbeid om norske bedriftskunder som vurderer bolig i Spania",
-    body: [
-      "Hei,",
-      "",
-      "Jeg tar kontakt fra Zen Corporate Homes, en del av Zen Eco Homes på Costa Blanca.",
-      "",
-      "Vi arbeider med norske bedrifter og organisasjoner som vurderer å eie bolig i Spania for ansatte, ledelse, gjester eller medlemmer. Jeg tror " + company + " kan være et relevant miljø å samarbeide med fordi dere allerede arbeider tett med virksomheter som kan ha nytte av en slik løsning.",
-      "",
-      "Tanken er enkel: dere beholder deres rådgiver- og kunderelasjon, mens vi håndterer behovsavklaring, områdevalg, boligshortlist, visninger og den praktiske eiendomsprosessen i Spania.",
-      "",
-      "Vi kan starte helt uforpliktende med ett konkret kundecase, en kort gjennomgang av konseptet eller et webinar / faginnhold dersom det passer bedre.",
-      "",
-      "Hvis dette kan være relevant, tar jeg gjerne en kort samtale og viser hvordan Corporate Home Assessment fungerer i praksis.",
-      "",
-      "Vennlig hilsen",
-      "Freddy Bremseth",
-      "Zen Corporate Homes",
-      "Zen Eco Homes",
-    ].join("\n"),
-  };
+  const outreachSequence = buildCorporatePartnerOutreach({
+    company_name: company,
+    partner_type: input.partner_type,
+    referral_angle: input.referral_angle,
+  });
+  const email = outreachSequence[0];
+
 
   return {
     title: company + " · partnerdossier",
@@ -154,10 +142,11 @@ export function buildCorporatePartnerBrief(input: CorporatePartnerBriefInput) {
       "Send aldri automatisk fra partnerdiscovery; bruk menneskelig kontroll før første kontakt.",
     ],
     email,
+    outreachSequence,
     guardrails: [
       "Dossieret er basert på offentlig selskapsdata og intern partnerlogikk.",
       "Ingen personnavn, personlig e-post eller telefon skal legges til automatisk.",
-      "E-posten er et utkast og sendes ikke automatisk.",
+      "E-postsekvensen er kun utkast og sendes ikke automatisk.",
       "Ingen skatte-, juridisk- eller regnskapsmessig konklusjon skal loves på vegne av partneren.",
     ],
   };
