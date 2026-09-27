@@ -44,7 +44,6 @@ const readinessLabels: Record<string, string> = {
   INVALID_DRAFT_PERMISSIONS: "Utkastet inneholder en ukjent eller ugyldig rettighet.",
   EMPTY_PERMISSIONS: "Utkastet har ingen rettigheter.",
   INVALID_BRAND_SCOPE: "Rettighetene passer ikke med denne merkevarens avgrensning.",
-  MARKETING_PUBLISH_NOT_IMPLEMENTED: "Direkte publisering er fortsatt sperret for medarbeidere. Markedsoversikt og innholdsutkast kan brukes.",
   AUTH_USER_MISSING: "Supabase Auth-brukeren finnes ikke ennå.",
   ACCESS_PROFILE_MISSING: "RealtyFlow-profilen WORKSPACE_MEMBER finnes ikke ennå.",
   ACCESS_PROFILE_WRONG_ROLE: "Eksisterende RealtyFlow-profil har feil rolle.",
@@ -64,7 +63,7 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "tasks.joint.write": { title: "Zen · opprette og fullføre felles oppgaver", description: "Opprette egne, nye oppgaver og merke dem fullført. Ingen kundemeldinger, gamle oppgaver eller globale oppfølgingsrutiner." },
   "marketing.read": { title: "Markedsføring – oversikt", description: "Se aktive kanaler, nylig innhold og resultater kun for valgt merkevare." },
   "marketing.draft": { title: "Markedsføring – lage innholdsutkast", description: "Lagre brand-avgrensede tekstutkast i Content Hub. Gir ikke publiseringsrettighet." },
-  "marketing.publish": { title: "Publisere i sosiale medier (planlagt)", description: "Ikke aktivert for medarbeidere. Krever egne kontoområder, publiseringssperrer og separat teknisk kontroll." },
+  "marketing.publish": { title: "Publisere i sosiale medier", description: "Legg brand-godkjente utkast i kontrollert publiseringskø. Kanal, medlemskap og innhold verifiseres på nytt før utsending." },
   "corporate.read": { title: "Corporate Homes – se", description: "Se Zen Eco Homes bedrifts- og partnerprospekter uten historisk CRM eller personberikelse." },
   "corporate.plan": { title: "Corporate Homes – planlegge", description: "Lage interne research- og neste-steg-oppgaver. Ingen automatisk kontakt eller statusendring." },
   "visibility.read": { title: "SEO · GEO · AEO – se", description: "Se brand-avgrensede søke-/AI-henvisninger og SEO-oppgaver." },
@@ -93,6 +92,7 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
       next.add("tasks.joint.read");
     }
     if (permission === "marketing.draft") next.add("marketing.read");
+    if (permission === "marketing.publish") { next.add("marketing.read"); next.add("marketing.draft"); }
     if (permission === "corporate.plan") next.add("corporate.read");
     if (permission === "visibility.plan") next.add("visibility.read");
     if (permission === "ads.draft") next.add("ads.read");
@@ -108,7 +108,8 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
       next.delete("tasks.joint.write");
     }
     if (permission === "tasks.joint.read") next.delete("tasks.joint.write");
-    if (permission === "marketing.read") next.delete("marketing.draft");
+    if (permission === "marketing.read") { next.delete("marketing.draft"); next.delete("marketing.publish"); }
+    if (permission === "marketing.draft") next.delete("marketing.publish");
     if (permission === "corporate.read") next.delete("corporate.plan");
     if (permission === "visibility.read") next.delete("visibility.plan");
     if (permission === "ads.read") next.delete("ads.draft");
