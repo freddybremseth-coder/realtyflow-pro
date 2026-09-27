@@ -993,6 +993,78 @@ try {
     inactiveChannelDraft.rows[0].result?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND",
     "Marketing draft accepted an inactive brand channel");
 
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["corporate.read"] }]) === false,
+    "Workspace user configure accepted Corporate Homes outside Zen Eco Homes");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["corporate.plan"] }]) === false,
+    "Workspace user configure accepted Corporate planning without Corporate read");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["visibility.plan"] }]) === false,
+    "Workspace user configure accepted visibility planning without visibility read");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["ads.draft"] }]) === false,
+    "Workspace user configure accepted ad drafting without ad read");
+
+  verify(await configureManaged([{
+    brandKey: "zeneco",
+    permissions: [
+      "corporate.read","corporate.plan",
+      "visibility.read","visibility.plan",
+      "ads.read","ads.draft","events.plan",
+    ],
+  }]) === true, "Valid Zen Corporate/Growth workspace configuration failed");
+
+  await sql("insert into public.corporate_prospects(brand_id,company_name,organization_type,country_code,city,industry,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,next_action) values ('zeneco','Nordic Growth AS','company','NO','Oslo','Technology','RESEARCHED',88,'A',array['distributed workforce'],array['benefit policy'],array['HR','CEO'],'https://example.test/nordic','Verify employee-benefit fit')");
+  await sql("insert into public.corporate_partner_prospects(brand_id,company_name,partner_type,country_code,city,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,next_action) values ('zeneco','Partner Advisory AS','management_consulting','NO','Bergen','DISCOVERED',75,'B',array['corporate clients'],array['Spain demand'],'Employee benefit introductions','Prepare referral brief')");
+  await sql("insert into public.search_discovery_events(brand_id,source,path,occurred_at) values ('zeneco','google','/bedriftshytte-spania',now()),('zeneco','chatgpt','/corporate-homes',now()),('pinosoecolife','google','/pinoso-private',now())");
+  await sql("insert into public.work_items(title,description,status,priority,brand_id,source_type,assigned_agent,next_action) values ('Zen SEO priority','Improve Corporate Homes landing page','TO_DO','HIGH','zeneco','ai_agent','seo','Add HR-benefit search intent'),('Private Pinoso SEO','Must not leak','TO_DO','HIGH','pinosoecolife','ai_agent','seo','Private next action')");
+  await sql("insert into public.ad_campaigns(brand_id,name,product_name,target_markets,status,total_creatives,estimated_cost_usd,growth_goal) values ('zeneco','Corporate HR campaign','Zen Corporate Homes',array['Norway'],'completed',5,120,'lead_generation'),('pinosoecolife','Private Pinoso Ad','Pinoso EcoLife',array['Norway'],'completed',3,75,'lead_generation')");
+
+  const growthSnapshot = await serviceSql(
+    "select public.workspace_brand_growth_snapshot($1::text,$2::uuid,$3::text) as result",
+    ["zeneco", managedUser, "managed@example.test"],
+  );
+  const growth = growthSnapshot.rows[0].result;
+  verify(growth?.corporate?.prospects?.length === 1 &&
+    growth.corporate.prospects[0].companyName === "Nordic Growth AS" &&
+    growth?.corporate?.partners?.length === 1 &&
+    growth?.visibility?.seoWork?.length === 1 &&
+    growth.visibility.seoWork[0].title === "Zen SEO priority" &&
+    growth?.ads?.length === 1 &&
+    growth.ads[0].name === "Corporate HR campaign" &&
+    !JSON.stringify(growth).includes("Private Pinoso"),
+    "Growth snapshot leaked another brand or omitted granted Zen modules");
+
+  for (const [kind,title] of [
+    ["corporate","Research Nordic Growth AS"],
+    ["seo","SEO Corporate Homes"],
+    ["ads","Ad brief Corporate Homes"],
+    ["video","Corporate video concept"],
+    ["info_meeting","HR information webinar"],
+  ]) {
+    const created = await serviceSql(
+      "select public.workspace_brand_growth_work_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text,$7::text,$8::date,$9::text,$10::text) as result",
+      ["zeneco", managedUser, "managed@example.test", kind, title,
+        "Internal planning only", "Prepare next internal step", "2026-10-15", "HIGH", "source-" + kind],
+    );
+    verify(created.rows[0].result?.kind === kind &&
+      created.rows[0].result?.status === "TO_DO",
+      "Growth planning failed for kind " + kind);
+  }
+  const growthRows = await sql(
+    "select assigned_agent,status,metadata from public.work_items where metadata->>'workspace_growth'='true' order by created_at,id",
+  );
+  verify(growthRows.rowCount === 5 &&
+    growthRows.rows.every(row =>
+      row.status === "TO_DO" &&
+      row.metadata?.external_action === false &&
+      row.metadata?.publishing_action === false &&
+      row.metadata?.ad_spend_action === false),
+    "Growth work escaped internal planning-only boundaries");
+  const growthAudit = await sql(
+    "select count(*)::int as total from core.brand_workspace_growth_work_audit where actor_user_id=$1",
+    [managedUser],
+  );
+  verify(growthAudit.rows[0].total === 5,
+    "Growth planning audit did not record every employee-created work item");
+
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["crm.joint.read"] }]) === false,
     "Workspace user configure accepted Zen-only scope on Pinoso");
 
