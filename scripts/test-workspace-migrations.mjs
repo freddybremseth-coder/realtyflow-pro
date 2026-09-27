@@ -19,6 +19,7 @@ const files = [
   "20260927143000_workspace_marketing_modules.sql",
   "20260927160000_workspace_content_studio.sql",
   "20260927190000_workspace_email_reach.sql",
+  "20260927213000_workspace_social_publish.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -992,7 +993,9 @@ try {
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft"] }]) === true,
     "Workspace user configure rejected implemented marketing draft access");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.publish"] }]) === false,
-    "Workspace user configure accepted workspace social publishing before scoped publish safety exists");
+    "Workspace user configure accepted social publishing without draft dependency");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft","marketing.publish"] }]) === true,
+    "Workspace user configure rejected controlled social publishing with complete dependencies");
 
   await sql("insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','social','Pinoso draft','Safe Pinoso content','draft'),('zeneco','social','Private Zen','Must not leak','published')");
   await sql("insert into public.social_channels(brand_id,platform,external_id,display_name,is_active) values ('pinosoecolife','facebook','fb-pinoso','Pinoso Facebook',true),('pinosoecolife','youtube','yt-pinoso','Pinoso YouTube',false),('zeneco','facebook','fb-zen','Zen Facebook',true)");
@@ -1023,6 +1026,23 @@ try {
   );
   verify(marketingAudit.rows[0].total === 1,
     "Marketing draft audit did not record the managed workspace actor");
+
+  const queuedMarketingPublish = await serviceSql(
+    "select public.workspace_brand_marketing_publish_queue($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife", managedUser, "managed@example.test",
+      createdMarketingDraft.rows[0].result.publication.id, ["facebook"]],
+  );
+  verify(queuedMarketingPublish.rows[0].result?.ok === true &&
+    queuedMarketingPublish.rows[0].result?.publication?.brand_id === "pinosoecolife" &&
+    queuedMarketingPublish.rows[0].result?.publication?.status === "scheduled" &&
+    queuedMarketingPublish.rows[0].result?.publication?.scheduled_platforms?.[0] === "facebook",
+    "Controlled workspace social publishing did not queue the exact brand draft");
+  const publishAudit = await sql(
+    "select count(*)::int as total from core.brand_workspace_marketing_publish_audit where actor_user_id=$1",
+    [managedUser],
+  );
+  verify(publishAudit.rows[0].total === 1,
+    "Workspace social publish audit did not record the managed actor");
 
   const inactiveChannelDraft = await serviceSql(
     "select public.workspace_brand_marketing_draft_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[]) as result",
