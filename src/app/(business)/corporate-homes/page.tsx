@@ -518,6 +518,7 @@ export default function CorporateHomesGrowthPage() {
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
             Google, LinkedIn, Meta, outbound og organisk/direct sammenlignes på faktiske Corporate-leads,
             kvalifisering, pipelineverdi og dokumenterte kommersielle utfall. Visning og tilbud kommer kun fra bekreftede Revenue OS-events.
+            Dette er styringsgrunnlaget før annonsebudsjett skaleres; RealtyFlow endrer ikke spend automatisk.
           </p>
           <p className="mt-2 text-xs font-semibold text-slate-500">{data?.acquisition.attributionRule || ""}</p>
         </div>
