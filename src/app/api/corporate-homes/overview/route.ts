@@ -308,6 +308,8 @@ export async function GET(request: NextRequest) {
     }))
     .filter((row: any) => ["A", "B"].includes(String(row.fit_tier || "").toUpperCase()))
     .sort((a: any, b: any) => {
+      const manualContactDelta = Number(Boolean(b.readiness?.manualContactReady)) - Number(Boolean(a.readiness?.manualContactReady));
+      if (manualContactDelta) return manualContactDelta;
       const qualificationDelta = Number(Boolean(b.readiness?.qualificationReady)) - Number(Boolean(a.readiness?.qualificationReady));
       if (qualificationDelta) return qualificationDelta;
       const tierRank = (value: string) => value === "A" ? 2 : value === "B" ? 1 : 0;
@@ -392,7 +394,7 @@ export async function GET(request: NextRequest) {
         signalBackedATier,
         lastSignalResearch: lastSignalResearchRun || null,
         focusProspects,
-        focusRule: "Klar for menneskelig kvalifisering → A-fit før B-fit → readiness-score → fit-score → sist oppdatert.",
+        focusRule: "Klar for manuell kontakt via selskapskanal → klar for menneskelig kvalifisering → A-fit før B-fit → readiness-score → fit-score → sist oppdatert.",
         statusCounts: prospectStatusCounts,
         tierCounts: prospectTierCounts,
         discovery: {

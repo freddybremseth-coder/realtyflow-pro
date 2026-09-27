@@ -47,3 +47,11 @@ test("Corporate Homes dashboard surfaces channel performance before paid scaling
   assert.match(page, /Aktiv pipeline/);
   assert.match(page, /før annonsebudsjett skaleres/);
 });
+
+
+test("Corporate Homes overview prioritizes manual company-contact readiness", () => {
+  assert.match(route, /manualContactReady/);
+  assert.match(route, /Klar for manuell kontakt via selskapskanal/);
+  assert.match(page, /Manuell kontakt klar/);
+  assert.match(page, /genericCompanyChannel/);
+});
