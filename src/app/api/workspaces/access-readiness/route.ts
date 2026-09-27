@@ -15,6 +15,9 @@ function planScopeValid(brandKey: string, permissions: WorkspacePermission[]) {
   if (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) return false;
   if (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) return false;
   if (permissions.includes("ads.draft") && !permissions.includes("ads.read")) return false;
+  if (permissions.includes("content.edit") && !permissions.includes("content.read")) return false;
+  if (permissions.includes("content.publish") &&
+      (!permissions.includes("content.read") || !permissions.includes("content.edit"))) return false;
   if (brandKey === "zeneco") {
     if (permissions.includes("crm.read") || permissions.includes("crm.write")) return false;
     if (permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) return false;
