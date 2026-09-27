@@ -50,7 +50,7 @@ test("Company contact research is scheduled, registered and visible in Corporate
 
 test("Company contact UI remains manual and draft-first", () => {
   assert.match(dashboard, /Ingen automatisk utsendelse|ingen utsendelse/i);
-  assert.match(prospect, /Ingen automatisk utsendelse/);
-  assert.match(partner, /Ingen automatisk utsendelse/);
+  assert.match(prospect, /ingen automatisk utsendelse/i);
+  assert.match(partner, /ingen automatisk utsendelse/i);
   assert.doesNotMatch(dashboard, /sendEmail\s*\(|sendMessage\s*\(/);
 });
