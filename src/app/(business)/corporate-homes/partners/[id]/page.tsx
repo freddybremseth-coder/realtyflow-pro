@@ -29,6 +29,13 @@ type Brief = {
     employeeCount?: number | null;
     status: string;
   };
+  companyContact: {
+    genericEmail?: string | null;
+    contactPageUrl?: string | null;
+    checkedAt?: string | null;
+    companyLevelOnly: boolean;
+    personalDataCollected: boolean;
+  };
   fit: {
     tier: string;
     score: number;
@@ -159,6 +166,21 @@ export default function CorporatePartnerBriefPage({ params }: { params: Promise<
               </a>
             )}
           </div>
+
+          {(brief.companyContact.genericEmail || brief.companyContact.contactPageUrl) && (
+            <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+              <div className="text-xs font-black uppercase tracking-wide text-cyan-900">Offisiell selskapskontakt</div>
+              {brief.companyContact.genericEmail && (
+                <div className="mt-2 break-all text-sm font-bold text-slate-900">{brief.companyContact.genericEmail}</div>
+              )}
+              {brief.companyContact.contactPageUrl && (
+                <a href={brief.companyContact.contactPageUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                  Åpne kontaktside <ExternalLink size={12} />
+                </a>
+              )}
+              <div className="mt-2 text-xs text-slate-500">Kun selskapsnivå. Ingen personlig kontakt er lagt til.</div>
+            </div>
+          )}
         </article>
 
         <article className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
