@@ -72,6 +72,9 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "ads.read": { title: "Annonser – se", description: "Se kampanjer for valgt merkevare uten tilgang til kontotokens eller budsjettutførelse." },
   "ads.draft": { title: "Annonser – utkast", description: "Lage interne annonsebrief og oppgaver. Starter ikke spend eller publisering." },
   "events.plan": { title: "Video & informasjonsmøter", description: "Planlegge video, webinar og informasjonsmøte som intern oppgave. Sender ingen invitasjon." },
+  "content.read": { title: "Nettside & innhold – se", description: "Se brandets nettsideutkast og registrerte publiseringer." },
+  "content.edit": { title: "Nettside & innhold – redigere", description: "Lage og forbedre artikler og guider som utkast." },
+  "content.publish": { title: "Nettside & innhold – publisere", description: "Publisere til riktig brand-nettside med versjonshistorikk og rollback." },
 };
 const suggested: WorkspacePermission[] = ["properties.catalog.read", "crm.read", "crm.write"];
 
@@ -90,6 +93,8 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
     if (permission === "corporate.plan") next.add("corporate.read");
     if (permission === "visibility.plan") next.add("visibility.read");
     if (permission === "ads.draft") next.add("ads.read");
+    if (permission === "content.edit") next.add("content.read");
+    if (permission === "content.publish") { next.add("content.read"); next.add("content.edit"); }
   } else {
     next.delete(permission);
     if (permission === "crm.joint.read") {
@@ -102,6 +107,8 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
     if (permission === "corporate.read") next.delete("corporate.plan");
     if (permission === "visibility.read") next.delete("visibility.plan");
     if (permission === "ads.read") next.delete("ads.draft");
+    if (permission === "content.read") { next.delete("content.edit"); next.delete("content.publish"); }
+    if (permission === "content.edit") next.delete("content.publish");
   }
   return WORKSPACE_PERMISSIONS.filter(candidate => next.has(candidate));
 }
