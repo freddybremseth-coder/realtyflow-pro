@@ -13,68 +13,59 @@ let publications: Array<Record<string, unknown>> = [];
 let channels: Array<Record<string, unknown>> = [];
 
 function fakeDatabase() {
-  function builder(table: string) {
-    let rows = table === "content_publications" ? publications : channels;
-    let inserted: Record<string, unknown> | null = null;
-    const query: any = {
-      select(...args: unknown[]) { calls.push({ table, method: "select", args }); return query; },
-      eq(column: string, value: unknown) {
-        calls.push({ table, method: "eq", args: [column, value] });
-        rows = rows.filter(row => row[column] === value);
-        return query;
-      },
-      in(column: string, values: unknown[]) {
-        calls.push({ table, method: "in", args: [column, values] });
-        rows = rows.filter(row => values.includes(row[column]));
-        return query;
-      },
-      order(...args: unknown[]) { calls.push({ table, method: "order", args }); return query; },
-      limit(...args: unknown[]) { calls.push({ table, method: "limit", args }); return query; },
-      insert(value: Record<string, unknown>) {
-        calls.push({ table, method: "insert", args: [value] });
-        inserted = {
-          id: "22222222-2222-4222-8222-222222222222",
-          created_at: "2026-09-27T12:00:00Z",
-          updated_at: "2026-09-27T12:00:00Z",
-          total_views: 0, total_likes: 0, total_comments: 0, total_shares: 0,
-          thumbnail_url: null, scheduled_at: null, published_at: null,
-          ...value,
-        };
-        return query;
-      },
-      single() {
-        calls.push({ table, method: "single", args: [] });
-        return Promise.resolve({ data: inserted, error: null });
-      },
-      then(resolve: (value: unknown) => unknown) {
-        return Promise.resolve({ data: rows, error: null }).then(resolve);
-      },
-    };
-    return query;
-  }
-
   return {
     rpc(name: string, args?: Record<string, unknown>) {
       calls.push({ method: "rpc", args: [name, args] });
-      if (name !== "workspace_brand_grant") throw new Error("Unexpected RPC " + name);
-      const key = String(args?.p_brand_key || "");
-      return Promise.resolve({
-        data: {
-          brand: { id: key === "zeneco" ? "zen-id" : "pinoso-id", brand_key: key },
-          grant: key === "pinosoecolife" ? {
-            brand_id: "pinoso-id", user_id: userId, email: "staff@example.test",
-            status: "active", permissions,
-          } : null,
-        },
-        error: null,
-      });
-    },
-    from(table: string) {
-      calls.push({ table, method: "from", args: [] });
-      if (!["content_publications", "social_channels"].includes(table)) {
-        throw new Error("Unexpected table " + table);
+      if (name === "workspace_brand_grant") {
+        const key = String(args?.p_brand_key || "");
+        return Promise.resolve({
+          data: {
+            brand: { id: key === "zeneco" ? "zen-id" : "pinoso-id", brand_key: key },
+            grant: key === "pinosoecolife" ? {
+              brand_id: "pinoso-id", user_id: userId, email: "staff@example.test",
+              status: "active", permissions,
+            } : null,
+          },
+          error: null,
+        });
       }
-      return builder(table);
+      if (name === "workspace_brand_marketing_snapshot") {
+        return Promise.resolve({
+          data: {
+            publications: publications.filter(row => row.brand_id === args?.p_brand_key),
+            channels: channels.filter(row => row.brand_id === args?.p_brand_key && row.is_active === true),
+          },
+          error: null,
+        });
+      }
+      if (name === "workspace_brand_marketing_draft_create") {
+        const requested = Array.isArray(args?.p_platforms) ? args?.p_platforms as string[] : [];
+        const active = new Set(channels
+          .filter(row => row.brand_id === args?.p_brand_key && row.is_active === true)
+          .map(row => String(row.platform)));
+        if (requested.some(platform => !active.has(platform))) {
+          return Promise.resolve({ data: { ok: false, error: "CHANNEL_NOT_ACTIVE_FOR_BRAND" }, error: null });
+        }
+        const publication = {
+          id: "22222222-2222-4222-8222-222222222222",
+          brand_id: args?.p_brand_key,
+          content_type: "social",
+          title: args?.p_title || null,
+          description: args?.p_description,
+          tags: args?.p_tags || [],
+          thumbnail_url: null,
+          scheduled_platforms: requested,
+          status: "draft",
+          scheduled_at: null,
+          published_at: null,
+          created_at: "2026-09-27T12:00:00Z",
+          updated_at: "2026-09-27T12:00:00Z",
+          total_views: 0, total_likes: 0, total_comments: 0, total_shares: 0,
+        };
+        publications.push(publication);
+        return Promise.resolve({ data: { ok: true, publication }, error: null });
+      }
+      throw new Error("Unexpected RPC " + name);
     },
     auth: { admin: { getUserById: async (id: string) => ({
       data: { user: { id, email: "staff@example.test" } }, error: null,
@@ -151,10 +142,10 @@ test("marketing read is exact-brand and never exposes channel identifiers or oth
   assert.equal(JSON.stringify(body).includes("PRIVATE ZEN"), false);
   assert.deepEqual(body.channels.map((row: any) => row.platform), ["facebook", "instagram"]);
   assert.equal(JSON.stringify(body).includes("external_id"), false);
-  assert.equal(calls.some(call => call.table === "content_publications" &&
-    call.method === "eq" && call.args[0] === "brand_id" && call.args[1] === "pinosoecolife"), true);
-  assert.equal(calls.some(call => call.table === "social_channels" &&
-    call.method === "eq" && call.args[0] === "brand_id" && call.args[1] === "pinosoecolife"), true);
+  const snapshotCall = calls.find(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_snapshot");
+  assert.ok(snapshotCall);
+  assert.equal((snapshotCall?.args[1] as any).p_brand_key, "pinosoecolife");
+  assert.equal((snapshotCall?.args[1] as any).p_user_id, userId);
 });
 
 test("marketing draft write is brand-fixed and cannot publish", async () => {
@@ -170,13 +161,14 @@ test("marketing draft write is brand-fixed and cannot publish", async () => {
   assert.equal(response.status, 201);
   const body = await response.json();
   assert.equal(body.published, false);
-  const insert = calls.find(call => call.table === "content_publications" && call.method === "insert")?.args[0] as any;
-  assert.equal(insert.brand_id, "pinosoecolife");
-  assert.equal(insert.status, "draft");
-  assert.equal(insert.content_type, "social");
-  assert.equal(insert.description, "Et trygt utkast for Pinoso EcoLife.");
-  assert.deepEqual(insert.tags, ["pinoso", "villa"]);
-  assert.equal(JSON.stringify(insert).includes("zeneco"), false);
+  const draftCall = calls.find(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_draft_create");
+  assert.ok(draftCall);
+  const draftArgs = draftCall?.args[1] as any;
+  assert.equal(draftArgs.p_brand_key, "pinosoecolife");
+  assert.equal(draftArgs.p_description, "Et trygt utkast for Pinoso EcoLife.");
+  assert.deepEqual(draftArgs.p_tags, ["pinoso", "villa"]);
+  assert.deepEqual(draftArgs.p_platforms, ["facebook", "instagram"]);
+  assert.equal(JSON.stringify(draftArgs).includes("zeneco"), false);
 });
 
 test("marketing draft requires explicit draft permission and active brand channel", async () => {
@@ -193,7 +185,7 @@ test("marketing draft requires explicit draft permission and active brand channe
     platforms: ["youtube"],
   }) as any, { params: { brandKey: "pinosoecolife" } });
   assert.equal(badChannel.status, 409);
-  assert.equal(calls.filter(call => call.table === "content_publications" && call.method === "insert").length, 0);
+  assert.equal(calls.filter(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_draft_create").length, 1);
 });
 
 test("other-brand workspace is denied before marketing table access", async () => {
@@ -201,5 +193,5 @@ test("other-brand workspace is denied before marketing table access", async () =
   calls.length = 0;
   const response = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
   assert.equal(response.status, 403);
-  assert.equal(calls.some(call => call.method === "from"), false);
+  assert.equal(calls.some(call => call.method === "rpc" && ["workspace_brand_marketing_snapshot","workspace_brand_marketing_draft_create"].includes(String(call.args[0]))), false);
 });
