@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
       typeof securityPreflight.private_document_buckets_present !== "boolean" ||
       typeof securityPreflight.private_document_buckets_private !== "boolean" ||
       !Number.isSafeInteger(securityPreflight.private_document_authenticated_policies) ||
-      !Number.isSafeInteger(securityPreflight.direct_customer_policy_risk))) {
+      !Number.isSafeInteger(securityPreflight.direct_customer_policy_risk) ||
+      !Number.isSafeInteger(securityPreflight.direct_internal_policy_risk))) {
     return reply({ error: "WORKSPACE_UNAVAILABLE" }, 503);
   }
 
