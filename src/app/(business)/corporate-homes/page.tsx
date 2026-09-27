@@ -147,7 +147,12 @@ type Overview = {
         score: number;
         label: string;
         qualificationReady: boolean;
+        manualContactReady: boolean;
         suggestedStage: string;
+        genericCompanyChannel: {
+          email?: string | null;
+          contactPageUrl?: string | null;
+        };
         reasons: string[];
         missing: string[];
       };
@@ -693,12 +698,19 @@ export default function CorporateHomesGrowthPage() {
                   {prospect.fitTier} · {prospect.fitScore}
                 </span>
               </div>
-              <div className="mt-3 flex items-center gap-2 text-xs">
-                <span className={`rounded-full px-2.5 py-1 font-black ${prospect.readiness.qualificationReady ? "bg-emerald-100 text-emerald-900" : "bg-white text-slate-700"}`}>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <span className={`rounded-full px-2.5 py-1 font-black ${prospect.readiness.manualContactReady ? "bg-emerald-100 text-emerald-900" : prospect.readiness.qualificationReady ? "bg-cyan-100 text-cyan-900" : "bg-white text-slate-700"}`}>
                   Klarhet {prospect.readiness.score}/100
                 </span>
+                {prospect.readiness.manualContactReady && (
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-black text-emerald-900">Manuell kontakt klar</span>
+                )}
                 <span className="font-semibold text-slate-500">{prospect.status}</span>
               </div>
+              <div className="mt-2 text-xs font-semibold text-slate-600">{prospect.readiness.label}</div>
+              {prospect.readiness.genericCompanyChannel?.email && (
+                <div className="mt-1 text-xs font-semibold text-cyan-800">{prospect.readiness.genericCompanyChannel.email}</div>
+              )}
               <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
                 {prospect.fitReasons.slice(0, 2).map((reason) => <div key={reason}>✓ {reason}</div>)}
                 {prospect.evidenceGaps.slice(0, 1).map((gap) => <div key={gap} className="text-amber-800">Mangler: {gap}</div>)}
