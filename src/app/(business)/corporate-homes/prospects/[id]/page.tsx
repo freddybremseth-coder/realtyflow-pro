@@ -80,6 +80,8 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [error, setError] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("initial");
   const [copyNotice, setCopyNotice] = useState("");
+  const [contactLogging, setContactLogging] = useState(false);
+  const [contactLogNotice, setContactLogNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -175,6 +177,47 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       window.setTimeout(() => setCopyNotice(""), 2200);
     } catch {
       setCopyNotice("Kunne ikke kopiere automatisk.");
+    }
+  }
+
+  async function logManualCompanyContact() {
+    const method = genericCompanyContact.genericEmail
+      ? "generic_email"
+      : genericCompanyContact.contactPageUrl
+        ? "contact_form"
+        : null;
+
+    if (!method) {
+      setContactLogNotice("Ingen offisiell selskapskanal er registrert.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Bekreft kun etter at du selv har sendt eller levert henvendelsen. RealtyFlow sender ingenting fra denne handlingen.",
+    );
+    if (!confirmed) return;
+
+    setContactLogging(true);
+    setContactLogNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/contact-log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          method,
+          template_key: selectedTemplate,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke loggføre manuell kontakt.");
+      setProspect(body?.prospect || prospect);
+      setContactLogNotice("Manuell kontakt er loggført. Ingen melding ble sendt av RealtyFlow.");
+      await load();
+    } catch (contactError) {
+      setError(contactError instanceof Error ? contactError.message : "Kunne ikke loggføre manuell kontakt.");
+    } finally {
+      setContactLogging(false);
     }
   }
 
@@ -551,7 +594,20 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
               <button onClick={() => void copyOutreach()} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
                 <Copy size={16} /> Kopier e-post
               </button>
+              {(genericCompanyContact.genericEmail || genericCompanyContact.contactPageUrl) && (
+                <button
+                  onClick={() => void logManualCompanyContact()}
+                  disabled={contactLogging}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-900 disabled:opacity-60"
+                >
+                  {contactLogging ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  {String(prospect?.status || "").toUpperCase() === "CONTACTED"
+                    ? "Loggfør ny manuell oppfølging"
+                    : "Jeg har kontaktet selskapet manuelt"}
+                </button>
+              )}
               {copyNotice && <span className="text-xs font-semibold text-emerald-800">{copyNotice}</span>}
+              {contactLogNotice && <span className="text-xs font-semibold text-emerald-800">{contactLogNotice}</span>}
               <span className="text-xs text-slate-500">Ingen automatisk utsendelse.</span>
             </div>
           </div>
