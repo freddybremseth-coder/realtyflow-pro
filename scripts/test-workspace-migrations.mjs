@@ -121,7 +121,11 @@ try {
   await sql("grant select,insert,update on public.content_publications to service_role; grant select on public.social_channels to service_role");
   await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
   await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
-  await sql("create table public.work_items (id uuid primary key default gen_random_uuid())");
+  await sql("create table public.work_items (id uuid primary key default gen_random_uuid(), title text not null, description text, status text not null default 'TO_DO' check (status in ('TO_DO','IN_PROGRESS','REVIEW','DONE','CANCELLED')), priority text not null default 'MEDIUM' check (priority in ('CRITICAL','HIGH','MEDIUM','LOW')), due_date date, brand_id text, source_type text not null default 'manual' check (source_type in ('manual','ai_agent','content','automation','market_intelligence')), source_id text, assigned_agent text, next_action text, metadata jsonb default '{}'::jsonb, created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("create table public.search_discovery_events (id uuid primary key default gen_random_uuid(), brand_id text not null, source text not null, path text not null, occurred_at timestamptz not null default now())");
+  await sql("create table public.corporate_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, organization_type text not null default 'company', country_code text not null default 'NO', city text, industry text, employee_count integer, member_count integer, website_url text, linkedin_company_url text, status text not null default 'RESEARCHED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', decision_roles text[] not null default '{}', source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
+  await sql("create table public.corporate_partner_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, partner_type text not null default 'other', country_code text not null default 'NO', city text, industry text, employee_count integer, website_url text, status text not null default 'DISCOVERED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', referral_angle text, source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
+  await sql("create table public.ad_campaigns (id uuid primary key default gen_random_uuid(), brand_id text, name text not null, product_name text not null, target_markets text[], audience_segments text[], funnel_stage text, offer text, status text not null default 'draft', total_creatives integer default 0, estimated_cost_usd numeric, growth_goal text default 'unspecified', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.portal_messages (id uuid primary key default gen_random_uuid())");
   await sql("create table public.brand_settings (brand_id text primary key, settings jsonb)");
   await sql("create table public.agentic_approvals (id uuid primary key default gen_random_uuid(), title text)");
@@ -164,6 +168,8 @@ try {
   await sql("grant usage on schema core to service_role");
   await sql("grant select on core.brands to service_role");
   await sql("grant select, insert, update on public.contacts to service_role");
+  await sql("grant select, insert, update on public.work_items to service_role");
+  await sql("grant select on public.search_discovery_events, public.corporate_prospects, public.corporate_partner_prospects, public.ad_campaigns to service_role");
   await sql("grant select on public.properties, public.property_brand_visibility to service_role");
   for (const filename of files) {
     const contents = await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8");
@@ -220,7 +226,8 @@ try {
     "workspace_zeneco_joint_task_complete", "workspace_brand_contacts",
     "workspace_brand_contact_create", "workspace_brand_contact_update",
     "workspace_brand_property_catalogue", "workspace_staff_security_preflight",
-    "workspace_brand_marketing_snapshot", "workspace_brand_marketing_draft_create"]) {
+    "workspace_brand_marketing_snapshot", "workspace_brand_marketing_draft_create",
+    "workspace_brand_growth_snapshot", "workspace_brand_growth_work_create"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -233,12 +240,14 @@ try {
     "workspace_user_directory", "workspace_user_directory_audit",
     "zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
     "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
-    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit"]) {
+    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit",
+    "brand_workspace_growth_work_audit"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
   for (const auditTable of ["zeneco_joint_lead_review_audit", "zeneco_joint_contact_edit_audit",
-    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit"]) {
+    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit",
+    "brand_workspace_growth_work_audit"]) {
     const privileges = await sql(
       "select has_table_privilege('service_role',$1,'SELECT') as sel, has_table_privilege('service_role',$1,'INSERT') as ins, has_table_privilege('service_role',$1,'UPDATE') as upd, has_table_privilege('service_role',$1,'DELETE') as del",
       ["core." + auditTable],
