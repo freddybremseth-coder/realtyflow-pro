@@ -53,6 +53,9 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
     if (typed.includes("corporate.plan") && !typed.includes("corporate.read")) return null;
     if (typed.includes("visibility.plan") && !typed.includes("visibility.read")) return null;
     if (typed.includes("ads.draft") && !typed.includes("ads.read")) return null;
+    if (typed.includes("content.edit") && !typed.includes("content.read")) return null;
+    if (typed.includes("content.publish") &&
+        (!typed.includes("content.read") || !typed.includes("content.edit"))) return null;
     if (brandKey === "zeneco") {
       if (typed.some(permission => permission === "crm.read" || permission === "crm.write") ||
           (typed.includes("crm.joint.write") && !typed.includes("crm.joint.read")) ||
