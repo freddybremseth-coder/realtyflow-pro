@@ -102,3 +102,12 @@ test("hot lead routing reuses buyer profile and stage-readiness context", () => 
   assert.match(source, /stage_readiness_href/);
   assert.match(source, /\/lead-intelligence\?buyerProfileId=/);
 });
+
+
+test("Corporate inbound bridge runs before the missing-contact return and enriches work metadata only with prospect linkage", () => {
+  assert.match(source, /syncCorporateProspectFromInboundReply/);
+  assert.match(source, /contactId: contact\?\.id/);
+  assert.match(source, /workItemCreated: corporateInbound\.workItemCreated/);
+  assert.match(source, /corporate_prospect_id: corporateInbound\.prospect\?\.prospectId/);
+  assert.match(source, /corporate_match_method: corporateInbound\.prospect\?\.matchedBy/);
+});
