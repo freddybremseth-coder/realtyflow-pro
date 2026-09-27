@@ -57,11 +57,10 @@ begin
     end;
   end if;
 
-  -- Conservative rule: any authenticated storage.objects policy explicitly
-  -- targeting these two private buckets blocks staff rollout. Access must be
-  -- redesigned first through scoped server routes or identity-bound policies.
-  -- pg_policies is catalog-backed, so this remains readable even when the
-  -- caller intentionally lacks direct storage schema privileges.
+  -- Direct authenticated access to Olivia's private document buckets is safe
+  -- only when BOTH the Storage policy and Olivia's table RLS use the same
+  -- existing internal-user gate. A plain bucket predicate would let every
+  -- future RealtyFlow WORKSPACE_MEMBER token access unrelated private files.
   select count(*)::integer into v_private_bucket_auth_policies
   from pg_catalog.pg_policies p
   where p.schemaname = 'storage'
@@ -72,12 +71,20 @@ begin
       or coalesce(p.with_check,'') ilike '%property-documents%'
       or coalesce(p.qual,'') ilike '%caecv-documents%'
       or coalesce(p.with_check,'') ilike '%caecv-documents%'
+    )
+    and (
+      (p.cmd in ('ALL','SELECT','UPDATE','DELETE')
+        and coalesce(p.qual,'') not ilike '%olivia_private.is_internal_user%')
+      or
+      (p.cmd in ('ALL','INSERT','UPDATE')
+        and coalesce(p.with_check,'') not ilike '%olivia_private.is_internal_user%')
     );
 
   -- A generic workspace Auth token must also not inherit unrelated write
-  -- privileges to operational/public asset buckets. These buckets may remain
-  -- publicly readable by design, but a workspace member has no reason to
-  -- upload, update or delete plot/ad/farm assets directly through Supabase.
+  -- privileges to operational/public asset buckets. Plot/ad direct writes are
+  -- always forbidden. Olivia field-observation writes may remain browser-level
+  -- only when every write predicate is bound to Olivia's existing internal-user
+  -- identity gate (farmer/super_admin), which excludes workspace employees.
   select count(*)::integer into v_operational_storage_auth_write_policies
   from pg_catalog.pg_policies p
   where p.schemaname = 'storage'
@@ -85,12 +92,28 @@ begin
     and p.cmd in ('ALL','INSERT','UPDATE','DELETE')
     and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
     and (
-      coalesce(p.qual,'') ilike '%plot-assets%'
-      or coalesce(p.with_check,'') ilike '%plot-assets%'
-      or coalesce(p.qual,'') ilike '%ad-creatives%'
-      or coalesce(p.with_check,'') ilike '%ad-creatives%'
-      or coalesce(p.qual,'') ilike '%olivia-field-observations%'
-      or coalesce(p.with_check,'') ilike '%olivia-field-observations%'
+      (
+        (
+          coalesce(p.qual,'') ilike '%plot-assets%'
+          or coalesce(p.with_check,'') ilike '%plot-assets%'
+          or coalesce(p.qual,'') ilike '%ad-creatives%'
+          or coalesce(p.with_check,'') ilike '%ad-creatives%'
+        )
+      )
+      or
+      (
+        (
+          coalesce(p.qual,'') ilike '%olivia-field-observations%'
+          or coalesce(p.with_check,'') ilike '%olivia-field-observations%'
+        )
+        and (
+          (p.cmd in ('ALL','UPDATE','DELETE')
+            and coalesce(p.qual,'') not ilike '%olivia_private.is_internal_user%')
+          or
+          (p.cmd in ('ALL','INSERT','UPDATE')
+            and coalesce(p.with_check,'') not ilike '%olivia_private.is_internal_user%')
+        )
+      )
     );
 
   -- For the four core customer surfaces, fail if a public/authenticated policy
