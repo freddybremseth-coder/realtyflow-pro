@@ -1133,8 +1133,15 @@ try {
     "select public.workspace_brand_content_publish_payload($1::text,$2::uuid,$3::text,$4::uuid) as result",
     ["pinosoecolife", managedUser, "managed@example.test", contentDraftId],
   );
-  verify(publishPayload.rows[0].result?.title === "Living in Pinoso",
-    "Content publish payload did not resolve exact draft");
+  verify(publishPayload.rows[0].result?.title === "Living in Pinoso" &&
+    publishPayload.rows[0].result?.version === 1,
+    "Content publish preparation did not resolve exact draft or store version first");
+  const preparedVersions = await serviceSql(
+    "select public.workspace_brand_content_versions($1::text,$2::uuid,$3::text,$4::uuid) as result",
+    ["pinosoecolife", managedUser, "managed@example.test", contentDraftId],
+  );
+  verify(preparedVersions.rows[0].result?.length === 1,
+    "Content version must exist before any external website publish");
 
   const finalized = await serviceSql(
     "select public.workspace_brand_content_publish_finalize($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::text) as result",
