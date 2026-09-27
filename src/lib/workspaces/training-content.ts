@@ -65,6 +65,78 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
     ],
   },
   {
+    id: "understand-realtyflow",
+    title: "Forstå RealtyFlow – hva informasjonen betyr og hva du skal gjøre med den",
+    shortTitle: "Forstå RealtyFlow",
+    summary: "En enkel forklaring av leads, scores, SEO-funn, oppgaver, kampanjer og eiendomsdata – og hva som krever menneskelig vurdering.",
+    readMinutes: 9,
+    brands: "all",
+    sections: [
+      {
+        heading: "RealtyFlow prioriterer – du vurderer",
+        paragraphs: [
+          "Systemet samler mange signaler og gjør det lettere å se hva som fortjener oppmerksomhet. En score, status eller anbefaling er aldri en ordre eller en garanti. Bruk informasjonen til å prioritere, og bruk faglig skjønn før du kontakter en kunde, endrer en tekst eller foreslår en bolig.",
+        ],
+        emphasis: "Tenk på RealtyFlow som en svært god arbeidsassistent: den husker, sorterer og finner signaler. Mennesket avgjør hva signalene betyr.",
+      },
+      {
+        heading: "Leads og CRM",
+        bullets: [
+          "Kontaktdata forteller hvem vi kjenner og hvordan vi kan nå dem.",
+          "Pipeline/status sier hvor kunden befinner seg i prosessen, men må holdes oppdatert for å ha verdi.",
+          "En lead uten neste handling blir lett glemt. Bruk derfor oppgaver og frister aktivt.",
+          "Noter bare relevante fakta og neste steg – ikke fyll CRM med lange, ustrukturerte tekster.",
+        ],
+      },
+      {
+        heading: "Corporate fit-score",
+        bullets: [
+          "Fit-score og tier hjelper oss å sortere hvilke selskaper som er mest interessante å undersøke først.",
+          "Scoren er ikke bevis på kjøpsinteresse. Den sier at virksomheten ser ut til å ligne målgruppen vår.",
+          "Fit reasons viser hvorfor systemet mener prospektet er interessant.",
+          "Evidence gaps viser hva som mangler før vi kan være sikre på hypotesen. Dette er ofte den viktigste research-listen.",
+          "Next action skal være konkret: finn riktig rolle, bekreft benefit-program, send introduksjon eller avtal oppfølging.",
+        ],
+      },
+      {
+        heading: "SEO Sam, Google og AI-søk",
+        bullets: [
+          "SEO Sam viser funn, datakvalitet og foreslåtte tiltak. Prioriter tiltak som påvirker viktige sider eller kundereiser.",
+          "Search/AI-henvisninger viser hvor besøk kommer fra. De er et signal om synlighet, ikke automatisk et signal om salg.",
+          "Topp landingssider forteller hvilke sider som faktisk blir oppdaget. Spør deretter om siden har riktig budskap og et godt neste steg.",
+          "En teknisk feil kan gjøre tallene ufullstendige. Les alltid datastatus før du trekker konklusjoner.",
+        ],
+      },
+      {
+        heading: "Annonser og kampanjer",
+        bullets: [
+          "Kampanjestatus forteller hva som er opprettet eller tidligere kjørt.",
+          "Målgruppe og growth goal forklarer hva kampanjen forsøker å oppnå.",
+          "Estimert kostnad er informasjon – ikke en fullmakt til å bruke budsjett.",
+          "En annonseidé er ikke god fordi den er kreativ. Den er god hvis den treffer riktig målgruppe med riktig budskap og leder til en målbar handling.",
+        ],
+      },
+      {
+        heading: "Eiendommer",
+        bullets: [
+          "Katalogen viser publiserte boliger som kan brukes i kundearbeidet.",
+          "Pris og tilgjengelighet kan endre seg. Verifiser før du lover noe til kunden.",
+          "Velg boliger ut fra kundens behov, ikke bare fordi de ser attraktive ut.",
+          "Når kunden blir konkret, dokumenter hvorfor et forslag passer eller ikke passer. Det gjør neste runde bedre.",
+        ],
+      },
+      {
+        heading: "Arbeidsoppgaver",
+        bullets: [
+          "En god oppgave beskriver én konkret handling, ikke et helt prosjekt.",
+          "Bruk frist når tidspunktet betyr noe.",
+          "Bruk neste handling til å gjøre det åpenbart hva som skal skje når oppgaven åpnes igjen.",
+          "Ferdig betyr at resultatet er lagret eller sendt videre – ikke bare at du har tenkt på saken.",
+        ],
+      },
+    ],
+  },
+  {
     id: "zeneco-focus",
     title: "Zen Eco Homes – hva vi selger, til hvem og hvorfor",
     shortTitle: "Zen Eco Homes",
