@@ -778,6 +778,118 @@ try {
   verify(removedPolicies.rowCount === 0,
     "Server-only Auth hardening migration left a broad direct policy behind");
 
+
+  // Owner-managed username/password access module. Passwords remain entirely
+  // outside SQL; directory/configuration only stores identity and permissions.
+  const directoryColumns = await sql(
+    "select column_name from information_schema.columns where table_schema='core' and table_name='workspace_user_directory'",
+  );
+  verify(!directoryColumns.rows.some(row =>
+    ["password","password_hash","secret","token"].includes(row.column_name)),
+    "Workspace user directory must never store password material");
+  const directoryAuditColumns = await sql(
+    "select column_name from information_schema.columns where table_schema='core' and table_name='workspace_user_directory_audit'",
+  );
+  verify(!directoryAuditColumns.rows.some(row =>
+    ["password","password_hash","secret","token"].includes(row.column_name)),
+    "Workspace user audit must never store password material");
+
+  const directoryPrivileges = await sql(
+    "select has_table_privilege('service_role','core.workspace_user_directory','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.workspace_user_directory','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.workspace_user_directory','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.workspace_user_directory','DELETE') as del",
+  );
+  verify(directoryPrivileges.rows[0].sel && directoryPrivileges.rows[0].ins &&
+    directoryPrivileges.rows[0].upd && !directoryPrivileges.rows[0].del,
+    "Workspace directory must be lifecycle-updatable but never hard-deletable by service_role");
+  const directoryAuditPrivileges = await sql(
+    "select has_table_privilege('service_role','core.workspace_user_directory_audit','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.workspace_user_directory_audit','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.workspace_user_directory_audit','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.workspace_user_directory_audit','DELETE') as del",
+  );
+  verify(directoryAuditPrivileges.rows[0].sel && !directoryAuditPrivileges.rows[0].ins &&
+    !directoryAuditPrivileges.rows[0].upd && !directoryAuditPrivileges.rows[0].del,
+    "Workspace directory audit must be read-only to service_role");
+
+  const configureManaged = async (brandAccess, username = "andrea.test") => {
+    const result = await serviceSql(
+      "select public.workspace_user_configure($1::uuid,$2::text,$3::text,$4::text,$5::jsonb,$6::text) as ok",
+      [managedUser, username, "managed@example.test", "Managed Workspace User",
+        JSON.stringify(brandAccess), "owner@example.test"],
+    );
+    return result.rows[0].ok;
+  };
+  verify(await configureManaged([
+    { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read"] },
+    { brandKey: "zeneco", permissions: ["crm.joint.read","crm.joint.write","tasks.joint.read","tasks.joint.write","properties.catalog.read"] },
+  ]) === true, "Valid multi-brand workspace user configuration failed");
+
+  const managedDirectory = await serviceSql(
+    "select public.workspace_login_directory($1::text) as result", ["andrea.test"],
+  );
+  verify(managedDirectory.rows[0].result?.user_id === managedUser &&
+    managedDirectory.rows[0].result?.email === "managed@example.test" &&
+    managedDirectory.rows[0].result?.status === "active",
+    "Username login directory did not resolve the configured identity");
+  const managedDirectoryByEmail = await serviceSql(
+    "select public.workspace_login_directory($1::text) as result", ["managed@example.test"],
+  );
+  verify(managedDirectoryByEmail.rows[0].result?.username === "andrea.test",
+    "Email login directory did not resolve the configured username");
+
+  const managedMemberships = await sql(
+    "select b.brand_key,m.status,m.permissions from core.brand_workspace_memberships m " +
+    "join core.brands b on b.id=m.brand_id where m.user_id=$1 order by b.brand_key",
+    [managedUser],
+  );
+  verify(managedMemberships.rowCount === 2 &&
+    managedMemberships.rows.every(row => row.status === "active"),
+    "Configured workspace user did not receive exactly two active brand memberships");
+  const managedZen = managedMemberships.rows.find(row => row.brand_key === "zeneco");
+  verify(managedZen?.permissions.includes("crm.joint.read") && !managedZen?.permissions.includes("crm.read"),
+    "Zen managed user scope incorrectly inherited generic CRM");
+
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["crm.read"] }]) === false,
+    "Workspace user configure accepted generic Zen CRM");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }]) === false,
+    "Workspace user configure accepted unfinished marketing access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["crm.joint.read"] }]) === false,
+    "Workspace user configure accepted Zen-only scope on Pinoso");
+
+  const snapshot = await serviceSql("select public.workspace_user_admin_snapshot() as result");
+  const managedSnapshot = snapshot.rows[0].result?.users?.find(user => user.user_id === managedUser);
+  verify(managedSnapshot?.username === "andrea.test" &&
+    Array.isArray(managedSnapshot?.memberships) &&
+    !JSON.stringify(managedSnapshot).toLowerCase().includes("password"),
+    "Owner workspace user snapshot missing identity/memberships or leaked password data");
+
+  const disabled = await serviceSql(
+    "select public.workspace_user_disable($1::uuid,$2::text) as ok",
+    [managedUser, "owner@example.test"],
+  );
+  verify(disabled.rows[0].ok === true, "Owner could not disable managed workspace user");
+  const disabledDirectory = await serviceSql(
+    "select public.workspace_login_directory($1::text) as result", ["andrea.test"],
+  );
+  verify(disabledDirectory.rows[0].result?.status === "disabled",
+    "Disabled workspace user remained active in login directory");
+  const disabledMemberships = await sql(
+    "select count(*)::int as total from core.brand_workspace_memberships where user_id=$1 and status='active'",
+    [managedUser],
+  );
+  verify(disabledMemberships.rows[0].total === 0,
+    "Disabling workspace user did not revoke every brand membership");
+  const directoryAudit = await sql(
+    "select action,new_status from core.workspace_user_directory_audit where user_id=$1 order by at,id",
+    [managedUser],
+  );
+  verify(directoryAudit.rowCount >= 2 &&
+    directoryAudit.rows[0].action === "created" &&
+    directoryAudit.rows[directoryAudit.rows.length - 1]?.new_status === "disabled",
+    "Workspace user lifecycle audit did not preserve create/disable history");
+
   process.stdout.write("Isolated workspace migration checks passed: " + checks + "\n");
 } finally {
   await client.end();
