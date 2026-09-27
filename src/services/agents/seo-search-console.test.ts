@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GSC_READ_SCOPE, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand, isFreddyFamilyDomainProperty, sumPageRows, selectGSCImpressionPages, readGSCAllBrands } from "./seo-search-console";
+import { GSC_READ_SCOPE, classifyGSCRefreshFailure, selectGSCProperty, selectStoredGSCBrandChannels, targetForBrand, isFreddyFamilyDomainProperty, sumPageRows, selectGSCImpressionPages, readGSCAllBrands } from "./seo-search-console";
 
 test("Search Console requests a distinct read-only grant", () => {
   assert.equal(GSC_READ_SCOPE, "https://www.googleapis.com/auth/webmasters.readonly");
@@ -116,4 +116,28 @@ test("GSC page sample keeps high-impression zero-click pages ahead of low-impres
   assert.deepEqual(pages.map(page => page.path), ["/guide/purchase", "/en"]);
   assert.equal(pages[0].impressions, 160);
   assert.equal(pages[0].clicks, 0);
+});
+
+
+test("classify Search Console invalid_grant as expired or revoked token, not generic RealtyFlow failure", () => {
+  const failure = classifyGSCRefreshFailure(400, {
+    error: "invalid_grant",
+    error_description: "Token has been expired or revoked.",
+  });
+  assert.equal(failure.kind, "token_expired_or_revoked");
+  assert.match(failure.message, /^GSC_REFRESH_TOKEN_EXPIRED_OR_REVOKED:/);
+});
+
+test("classify Search Console OAuth client mismatch separately from reauthorization", () => {
+  for (const error of ["invalid_client", "unauthorized_client"]) {
+    const failure = classifyGSCRefreshFailure(400, { error });
+    assert.equal(failure.kind, "oauth_client_configuration");
+    assert.match(failure.message, /^GSC_OAUTH_CLIENT_CONFIGURATION:/);
+  }
+});
+
+test("classify transient Google token failures without asking for new consent", () => {
+  const failure = classifyGSCRefreshFailure(503, { error: "temporarily_unavailable" });
+  assert.equal(failure.kind, "google_temporary");
+  assert.match(failure.message, /^GSC_GOOGLE_TEMPORARY:/);
 });
