@@ -39,6 +39,8 @@ const readinessLabels: Record<string, string> = {
   ACCESS_PROFILE_WRONG_ROLE: "Eksisterende RealtyFlow-profil har feil rolle.",
   ACCESS_PROFILE_INACTIVE: "RealtyFlow-profilen er deaktivert.",
   ACTIVE_MEMBERSHIP_ALREADY_PRESENT: "Et aktivt medlemskap finnes allerede; dette må gjennomgås, ikke overskrives.",
+  SECURITY_PREFLIGHT_NOT_INSTALLED: "Sikkerhetskontrollen for direkte Supabase Auth og private dokumenter er ikke installert ennå.",
+  DIRECT_AUTH_SECURITY_BLOCKER: "Direkte Supabase Auth/storage er ikke sikkert nok for medarbeiderkontoer ennå. Private dokumentpolicyer eller kunde-RLS må strammes inn før aktivering.",
   FEATURE_FLAG_DISABLED: "Medarbeiderfunksjonen er fortsatt slått av globalt, som forventet før godkjent utrulling.",
 };
 const permissionLabels: Record<WorkspacePermission, { title: string; description: string }> = {
