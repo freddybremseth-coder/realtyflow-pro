@@ -8,6 +8,7 @@ import {
   type AccessRole,
 } from "@/lib/access-control";
 import { findAccessProfile } from "@/lib/access-control-server";
+import { verifyWorkspaceDirectorySession } from "@/lib/workspaces/user-directory";
 
 export const ADMIN_SESSION_REQUIRED_MESSAGE = "Admin session required";
 export const ACCESS_PERMISSION_REQUIRED_MESSAGE = "Access permission required";
@@ -38,13 +39,23 @@ export async function getRequestAccessContext(request: NextRequest): Promise<Req
   if (session?.role === "OWNER" && isAdminEmail(session.email)) {
     return { email: session.email, role: "OWNER", permissions: permissionsForRole("OWNER"), source: "owner-session" };
   }
+  if (session?.role === "WORKSPACE_MEMBER") {
+    if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
+    const verified = await verifyWorkspaceDirectorySession(session.email);
+    if (verified.error || !verified.user || verified.user.email !== session.email.trim().toLowerCase()) return null;
+    return {
+      email: verified.user.email,
+      role: "WORKSPACE_MEMBER",
+      permissions: permissionsForRole("WORKSPACE_MEMBER"),
+      source: "role-profile",
+    };
+  }
   if (session) {
     const resolved = await findAccessProfile(session.email);
     if (resolved.error || !resolved.profile || !resolved.profile.active) return null;
     // Deny stale signed global-role cookies after owner changes or revokes the profile.
     // A new session must be issued with the new role before any API may run.
-    if (resolved.profile.role !== session.role) return null;
-    if (resolved.profile.role === "WORKSPACE_MEMBER" && process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
+    if (resolved.profile.role !== session.role || resolved.profile.role === "WORKSPACE_MEMBER") return null;
     return {
       email: resolved.profile.email,
       role: resolved.profile.role,
