@@ -66,7 +66,7 @@ export function GrowthCorporatePanel({
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("MEDIUM");
   const [sourceId, setSourceId] = useState("");
-  const [area, setArea] = useState<WorkArea>("plan");
+  const [area, setArea] = useState<WorkArea>("corporate");
 
   const allowedKinds = useMemo(() => {
     const values: string[] = [];
