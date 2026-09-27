@@ -165,6 +165,17 @@ export async function POST(request: NextRequest) {
       return reply({ error: "INVALID_USER_CONFIGURATION" }, 400);
     }
 
+    const { snapshot: beforeCreate, error: beforeCreateError } = await loadSnapshot(supabase);
+    if (beforeCreateError || !beforeCreate) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
+    if (beforeCreate.users.some((user: any) =>
+      user.username === username || user.email === email)) {
+      return reply({ error: "WORKSPACE_USER_ALREADY_EXISTS" }, 409);
+    }
+    const knownBrands = new Set(beforeCreate.brands.map((brand: any) => brand.brandKey));
+    if (brandAccess.some(item => !knownBrands.has(item.brandKey))) {
+      return reply({ error: "UNKNOWN_BRAND" }, 400);
+    }
+
     const { data: created, error: authError } = await supabase.auth.admin.createUser({
       email,
       password: password as string,
@@ -186,7 +197,10 @@ export async function POST(request: NextRequest) {
       p_actor: owner.context.email,
     });
     if (configureError || configured !== true) {
-      await supabase.auth.admin.deleteUser(created.user.id).catch(() => undefined);
+      const rollback = await supabase.auth.admin.deleteUser(created.user.id).catch(() => ({ error: new Error("rollback failed") } as any));
+      if (rollback?.error) {
+        return reply({ error: "WORKSPACE_USER_CONFIGURE_FAILED_ROLLBACK_REQUIRED" }, 500);
+      }
       return reply({ error: "WORKSPACE_USER_CONFIGURE_FAILED" }, configureError ? 503 : 409);
     }
     return reply({
@@ -210,6 +224,14 @@ export async function POST(request: NextRequest) {
     const brandAccess = validBrandAccess(body.brandAccess);
     if (!usernamePattern.test(username) || !displayName || displayName.length > 120 || !brandAccess) {
       return reply({ error: "INVALID_USER_CONFIGURATION" }, 400);
+    }
+    const knownBrands = new Set(snapshot.brands.map((brand: any) => brand.brandKey));
+    if (brandAccess.some(item => !knownBrands.has(item.brandKey))) {
+      return reply({ error: "UNKNOWN_BRAND" }, 400);
+    }
+    if (snapshot.users.some((user: any) =>
+      user.userId !== userId && user.username === username)) {
+      return reply({ error: "USERNAME_ALREADY_EXISTS" }, 409);
     }
     const { data: authResult, error: authError } = await supabase.auth.admin.getUserById(userId);
     if (authError || !authResult.user ||
