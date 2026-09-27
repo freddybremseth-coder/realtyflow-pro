@@ -12,6 +12,9 @@ const reply = (body: unknown, status = 200) => NextResponse.json(body, { status,
 
 function planScopeValid(brandKey: string, permissions: WorkspacePermission[]) {
   if (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) return false;
+  if (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) return false;
+  if (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) return false;
+  if (permissions.includes("ads.draft") && !permissions.includes("ads.read")) return false;
   if (brandKey === "zeneco") {
     if (permissions.includes("crm.read") || permissions.includes("crm.write")) return false;
     if (permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) return false;
@@ -21,7 +24,8 @@ function planScopeValid(brandKey: string, permissions: WorkspacePermission[]) {
     return true;
   }
   return !permissions.some(permission =>
-    ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission));
+    ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
+     "corporate.read", "corporate.plan"].includes(permission));
 }
 
 /**
