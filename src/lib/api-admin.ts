@@ -8,8 +8,6 @@ import {
   type AccessRole,
 } from "@/lib/access-control";
 import { findAccessProfile } from "@/lib/access-control-server";
-import { getPlatformSupabase } from "@/lib/platform/supabase";
-import { getWorkspaceRuntimeState } from "@/lib/workspaces/runtime-control";
 
 export const ADMIN_SESSION_REQUIRED_MESSAGE = "Admin session required";
 export const ACCESS_PERMISSION_REQUIRED_MESSAGE = "Access permission required";
@@ -41,21 +39,10 @@ export async function getRequestAccessContext(request: NextRequest): Promise<Req
     return { email: session.email, role: "OWNER", permissions: permissionsForRole("OWNER"), source: "owner-session" };
   }
   if (session?.role === "WORKSPACE_MEMBER") {
-    // Route-level defense in depth: do not rely only on Edge middleware.
-    // Recheck the shared database runtime switch and the live managed directory
-    // before any scoped handler gets a workspace context.
-    const supabase = getPlatformSupabase();
-    if (!supabase) return null;
-    const runtime = await getWorkspaceRuntimeState(supabase);
-    if (runtime.error || !runtime.enabled) return null;
-    const { data: directory, error } = await supabase.rpc("workspace_login_directory", {
-      p_login: session.email,
-    });
-    if (error || !directory || directory.status !== "active" ||
-        typeof directory.email !== "string" ||
-        directory.email.trim().toLowerCase() !== session.email.trim().toLowerCase()) {
-      return null;
-    }
+    // Production middleware revalidates the database runtime switch and managed
+    // directory on every protected request. Scoped workspace handlers then
+    // independently verify the exact live brand grant + Supabase Auth identity
+    // before reading or writing brand data.
     return {
       email: session.email,
       role: "WORKSPACE_MEMBER",
