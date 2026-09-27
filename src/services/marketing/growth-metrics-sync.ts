@@ -19,6 +19,7 @@ import { deriveSpecificLocationFromTitle, isBroadInventoryRegion } from "@/servi
 import { unsupportedOutcomeClaims } from "@/lib/marketing/autonomous/claim-guard";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
+import { recordRemasterReelPerformance } from "@/services/marketing/remaster-reel-learning";
 
 export interface GrowthMetricsSyncOptions {
   brandId?: string;
@@ -51,6 +52,7 @@ interface AssetGenomeResult {
   unsupportedClaims: string[];
   assetLocation: string | null;
   verifiedLocation: string | null;
+  mediaUrl: string | null;
 }
 
 function propertyIdFromSource(sourceId: unknown): string | null {
@@ -151,7 +153,7 @@ async function latestAssetGenome(
 ): Promise<AssetGenomeResult | null> {
   const { data } = await supabase
     .from("marketing_assets")
-    .select("genome, fact_sources, property_ids, headline, body, cta, updated_at")
+    .select("genome, fact_sources, property_ids, headline, body, cta, media, updated_at")
     .eq("content_id", contentId)
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -189,11 +191,14 @@ async function latestAssetGenome(
     ...(tags.length ? { tags } : {}),
   };
 
+  const media = data.media && typeof data.media === "object" ? data.media as Record<string, unknown> : {};
+  const mediaUrl = typeof media.videoUrl === "string" ? media.videoUrl : null;
   return {
     genome,
     ...quality,
     assetLocation: place,
     verifiedLocation: currentLocation,
+    mediaUrl,
   };
 }
 
@@ -347,6 +352,8 @@ export async function syncGrowthInstagramMetrics(
         saves: engagement.saves,
         shares: engagement.shares,
       };
+      await recordRemasterReelPerformance(supabase, { brandId: currentBrand, channel: "instagram", mediaUrl: assetGenome.mediaUrl, metrics }).catch(() => undefined);
+
       await replaceCanonicalSnapshot(supabase, {
         brandId: currentBrand,
         contentId,

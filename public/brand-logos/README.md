@@ -6,7 +6,7 @@ the rendered MP4.
 
 Naming: lowercase brandId, `.png` extension. The brandIds in use:
 
-- `zeneco.png` — Zen Eco Homes (and the `donaanna` brand uses this same logo today; create a separate `donaanna.png` if/when you have one)
+- Zen Eco Homes uses purpose-built assets from zenecohomes.com: `zeneco-header-dark.svg` for light UI surfaces, `zeneco-header-light.svg` over dark hero imagery, `zeneco-mark.svg` for avatars/favicons, and `zeneco-watermark.svg` for reels/video/social/YouTube. The detailed full logo is reserved for large brand surfaces.
 - `chatgenius.png` — Chat Genius
 - `soleada.png` — Soleada
 - `freddyb.png` — Freddybremseth.com
@@ -21,3 +21,7 @@ To override per-render, you can also pass `brandLogoUrl` in the
 file in this folder.
 
 If neither is provided, the video renders without a logo (no error).
+
+## Zen Eco Homes identity lock
+
+Do not recreate the former boxed ZE mark or the old “Presented by” sponsor card. Do not shrink the detailed full logo into a tiny UI or watermark. Reels, videos, social posts and YouTube assets must use the dedicated transparent Zen Eco Homes watermark. `zeneco-presented.svg` remains only as a compatibility copy of that watermark.

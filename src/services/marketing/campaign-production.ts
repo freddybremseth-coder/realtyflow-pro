@@ -178,10 +178,17 @@ export interface CreateCampaignDraftInput {
   legacyPublicationId?: string;
   channel?: "instagram" | "facebook";
   mediaUrl?: string;
+  mediaType?: "image" | "video" | "reel";
   useInventoryProperty?: boolean;
   propertyId?: string;
   /** Manual-review recovery only: bypass AI prose and compose only from whitelisted Inventory facts. */
   deterministicInventoryCopy?: boolean;
+  /**
+   * Canary/manual-review recovery only. After novelty retries are exhausted,
+   * the final attempt may continue through all remaining gates but is forced
+   * to manual-review and can never publish live.
+   */
+  allowNoveltyManualReviewFallback?: boolean;
   /** Autopilot-only: an exact reusable source cannot be selected inside this window. */
   reuseCooldownDays?: number;
   /** Fail closed if recent publication history cannot be loaded. */
@@ -410,7 +417,12 @@ export async function createCampaignDraft(
           sourceHumanApproved = !!decision.chosen.humanApproved;
         } else {
           creative = await generator.generate({ brief, brand, recommendation });
-          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: input.mediaUrl, mediaType: "image" } } };
+          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) {
+            const mediaType = input.mediaType ?? "image";
+            creative = { ...creative, asset: { ...creative.asset, media: mediaType === "image"
+              ? { imageUrl: input.mediaUrl, mediaType }
+              : { videoUrl: input.mediaUrl, mediaType } } };
+          }
         }
       }
     } catch (err) {
@@ -446,6 +458,7 @@ export async function createCampaignDraft(
     const d = await dispatchGeneratedAsset(orchestratorDeps, {
       asset: creative.asset, brief, run, brand, history, account: account ? { accountId: account.accountId } : null,
       service: input.service ?? null, sourceType, sourceId, reuseMode, preapprovedFormat, propertyIds: creative.provenance.propertyIds ?? [],
+      allowNoveltyManualReviewFallback: input.allowNoveltyManualReviewFallback === true,
     });
 
     results.push({

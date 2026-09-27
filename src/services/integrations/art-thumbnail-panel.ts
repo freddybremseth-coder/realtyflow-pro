@@ -161,3 +161,49 @@ export function buildArtShortPoster(category: string, title: string, variant: 'a
   label(variant === 'art' ? 'FREDDY BREMSETH ART' : 'FULL SONG ON CHANNEL',40,1840,4,white);
   return Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`, 'ascii'), pixels]);
 }
+
+
+/**
+ * Dependency-free 1080x1920 branding poster for portfolio Reels.
+ * FFmpeg overlays the visual gallery into the center area, so text never needs
+ * libass, drawtext, fontconfig or an SVG decoder in serverless.
+ */
+export function buildPortfolioReelPoster(brand: string, title: string, site: string, zenEco = false): Buffer {
+  const width = 1080, height = 1920;
+  const pixels = Buffer.alloc(width * height * 3);
+  const bg: RGB = [7, 19, 31];
+  const white: RGB = [245, 246, 240];
+  const pale: RGB = [185, 232, 255];
+  const teal: RGB = [8, 61, 67];
+  const gold: RGB = [242, 193, 78];
+
+  function rect(x: number, y: number, w: number, h: number, color: RGB) {
+    const x0=Math.max(0,x), x1=Math.min(width,x+w), y0=Math.max(0,y), y1=Math.min(height,y+h);
+    for(let row=y0;row<y1;row++) for(let col=x0;col<x1;col++){
+      const i=(row*width+col)*3;
+      pixels[i]=color[0];pixels[i+1]=color[1];pixels[i+2]=color[2];
+    }
+  }
+  function label(value: string, x: number, y: number, scale: number, color: RGB) {
+    for(const [n,char] of [...safeUpper(value)].entries()){
+      const glyph=GLYPHS[char];
+      if(!glyph) continue;
+      for(let gy=0;gy<7;gy++)for(let gx=0;gx<5;gx++){
+        if(glyph[gy][gx]==='1') rect(x+n*scale*6+gx*scale,y+gy*scale,scale,scale,color);
+      }
+    }
+  }
+
+  rect(0,0,width,height,bg);
+  label(brand.slice(0,32),42,42,5,white);
+  titleLines(title,28).forEach((line,i)=>label(line,42,104+i*38,3,pale));
+  rect(0,1728,width,192,bg);
+  label(site.slice(0,40),42,1766,4,white);
+  label('MUSIC BY RE-MASTER FREDDY',42,1820,3,pale);
+  if(zenEco){
+    rect(560,1646,478,58,teal);
+    label('ZEN ECO HOMES',584,1662,3,gold);
+    label('COSTA BLANCA',822,1662,2,white);
+  }
+  return Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`, 'ascii'), pixels]);
+}

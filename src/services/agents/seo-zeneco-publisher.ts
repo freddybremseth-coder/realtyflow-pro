@@ -1,7 +1,8 @@
+import { parseTrackedSEOChange } from "./seo-change-monitor";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GSCBrandSnapshot } from "./seo-search-console";
 import {
-  selectZenEcoMetadataCandidate, zenEcoReadinessValid,
+  selectZenEcoMetadataCandidate, zenEcoReadinessValid, ZENECO_METADATA_VARIANTS,
 } from "./seo-zeneco-metadata";
 
 const BASE = "https://www.zenecohomes.com";
@@ -77,15 +78,87 @@ async function applyRevision(supabase: SupabaseClient, data: {
   });
   if (error) throw new Error("SEO publisher revision rejected: " + error.code);
   const row = Array.isArray(result) ? result[0] : null;
-  if (!row || !Number.isInteger(row.revision) || row.active !== (data.action === "apply")) {
+  if (!row || row.page_path !== data.path || !Number.isInteger(row.revision) || row.revision < 1 || typeof row.changed !== "boolean" || row.active !== (data.action === "apply")) {
     throw new Error("SEO publisher revision response was invalid");
   }
   return row as { page_path: string; revision: number; active: boolean; changed: boolean };
 }
 
+type PublisherChecks = {
+  ready: (expectedDbHost: string) => Promise<boolean>;
+  visible: (path: string, title: string, description: string) => Promise<boolean>;
+};
+const publisherChecks: PublisherChecks = { ready: checkReadiness, visible: visiblePublicMetadata };
+
+async function reviewAttempt(
+  supabase: SupabaseClient, attempt: Attempt, expectedDbHost: string,
+  now: Date, dependencies: PublisherChecks,
+): Promise<ZenEcoPublisherResult> {
+  const p = attempt.details || {};
+  const variant = ZENECO_METADATA_VARIANTS.find(item => item.path === p.page);
+  if (!p.page || !p.title || !p.description || !p.change_id || !variant || p.title !== variant.title || p.description !== variant.description ||
+      p.query !== variant.query || !Number.isInteger(p.metadata_revision) || !parseTrackedSEOChange({ ...p, brand_id: "zeneco", site_verified: true })) {
+    // Do not issue a blind rollback without a trusted, complete revision.
+    return { status: "blocked", reason: "Ufullstendig endringslogg. Må kontrolleres manuelt.",
+      page: null, published: 0 };
+  }
+  if (await dependencies.ready(expectedDbHost) &&
+      await dependencies.visible(variant.path, variant.title, variant.description)) {
+
+    const { data: already, error: seenError } = await supabase.from("automation_logs")
+      .select("id").eq("action", "seo_autopilot_change")
+      .contains("details", { change_id: p.change_id }).limit(1).maybeSingle();
+    if (seenError) throw new Error("SEO audit deduplication failed: " + seenError.code);
+    if (!already) {
+      const { error: auditError } = await supabase.from("automation_logs").insert({
+        action: "seo_autopilot_change", agent_name: "Sam SEO Expert", status: "success",
+        details: {
+          change_id: p.change_id, brand_id: "zeneco", page: p.page, query: p.query,
+          metadata_revision: p.metadata_revision, applied_at: p.applied_at,
+          baseline_period_start: p.baseline_period_start,
+          baseline_period_end: p.baseline_period_end,
+          baseline_impressions: p.baseline_impressions,
+          baseline_clicks: p.baseline_clicks,
+          baseline_position: p.baseline_position,
+          site_verified: true, publisher: "zeneco_metadata_v1",
+        },
+      });
+      if (auditError) throw new Error("Verified SEO change audit failed: " + auditError.code);
+    }
+    // Keep the attempt pending until the effect-measurement record exists.
+    // A failed insert/update is then recoverable on the next cycle.
+    const { error: finalizeError } = await supabase.from("automation_logs")
+      .update({ status: "success", details: { ...p, site_verified: true,
+        verified_at: now.toISOString() } }).eq("id", attempt.id).eq("status", "partial");
+    if (finalizeError) throw new Error("SEO publication verification could not be stored: " + finalizeError.code);
+
+    return { status: "verified", reason: "Endringen er bekreftet synlig på nettstedet og loggført.",
+      page: p.page, published: 1 };
+  }
+  const age = now.getTime() - Date.parse(attempt.created_at);
+  if (!Number.isFinite(age) || age < VERIFY_TIMEOUT_MS) {
+    return { status: "pending", reason: "Venter på at nettsiden skal vise den lagrede metadataendringen.",
+      page: p.page, published: 0 };
+  }
+  // Cannot confirm the live page after 72 hours. Atomically roll back the
+  // exact revision; the site will fall back to its compiled static metadata.
+  const rollback = await applyRevision(supabase, {
+    path: p.page, title: null, description: null, expectedRevision: p.metadata_revision!,
+    changeId: p.change_id + "_rollback", action: "rollback",
+  });
+  const { error: closeError } = await supabase.from("automation_logs")
+    .update({ status: "error", details: { ...p, site_verified: false,
+      rolled_back: true, rollback_revision: rollback.revision } })
+    .eq("id", attempt.id).eq("status", "partial");
+  if (closeError) throw new Error("SEO rollback audit failed: " + closeError.code);
+  return { status: "rollback", reason: "Nettstedet viste ikke endringen; den lagrede revisjonen er deaktivert.",
+    page: p.page, published: 0 };
+}
+
 export async function runZenEcoMetadataPublisher(
   supabase: SupabaseClient, snapshot: GSCBrandSnapshot | null, expectedSupabaseUrl: string,
   now = new Date(),
+  dependencies: PublisherChecks = publisherChecks,
 ): Promise<ZenEcoPublisherResult> {
   const { data: pending, error: pendingError } = await supabase.from("automation_logs")
     .select("id,created_at,details").eq("action", ACTION).eq("status", "partial")
@@ -93,70 +166,13 @@ export async function runZenEcoMetadataPublisher(
   if (pendingError) throw new Error("SEO publication audit lookup failed: " + pendingError.code);
 
   const expectedDbHost = new URL(expectedSupabaseUrl).host;
-  if (pending) {
-    const attempt = pending as Attempt;
-    const p = attempt.details || {};
-    if (!p.page || !p.title || !p.description || !p.change_id ||
-        !Number.isInteger(p.metadata_revision) || !/^\/[a-z0-9-]+$/.test(p.page)) {
-      // Do not issue a blind rollback without a trusted, complete revision.
-      return { status: "blocked", reason: "Ufullstendig endringslogg. Må kontrolleres manuelt.",
-        page: null, published: 0 };
-    }
-    if (await checkReadiness(expectedDbHost) &&
-        await visiblePublicMetadata(p.page, p.title, p.description)) {
-      const { error: finalizeError } = await supabase.from("automation_logs")
-        .update({ status: "success", details: { ...p, site_verified: true,
-          verified_at: now.toISOString() } }).eq("id", attempt.id).eq("status", "partial");
-      if (finalizeError) throw new Error("SEO publication verification could not be stored: " + finalizeError.code);
+  if (pending) return reviewAttempt(supabase, pending as Attempt, expectedDbHost, now, dependencies);
 
-      const { data: already, error: seenError } = await supabase.from("automation_logs")
-        .select("id").eq("action", "seo_autopilot_change")
-        .contains("details", { change_id: p.change_id }).limit(1).maybeSingle();
-      if (seenError) throw new Error("SEO audit deduplication failed: " + seenError.code);
-      if (!already) {
-        const { error: auditError } = await supabase.from("automation_logs").insert({
-          action: "seo_autopilot_change", agent_name: "Sam SEO Expert", status: "success",
-          details: {
-            change_id: p.change_id, brand_id: "zeneco", page: p.page, query: p.query,
-            metadata_revision: p.metadata_revision, applied_at: p.applied_at,
-            baseline_period_start: p.baseline_period_start,
-            baseline_period_end: p.baseline_period_end,
-            baseline_impressions: p.baseline_impressions,
-            baseline_clicks: p.baseline_clicks,
-            baseline_position: p.baseline_position,
-            site_verified: true, publisher: "zeneco_metadata_v1",
-          },
-        });
-        if (auditError) throw new Error("Verified SEO change audit failed: " + auditError.code);
-      }
-      return { status: "verified", reason: "Endringen er bekreftet synlig på nettstedet og loggført.",
-        page: p.page, published: 1 };
-    }
-    const age = now.getTime() - Date.parse(attempt.created_at);
-    if (!Number.isFinite(age) || age < VERIFY_TIMEOUT_MS) {
-      return { status: "pending", reason: "Venter på at nettsiden skal vise den lagrede metadataendringen.",
-        page: p.page, published: 0 };
-    }
-    // Cannot confirm the live page after 72 hours. Atomically roll back the
-    // exact revision; the site will fall back to its compiled static metadata.
-    const rollback = await applyRevision(supabase, {
-      path: p.page, title: null, description: null, expectedRevision: p.metadata_revision!,
-      changeId: p.change_id + "_rollback", action: "rollback",
-    });
-    const { error: closeError } = await supabase.from("automation_logs")
-      .update({ status: "error", details: { ...p, site_verified: false,
-        rolled_back: true, rollback_revision: rollback.revision } })
-      .eq("id", attempt.id).eq("status", "partial");
-    if (closeError) throw new Error("SEO rollback audit failed: " + closeError.code);
-    return { status: "rollback", reason: "Nettstedet viste ikke endringen; den lagrede revisjonen er deaktivert.",
-      page: p.page, published: 0 };
-  }
-
-  const candidate = selectZenEcoMetadataCandidate(snapshot, now);
+  let candidate = selectZenEcoMetadataCandidate(snapshot, now);
   // Capability is checked even when there is no Google candidate. The owner
   // can see whether the live site truly reads the SAME published table before
   // Sam is allowed to write anything.
-  const ready = await checkReadiness(expectedDbHost);
+  const ready = await dependencies.ready(expectedDbHost);
   if (!ready) return {
     status: "blocked", reason: "Nettstedets metadata-mottaker eller lesetilgang til riktig database er ikke verifisert. Ingen endring utført.",
     page: candidate?.path || null, published: 0,
@@ -167,10 +183,12 @@ export async function runZenEcoMetadataPublisher(
   const { data: priorRows, error: priorError } = await supabase.from("seo_page_overrides")
     .select("page_path,revision,active").eq("brand_id", "zeneco");
   if (priorError) throw new Error("SEO override state lookup failed: " + priorError.code);
-  // Exactly one lifetime experiment per page until a deliberate new plan.
-  if ((priorRows || []).some(row => row.page_path === candidate.path)) return {
-    status: "monitor", reason: "Siden har allerede en tidligere endring eller tilbakeføring; ingen automatisk ny versjon.",
-    page: candidate.path, published: 0,
+  // A previously used first candidate must not starve the remaining pages.
+  candidate = selectZenEcoMetadataCandidate(snapshot, now,
+    new Set((priorRows || []).map(row => String(row.page_path))));
+  if (!candidate) return {
+    status: "monitor", reason: "Alle kvalifiserte sider har allerede en endring eller tilbakeføring; ingen automatisk ny versjon.",
+    page: null, published: 0,
   };
   const { data: recent, error: recentError } = await supabase.from("automation_logs")
     .select("id").eq("action", ACTION)
@@ -192,7 +210,7 @@ export async function runZenEcoMetadataPublisher(
     return { status: "pending", reason: "Dette metadataforsøket er allerede registrert og avventer kontroll.",
       page: candidate.path, published: 0 };
   }
-  const { error: attemptError } = await supabase.from("automation_logs").insert({
+  const { data: attempt, error: attemptError } = await supabase.from("automation_logs").insert({
     action: ACTION, agent_name: "Sam SEO Expert", status: "partial",
     details: {
       change_id: changeId, brand_id: "zeneco", page: candidate.path,
@@ -204,12 +222,13 @@ export async function runZenEcoMetadataPublisher(
       baseline_clicks: candidate.baseline.clicks, baseline_position: candidate.baseline.position,
       site_verified: false, publisher: "zeneco_metadata_v1",
     },
-  });
-  if (attemptError) {
+  }).select("id,created_at,details").single();
+  if (attemptError || !attempt) {
     await applyRevision(supabase, { path: candidate.path, title: null, description: null,
       expectedRevision: row.revision, changeId: changeId + "_audit_rollback", action: "rollback" });
-    throw new Error("SEO audit failed; revision was rolled back: " + attemptError.code);
+    throw new Error("SEO audit failed; revision was rolled back: " + (attemptError?.code || "missing_attempt"));
   }
-  return { status: "pending", reason: "Avgrenset metadata er lagret. Venter på kontroll av faktisk nettsidevisning.",
-    page: candidate.path, published: 0 };
+  // Verify immediately when the site already serves this revision. Otherwise
+  // retain the pending attempt for the ordinary daily confirmation/rollback.
+  return reviewAttempt(supabase, attempt as Attempt, expectedDbHost, now, dependencies);
 }

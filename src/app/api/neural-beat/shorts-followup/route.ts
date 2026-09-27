@@ -8,17 +8,13 @@ import {
 } from '@/services/integrations/shorts-generator';
 import { uploadVideo } from '@/services/integrations/youtube-client';
 import { publishMissingShort } from '@/services/pipelines/remaster-art-short-publish';
-import { loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from '@/services/pipelines/remaster-song-art';
-import {
-  getGenreImages,
-  getLatestLogoUrl,
-  REMASTER_SONG_READ_BRANDS,
-} from '@/services/integrations/airtable-client';
+import { classifyArtVisualMode, loadSongArtGallery, artCreditsDescription, type ArtVisualMode } from '@/services/pipelines/remaster-song-art';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const NEURAL_BEAT_BRAND_ID = 'remasterfreddy';
+const REMASTER_SONG_READ_BRANDS = ['remasterfreddy','neuralbeat','neural-beat'];
 const MAX_FOLLOWUP_SHORTS = 2; // in addition to the pipeline Short
 const MIN_HOURS_BETWEEN_SHORTS = 40; // ~2 days apart spreads discovery
 const CANDIDATE_WINDOW_DAYS = 12;
@@ -64,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     const { data: songs, error } = await supabase
       .from('songs')
-      .select('id, name, artist, file_url, youtube_url, genre, mood, ai_metadata, updated_at')
+      .select('id, name, artist, file_url, youtube_url, genre, mood, image_url, thumbnail_url, ai_metadata, updated_at')
       .in('brand', [...REMASTER_SONG_READ_BRANDS])
       .not('youtube_url', 'is', null)
       .not('file_url', 'is', null)
@@ -79,9 +75,13 @@ export async function GET(request: NextRequest) {
     // failed after the full YouTube upload.
     const missingInitial = (songs || []).find((song) => {
       const meta = song.ai_metadata || {};
-      // Only retry ordinary music when its initial Short explicitly failed,
-      // so old completed tracks without Shorts are not mass-published.
-      const art = ['meditation','relaxing','alternative'].includes(meta.artVisualMode);
+      const inferredMode = classifyArtVisualMode({
+        title: song.name, genre: song.genre || undefined, mood: song.mood || undefined, metadata: meta,
+      });
+      // Calm/healing title intent can recover a missing Short even when an old
+      // run stored stale EDM metadata and never persisted artVisualMode.
+      const art = ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
+        || ['meditation','relaxing','alternative'].includes(String(inferredMode));
       return !meta.shortsUrl && meta.shortsStatus !== 'needs-reconciliation'
         && (art || meta.shortsStatus === 'failed');
     });
@@ -127,39 +127,49 @@ export async function GET(request: NextRequest) {
       ? Math.max(0, sections[0] - 3)
       : Math.max(0, usedStarts.length * 45); // spread heuristically if detection fails
 
-    const artMode: ArtVisualMode = ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
+    const storedMode: ArtVisualMode = ['meditation','relaxing','alternative'].includes(meta.artVisualMode)
       ? meta.artVisualMode as ArtVisualMode : null;
-    // ── Artwork follow-ups reuse ONLY published public gallery previews.
-    // Do not insert EDM/party imagery into a meditation artwork Short.
-    const genreImages = artMode ? [] : await getGenreImages(candidate.genre || 'dance', 4).catch(() => []);
+    const inferredMode = classifyArtVisualMode({
+      title: candidate.name, genre: candidate.genre || undefined, mood: candidate.mood || undefined, metadata: meta,
+    });
+    const artMode: ArtVisualMode = storedMode || inferredMode;
+    // ── Artwork follow-ups reuse ONLY owned/published imagery.
+    // No Airtable dependency: use song assets first, then Freddy Art previews.
     const imageBuffers: Buffer[] = [];
-    for (const img of genreImages.slice(0, 4)) {
-      try {
-        const res = await fetch(img.imageUrl);
-        if (res.ok) imageBuffers.push(Buffer.from(await res.arrayBuffer()));
-      } catch { /* skip */ }
-    }
-    // Fallback thumbnails belong only to the generic EDM lane: full-width
-    // YouTube thumbnails are not valid uncropped source paintings.
-    if (!artMode && imageBuffers.length === 0) {
-      for (const url of (meta.thumbnailVariantUrls || []).slice(0, 3)) {
+    if (!artMode) {
+      const ownedUrls = [
+        ...(Array.isArray(meta.thumbnailVariantUrls) ? meta.thumbnailVariantUrls : []),
+        candidate.image_url,
+        candidate.thumbnail_url,
+      ].filter((value): value is string => typeof value === 'string' && value.startsWith('https://'));
+      for (const url of ownedUrls) {
+        if (imageBuffers.length >= 3) break;
         try {
           const res = await fetch(url);
           if (res.ok) imageBuffers.push(Buffer.from(await res.arrayBuffer()));
         } catch { /* skip */ }
       }
+      if (imageBuffers.length < 3) {
+        const gallery = await loadSongArtGallery(candidate.id, 'alternative', 6).catch(() => []);
+        for (const artwork of gallery) {
+          if (imageBuffers.length >= 3) break;
+          try {
+            const res = await fetch(artwork.imageUrl);
+            if (res.ok) imageBuffers.push(Buffer.from(await res.arrayBuffer()));
+          } catch { /* skip */ }
+        }
+      }
     }
     if (!artMode && imageBuffers.length === 0) {
       return NextResponse.json(
-        { success: false, songId: candidate.id, error: 'No background images available' },
+        { success: false, songId: candidate.id, error: 'No owned Re-Master or Freddy Art images available' },
         { status: 200 },
       );
     }
 
-    // ── Logo (same auto chain as the pipeline) ──
+    // ── Logo ──
     let logoBuffer: Buffer | undefined;
-    const logoUrl = (await getLatestLogoUrl())
-      || process.env.REMASTER_LOGO_URL
+    const logoUrl = process.env.REMASTER_LOGO_URL
       || 'https://remaster.freddybremseth.com/assets/remaster-logo.png';
     try {
       const res = await fetch(logoUrl);

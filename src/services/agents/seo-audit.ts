@@ -1,3 +1,4 @@
+import { inspectPageQuality, type SEOPageQuality } from "./seo-page-quality";
 import { choosePublicSitemapPages, inspectPublicSample, type SampledPage } from "./seo-page-sampler";
 
 /**
@@ -31,6 +32,7 @@ export type SiteAudit = {
   base: string;
   checkedAt: string;
   home: {
+    quality?: SEOPageQuality;
     status: number | null;
     finalUrl: string | null;
     title: string | null;
@@ -178,6 +180,7 @@ export async function auditOneSite(
       audit.observations.push("Homepage did not return HTML 200; inspect origin/redirect response");
     } else {
       const html = snap.body;
+      audit.home.quality = inspectPageQuality(html);
       audit.home.title = textFromHtml(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] || "") || null;
       audit.home.description = metatag(html, "description");
       audit.home.canonical = canonicalTag(html);

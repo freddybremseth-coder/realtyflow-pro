@@ -24,6 +24,7 @@ import {
   markRemasterPromotionSourcePlanned,
   remasterPromotionMasterIdea,
   remasterPromotionMediaUrl,
+  remasterPromotionMediaType,
 } from "@/services/marketing/remaster-promotion-source";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
@@ -184,6 +185,7 @@ export async function GET(request: NextRequest) {
           const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
           const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
           let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
+          const mediaType = remasterSource ? remasterPromotionMediaType(remasterSource) : undefined;
           let generatedMedia: Record<string, unknown> | null = null;
 
           // Instagram cannot publish text-only content. SaaS brands historically
@@ -227,6 +229,7 @@ export async function GET(request: NextRequest) {
             useInventoryProperty: role === "real_estate",
             masterIdea,
             mediaUrl,
+            mediaType,
             goal: { kind: role === "real_estate" ? "qualified_leads" as const : "awareness" as const, target: 10, horizonDays: 30 },
             publishingCapacityPerWeek: 4,
             reuseCooldownDays: 14,

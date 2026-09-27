@@ -179,3 +179,15 @@ test("deliberately nonindex public sample stays a noindex finding rather than a 
   }, base);
   assert.match(sample.issue || "", /explicitly returns noindex/);
 });
+
+test("all portfolio brands rotate sampled pages while keeping category diversity and request limits", () => {
+  const sitemap = xml([BASE + '/guide/one', BASE + '/guide/two', BASE + '/guide/three',
+    BASE + '/eiendommer/one', BASE + '/eiendommer/two', BASE + '/omrader/altea']);
+  const first = choosePublicSitemapPages(sitemap, BASE, 3, 0);
+  const next = choosePublicSitemapPages(sitemap, BASE, 3, 1);
+  assert.equal(first.length, 3);
+  assert.equal(next.length, 3);
+  assert.notDeepEqual(first, next);
+  assert.ok(next.includes(BASE + '/guide/two'));
+  assert.ok(next.includes(BASE + '/eiendommer/two'));
+});

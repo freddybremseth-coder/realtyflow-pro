@@ -17,6 +17,7 @@ import { enrichPublishedGrowthGenomes } from "@/services/marketing/growth-genome
 import { fetchFacebookPostEngagement } from "@/services/integrations/facebook-insights";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
+import { recordRemasterReelPerformance } from "@/services/marketing/remaster-reel-learning";
 
 export interface GrowthFacebookMetricsSyncOptions {
   brandId: string;
@@ -123,7 +124,7 @@ async function latestAssetGenome(
 ) {
   const { data } = await supabase
     .from("marketing_assets")
-    .select("genome, fact_sources, property_ids, headline, body, cta, updated_at")
+    .select("genome, fact_sources, property_ids, headline, body, cta, media, updated_at")
     .eq("content_id", contentId)
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -154,7 +155,9 @@ async function latestAssetGenome(
     ...(tags.length ? { tags } : {}),
   };
 
-  return { genome, quality, propertyId, assetLocation, verifiedLocation };
+  const media = data.media && typeof data.media === "object" ? data.media as Record<string, unknown> : {};
+  const mediaUrl = typeof media.videoUrl === "string" ? media.videoUrl : null;
+  return { genome, quality, propertyId, assetLocation, verifiedLocation, mediaUrl };
 }
 
 export async function syncGrowthFacebookMetrics(
@@ -245,6 +248,8 @@ export async function syncGrowthFacebookMetrics(
         .eq("content_id", contentId)
         .eq("channel", "facebook");
       if (deleteError) throw new Error(`FACEBOOK_METRICS_SNAPSHOT_DELETE_FAILED: ${deleteError.message}`);
+
+      await recordRemasterReelPerformance(supabase, { brandId, channel: "facebook", mediaUrl: asset.mediaUrl, metrics }).catch(() => undefined);
 
       await store.recordEvent({
         eventType: "metrics_snapshot",

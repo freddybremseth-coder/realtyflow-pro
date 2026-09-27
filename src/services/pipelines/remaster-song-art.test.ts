@@ -19,6 +19,21 @@ test('routes meditation, relaxing and alternative to art; leaves EDM untouched',
   assert.equal(classifyArtVisualMode({ genre: 'House' }, { genre: 'ambient', mood: 'relaxing' }), 'relaxing');
   assert.equal(classifyArtVisualMode({ genre: 'Instrumental', mood: 'calm' }), 'relaxing');
   assert.equal(classifyArtVisualMode({ genre: 'Zen' }), 'relaxing');
+  assert.equal(classifyArtVisualMode({
+    title: 'Healing Waves of Light', genre: 'EDM', mood: 'energetic', metadata: { energy: 'high' },
+  }), 'meditation');
+  assert.equal(classifyArtVisualMode({
+    title: 'Deep Ocean Stillness', genre: 'EDM', mood: 'energetic', metadata: { energy: 'high' },
+  }), 'meditation');
+  assert.equal(classifyArtVisualMode({
+    title: 'Neon Night Drive', genre: 'EDM', mood: 'energetic', metadata: { energy: 'high' },
+  }), null);
+  assert.equal(classifyArtVisualMode({
+    title: 'Eastern Serenity', genre: 'EDM', mood: 'energetic', metadata: { energy: 'high' },
+  }), 'relaxing');
+  assert.equal(classifyArtVisualMode({
+    title: 'Sunset Serenity Instrumental', genre: 'EDM', mood: 'energetic', metadata: { energy: 'high' },
+  }), 'relaxing');
   assert.equal(classifyMixArtVisualMode([{ genre: 'Meditation' }, { mood: 'peaceful' }]), 'meditation');
   assert.equal(classifyMixArtVisualMode([{ genre: 'Meditation' }, { genre: 'EDM', mood: 'energetic' }]), null);
   assert.equal(classifyMixArtVisualMode([{ genre: 'Ambient' }, { genre: 'Relaxing' }, { genre: 'House' }]), 'relaxing');

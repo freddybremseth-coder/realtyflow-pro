@@ -47,6 +47,7 @@ export function zenEcoReadinessValid(
 export function selectZenEcoMetadataCandidate(
   snapshot: GSCBrandSnapshot | null,
   now = new Date(),
+  excludedPaths: ReadonlySet<string> = new Set(),
 ): ZenEcoMetadataCandidate | null {
   if (!snapshot || snapshot.brandId !== "zeneco" || snapshot.dataQuality.truncated ||
       snapshot.dataQuality.queryRowsSampled === false ||
@@ -59,6 +60,7 @@ export function selectZenEcoMetadataCandidate(
       now.getTime() - periodEnd > 10 * 86400000 ||
       snapshot.totals.currentImpressions < 100) return null;
   for (const variant of ZENECO_METADATA_VARIANTS) {
+    if (excludedPaths.has(variant.path)) continue;
     const page = snapshot.topPages.find(row => row.path === variant.path && row.impressions >= 100);
     const query = snapshot.topQueryPages.find(row =>
       row.page === variant.path &&

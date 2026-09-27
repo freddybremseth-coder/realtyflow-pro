@@ -8,6 +8,7 @@ import * as os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
+import { ZENECO_WATERMARK_SVG_URL } from "@/lib/brand-assets";
 
 const execFileAsync = promisify(execFile);
 
@@ -81,11 +82,25 @@ function buildPropertyTextSlides(property: Record<string, unknown>, brand: { nam
   ];
 }
 
-async function downloadImage(url: string, destPath: string): Promise<boolean> {
+function bufferLooksLikeSvg(buffer: Buffer): boolean {
+  const head = buffer.subarray(0, 1024).toString("utf8").trimStart().toLowerCase();
+  return head.startsWith("<svg") || (head.startsWith("<?xml") && head.includes("<svg"));
+}
+
+async function downloadImage(url: string, destPath: string, options?: { rejectSvg?: boolean }): Promise<boolean> {
   try {
     const res = await fetch(url);
     if (!res.ok) return false;
     const buffer = Buffer.from(await res.arrayBuffer());
+
+    // ffmpeg-static does not include an SVG decoder in production. A remote
+    // SVG can also be saved under a misleading .png filename, so inspect the
+    // bytes instead of trusting the extension.
+    if (options?.rejectSvg && bufferLooksLikeSvg(buffer)) {
+      console.warn(`[Property Video] Skipping SVG asset unsupported by FFmpeg: ${url}`);
+      return false;
+    }
+
     await fs.writeFile(destPath, buffer);
     return true;
   } catch {
@@ -94,27 +109,34 @@ async function downloadImage(url: string, destPath: string): Promise<boolean> {
 }
 
 /**
- * Resolve a brand logo to a local file path that ffmpeg can read. Lookup
- * order:
- *   1. Caller-supplied URL (brandLogoUrl in request body) — downloaded
- *   2. /public/brand-logos/<brandId>.png — copied straight from the bundle
- *   3. null (renderer skips the overlay)
- *
- * Local file lookup happens at render time so dropping a new logo into
- * /public/brand-logos doesn't require any code changes.
+ * Resolve a brand logo to a local file path that ffmpeg can read.
+ * Zen Eco Homes always resolves to its approved canonical transparent mark
+ * unless a caller intentionally supplies an explicit override.
  */
 async function resolveBrandLogo(
   brandId: string | undefined,
   brandLogoUrl: string | undefined,
   destDir: string,
 ): Promise<string | undefined> {
-  // Caller override takes precedence
   if (brandLogoUrl) {
     const dest = path.join(destDir, "logo.png");
-    if (await downloadImage(brandLogoUrl, dest)) return dest;
+    if (await downloadImage(brandLogoUrl, dest, { rejectSvg: true })) return dest;
   }
 
-  // Fall back to a logo file shipped in /public/brand-logos
+  if (brandId === "zeneco") {
+    // The approved Zen Eco Homes watermark is currently SVG-only. The
+    // production ffmpeg-static build cannot decode SVG (exit 234), so do not
+    // pass it into the video graph. Rendering continues without a watermark
+    // until a raster canonical asset is available.
+    const probe = path.join(destDir, "zeneco-watermark.png");
+    if (await downloadImage(ZENECO_WATERMARK_SVG_URL, probe, { rejectSvg: true })) {
+      console.log("[Property Video] Using canonical Zen Eco Homes raster logo.");
+      return probe;
+    }
+    console.warn("[Property Video] Canonical Zen Eco Homes watermark is SVG; rendering safely without logo.");
+    return undefined;
+  }
+
   if (brandId) {
     const candidates = [
       path.join(process.cwd(), "public", "brand-logos", `${brandId}.png`),
@@ -135,6 +157,29 @@ async function resolveBrandLogo(
   }
 
   return undefined;
+}
+
+async function buildYouTubeThumbnail(
+  ffmpegBin: string,
+  imagePath: string,
+  logoPath: string | undefined,
+  brandId: string,
+  workDir: string,
+): Promise<Buffer> {
+  if (brandId !== "zeneco" || !logoPath) return fs.readFile(imagePath);
+
+  const outputPath = path.join(workDir, "youtube-thumbnail-zeneco.jpg");
+  await execFileAsync(ffmpegBin, [
+    "-i", imagePath,
+    "-i", logoPath,
+    "-filter_complex",
+    "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720[bg];[1:v]scale=410:-1:force_original_aspect_ratio=decrease[logo];[bg][logo]overlay=W-w-38:H-h-32:format=auto",
+    "-frames:v", "1",
+    "-q:v", "2",
+    "-y", outputPath,
+  ], { timeout: 30_000 });
+
+  return fs.readFile(outputPath);
 }
 
 /**
@@ -400,9 +445,9 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
               return;
             }
 
-            // Try to set thumbnail from first image
+            // Set thumbnail; Zen Eco Homes receives the exact approved logo overlay.
             try {
-              const thumbBuffer = await fs.readFile(imagePaths[0]);
+              const thumbBuffer = await buildYouTubeThumbnail(ffmpegBin, imagePaths[0], logoPath, brandId, imgDir);
               await setThumbnail(uploadResult.videoId, thumbBuffer, brandId);
               console.log(`[Property Video] Thumbnail set for ${uploadResult.videoId}`);
             } catch (thumbErr) {

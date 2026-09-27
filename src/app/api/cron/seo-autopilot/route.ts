@@ -8,11 +8,8 @@ import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { readGSCAllBrands } from "@/services/agents/seo-search-console";
 import { evaluateSeoPilotBrand } from "@/services/agents/seo-autopilot-policy";
 import { runZenEcoMetadataPublisher } from "@/services/agents/seo-zeneco-publisher";
-import { auditSEOPortfolio } from "@/services/agents/seo-audit";
-import { getSEOObservedSignals } from "@/services/agents/seo-data";
-import { getSEOLeadSignals } from "@/services/agents/seo-leads";
-import { planSEODiagnostics } from "@/services/agents/seo-diagnostics";
-import { checkReferralCollectorPreflight } from "@/services/agents/seo-referral-health";
+
+import { runSEOControls } from "@/services/agents/seo-controls";
 
 const PATH = "/api/cron/seo-autopilot";
 const ACTION = "seo_autopilot_pilot_cycle";
@@ -58,22 +55,9 @@ export async function GET(request: NextRequest) {
     // Daily, low-risk, evidence-tagged technical/lead/referral diagnostics for
     // every approved public host. A failing site or data source must not erase
     // successful Google readings or create an owner approval queue item.
-    const observations = await Promise.allSettled([
-      getSEOObservedSignals(), getSEOLeadSignals(), auditSEOPortfolio(),
-    ] as const);
-    const signals = observations[0].status === "fulfilled" ? observations[0].value : null;
-    const leads = observations[1].status === "fulfilled" ? observations[1].value : null;
-    const audits = observations[2].status === "fulfilled" ? observations[2].value : [];
-    // A preflight is read-only: never create synthetic visits or CRM leads.
-    // Run only if Google observed clicks but first-party arrivals are zero.
-    // The bounded network check cannot prove a browser session or event write.
-    const collectorPreflight = signals?.totals.current === 0 &&
-      readings.some(item => item.status === "connected" && (item.result?.totals.currentClicks || 0) > 0)
-      ? await checkReferralCollectorPreflight() : null;
-    const diagnostics = planSEODiagnostics({
-      snapshots: readings.flatMap(item => item.status === "connected" && item.result ? [item.result] : []),
-      signals, leads, audits, collectorPreflight,
-    });
+    const { signals, leads, audits, collectorPreflight, diagnostics, controlReport } = await runSEOControls(
+      readings.flatMap(item => item.status === "connected" && item.result ? [item.result] : []),
+    );
     // Share the factual measurements and zero-approval diagnostics with
     // Sam's main panel after reload. These checks NEVER authorize site writes.
     const storedReadings = await supabase.from("automation_logs").insert({
@@ -81,7 +65,7 @@ export async function GET(request: NextRequest) {
       status: verified ? "success" : "partial",
       details: {
         google_search_console: readings, source: ACTION, collected_at: timestamp,
-        diagnostics, collectorPreflight, auditCheckedAt: audits.length ? timestamp : null,
+        diagnostics, collectorPreflight, controlReport, auditCheckedAt: audits.length ? timestamp : null,
         sourceAvailability: {
           searchConsoleMeasured: verified,
           siteAuditsMeasured: audits.length,
@@ -117,6 +101,7 @@ export async function GET(request: NextRequest) {
         pilot_brands: ["zeneco", "freddyb"],
         assessed: assessments,
         search_console_brands_measured: verified,
+        controlReport,
         daily_diagnostics: diagnostics.length,
         public_sites_audited: audits.length,
         collector_preflight: collectorPreflight ? {
@@ -148,6 +133,14 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "SEO pilot unavailable";
     console.error("[SamSEO] Pilot cycle failed", message);
+    // Retain failures for the next dashboard load and Automation Center.
+    // Failure logging must not replace the original error if storage is down.
+    try {
+      await supabase.from("automation_logs").insert({
+        action: ACTION, agent_name: "Sam SEO Expert", status: "error",
+        details: { error: "SEO-syklusen ble ikke fullført. Se serverloggen for årsak.", public_write_status: "unknown" },
+      });
+    } catch { /* Preserve the original failure response. */ }
     return NextResponse.json({ error: message.slice(0, 250) }, { status: 503 });
   }
 }

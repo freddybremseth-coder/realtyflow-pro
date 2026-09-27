@@ -22,6 +22,7 @@ export interface MetaGraph {
   publishIgMedia(igUserId: string, creationId: string): Promise<{ id: string }>;
   createFbPost(pageId: string, p: { message: string; link?: string }): Promise<{ id: string }>;
   createFbPhoto(pageId: string, p: { url: string; caption?: string }): Promise<{ id: string }>;
+  createFbReel?(pageId: string, p: { videoUrl: string; description?: string; title?: string }): Promise<{ id: string }>;
   reconcile?(idempotencyKey: string): Promise<{ externalId: string } | null>;
 }
 
@@ -138,9 +139,13 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     const media = asset.media ?? {};
     await writeAttempt(key, base, { status: "publishing" });
     try {
-      const id = media.imageUrl
-        ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset) })).id
-        : (await graph.createFbPost(target, { message: caption(asset), link: media.linkUrl })).id;
+      const id = media.videoUrl
+        ? graph.createFbReel
+          ? (await graph.createFbReel(target, { videoUrl: media.videoUrl, description: caption(asset), title: asset.headline })).id
+          : (() => { throw new Error("FACEBOOK_REEL_PUBLISHER_NOT_CONFIGURED"); })()
+        : media.imageUrl
+          ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset) })).id
+          : (await graph.createFbPost(target, { message: caption(asset), link: media.linkUrl })).id;
       await writeAttempt(key, base, { status: "posted", external_id: id, external_media_id: id });
       return { state: "published", externalId: id };
     } catch (err) {
@@ -218,5 +223,26 @@ export function makeGraphApi(token: string, apiVersion = "v25.0"): MetaGraph {
     publishIgMedia: (ig, creationId) => post(`/${ig}/media_publish`, { creation_id: creationId }),
     createFbPost: (pageId, p) => post(`/${pageId}/feed`, { message: p.message, ...(p.link ? { link: p.link } : {}) }),
     createFbPhoto: (pageId, p) => post(`/${pageId}/photos`, { url: p.url, caption: p.caption }),
+    createFbReel: async (pageId, p) => {
+      const form = async (url: string, body: Record<string,string>, headers: Record<string,string> = {"Content-Type":"application/x-www-form-urlencoded"}) => {
+        const res = await fetch(url,{method:"POST",headers,body:headers["Content-Type"]==="application/x-www-form-urlencoded"?new URLSearchParams(body).toString():undefined});
+        const json = await res.json().catch(()=>({})) as any;
+        if(!res.ok || json?.error) throw new Error(`Meta Graph feilet (facebook reel): ${json?.error?.message ?? res.status}`);
+        return json;
+      };
+      const start = await form(`${base}/${pageId}/video_reels`,{access_token:token,upload_phase:"start"});
+      const videoId = String(start.video_id || "");
+      const uploadUrl = String(start.upload_url || "");
+      if(!/^\d{6,25}$/.test(videoId) || !uploadUrl.startsWith("https://rupload.facebook.com/")) throw new Error("FACEBOOK_REEL_START_INVALID");
+      const transferred = await fetch(uploadUrl,{method:"POST",headers:{Authorization:"OAuth "+token,file_url:p.videoUrl}});
+      const transferJson = await transferred.json().catch(()=>({})) as any;
+      if(!transferred.ok || transferJson?.success!==true) throw new Error(`Meta Graph feilet (facebook reel upload): ${transferJson?.error?.message ?? transferred.status}`);
+      const finish = await form(`${base}/${pageId}/video_reels`,{
+        access_token:token,video_id:videoId,upload_phase:"finish",video_state:"PUBLISHED",
+        description:(p.description||"").slice(0,2000),title:(p.title||"").slice(0,100)
+      });
+      if(finish?.success!==true) throw new Error("FACEBOOK_REEL_FINISH_UNCONFIRMED");
+      return {id:videoId};
+    },
   };
 }

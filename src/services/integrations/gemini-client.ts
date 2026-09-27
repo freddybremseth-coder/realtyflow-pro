@@ -128,6 +128,18 @@ Reply ONLY with the image prompt text, no explanation.`;
 
 // ─── Mood-based visual theme mapping for multi-image generation ────────
 const MOOD_VISUAL_THEMES: Record<string, string[]> = {
+  meditative: [
+    'silent ocean horizon before sunrise with glasslike water and soft mist, no people or boats',
+    'minimal zen meditation room with natural wood, linen cushions and gentle morning light',
+    'still mountain lake reflecting pale clouds with reeds in the foreground, complete silence',
+    'soft fog moving through a quiet pine forest at dawn with diffused natural light',
+    'close view of gentle ripples on calm water with warm reflected light and muted tones',
+    'peaceful stone garden with moss, bamboo and a small reflecting pool in soft overcast light',
+    'empty beach at first light with slow small waves, pastel sky and no people, boats or buildings',
+    'abstract natural light passing through translucent fabric, soft gradients and meditative stillness',
+    'quiet waterfall flowing through mossy rocks in a shaded forest, long-exposure calm atmosphere',
+    'single candle beside smooth stones and a small bowl in a serene neutral meditation space',
+  ],
   romantic: [
     'happy couple walking hand in hand along a golden sunset beach with gentle waves',
     'couple sharing a candlelit dinner on a terrace overlooking the Mediterranean sea',
@@ -208,6 +220,9 @@ const MOOD_VISUAL_THEMES: Record<string, string[]> = {
 function getMoodCategory(mood: string, energy: string): string {
   const moodLower = mood.toLowerCase();
   if (moodLower.includes('romantic') || moodLower.includes('love') || moodLower.includes('sensual')) return 'romantic';
+  if (moodLower.includes('meditat') || moodLower.includes('healing') || moodLower.includes('stillness') ||
+      moodLower.includes('peaceful') || moodLower.includes('serene') || moodLower.includes('tranquil') ||
+      moodLower.includes('soothing') || moodLower.includes('mindful') || moodLower.includes('zen')) return 'meditative';
   if (moodLower.includes('chill') || moodLower.includes('relax') || moodLower.includes('calm') || moodLower.includes('ambient')) return 'chill';
   if (moodLower.includes('dark') || moodLower.includes('intense') || moodLower.includes('aggressive') || moodLower.includes('heavy')) return 'dark';
   if (moodLower.includes('happy') || moodLower.includes('upbeat') || moodLower.includes('fun') || moodLower.includes('cheerful')) return 'happy';
@@ -241,8 +256,12 @@ export async function generateMusicImageSet(
   const shuffled = [...themes].sort(() => Math.random() - 0.5);
   const selectedThemes = Array.from({ length: count }, (_, i) => shuffled[i % shuffled.length]);
 
+  const isMeditative = moodCategory === 'meditative';
+  const safeVisualStyle = isMeditative ? '' : (options.visualStyle || '');
   const enhancedPrompts = selectedThemes.map((theme) =>
-    `${theme}. ${options.genre ? `Feeling of ${options.genre} music.` : ''} ${options.visualStyle ? `Visual style: ${options.visualStyle}.` : ''} Photorealistic, cinematic, ultra sharp focus, vivid bright colors, warm natural light, crystal clear detail, no text or watermarks, 16:9 aspect ratio.`
+    `${theme}. ${options.genre ? `Feeling of ${options.genre} music.` : ''} ${safeVisualStyle ? `Visual style: ${safeVisualStyle}.` : ''} ${isMeditative
+      ? 'Quiet, uncluttered, low-stimulation composition, soft natural light, muted organic tones, no DJ, no party, no dancing, no cars, no boats, no nightlife, no neon.'
+      : 'Photorealistic, cinematic, ultra sharp focus, vivid bright colors, warm natural light, crystal clear detail.'} No text or watermarks, 16:9 aspect ratio.`
   );
 
   console.log(`[ImageGen] Generating ${count} images for mood: ${moodCategory} (Gemini)`);
@@ -269,7 +288,9 @@ export async function generateMusicImageSet(
         try {
           const startMs = Date.now();
           const image = await generateImage(prompt, {
-            style: 'photorealistic travel and lifestyle photography, ultra sharp focus, vivid saturated colors, bright natural light, 8K UHD detail, high contrast',
+            style: isMeditative
+              ? 'serene fine-art nature photography, soft diffused natural light, muted organic palette, minimal composition, gentle detail'
+              : 'photorealistic travel and lifestyle photography, ultra sharp focus, vivid saturated colors, bright natural light, 8K UHD detail, high contrast',
             aspectRatio: '16:9',
           });
           const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
@@ -283,7 +304,9 @@ export async function generateMusicImageSet(
           await new Promise((resolve) => setTimeout(resolve, 2000));
           try {
             const image = await generateImage(prompt, {
-              style: 'cinematic lifestyle photography, vibrant summer colors',
+              style: isMeditative
+                ? 'calm natural photography, soft light, muted colors, minimal peaceful composition'
+                : 'cinematic lifestyle photography, vibrant summer colors',
               aspectRatio: '16:9',
             });
             console.log(`[ImageGen] Image ${imgNum} succeeded on retry`);
@@ -346,8 +369,13 @@ export async function analyzeSong(
   imageGenre: string;
 }> {
   const metadata = options.metadata;
-  const prompt = `You are a music analyst specialized in EDM and electronic music.
+  const prompt = `You are a music analyst for electronic, ambient, meditation, healing, relaxation and contemporary instrumental music.
 Analyze this song based on the available information and respond in valid JSON only.
+
+IMPORTANT:
+- Treat explicit title intent such as healing, meditation, stillness, mindfulness, inner peace, sound bath, zen or sleep as strong evidence of a calm/low-energy release unless reliable metadata clearly contradicts it.
+- Never force every Re-Master Freddy release into EDM, progressive or energetic.
+- For calm/healing music, visualStyle must describe quiet nature, still water, soft light, zen or meditative spaces and must exclude DJs, parties, cars, boats, dancing, nightlife and neon.
 
 Title: "${options.title}"
 ${options.artist ? `Artist: ${options.artist}` : ''}
@@ -362,9 +390,9 @@ Respond with ONLY this JSON structure, no markdown:
   "style": "music style (e.g., progressive, minimal, melodic)",
   "mood": "mood (e.g., euphoric, dark, chill, energetic)",
   "energy": "low|medium|high",
-  "visualStyle": "description of a real-life visual style that fits the music (summer, beach, boats, cars, islands, mountains, people, DJ scenes — avoid neon/abstract)",
+  "visualStyle": "description of a real-life visual style that fits the music; calm tracks use still nature/zen/soft light, energetic tracks may use lifestyle/action",
   "targetAudience": "target audience for this type of music",
-  "imageGenre": "MUST be exactly one of: romantic, sensual, rock, pop, dance, dream, nostalgic, training — pick the best visual category for this song's mood and energy"
+  "imageGenre": "MUST be exactly one of: meditation, relaxing, ambient, romantic, sensual, rock, pop, dance, dream, nostalgic, training — pick the safest visual category for this song's mood and energy"
 }`;
 
   const result = await askClaude(prompt, { temperature: 0.3, maxTokens: 500 });
@@ -376,7 +404,17 @@ Respond with ONLY this JSON structure, no markdown:
     // fallback
   }
 
-  return {
+  const calmTitle = /\b(healing|meditation|meditative|mindfulness|stillness|inner peace|sound bath|breathwork|zen|sleep)\b/i.test(options.title);
+  return calmTitle ? {
+    genre: 'Meditation Ambient',
+    subGenre: 'Healing Meditation',
+    style: 'meditative ambient',
+    mood: 'meditative peaceful',
+    energy: 'low',
+    visualStyle: 'Serene still water, mist, soft dawn light, peaceful nature and zen calm; no DJs, parties, dancing, cars, boats, nightlife or neon.',
+    targetAudience: 'listeners seeking meditation, relaxation, healing and calm',
+    imageGenre: 'meditation',
+  } : {
     genre: metadata?.genre || 'EDM',
     subGenre: 'Electronic',
     style: 'progressive',
@@ -407,6 +445,7 @@ export async function generateYouTubeSEO(
     genre: string;
     style: string;
     mood: string;
+    visualMode?: 'meditation' | 'relaxing' | 'alternative' | null;
   }
 ): Promise<{
   title: string;
@@ -425,8 +464,14 @@ export async function generateYouTubeSEO(
       .join(' ');
   const mood = titleCase(options.mood);
   const genre = titleCase(options.genre);
+  const calmVisualMode = options.visualMode === 'meditation' || options.visualMode === 'relaxing';
 
-  const titleFormulas = [
+  const titleFormulas = calmVisualMode ? [
+    `"${options.title}" by Re-Master Freddy - make it calm/use-case first: e.g. "Meditation & Deep Calm | ${options.title}"`,
+    `"${options.title}" by Re-Master Freddy - make it healing-first: e.g. "${options.title} | Healing Ambient"`,
+    `"${options.title}" by Re-Master Freddy - make it rest-focused: e.g. "Breathe & Unwind | ${options.title}"`,
+    `"${options.title}" by Re-Master Freddy - make it release-style: e.g. "${options.title} | ${genre} (Official Visualizer)"`,
+  ] : [
     `"${options.title}" by Re-Master Freddy - make it mood-first: e.g. "${mood} ${genre} Vibes | ${options.title}"`,
     `"${options.title}" by Re-Master Freddy - make it use-case first: e.g. "${genre} for Summer Drives | ${options.title}"`,
     `"${options.title}" by Re-Master Freddy - make it emotional: e.g. "${options.title} | Pure ${mood} Energy"`,
@@ -435,14 +480,23 @@ export async function generateYouTubeSEO(
   ];
   const titleFormula = titleFormulas[Math.floor(Math.random() * titleFormulas.length)];
 
-  const prompt = `You are a YouTube SEO expert for music channels. Generate optimized YouTube metadata for this EDM/electronic track.
+  const prompt = `You are a YouTube SEO expert for music channels. Generate optimized YouTube metadata for this electronic, ambient or meditation track.
 
 Track: "${options.title}"
 Artist: ${options.artist || 'Re-Master Freddy'}
 Genre: ${options.genre}
 Style: ${options.style}
 Mood: ${options.mood}
+Visual lane: ${calmVisualMode ? 'CALM / MEDITATIVE' : 'STANDARD'}
 
+${calmVisualMode ? `CALM TRACK OVERRIDE (CRITICAL):
+- The release is meditation, healing or relaxation oriented.
+- Never describe it as energetic, a drop, workout music, festival music, night-drive music or an EDM banger.
+- Thumbnail hooks should use ideas such as INNER STILLNESS, HEALING WAVES, BREATHE DEEPLY, QUIET OCEAN or DEEP CALM.
+- imagePrompt must depict serene nature, still water, mist, soft dawn light, zen/meditation spaces or gentle abstract natural light.
+- imagePrompt must explicitly exclude DJ, party, dancing, cars, boats, nightlife, clubs, festivals and neon.
+- Prefer meditation, healing, ambient, sleep, calm and relaxation search language. Do not add EDM hashtags unless the actual genre requires it.
+` : ''}
 TITLE RULES (CRITICAL for CTR):
 - Use this formula variation: ${titleFormula}
 - Max 60 characters
@@ -481,7 +535,7 @@ Respond with ONLY this JSON, no markdown:
   "tags": ["tag1", "tag2", "...up to 20 relevant tags including trending search terms"],
   "categoryId": "10",
   "privacyStatus": "public",
-  "imagePrompt": "A vivid image prompt for the video thumbnail (real-life summer scene: people, DJ, beach, boat, car, island or mountains — photorealistic, no text)",
+  "imagePrompt": "A vivid image prompt for the video thumbnail that follows the visual lane above; calm tracks use serene still nature/zen and explicitly exclude DJ, party, cars, boats, dancing, nightlife and neon; no text",
   "thumbnailVariants": [
     { "hook": "HOOK TEXT A", "subtext": "subtext a", "stamp": "NEW" },
     { "hook": "HOOK TEXT B", "subtext": "subtext b" },
@@ -504,24 +558,9 @@ Respond with ONLY this JSON, no markdown:
     // fallback
   }
 
-  const fallbackDesc = `${options.title} by ${options.artist || 'Re-Master Freddy'}
-
-A ${options.mood} ${options.genre} track with ${options.style} vibes. Let the music take you on a journey.
-
-Enjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment what vibe you want to hear next!
-
-¿Te gusta este beat? ¡Dale a like y suscríbete para beats chill diarios! 💬 ¡Comenta qué tipo de vibra quieres escuchar la próxima vez!
-
-⏱️ Timestamps
-00:00 Start
-00:30 Build-up
-01:30 Drop
-
-🎵 About Re-Master Freddy
-Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops of chill beats, study music, and EDM bangers!
-
-🏷️ Tags
-#ReMasterFreddy #AIMusic #${options.genre.replace(/\s/g, '')} #EDM #ChillBeats #StudyMusic #ElectronicMusic #LoFi`;
+  const fallbackDesc = calmVisualMode
+    ? `${options.title} by ${options.artist || 'Re-Master Freddy'}\n\nA peaceful ${options.genre} release for meditation, relaxation, sleep, healing and quiet focus. Let the sound settle into a slower, more reflective space.\n\n🔔 Subscribe for more calming Re-Master Freddy releases.\n👍 Like if this helped you slow down and reset.\n\n🎵 About Re-Master Freddy\nMusic and visual experiences created by Re-Master Freddy.\n\n🏷️ Tags\n#ReMasterFreddy #MeditationMusic #HealingMusic #AmbientMusic #RelaxingMusic #CalmMusic`
+    : `${options.title} by ${options.artist || 'Re-Master Freddy'}\n\nA ${options.mood} ${options.genre} track with ${options.style} vibes. Let the music take you on a journey.\n\nEnjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment what vibe you want to hear next!\n\n¿Te gusta este beat? ¡Dale a like y suscríbete para beats chill diarios! 💬 ¡Comenta qué tipo de vibra quieres escuchar la próxima vez!\n\n⏱️ Timestamps\n00:00 Start\n00:30 Build-up\n01:30 Drop\n\n🎵 About Re-Master Freddy\nRe-Master Freddy creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops of chill beats, study music, and EDM bangers!\n\n🏷️ Tags\n#ReMasterFreddy #AIMusic #${options.genre.replace(/\s/g, '')} #EDM #ChillBeats #StudyMusic #ElectronicMusic #LoFi`;
 
   // Rotate fallback titles too — Title Case, no "Mix" claims for single tracks
   const fallbackTitles = [
@@ -536,10 +575,14 @@ Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI 
   return {
     title: fallbackTitle.slice(0, 60),
     description: fallbackDesc,
-    tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Re-Master Freddy', 'AI Music', 'Chill Beats', 'Study Music', 'Lo-Fi', options.title, `${options.genre} 2026`, `${options.mood} music`, 'focus music', 'relaxing beats'],
+    tags: calmVisualMode
+      ? [options.genre, options.mood, options.style, 'Meditation Music', 'Healing Music', 'Ambient Music', 'Relaxing Music', 'Re-Master Freddy', 'Calm Music', options.title]
+      : [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Re-Master Freddy', 'AI Music', 'Chill Beats', 'Study Music', 'Lo-Fi', options.title, `${options.genre} 2026`, `${options.mood} music`, 'focus music', 'relaxing beats'],
     categoryId: '10',
     privacyStatus: 'public',
-    imagePrompt: `Photorealistic summer lifestyle scene for ${options.genre} music, ${options.mood} mood — people enjoying a beach, boat or festival at golden hour, no text`,
+    imagePrompt: calmVisualMode
+      ? `Serene still water, soft mist and gentle dawn light for ${options.title}; peaceful meditative atmosphere, no DJ, no party, no dancing, no cars, no boats, no nightlife, no neon, no text`
+      : `Photorealistic summer lifestyle scene for ${options.genre} music, ${options.mood} mood — people enjoying a beach, boat or festival at golden hour, no text`,
     thumbnailVariants: buildFallbackThumbnailVariants(options.genre, options.mood),
   };
 }
@@ -549,7 +592,8 @@ function buildFallbackThumbnailVariants(genre: string, mood: string): ThumbnailH
   const moodLower = mood.toLowerCase();
   const genreLower = genre.toLowerCase();
 
-  const isChill = moodLower.includes('chill') || moodLower.includes('calm') || moodLower.includes('relax');
+  const isMeditative = /meditat|healing|stillness|peaceful|serene|tranquil|soothing|zen/.test(moodLower + ' ' + genreLower);
+  const isChill = moodLower.includes('chill') || moodLower.includes('calm') || moodLower.includes('relax') || moodLower.includes('ambient');
   const isEnergetic = moodLower.includes('energetic') || moodLower.includes('power') || moodLower.includes('intense');
   const isRomantic = moodLower.includes('romantic') || moodLower.includes('love');
   const isDark = moodLower.includes('dark') || moodLower.includes('deep');
@@ -557,7 +601,13 @@ function buildFallbackThumbnailVariants(genre: string, mood: string): ThumbnailH
   const isEDM = genreLower.includes('edm') || genreLower.includes('house') || genreLower.includes('techno');
 
   let pool: ThumbnailHookVariant[];
-  if (isLofi || isChill) {
+  if (isMeditative) {
+    pool = [
+      { hook: 'INNER STILLNESS', subtext: 'Meditation & Calm', stamp: 'NEW' },
+      { hook: 'HEALING WAVES', subtext: 'Breathe & Release' },
+      { hook: 'DEEP CALM', subtext: 'Peaceful Ambient' },
+    ];
+  } else if (isLofi || isChill) {
     pool = [
       { hook: 'STUDY FLOW', subtext: 'Lo-Fi Focus Beats', stamp: 'NEW' },
       { hook: 'LATE NIGHT VIBES', subtext: 'Chill Beats 2026' },

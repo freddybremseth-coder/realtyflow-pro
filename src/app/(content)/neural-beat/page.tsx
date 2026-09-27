@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { OpenArtToggle } from '@/components/ui/openart-toggle';
+import { getSupabase } from '@/lib/supabase/client';
 import {
   Music, Loader2, Play, CheckCircle, XCircle, Clock, Zap, Youtube, Radio, Disc3,
   Waves, PlayCircle, AlertCircle, Trash2, Upload, BarChart3, Eye, ThumbsUp, MessageSquare,
@@ -464,20 +465,20 @@ export default function NeuralBeatPage() {
         throw new Error(err.error || 'Kunne ikke opprette opplastings-URL');
       }
 
-      const { uploadUrl, publicUrl } = await signRes.json();
+      const { bucket, storagePath, token, publicUrl } = await signRes.json();
 
-      // Step 2: Upload MP3 directly to Supabase Storage (large file, no Vercel limit)
-      const headers: Record<string, string> = { 'Content-Type': 'audio/mpeg' };
+      if (!bucket || !storagePath || !token || !publicUrl) {
+        throw new Error('Ugyldig opplastingsbillett fra serveren');
+      }
 
-      const uploadRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers,
-        body: mp3File,
-      });
+      // Step 2: Use Supabase's supported signed-upload client. The old raw
+      // cross-origin PUT could fail on Safari/iOS with only "Load failed".
+      const { error: uploadError } = await getSupabase().storage
+        .from(bucket)
+        .uploadToSignedUrl(storagePath, token, mp3File);
 
-      if (!uploadRes.ok) {
-        const errText = await uploadRes.text();
-        throw new Error(`Opplasting feilet: ${errText}`);
+      if (uploadError) {
+        throw new Error(`Opplasting feilet: ${uploadError.message}`);
       }
 
       const audioUrl = publicUrl;
@@ -522,10 +523,12 @@ export default function NeuralBeatPage() {
       body: JSON.stringify({ fileName: `${prefix}-${file.name}` }),
     });
     if (!signRes.ok) throw new Error('Kunne ikke opprette opplastings-URL');
-    const { uploadUrl, publicUrl } = await signRes.json();
-    const headers: Record<string, string> = { 'Content-Type': file.type || 'image/png' };
-    const uploadRes = await fetch(uploadUrl, { method: 'PUT', headers, body: file });
-    if (!uploadRes.ok) throw new Error('Bildeopplasting feilet');
+    const { bucket, storagePath, token, publicUrl } = await signRes.json();
+    if (!bucket || !storagePath || !token || !publicUrl) throw new Error('Ugyldig opplastingsbillett');
+    const { error: uploadError } = await getSupabase().storage
+      .from(bucket)
+      .uploadToSignedUrl(storagePath, token, file);
+    if (uploadError) throw new Error('Bildeopplasting feilet: ' + uploadError.message);
     return publicUrl;
   };
 

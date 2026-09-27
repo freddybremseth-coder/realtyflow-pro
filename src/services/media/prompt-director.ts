@@ -111,6 +111,25 @@ function pickBrandId(request: string, override?: string) {
 function brandBlocks(brandId?: string): Record<string, string> {
   const brand = BRANDS.find((item) => item.id === brandId);
   if (!brand) return {};
+
+  if (brand.id === "zeneco") {
+    return {
+      "BRAND RULES": [
+        "Brand: Zen Eco Homes.",
+        "Positioning: Modern Mediterranean Living on Costa Blanca.",
+        "Visual identity: premium contemporary Mediterranean architecture, calm sea-and-sun atmosphere, restrained olive/cypress greenery and natural materials.",
+        "Approved logo system: compact horizontal wordmark for UI, light horizontal wordmark over dark hero imagery, architectural mark for avatars/favicons, dedicated transparent watermark for reels/video/social/YouTube, and the detailed full logo only on larger brand surfaces.",
+        "Palette: deep teal #0B4F59, warm gold #D4A84D, warm off-white/cream #F8F6F1; botanical green only as a restrained supporting accent.",
+        "Use generous negative space, refined editorial composition and warm natural light. Keep it premium, calm and credible rather than flashy.",
+        "When a logo or brand mark is needed, leave clean negative space for RealtyFlow's deterministic brand overlay. Do not draw, spell, reinterpret or approximate the Zen Eco Homes logo inside the AI-generated image.",
+        "Never use the old black ZE identity, the former boxed ZE mark, or the detailed full logo as a tiny UI/watermark. Avoid neon green, generic corporate eco graphics, clutter, cyber/futuristic styling and fake logos.",
+        `Audience: ${brand.target_audience}.`,
+        brand.specialties?.length ? `Relevant specialties: ${brand.specialties.join(", ")}.` : "",
+      ].filter(Boolean).join(" "),
+      COLOR: "Use the Zen Eco Homes palette: deep teal #0B4F59, warm gold #D4A84D and warm off-white #F8F6F1, with subtle natural green only where visually appropriate.",
+    };
+  }
+
   return {
     "BRAND RULES": [
       `Brand: ${brand.name}.`,

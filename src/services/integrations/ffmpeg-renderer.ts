@@ -396,6 +396,23 @@ function buildKenBurnsFilter(patternIndex: number, totalFrames: number, fps: num
   return `zoompan=z=${z}:x=${x}:y=${y}:d=${d}:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:fps=${fps}`;
 }
 
+function isSvgAsset(filePath: string): boolean {
+  if (path.extname(filePath).toLowerCase() === '.svg') return true;
+  try {
+    const fd = fsSync.openSync(filePath, 'r');
+    try {
+      const buf = Buffer.alloc(1024);
+      const bytesRead = fsSync.readSync(fd, buf, 0, buf.length, 0);
+      const head = buf.subarray(0, bytesRead).toString('utf8').trimStart().toLowerCase();
+      return head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'));
+    } finally {
+      fsSync.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
 function runFFmpeg(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn(getFFmpegPath(), args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -476,11 +493,21 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
       const artworkScale = options.imageFit === 'contain'
         ? `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x101820`
         : `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`;
-      if (options.logoPath && fsSync.existsSync(options.logoPath)) {
-        // Scale image, then overlay logo in bottom-right corner (120px wide, 16px padding)
+      const usableLogoPath = options.logoPath
+        && fsSync.existsSync(options.logoPath)
+        && !isSvgAsset(options.logoPath)
+          ? options.logoPath
+          : undefined;
+
+      if (options.logoPath && !usableLogoPath && fsSync.existsSync(options.logoPath)) {
+        console.warn('[FFmpeg] SVG logo skipped because this FFmpeg build has no SVG decoder.');
+      }
+
+      if (usableLogoPath) {
+        // Scale image, then overlay logo in bottom-right corner.
         await runFFmpeg([
           '-i', options.imagePaths[i],
-          '-i', options.logoPath,
+          '-i', usableLogoPath,
           '-filter_complex',
           `[0]${artworkScale}[bg];[1]scale=170:-1[logo];[bg][logo]overlay=W-w-24:H-h-24`,
           '-q:v', '2',

@@ -101,10 +101,45 @@ export function pickRemasterPromotionSource(
   })[0] ?? null;
 }
 
+type ReelVariant = { url?: unknown; startSeconds?: unknown; score?: unknown; rank?: unknown };
+
+function reelVariants(source: RemasterPromotionSource): Array<{ url: string; startSeconds: number; score: number; rank: number }> {
+  const payload = source.payload ?? {};
+  const ai = payload.ai_metadata && typeof payload.ai_metadata === "object"
+    ? payload.ai_metadata as Record<string, unknown>
+    : {};
+  const raw = Array.isArray(ai.socialReelVariants) ? ai.socialReelVariants as ReelVariant[] : [];
+  const scored = raw.flatMap((item, index) => {
+    const url = clean(item?.url);
+    if (!url || !/^https:\/\/.+\.mp4(?:$|\?)/i.test(url)) return [];
+    return [{
+      url,
+      startSeconds: Number.isFinite(Number(item?.startSeconds)) ? Number(item.startSeconds) : 0,
+      score: Number.isFinite(Number(item?.score)) ? Number(item.score) : 0,
+      rank: Number.isFinite(Number(item?.rank)) ? Number(item.rank) : index + 1,
+    }];
+  });
+  return scored.sort((a, b) => (b.score - a.score) || (a.rank - b.rank));
+}
+
 export function remasterPromotionMediaUrl(source: RemasterPromotionSource) {
+  const variants = reelVariants(source);
+  if (variants.length) return variants[0].url;
+  const payload = source.payload ?? {};
+  const ai = payload.ai_metadata && typeof payload.ai_metadata === "object"
+    ? payload.ai_metadata as Record<string, unknown>
+    : {};
+  const directReel = clean(payload.socialReelUrl) || clean(payload.social_reel_url)
+    || clean(ai.socialReelUrl) || clean(ai.social_reel_url);
+  if (/^https:\/\/.+\.mp4(?:$|\?)/i.test(directReel)) return directReel;
   const videoId = remasterYoutubeVideoId(source);
   if (videoId) return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
   return clean(source.payload?.thumbnail_url) || clean(source.payload?.image_url) || undefined;
+}
+
+export function remasterPromotionMediaType(source: RemasterPromotionSource): "reel" | "image" {
+  const media = remasterPromotionMediaUrl(source) || "";
+  return /\.mp4(?:$|\?)/i.test(media) ? "reel" : "image";
 }
 
 export function remasterPromotionMasterIdea(source: RemasterPromotionSource, guidance = "") {
@@ -118,7 +153,7 @@ export function remasterPromotionMasterIdea(source: RemasterPromotionSource, gui
     payload.energy ? `energy: ${String(payload.energy)}` : null,
   ].filter(Boolean).join(", ");
 
-  return `Promote the verified Re-Master Freddy track "${source.title}". Use only this selected song as the creative subject. Verified YouTube destination: ${verifiedUrl}. ${facts ? `Verified song facts: ${facts}. ` : ""}Use the verified Re-Master/YouTube artwork supplied with the source when available. Goal: qualified YouTube listens/views, Re-Master Freddy followers and repeat listeners. Do not invent streaming numbers, chart positions, reviews, awards, listener counts or platform availability. Do not replace the selected song with another catalog item.${guidance}`;
+  return `Promote the verified Re-Master Freddy track "${source.title}". Use only this selected song as the creative subject. Verified YouTube destination: ${verifiedUrl}. ${facts ? `Verified song facts: ${facts}. ` : ""}This is MUSIC-FIRST. When an approved Reel exists, let the audible music lead and keep the copy short. Facebook: 2-4 short lines, natural introduction, exact YouTube URL as primary CTA, then optional https://remaster.freddybremseth.com/. Instagram: shorter discovery copy, concise relevant hashtags, no invented "link in bio". Visuals must match genre/mood: meditation/relaxing = calm art, nature, still water, serene interiors; deep house/Mediterranean = coast, sunset, elegant lifestyle; energetic/EDM = movement, city/night energy; romantic/summer = warm Mediterranean evening. Never force DJ, cars, neon or party imagery onto calm tracks. Goal: qualified YouTube listens/views, Re-Master Freddy followers and repeat listeners. Do not invent streaming numbers, chart positions, reviews, awards, listener counts or platform availability. Do not replace the selected song with another catalog item.${guidance}`;
 }
 
 export async function loadRemasterPromotionSource(

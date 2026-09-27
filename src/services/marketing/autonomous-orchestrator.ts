@@ -159,6 +159,12 @@ export async function dispatchGeneratedAsset(
     publicationId?: string; brandTerms?: string[]; preapprovedFormat?: boolean; brand?: BrandContext;
     account?: { accountId: string } | null; service?: string | null;
     sourceType?: string; sourceId?: string | null; reuseMode?: string | null; propertyIds?: string[];
+    /**
+     * Canary/manual-review recovery only. If novelty retries are exhausted,
+     * continue through the remaining safety gates but force manual-review.
+     * This must never be used by controlled-auto/live generation.
+     */
+    allowNoveltyManualReviewFallback?: boolean;
   },
 ): Promise<DispatchResult> {
   const { asset, brief, run } = args;
@@ -190,8 +196,18 @@ export async function dispatchGeneratedAsset(
   const noveltyByCaption = contentNoveltyScore({ genome: asset.genome, angle: caption, campaignId: brief.campaignId }, args.history ?? [], { now: deps.now?.() });
   const novelty = noveltyByCaption.similarity > noveltyByBrief.similarity ? noveltyByCaption : noveltyByBrief;
   trace.push({ step: "novelty", actor: "novelty", summary: `${novelty.decision} (novelty ${novelty.noveltyScore})`, detail: { similarity: novelty.similarity } });
-  if (novelty.decision === "regenerate") {
+  const noveltyManualReviewFallback = novelty.decision === "regenerate" && args.allowNoveltyManualReviewFallback === true;
+  if (novelty.decision === "regenerate" && !noveltyManualReviewFallback) {
     return { publicationId, state: "regenerate", mode: "n/a", qualityScore: null, published: false, approvalId: null, trace };
+  }
+  if (noveltyManualReviewFallback) {
+    trace.push({
+      step: "novelty",
+      actor: "novelty",
+      summary: "novelty retries exhausted → manual-review-only recovery",
+      mode: "manual-review",
+      detail: { similarity: novelty.similarity, failClosed: true },
+    });
   }
 
   // 2) PUBLISHABILITY-gate — intern/meta-tekst blir ALDRI en post. Ingen approval.
@@ -263,6 +279,7 @@ export async function dispatchGeneratedAsset(
   const action = publishActionFor(asset.channel);
   const decision = resolveMarketingAutonomy(action, run.level, { channel: asset.channel, confidence: quality.score / 100, dataQuality: quality.score / 100, preapprovedFormat: args.preapprovedFormat });
   let mode = decision.mode;
+  if (noveltyManualReviewFallback) mode = "manual-review";
   if (quality.requiresApproval && mode === "live") mode = "manual-review";
   if (args.brand) {
     const claim = checkClaims(caption, args.brand);
