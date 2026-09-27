@@ -58,3 +58,22 @@ Hvert serverkall kontrollerer live medarbeiderprofil, eksakt Supabase Auth-UUID/
 Grensesnittet viser en egen `Felles oppgaver`-fane bare dersom rettighetene finnes og CRM kan vise individuelt godkjente nye kunder. Brukeren må velge en slik kunde. Oppgavene forsvinner fra medarbeiderens visning dersom kunden eller medlemskapet tilbakekalles; oppgavehistorikken blir liggende serverinternt for revisjon.
 
 Den isolerte PostgreSQL-integrasjonstesten installerer alle fire migrasjonsutkast i en midlertidig testdatabase og rapporterte **60 beståtte kontroller** etter utvidelsen, inkludert separate oppgavegrants, gamle og feilmerkede kunder, opprettelse/fullføring, feil kundereferanse, manglende innsyn etter tilbakekalling og at global `public.work_items` ikke brukes. Dette er ikke en produksjonsgodkjenning: Kjør full CI på siste kodeversjon og gjennomgå tilgangsutkast før eventuell utrulling.
+
+
+## Direkte Supabase Auth og Storage – produksjonskontroll 27.09.2026
+
+Før en `WORKSPACE_MEMBER` kan få en ekte Supabase Auth-konto må sikkerhetsgrensen også holde dersom brukeren går utenom RealtyFlow-grensesnittet og bruker sitt eget Auth-token direkte mot Supabase.
+
+Read-only produksjonskontroll viser at de viktigste kundetabellene `public.contacts`, `public.work_items`, `public.portal_messages` og `public.brand_settings` har RLS aktivert. Direkte kunde-/oppgave-/meldingstilgang er derfor ikke åpnet av selve workspace-koden. Familieøkonomi-kompatibilitetsvisningene er `security_invoker=true`; de underliggende tabellene bruker eier-/husholdningsbasert RLS, så et nytt workspace-medlem arver ikke Freddys økonomidata bare ved å bli autentisert.
+
+Det ble derimot funnet en **egen aktiveringsblokkering i Supabase Storage**: de private bucketene `property-documents` og `caecv-documents` har eksisterende `storage.objects`-policyer som gir rollen `authenticated` generell SELECT/INSERT/UPDATE/DELETE for hele bucketen. RealtyFlow-workspace trenger ikke slik direkte Storage-tilgang. Produksjonen har per kontrolltidspunkt kun én registrert fil i `property-documents` og ingen registrerte filer i `caecv-documents`, men policyomfanget er likevel for bredt for en ny medarbeiderkonto.
+
+**Ingen produksjonspolicy er endret.** Før faktisk medarbeideraktivering må disse bucket-policyene gjennomgås og erstattes med enten servermediert tilgang eller eksplisitt identitets-/ressursavgrensede regler. Dette må testes mot eventuelle eksterne klienter før endring, selv om repository-søk ikke fant aktive RealtyFlow-kodebaner som bruker bucket-navnene direkte.
+
+Migrasjonsutkastet `20260924190000_workspace_staff_security_preflight.sql` er kun en read-only kontrollfunksjon. Den muterer ingen policyer. Den krever at:
+- de fire sentrale kundeoverflatene fortsatt har RLS,
+- begge dokumentbucketene finnes og er private,
+- ingen `authenticated`/`public` Storage-policy retter seg direkte mot disse private bucketene,
+- ingen permissiv public/authenticated-policy åpner de sentrale kundetabellene.
+
+Owner-siden markerer `SECURITY_PREFLIGHT_NOT_INSTALLED` dersom kontrollen mangler, og `DIRECT_AUTH_SECURITY_BLOCKER` dersom kontrollen finner eksponering. Begge stopper `readyForOwnerReview`; de kan ikke aktivere en bruker.
