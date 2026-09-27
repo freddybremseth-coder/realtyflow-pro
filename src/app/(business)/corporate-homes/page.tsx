@@ -50,6 +50,26 @@ type Overview = {
     openWorkItems: number;
     pipelineValue: number;
   };
+  revenueFunnel: {
+    documentedOnly: boolean;
+    totalProspects: number;
+    promotedToCrm: number;
+    contacted: number;
+    engaged: number;
+    meetings: number;
+    opportunities: number;
+    viewingCompanies: number;
+    offerCompanies: number;
+    rates: {
+      prospectToContacted: number;
+      contactedToMeeting: number;
+      meetingToOpportunity: number;
+      opportunityToViewing: number;
+      viewingToOffer: number;
+    };
+    latestConfirmedOutcomeAt?: string | null;
+    revenueEventsReady: boolean;
+  };
   acquisition: {
     periodDays: number;
     attributionRule: string;
@@ -426,6 +446,65 @@ export default function CorporateHomesGrowthPage() {
         <Metric icon={<RefreshCw size={18} />} label="Må følges opp" value={data?.summary.dueNow ?? "—"} />
         <Metric icon={<BriefcaseBusiness size={18} />} label="Åpne oppgaver" value={data?.summary.openWorkItems ?? "—"} />
         <Metric icon={<CircleDollarSign size={18} />} label="Aktiv pipeline" value={data ? money(data.summary.pipelineValue) : "—"} />
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Marketing → Revenue</p>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Dokumentert Corporate-funnel helt til visning og tilbud</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              De siste stegene teller bare kanoniske Revenue OS-events som et menneske har bekreftet faktisk har skjedd.
+              CRM-status alene brukes ikke som bevis på fullført visning eller gitt tilbud.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800">Dokumenterte utfall</span>
+            <span className={`rounded-full px-3 py-1.5 ${data?.revenueFunnel.revenueEventsReady ? "bg-cyan-50 text-cyan-800" : "bg-amber-50 text-amber-800"}`}>
+              Revenue Events {data?.revenueFunnel.revenueEventsReady ? "klar" : "ikke tilgjengelig"}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          {[
+            ["Prospekter", data?.revenueFunnel.totalProspects ?? "—"],
+            ["I CRM", data?.revenueFunnel.promotedToCrm ?? "—"],
+            ["Kontaktet", data?.revenueFunnel.contacted ?? "—"],
+            ["Svar / engaged", data?.revenueFunnel.engaged ?? "—"],
+            ["Møte", data?.revenueFunnel.meetings ?? "—"],
+            ["Opportunity", data?.revenueFunnel.opportunities ?? "—"],
+            ["Faktisk visning", data?.revenueFunnel.viewingCompanies ?? "—"],
+            ["Faktisk tilbud", data?.revenueFunnel.offerCompanies ?? "—"],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</div>
+              <div className="mt-1 text-2xl font-black text-slate-950">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            ["Prospekt → kontakt", data?.revenueFunnel.rates.prospectToContacted ?? 0],
+            ["Kontakt → møte", data?.revenueFunnel.rates.contactedToMeeting ?? 0],
+            ["Møte → opportunity", data?.revenueFunnel.rates.meetingToOpportunity ?? 0],
+            ["Opportunity → visning", data?.revenueFunnel.rates.opportunityToViewing ?? 0],
+            ["Visning → tilbud", data?.revenueFunnel.rates.viewingToOffer ?? 0],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-xl border border-slate-200 p-3">
+              <div className="text-xs font-bold text-slate-600">{label}</div>
+              <div className="mt-1 text-lg font-black text-teal-900">{value}%</div>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs leading-5 text-slate-500">
+          {data?.revenueFunnel.latestConfirmedOutcomeAt
+            ? `Siste bekreftede kommersielle outcome: ${new Date(data.revenueFunnel.latestConfirmedOutcomeAt).toLocaleString("nb-NO")}.`
+            : "Ingen bekreftet Corporate-visning eller Corporate-tilbud er registrert ennå."}
+          {" "}Tallene er observasjoner, ikke prognoser.
+        </p>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
