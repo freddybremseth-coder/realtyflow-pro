@@ -299,6 +299,63 @@ export async function GET(request: NextRequest) {
   const genericEmailRows = allCompanyRows.filter((row: any) => Boolean(genericContactFor(row)?.generic_email));
   const contactPageRows = allCompanyRows.filter((row: any) => Boolean(genericContactFor(row)?.contact_page_url));
 
+  const { data: corporateRevenueEvents, error: corporateRevenueEventsError } = await supabase
+    .from("revenue_events")
+    .select("id,event_type,contact_id,occurred_at,source_system,source_type,source_id,metadata")
+    .eq("brand_id", "zeneco")
+    .eq("source_system", "corporate_homes")
+    .in("event_type", ["viewing_completed", "offer_made"])
+    .order("occurred_at", { ascending: false })
+    .limit(1000);
+
+  const revenueEvents = corporateRevenueEventsError ? [] : (corporateRevenueEvents || []);
+  const viewingContactIds = new Set(
+    revenueEvents
+      .filter((event: any) => event.event_type === "viewing_completed" && event.contact_id)
+      .map((event: any) => String(event.contact_id)),
+  );
+  const offerContactIds = new Set(
+    revenueEvents
+      .filter((event: any) => event.event_type === "offer_made" && event.contact_id)
+      .map((event: any) => String(event.contact_id)),
+  );
+
+  const prospectStatus = (row: any) => String(row.status || "DISCOVERED").toUpperCase();
+  const contactedProspects = prospectRows.filter((row: any) =>
+    ["CONTACTED", "ENGAGED", "MEETING", "OPPORTUNITY"].includes(prospectStatus(row)),
+  ).length;
+  const engagedProspects = prospectRows.filter((row: any) =>
+    ["ENGAGED", "MEETING", "OPPORTUNITY"].includes(prospectStatus(row)),
+  ).length;
+  const meetingProspects = prospectRows.filter((row: any) =>
+    ["MEETING", "OPPORTUNITY"].includes(prospectStatus(row)),
+  ).length;
+  const opportunityProspects = prospectRows.filter((row: any) => prospectStatus(row) === "OPPORTUNITY").length;
+
+  const rate = (numerator: number, denominator: number) =>
+    denominator > 0 ? Math.round((numerator / denominator) * 100) : 0;
+
+  const corporateRevenueFunnel = {
+    documentedOnly: true,
+    totalProspects: prospectRows.length,
+    promotedToCrm: promotedProspects,
+    contacted: contactedProspects,
+    engaged: engagedProspects,
+    meetings: meetingProspects,
+    opportunities: opportunityProspects,
+    viewingCompanies: viewingContactIds.size,
+    offerCompanies: offerContactIds.size,
+    rates: {
+      prospectToContacted: rate(contactedProspects, prospectRows.length),
+      contactedToMeeting: rate(meetingProspects, contactedProspects),
+      meetingToOpportunity: rate(opportunityProspects, meetingProspects),
+      opportunityToViewing: rate(viewingContactIds.size, opportunityProspects),
+      viewingToOffer: rate(offerContactIds.size, viewingContactIds.size),
+    },
+    latestConfirmedOutcomeAt: revenueEvents[0]?.occurred_at || null,
+    revenueEventsReady: !corporateRevenueEventsError,
+  };
+
   const focusProspects = prospectRows
     .filter((row: any) => !row.converted_contact_id)
     .filter((row: any) => String(row.status || "").toUpperCase() !== "DISQUALIFIED")
@@ -352,6 +409,7 @@ export async function GET(request: NextRequest) {
         openWorkItems: corporateWorkItems.filter((item: any) => !["DONE", "CANCELLED"].includes(String(item.status || "").toUpperCase())).length,
         pipelineValue,
       },
+      revenueFunnel: corporateRevenueFunnel,
       acquisition: {
         channels: acquisitionChannels,
         attributionRule: "Første Corporate-sideinteraksjon med UTM brukes som acquisition-kilde; ellers brukes kontaktens kilde og faller tilbake til organisk/direkte.",
@@ -434,6 +492,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError, corporateRevenueEventsError].filter(Boolean).map((item: any) => item.message),
   });
 }
