@@ -23,6 +23,29 @@ drop policy if exists "Authenticated write plot-assets" on storage.objects;
 drop policy if exists "Authenticated delete plot-assets" on storage.objects;
 drop policy if exists "Authenticated write ad-creatives" on storage.objects;
 
+-- Production advisor drift check found three SECURITY DEFINER functions with
+-- browser-role EXECUTE that are not browser APIs. Keep the dedicated restricted
+-- runtime grant for Nexus Commercial Activation, and keep the email function as
+-- trigger-only; remove PUBLIC/anon/authenticated execution when the functions
+-- exist in the target database.
+do $workspace_revoke_security_definers$
+begin
+  if to_regprocedure('public.nexus_commercial_activation_contact_guard(uuid,text,timestamp with time zone)') is not null then
+    revoke execute on function public.nexus_commercial_activation_contact_guard(uuid, text, timestamptz)
+      from public, anon, authenticated;
+  end if;
+  if to_regprocedure('public.ensure_nexus_commercial_activation_work_item(uuid,text,timestamp with time zone,text,text,text,text,text,integer,jsonb)') is not null then
+    revoke execute on function public.ensure_nexus_commercial_activation_work_item(
+      uuid, text, timestamptz, text, text, text, text, text, integer, jsonb
+    ) from public, anon, authenticated;
+  end if;
+  if to_regprocedure('public.sync_email_admission_review_work_item()') is not null then
+    revoke execute on function public.sync_email_admission_review_work_item()
+      from public, anon, authenticated;
+  end if;
+end;
+$workspace_revoke_security_definers$;
+
 -- Olivia private documents: preserve the existing authenticated client flow,
 -- but require the same internal identity gate as olivia.property_documents and
 -- olivia.caecv_documents. A normal RealtyFlow workspace account is not an
