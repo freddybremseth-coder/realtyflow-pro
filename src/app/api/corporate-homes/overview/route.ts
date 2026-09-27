@@ -106,8 +106,61 @@ export async function GET(request: NextRequest) {
     .limit(1)
     .maybeSingle();
 
+  const [
+    { data: partnerRows, error: partnerError },
+    { data: lastPartnerDiscovery, error: lastPartnerDiscoveryError },
+  ] = await Promise.all([
+    supabase
+      .from("corporate_partner_prospects")
+      .select("id,company_name,organization_number,domain,partner_type,city,industry,employee_count,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,source_url,next_action,created_at,updated_at")
+      .eq("brand_id", "zeneco")
+      .order("fit_score", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .limit(500),
+    supabase
+      .from("automation_logs")
+      .select("id,status,details,created_at")
+      .eq("action", "corporate_homes_partner_discovery")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
   const rows = contacts || [];
   const prospectRows = prospects || [];
+  const partners = partnerRows || [];
+  const partnerTierCounts = partners.reduce<Record<string, number>>((acc, row: any) => {
+    const tier = String(row.fit_tier || "UNSCORED").toUpperCase();
+    acc[tier] = (acc[tier] || 0) + 1;
+    return acc;
+  }, {});
+  const partnerStatusCounts = partners.reduce<Record<string, number>>((acc, row: any) => {
+    const status = String(row.status || "DISCOVERED").toUpperCase();
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const focusPartners = partners
+    .filter((row: any) => ["A", "B"].includes(String(row.fit_tier || "").toUpperCase()))
+    .filter((row: any) => !["PARTNER", "DISQUALIFIED"].includes(String(row.status || "").toUpperCase()))
+    .slice(0, 8)
+    .map((row: any) => ({
+      id: row.id,
+      companyName: row.company_name,
+      organizationNumber: row.organization_number,
+      domain: row.domain,
+      partnerType: row.partner_type,
+      city: row.city,
+      industry: row.industry,
+      employeeCount: row.employee_count,
+      status: String(row.status || "DISCOVERED").toUpperCase(),
+      fitTier: String(row.fit_tier || "UNSCORED").toUpperCase(),
+      fitScore: Number(row.fit_score || 0),
+      fitReasons: Array.isArray(row.fit_reasons) ? row.fit_reasons.slice(0, 3) : [],
+      evidenceGaps: Array.isArray(row.evidence_gaps) ? row.evidence_gaps.slice(0, 2) : [],
+      referralAngle: row.referral_angle || null,
+      sourceUrl: row.source_url || null,
+      nextAction: row.next_action || null,
+    }));
   const ids = new Set(rows.map((row: any) => String(row.id)));
   const corporateWorkItems = (workItems || []).filter((item: any) => {
     if (ids.has(String(item.source_id || ""))) return true;
@@ -260,6 +313,20 @@ export async function GET(request: NextRequest) {
         attributionRule: "Første Corporate-sideinteraksjon med UTM brukes som acquisition-kilde; ellers brukes kontaktens kilde og faller tilbake til organisk/direkte.",
         periodDays: 30,
       },
+      partners: {
+        total: partners.length,
+        target: 100,
+        progressPercent: Math.min(100, Math.round((partners.length / 100) * 100)),
+        aTier: partnerTierCounts.A || 0,
+        bTier: partnerTierCounts.B || 0,
+        engaged: (partnerStatusCounts.ENGAGED || 0) + (partnerStatusCounts.PARTNER || 0),
+        focusPartners,
+        statusCounts: partnerStatusCounts,
+        tierCounts: partnerTierCounts,
+        lastDiscovery: lastPartnerDiscovery || null,
+        personalEnrichmentStarted: false,
+        automaticOutreach: false,
+      },
       prospects: {
         total: prospectRows.length,
         target: 250,
@@ -309,6 +376,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError].filter(Boolean).map((item: any) => item.message),
   });
 }
