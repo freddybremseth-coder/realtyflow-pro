@@ -111,16 +111,24 @@ begin
 
   -- A workspace Supabase Auth identity also inherits the generic authenticated
   -- role outside the workspace routes. Explicitly block known internal
-  -- operational tables that must never become readable merely because a user
-  -- can authenticate. Public catalogue tables (properties/plots/books/rates)
-  -- are intentionally not part of this internal-only list.
+  -- operational tables that a workspace user must never receive merely by
+  -- authenticating. agentic_approvals exposes approval/decision metadata;
+  -- plot_assets contains customer visibility/distribution fields and currently
+  -- has a generic authenticated full-access policy. Public catalogue tables
+  -- (properties/land plots/books/rates) are intentionally not in this list.
   select count(*)::integer into v_direct_internal_policy_risk
   from pg_catalog.pg_policies p
   where p.schemaname = 'public'
-    and p.tablename in ('agentic_approvals')
-    and p.cmd in ('ALL','SELECT')
+    and p.tablename in ('agentic_approvals','plot_assets')
+    and p.cmd in ('ALL','SELECT','INSERT','UPDATE','DELETE')
     and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
-    and coalesce(regexp_replace(lower(p.qual),'[()[:space:]]','','g'),'') not in ('','false');
+    and (
+      (p.cmd in ('ALL','SELECT','UPDATE','DELETE')
+        and coalesce(regexp_replace(lower(p.qual),'[()[:space:]]','','g'),'') not in ('','false'))
+      or
+      (p.cmd in ('ALL','INSERT','UPDATE')
+        and coalesce(regexp_replace(lower(p.with_check),'[()[:space:]]','','g'),'') not in ('','false'))
+    );
 
   return jsonb_build_object(
     'required_customer_tables_rls', v_required_tables_rls,
