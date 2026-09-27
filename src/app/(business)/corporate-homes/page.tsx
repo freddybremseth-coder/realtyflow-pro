@@ -560,6 +560,7 @@ export default function CorporateHomesGrowthPage() {
         </div>
 
         {data?.growthReview?.review ? (
+          <>
           <div className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.6fr]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-black uppercase tracking-wide text-slate-500">Målt flaskehals</div>
@@ -627,6 +628,7 @@ export default function CorporateHomesGrowthPage() {
               </div>
             </div>
           )}
+          </>
         ) : (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
             Første ukentlige Corporate Growth Review er ikke lagret ennå. Reviewen opprettes automatisk når cron-jobben kjører.
