@@ -89,6 +89,9 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
   const [meetingNotice, setMeetingNotice] = useState("");
   const [opportunityPromoting, setOpportunityPromoting] = useState(false);
   const [opportunityNotice, setOpportunityNotice] = useState("");
+  const [decisionPack, setDecisionPack] = useState<Record<string, any> | null>(null);
+  const [buildingDecisionPack, setBuildingDecisionPack] = useState(false);
+  const [decisionPackNotice, setDecisionPackNotice] = useState("");
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState("");
   const [matchingProperties, setMatchingProperties] = useState<Array<Record<string, any>>>([]);
@@ -117,6 +120,8 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       if (!response.ok) throw new Error(body?.error || "Kunne ikke hente beslutningsgrunnlaget.");
       setBrief(body?.brief || null);
       setProspect(body?.prospect || null);
+      const savedDecisionPack = body?.prospect?.evidence?.corporate_decision_pack;
+      if (savedDecisionPack && typeof savedDecisionPack === "object") setDecisionPack(savedDecisionPack);
       const savedPropertyMatch = body?.prospect?.evidence?.corporate_property_match;
       if (savedPropertyMatch && typeof savedPropertyMatch === "object" && Array.isArray(savedPropertyMatch.shortlist)) {
         setMatchingProperties(savedPropertyMatch.shortlist);
@@ -307,6 +312,28 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
       setError(opportunityError instanceof Error ? opportunityError.message : "Kunne ikke opprette Opportunity.");
     } finally {
       setOpportunityPromoting(false);
+    }
+  }
+
+  async function buildDecisionPack() {
+    setBuildingDecisionPack(true);
+    setDecisionPackNotice("");
+    setError("");
+    try {
+      const response = await fetch(`/api/corporate-homes/prospects/${encodeURIComponent(id)}/decision-pack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke bygge Corporate Decision Pack.");
+      setDecisionPack(body?.decisionPack || null);
+      setDecisionPackNotice("Beslutningspakken er lagret internt. Den er ikke delt med kunden.");
+      await load();
+    } catch (packError) {
+      setError(packError instanceof Error ? packError.message : "Kunne ikke bygge Corporate Decision Pack.");
+    } finally {
+      setBuildingDecisionPack(false);
     }
   }
 
@@ -578,6 +605,64 @@ export default function CorporateProspectBriefPage({ params }: { params: Promise
               </div>
             </div>
           )}
+        </section>
+      )}
+
+      {String(prospect?.status || "").toUpperCase() === "OPPORTUNITY" && (
+        <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.14em] text-emerald-900">Corporate Decision Pack</div>
+              <h2 className="mt-2 text-xl font-black text-slate-950">Gjør Opportunity beslutningsklar</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+                Samler discovery, lagret topp-5 shortlist, enkle interne nøkkeltall og styre-/lederchecklist.
+                Pakken er kun internt arbeidsgrunnlag og deles aldri automatisk.
+              </p>
+            </div>
+            <button
+              onClick={() => void buildDecisionPack()}
+              disabled={buildingDecisionPack || !matchingProperties.length}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-900 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {buildingDecisionPack ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+              {decisionPack ? "Oppdater Decision Pack" : "Bygg Decision Pack"}
+            </button>
+          </div>
+          {!matchingProperties.length && (
+            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-950">
+              Lagre boligshortlisten først. Decision Pack bruker den kvalitetssikrede interne topp-5-listen.
+            </div>
+          )}
+          {decisionPackNotice && <div className="mt-3 text-xs font-bold text-emerald-900">{decisionPackNotice}</div>}
+          {decisionPack && (
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl bg-white p-4">
+                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Boligkandidater</div>
+                <div className="mt-1 text-2xl font-black text-slate-950">{decisionPack.shortlist?.length || 0}</div>
+              </div>
+              <div className="rounded-2xl bg-white p-4">
+                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Topp pris</div>
+                <div className="mt-1 text-lg font-black text-slate-950">
+                  {decisionPack.economics?.basis_property_price_eur ? `€${Number(decisionPack.economics.basis_property_price_eur).toLocaleString("nb-NO")}` : "—"}
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white p-4">
+                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Budsjettmargin</div>
+                <div className="mt-1 text-lg font-black text-slate-950">
+                  {decisionPack.economics?.budget_headroom_eur !== null && decisionPack.economics?.budget_headroom_eur !== undefined
+                    ? `€${Number(decisionPack.economics.budget_headroom_eur).toLocaleString("nb-NO")}`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white p-4">
+                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Styrepunkter</div>
+                <div className="mt-1 text-2xl font-black text-slate-950">{decisionPack.board_case?.length || 0}</div>
+              </div>
+            </div>
+          )}
+          <div className="mt-3 text-xs text-slate-600">
+            Ingen kundedeling · ingen automatisk utsendelse · skatt, juridisk struktur og drift krever separat kvalitetssikring.
+          </div>
         </section>
       )}
 
