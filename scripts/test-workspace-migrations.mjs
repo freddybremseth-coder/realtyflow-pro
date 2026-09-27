@@ -148,6 +148,15 @@ try {
   await sql("create policy \"Olivia authenticated users can upload field observation images\" on storage.objects for insert to authenticated with check (bucket_id='olivia-field-observations')");
   await sql("create policy \"Olivia authenticated users can update field observation images\" on storage.objects for update to authenticated using (bucket_id='olivia-field-observations') with check (bucket_id='olivia-field-observations')");
   await sql("create policy \"Olivia authenticated users can delete field observation images\" on storage.objects for delete to authenticated using (bucket_id='olivia-field-observations')");
+  // Reproduce production grant drift: these server/trigger-only SECURITY DEFINER
+  // functions were explicitly executable by browser roles despite their original
+  // migrations revoking PUBLIC. Workspace hardening must remove those grants.
+  await sql("create function public.nexus_commercial_activation_contact_guard(uuid,text,timestamptz) returns boolean language sql security definer as $guard$ select true $guard$");
+  await sql("create function public.ensure_nexus_commercial_activation_work_item(uuid,text,timestamptz,text,text,text,text,text,integer,jsonb) returns boolean language sql security definer as $ensure$ select true $ensure$");
+  await sql("create function public.sync_email_admission_review_work_item() returns trigger language plpgsql security definer as $sync$ begin return new; end $sync$");
+  await sql("grant execute on function public.nexus_commercial_activation_contact_guard(uuid,text,timestamptz) to anon,authenticated");
+  await sql("grant execute on function public.ensure_nexus_commercial_activation_work_item(uuid,text,timestamptz,text,text,text,text,text,integer,jsonb) to anon,authenticated");
+  await sql("grant execute on function public.sync_email_admission_review_work_item() to anon,authenticated");
   await sql("grant usage on schema core to service_role");
   await sql("grant select on core.brands to service_role");
   await sql("grant select, insert, update on public.contacts to service_role");
@@ -780,6 +789,7 @@ try {
     security?.operational_storage_authenticated_write_policies === 0 &&
     security?.direct_customer_policy_risk === 0 &&
     security?.direct_internal_policy_risk === 0 &&
+    security?.direct_security_definer_risk === 0 &&
     security?.safe_for_workspace_auth === true,
     "Identity-bound Olivia Storage plus server-only hardening should satisfy the workspace Auth preflight");
   const removedPolicies = await sql(
@@ -788,6 +798,14 @@ try {
   );
   verify(removedPolicies.rowCount === 0,
     "Server-only Auth hardening migration left a broad direct policy behind");
+
+  const unsafeSecurityDefinerGrants = await sql(
+    "select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace " +
+    "where n.nspname='public' and p.proname in ('nexus_commercial_activation_contact_guard','ensure_nexus_commercial_activation_work_item','sync_email_admission_review_work_item') " +
+    "and (has_function_privilege('anon',p.oid,'EXECUTE') or has_function_privilege('authenticated',p.oid,'EXECUTE'))",
+  );
+  verify(unsafeSecurityDefinerGrants.rowCount === 0,
+    "Workspace hardening left a server/trigger-only SECURITY DEFINER callable by browser roles");
 
   const oliviaStoragePolicies = await sql(
     "select policyname,cmd,coalesce(qual,'') as qual,coalesce(with_check,'') as with_check from pg_policies " +
