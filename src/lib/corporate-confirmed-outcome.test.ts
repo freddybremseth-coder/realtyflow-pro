@@ -57,7 +57,7 @@ test("confirmed offer must match the property selected in offer preflight", () =
     evidence,
     type: "OFFER_MADE",
     propertyRef: "WRONG",
-  }), /tilbudspreflight/);
+  }), /Tilbudet må gjelde/);
 });
 
 test("confirmed-outcome log stays bounded", () => {
