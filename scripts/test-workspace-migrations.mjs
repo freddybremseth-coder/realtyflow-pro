@@ -16,6 +16,7 @@ const files = [
   "20260924190000_workspace_staff_security_preflight.sql",
   "20260924200000_workspace_known_server_only_auth_hardening.sql",
   "20260924210000_workspace_user_directory_and_admin.sql",
+  "20260927143000_workspace_marketing_modules.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -115,9 +116,17 @@ try {
   await sql("grant usage on schema olivia_private to authenticated");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
   await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("create table public.content_publications (id uuid primary key default gen_random_uuid(), brand_id text not null, content_type text not null, title text, description text, tags text[], thumbnail_url text, scheduled_platforms text[], status text default 'draft' check (status in ('draft','processing','published','scheduled','failed')), scheduled_at timestamptz, published_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), total_views integer default 0, total_likes integer default 0, total_comments integer default 0, total_shares integer default 0, ai_generated boolean default false, content_features jsonb not null default '{}'::jsonb)");
+  await sql("create table public.social_channels (id uuid primary key default gen_random_uuid(), brand_id text not null, platform text not null, external_id text not null, display_name text not null, metadata jsonb not null default '{}'::jsonb, is_active boolean not null default true, created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("grant select,insert,update on public.content_publications to service_role; grant select on public.social_channels to service_role");
   await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
   await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
-  await sql("create table public.work_items (id uuid primary key default gen_random_uuid())");
+  await sql("create table public.work_items (id uuid primary key default gen_random_uuid(), title text not null, description text, status text not null default 'TO_DO' check (status in ('TO_DO','IN_PROGRESS','REVIEW','DONE','CANCELLED')), priority text not null default 'MEDIUM' check (priority in ('CRITICAL','HIGH','MEDIUM','LOW')), due_date date, brand_id text, source_type text not null default 'manual' check (source_type in ('manual','ai_agent','content','automation','market_intelligence')), source_id text, assigned_agent text, next_action text, metadata jsonb default '{}'::jsonb, created_at timestamptz default now(), updated_at timestamptz default now())");
+  await sql("create table public.search_discovery_events (id uuid primary key default gen_random_uuid(), brand_id text not null, source text not null, path text not null, occurred_at timestamptz not null default now())");
+  await sql("create table public.automation_logs (id uuid primary key default gen_random_uuid(), action text not null, agent_name text, status text not null, details jsonb, created_at timestamptz default now())");
+  await sql("create table public.corporate_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, organization_type text not null default 'company', country_code text not null default 'NO', city text, industry text, employee_count integer, member_count integer, website_url text, linkedin_company_url text, status text not null default 'RESEARCHED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', decision_roles text[] not null default '{}', source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
+  await sql("create table public.corporate_partner_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, partner_type text not null default 'other', country_code text not null default 'NO', city text, industry text, employee_count integer, website_url text, status text not null default 'DISCOVERED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', referral_angle text, source_url text, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
+  await sql("create table public.ad_campaigns (id uuid primary key default gen_random_uuid(), brand_id text, name text not null, product_name text not null, target_markets text[], audience_segments text[], funnel_stage text, offer text, status text not null default 'draft', total_creatives integer default 0, estimated_cost_usd numeric, growth_goal text default 'unspecified', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.portal_messages (id uuid primary key default gen_random_uuid())");
   await sql("create table public.brand_settings (brand_id text primary key, settings jsonb)");
   await sql("create table public.agentic_approvals (id uuid primary key default gen_random_uuid(), title text)");
@@ -160,6 +169,8 @@ try {
   await sql("grant usage on schema core to service_role");
   await sql("grant select on core.brands to service_role");
   await sql("grant select, insert, update on public.contacts to service_role");
+  await sql("grant select, insert, update on public.work_items to service_role");
+  await sql("grant select on public.search_discovery_events, public.automation_logs, public.corporate_prospects, public.corporate_partner_prospects, public.ad_campaigns to service_role");
   await sql("grant select on public.properties, public.property_brand_visibility to service_role");
   for (const filename of files) {
     const contents = await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8");
@@ -215,7 +226,9 @@ try {
     "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
     "workspace_zeneco_joint_task_complete", "workspace_brand_contacts",
     "workspace_brand_contact_create", "workspace_brand_contact_update",
-    "workspace_brand_property_catalogue", "workspace_staff_security_preflight"]) {
+    "workspace_brand_property_catalogue", "workspace_staff_security_preflight",
+    "workspace_brand_marketing_snapshot", "workspace_brand_marketing_draft_create",
+    "workspace_brand_growth_snapshot", "workspace_brand_growth_work_create"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -228,12 +241,14 @@ try {
     "workspace_user_directory", "workspace_user_directory_audit",
     "zeneco_joint_lead_cohort", "zeneco_joint_lead_review_audit",
     "zeneco_joint_contact_edit_audit", "zeneco_joint_work_items",
-    "brand_workspace_contact_write_audit"]) {
+    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit",
+    "brand_workspace_growth_work_audit"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
   for (const auditTable of ["zeneco_joint_lead_review_audit", "zeneco_joint_contact_edit_audit",
-    "brand_workspace_contact_write_audit"]) {
+    "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit",
+    "brand_workspace_growth_work_audit"]) {
     const privileges = await sql(
       "select has_table_privilege('service_role',$1,'SELECT') as sel, has_table_privilege('service_role',$1,'INSERT') as ins, has_table_privilege('service_role',$1,'UPDATE') as upd, has_table_privilege('service_role',$1,'DELETE') as del",
       ["core." + auditTable],
@@ -931,8 +946,131 @@ try {
 
   verify(await configureManaged([{ brandKey: "zeneco", permissions: ["crm.read"] }]) === false,
     "Workspace user configure accepted generic Zen CRM");
-  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }]) === false,
-    "Workspace user configure accepted unfinished marketing access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }]) === true,
+    "Workspace user configure rejected implemented marketing read access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.draft"] }]) === false,
+    "Workspace user configure accepted marketing draft without read access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft"] }]) === true,
+    "Workspace user configure rejected implemented marketing draft access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.publish"] }]) === false,
+    "Workspace user configure accepted workspace social publishing before scoped publish safety exists");
+
+  await sql("insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','social','Pinoso draft','Safe Pinoso content','draft'),('zeneco','social','Private Zen','Must not leak','published')");
+  await sql("insert into public.social_channels(brand_id,platform,external_id,display_name,is_active) values ('pinosoecolife','facebook','fb-pinoso','Pinoso Facebook',true),('pinosoecolife','youtube','yt-pinoso','Pinoso YouTube',false),('zeneco','facebook','fb-zen','Zen Facebook',true)");
+  const marketingSnapshot = await serviceSql(
+    "select public.workspace_brand_marketing_snapshot($1::text,$2::uuid,$3::text) as result",
+    ["pinosoecolife", managedUser, "managed@example.test"],
+  );
+  verify(marketingSnapshot.rows[0].result?.publications?.length === 1 &&
+    marketingSnapshot.rows[0].result.publications[0].title === "Pinoso draft" &&
+    marketingSnapshot.rows[0].result.channels?.length === 1 &&
+    marketingSnapshot.rows[0].result.channels[0].platform === "facebook" &&
+    !JSON.stringify(marketingSnapshot.rows[0].result).includes("Private Zen") &&
+    !JSON.stringify(marketingSnapshot.rows[0].result).includes("fb-pinoso"),
+    "Marketing snapshot leaked another brand or private channel identifier");
+
+  const createdMarketingDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[]) as result",
+    ["pinosoecolife", managedUser, "managed@example.test", "Staff draft", "Draft only body",
+      ["pinoso","villa"], ["facebook"]],
+  );
+  verify(createdMarketingDraft.rows[0].result?.ok === true &&
+    createdMarketingDraft.rows[0].result?.publication?.brand_id === "pinosoecolife" &&
+    createdMarketingDraft.rows[0].result?.publication?.status === "draft",
+    "Scoped marketing draft creation failed or escaped draft status");
+  const marketingAudit = await sql(
+    "select count(*)::int as total from core.brand_workspace_marketing_draft_audit where actor_user_id=$1",
+    [managedUser],
+  );
+  verify(marketingAudit.rows[0].total === 1,
+    "Marketing draft audit did not record the managed workspace actor");
+
+  const inactiveChannelDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[]) as result",
+    ["pinosoecolife", managedUser, "managed@example.test", "Blocked draft", "Inactive channel",
+      [], ["youtube"]],
+  );
+  verify(inactiveChannelDraft.rows[0].result?.ok === false &&
+    inactiveChannelDraft.rows[0].result?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND",
+    "Marketing draft accepted an inactive brand channel");
+
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["corporate.read"] }]) === false,
+    "Workspace user configure accepted Corporate Homes outside Zen Eco Homes");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["corporate.plan"] }]) === false,
+    "Workspace user configure accepted Corporate planning without Corporate read");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["visibility.plan"] }]) === false,
+    "Workspace user configure accepted visibility planning without visibility read");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["ads.draft"] }]) === false,
+    "Workspace user configure accepted ad drafting without ad read");
+
+  verify(await configureManaged([{
+    brandKey: "zeneco",
+    permissions: [
+      "corporate.read","corporate.plan",
+      "visibility.read","visibility.plan",
+      "ads.read","ads.draft","events.plan",
+    ],
+  }]) === true, "Valid Zen Corporate/Growth workspace configuration failed");
+
+  await sql("insert into public.corporate_prospects(brand_id,company_name,organization_type,country_code,city,industry,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,next_action) values ('zeneco','Nordic Growth AS','company','NO','Oslo','Technology','RESEARCHED',88,'A',array['distributed workforce'],array['benefit policy'],array['HR','CEO'],'https://example.test/nordic','Verify employee-benefit fit')");
+  await sql("insert into public.corporate_partner_prospects(brand_id,company_name,partner_type,country_code,city,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,next_action) values ('zeneco','Partner Advisory AS','management_consulting','NO','Bergen','DISCOVERED',75,'B',array['corporate clients'],array['Spain demand'],'Employee benefit introductions','Prepare referral brief')");
+  await sql("insert into public.search_discovery_events(brand_id,source,path,occurred_at) values ('zeneco','google','/bedriftshytte-spania',now()),('zeneco','chatgpt','/corporate-homes',now()),('pinosoecolife','google','/pinoso-private',now())");
+  await sql("insert into public.automation_logs(action,agent_name,status,details) values ('seo_gsc_live_read','Sam SEO Expert','partial',jsonb_build_object('google_search_console',jsonb_build_array(jsonb_build_object('brandId','zeneco','status','error','error','ZEN_GSC_STATUS'),jsonb_build_object('brandId','pinosoecolife','status','success','result',jsonb_build_object('clicks',99))), 'diagnostics',jsonb_build_array(jsonb_build_object('brandId','zeneco','kind','check','title','Zen measurement','category','measurement','finding','ZEN_DIAGNOSTIC','evidence','zen-only evidence','nextStep','Reconnect GSC'),jsonb_build_object('brandId','pinosoecolife','kind','check','title','Private Pinoso','category','measurement','finding','PINOSO_PRIVATE_DIAGNOSTIC','evidence','private','nextStep','private'))))");
+  await sql("insert into public.work_items(title,description,status,priority,brand_id,source_type,assigned_agent,next_action) values ('Zen SEO priority','Improve Corporate Homes landing page','TO_DO','HIGH','zeneco','ai_agent','seo','Add HR-benefit search intent'),('Private Pinoso SEO','Must not leak','TO_DO','HIGH','pinosoecolife','ai_agent','seo','Private next action')");
+  await sql("insert into public.ad_campaigns(brand_id,name,product_name,target_markets,status,total_creatives,estimated_cost_usd,growth_goal) values ('zeneco','Corporate HR campaign','Zen Corporate Homes',array['Norway'],'completed',5,120,'lead_generation'),('pinosoecolife','Private Pinoso Ad','Pinoso EcoLife',array['Norway'],'completed',3,75,'lead_generation')");
+
+  const growthSnapshot = await serviceSql(
+    "select public.workspace_brand_growth_snapshot($1::text,$2::uuid,$3::text) as result",
+    ["zeneco", managedUser, "managed@example.test"],
+  );
+  const growth = growthSnapshot.rows[0].result;
+  verify(growth?.corporate?.prospects?.length === 1 &&
+    growth.corporate.prospects[0].companyName === "Nordic Growth AS" &&
+    growth?.corporate?.partners?.length === 1 &&
+    growth?.visibility?.seoWork?.length === 1 &&
+    growth.visibility.seoWork[0].title === "Zen SEO priority" &&
+    growth?.ads?.length === 1 &&
+    growth.ads[0].name === "Corporate HR campaign" &&
+    growth?.visibility?.seoSam?.gsc?.error === "ZEN_GSC_STATUS" &&
+    growth?.visibility?.seoSam?.diagnostics?.[0]?.finding === "ZEN_DIAGNOSTIC" &&
+    !JSON.stringify(growth).includes("Private Pinoso") &&
+    !JSON.stringify(growth).includes("PINOSO_PRIVATE_DIAGNOSTIC") &&
+    !JSON.stringify(growth).includes('"clicks":99'),
+    "Growth snapshot leaked another brand or omitted granted Zen modules");
+
+  for (const [kind,title] of [
+    ["corporate","Research Nordic Growth AS"],
+    ["seo","SEO Corporate Homes"],
+    ["ads","Ad brief Corporate Homes"],
+    ["video","Corporate video concept"],
+    ["info_meeting","HR information webinar"],
+  ]) {
+    const created = await serviceSql(
+      "select public.workspace_brand_growth_work_create($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text,$7::text,$8::date,$9::text,$10::text) as result",
+      ["zeneco", managedUser, "managed@example.test", kind, title,
+        "Internal planning only", "Prepare next internal step", "2026-10-15", "HIGH", "source-" + kind],
+    );
+    verify(created.rows[0].result?.kind === kind &&
+      created.rows[0].result?.status === "TO_DO",
+      "Growth planning failed for kind " + kind);
+  }
+  const growthRows = await sql(
+    "select assigned_agent,status,metadata from public.work_items where metadata->>'workspace_growth'='true' order by created_at,id",
+  );
+  verify(growthRows.rowCount === 5 &&
+    growthRows.rows.every(row =>
+      row.status === "TO_DO" &&
+      row.metadata?.external_action === false &&
+      row.metadata?.publishing_action === false &&
+      row.metadata?.ad_spend_action === false),
+    "Growth work escaped internal planning-only boundaries");
+  const growthAudit = await sql(
+    "select count(*)::int as total from core.brand_workspace_growth_work_audit where actor_user_id=$1",
+    [managedUser],
+  );
+  verify(growthAudit.rows[0].total === 5,
+    "Growth planning audit did not record every employee-created work item");
+
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["crm.joint.read"] }]) === false,
     "Workspace user configure accepted Zen-only scope on Pinoso");
 

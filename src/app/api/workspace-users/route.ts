@@ -48,7 +48,11 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
           typeof permission === "string" &&
           WORKSPACE_PERMISSIONS.includes(permission as WorkspacePermission))) return null;
     const typed = permissions as WorkspacePermission[];
-    if (typed.some(permission => permission.startsWith("marketing."))) return null;
+    if (typed.includes("marketing.publish")) return null;
+    if (typed.includes("marketing.draft") && !typed.includes("marketing.read")) return null;
+    if (typed.includes("corporate.plan") && !typed.includes("corporate.read")) return null;
+    if (typed.includes("visibility.plan") && !typed.includes("visibility.read")) return null;
+    if (typed.includes("ads.draft") && !typed.includes("ads.read")) return null;
     if (brandKey === "zeneco") {
       if (typed.some(permission => permission === "crm.read" || permission === "crm.write") ||
           (typed.includes("crm.joint.write") && !typed.includes("crm.joint.read")) ||
@@ -56,7 +60,8 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
             !typed.includes("crm.joint.read")) ||
           (typed.includes("tasks.joint.write") && !typed.includes("tasks.joint.read"))) return null;
     } else if (typed.some(permission =>
-      ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission))) {
+      ["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
+       "corporate.read", "corporate.plan"].includes(permission))) {
       return null;
     }
     seen.add(brandKey);

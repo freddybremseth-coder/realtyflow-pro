@@ -210,7 +210,7 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
       body: {
         action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
         displayName: "Andrea", password: "Strong!Workspace7Password",
-        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }],
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["marketing.draft"] }],
       },
       error: "INVALID_BRAND_ACCESS", field: "brandAccess",
     },
@@ -240,7 +240,7 @@ test("existing managed user can update access, reset password and disable withou
 
   const updated = await POST(req("POST", owner, {
     action: "UPDATE_ACCESS", userId, username: "andrea", displayName: "Andrea T.",
-    brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read"] }],
+    brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read","marketing.read","marketing.draft"] }],
   }) as any);
   assert.equal(updated.status, 200);
   assert.ok(rpcCalls.some(call => call.name === "workspace_user_configure"));

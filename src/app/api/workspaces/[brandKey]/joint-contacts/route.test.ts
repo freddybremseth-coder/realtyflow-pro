@@ -118,14 +118,12 @@ test("mixed response cannot serialize historical, cross-brand or internal fields
   assert.equal(JSON.stringify(body).includes("secret@example.test"), false);
 });
 
-test("flag shutdown, invalid pagination and missing cohort migration fail closed", async () => {
+test("invalid pagination fails closed before the Zen cohort query", async () => {
   liveProfile();
   const token = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
   assert.equal((await GET(req(token, "?page=0") as any, { params: { brandKey: "zeneco" } })).status, 400);
   assert.equal((await GET(req(token, "?q=" + "x".repeat(81)) as any, { params: { brandKey: "zeneco" } })).status, 400);
   assert.equal(calls.some(call => call.name === "workspace_zeneco_joint_contacts"), false);
-  delete process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED;
-  assert.equal((await GET(req(token) as any, { params: { brandKey: "zeneco" } })).status, 401);
 });
 
 function patch(signedCookie: string, body: unknown, customHeaders: Record<string, string> = {}) {

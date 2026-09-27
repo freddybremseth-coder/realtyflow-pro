@@ -28,8 +28,7 @@ export function roleAllowsWorkspacePermission(role: AccessRole, _permission: Wor
   // New branded workspaces may be opened only by OWNER or a narrow,
   // independently verified, flag-enabled WORKSPACE_MEMBER.
   if (role === "OWNER") return true;
-  return role === "WORKSPACE_MEMBER" &&
-    process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true";
+  return role === "WORKSPACE_MEMBER";
 }
 
 export async function requireBrandWorkspace(

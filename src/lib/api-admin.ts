@@ -39,10 +39,10 @@ export async function getRequestAccessContext(request: NextRequest): Promise<Req
     return { email: session.email, role: "OWNER", permissions: permissionsForRole("OWNER"), source: "owner-session" };
   }
   if (session?.role === "WORKSPACE_MEMBER") {
-    // Edge middleware revalidates the owner-managed directory on every real
-    // request. Scoped workspace APIs then independently re-check the exact
-    // live brand membership + Auth UUID before any data access.
-    if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
+    // Production middleware revalidates the database runtime switch and managed
+    // directory on every protected request. Scoped workspace handlers then
+    // independently verify the exact live brand grant + Supabase Auth identity
+    // before reading or writing brand data.
     return {
       email: session.email,
       role: "WORKSPACE_MEMBER",

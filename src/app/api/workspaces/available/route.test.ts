@@ -78,17 +78,20 @@ test.afterEach(() => {
   }
 });
 
-test("marketing-only Pinoso membership is not advertised as an available workspace", async () => {
+test("marketing-only Pinoso membership is advertised with implemented rights only", async () => {
   permissions = ["marketing.read", "marketing.draft", "marketing.publish"];
   const cookie = "realtyflow_admin=" +
     await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
   const response = await GET(request(cookie) as any);
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.deepEqual(body.workspaces, []);
+  assert.deepEqual(body.workspaces, [{
+    brandKey: "pinosoecolife", name: "Pinoso EcoLife",
+    permissions: ["marketing.read", "marketing.draft"],
+  }]);
 });
 
-test("implemented Pinoso permission is shown while unfinished marketing rights stay hidden", async () => {
+test("implemented Pinoso permissions include scoped marketing read and drafts", async () => {
   permissions = ["properties.catalog.read", "marketing.read", "marketing.draft"];
   const cookie = "realtyflow_admin=" +
     await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
@@ -97,12 +100,12 @@ test("implemented Pinoso permission is shown while unfinished marketing rights s
   const body = await response.json();
   assert.deepEqual(body.workspaces, [{
     brandKey: "pinosoecolife", name: "Pinoso EcoLife",
-    permissions: ["properties.catalog.read"],
+    permissions: ["properties.catalog.read", "marketing.read", "marketing.draft"],
   }]);
-  assert.equal(JSON.stringify(body).includes("marketing."), false);
+  assert.equal(JSON.stringify(body).includes("marketing.publish"), false);
 });
 
-test("Zen available workspace never inherits generic CRM or unfinished marketing rights", async () => {
+test("Zen available workspace never inherits generic CRM or workspace publishing rights", async () => {
   currentBrand = "zeneco";
   permissions = ["crm.read", "crm.write", "crm.joint.read", "properties.catalog.read",
     "marketing.read", "marketing.publish"];
@@ -112,7 +115,7 @@ test("Zen available workspace never inherits generic CRM or unfinished marketing
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.workspaces[0].permissions,
-    ["crm.joint.read", "properties.catalog.read"]);
+    ["crm.joint.read", "properties.catalog.read", "marketing.read"]);
   assert.equal(JSON.stringify(body).includes("crm.write"), false);
-  assert.equal(JSON.stringify(body).includes("marketing."), false);
+  assert.equal(JSON.stringify(body).includes("marketing.publish"), false);
 });

@@ -37,16 +37,25 @@ export async function GET(
     const { data: identity, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !identity?.user) return fail(403, "ACCESS_DENIED");
     permissions = WORKSPACE_PERMISSIONS.filter(permission =>
-      !permission.startsWith("marketing.") &&
+      permission !== "marketing.publish" &&
       (brandKey === "zeneco"
         ? permission !== "crm.read" && permission !== "crm.write"
-        : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"].includes(permission)) &&
+        : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
+            "corporate.read", "corporate.plan"].includes(permission)) &&
       (!["tasks.joint.read", "tasks.joint.write"].includes(permission) ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
       (permission !== "tasks.joint.write" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("tasks.joint.read"))) &&
       (permission !== "crm.joint.write" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
+      (permission !== "marketing.draft" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("marketing.read"))) &&
+      (permission !== "corporate.plan" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("corporate.read"))) &&
+      (permission !== "visibility.plan" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("visibility.read"))) &&
+      (permission !== "ads.draft" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("ads.read"))) &&
       roleAllowsWorkspacePermission(context.role, permission) &&
       hasVerifiedBrandGrant({
         grant, brandId: scope.brand.id, sessionEmail: context.email,

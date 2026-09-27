@@ -28,11 +28,24 @@ type BrandChoice = {
   properties: boolean;
   tasksRead: boolean;
   tasksWrite: boolean;
+  marketingRead: boolean;
+  marketingDraft: boolean;
+  corporateRead: boolean;
+  corporatePlan: boolean;
+  visibilityRead: boolean;
+  visibilityPlan: boolean;
+  adsRead: boolean;
+  adsDraft: boolean;
+  eventsPlan: boolean;
 };
 
 const emptyChoice = (): BrandChoice => ({
   enabled: false, crmRead: false, crmWrite: false,
   properties: false, tasksRead: false, tasksWrite: false,
+  marketingRead: false, marketingDraft: false,
+  corporateRead: false, corporatePlan: false,
+  visibilityRead: false, visibilityPlan: false,
+  adsRead: false, adsDraft: false, eventsPlan: false,
 });
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -75,6 +88,15 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       properties: permissions.includes("properties.catalog.read"),
       tasksRead: permissions.includes("tasks.joint.read"),
       tasksWrite: permissions.includes("tasks.joint.write"),
+      marketingRead: permissions.includes("marketing.read"),
+      marketingDraft: permissions.includes("marketing.draft"),
+      corporateRead: permissions.includes("corporate.read"),
+      corporatePlan: permissions.includes("corporate.plan"),
+      visibilityRead: permissions.includes("visibility.read"),
+      visibilityPlan: permissions.includes("visibility.plan"),
+      adsRead: permissions.includes("ads.read"),
+      adsDraft: permissions.includes("ads.draft"),
+      eventsPlan: permissions.includes("events.plan"),
     };
   }
   return next;
@@ -144,6 +166,11 @@ export default function WorkspaceUsersPage() {
       if (!next.enabled) return { ...current, [brandKey]: emptyChoice() };
       if (next.crmWrite) next.crmRead = true;
       if (next.tasksWrite) next.tasksRead = true;
+      if (next.marketingDraft) next.marketingRead = true;
+      if (next.corporatePlan) next.corporateRead = true;
+      if (next.visibilityPlan) next.visibilityRead = true;
+      if (next.adsDraft) next.adsRead = true;
+      if (brandKey !== "zeneco") { next.corporateRead = false; next.corporatePlan = false; }
       if (brandKey === "zeneco" && (next.tasksRead || next.tasksWrite)) next.crmRead = true;
       return { ...current, [brandKey]: next };
     });
@@ -160,6 +187,15 @@ export default function WorkspaceUsersPage() {
         properties: choice.properties,
         jointTasksRead: choice.tasksRead,
         jointTasksWrite: choice.tasksWrite,
+        marketingRead: choice.marketingRead,
+        marketingDraft: choice.marketingDraft,
+        corporateRead: choice.corporateRead,
+        corporatePlan: choice.corporatePlan,
+        visibilityRead: choice.visibilityRead,
+        visibilityPlan: choice.visibilityPlan,
+        adsRead: choice.adsRead,
+        adsDraft: choice.adsDraft,
+        eventsPlan: choice.eventsPlan,
       });
       return permissions.length ? [{ brandKey: brand.brandKey, permissions }] : [];
     });
@@ -402,11 +438,11 @@ export default function WorkspaceUsersPage() {
                 </label>
                 {choice.enabled && <div className="mt-4 grid gap-3 md:grid-cols-3">
                   <div className="rounded-lg border border-slate-800 p-3">
-                    <strong className="text-sm">{isZen ? "CRM · nye felleskunder" : "CRM & kunder"}</strong>
+                    <strong className="text-sm">{isZen ? "Leads · nye felleskunder" : "Leads & CRM"}</strong>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.crmRead}
-                      onChange={e => updateChoice(brand.brandKey, { crmRead: e.target.checked, ...(e.target.checked ? {} : { crmWrite: false, tasksRead: false, tasksWrite: false }) })}/> Se kunder</label>
+                      onChange={e => updateChoice(brand.brandKey, { crmRead: e.target.checked, ...(e.target.checked ? {} : { crmWrite: false, tasksRead: false, tasksWrite: false }) })}/> Se leads og kunder</label>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.crmWrite}
-                      onChange={e => updateChoice(brand.brandKey, { crmWrite: e.target.checked })}/> Endre kontaktopplysninger</label>
+                      onChange={e => updateChoice(brand.brandKey, { crmWrite: e.target.checked })}/> Opprette og redigere leads</label>
                   </div>
                   <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Eiendommer</strong>
@@ -420,6 +456,42 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.tasksWrite}
                       onChange={e => updateChoice(brand.brandKey, { tasksWrite: e.target.checked })}/> Opprette/fullføre</label>
                   </div>}
+                  <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">Markedsføring</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingRead}
+                      onChange={e => updateChoice(brand.brandKey, { marketingRead: e.target.checked, ...(e.target.checked ? {} : { marketingDraft: false }) })}/> Se markedsoversikt og innhold</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingDraft}
+                      onChange={e => updateChoice(brand.brandKey, { marketingDraft: e.target.checked })}/> Lage innholdsutkast</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Publisering er en separat rettighet og er ikke åpnet for medarbeidere ennå.</p>
+                  </div>
+                  {isZen && <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">Corporate Homes</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.corporateRead}
+                      onChange={e => updateChoice(brand.brandKey, { corporateRead: e.target.checked, ...(e.target.checked ? {} : { corporatePlan: false }) })}/> Se bedrifter og partnerprospekter</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.corporatePlan}
+                      onChange={e => updateChoice(brand.brandKey, { corporatePlan: e.target.checked })}/> Research og planlegge neste steg</label>
+                  </div>}
+                  <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">SEO · GEO · AEO</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.visibilityRead}
+                      onChange={e => updateChoice(brand.brandKey, { visibilityRead: e.target.checked, ...(e.target.checked ? {} : { visibilityPlan: false }) })}/> Se synlighet og SEO-oppgaver</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.visibilityPlan}
+                      onChange={e => updateChoice(brand.brandKey, { visibilityPlan: e.target.checked })}/> Lage SEO/GEO/AEO, søkeord- og tekstoppgaver</label>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">Annonser</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.adsRead}
+                      onChange={e => updateChoice(brand.brandKey, { adsRead: e.target.checked, ...(e.target.checked ? {} : { adsDraft: false }) })}/> Se kampanjer</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.adsDraft}
+                      onChange={e => updateChoice(brand.brandKey, { adsDraft: e.target.checked })}/> Lage annonsebrief og utkast</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Ingen annonsebruk eller publisering kan startes her.</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 p-3">
+                    <strong className="text-sm">Video & informasjonsmøter</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.eventsPlan}
+                      onChange={e => updateChoice(brand.brandKey, { eventsPlan: e.target.checked })}/> Planlegge videoer, webinarer og informasjonsmøter</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Oppretter arbeidsoppgaver, ikke invitasjoner eller utsendinger.</p>
+                  </div>
                 </div>}
               </article>;
             })}
