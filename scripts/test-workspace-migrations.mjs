@@ -16,6 +16,7 @@ const files = [
   "20260924190000_workspace_staff_security_preflight.sql",
   "20260924200000_workspace_known_server_only_auth_hardening.sql",
   "20260924210000_workspace_user_directory_and_admin.sql",
+  "20260927143000_workspace_marketing_modules.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -931,8 +932,14 @@ try {
 
   verify(await configureManaged([{ brandKey: "zeneco", permissions: ["crm.read"] }]) === false,
     "Workspace user configure accepted generic Zen CRM");
-  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }]) === false,
-    "Workspace user configure accepted unfinished marketing access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read"] }]) === true,
+    "Workspace user configure rejected implemented marketing read access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.draft"] }]) === false,
+    "Workspace user configure accepted marketing draft without read access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft"] }]) === true,
+    "Workspace user configure rejected implemented marketing draft access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.publish"] }]) === false,
+    "Workspace user configure accepted workspace social publishing before scoped publish safety exists");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["crm.joint.read"] }]) === false,
     "Workspace user configure accepted Zen-only scope on Pinoso");
 
