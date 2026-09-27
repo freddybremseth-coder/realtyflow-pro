@@ -100,6 +100,43 @@ export async function listGSCProperties(accessToken: string): Promise<GSCPropert
   return Array.isArray(payload.siteEntry) ? payload.siteEntry : [];
 }
 
+export type GSCRefreshFailureKind =
+  | "token_expired_or_revoked"
+  | "oauth_client_configuration"
+  | "google_temporary"
+  | "google_oauth_error";
+
+type GoogleOAuthErrorPayload = { error?: string; error_description?: string };
+
+export function classifyGSCRefreshFailure(
+  status: number,
+  payload: GoogleOAuthErrorPayload,
+): { kind: GSCRefreshFailureKind; message: string } {
+  const code = String(payload.error || "").trim();
+  if (code === "invalid_grant") {
+    return {
+      kind: "token_expired_or_revoked",
+      message: "GSC_REFRESH_TOKEN_EXPIRED_OR_REVOKED: Google avviste den lagrede Search Console-fornyelsesnøkkelen fordi den er utløpt eller tilbakekalt.",
+    };
+  }
+  if (code === "invalid_client" || code === "unauthorized_client") {
+    return {
+      kind: "oauth_client_configuration",
+      message: "GSC_OAUTH_CLIENT_CONFIGURATION: RealtyFlows Google OAuth-klient samsvarer ikke med den lagrede Search Console-autorisasjonen.",
+    };
+  }
+  if (code === "temporarily_unavailable" || code === "server_error" || status >= 500) {
+    return {
+      kind: "google_temporary",
+      message: "GSC_GOOGLE_TEMPORARY: Googles token-tjeneste er midlertidig utilgjengelig. Den lagrede autorisasjonen skal ikke erstattes.",
+    };
+  }
+  return {
+    kind: "google_oauth_error",
+    message: "GSC_GOOGLE_OAUTH_ERROR: Google Search Console token refresh failed: " + (code || "HTTP " + status),
+  };
+}
+
 type GSCStoredChannel = { id: string; brand_id: string; external_id: string };
 
 /**
@@ -211,7 +248,14 @@ async function authorizedAccessToken(brandId: string) {
       refresh_token: tokens.refreshToken, grant_type: "refresh_token",
     }), cache: "no-store", signal: AbortSignal.timeout(9000),
   });
-  if (!response.ok) throw new Error("Google Search Console access needs reauthorization: HTTP " + response.status);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as GoogleOAuthErrorPayload;
+    const failure = classifyGSCRefreshFailure(response.status, payload);
+    console.error("[SamSEO] GSC token refresh failed", {
+      brandId, status: response.status, oauthError: payload.error || "unknown", category: failure.kind,
+    });
+    throw new Error(failure.message);
+  }
   const refreshed = await response.json() as { access_token?: string; expires_in?: number; refresh_token?: string; scope?: string };
   if (!refreshed.access_token) throw new Error("Search Console refresh returned no access token");
   const refreshedScopes = refreshed.scope ? refreshed.scope.split(" ") : tokens.scopes;
