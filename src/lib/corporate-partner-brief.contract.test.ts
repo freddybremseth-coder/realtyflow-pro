@@ -14,8 +14,9 @@ test("Partner dossier API reads only partner-company data", () => {
 });
 
 test("Partner dossier UI is draft-first with no send action", () => {
-  assert.match(page, /Norsk partnerhenvendelse/);
-  assert.match(page, /Kopier e-post/);
+  assert.match(page, /Norsk partnersekvens/);
+  assert.match(page, /Kopier utkast/);
+  assert.match(page, /Dag 0 · 7 · 21/);
   assert.match(page, /ingen automatisk utsendelse/i);
   assert.doesNotMatch(page, /sendEmail|sendMessage|email\/send/);
 });

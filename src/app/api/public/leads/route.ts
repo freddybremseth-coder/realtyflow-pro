@@ -71,6 +71,27 @@ function inboundProspectStatus(current: unknown) {
   return ["MEETING", "OPPORTUNITY"].includes(status) ? status : "ENGAGED";
 }
 
+const CORPORATE_PARTNER_TYPES = new Set([
+  "accounting_tax",
+  "legal",
+  "management_consulting",
+  "hr_recruitment",
+  "business_membership",
+  "corporate_travel",
+  "wealth_advisory",
+  "other",
+]);
+
+function normalizePartnerType(value: unknown) {
+  const normalized = cleanText(value, 80).toLowerCase();
+  return CORPORATE_PARTNER_TYPES.has(normalized) ? normalized : "other";
+}
+
+function inboundPartnerStatus(current: unknown) {
+  const status = String(current || "").toUpperCase();
+  return status === "PARTNER" ? "PARTNER" : "ENGAGED";
+}
+
 function interactionSummary(params: {
   source: string;
   brandLabel: string;
@@ -85,6 +106,8 @@ function interactionSummary(params: {
   contactRole?: string;
   userCount?: number | null;
   corporateModel?: string;
+  partnerType?: string;
+  partnershipInterest?: string;
   message: string;
 }) {
   return [
@@ -100,6 +123,8 @@ function interactionSummary(params: {
     params.contactRole ? `Kontaktrolle: ${params.contactRole}` : "",
     params.userCount ? `Ansatte/medlemmer: ${params.userCount}` : "",
     params.corporateModel ? `Corporate-modell: ${params.corporateModel}` : "",
+    params.partnerType ? `Partnertype: ${params.partnerType}` : "",
+    params.partnershipInterest ? `Partnerinteresse: ${params.partnershipInterest}` : "",
     params.message ? `Melding: ${params.message}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -152,6 +177,8 @@ export async function POST(request: NextRequest) {
   const contactRole = cleanText(body.contact_role || body.contactRole, 160);
   const userCount = positiveInteger(body.user_count || body.userCount);
   const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
+  const partnerType = normalizePartnerType(body.partner_type || body.partnerType);
+  const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
   const visitorId = cleanText(body.visitor_id || body.visitorId, 160);
   const sessionId = cleanText(body.session_id || body.sessionId, 160);
@@ -164,7 +191,12 @@ export async function POST(request: NextRequest) {
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
   const pipelineValue = incomingPipelineValue || (budget ? Number(budget.replace(/[^0-9]/g, "")) || 0 : 0);
-  const isCorporateHome = brandId === "zeneco" && (
+  const isCorporatePartner = brandId === "zeneco" && (
+    requestType === "corporate-partner" ||
+    source.toLowerCase().includes("corporate-partner") ||
+    pageUrl.toLowerCase().includes("/bedriftshytte-spania/partnere")
+  );
+  const isCorporateHome = brandId === "zeneco" && !isCorporatePartner && (
     requestType === "corporate-home" ||
     source.toLowerCase().includes("corporate-homes") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania")
@@ -186,6 +218,8 @@ export async function POST(request: NextRequest) {
     contactRole ? `Kontaktrolle: ${contactRole}` : "",
     userCount ? `Ansatte/medlemmer: ${userCount}` : "",
     corporateModel ? `Corporate-modell: ${corporateModel}` : "",
+    isCorporatePartner ? `Partnertype: ${partnerType}` : "",
+    partnershipInterest ? `Partnerinteresse: ${partnershipInterest}` : "",
     utmSource || utmCampaign || utmContent
       ? `UTM: ${utmSource} / ${utmCampaign} / ${utmContent}`
       : "",
@@ -207,7 +241,10 @@ export async function POST(request: NextRequest) {
     type: "note",
     content: interactionSummary({
       source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle,
-      organizationName, organizationType, contactRole, userCount, corporateModel, message,
+      organizationName, organizationType, contactRole, userCount, corporateModel,
+      partnerType: isCorporatePartner ? partnerType : undefined,
+      partnershipInterest: partnershipInterest || undefined,
+      message,
     }),
     date: now,
     direction: "in",
@@ -226,6 +263,8 @@ export async function POST(request: NextRequest) {
       contact_role: contactRole || null,
       user_count: userCount,
       corporate_model: corporateModel || null,
+      partner_type: isCorporatePartner ? partnerType : null,
+      partnership_interest: partnershipInterest || null,
     },
   };
   const existingInteractions = Array.isArray(existing?.interactions) ? existing.interactions : [];
@@ -265,6 +304,7 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   let corporateProspect: Record<string, any> | null = null;
+  let corporatePartner: Record<string, any> | null = null;
   if (isCorporateHome && organizationName) {
     const range = budgetRange(budget);
     const memberOrganisation = isMemberOrganisationLabel(organizationType);
@@ -391,22 +431,126 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (isCorporatePartner && organizationName) {
+    const { data: candidatePartners, error: candidatePartnerError } = await supabase
+      .from("corporate_partner_prospects")
+      .select("*")
+      .eq("brand_id", "zeneco")
+      .limit(1000);
+
+    if (candidatePartnerError) {
+      console.warn("[public-leads] corporate partner lookup failed", candidatePartnerError.message);
+    } else {
+      const existingPartner = (candidatePartners || []).find(
+        (row: any) => String(row.company_name || "").trim().toLocaleLowerCase("nb-NO")
+          === organizationName.toLocaleLowerCase("nb-NO"),
+      ) || null;
+
+      const inboundEvidence = {
+        inbound_partner_request: true,
+        inbound_last_at: now,
+        inbound_contact_role: contactRole || null,
+        partnership_interest: partnershipInterest || null,
+        inbound_utm: definedEntries({
+          source: utmSource || null,
+          medium: utmMedium || null,
+          campaign: utmCampaign || null,
+          content: utmContent || null,
+        }),
+        company_level_only: false,
+        voluntary_contact_submission: true,
+        personal_enrichment_performed: false,
+      };
+
+      if (existingPartner) {
+        const currentEvidence = objectValue(existingPartner.evidence);
+        const currentReasons = Array.isArray(existingPartner.fit_reasons) ? existingPartner.fit_reasons : [];
+        const inboundReason = "Direkte partnerhenvendelse fra ZenEcoHomes.com";
+        const nextScore = Math.max(Number(existingPartner.fit_score || 0), 82);
+        const nextReasons = currentReasons.includes(inboundReason)
+          ? currentReasons
+          : [...currentReasons, inboundReason];
+
+        const { data: updatedPartner, error: updatePartnerError } = await supabase
+          .from("corporate_partner_prospects")
+          .update({
+            partner_type: partnerType,
+            status: inboundPartnerStatus(existingPartner.status),
+            fit_score: nextScore,
+            fit_tier: nextScore >= 75 ? "A" : nextScore >= 58 ? "B" : "C",
+            fit_reasons: nextReasons,
+            referral_angle: partnershipInterest || existingPartner.referral_angle || null,
+            evidence: { ...currentEvidence, ...inboundEvidence },
+            converted_contact_id: data.id,
+            next_action: "Direkte partnerhenvendelse: følg opp personlig og avklar kundetyper, rollefordeling og eventuell samarbeidsavtale.",
+            next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            updated_at: now,
+          })
+          .eq("id", existingPartner.id)
+          .select("*")
+          .single();
+
+        if (updatePartnerError) {
+          console.warn("[public-leads] corporate partner update failed", updatePartnerError.message);
+        } else {
+          corporatePartner = updatedPartner;
+        }
+      } else {
+        const { data: createdPartner, error: createPartnerError } = await supabase
+          .from("corporate_partner_prospects")
+          .insert({
+            brand_id: "zeneco",
+            company_name: organizationName,
+            partner_type: partnerType,
+            country_code: "NO",
+            status: "ENGAGED",
+            fit_score: 82,
+            fit_tier: "A",
+            fit_reasons: [
+              "Direkte partnerhenvendelse fra ZenEcoHomes.com",
+              `Oppgitt partnersegment: ${partnerType}`,
+            ],
+            evidence_gaps: [],
+            referral_angle: partnershipInterest || null,
+            source_type: "inbound_website",
+            source_url: pageUrl || null,
+            evidence: inboundEvidence,
+            converted_contact_id: data.id,
+            next_action: "Direkte partnerhenvendelse: følg opp personlig og avklar kundetyper, rollefordeling og eventuell samarbeidsavtale.",
+            next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            created_at: now,
+            updated_at: now,
+          })
+          .select("*")
+          .single();
+
+        if (createPartnerError) {
+          console.warn("[public-leads] corporate partner create failed", createPartnerError.message);
+        } else {
+          corporatePartner = createdPartner;
+        }
+      }
+    }
+  }
+
   await supabase.from("work_items").insert({
     title: `${existing?.id ? "Ny aktivitet fra" : `Ny ${brandLabel}-lead:`} ${name}`,
     description: `${email}${preferredArea || incomingPropertyInterest ? ` · ${preferredArea || incomingPropertyInterest}` : ""}${budget || pipelineValue ? ` · ${budget || `€${pipelineValue}`}` : ""}`,
     status: "TO_DO",
-    priority: isCorporateHome || pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM",
+    priority: isCorporateHome || isCorporatePartner || pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM",
     due_date: new Date().toISOString().slice(0, 10),
     brand_id: brandId,
     source_type: "website_lead",
     source_id: data.id,
     assigned_agent: "sales",
-    next_action: isCorporateHome
-      ? "Corporate Homes B2B: svar personlig, identifiser beslutningstaker(e) og avklar antall brukere, formål, budsjett, tidslinje og styre-/ledelsesprosess."
-      : existing?.id
+    next_action: isCorporatePartner
+      ? "Corporate Homes partner: svar personlig og avklar kundetyper, rollefordeling, introduksjonsprosess og behov for samarbeidsavtale."
+      : isCorporateHome
+        ? "Corporate Homes B2B: svar personlig, identifiser beslutningstaker(e) og avklar antall brukere, formål, budsjett, tidslinje og styre-/ledelsesprosess."
+        : existing?.id
         ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
         : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
-    ai_score: isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
+    ai_score: isCorporatePartner ? 90 : isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
     metadata: {
       page_url: pageUrl,
       property_ref: propertyRef,
@@ -415,7 +559,7 @@ export async function POST(request: NextRequest) {
       brand_id: brandId,
       brand_label: brandLabel,
       request_type: requestType || null,
-      segment: isCorporateHome ? "corporate_homes" : null,
+      segment: isCorporatePartner ? "corporate_partner" : isCorporateHome ? "corporate_homes" : null,
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
       created_from_public_endpoint: true,
@@ -432,7 +576,10 @@ export async function POST(request: NextRequest) {
       contact_role: contactRole || null,
       user_count: userCount,
       corporate_model: corporateModel || null,
+      partner_type: isCorporatePartner ? partnerType : null,
+      partnership_interest: partnershipInterest || null,
       corporate_prospect_id: corporateProspect?.id || null,
+      corporate_partner_id: corporatePartner?.id || null,
     },
     created_at: now,
     updated_at: now,
@@ -444,7 +591,10 @@ export async function POST(request: NextRequest) {
     title: existing?.id ? `Ny public aktivitet: ${name}` : `Ny public lead: ${name}`,
     description: interactionSummary({
       source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle,
-      organizationName, organizationType, contactRole, userCount, corporateModel, message,
+      organizationName, organizationType, contactRole, userCount, corporateModel,
+      partnerType: isCorporatePartner ? partnerType : undefined,
+      partnershipInterest: partnershipInterest || undefined,
+      message,
     }),
     contactId: data.id,
     brandId,
@@ -452,7 +602,7 @@ export async function POST(request: NextRequest) {
     sourceType: "website_form",
     sourceId: revenueSourceId,
     actorType: "customer",
-    confidenceScore: isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
+    confidenceScore: isCorporatePartner ? 90 : isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
     revenueImpactEur: pipelineValue || null,
     occurredAt: now,
     dedupeKey: buildRevenueEventDedupeKey(["public_leads", brandId, revenueSourceId]),
@@ -466,7 +616,7 @@ export async function POST(request: NextRequest) {
       budget,
       timeline,
       request_type: requestType,
-      segment: isCorporateHome ? "corporate_homes" : null,
+      segment: isCorporatePartner ? "corporate_partner" : isCorporateHome ? "corporate_homes" : null,
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
       submission_id: submissionId || null,
@@ -482,7 +632,10 @@ export async function POST(request: NextRequest) {
       contact_role: contactRole || null,
       user_count: userCount,
       corporate_model: corporateModel || null,
+      partner_type: isCorporatePartner ? partnerType : null,
+      partnership_interest: partnershipInterest || null,
       corporate_prospect_id: corporateProspect?.id || null,
+      corporate_partner_id: corporatePartner?.id || null,
     },
     createdBy: "api/public/leads",
   });
@@ -497,6 +650,9 @@ export async function POST(request: NextRequest) {
     brandId,
     corporateProspect: corporateProspect
       ? { id: corporateProspect.id, status: corporateProspect.status, fitTier: corporateProspect.fit_tier }
+      : null,
+    corporatePartner: corporatePartner
+      ? { id: corporatePartner.id, status: corporatePartner.status, fitTier: corporatePartner.fit_tier }
       : null,
   });
 }
