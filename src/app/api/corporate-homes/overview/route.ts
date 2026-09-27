@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       .limit(1500),
     supabase
       .from("corporate_prospects")
-      .select("id,company_name,organization_number,domain,industry,employee_count,employee_band,member_count,organization_type,status,fit_tier,fit_score,fit_reasons,evidence_gaps,decision_roles,source_url,next_action,converted_contact_id,created_at,updated_at")
+      .select("id,company_name,organization_number,domain,website_url,industry,employee_count,employee_band,member_count,organization_type,status,fit_tier,fit_score,fit_reasons,evidence_gaps,decision_roles,source_url,next_action,converted_contact_id,evidence,created_at,updated_at")
       .eq("brand_id", "zeneco")
       .limit(1000),
     supabase
@@ -102,6 +102,14 @@ export async function GET(request: NextRequest) {
     .from("automation_logs")
     .select("id,status,details,created_at")
     .eq("action", "corporate_homes_content_drafts")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: lastSignalResearchRun, error: lastSignalResearchRunError } = await supabase
+    .from("automation_logs")
+    .select("id,status,details,created_at")
+    .eq("action", "corporate_homes_company_signals")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -257,6 +265,22 @@ export async function GET(request: NextRequest) {
   }, {});
   const promotedProspects = prospectRows.filter((row: any) => Boolean(row.converted_contact_id)).length;
 
+  const signalResearchRows = prospectRows.filter((row: any) => {
+    const evidence = row.evidence && typeof row.evidence === "object" ? row.evidence : {};
+    const research = evidence.company_signal_research;
+    return Boolean(research && typeof research === "object" && research.checked_at);
+  });
+  const signalBackedProspects = prospectRows.filter((row: any) => {
+    const evidence = row.evidence && typeof row.evidence === "object" ? row.evidence : {};
+    return Boolean(
+      evidence.employee_benefit_signal ||
+      evidence.remote_workforce_signal ||
+      evidence.retreat_signal ||
+      evidence.existing_cabin_signal
+    );
+  });
+  const signalBackedATier = signalBackedProspects.filter((row: any) => String(row.fit_tier || "").toUpperCase() === "A").length;
+
   const focusProspects = prospectRows
     .filter((row: any) => !row.converted_contact_id)
     .filter((row: any) => String(row.status || "").toUpperCase() !== "DISQUALIFIED")
@@ -335,6 +359,10 @@ export async function GET(request: NextRequest) {
         bTier: prospectTierCounts.B || 0,
         qualified: (prospectStatusCounts.QUALIFIED || 0) + (prospectStatusCounts.CONTACT_READY || 0),
         promoted: promotedProspects,
+        signalsResearched: signalResearchRows.length,
+        signalBacked: signalBackedProspects.length,
+        signalBackedATier,
+        lastSignalResearch: lastSignalResearchRun || null,
         focusProspects,
         focusRule: "Klar for menneskelig kvalifisering → A-fit før B-fit → readiness-score → fit-score → sist oppdatert.",
         statusCounts: prospectStatusCounts,
@@ -376,6 +404,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError].filter(Boolean).map((item: any) => item.message),
   });
 }

@@ -106,6 +106,14 @@ type Overview = {
     bTier: number;
     qualified: number;
     promoted: number;
+    signalsResearched: number;
+    signalBacked: number;
+    signalBackedATier: number;
+    lastSignalResearch?: {
+      status?: string | null;
+      details?: Record<string, any> | null;
+      created_at?: string | null;
+    } | null;
     focusRule: string;
     focusProspects: Array<{
       id: string;
@@ -205,6 +213,8 @@ export default function CorporateHomesGrowthPage() {
   const [contentNotice, setContentNotice] = useState("");
   const [partnerBusy, setPartnerBusy] = useState(false);
   const [partnerNotice, setPartnerNotice] = useState("");
+  const [signalBusy, setSignalBusy] = useState(false);
+  const [signalNotice, setSignalNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -259,6 +269,30 @@ export default function CorporateHomesGrowthPage() {
       setError(partnerError instanceof Error ? partnerError.message : "Kunne ikke kjøre partnerdiscovery.");
     } finally {
       setPartnerBusy(false);
+    }
+  }
+
+  async function runCompanySignalResearch() {
+    setSignalBusy(true);
+    setSignalNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/signals/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre selskaps-signalresearch.");
+      const result = body?.result || {};
+      setSignalNotice(
+        `${Number(result?.researched || 0)} selskaper undersøkt · ${Number(result?.signals_found || 0)} signaler funnet · ${Number(result?.changed_to_a_fit || 0)} nye A-fit.`
+      );
+      await load();
+    } catch (signalError) {
+      setError(signalError instanceof Error ? signalError.message : "Kunne ikke kjøre selskaps-signalresearch.");
+    } finally {
+      setSignalBusy(false);
     }
   }
 
@@ -416,9 +450,11 @@ export default function CorporateHomesGrowthPage() {
             <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
               <div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${data?.prospects.progressPercent || 0}%` }} />
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <MiniStat label="A-fit" value={data?.prospects.aTier ?? "—"} />
               <MiniStat label="B-fit" value={data?.prospects.bTier ?? "—"} />
+              <MiniStat label="Signalresearch" value={data?.prospects.signalsResearched ?? "—"} />
+              <MiniStat label="Med signal" value={data?.prospects.signalBacked ?? "—"} />
               <MiniStat label="Kvalifisert" value={data?.prospects.qualified ?? "—"} />
               <MiniStat label="Promotert til CRM" value={data?.prospects.promoted ?? "—"} />
             </div>
@@ -428,13 +464,33 @@ export default function CorporateHomesGrowthPage() {
                 : "Ingen discovery-kjøring registrert ennå."}
             </p>
           </div>
-          <Link
-            href="/corporate-homes/prospects"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white hover:bg-teal-700"
-          >
-            Åpne prospektmotor <ArrowRight size={15} />
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void runCompanySignalResearch()}
+              disabled={signalBusy}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-teal-800 px-4 py-3 text-sm font-black text-teal-900 hover:bg-teal-50 disabled:opacity-50"
+            >
+              {signalBusy ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              Undersøk selskaps-signaler
+            </button>
+            <Link
+              href="/corporate-homes/prospects"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white hover:bg-teal-700"
+            >
+              Åpne prospektmotor <ArrowRight size={15} />
+            </Link>
+          </div>
         </div>
+        {signalNotice && (
+          <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{signalNotice}</div>
+        )}
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          Signalresearch leser maks fire offentlige sider per selskap og lagrer kun bedriftsnivå-signaler og kilde-URL.
+          Ingen personnavn, e-post eller telefon samles inn.
+          {data?.prospects.lastSignalResearch?.created_at
+            ? ` Siste kjøring: ${new Date(data.prospects.lastSignalResearch.created_at).toLocaleString("nb-NO")}.`
+            : ""}
+        </p>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
