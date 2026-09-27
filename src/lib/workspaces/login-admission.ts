@@ -57,8 +57,9 @@ export async function admitWorkspaceMemberLogin(
     }
     const permissions = grant.permissions as string[];
     const brandKey = brand.brand_key;
-    const invalidScope = permissions.includes("marketing.publish") ||
-      (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) ||
+    const invalidScope = (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) ||
+      (permissions.includes("marketing.publish") &&
+        (!permissions.includes("marketing.read") || !permissions.includes("marketing.draft"))) ||
       (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) ||
       (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) ||
       (permissions.includes("ads.draft") && !permissions.includes("ads.read")) ||
@@ -79,10 +80,7 @@ export async function admitWorkspaceMemberLogin(
          "corporate.read", "corporate.plan"].includes(permission)));
     if (invalidScope) return { ok: false, reason: "IDENTITY_MISMATCH" };
 
-    // Social publishing is still withheld, but brand-scoped marketing read/draft
-    // is now an implemented workspace capability.
-    const implementedPermissions = permissions.filter(permission => permission !== "marketing.publish");
-    if (implementedPermissions.length === 0) continue;
+    if (permissions.length === 0) continue;
     activeBrands.push(brandKey);
   }
 
