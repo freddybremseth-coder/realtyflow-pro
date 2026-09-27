@@ -137,12 +137,7 @@ function primaryIndustry(entity: BrregEntity) {
 }
 
 function businessMembershipRelevance(entity: BrregEntity) {
-  const haystack = [
-    entity.navn,
-    entity.naeringskode1?.beskrivelse,
-    entity.naeringskode2?.beskrivelse,
-    entity.naeringskode3?.beskrivelse,
-  ].filter(Boolean).join(" ").toLowerCase();
+  const name = String(entity.navn || "").toLowerCase();
 
   const broadBusinessTerms = [
     "arbeidsgiver",
@@ -164,7 +159,6 @@ function businessMembershipRelevance(entity: BrregEntity) {
     "eiendom",
     "reiseliv",
     "profesjon",
-    "forbund",
   ];
   const narrowSectorTerms = [
     "avl",
@@ -181,8 +175,11 @@ function businessMembershipRelevance(entity: BrregEntity) {
     "plante",
   ];
 
-  const broadHits = broadBusinessTerms.filter((term) => haystack.includes(term));
-  const narrowHits = narrowSectorTerms.filter((term) => haystack.includes(term));
+  // Use the organisation's own name for the strong relevance signal.
+  // Generic NACE descriptions such as "næringslivs- og arbeidsgiverorganisasjoner"
+  // are too broad and otherwise make every 94.1 entity look equally relevant.
+  const broadHits = broadBusinessTerms.filter((term) => name.includes(term));
+  const narrowHits = narrowSectorTerms.filter((term) => name.includes(term));
   return { broadHits, narrowHits };
 }
 
