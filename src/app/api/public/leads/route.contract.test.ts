@@ -47,3 +47,21 @@ test("Corporate inbound integration does not enrich people or send outreach", ()
   assert.doesNotMatch(source, /corporate_prospect_contacts/);
   assert.doesNotMatch(source, /sendEmail|sendMessage|personal_contact_enrichment/);
 });
+
+
+test("Corporate partner inbound is separate from Corporate Home buyer prospects", () => {
+  assert.match(source, /const isCorporatePartner/);
+  assert.match(source, /const isCorporateHome = brandId === "zeneco" && !isCorporatePartner/);
+  assert.match(source, /requestType === "corporate-partner"/);
+  assert.match(source, /\.from\("corporate_partner_prospects"\)/);
+  assert.match(source, /corporate_partner_id: corporatePartner\?\.id/);
+  assert.match(source, /voluntary_contact_submission: true/);
+  assert.match(source, /personal_enrichment_performed: false/);
+});
+
+test("Direct partner inquiries become engaged without automated outreach", () => {
+  assert.match(source, /status: "ENGAGED"/);
+  assert.match(source, /Direkte partnerhenvendelse fra ZenEcoHomes\.com/);
+  assert.match(source, /converted_contact_id: data\.id/);
+  assert.doesNotMatch(source, /sendEmail|sendMessage|personal_contact_enrichment/);
+});
