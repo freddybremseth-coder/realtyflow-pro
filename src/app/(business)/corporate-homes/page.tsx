@@ -98,6 +98,20 @@ type Overview = {
       created_at?: string | null;
     } | null;
   };
+  genericContacts: {
+    researched: number;
+    genericEmails: number;
+    contactPages: number;
+    dailyBatch: number;
+    companyLevelOnly: boolean;
+    personalDataCollected: boolean;
+    automaticOutreach: boolean;
+    lastRun?: {
+      status?: string | null;
+      details?: Record<string, any> | null;
+      created_at?: string | null;
+    } | null;
+  };
   prospects: {
     total: number;
     target: number;
@@ -215,6 +229,8 @@ export default function CorporateHomesGrowthPage() {
   const [partnerNotice, setPartnerNotice] = useState("");
   const [signalBusy, setSignalBusy] = useState(false);
   const [signalNotice, setSignalNotice] = useState("");
+  const [genericContactBusy, setGenericContactBusy] = useState(false);
+  const [genericContactNotice, setGenericContactNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
