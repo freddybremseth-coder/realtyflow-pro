@@ -276,7 +276,11 @@ export default function FocusedWorkspacePage() {
                 <p className="mt-1 text-sm text-slate-400">Åpne bare når du skal skrive, se tidligere innhold eller velge kanal.</p>
               </summary>
               <div className="border-t border-slate-800 p-5">
-                <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />
+                <WorkspaceMarketingPanel
+                  brandKey={brandKey}
+                  canDraft={permissions.includes("marketing.draft")}
+                  canPublish={permissions.includes("marketing.publish")}
+                />
               </div>
             </details>}
           </section>}
