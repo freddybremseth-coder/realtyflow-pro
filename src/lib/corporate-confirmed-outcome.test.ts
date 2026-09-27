@@ -26,6 +26,7 @@ test("confirmed completed viewing requires CRM identity and a planned property",
   assert.equal(outcome.crmPipelineStatus, "VIEWING");
   assert.equal(outcome.propertyRef, "A2");
   assert.equal(outcome.pipelineValueEur, 540000);
+  assert.equal(outcome.nextFollowupAt, "2026-09-28T16:00:00.000Z");
   assert.throws(() => buildCorporateConfirmedOutcome({
     status: "OPPORTUNITY",
     evidence: viewingEvidence,
