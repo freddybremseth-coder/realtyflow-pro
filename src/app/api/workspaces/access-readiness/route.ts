@@ -43,15 +43,32 @@ export async function GET(request: NextRequest) {
   const supabase = getPlatformSupabase();
   if (!supabase) return reply({ error: "WORKSPACE_UNAVAILABLE" }, 503);
 
-  const [snapshot, grants, profileResult, authResult] = await Promise.all([
+  const [snapshot, grants, securitySnapshot, profileResult, authResult] = await Promise.all([
     supabase.rpc("workspace_access_snapshot"),
     supabase.rpc("workspace_user_brand_grants", { p_email: email }),
+    supabase.rpc("workspace_staff_security_preflight"),
     findAccessProfile(email),
     supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
+  const securityError = securitySnapshot.error;
+  const securityRpcMissing = Boolean(securityError &&
+    (securityError.code === "PGRST202" || securityError.code === "42883") &&
+    /workspace_staff_security_preflight/i.test(securityError.message || ""));
   if (snapshot.error || grants.error || profileResult.error || authResult.error ||
+      (securityError && !securityRpcMissing) ||
       !snapshot.data || !Array.isArray(snapshot.data.brands) || !Array.isArray(snapshot.data.plans) ||
       !Array.isArray(grants.data)) {
+    return reply({ error: "WORKSPACE_UNAVAILABLE" }, 503);
+  }
+  const securityPreflight = securityRpcMissing ? null : securitySnapshot.data;
+  if (securityPreflight && (
+      typeof securityPreflight !== "object" ||
+      typeof securityPreflight.safe_for_workspace_auth !== "boolean" ||
+      typeof securityPreflight.required_customer_tables_rls !== "boolean" ||
+      typeof securityPreflight.private_document_buckets_present !== "boolean" ||
+      typeof securityPreflight.private_document_buckets_private !== "boolean" ||
+      !Number.isSafeInteger(securityPreflight.private_document_authenticated_policies) ||
+      !Number.isSafeInteger(securityPreflight.direct_customer_policy_risk))) {
     return reply({ error: "WORKSPACE_UNAVAILABLE" }, 503);
   }
 
@@ -88,6 +105,8 @@ export async function GET(request: NextRequest) {
     if (!profile.active) blockers.push("ACCESS_PROFILE_INACTIVE");
   }
   if (activeMembership) blockers.push("ACTIVE_MEMBERSHIP_ALREADY_PRESENT");
+  if (securityRpcMissing) blockers.push("SECURITY_PREFLIGHT_NOT_INSTALLED");
+  else if (!securityPreflight?.safe_for_workspace_auth) blockers.push("DIRECT_AUTH_SECURITY_BLOCKER");
   if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true")
     blockers.push("FEATURE_FLAG_DISABLED");
 
@@ -101,6 +120,7 @@ export async function GET(request: NextRequest) {
       authUserExists: Boolean(authUser),
       workspaceProfile: profile ? { role: profile.role, active: profile.active } : null,
       activeMembershipExists: Boolean(activeMembership),
+      securityPreflight,
       featureFlagEnabled: process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED === "true",
     },
     blockers,
