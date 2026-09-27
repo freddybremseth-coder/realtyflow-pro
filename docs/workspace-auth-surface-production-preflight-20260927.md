@@ -1,6 +1,6 @@
 # Workspace Auth Surface Production Preflight — 2026-09-27
 
-Scope: read-only production inspection for future `WORKSPACE_MEMBER` activation. No production policy, user, membership, feature flag, customer, task, message or Storage object was changed during this review.
+Scope: production inspection and staged hardening for future `WORKSPACE_MEMBER` activation. No production user, membership, feature flag, customer, task, message, Storage object or policy was changed during this review.
 
 ## Current production result
 
@@ -12,7 +12,7 @@ The same conditions used by `workspace_staff_security_preflight()` were evaluate
 - Generic authenticated write/delete policies on operational Storage buckets: **6**
 - Direct customer-table policy risks for `contacts`, `work_items`, `portal_messages`, `brand_settings`: **0**
 - Direct internal-table policy risks: **2**
-- Result for workspace Auth activation today: **BLOCKED**
+- Result for workspace Auth activation in production today: **BLOCKED**
 
 The two internal-table blockers are the authenticated read policy on `agentic_approvals` and the generic authenticated full-access policy on `plot_assets`.
 
@@ -25,55 +25,60 @@ The eight private-document blockers are read/insert/update/delete policies for e
 - `property-documents`
 - `caecv-documents`
 
-## Safe server-only hardening staged in this PR
+## Olivia consumer investigation
 
-`20260924200000_workspace_known_server_only_auth_hardening.sql` removes only broad direct-Auth policies that current RealtyFlow repository paths demonstrably replace with guarded server/service-role calls:
+The repository did not show a current RealtyFlow application route using `property-documents`, `caecv-documents` or `olivia-field-observations`, so the legacy consumer was traced from production metadata instead of deleting policies blindly.
 
-- `agentic_approvals_read`
-- `plot_assets authenticated full access`
-- `Authenticated write plot-assets`
-- `Authenticated delete plot-assets`
-- `Authenticated write ad-creatives`
+Read-only production checks found:
 
-Public delivery of public plot/ad assets is left unchanged.
+- `property-documents` contains one active PDF object, uploaded 2026-06-05.
+- That object maps to an active row in `olivia.property_documents`.
+- The object owner is an existing Olivia `super_admin` identity.
+- `olivia.property_documents`, `olivia.caecv_documents` and `olivia.farm_observations` already use RLS policies guarded by `olivia_private.is_internal_user()`.
+- `olivia_private.is_internal_user()` accepts only identities present in `olivia.user_profiles` with role `farmer` or `super_admin`.
+- `caecv-documents` and `olivia-field-observations` currently have no stored objects.
 
-This migration is **not applied to production**. Its isolated fixture intentionally preserves all eight private-document policies and the three Olivia write policies, so the safety preflight must remain red after this partial hardening rather than giving a false green result.
+This establishes a safe compatibility boundary: Olivia browser Storage access can remain, but it must use the same internal-user gate as Olivia table RLS. A RealtyFlow workspace employee is not admitted by that gate merely because they have a Supabase Auth account.
 
-## Blockers that remain intentionally unresolved
+## Hardening staged in this PR
 
-### Private document buckets
+`20260924200000_workspace_known_server_only_auth_hardening.sql` is still **not applied to production**. It now stages both parts of the required pre-activation hardening:
 
-The repository does not contain sufficient evidence that all existing consumers of `property-documents` and `caecv-documents` can lose browser-level authenticated access without regression. Do not drop these eight policies solely to enable staff accounts.
+1. Remove broad direct Auth access that RealtyFlow already replaces with guarded server/service-role paths:
+   - `agentic_approvals_read`
+   - `plot_assets authenticated full access`
+   - `Authenticated write plot-assets`
+   - `Authenticated delete plot-assets`
+   - `Authenticated write ad-creatives`
 
-Required next check:
-1. Identify every active reader/uploader/updater/deleter of both buckets.
-2. Replace broad `authenticated` access with server-mediated or purpose-specific identity-bound routes.
-3. Add regression coverage for the existing document workflow.
-4. Only then stage/drop the broad policies.
+2. Preserve the existing Olivia browser workflow while replacing bucket-only authenticated predicates with:
+   - the exact bucket restriction, **and**
+   - `olivia_private.is_internal_user()`
 
-### Olivia field observations
+This applies to all eight private-document CRUD policies and all three Olivia field-observation write policies.
 
-No concrete application path using `olivia-field-observations` was found in the RealtyFlow repository, which makes this an external/legacy-consumer risk rather than proof the policies are unused.
+The preflight migration was updated so an authenticated Olivia Storage policy is considered safe only when every applicable `USING` / `WITH CHECK` expression carries the internal-user gate. Plot/ad direct Auth writes remain blockers regardless.
 
-Required next check:
-1. Identify the current Olivia client and authentication path.
-2. Confirm whether upload/update/delete is still needed.
-3. Replace generic authenticated access with a dedicated server route or narrowly scoped identity policy.
-4. Preserve Olivia behavior with tests before production policy changes.
+## Regression coverage
+
+The isolated workspace migration suite now verifies all of the following:
+
+- server-only plot/ad/internal policies are removed;
+- all 11 retained Olivia Storage policies are identity-bound;
+- an Olivia `super_admin` fixture can still read/write the retained Storage surfaces;
+- an ordinary workspace identity can neither read nor write them;
+- the final workspace Auth preflight becomes green only after these protections are present.
+
+The test database is explicitly local and isolated; it never connects to production.
 
 ## Activation rule
 
-A workspace employee must not be invited or enabled while the production preflight reports any of the direct-Auth blockers above. The feature flag remains off, access plans remain drafts, and PR #1028 remains unmerged until the remaining document/Olivia consumers are understood and the final rollout is explicitly approved.
+Production remains **blocked** until the staged migrations are deployed and the production preflight is rerun successfully.
 
+After deployment, activation still requires all normal rollout checks to pass before any employee is enabled:
+1. production preflight returns `safe_for_workspace_auth = true`;
+2. workspace migrations and app CI are green on current `main`;
+3. the workspace feature flag is deliberately enabled;
+4. the employee is created with only the approved brand/module grants.
 
-## Activity snapshot used to assess policy-removal risk
-
-Read-only Storage metadata showed:
-
-- `ad-creatives`: 123 objects; latest object timestamp 2026-08-02.
-- `plot-assets`: 2 objects; latest object timestamp 2026-05-02.
-- `property-documents`: 1 object; latest object timestamp 2026-06-05.
-- `caecv-documents`: no current objects returned by the aggregate query.
-- `olivia-field-observations`: no current objects returned by the aggregate query.
-
-The last-24-hour Storage log aggregate found only two GET requests involving these five buckets, both for `ad-creatives`; no authenticated write for the private-document, plot, ad or Olivia buckets appeared in that 24-hour window. This is useful evidence but **not** proof that older, infrequent or external clients are unused, so it does not justify dropping the eight private-document or three Olivia write policies without their own consumer review.
+No employee has been invited or enabled by this work.
