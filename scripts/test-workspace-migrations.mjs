@@ -262,6 +262,25 @@ try {
       !privileges.rows[0].upd && !privileges.rows[0].del,
       auditTable + " must be append-only for service_role");
   }
+  const contentDraftPrivileges = await sql(
+    "select has_table_privilege('service_role','core.brand_workspace_content_drafts','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.brand_workspace_content_drafts','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.brand_workspace_content_drafts','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.brand_workspace_content_drafts','DELETE') as del",
+  );
+  verify(contentDraftPrivileges.rows[0].sel && contentDraftPrivileges.rows[0].ins &&
+    contentDraftPrivileges.rows[0].upd && !contentDraftPrivileges.rows[0].del,
+    "Content drafts must be editable but never hard-deletable by service_role");
+  const contentVersionPrivileges = await sql(
+    "select has_table_privilege('service_role','core.brand_workspace_content_versions','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.brand_workspace_content_versions','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.brand_workspace_content_versions','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.brand_workspace_content_versions','DELETE') as del",
+  );
+  verify(contentVersionPrivileges.rows[0].sel && contentVersionPrivileges.rows[0].ins &&
+    !contentVersionPrivileges.rows[0].upd && !contentVersionPrivileges.rows[0].del,
+    "Content versions must be append-only for service_role");
+
   const planAuditPrivileges = await sql(
     "select has_table_privilege('service_role','core.brand_workspace_access_plan_audit','SELECT') as sel, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','INSERT') as ins, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','UPDATE') as upd, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','DELETE') as del",
   );
