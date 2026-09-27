@@ -13,6 +13,7 @@ const files = [
   "20260924160000_zeneco_joint_tasks_isolated_foundation.sql",
   "20260924170000_brand_workspace_contact_writes.sql",
   "20260924180000_workspace_brand_property_catalogue.sql",
+  "20260924190000_workspace_staff_security_preflight.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -162,7 +163,7 @@ try {
     "workspace_zeneco_joint_tasks", "workspace_zeneco_joint_task_create",
     "workspace_zeneco_joint_task_complete", "workspace_brand_contacts",
     "workspace_brand_contact_create", "workspace_brand_contact_update",
-    "workspace_brand_property_catalogue"]) {
+    "workspace_brand_property_catalogue", "workspace_staff_security_preflight"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -720,6 +721,13 @@ try {
     "Revoked Pinoso membership still read brand property catalogue");
   verify(await createBrandContact() === null,
     "Revoked Pinoso membership still created a customer");
+
+  const staffSecurityPreflight = await serviceSql(
+    "select public.workspace_staff_security_preflight() as result",
+  );
+  verify(staffSecurityPreflight.rows[0].result?.safe_for_workspace_auth === false &&
+    staffSecurityPreflight.rows[0].result?.private_document_buckets_present === false,
+    "Staff security preflight must fail closed when private Storage metadata is unavailable");
 
   process.stdout.write("Isolated workspace migration checks passed: " + checks + "\n");
 } finally {
