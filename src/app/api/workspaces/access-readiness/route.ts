@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
   if (plan && permissions.length !== plan.permissions.length) blockers.push("INVALID_DRAFT_PERMISSIONS");
   if (plan && permissions.length === 0) blockers.push("EMPTY_PERMISSIONS");
   if (plan && !planScopeValid(brandKey, permissions)) blockers.push("INVALID_BRAND_SCOPE");
-  if (permissions.some(permission => permission.startsWith("marketing.")))
+  if (permissions.some((permission: WorkspacePermission) => permission.startsWith("marketing.")))
     blockers.push("MARKETING_SCOPE_NOT_IMPLEMENTED");
   if (!authUser) blockers.push("AUTH_USER_MISSING");
   if (!profile) blockers.push("ACCESS_PROFILE_MISSING");
