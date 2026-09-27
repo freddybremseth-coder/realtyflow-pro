@@ -55,6 +55,6 @@ export const SIDEBAR_NAV = {
     { label: "Reach Nyhetsbrev", href: "/reach", icon: "Send" },
   ],
   admin: [
-    { label: "Roller & tilgang", href: "/access-control", icon: "UserCog" }, { label: "Audit Log", href: "/audit-log", icon: "Activity" }, { label: "Brands", href: "/brands", icon: "Palette" }, { label: "Business Hub", href: "/business-hub", icon: "Briefcase" }, { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" }, { label: "Doña Anna", href: "/dona-anna", icon: "Store" }, { label: "Data Health", href: "/data-health", icon: "Database" }, { label: "Innstillinger", href: "/settings", icon: "Settings" },
+    { label: "Brukere & tilgang", href: "/workspace-users", icon: "UsersRound" },     { label: "Roller & tilgang", href: "/access-control", icon: "UserCog" }, { label: "Audit Log", href: "/audit-log", icon: "Activity" }, { label: "Brands", href: "/brands", icon: "Palette" }, { label: "Business Hub", href: "/business-hub", icon: "Briefcase" }, { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" }, { label: "Doña Anna", href: "/dona-anna", icon: "Store" }, { label: "Data Health", href: "/data-health", icon: "Database" }, { label: "Innstillinger", href: "/settings", icon: "Settings" },
   ],
 } as const;

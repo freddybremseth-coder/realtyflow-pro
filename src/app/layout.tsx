@@ -37,7 +37,7 @@ export default function RootLayout({
 }>) {
   const pathname = headers().get("x-pathname") || "";
   const authRoute = isAuthRoute(pathname);
-  const bareRoute = authRoute || isPublicShellRoute(pathname);
+  const bareRoute = authRoute || isPublicShellRoute(pathname) || (pathname === "/workspace" || pathname.startsWith("/workspace/"));
 
   return (
     <html lang="no" className="dark">

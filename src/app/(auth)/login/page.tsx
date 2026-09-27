@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Lock, Mail, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { Lock, UserRound, Eye, EyeOff, ShieldCheck } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -25,12 +25,12 @@ export default function LoginPage() {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ login, password }),
     });
     const data = await res.json();
 
     if (!res.ok) {
-      setError(data.error || "Feil e-post eller passord. Prøv igjen.");
+      setError(data.error || "Feil brukernavn/e-post eller passord. Prøv igjen.");
     } else {
       const nextPath = new URLSearchParams(window.location.search).get("next");
       router.push(nextPath || data.homePath || "/revenue-command");
@@ -48,7 +48,7 @@ export default function LoginPage() {
     const res = await fetch("/api/auth/reset-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email: login }),
     });
     const data = await res.json();
 
@@ -63,12 +63,12 @@ export default function LoginPage() {
         <CardHeader className="text-center">
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center"><span className="text-2xl font-bold text-white">RF</span></div>
           <CardTitle className="text-2xl">{resetMode ? "Nytt passord" : "Logg inn"}</CardTitle>
-          <p className="text-sm text-slate-400 mt-1">Kun godkjente RealtyFlow-brukere</p>
+          <p className="text-sm text-slate-400 mt-1">Kun godkjente RealtyFlow-brukere · brukernavn eller e-post</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={resetMode ? handleResetPassword : handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16}/><Input type="email" placeholder="E-post" value={email} onChange={(e) => setEmail(e.target.value)} className="pl-10" required/></div>
+              <div className="relative"><UserRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16}/><Input type={resetMode ? "email" : "text"} placeholder={resetMode ? "E-post" : "Brukernavn eller e-post"} value={login} onChange={(e) => setLogin(e.target.value)} className="pl-10" autoCapitalize="none" autoCorrect="off" required/></div>
               {!resetMode && <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16}/><Input type={showPassword ? "text" : "password"} placeholder="Passord" value={password} onChange={(e) => setPassword(e.target.value)} className="pl-10 pr-10" required/><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></div>}
             </div>
             {error && <p className="text-sm text-red-400 text-center">{error}</p>}

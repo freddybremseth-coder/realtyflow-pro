@@ -38,9 +38,24 @@ export async function getRequestAccessContext(request: NextRequest): Promise<Req
   if (session?.role === "OWNER" && isAdminEmail(session.email)) {
     return { email: session.email, role: "OWNER", permissions: permissionsForRole("OWNER"), source: "owner-session" };
   }
+  if (session?.role === "WORKSPACE_MEMBER") {
+    // Edge middleware revalidates the owner-managed directory on every real
+    // request. Scoped workspace APIs then independently re-check the exact
+    // live brand membership + Auth UUID before any data access.
+    if (process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED !== "true") return null;
+    return {
+      email: session.email,
+      role: "WORKSPACE_MEMBER",
+      permissions: permissionsForRole("WORKSPACE_MEMBER"),
+      source: "role-profile",
+    };
+  }
   if (session) {
     const resolved = await findAccessProfile(session.email);
     if (resolved.error || !resolved.profile || !resolved.profile.active) return null;
+    // Deny stale signed global-role cookies after owner changes or revokes the profile.
+    // A new session must be issued with the new role before any API may run.
+    if (resolved.profile.role === "WORKSPACE_MEMBER" || resolved.profile.role !== session.role) return null;
     return {
       email: resolved.profile.email,
       role: resolved.profile.role,

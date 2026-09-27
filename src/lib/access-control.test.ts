@@ -18,6 +18,9 @@ test("owner receives every permission while viewer remains read-only", () => {
   assert.equal(hasPermission("SALES", "finance.write"), false);
   assert.equal(hasPermission("CLOSING", "documents.write"), true);
   assert.equal(hasPermission("KEYHOLDING", "keyholding.write"), true);
+  assert.deepEqual(permissionsForRole("WORKSPACE_MEMBER"), []);
+  assert.equal(hasPermission("WORKSPACE_MEMBER", "customers.read"), false);
+  assert.equal(hasPermission("WORKSPACE_MEMBER", "finance.read"), false);
 });
 
 test("known API routes map to explicit permissions and unknown routes stay owner-only", () => {
@@ -35,6 +38,27 @@ test("known API routes map to explicit permissions and unknown routes stay owner
   assert.equal(accessRequirementForApi("/api/platform", "GET"), "OWNER_ONLY");
   assert.equal(accessRequirementForApi("/api/platform/commands", "POST"), "OWNER_ONLY");
   assert.equal(accessRequirementForApi("/api/unknown/system", "GET"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/contacts", "GET"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/contacts", "PATCH"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/contacts", "POST"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/contacts", "DELETE"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/properties", "POST"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/access-plans", "GET"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/available", "GET"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/available", "POST"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/properties", "GET"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/capabilities", "GET"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "GET"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "POST"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "PATCH"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-contacts", "DELETE"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-tasks", "GET"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-tasks", "POST"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-tasks", "PATCH"), "AUTHENTICATED");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/joint-tasks", "DELETE"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/pinosoecolife/joint-tasks", "GET"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/soleada/joint-contacts", "GET"), "OWNER_ONLY");
+  assert.equal(accessRequirementForApi("/api/workspaces/zeneco/contacts/export", "GET"), "OWNER_ONLY");
   assert.equal(accessRequirementForApi("/api/access-control", "GET"), "OWNER_ONLY");
 });
 
@@ -51,6 +75,8 @@ test("navigation is reduced by role", () => {
   assert.equal(canSeeNavHref("VIEWER", "/audit-log"), true);
   assert.equal(canSeeNavHref("VIEWER", "/team-workload"), true);
   assert.equal(canSeeNavHref("VIEWER", "/settings"), false);
+  assert.equal(canSeeNavHref("WORKSPACE_MEMBER", "/customers"), false);
+  assert.equal(canSeeNavHref("WORKSPACE_MEMBER", "/access-control"), false);
 });
 
 test("audit trail merges access changes and contact interactions", () => {

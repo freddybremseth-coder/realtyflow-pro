@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/remaster-migration-integration.yml"
       - "scripts/test-remaster-migrations.mjs"
+      - "scripts/test-workspace-migrations.mjs"
       - "supabase/migrations/**"
   workflow_dispatch:
 
@@ -47,3 +48,5 @@ jobs:
         run: npm ci --silent
       - name: Run explicit migration integration tests
         run: npm run test:migrations -- growth-actions-fingerprint user-image-bank-contract remaster-job-core lead-intelligence-persistence lead-intelligence-runtime-rls lead-intelligence-crm-context lead-intelligence-shortlist-draft lead-intelligence-presentation-draft contacts-rls-hardening
+      - name: Run isolated Zen workspace and new-lead cohort integration tests
+        run: node scripts/test-workspace-migrations.mjs

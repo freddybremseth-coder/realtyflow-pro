@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       id: role,
       label: ACCESS_ROLE_LABELS[role],
       permissions: ROLE_PERMISSIONS[role],
-      assignable: role !== "OWNER",
+      assignable: role !== "OWNER" && role !== "WORKSPACE_MEMBER",
     })),
     safety: {
       ownerOnlyChanges: true,
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   const role = normalizeRole(body.role);
   if (!email || !email.includes("@")) return NextResponse.json({ error: "Gyldig e-post mangler." }, { status: 400 });
   if (getAdminEmails().includes(email)) return NextResponse.json({ error: "Owner-profiler styres av REALTYFLOW_ADMIN_EMAILS og kan ikke endres her." }, { status: 400 });
-  if (!role || role === "OWNER") return NextResponse.json({ error: "Velg en tillatt rolle." }, { status: 400 });
+  if (!role || role === "OWNER" || role === "WORKSPACE_MEMBER") return NextResponse.json({ error: "Velg en tillatt rolle." }, { status: 400 });
 
   const result = await saveAccessProfile({
     actorEmail: context.email,

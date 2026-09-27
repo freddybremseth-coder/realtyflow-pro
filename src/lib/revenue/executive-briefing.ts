@@ -110,6 +110,7 @@ const ROLE_LABELS: Record<AccessRole, string> = {
   MARKETING: "Marketing",
   KEYHOLDING: "Keyholding",
   VIEWER: "Read-only",
+  WORKSPACE_MEMBER: "Brand workspace member",
 };
 
 const SEVERITY_WEIGHT: Record<ExecutiveDecisionSeverity, number> = {
