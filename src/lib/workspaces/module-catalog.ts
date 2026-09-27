@@ -103,8 +103,8 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   {
     id: "socialPublish",
     label: "Publisere til sosiale medier",
-    description: "Egen høyere rettighet. Åpnes først når konto-, kanal- og publiseringssperrer er verifisert for medarbeidere.",
-    status: "planned",
+    description: "Legg brand-avgrensede utkast i kontrollert publiseringskø. Kanal, medlemskap og innhold verifiseres på nytt før utsending.",
+    status: "ready",
     brandScope: "all",
     readPermissions: [],
     writePermissions: ["marketing.publish"],
@@ -169,6 +169,7 @@ export function programPermissions(params: {
   jointTasksWrite: boolean;
   marketingRead: boolean;
   marketingDraft: boolean;
+  marketingPublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -196,8 +197,9 @@ export function programPermissions(params: {
     if (params.crmWrite) result.add("crm.write");
   }
   if (params.properties) result.add("properties.catalog.read");
-  if (params.marketingRead || params.marketingDraft) result.add("marketing.read");
-  if (params.marketingDraft) result.add("marketing.draft");
+  if (params.marketingRead || params.marketingDraft || params.marketingPublish) result.add("marketing.read");
+  if (params.marketingDraft || params.marketingPublish) result.add("marketing.draft");
+  if (params.marketingPublish) result.add("marketing.publish");
   if (params.brandKey === "zeneco" && (params.corporateRead || params.corporatePlan)) result.add("corporate.read");
   if (params.brandKey === "zeneco" && params.corporatePlan) result.add("corporate.plan");
   if (params.visibilityRead || params.visibilityPlan) result.add("visibility.read");
