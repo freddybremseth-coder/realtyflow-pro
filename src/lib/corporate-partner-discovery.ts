@@ -96,7 +96,7 @@ export const corporatePartnerProfiles: Array<{
     type: "business_membership",
     label: "Arbeidsgiver- / nærings- / profesjonsorganisasjon",
     nace: ["94.1"],
-    baseScore: 34,
+    baseScore: 20,
     referralAngle: "Kan formidle konseptet til medlemsbedrifter eller selv vurdere en medlemsmodell.",
   },
   {
@@ -136,6 +136,56 @@ function primaryIndustry(entity: BrregEntity) {
   return entity.naeringskode1?.beskrivelse || entity.naeringskode2?.beskrivelse || entity.naeringskode3?.beskrivelse || null;
 }
 
+function businessMembershipRelevance(entity: BrregEntity) {
+  const haystack = [
+    entity.navn,
+    entity.naeringskode1?.beskrivelse,
+    entity.naeringskode2?.beskrivelse,
+    entity.naeringskode3?.beskrivelse,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const broadBusinessTerms = [
+    "arbeidsgiver",
+    "nærings",
+    "bedrift",
+    "virke",
+    "handel",
+    "finans",
+    "bank",
+    "forsikring",
+    "teknologi",
+    "industri",
+    "advokat",
+    "jurist",
+    "regnskap",
+    "revisor",
+    "ingeniør",
+    "arkitekt",
+    "eiendom",
+    "reiseliv",
+    "profesjon",
+    "forbund",
+  ];
+  const narrowSectorTerms = [
+    "avl",
+    "husdyr",
+    "svin",
+    "storfe",
+    "sau",
+    "skog",
+    "fiske",
+    "fiskeri",
+    "landbruk",
+    "bonde",
+    "frø",
+    "plante",
+  ];
+
+  const broadHits = broadBusinessTerms.filter((term) => haystack.includes(term));
+  const narrowHits = narrowSectorTerms.filter((term) => haystack.includes(term));
+  return { broadHits, narrowHits };
+}
+
 function scorePartner(entity: BrregEntity, profile: (typeof corporatePartnerProfiles)[number]) {
   let score = profile.baseScore;
   const reasons = [`Relevant partnersegment: ${profile.label}`];
@@ -164,6 +214,20 @@ function scorePartner(entity: BrregEntity, profile: (typeof corporatePartnerProf
     reasons.push("Medlemsorganisasjoner kan være relevante selv med få registrerte ansatte");
   } else {
     gaps.push("Størrelse må vurderes nærmere");
+  }
+
+  if (profile.type === "business_membership") {
+    const relevance = businessMembershipRelevance(entity);
+    if (relevance.broadHits.length) {
+      score += 22;
+      reasons.push(`Bred arbeidsgiver-/nærings-/profesjonsrelevans: ${relevance.broadHits.slice(0, 3).join(", ")}`);
+    } else {
+      gaps.push("Bred medlems-/arbeidsgiverrelevans er ikke dokumentert");
+    }
+    if (relevance.narrowHits.length && !relevance.broadHits.length) {
+      score -= 15;
+      gaps.push("Smal bransjeorganisasjon – lavere henvisningsprioritet");
+    }
   }
 
   if (entity.registrertIForetaksregisteret) {
