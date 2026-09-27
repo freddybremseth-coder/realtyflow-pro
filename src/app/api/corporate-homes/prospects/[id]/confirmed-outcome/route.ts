@@ -136,7 +136,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     .update({
       pipeline_status: outcome.crmPipelineStatus,
       pipeline_value: outcome.pipelineValueEur || Number(crmContact.pipeline_value || 0),
-      next_followup: now,
+      next_followup: outcome.nextFollowupAt,
       updated_at: now,
     })
     .eq("id", prospect.converted_contact_id)
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     .update({
       evidence: appendCorporateConfirmedOutcome(prospect.evidence, loggedOutcome),
       next_action: outcome.nextAction,
-      next_followup: now,
+      next_followup: outcome.nextFollowupAt,
       updated_at: now,
     })
     .eq("id", id)
