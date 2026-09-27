@@ -21,6 +21,16 @@ type Readiness = {
     authUserExists: boolean;
     workspaceProfile: { role: string; active: boolean } | null;
     activeMembershipExists: boolean;
+    securityPreflight: {
+      required_customer_tables_rls: boolean;
+      private_document_buckets_present: boolean;
+      private_document_buckets_private: boolean;
+      private_document_authenticated_policies: number;
+      operational_storage_authenticated_write_policies: number;
+      direct_customer_policy_risk: number;
+      direct_internal_policy_risk: number;
+      safe_for_workspace_auth: boolean;
+    } | null;
     featureFlagEnabled: boolean;
   };
   blockers: string[];
@@ -245,6 +255,14 @@ export default function WorkspaceAccessPage() {
                   ? <li>Ingen tekniske blokkeringer funnet.</li>
                   : readiness.blockers.map(blocker => <li key={blocker}>{readinessLabels[blocker] || blocker}</li>)}
               </ul>
+              {readiness.checks.securityPreflight && <div className="mt-4 grid gap-2 rounded-lg border border-slate-700/70 bg-slate-950/40 p-3 text-xs sm:grid-cols-2">
+                <span>Kunde-/oppgavetabeller med RLS: <strong>{readiness.checks.securityPreflight.required_customer_tables_rls ? "OK" : "IKKE OK"}</strong></span>
+                <span>Private dokumentbøtter: <strong>{readiness.checks.securityPreflight.private_document_buckets_private ? "Private" : "Må kontrolleres"}</strong></span>
+                <span>Direkte Auth-policyer på private dokumenter: <strong>{readiness.checks.securityPreflight.private_document_authenticated_policies}</strong></span>
+                <span>Direkte Auth-skrivepolicyer på operative filer: <strong>{readiness.checks.securityPreflight.operational_storage_authenticated_write_policies}</strong></span>
+                <span>Direkte kunde-policy-risiko: <strong>{readiness.checks.securityPreflight.direct_customer_policy_risk}</strong></span>
+                <span>Direkte intern-policy-risiko: <strong>{readiness.checks.securityPreflight.direct_internal_policy_risk}</strong></span>
+              </div>}
             </div>}
             <p className="flex items-center gap-2 text-xs text-slate-400"><LockKeyhole size={14} /> Aktivering og invitasjoner er deaktivert inntil sikkerhetskontrollene er bestått.</p>
           </section>
