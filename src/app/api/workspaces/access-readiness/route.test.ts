@@ -192,17 +192,22 @@ test("missing security-preflight migration is an explicit fail-closed blocker, n
   assert.equal(body.activationAvailable, false);
 });
 
-test("marketing read and draft are implemented while publishing remains blocked", async () => {
+test("marketing publishing is ready only with complete read and draft dependencies", async () => {
   planPermissions = ["crm.read", "marketing.read", "marketing.draft"];
   const cookie = "realtyflow_admin=" + await createAdminSession("owner@example.test");
   let body = await (await GET(request(cookie) as any)).json();
   assert.equal(body.readyForOwnerReview, true);
   assert.equal(body.blockers.includes("MARKETING_PUBLISH_NOT_IMPLEMENTED"), false);
 
+  planPermissions = ["crm.read", "marketing.read", "marketing.draft", "marketing.publish"];
+  body = await (await GET(request(cookie) as any)).json();
+  assert.equal(body.readyForOwnerReview, true);
+  assert.equal(body.blockers.includes("INVALID_BRAND_SCOPE"), false);
+
   planPermissions = ["crm.read", "marketing.read", "marketing.publish"];
   body = await (await GET(request(cookie) as any)).json();
   assert.equal(body.readyForOwnerReview, false);
-  assert.equal(body.blockers.includes("MARKETING_PUBLISH_NOT_IMPLEMENTED"), true);
+  assert.equal(body.blockers.includes("INVALID_BRAND_SCOPE"), true);
   assert.equal(body.activationAvailable, false);
 });
 
