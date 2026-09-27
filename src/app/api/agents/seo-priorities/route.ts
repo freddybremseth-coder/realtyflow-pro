@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
       lastFailure: !item.connected && recentOAuth.get(item.brandId)?.code !== "gsc_connected"
         ? recentOAuth.get(item.brandId) || null : null,
       error: item.error || (registered.has(item.brandId) && !item.connected
-        ? "Google-tillatelsen er lagret, men RealtyFlow kan ikke kontrollere lesetilgangen. Dette er en intern tilkoblingsfeil."
+        ? "Google-tillatelsen er lagret, men lesetilgangen kunne ikke bekreftes. Kontroller siste Google-lesefeil før eventuell ny godkjenning."
         : null),
     }));
     const metrics = snapshots.map(item => ({
