@@ -100,14 +100,16 @@ export function LeadIntelligenceWorklistHistoryPanel({
   const hasActiveWorklistItem = Boolean(activeBuyerProfileId);
   const selectedCount = selectedBuyerProfileIds.length;
   const allVisibleSelected = items.length > 0 && selectedCount === items.length;
-  const focusCounts = items.reduce(
+  const actionableItems = items.filter((item) => item.profileStatus !== "superseded" && item.profileStatus !== "archived");
+  const historyItems = items.filter((item) => item.profileStatus === "superseded" || item.profileStatus === "archived");
+  const focusCounts = actionableItems.reduce(
     (counts, item) => {
       counts[item.nextAction.priority] += 1;
       return counts;
     },
     { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
   );
-  const mostImportantAction = items[0]?.nextAction || null;
+  const mostImportantAction = actionableItems[0]?.nextAction || null;
   const urgentCount = focusCounts.CRITICAL + focusCounts.HIGH;
 
   return (
@@ -179,7 +181,7 @@ export function LeadIntelligenceWorklistHistoryPanel({
 
       {!expanded && (
         <p className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">
-          {items.length} lagrede profiler er skjult. Åpne historikken hvis du vil bytte aktiv profil.
+          {actionableItems.length} aktive profiler og {historyItems.length} historikkversjoner er skjult. Åpne historikken ved behov.
         </p>
       )}
 
@@ -217,6 +219,7 @@ export function LeadIntelligenceWorklistHistoryPanel({
             const budget = formatCurrency(item.budgetAmount, item.budgetCurrency || "EUR");
             const isActive = activeBuyerProfileId === item.buyerProfileId;
             const isSelected = selectedBuyerProfileIds.includes(item.buyerProfileId);
+            const isHistorical = item.profileStatus === "superseded" || item.profileStatus === "archived";
 
             return (
               <div
@@ -253,23 +256,35 @@ export function LeadIntelligenceWorklistHistoryPanel({
                   <div className="flex flex-wrap gap-2">
                     {isSelected && <Badge variant="destructive">Valgt for sletting</Badge>}
                     {isActive && <Badge variant="default">Aktiv</Badge>}
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${nextActionPriorityClasses(
-                        item.nextAction.priority,
-                      )}`}
-                    >
-                      {item.nextAction.priority}
-                    </span>
+                    {isHistorical ? (
+                      <Badge variant="secondary">Historikk</Badge>
+                    ) : (
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${nextActionPriorityClasses(
+                          item.nextAction.priority,
+                        )}`}
+                      >
+                        {item.nextAction.priority}
+                      </span>
+                    )}
                     <Badge variant="outline">{item.profileStatus}</Badge>
                     {item.purchaseReadiness && <Badge variant="secondary">{item.purchaseReadiness}</Badge>}
                   </div>
                 </div>
 
-                <div className={`mt-4 rounded-lg border p-3 ${nextActionPriorityClasses(item.nextAction.priority)}`}>
-                  <p className="text-xs uppercase tracking-wide opacity-80">Neste beste handling</p>
-                  <p className="mt-1 text-sm font-semibold">{item.nextAction.label}</p>
-                  <p className="mt-1 text-xs leading-5 opacity-85">{item.nextAction.reason}</p>
-                </div>
+                {isHistorical ? (
+                  <div className="mt-4 rounded-lg border border-slate-700/60 bg-slate-900/60 p-3 text-slate-400">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Tidligere profilversjon</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-300">Ingen handling kreves</p>
+                    <p className="mt-1 text-xs leading-5">Denne versjonen er erstattet av en nyere profil og brukes ikke til matching eller shortlist.</p>
+                  </div>
+                ) : (
+                  <div className={`mt-4 rounded-lg border p-3 ${nextActionPriorityClasses(item.nextAction.priority)}`}>
+                    <p className="text-xs uppercase tracking-wide opacity-80">Neste beste handling</p>
+                    <p className="mt-1 text-sm font-semibold">{item.nextAction.label}</p>
+                    <p className="mt-1 text-xs leading-5 opacity-85">{item.nextAction.reason}</p>
+                  </div>
+                )}
 
                 <dl className="mt-4 grid gap-3 text-xs text-slate-400 md:grid-cols-3">
                   <div>
@@ -316,17 +331,22 @@ export function LeadIntelligenceWorklistHistoryPanel({
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant={isActive ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => onContinueFromItem(item)}
-                    disabled={!item.analysisRunId}
-                  >
-                    <UserCheck className="mr-2 h-4 w-4" />
-                    {isActive ? "Valgt for videre arbeid" : "Fortsett med denne profilen"}
-                  </Button>
-                  {!item.analysisRunId && (
+                  {!isHistorical && (
+                    <Button
+                      type="button"
+                      variant={isActive ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => onContinueFromItem(item)}
+                      disabled={!item.analysisRunId}
+                    >
+                      <UserCheck className="mr-2 h-4 w-4" />
+                      {isActive ? "Valgt for videre arbeid" : "Fortsett med denne profilen"}
+                    </Button>
+                  )}
+                  {isHistorical && (
+                    <p className="text-xs text-slate-500">Kun historikk. Bruk den nyeste godkjente profilen for videre arbeid.</p>
+                  )}
+                  {!isHistorical && !item.analysisRunId && (
                     <p className="text-xs text-amber-200">
                       Mangler analyse-run og kan ikke brukes til videre preview ennå.
                     </p>
