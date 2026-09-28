@@ -3,6 +3,11 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { OWNED_GROWTH_BRAND_IDS, OWNED_GROWTH_BRANDS, growthBrandDefinition, isMetaGrowthChannel, isPilotChannel } from "@/lib/marketing/brand-registry";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import type { MarketingChannel } from "@/lib/marketing/genome";
+import {
+  buildMarketingNextActions,
+  marketingSurfaceKind,
+  type MarketingSurfaceKind,
+} from "@/lib/marketing/next-best-action";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -27,10 +32,21 @@ type ReadinessRow = {
   evaluatedRules: number;
   actionableRules: number;
   liveLearning: boolean;
-  status: "LIVE_LEARNING" | "PILOT_READY" | "BRAND_BRAIN_READY" | "CONNECTED" | "NOT_READY";
+  surfaceKind: MarketingSurfaceKind;
+  attentionRequired: boolean;
+  attentionReason: string | null;
+  status: "LIVE_LEARNING" | "PILOT_READY" | "BRAND_BRAIN_READY" | "CONNECTED" | "NOT_READY" | "SIGNAL_READY";
 };
 
-function blocker(params: { connected: boolean; brandBrainReady: boolean; planned: boolean; pilotReady: boolean; platform: string | null }) {
+function blocker(params: {
+  connected: boolean;
+  brandBrainReady: boolean;
+  planned: boolean;
+  pilotReady: boolean;
+  platform: string | null;
+  surfaceKind: MarketingSurfaceKind;
+}) {
+  if (params.surfaceKind === "signal") return null;
   if (params.pilotReady) return null;
   if (!params.connected) return "Konto er ikke koblet.";
   if (!params.brandBrainReady) return "Brand Brain mangler.";
@@ -39,6 +55,22 @@ function blocker(params: { connected: boolean; brandBrainReady: boolean; planned
     return "Kanal koblet og planlagt, men brand-scopet write-governance + approval-publisher er ikke pilotklar ennå.";
   }
   return "Kanalen er ikke godkjent som Growth OS-pilot ennå.";
+}
+
+function humanAttention(params: {
+  connected: boolean;
+  brandBrainReady: boolean;
+  quarantined: number;
+  surfaceKind: MarketingSurfaceKind;
+}) {
+  if (params.surfaceKind === "signal") return { required: false, reason: null };
+  if (params.quarantined > 0) {
+    return { required: true, reason: `${params.quarantined} learning-måling(er) er i karantene.` };
+  }
+  if (params.connected && !params.brandBrainReady) {
+    return { required: true, reason: "Brand Brain mangler og krever eier-/brandbeslutning før autonom produksjon." };
+  }
+  return { required: false, reason: null };
 }
 
 function nextDailyMetricsCronAfter(afterMs: number): number {
@@ -98,22 +130,32 @@ export async function GET(request: NextRequest) {
   const rows: ReadinessRow[] = (channels ?? []).map((channel: any): ReadinessRow => {
     const brandId = String(channel.brand_id);
     const platform = String(channel.platform);
+    const surfaceKind = marketingSurfaceKind(platform);
     const definition = growthBrandDefinition(brandId);
     const brandContext = contextByBrand.get(brandId);
-    const published = (publications ?? []).filter((p: any) => String(p.brand_id) === brandId && String(p.channel) === platform).length;
-    const channelEvents = (events ?? []).filter((e: any) => String(e.brand_id) === brandId && String(e.channel) === platform);
+    const published = surfaceKind === "destination"
+      ? (publications ?? []).filter((p: any) => String(p.brand_id) === brandId && String(p.channel) === platform).length
+      : 0;
+    const channelEvents = surfaceKind === "destination"
+      ? (events ?? []).filter((e: any) => String(e.brand_id) === brandId && String(e.channel) === platform)
+      : [];
     const eligible = new Set(channelEvents.filter((e: any) => e?.metadata?.learning_eligible !== false).map((e: any) => String(e.content_id || "")).filter(Boolean)).size;
     const quarantined = new Set(channelEvents.filter((e: any) => e?.metadata?.learning_eligible === false).map((e: any) => String(e.content_id || "")).filter(Boolean)).size;
     const scope = channelLearningScope(brandId, platform);
-    const scopedRules = (rules ?? []).filter((r: any) => String(r.scope) === scope);
+    const scopedRules = surfaceKind === "destination"
+      ? (rules ?? []).filter((r: any) => String(r.scope) === scope)
+      : [];
     const evaluatedRules = scopedRules.length;
     const actionableRules = scopedRules.filter((r: any) => ["favor", "avoid"].includes(String(r.verdict))).length;
     const connected = true;
     const brandBrainReady = Boolean(brandContext);
-    const planned = Boolean(definition?.plannedChannels.includes(platform as MarketingChannel));
-    const pilotReady = connected && brandBrainReady && isPilotChannel(brandId, platform);
-    const pilotBlockReason = blocker({ connected, brandBrainReady, planned, pilotReady, platform });
-    const liveLearning = pilotReady && eligible >= CONTROL_REQUIRED_OBSERVATIONS && evaluatedRules > 0;
+    const planned = surfaceKind === "signal"
+      ? true
+      : Boolean(definition?.plannedChannels.includes(platform as MarketingChannel));
+    const pilotReady = surfaceKind === "destination" && connected && brandBrainReady && isPilotChannel(brandId, platform);
+    const pilotBlockReason = blocker({ connected, brandBrainReady, planned, pilotReady, platform, surfaceKind });
+    const liveLearning = surfaceKind === "destination" && pilotReady && eligible >= CONTROL_REQUIRED_OBSERVATIONS && evaluatedRules > 0;
+    const attention = humanAttention({ connected, brandBrainReady, quarantined, surfaceKind });
 
     return {
       brandId,
@@ -132,7 +174,18 @@ export async function GET(request: NextRequest) {
       evaluatedRules,
       actionableRules,
       liveLearning,
-      status: liveLearning ? "LIVE_LEARNING" : pilotReady ? "PILOT_READY" : brandBrainReady ? "BRAND_BRAIN_READY" : "CONNECTED",
+      surfaceKind,
+      attentionRequired: attention.required,
+      attentionReason: attention.reason,
+      status: surfaceKind === "signal"
+        ? "SIGNAL_READY"
+        : liveLearning
+          ? "LIVE_LEARNING"
+          : pilotReady
+            ? "PILOT_READY"
+            : brandBrainReady
+              ? "BRAND_BRAIN_READY"
+              : "CONNECTED",
     };
   });
 
@@ -144,6 +197,8 @@ export async function GET(request: NextRequest) {
     const brandBrainReady = Boolean(context);
     const planned = Boolean(definition?.plannedChannels.length);
     const pilotReady = false;
+    const surfaceKind: MarketingSurfaceKind = "destination";
+    const attention = humanAttention({ connected, brandBrainReady, quarantined: 0, surfaceKind });
     rows.push({
       brandId,
       brandName: (context as any)?.brand_name ?? definition?.name ?? brandId,
@@ -154,52 +209,76 @@ export async function GET(request: NextRequest) {
       brandBrainReady,
       planned,
       pilotReady,
-      pilotBlockReason: blocker({ connected, brandBrainReady, planned, pilotReady, platform: null }),
+      pilotBlockReason: blocker({ connected, brandBrainReady, planned, pilotReady, platform: null, surfaceKind }),
       published: 0,
       measuredEligible: 0,
       quarantined: 0,
       evaluatedRules: 0,
       actionableRules: 0,
       liveLearning: false,
+      surfaceKind,
+      attentionRequired: attention.required,
+      attentionReason: attention.reason,
       status: context ? "BRAND_BRAIN_READY" : "NOT_READY",
     });
   }
 
-  rows.sort((a, b) => `${a.brandName}|${a.platform ?? ""}`.localeCompare(`${b.brandName}|${b.platform ?? ""}`));
+  rows.sort((a, b) => `${a.brandName}|${a.surfaceKind}|${a.platform ?? ""}`.localeCompare(`${b.brandName}|${b.surfaceKind}|${b.platform ?? ""}`));
 
-  const controlScope = channelLearningScope("zeneco", "instagram");
-  const controlEvents = (events ?? []).filter((e: any) => String(e.brand_id) === "zeneco" && String(e.channel) === "instagram");
-  const controlPublished = (publications ?? []).filter((p: any) => String(p.brand_id) === "zeneco" && String(p.channel) === "instagram");
-  const controlEligible = new Set(
-    controlEvents
-      .filter((e: any) => e?.metadata?.learning_eligible !== false)
-      .map((e: any) => String(e.content_id || ""))
-      .filter(Boolean),
-  ).size;
-  const controlRules = (rules ?? []).filter((r: any) => String(r.scope) === controlScope);
-  const controlEvaluatedRules = controlRules.length;
-  const controlActionableRules = controlRules.filter((r: any) => ["favor", "avoid"].includes(String(r.verdict))).length;
-  const controlValidated = controlEligible >= CONTROL_REQUIRED_OBSERVATIONS && controlEvaluatedRules > 0;
+  const nextActions = buildMarketingNextActions(rows, CONTROL_REQUIRED_OBSERVATIONS);
+  const nextCanary = nextActions.find((action) => action.kind === "PREPARE_CANARY") ?? null;
+  const fallbackControl = rows
+    .filter((row) => row.surfaceKind === "destination" && row.pilotReady)
+    .sort((a, b) =>
+      Number(b.liveLearning) - Number(a.liveLearning)
+      || b.measuredEligible - a.measuredEligible
+      || b.evaluatedRules - a.evaluatedRules,
+    )[0] ?? null;
+  const controlRow = nextCanary
+    ? rows.find((row) => row.brandId === nextCanary.brandId && row.platform === nextCanary.sourceChannel) ?? fallbackControl
+    : fallbackControl;
+  const controlScope = controlRow?.platform ? channelLearningScope(controlRow.brandId, controlRow.platform) : "";
+  const controlPublished = controlRow?.platform
+    ? (publications ?? []).filter((p: any) => String(p.brand_id) === controlRow.brandId && String(p.channel) === controlRow.platform)
+    : [];
+
   const controlGate = {
-    status: controlValidated ? "RUN_NEXT_CANARY" : "WAIT",
-    controlBrandId: "zeneco",
-    controlChannel: "instagram",
+    status: nextCanary ? "RUN_NEXT_CANARY" : "WAIT",
+    controlBrandId: controlRow?.brandId ?? "",
+    controlChannel: controlRow?.platform ?? "",
     learningScope: controlScope,
-    eligibleObservations: controlEligible,
+    eligibleObservations: controlRow?.measuredEligible ?? 0,
     requiredObservations: CONTROL_REQUIRED_OBSERVATIONS,
     maturityHours: CONTROL_MATURITY_HOURS,
-    evaluatedRules: controlEvaluatedRules,
-    actionableRules: controlActionableRules,
-    nextEvaluationAt: controlValidated ? null : nextEvaluationAt(controlPublished, Date.now()),
-    nextRecommendedCanary: controlValidated
-      ? { brandId: "zeneco", channel: "facebook", path: "/marketing-canary-facebook" }
+    evaluatedRules: controlRow?.evaluatedRules ?? 0,
+    actionableRules: controlRow?.actionableRules ?? 0,
+    nextEvaluationAt: nextCanary ? null : nextEvaluationAt(controlPublished, Date.now()),
+    nextRecommendedCanary: nextCanary?.href
+      ? { brandId: nextCanary.brandId, channel: nextCanary.channel, path: nextCanary.href }
       : null,
-    reason: controlEligible < CONTROL_REQUIRED_OBSERVATIONS
-      ? `WAIT_FOR_10_ELIGIBLE_INSTAGRAM_OBSERVATIONS (${controlEligible}/${CONTROL_REQUIRED_OBSERVATIONS})`
-      : controlEvaluatedRules === 0
-        ? "WAIT_FOR_CHANNEL_LEARNING_EVALUATION"
-        : "RUN_ZENECO_FACEBOOK_CANARY",
+    reason: nextCanary
+      ? `PREPARE_${nextCanary.brandId.toUpperCase()}_${String(nextCanary.channel).toUpperCase()}_CANARY`
+      : controlRow && controlRow.measuredEligible < CONTROL_REQUIRED_OBSERVATIONS
+        ? `WAIT_FOR_${CONTROL_REQUIRED_OBSERVATIONS}_ELIGIBLE_OBSERVATIONS (${controlRow.measuredEligible}/${CONTROL_REQUIRED_OBSERVATIONS})`
+        : controlRow && controlRow.evaluatedRules === 0
+          ? "WAIT_FOR_CHANNEL_LEARNING_EVALUATION"
+          : "NO_CONTROLLED_CANARY_REQUIRED",
   };
 
-  return NextResponse.json({ generatedAt: new Date().toISOString(), controlGate, rows });
+  const automationSummary = {
+    autoReady: nextActions.filter((action) => action.execution === "AUTO_READY").length,
+    humanRequired: nextActions.filter((action) => action.execution === "HUMAN_REQUIRED").length,
+    systemWork: nextActions.filter((action) => action.execution === "SYSTEM_WORK").length,
+    waiting: nextActions.filter((action) => action.execution === "WAIT").length,
+    connectedSignals: rows.filter((row) => row.surfaceKind === "signal" && row.connected).length,
+    connectedDestinations: rows.filter((row) => row.surfaceKind === "destination" && row.connected).length,
+  };
+
+  return NextResponse.json({
+    generatedAt: new Date().toISOString(),
+    controlGate,
+    nextActions,
+    automationSummary,
+    rows,
+  });
 }
