@@ -94,6 +94,15 @@ type Overview = {
       rootCauseCategory: string;
       actionType: string;
       updatedAt?: string | null;
+      effect?: {
+        trend: "NOT_ENOUGH_DATA" | "IMPROVING" | "UNCHANGED" | "WORSENING";
+        baselineRatePct?: number | null;
+        latestRatePct?: number | null;
+        deltaPctPoints?: number | null;
+        postSnapshots: number;
+        latestSnapshotAt?: string | null;
+        evidenceNote: string;
+      } | null;
     } | null;
     review?: {
       status: "READY" | "LEARNING" | "DATA_GAP";
@@ -670,6 +679,44 @@ export default function CorporateHomesGrowthPage() {
                       </div>
                     </div>
                   )}
+
+                    {data.growthReview.improvement.effect && (
+                      <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="text-[11px] font-black uppercase tracking-wide text-cyan-800">Corporate effekt siden tiltak</div>
+                            <div className="mt-1 text-sm font-black text-slate-950">
+                              {data.growthReview.improvement.effect.trend.replaceAll("_", " ")}
+                            </div>
+                          </div>
+                          <div className="text-xs font-bold text-slate-700">
+                            {data.growthReview.improvement.effect.baselineRatePct !== null &&
+                            data.growthReview.improvement.effect.baselineRatePct !== undefined
+                              ? `Baseline ${data.growthReview.improvement.effect.baselineRatePct}%`
+                              : "Baseline mangler"}
+                            {" · "}
+                            {data.growthReview.improvement.effect.latestRatePct !== null &&
+                            data.growthReview.improvement.effect.latestRatePct !== undefined
+                              ? `Siste ${data.growthReview.improvement.effect.latestRatePct}%`
+                              : "Siste rate mangler"}
+                            {data.growthReview.improvement.effect.deltaPctPoints !== null &&
+                            data.growthReview.improvement.effect.deltaPctPoints !== undefined && (
+                              <>
+                                {" · "}
+                                {data.growthReview.improvement.effect.deltaPctPoints > 0 ? "+" : ""}
+                                {data.growthReview.improvement.effect.deltaPctPoints} pp
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-slate-600">
+                          {data.growthReview.improvement.effect.evidenceNote}
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold text-cyan-900">
+                          {data.growthReview.improvement.effect.postSnapshots} kvalifiserte snapshot etter tiltaket
+                        </p>
+                      </div>
+                    )}
                 </div>
                 {data.growthReview.comparison.continuousImprovementCandidate && (
                   <Link
