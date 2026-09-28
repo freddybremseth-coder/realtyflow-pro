@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
       !permissions.includes("tasks.joint.read")) ||
     (brandKey === "zeneco" && permissions.includes("crm.joint.write") && !permissions.includes("crm.joint.read")) ||
     (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) ||
+    (permissions.includes("marketing.publish") &&
+      (!permissions.includes("marketing.read") || !permissions.includes("marketing.draft"))) ||
     (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) ||
     (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) ||
     (permissions.includes("ads.draft") && !permissions.includes("ads.read")) ||
