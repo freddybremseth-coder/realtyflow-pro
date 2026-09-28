@@ -205,17 +205,6 @@ export async function ensureInboundBuyerProfile(input: {
     return result.rows[0]?.id || null;
   });
 
-  if (existing && input.intent !== "update_preferences") {
-    return {
-      status: "linked_existing",
-      buyerProfileId: existing,
-      buyerProfileStatus: "APPROVED",
-      analysis: null,
-      verifiedCriteriaCount: 0,
-      requiresRevision: false,
-    };
-  }
-
   const analyzed = await analyzeLeadIntake(
     {
       source: "email",
@@ -228,14 +217,24 @@ export async function ensureInboundBuyerProfile(input: {
   const analysis = analyzed.result;
   const verified = verifiedCriteria(analysis, rawText);
 
-  if (existing && input.intent === "update_preferences") {
+  if (existing) {
+    if (verified.length > 0) {
+      return {
+        status: "revision_required",
+        buyerProfileId: existing,
+        buyerProfileStatus: "APPROVED",
+        analysis,
+        verifiedCriteriaCount: verified.length,
+        requiresRevision: true,
+      };
+    }
     return {
-      status: "revision_required",
+      status: "linked_existing",
       buyerProfileId: existing,
       buyerProfileStatus: "APPROVED",
-      analysis,
-      verifiedCriteriaCount: verified.length,
-      requiresRevision: true,
+      analysis: null,
+      verifiedCriteriaCount: 0,
+      requiresRevision: false,
     };
   }
 
