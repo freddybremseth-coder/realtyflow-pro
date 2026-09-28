@@ -21,18 +21,24 @@ type TopicMission = {
   payload: Record<string, unknown>;
 };
 
-function missionPage(issueId: string): string | null {
-  const prefix = CONTENT_OPPORTUNITY_PREFIXES.find((value) => issueId.startsWith(value));
-  if (!prefix) return null;
-  const parts = issueId.split(":");
-  if (parts.length < 3) return null;
-  const encoded = parts.slice(2).join(":");
-  try {
-    const decoded = decodeURIComponent(encoded);
-    return decoded.startsWith("/") && !decoded.startsWith("//") ? decoded : null;
-  } catch {
-    return null;
+function exactPageForOpportunity(
+  issueId: string,
+  brandId: string,
+  snapshots: readonly GSCBrandSnapshot[],
+): string | null {
+  const snapshot = snapshots.find((item) => item.brandId === brandId);
+  if (!snapshot) return null;
+
+  for (const row of snapshot.topQueryPages) {
+    const encoded = encodeURIComponent(row.page).slice(0, 105);
+    if (issueId === `gsc-snippet:${brandId}:${encoded}`) return row.page;
+    if (issueId === `gsc-content:${brandId}:${encoded}`) return row.page;
   }
+  for (const row of snapshot.topPages) {
+    const encoded = encodeURIComponent(row.path).slice(0, 105);
+    if (issueId === `gsc-page-snippet:${brandId}:${encoded}`) return row.path;
+  }
+  return null;
 }
 
 function absoluteBrandUrl(brandId: string, path: string | null) {
@@ -56,7 +62,7 @@ export function buildSEOTopicMissions(snapshots: readonly GSCBrandSnapshot[]): T
     const brandId = String(opportunity.brandId);
     const brand = growthBrandDefinition(brandId);
     if (!brand) return [];
-    const page = missionPage(opportunity.issueId);
+    const page = exactPageForOpportunity(opportunity.issueId, brandId, snapshots);
     const sourceUrl = absoluteBrandUrl(brandId, page);
     if (!sourceUrl) return [];
 
