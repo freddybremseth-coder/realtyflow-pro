@@ -171,7 +171,7 @@ export default function SocialAutomationPage() {
               <div>
                 <div className="text-xs font-black uppercase tracking-wider text-emerald-700">Growth Autopilot queue</div>
                 <h2 className="mt-1 text-xl font-black text-slate-950">Neste handlinger valgt av Nexus</h2>
-                <p className="mt-1 max-w-3xl text-sm text-slate-700">AUTO READY betyr at beslutningsgrunnlaget er på plass. I denne sprinten beholdes eksisterende approval/claim-guards før ekstern publisering.</p>
+                <p className="mt-1 max-w-3xl text-sm text-slate-700">AUTO READY køes automatisk av den timebaserte Marketing Autopilot. Hvis kanalen ikke er live-forhåndsgodkjent, lages bare kontrollert utkast/review; eksisterende claim-, account-, approval- og rollback-guards gjelder alltid.</p>
               </div>
               <Link href="/nexus-os/growth-scaling" className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white">Scaling Control →</Link>
             </div>
@@ -185,7 +185,8 @@ export default function SocialAutomationPage() {
                   <div className="mt-3 font-black">{action.title}</div>
                   <p className="mt-2 text-sm leading-5 opacity-80">{action.reason}</p>
                   {action.sourceChannel && action.sourceChannel !== action.channel && <div className="mt-2 text-xs font-bold opacity-70">Læring fra {action.sourceChannel} → {action.channel}</div>}
-                  {action.href && <Link href={action.href} className="mt-3 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm">Åpne kontrollflate →</Link>}
+                  {action.execution === "AUTO_READY" && <div className="mt-3 text-xs font-black text-emerald-800">Kjøres automatisk · ingen knapp nødvendig</div>}
+                  {action.href && action.execution !== "AUTO_READY" && <Link href={action.href} className="mt-3 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm">Åpne kontrollflate →</Link>}
                 </div>
               ))}
               {!loading && actions.filter((action) => action.execution !== "WAIT").length === 0 && <div className="lg:col-span-3 rounded-xl border border-emerald-200 bg-white/70 p-4 text-sm text-emerald-900">Ingen ny handling må startes nå. Autopilot venter på nye modne signaler.</div>}
