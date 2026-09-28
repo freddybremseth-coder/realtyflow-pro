@@ -705,6 +705,23 @@ function budgetMatchResult(
   const budget = calculatePropertyBudget(profile.budget, property, options.costProfile);
   if (!profile.budget.amount) return { result: null, rejected: false, penalty: 0 };
 
+  if (property.facts.property_type?.value === "plot") {
+    return {
+      result: {
+        key: "estimated_total_cost",
+        outcome: "unknown",
+        expected: profile.budget.amount,
+        actual: budget.purchasePrice,
+        sourceField: property.facts.purchase_price?.sourceField || null,
+        reason: budget.purchasePrice === null
+          ? "Land price is missing; total plot and build cost must be verified."
+          : `Land price ${budget.purchasePrice} ${budget.currency} is known, but total plot and build cost must be verified against the buyer budget ${profile.budget.amount} ${budget.currency}.`,
+      },
+      rejected: false,
+      penalty: 4,
+    };
+  }
+
   if (budget.estimatedTotalCost === null) {
     return {
       result: {
