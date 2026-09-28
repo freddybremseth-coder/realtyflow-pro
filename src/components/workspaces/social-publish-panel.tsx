@@ -106,10 +106,10 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
     setNotice("");
   }
 
-  function toggleChannel(id: string, checked: boolean) {
+  function togglePlatform(platform: string, checked: boolean) {
     setSelectedPlatforms(current => checked
-      ? Array.from(new Set([...current, id]))
-      : current.filter(item => item !== id));
+      ? Array.from(new Set([...current, platform]))
+      : current.filter(item => item !== platform));
   }
 
   async function publish() {
