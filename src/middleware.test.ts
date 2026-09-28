@@ -203,6 +203,8 @@ test("when database runtime is enabled workspace role can enter only narrow shel
       "/api/workspaces/pinosoecolife/content",
       "/api/workspaces/pinosoecolife/email",
       "/api/workspaces/pinosoecolife/social-publish",
+      "/api/workspaces/pinosoecolife/reels",
+      "/api/workspaces/zeneco/reels",
       "/api/workspaces/zeneco/joint-contacts",
       "/api/workspaces/zeneco/joint-tasks",
       "/api/auth/me",
