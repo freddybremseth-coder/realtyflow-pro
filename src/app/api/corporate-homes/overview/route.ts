@@ -13,6 +13,7 @@ import {
   WEEKLY_MANAGEMENT_SETTINGS_KEY,
   parseWeeklyManagementSettings,
 } from "@/lib/revenue/weekly-management-review";
+import { buildCorporateImprovementObservedEffect } from "@/lib/corporate-improvement-observed-effect";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -132,13 +133,13 @@ export async function GET(request: NextRequest) {
     .limit(1)
     .maybeSingle();
 
-  const { data: lastCorporateGrowthReview, error: lastCorporateGrowthReviewError } = await supabase
+  const { data: recentCorporateGrowthReviews, error: lastCorporateGrowthReviewError } = await supabase
     .from("automation_logs")
     .select("id,status,details,created_at")
     .eq("action", "corporate_homes_growth_review")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(12);
+  const lastCorporateGrowthReview = recentCorporateGrowthReviews?.[0] || null;
 
   const growthDetails =
     lastCorporateGrowthReview?.details &&
@@ -216,6 +217,10 @@ export async function GET(request: NextRequest) {
         rootCauseCategory: tracked.rootCauseCategory,
         actionType: tracked.actionType,
         updatedAt: tracked.updatedAt,
+        observedEffect: buildCorporateImprovementObservedEffect(
+          recentCorporateGrowthReviews || [],
+          { candidateId: tracked.candidateId, createdAt: tracked.createdAt },
+        ),
       };
     }
   }
