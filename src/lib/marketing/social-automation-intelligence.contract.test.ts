@@ -84,3 +84,11 @@ test("Social Automation separates user decisions from automatic work", () => {
   assert.match(page, /Ingen handling fra deg/);
   assert.match(page, /Dette er status, ikke «Needs attention»/);
 });
+
+
+test("readiness describes canary as automatic system execution, not a user command", () => {
+  assert.match(readiness, /AUTO_QUEUE_NEXT_CANARY/);
+  assert.match(readiness, /userActionRequired: false/);
+  assert.match(readiness, /execution: nextCanary \? "AUTO_READY" : "WAIT"/);
+  assert.doesNotMatch(readiness, /RUN_NEXT_CANARY/);
+});
