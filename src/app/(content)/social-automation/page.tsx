@@ -66,6 +66,46 @@ type LearningInsight = {
   updatedAt: string | null;
 };
 
+type SEOTopicJourney = {
+  topicId: string;
+  genomeTopic: string;
+  brandId: string;
+  title: string;
+  canonicalUrl: string;
+  sourceStatus: string;
+  priority: number;
+  recommendedChannels: string[];
+  evidence: string | null;
+  observation: string | null;
+  nextAction: string | null;
+  sourceUpdatedAt: string | null;
+  sourceLastPlannedAt: string | null;
+  stage: "MISSION_READY" | "CONTENT_CREATED" | "PUBLISHED" | "MEASURED" | "LEAD_SIGNAL" | "BUSINESS_PROVEN";
+  contentCount: number;
+  publishedCount: number;
+  measuredContentCount: number;
+  latestPublishedAt: string | null;
+  latestMetricsAt: string | null;
+  channels: string[];
+  metrics: {
+    impressions: number;
+    views: number;
+    clicks: number;
+    reactions: number;
+    comments: number;
+    saves: number;
+    shares: number;
+  };
+  business: {
+    leads: number;
+    qualified: number;
+    viewings: number;
+    offers: number;
+    sales: number;
+    commissionEur: number;
+  };
+};
+
 type GrowthRow = {
   brandId: string;
   channel: string;
@@ -114,6 +154,7 @@ type Payload = {
   };
   nextActions?: NextAction[];
   learningInsights?: LearningInsight[];
+  seoTopicJourneys?: SEOTopicJourney[];
   performanceSummary?: {
     periodDays: number;
     portfolio: GrowthRow;
@@ -164,6 +205,24 @@ function executionLabel(execution: NextAction["execution"]) {
   return "Watching";
 }
 
+function journeyStageLabel(stage: SEOTopicJourney["stage"]) {
+  if (stage === "BUSINESS_PROVEN") return "Business proven";
+  if (stage === "LEAD_SIGNAL") return "Lead signal";
+  if (stage === "MEASURED") return "Measured";
+  if (stage === "PUBLISHED") return "Published";
+  if (stage === "CONTENT_CREATED") return "Content created";
+  return "Mission ready";
+}
+
+function journeyStageTone(stage: SEOTopicJourney["stage"]) {
+  if (stage === "BUSINESS_PROVEN") return "bg-emerald-100 text-emerald-800";
+  if (stage === "LEAD_SIGNAL") return "bg-cyan-100 text-cyan-800";
+  if (stage === "MEASURED") return "bg-violet-100 text-violet-800";
+  if (stage === "PUBLISHED") return "bg-blue-100 text-blue-800";
+  if (stage === "CONTENT_CREATED") return "bg-amber-100 text-amber-800";
+  return "bg-slate-100 text-slate-700";
+}
+
 export default function SocialAutomationPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -196,6 +255,7 @@ export default function SocialAutomationPage() {
   const signals = rows.filter((row) => row.surfaceKind === "signal");
   const destinations = rows.filter((row) => row.surfaceKind === "destination");
   const learningInsights = data?.learningInsights ?? [];
+  const seoTopicJourneys = data?.seoTopicJourneys ?? [];
   const performance = data?.performanceSummary ?? null;
   const portfolio = performance?.portfolio;
 
@@ -295,6 +355,53 @@ export default function SocialAutomationPage() {
                 </div>
               ))}
               {!loading && learningInsights.length === 0 && <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Nexus har ennå ingen handlingsregler med nok evidens til å vise her.</div>}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-cyan-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-cyan-700">SAM → Social → Business</div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">Topic Journey</h2>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600">Følg samme målte søkemulighet fra SAM/GSC til content mission, publisering, social metrics og attribuerte CRM-resultater. Ingen proxy-resultater blir fremstilt som leads eller salg.</p>
+              </div>
+              <Link href="/nexus-os/source-queue" className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-950">Source Queue →</Link>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {seoTopicJourneys.slice(0, 6).map((journey) => {
+                const exposure = Math.max(journey.metrics.impressions, journey.metrics.views);
+                const brandName = destinations.find((row) => row.brandId === journey.brandId)?.brandName ?? journey.brandId;
+                return (
+                  <div key={journey.topicId} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-black text-slate-900">{brandName}</div>
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${journeyStageTone(journey.stage)}`}>{journeyStageLabel(journey.stage)}</span>
+                    </div>
+                    <div className="mt-2 text-sm font-black text-slate-950">{journey.title}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-black uppercase text-slate-500">
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-1">SAM signal ✓</span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-1">Mission ✓</span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-1">Content {journey.contentCount || "—"}</span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-1">Published {journey.publishedCount || "—"}</span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-1">Measured {journey.measuredContentCount || "—"}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-lg bg-white p-2"><div className="text-lg font-black text-slate-950">{exposure.toLocaleString("nb-NO")}</div><div className="text-[10px] font-bold uppercase text-slate-400">Reach</div></div>
+                      <div className="rounded-lg bg-white p-2"><div className="text-lg font-black text-slate-950">{journey.metrics.clicks}</div><div className="text-[10px] font-bold uppercase text-slate-400">Clicks</div></div>
+                      <div className="rounded-lg bg-white p-2"><div className="text-lg font-black text-cyan-900">{journey.business.leads}</div><div className="text-[10px] font-bold uppercase text-slate-400">Leads</div></div>
+                    </div>
+                    {(journey.business.qualified > 0 || journey.business.sales > 0 || journey.business.commissionEur > 0) && (
+                      <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-950">
+                        {journey.business.qualified > 0 && <span>{journey.business.qualified} kvalifiserte · </span>}
+                        {journey.business.sales > 0 && <span>{journey.business.sales} salg · </span>}
+                        {journey.business.commissionEur > 0 && <span>€{journey.business.commissionEur.toLocaleString("nb-NO")} attribuert provisjon</span>}
+                      </div>
+                    )}
+                    <a href={journey.canonicalUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-black text-cyan-800">Åpne canonical side →</a>
+                  </div>
+                );
+              })}
+              {!loading && seoTopicJourneys.length === 0 && <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Ingen aktive SAM SEO topic-missions har ennå en målbar Topic Journey.</div>}
             </div>
           </section>
 
