@@ -170,6 +170,30 @@ begin
   for share of m;
   if v_brand_id is null then return null; end if;
 
+  if v_image is not null and not (
+    exists (
+      select 1
+      from public.property_brand_visibility pbv
+      join public.properties p on p.id=pbv.property_id
+      where pbv.brand_id=p_brand_key and pbv.visible=true
+        and p.show_on_website=true and p.website_visible=true
+        and (
+          v_image=nullif(btrim(p.primary_image),'')
+          or v_image=any(coalesce(p.images,'{}'::text[]))
+          or v_image=any(coalesce(p.gallery,'{}'::text[]))
+        )
+    )
+    or exists (
+      select 1
+      from public.media_assets ma
+      where ma.brand_id=p_brand_key and ma.deleted_at is null
+        and coalesce(ma.signed_url_required,false)=false
+        and v_image in (nullif(btrim(ma.public_url),''),nullif(btrim(ma.thumbnail_url),''))
+    )
+  ) then
+    return jsonb_build_object('ok',false,'error','IMAGE_NOT_APPROVED_FOR_BRAND');
+  end if;
+
   foreach v_platform in array v_platforms loop
     if not exists (
       select 1 from public.social_channels sc
@@ -272,12 +296,17 @@ begin
   if v_brand_id is null then return null; end if;
 
   select coalesce(jsonb_agg(jsonb_build_object(
-    'id',c.id,'platform',c.platform,'displayName',c.display_name
-  ) order by c.platform,c.display_name,c.id),'[]'::jsonb)
+    'platform',c.platform,'displayName',c.display_name
+  ) order by c.platform),'[]'::jsonb)
   into v_channels
-  from public.social_channels c
-  where c.brand_id=p_brand_key and c.is_active=true
-    and c.platform in ('facebook','instagram');
+  from (
+    select platform,max(display_name) as display_name
+    from public.social_channels
+    where brand_id=p_brand_key and is_active=true
+      and platform in ('facebook','instagram')
+    group by platform
+    having count(*)=1
+  ) c;
 
   select coalesce(jsonb_agg(jsonb_build_object(
     'id',p.id,
@@ -305,7 +334,7 @@ begin
      and a.actor_user_id=p_user_id
      and a.actor_email=p_email
     where cp.brand_id=p_brand_key
-      and cp.status in ('draft','failed')
+      and cp.status='draft'
       and cp.content_type in ('image_post','marketing_post','post','social','social_post')
       and length(btrim(coalesce(cp.description,''))) > 0
     order by cp.updated_at desc nulls last,cp.id
@@ -321,7 +350,7 @@ grant execute on function public.workspace_brand_social_publish_snapshot(text,uu
   to service_role;
 
 create or replace function public.workspace_brand_social_publish_prepare(
-  p_brand_key text,p_user_id uuid,p_email text,p_publication_id uuid,p_channel_ids uuid[]
+  p_brand_key text,p_user_id uuid,p_email text,p_publication_id uuid,p_platforms text[]
 ) returns jsonb language plpgsql security invoker set search_path='' as $workspace_social_prepare$
 declare
   v_brand_id uuid;
@@ -335,10 +364,18 @@ declare
 begin
   if p_brand_key is null or p_brand_key !~ '^[a-z0-9][a-z0-9-]{1,62}$'
     or p_user_id is null or p_email is null or p_email<>lower(btrim(p_email))
-    or p_publication_id is null or p_channel_ids is null
-    or cardinality(p_channel_ids) not between 1 and 2
-    or cardinality(p_channel_ids) <> (select count(distinct x) from unnest(p_channel_ids) x)
+    or p_publication_id is null or p_platforms is null
+    or cardinality(p_platforms) not between 1 and 2
+    or cardinality(p_platforms) <> (select count(distinct lower(btrim(x))) from unnest(p_platforms) x)
+    or exists (
+      select 1 from unnest(p_platforms) x
+      where lower(btrim(x)) not in ('facebook','instagram')
+    )
   then return jsonb_build_object('ok',false,'error','INVALID_PUBLISH_REQUEST'); end if;
+
+  p_platforms := array(
+    select lower(btrim(x)) from unnest(p_platforms) x order by lower(btrim(x))
+  );
 
   select b.id into v_brand_id
   from core.brand_workspace_memberships m
@@ -368,7 +405,7 @@ begin
    and a.actor_user_id=p_user_id
    and a.actor_email=p_email
   where cp.id=p_publication_id and cp.brand_id=p_brand_key
-    and cp.status in ('draft','failed')
+    and cp.status='draft'
     and cp.content_type in ('image_post','marketing_post','post','social','social_post')
     and length(btrim(coalesce(cp.description,''))) > 0
   for update of cp;
@@ -382,12 +419,14 @@ begin
          ) order by c.platform,c.display_name,c.id),'[]'::jsonb)
   into v_channel_count,v_platform_count,v_channels
   from public.social_channels c
-  where c.id=any(p_channel_ids)
-    and c.brand_id=p_brand_key and c.is_active=true
-    and c.platform in ('facebook','instagram');
+  where c.brand_id=p_brand_key and c.is_active=true
+    and c.platform=any(p_platforms);
 
-  if v_channel_count<>cardinality(p_channel_ids) or v_platform_count<>v_channel_count then
+  if v_channel_count<cardinality(p_platforms) or v_platform_count<cardinality(p_platforms) then
     return jsonb_build_object('ok',false,'error','CHANNEL_SCOPE_INVALID');
+  end if;
+  if v_channel_count>cardinality(p_platforms) or v_platform_count<>cardinality(p_platforms) then
+    return jsonb_build_object('ok',false,'error','CHANNEL_AMBIGUOUS');
   end if;
 
   select coalesce(array_agg(distinct lower(btrim(platform)) order by lower(btrim(platform))),'{}'::text[])
@@ -395,10 +434,9 @@ begin
   from unnest(coalesce(v_pub.scheduled_platforms,'{}'::text[])) platform
   where lower(btrim(platform)) in ('facebook','instagram');
 
-  if cardinality(v_planned)>0 and exists (
-    select 1
-    from jsonb_array_elements(v_channels) c
-    where not ((c->>'platform')=any(v_planned))
+  if cardinality(v_planned)=0 or exists (
+    select 1 from unnest(p_platforms) requested
+    where not (requested=any(v_planned))
   ) then
     return jsonb_build_object('ok',false,'error','PLATFORM_NOT_PLANNED_FOR_DRAFT');
   end if;
@@ -436,9 +474,9 @@ exception
     return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
 end; $workspace_social_prepare$;
 
-revoke execute on function public.workspace_brand_social_publish_prepare(text,uuid,text,uuid,uuid[])
+revoke execute on function public.workspace_brand_social_publish_prepare(text,uuid,text,uuid,text[])
   from public,anon,authenticated;
-grant execute on function public.workspace_brand_social_publish_prepare(text,uuid,text,uuid,uuid[])
+grant execute on function public.workspace_brand_social_publish_prepare(text,uuid,text,uuid,text[])
   to service_role;
 
 create or replace function public.workspace_brand_social_publish_finalize(
