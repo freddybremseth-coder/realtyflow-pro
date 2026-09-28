@@ -173,6 +173,7 @@ export async function saveLeadPropertyShortlistDraft(input: {
       brand: request.brand,
       propertyId: item.propertyId,
       propertyReference: item.match.property.reference,
+      propertySourceKind: item.match.property.sourceKind,
       propertyTitle: item.match.property.title,
       propertyLocation: item.match.property.location,
       propertyPrice: item.match.property.price,
