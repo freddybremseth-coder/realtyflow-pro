@@ -30,4 +30,3 @@ test("does not change non-social content", () => {
 test("leaves non-owned tenant brands unchanged when no canonical website is registered", () => {
   assert.equal(ensureBrandWebsiteLink({ brandId: "unknown-brand", channel: "facebook", content: "Hei" }), "Hei");
 });
-});
