@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Building2, LockKeyhole, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
+import { BookOpen, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
@@ -10,6 +10,7 @@ import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publ
 import { GrowthCorporatePanel } from "@/components/workspaces/growth-corporate-panel";
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
+import { WorkspaceReelsPanel } from "@/components/workspaces/reels-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; pipeline_status: string | null };
@@ -19,6 +20,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
   { id: "leads", label: "Leads", icon: Users, permitted: ["crm.read", "crm.joint.read", "tasks.joint.read"] },
   { id: "growth", label: "Vekst & innhold", icon: TrendingUp, permitted: [
     "marketing.read", "marketing.draft", "marketing.publish",
+    "reels.read", "reels.create", "reels.publish",
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
@@ -100,7 +102,8 @@ export default function FocusedWorkspacePage() {
   const canEditCrm = canCreateCrm || (isJointCrm && permissions.includes("crm.joint.write"));
   const showProperties = permissions.includes("properties.catalog.read");
   const showMarketing = permissions.some(p => p.startsWith("marketing."));
-  const showGrowth = permissions.some(p => [
+  const showReels = ["zeneco", "pinosoecolife"].includes(brandKey) && permissions.includes("reels.read");
+  const showGrowth = showReels || permissions.some(p => [
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
@@ -189,6 +192,11 @@ export default function FocusedWorkspacePage() {
                     : "E-post, SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."}
                 </p>
               </button>}
+              {showReels && <button onClick={() => setTab("growth")} className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5 text-left hover:border-cyan-500">
+                <Clapperboard size={25} className="text-cyan-400"/>
+                <h3 className="mt-3 text-lg font-semibold">Lag en Reel</h3>
+                <p className="mt-1 text-sm text-slate-400">Velg musikk og boligtype. Re-Master lager videoen, og du forhåndsviser før publisering.</p>
+              </button>}
               {showProperties && <button onClick={() => setTab("properties")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
                 <Building2 size={25} className="text-cyan-400"/>
                 <h3 className="mt-3 text-lg font-semibold">Finn riktig bolig</h3>
@@ -271,6 +279,15 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
             {showGrowth && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
+            {showReels && <details open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+              <summary className="cursor-pointer list-none p-5">
+                <strong className="text-lg text-cyan-100">Reels Studio</strong>
+                <p className="mt-1 text-sm text-slate-400">Lag og forhåndsvis Reels uten å åpne Re-Master-admin.</p>
+              </summary>
+              <div className="border-t border-slate-800 p-5">
+                <WorkspaceReelsPanel brandKey={brandKey} canCreate={permissions.includes("reels.create")} canPublish={permissions.includes("reels.publish")} />
+              </div>
+            </details>}
             {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg">Lag innhold til sosiale medier</strong>
