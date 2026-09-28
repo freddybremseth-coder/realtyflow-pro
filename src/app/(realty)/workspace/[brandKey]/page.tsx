@@ -240,7 +240,7 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && showCrm && tab === "leads" && (
           <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold">Leads · {title}</h2>
+              <h2 className="text-xl font-semibold">Kunder & leads · {title}</h2>
               <button className="inline-flex items-center gap-2 text-sm text-cyan-300" onClick={() => void loadCrm()}><RefreshCw size={15}/> Oppdater</button>
             </div>
             <form className="relative mt-4 flex gap-2" onSubmit={event => { event.preventDefault(); setCrmPage(1); setCrmQuery(search.trim()); }}>
@@ -249,6 +249,37 @@ export default function FocusedWorkspacePage() {
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm" /></label>
               <button type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Søk</button>
             </form>
+            {selectedCustomer && <div className="mt-5 rounded-2xl border border-cyan-800/70 bg-cyan-950/15 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Åpen kunde</p>
+                  <h3 className="mt-1 text-xl font-semibold">{selectedCustomer.name || "Uten navn"}</h3>
+                  <p className="mt-1 text-sm text-slate-300">
+                    {selectedCustomer.email || "Ingen e-post"}{selectedCustomer.phone ? ` · ${selectedCustomer.phone}` : ""}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Status: <span className="text-cyan-200">{selectedCustomer.pipeline_status || "Uten status"}</span>
+                    {selectedCustomer.source ? ` · Kilde: ${selectedCustomer.source}` : ""}
+                  </p>
+                </div>
+                <button type="button" onClick={() => { setSelectedCustomerId(""); resetContactForm(); }}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300">Lukk kundekort</button>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {canEditCrm && <button type="button" className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200" onClick={() => {
+                  setEditingId(selectedCustomer.id); setFormName(selectedCustomer.name || "");
+                  setFormEmail(selectedCustomer.email || ""); setFormPhone(selectedCustomer.phone || "");
+                  setContactError(""); setContactNotice("");
+                }}>Rediger kontakt</button>}
+                {showProperties && <button type="button" onClick={() => setTab("properties")}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Finn bolig</button>}
+                {permissions.includes("email.read") && <button type="button" onClick={() => setTab("growth")}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-sm">E-post / Reach</button>}
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                RealtyFlow holder kundearbeidet innenfor {title}. Økonomi, gamle private CRM-notater og andre merkevarer er ikke tilgjengelige her.
+              </p>
+            </div>}
             {canEditCrm && (canCreateCrm || editingId) && <form className="mt-5 space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
               <h3 className="font-semibold">{editingId ? "Rediger kunde" : "Legg til kunde"}</h3>
               <p className="text-xs text-slate-400">Kun navn, e-post og telefon kan endres her. Merkevare og økonomiske felt låses av serveren.</p>
@@ -266,14 +297,19 @@ export default function FocusedWorkspacePage() {
             {crmBusy && <p className="mt-4 text-sm text-slate-400">Laster CRM…</p>}
             {crmError && <p role="alert" className="mt-4 text-sm text-amber-300">{crmError}</p>}
             {!crmBusy && !crmError && <div className="mt-4 space-y-2">
-              {filtered.map(contact => <article key={contact.id} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-                <h3 className="font-medium">{contact.name || "Uten navn"}</h3>
-                <p className="mt-1 text-sm text-slate-400">{contact.email || "Ingen e-post"}{contact.phone ? ` · ${contact.phone}` : ""}</p>
-                <p className="mt-1 text-xs text-cyan-300">{contact.pipeline_status || "Uten status"}</p>
-                {canEditCrm && <button type="button" className="mt-2 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-cyan-300" onClick={() => {
-                  setEditingId(contact.id); setFormName(contact.name || ""); setFormEmail(contact.email || "");
-                  setFormPhone(contact.phone || ""); setContactError(""); setContactNotice("");
-                }}>Rediger kontaktopplysninger</button>}
+              {filtered.map(contact => <article key={contact.id}
+                className={`rounded-xl border p-3 ${selectedCustomerId === contact.id ? "border-cyan-600 bg-cyan-950/20" : "border-slate-800 bg-slate-950/50"}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-medium">{contact.name || "Uten navn"}</h3>
+                    <p className="mt-1 text-sm text-slate-400">{contact.email || "Ingen e-post"}{contact.phone ? ` · ${contact.phone}` : ""}</p>
+                    <p className="mt-1 text-xs text-cyan-300">{contact.pipeline_status || "Uten status"}</p>
+                  </div>
+                  <button type="button" onClick={() => { setSelectedCustomerId(contact.id); resetContactForm(); }}
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-cyan-200">
+                    {selectedCustomerId === contact.id ? "Kunde åpnet" : "Åpne kundearbeid"}
+                  </button>
+                </div>
               </article>)}
               {filtered.length === 0 && <p className="p-4 text-sm text-slate-400">Ingen kunder funnet på denne siden.</p>}
             </div>}
@@ -287,8 +323,13 @@ export default function FocusedWorkspacePage() {
             <p className="mt-4 text-xs text-slate-500">Søk og visning er avgrenset til merkevaren. Opprettelse og redigering er begrenset til kontaktopplysninger; status, notater, avtaler og økonomi er ikke åpnet for medarbeidere.</p>
           </section>
         )}
-        {!loading && !error && showJointTasks && tab === "leads" &&
-          <ZenJointTasks contacts={contacts} canWrite={canWriteJointTasks} />}
+        {!loading && !error && showJointTasks && tab === "leads" && selectedCustomer &&
+          <ZenJointTasks contacts={[selectedCustomer]} canWrite={canWriteJointTasks}
+            selectedContactId={selectedCustomer.id} hideContactSelector />}
+        {!loading && !error && showJointTasks && tab === "leads" && !selectedCustomer &&
+          <p className="rounded-xl border border-dashed border-slate-800 p-4 text-sm text-slate-500">
+            Åpne en kunde over for å se og opprette felles oppgaver.
+          </p>}
         {!loading && !error && showProperties && tab === "properties" &&
           <WorkspacePropertyCatalogue brandKey={brandKey} />}
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
