@@ -63,7 +63,7 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "tasks.joint.write": { title: "Zen · opprette og fullføre felles oppgaver", description: "Opprette egne, nye oppgaver og merke dem fullført. Ingen kundemeldinger, gamle oppgaver eller globale oppfølgingsrutiner." },
   "marketing.read": { title: "Markedsføring – oversikt", description: "Se aktive kanaler, nylig innhold og resultater kun for valgt merkevare." },
   "marketing.draft": { title: "Markedsføring – lage innholdsutkast", description: "Lagre brand-avgrensede tekstutkast i Content Hub. Gir ikke publiseringsrettighet." },
-  "marketing.publish": { title: "Publisere i sosiale medier", description: "Publisere brand-avgrensede SoMe-utkast til eksakt aktive Facebook-, Instagram- og LinkedIn-kanaler med audit og live tilgangskontroll." },
+  "marketing.publish": { title: "Publisere i sosiale medier", description: "Publisere egne workspace-utkast til eksakt aktive Facebook- og Instagram-kanaler med audit og live tilgangskontroll." },
   "corporate.read": { title: "Corporate Homes – se", description: "Se Zen Eco Homes bedrifts- og partnerprospekter uten historisk CRM eller personberikelse." },
   "corporate.plan": { title: "Corporate Homes – planlegge", description: "Lage interne research- og neste-steg-oppgaver. Ingen automatisk kontakt eller statusendring." },
   "visibility.read": { title: "SEO · GEO · AEO – se", description: "Se brand-avgrensede søke-/AI-henvisninger og SEO-oppgaver." },
