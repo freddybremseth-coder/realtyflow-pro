@@ -93,7 +93,6 @@ type Overview = {
       closedAt?: string | null;
       rootCauseCategory: string;
       actionType: string;
-      effectTrend: string;
       updatedAt?: string | null;
     } | null;
     review?: {
@@ -660,9 +659,13 @@ export default function CorporateHomesGrowthPage() {
                         </div>
                       </div>
                       <div>
-                        <div className="font-black uppercase tracking-wide text-slate-500">Målt effekt</div>
+                        <div className="font-black uppercase tracking-wide text-slate-500">Tiltak / rotårsak</div>
                         <div className="mt-1 font-bold text-slate-900">
-                          {data.growthReview.improvement.effectTrend.replaceAll("_", " ")}
+                          {data.growthReview.improvement.actionType !== "UNSET"
+                            ? data.growthReview.improvement.actionType.replaceAll("_", " ")
+                            : data.growthReview.improvement.rootCauseCategory !== "UNKNOWN"
+                              ? data.growthReview.improvement.rootCauseCategory.replaceAll("_", " ")
+                              : "Ikke dokumentert ennå"}
                         </div>
                       </div>
                     </div>
