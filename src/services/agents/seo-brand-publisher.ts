@@ -253,12 +253,18 @@ export async function runPortfolioPublishers(db: SupabaseClient, snapshots: read
 export async function requestBrandRollback(db: SupabaseClient, brandId: string, revision: string) {
   const site=publisherForBrand(brandId);
   if (!site || !/^[a-f0-9]{40}$/.test(revision)) throw new Error("Unknown brand or revision");
-  const id=brandPublicationId(brandId);
-  const row=await db.from("automation_logs").select("details").eq("id",id).eq("action",ACTION).maybeSingle();
-  const job=row.data?.details as BrandPublicationJob;
-  if (row.error || !job || !validJob(job,site) || job.phase!=="done" || job.mergeSha!==revision) return false;
-  const saved=await db.from("automation_logs").update({status:"partial",details:{...job,phase:"rollback_prepare",
-    originalMergeSha:revision,rollbackRequestedAt:new Date().toISOString()}}).eq("id",id).eq("action",ACTION)
+  const ids = [brandPublicationId(brandId,":v2"), brandPublicationId(brandId)];
+  const rows = await db.from("automation_logs").select("id,details").eq("action",ACTION).in("id",ids);
+  if (rows.error) throw new Error("Rollback state unavailable");
+  const match = (rows.data || []).map(row => {
+    const job = row.details as BrandPublicationJob;
+    const version: "v1" | "v2" = row.id === brandPublicationId(brandId,":v2") ? "v2" : "v1";
+    const target = version === "v2" ? secondVariantForBrand(site.brandId) : site;
+    return { id: row.id as string, job, version, target, valid: validJob(job,site,version,target) };
+  }).find(item => item.valid && item.job.phase === "done" && item.job.mergeSha === revision);
+  if (!match) return false;
+  const saved=await db.from("automation_logs").update({status:"partial",details:{...match.job,phase:"rollback_prepare",
+    originalMergeSha:revision,rollbackRequestedAt:new Date().toISOString()}}).eq("id",match.id).eq("action",ACTION)
     .contains("details",{phase:"done",mergeSha:revision}).select("id");
   if (saved.error) throw new Error("Rollback request could not be stored");
   return saved.data?.length===1;
@@ -268,25 +274,32 @@ export async function requestBrandRollback(db: SupabaseClient, brandId: string, 
  * Read durable rollback intent as well as the last daily report, so a reload
  * cannot present a queued rollback as an active successful experiment. */
 export async function portfolioPublicationStatuses(db: SupabaseClient, last: unknown): Promise<BrandPublicationStatus[]> {
-  const rows = await db.from("automation_logs").select("id,details").eq("action",ACTION)
-    .in("id",SEO_BRAND_PUBLISHERS.map(site=>brandPublicationId(site.brandId)));
+  const ids = SEO_BRAND_PUBLISHERS.flatMap(site => [
+    brandPublicationId(site.brandId),
+    brandPublicationId(site.brandId,":v2"),
+  ]);
+  const rows = await db.from("automation_logs").select("id,details").eq("action",ACTION).in("id",ids);
   if (rows.error) throw new Error("Publication status unavailable");
   return SEO_BRAND_PUBLISHERS.map(site => {
-    const job = rows.data?.find(row=>row.id===brandPublicationId(site.brandId))?.details as BrandPublicationJob | undefined;
+    const v2 = rows.data?.find(row=>row.id===brandPublicationId(site.brandId,":v2"))?.details as BrandPublicationJob | undefined;
+    const v1 = rows.data?.find(row=>row.id===brandPublicationId(site.brandId))?.details as BrandPublicationJob | undefined;
+    const v2Target = secondVariantForBrand(site.brandId);
+    const job = v2 && validJob(v2,site,"v2",v2Target) ? v2 : v1 && validJob(v1,site) ? v1 : undefined;
+    const version = job === v2 ? "v2" : "v1";
     const saved = Array.isArray(last) ? last.find(item=>item?.brandId===site.brandId) as BrandPublicationStatus | undefined : undefined;
     const common = {brandId:site.brandId,page:"/" as const,published:0};
-    if (job && validJob(job,site)) {
-      if (job.phase === "rolled_back") return {...common,status:"rollback",reason:"Tidligere metadata er gjenopprettet og bekreftet offentlig."};
+    if (job) {
+      if (job.phase === "rolled_back") return {...common,status:"rollback",reason:`${version.toUpperCase()} er tilbakeført og bekreftet offentlig.`};
       if (job.phase.startsWith("rollback_") && saved?.status === "blocked") return saved;
-      if (job.phase.startsWith("rollback_")) return {...common,status:"pending",reason:"Tilbakeføring er satt i kø. Sam følger den opp i den daglige syklusen."};
-      if (job.phase === "done") return {...common,status:"verified",reason:"Publisering bekreftet offentlig. Sam følger effektmålingen videre.",rollbackAvailable:true,revision:job.mergeSha};
+      if (job.phase.startsWith("rollback_")) return {...common,status:"pending",reason:`${version.toUpperCase()}-tilbakeføring er satt i kø. Sam følger den opp automatisk.`};
+      if (job.phase === "done") return {...common,status:"verified",reason:`${version.toUpperCase()} er publisert og verifisert. Sam følger effektmålingen videre.`,rollbackAvailable:true,revision:job.mergeSha};
       if (saved?.status === "blocked") return saved;
       return {...common,status:"pending",reason:job.phase === "prepare"
-        ? "Metadataforsøket er registrert. Sam følger opp endringsforslaget automatisk."
-        : job.phase === "checks" ? "Endringsforslaget avventer ferske søketall og grønne publiseringskontroller."
-        : "Endringen er slått sammen. Sam avventer bekreftet offentlig resultat.",
+        ? `${version.toUpperCase()}-eksperimentet er registrert. Sam følger opp endringsforslaget automatisk.`
+        : job.phase === "checks" ? `${version.toUpperCase()} avventer ferske søketall og grønne publiseringskontroller.`
+        : `${version.toUpperCase()} er slått sammen. Sam avventer bekreftet offentlig resultat.`,
         ...(job.pullNumber ? {pullUrl:"https://github.com/"+site.repository+"/pull/"+job.pullNumber} : {})};
     }
-    return saved || {...common,status:"monitor",reason:"Konfigurert for automatisk kontroll. Publiseringsadgang er ennå ikke målt i en daglig syklus."};
+    return saved || {...common,status:"monitor",reason:"Konfigurert for automatiske, versjonerte metadataeksperimenter. Publiseringsadgang er ennå ikke målt i en daglig syklus."};
   });
 }
