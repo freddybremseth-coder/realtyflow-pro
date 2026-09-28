@@ -15,8 +15,18 @@ const endpoint = "/api/workspaces/zeneco/joint-tasks";
  * Separate NEW-only task ledger. It never calls the global /api/revenue/execution,
  * /api/internal-alerts or /api/customers routes, and cannot import old work_items.
  */
-export function ZenJointTasks({ contacts, canWrite }: { contacts: Contact[]; canWrite: boolean }) {
-  const [contactId, setContactId] = useState("");
+export function ZenJointTasks({
+  contacts,
+  canWrite,
+  selectedContactId,
+  hideContactSelector = false,
+}: {
+  contacts: Contact[];
+  canWrite: boolean;
+  selectedContactId?: string;
+  hideContactSelector?: boolean;
+}) {
+  const [contactId, setContactId] = useState(selectedContactId || "");
   const [tasks, setTasks] = useState<JointTask[]>([]);
   const [title, setTitle] = useState("");
   const [dueOn, setDueOn] = useState("");
@@ -27,6 +37,16 @@ export function ZenJointTasks({ contacts, canWrite }: { contacts: Contact[]; can
   const [revision, setRevision] = useState(0);
   const selected = contacts.find(contact => contact.id === contactId);
   const activeId = selected?.id || "";
+
+  useEffect(() => {
+    if (selectedContactId === undefined) return;
+    setContactId(selectedContactId);
+    setTasks([]);
+    setNotice("");
+    setError("");
+    setTitle("");
+    setDueOn("");
+  }, [selectedContactId]);
 
   useEffect(() => {
     if (!activeId) { setTasks([]); setLoading(false); return; }
@@ -90,7 +110,7 @@ export function ZenJointTasks({ contacts, canWrite }: { contacts: Contact[]; can
         Oppgaver sender ingen kundemeldinger automatisk.
       </p>
     </header>
-    <label className="block space-y-2 text-sm" htmlFor="joint-task-contact">
+    {!hideContactSelector && <label className="block space-y-2 text-sm" htmlFor="joint-task-contact">
       <span>Velg godkjent felleskunde</span>
       <select id="joint-task-contact" value={activeId} onChange={event => {
         setContactId(event.target.value); setTasks([]); setNotice(""); setTitle("");
@@ -98,7 +118,7 @@ export function ZenJointTasks({ contacts, canWrite }: { contacts: Contact[]; can
         <option value="">Velg kunde…</option>
         {contacts.map(contact => <option key={contact.id} value={contact.id}>{contact.name || contact.id}</option>)}
       </select>
-    </label>
+    </label>}
     {!contacts.length && <p className="text-sm text-amber-300">Ingen godkjente felleskunder på denne CRM-siden. Åpne eller søk etter en kunde først.</p>}
     {activeId && canWrite && <form className="grid gap-3 sm:grid-cols-[1fr_auto]" onSubmit={event => {
       event.preventDefault(); void createTask();
