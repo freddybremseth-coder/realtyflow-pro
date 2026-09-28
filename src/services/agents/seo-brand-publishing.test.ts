@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SEO_BRAND_PUBLISHERS, brandPublishingEvidence, patchBrandHtml, readBrandHtml, patchNextHomepage, readNextLayoutMetadata } from "./seo-brand-publishing";
+import { SEO_BRAND_PUBLISHERS, brandPublishingEvidence, patchBrandHtml, readBrandHtml, patchNextHomepage, readNextHomepageMetadata, readNextLayoutMetadata, secondVariantForBrand } from "./seo-brand-publishing";
 import type { BrandPublisher } from "./seo-brand-publishing";
 import type { GSCBrandSnapshot } from "./seo-search-console";
 const now=new Date("2026-09-27T12:00:00Z");
@@ -53,12 +53,26 @@ test("HTML adapter changes only title and description, escaping copy and preserv
   assert.equal(readBrandHtml(html.replace('<link','<meta name="robots" content="noindex"><link'))?.noindex,true);
   assert.equal(readBrandHtml('<body><title>spoof</title></body>'),null);
 });
-test("Next adapter is reversible and refuses pre-existing or changed metadata",()=>{
+test("Next adapter is reversible, chainable and refuses pre-existing or changed metadata",()=>{
   const original='import Link from "next/link";\nexport default function Home() { return null; }';
   const patched=patchNextHomepage(original,before);
+  assert.deepEqual(readNextHomepageMetadata(patched),before);
+  const second=secondVariantForBrand("pinosoecolife");
+  const repatched=patchNextHomepage(patched,second,before);
+  assert.deepEqual(readNextHomepageMetadata(repatched),second);
+  assert.equal(patchNextHomepage(repatched,null,second),original);
   assert.equal(patchNextHomepage(patched,null,before),original);
   assert.throws(()=>patchNextHomepage(patched,before),/revision/);
   assert.throws(()=>patchNextHomepage(patched,null,{...before,title:"changed"}),/revision/);
   assert.throws(()=>patchNextHomepage('export async function generateMetadata() {}',before),/dedicated/);
   assert.deepEqual(readNextLayoutMetadata('export const metadata: Metadata = {\n title: { default: "Old title" },\n description: "Old description",\n};'),{title:"Old title",description:"Old description"});
+});
+
+
+test("second metadata variants stay within search-snippet safety bounds",()=>{
+  for(const configured of SEO_BRAND_PUBLISHERS){
+    const second=secondVariantForBrand(configured.brandId);
+    assert.ok(second.title.length<=65);
+    assert.ok(second.description.length<=160);
+  }
 });
