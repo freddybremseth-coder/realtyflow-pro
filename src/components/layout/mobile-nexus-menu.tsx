@@ -86,7 +86,7 @@ export function MobileNexusMenu() {
           <div className="grid grid-cols-2 gap-2">
             {CORE.map(({ href, label, Icon }) => {
               const active = pathname === href || (href !== "/nexus-os" && pathname.startsWith(`${href}/`));
-              return <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16} />{label}</Link>;
+              return href === "/nexus-os/communications" ? <a key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16} />{label}</a> : <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16} />{label}</Link>;
             })}
           </div>
         </div>
@@ -104,7 +104,7 @@ export function MobileNexusMenu() {
             <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
               {section.items.map((item, index) => {
                 const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
-                return <Link key={item.href} href={item.href} className={`block px-4 py-3 text-sm font-medium ${index ? "border-t border-slate-700" : ""} ${active ? "bg-cyan-300/15 font-bold text-cyan-100" : "text-slate-100 hover:bg-slate-800"}`}>{item.label}</Link>;
+                return item.href === "/nexus-os/communications" ? <a key={item.href} href={item.href} className={`block px-4 py-3 text-sm font-medium ${index ? "border-t border-slate-700" : ""} ${active ? "bg-cyan-300/15 font-bold text-cyan-100" : "text-slate-100 hover:bg-slate-800"}`}>{item.label}</a> : <Link key={item.href} href={item.href} className={`block px-4 py-3 text-sm font-medium ${index ? "border-t border-slate-700" : ""} ${active ? "bg-cyan-300/15 font-bold text-cyan-100" : "text-slate-100 hover:bg-slate-800"}`}>{item.label}</Link>;
               })}
             </div>
           </section>)}
