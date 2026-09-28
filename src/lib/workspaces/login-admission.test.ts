@@ -95,6 +95,18 @@ test("marketing-only read/draft membership admits the scoped workspace shell", a
   assert.deepEqual(result, { ok: true, activeBrands: ["pinosoecolife"] });
 });
 
+test("social publish membership admits only with complete marketing read draft publish scope", async () => {
+  rpcData = [{
+    brand: { id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
+    grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["marketing.read", "marketing.draft", "marketing.publish"],
+    },
+  }];
+  const result = await admitWorkspaceMemberLogin("staff@example.test", userId);
+  assert.deepEqual(result, { ok: true, activeBrands: ["pinosoecolife"] });
+});
+
 test("content-only membership admits when read, edit and publish dependencies are complete", async () => {
   rpcData = [{
     brand: { id: "brand-id", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" },
@@ -166,6 +178,10 @@ test("malformed, inactive, invalid-brand and RPC-error grants fail closed", asyn
     [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
       brand_id: "brand-id", user_id: userId, email: "staff@example.test",
       status: "active", permissions: ["marketing.read", "marketing.publish"],
+    } }],
+    [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
+      brand_id: "brand-id", user_id: userId, email: "staff@example.test",
+      status: "active", permissions: ["marketing.publish"],
     } }],
     [{ brand: { id: "brand-id", brand_key: "pinosoecolife" }, grant: {
       brand_id: "brand-id", user_id: userId, email: "staff@example.test",
