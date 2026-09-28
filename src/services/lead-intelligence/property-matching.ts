@@ -256,6 +256,74 @@ function inferFutureBuildingRisk(record: RawProperty): boolean | string | null {
   return null;
 }
 
+function inferGolfCourseSetting(record: RawProperty): boolean | null {
+  const explicit = firstValue(record, [
+    "golf_course_setting",
+    "on_golf_course",
+    "golf_resort",
+    "golf_course",
+  ]);
+  if (explicit) {
+    const booleanValue = asBoolean(explicit.value);
+    if (booleanValue !== null) return booleanValue;
+    const explicitText = fold(explicit.value);
+    if (/\b(on|inside|within|in)\b.*\bgolf\b/.test(explicitText)) return true;
+  }
+
+  const locationText = fold([
+    record.location,
+    record.town,
+    record.municipality,
+    record.area,
+    record.title,
+    record.title_no,
+    record.title_en,
+  ].filter(Boolean).join(" "));
+  if (/\bgolf\b/.test(locationText)) return true;
+
+  const text = fold(collectSearchText(record));
+  if (
+    /\b(ligger|beliggende|located|situated|set|built)\s+(pa|på|on|within|inside|in)\b[^.]{0,90}\bgolf(bane| course| resort)?\b/.test(text)
+    || /\b(en|dentro de)\b[^.]{0,70}\b(campo de golf|golf resort)\b/.test(text)
+    || /\bon the golf course\b|\bwithin the golf resort\b|\binside the golf resort\b/.test(text)
+  ) {
+    return true;
+  }
+
+  // A listing that explicitly states a meaningful distance to a golf course is
+  // evidence that the home is nearby, not located on the course itself.
+  const distanceMatch = text.match(/\bgolf(?:bane| course)?\b[^\d]{0,25}(\d+(?:[.,]\d+)?)\s*km\b/);
+  if (distanceMatch && Number(String(distanceMatch[1]).replace(",", ".")) >= 1) return false;
+
+  return null;
+}
+
+function inferShortTermRentalArea(record: RawProperty): boolean | null {
+  const explicit = firstValue(record, [
+    "short_term_rental_area",
+    "airbnb_area",
+    "holiday_rental_area",
+    "tourist_rental_area",
+  ]);
+  if (explicit) {
+    const booleanValue = asBoolean(explicit.value);
+    if (booleanValue !== null) return booleanValue;
+  }
+
+  const text = fold(collectSearchText(record));
+  if (
+    /\bairbnb\b/.test(text)
+    || /\bshort[- ]term rental (area|resort|complex)\b/.test(text)
+    || /\bholiday rental (area|resort|complex)\b/.test(text)
+    || /\bvacation rental (area|resort|complex)\b/.test(text)
+    || /\bkorttidsutleie(?:omrade|område)?\b/.test(text)
+    || /\bferieboligomrade|ferieboligområde|turistkompleks\b/.test(text)
+  ) {
+    return true;
+  }
+  return null;
+}
+
 function inferNewBuildOrResale(record: RawProperty): string | null {
   const explicit = firstValue(record, ["new_build_or_resale", "build_type", "sale_type"]);
   if (explicit) return asText(explicit.value);
@@ -365,6 +433,26 @@ export function normalizePropertyForLeadMatching(
 
   const newBuild = inferNewBuildOrResale(property);
   addFact(facts, "new_build_or_resale", newBuild, newBuild ? "inferred" : null, source, newBuild ? "inferred" : "unknown");
+
+  const golfCourseSetting = inferGolfCourseSetting(property);
+  addFact(
+    facts,
+    "golf_course_setting",
+    golfCourseSetting,
+    golfCourseSetting === null ? null : "inferred",
+    source,
+    golfCourseSetting === null ? "unknown" : "inferred",
+  );
+
+  const shortTermRentalArea = inferShortTermRentalArea(property);
+  addFact(
+    facts,
+    "short_term_rental_area",
+    shortTermRentalArea,
+    shortTermRentalArea === null ? null : "inferred",
+    source,
+    shortTermRentalArea === null ? "unknown" : "inferred",
+  );
 
   const viewQuality = inferViewQuality(property);
   addFact(facts, "view_quality", viewQuality, viewQuality ? "inferred" : null, source, viewQuality ? "inferred" : "unknown");

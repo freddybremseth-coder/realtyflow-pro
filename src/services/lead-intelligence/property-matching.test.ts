@@ -456,3 +456,78 @@ test("matching is deterministic and ranking is stable", () => {
     "prop-c",
   ]);
 });
+
+test("golf-course exclusion rejects a property located at Vistabella Golf", () => {
+  const martusProfile = {
+    ...profile,
+    budget: { amount: 450000, currency: "EUR" as const, includesCosts: null, approximate: true, hardLimit: null },
+    locations: { preferred: [], excluded: [], flexible: true },
+    hardRequirements: [
+      { key: "bedrooms" as const, operator: "gte" as const, value: 3, sourceText: "minimum 3" },
+    ],
+    preferences: [],
+    exclusions: [
+      {
+        key: "golf_course_setting" as const,
+        operator: "eq" as const,
+        value: true,
+        severity: "reject" as const,
+        sourceText: "ikke en golf bane",
+      },
+    ],
+  };
+  const property = normalizePropertyForLeadMatching({
+    id: "sp0783",
+    property_type: "townhouse",
+    price: 309900,
+    bedrooms: 3,
+    location: "Orihuela, Vistabella Golf",
+    title: "NYBYGG AV BUNGALOW-LEILIGHETER I VISTABELLA",
+  });
+  const match = matchPropertyToLeadProfile(martusProfile, property);
+  assert.equal(property.facts.golf_course_setting.value, true);
+  assert.equal(match.eligibility, "rejected");
+  assert.equal(match.exclusionResults.some((row) => row.key === "golf_course_setting" && row.outcome === "fail"), true);
+});
+
+test("golf-course exclusion detects a listing explicitly located on Bonalba golf course", () => {
+  const martusProfile = {
+    ...profile,
+    budget: { amount: 450000, currency: "EUR" as const, includesCosts: null, approximate: true, hardLimit: null },
+    locations: { preferred: [], excluded: [], flexible: true },
+    hardRequirements: [],
+    preferences: [],
+    exclusions: [
+      {
+        key: "golf_course_setting" as const,
+        operator: "eq" as const,
+        value: true,
+        severity: "reject" as const,
+        sourceText: "ikke en golf bane",
+      },
+    ],
+  };
+  const property = normalizePropertyForLeadMatching({
+    id: "n7815",
+    property_type: "apartment",
+    price: 310500,
+    bedrooms: 3,
+    location: "Mutxamel, Bonalba-cotoveta",
+    description_no: "Boligprosjektet ligger på Bonalba golfbane.",
+  });
+  const match = matchPropertyToLeadProfile(martusProfile, property);
+  assert.equal(property.facts.golf_course_setting.value, true);
+  assert.equal(match.eligibility, "rejected");
+});
+
+test("a golf course listed seven kilometres away is not treated as living on a golf course", () => {
+  const property = normalizePropertyForLeadMatching({
+    id: "sp1649",
+    property_type: "apartment",
+    price: 300500,
+    bedrooms: 3,
+    location: "Alicante, San Agustín",
+    description_no: "Alicante golfbane – 7 km.",
+  });
+  assert.equal(property.facts.golf_course_setting.value, false);
+});

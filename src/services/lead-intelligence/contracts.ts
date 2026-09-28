@@ -72,6 +72,8 @@ export const CANONICAL_CRITERION_KEYS = [
   "bathrooms",
   "property_type",
   "location",
+  "golf_course_setting",
+  "short_term_rental_area",
   "total_budget",
   "purchase_price",
   "estimated_total_cost",
@@ -155,6 +157,14 @@ const criterionKeyAliases: Record<string, CanonicalCriterionKey> = {
   building_risk: "future_building_risk",
   future_construction_risk: "future_building_risk",
   privacy_risk: "view_privacy_loss_risk",
+  golf_course: "golf_course_setting",
+  golf_resort: "golf_course_setting",
+  on_golf_course: "golf_course_setting",
+  golf_setting: "golf_course_setting",
+  airbnb_area: "short_term_rental_area",
+  short_term_rental: "short_term_rental_area",
+  holiday_rental_area: "short_term_rental_area",
+  tourist_rental_area: "short_term_rental_area",
 };
 
 const propertyTypeAliases: Record<string, CanonicalPropertyType> = {
