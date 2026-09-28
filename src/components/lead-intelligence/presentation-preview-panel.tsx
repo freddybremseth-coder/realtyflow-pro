@@ -336,6 +336,7 @@ export function InternalPresentationPreview({
                     </div>
                     <PropertyNavigationLinks
                       propertyId={property.propertyId}
+                      sourceKind={property.sourceKind}
                       publicUrl={property.publicUrl}
                       returnTo={leadIntelligenceMatchReturnUrl(returnTo, property.propertyId)}
                     />
