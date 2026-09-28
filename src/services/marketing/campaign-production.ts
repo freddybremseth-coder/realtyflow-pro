@@ -173,6 +173,8 @@ export interface CreateCampaignDraftInput {
   service?: string;
   market?: string;
   language?: string;
+  /** Stable cross-channel learning key, e.g. a SAM SEO topic mission. */
+  topic?: string;
   publishingAccountId?: string;
   publishingCapacityPerWeek?: number;
   legacyPublicationId?: string;
@@ -352,7 +354,7 @@ export async function createCampaignDraft(
   const baseGenome: ContentGenome = {
     brandId: input.brandId, channel: input.channel ?? "instagram", format: routedFormat,
     hookType: (fav.hookType as any) ?? "price_first", ctaType: (fav.ctaType as any) ?? "book_viewing",
-    goal: mapGoal(input.goal.kind), area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_"),
+    goal: mapGoal(input.goal.kind), topic: input.topic, area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_"),
   };
   const campaign: CampaignPlan = { campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit", goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea };
   const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [], formatOverride: routedFormat });
