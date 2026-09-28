@@ -16,7 +16,6 @@ const LABEL_OVERRIDES: Record<string,string> = {
   "/nexus-os/autonomy":"Autopilot-regler", "/connections":"Tilkoblinger", "/nexus-os":"Nexus AI & autopilot",
 };
 const WORKSPACES_NAV_ITEM: NavigationItem = { label: "Arbeidsområder", href: "/workspaces", icon: "PanelsTopLeft" };
-const WORKSPACE_ACCESS_NAV_ITEM: NavigationItem = { label: "Brukere og arbeidsområder", href: "/workspace-access", icon: "ShieldCheck" };
 const NEXUS_TODAY_NAV_ITEM: NavigationItem = { label: "I dag", href: "/nexus-os/today", icon: "Sparkles" };
 const PERSONAL_INTELLIGENCE_NAV_ITEM: NavigationItem = { label: "AI-rådgiver", href: "/personal-intelligence", icon: "BrainCircuit" };
 const PROPERTY_360_NAV_ITEM: NavigationItem = { label: "Property 360", href: "/inventory/property-360", icon: "Target" };
@@ -32,7 +31,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
   { id:"care", label:"Care", icon:"KeyRound", hrefs:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/service-revenue"] },
   { id:"revenue", label:"Drift, økonomi & ledelse", icon:"Handshake", hrefs:["/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/team-workload","/revenue-data-health"] },
   { id:"business", label:"Virksomheter", icon:"Briefcase", hrefs:["/business-hub","/mondeo","/dona-anna","/platform","/demosites","/saas","/revenue-engine","/nexus-os/account-launch"] },
-  { id:"admin", label:"System & autopilot", icon:"Settings", hrefs:["/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/automation","/agents","/data-health","/workspace-users","/access-control","/workspace-access","/audit-log"] },
+  { id:"admin", label:"System & autopilot", icon:"Settings", hrefs:["/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/automation","/agents","/data-health","/workspace-users","/access-control","/audit-log"] },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
@@ -46,7 +45,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
   WORKSPACE_MEMBER:[],
 };
 
-function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM,WORKSPACE_ACCESS_NAV_ITEM]; }
+function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM]; }
 function canSeeItem(role:AccessRole,permissions:string[],href:string){ if(role==="OWNER"&&OWNER_HIDDEN_HREFS.has(href)) return false; if(REVENUE_READ_PAGES.has(href)) return permissions.includes("revenue.read"); return canSeeNavHref(role,href); }
 export function buildVisibleNavigation(role:AccessRole,permissions:string[]):NavigationSection[]{ const itemByHref=new Map(sourceItems().map(item=>[item.href,{...item,label:LABEL_OVERRIDES[item.href]||item.label}])); return GROUPS.map(group=>({id:group.id,label:group.label,icon:group.icon,items:group.hrefs.map(href=>itemByHref.get(href)).filter((item):item is NavigationItem=>Boolean(item)).filter(item=>canSeeItem(role,permissions,item.href))})).filter(section=>section.items.length>0); }
 export function isNavigationPathActive(pathname:string,href:string){ if(href==="/") return pathname==="/"; return pathname===href||pathname.startsWith(`${href}/`); }
