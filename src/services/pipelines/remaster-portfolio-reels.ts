@@ -140,13 +140,15 @@ export async function renderPortfolioReel(input:ReelRenderInput):Promise<ReelRen
     args.push("-stream_loop","-1","-ss","10","-i",audio);
     const filters:string[]=[];
     for(let i=0;i<files.length;i++)filters.push(
-      `[${i}:v]scale=1080:1540:force_original_aspect_ratio=decrease,pad=1080:1540:(ow-iw)/2:(oh-ih)/2:color=0x0a1724,fps=24,trim=duration=${segment.toFixed(3)},setsar=1,setpts=PTS-STARTPTS[v${i}]`
+      `[${i}:v]scale=1080:1200:force_original_aspect_ratio=decrease,pad=1080:1200:(ow-iw)/2:(oh-ih)/2:color=0x0a1724,fps=24,trim=duration=${segment.toFixed(3)},setsar=1,setpts=PTS-STARTPTS[v${i}]`
     );
     filters.push(files.map((_,i)=>"[v"+i+"]").join("")+`concat=n=${files.length}:v=1:a=0[gallery]`);
     const posterIndex=files.length;
     const audioIndex=files.length+1;
     filters.push(`[${posterIndex}:v]format=rgb24[poster]`);
-    filters.push(`[poster][gallery]overlay=0:190:shortest=1,format=yuv420p[vout]`);
+    // Reserve y=1520..1919 as a clean, dark platform-UI safe area. Facebook and
+    // Instagram place captions/actions here, so generated branding must never compete with it.
+    filters.push(`[poster][gallery]overlay=0:320:shortest=1,format=yuv420p[vout]`);
     args.push("-filter_complex",filters.join(";"),"-map","[vout]","-map",`${audioIndex}:a:0`,
       "-t",String(input.durationSeconds),"-r","24","-c:v","libx264","-preset","ultrafast","-crf","27",
       "-pix_fmt","yuv420p","-c:a","aac","-ar","48000","-b:a","128k","-movflags","+faststart","-y",out);
