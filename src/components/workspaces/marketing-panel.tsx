@@ -163,7 +163,7 @@ export function WorkspaceMarketingPanel({
     {canDraft && <form onSubmit={event => { event.preventDefault(); void createDraft(); }}
       className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><FilePlus2 size={19}/> Nytt innholdsutkast</h2>
-      <p className="mt-1 text-xs text-slate-400">Lagrer bare utkast. Denne arbeidsflaten kan ikke publisere til sosiale medier.</p>
+      <p className="mt-1 text-xs text-slate-400">Denne delen lagrer bare utkast. Har du egen publiseringsrettighet, bruker du «Publiser til sosiale medier» etter at utkastet er klart.</p>
       <div className="mt-4 grid gap-3">
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={200}
