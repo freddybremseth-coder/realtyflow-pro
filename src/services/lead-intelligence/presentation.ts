@@ -178,7 +178,10 @@ function brandPropertyUrl(brand: string, propertyReference: string | null) {
 }
 
 function customerPropertyUrl(brand: string, item: LeadCustomerPresentationShortlistSnapshot["items"][number]) {
-  return safeWebsiteUrl(item.propertyPublicUrl) || brandPropertyUrl(brand, item.propertyReference);
+  const explicit = safeWebsiteUrl(item.propertyPublicUrl);
+  if (explicit) return explicit;
+  if (item.propertySourceKind === "land_plot") return null;
+  return brandPropertyUrl(brand, item.propertyReference);
 }
 
 function uniqueItems(values: Array<string | null | undefined>, limit = 8) {
@@ -348,9 +351,10 @@ function buildPresentationJson(input: {
       },
       {
         type: "properties",
-        title: "Valgte boliger",
+        title: "Valgte alternativer",
         items: snapshot.items.map((item) => ({
           propertyId: item.propertyId,
+          sourceKind: item.propertySourceKind,
           reference: item.propertyReference,
           title: propertyName(item),
           location: item.propertyLocation,
@@ -380,7 +384,8 @@ function buildEmailDraft(input: {
   title: string;
 }) {
   const location = input.snapshot.items.map((item) => item.propertyLocation).find(Boolean) || "området vi har vurdert";
-  const subject = `Boligforslag: ${input.snapshot.items.length} alternativer i ${location}`;
+  const hasLandPlot = input.snapshot.items.some((item) => item.propertySourceKind === "land_plot");
+  const subject = `${hasLandPlot ? "Eiendomsforslag" : "Boligforslag"}: ${input.snapshot.items.length} alternativer i ${location}`;
   const sharedReasons = sharedReasonKeys(input.snapshot.items.map((item) => item.reasons));
   const sharedReasonText = sharedReasonSummary(sharedReasons);
   const missingWebsiteLinks = input.snapshot.items.filter((item) => !customerPropertyUrl(input.snapshot.brand, item)).length;
@@ -407,7 +412,7 @@ function buildEmailDraft(input: {
   const bodyText = [
     "Hei,",
     "",
-    "Jeg har sett gjennom aktuelle boliger opp mot behovene vi har notert så langt.",
+    "Jeg har sett gjennom aktuelle bolig-, eiendoms- og tomtealternativer opp mot behovene vi har notert så langt.",
     input.snapshot.budgetAmount === null
       ? "Budsjett må avklares."
       : `Budsjett: ca. ${formatCurrency(input.snapshot.budgetAmount, input.snapshot.budgetCurrency)}${input.snapshot.budgetIncludesCosts ? " inkludert omkostninger" : ""}.`,
@@ -453,7 +458,7 @@ function buildEmailDraft(input: {
 
   const bodyHtml = [
     `<p>Hei,</p>`,
-    `<p>Jeg har sett gjennom aktuelle boliger opp mot behovene vi har notert så langt.</p>`,
+    `<p>Jeg har sett gjennom aktuelle bolig-, eiendoms- og tomtealternativer opp mot behovene vi har notert så langt.</p>`,
     `<p>${escapeHtml(budgetLine)}</p>`,
     sharedReasonText ? `<p>${escapeHtml(sharedReasonText)}</p>` : "",
     `<p>Jeg ville sett nærmere på disse alternativene:</p>`,
