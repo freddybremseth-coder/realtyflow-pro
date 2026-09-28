@@ -80,7 +80,7 @@ type SEOTopicJourney = {
   nextAction: string | null;
   sourceUpdatedAt: string | null;
   sourceLastPlannedAt: string | null;
-  stage: "MISSION_READY" | "CONTENT_CREATED" | "PUBLISHED" | "MEASURED" | "LEAD_SIGNAL" | "BUSINESS_PROVEN";
+  stage: "MISSION_READY" | "CONTENT_CREATED" | "PUBLISHED" | "MEASURED" | "LEAD_SIGNAL" | "QUALIFIED_SIGNAL" | "BUSINESS_PROVEN";
   contentCount: number;
   publishedCount: number;
   measuredContentCount: number;
@@ -207,6 +207,7 @@ function executionLabel(execution: NextAction["execution"]) {
 
 function journeyStageLabel(stage: SEOTopicJourney["stage"]) {
   if (stage === "BUSINESS_PROVEN") return "Business proven";
+  if (stage === "QUALIFIED_SIGNAL") return "Qualified signal";
   if (stage === "LEAD_SIGNAL") return "Lead signal";
   if (stage === "MEASURED") return "Measured";
   if (stage === "PUBLISHED") return "Published";
@@ -216,6 +217,7 @@ function journeyStageLabel(stage: SEOTopicJourney["stage"]) {
 
 function journeyStageTone(stage: SEOTopicJourney["stage"]) {
   if (stage === "BUSINESS_PROVEN") return "bg-emerald-100 text-emerald-800";
+  if (stage === "QUALIFIED_SIGNAL") return "bg-teal-100 text-teal-800";
   if (stage === "LEAD_SIGNAL") return "bg-cyan-100 text-cyan-800";
   if (stage === "MEASURED") return "bg-violet-100 text-violet-800";
   if (stage === "PUBLISHED") return "bg-blue-100 text-blue-800";
