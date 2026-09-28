@@ -21,6 +21,7 @@ const files = [
   "20260927190000_workspace_email_reach.sql",
   "20260928103000_workspace_social_publish.sql",
   "20260928205000_workspace_external_collaborators.sql",
+  "20260928213000_workspace_reels_studio.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -1053,6 +1054,14 @@ try {
     "Workspace user configure accepted social publishing without marketing draft");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft","marketing.publish"] }]) === true,
     "Workspace user configure rejected complete social publishing scope");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["reels.create"] }]) === false,
+    "Workspace user configure accepted Reel create without read");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["reels.read","reels.publish"] }]) === false,
+    "Workspace user configure accepted Reel publish without create");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["reels.read","reels.create","reels.publish"] }]) === true,
+    "Workspace user configure rejected complete Pinoso Reel scope");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["reels.read","reels.create"] }]) === true,
+    "Workspace user configure rejected Zen Reel scope");
 
   await sql("insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','social','Pinoso draft','Safe Pinoso content','draft'),('zeneco','social','Private Zen','Must not leak','published')");
   await sql("insert into public.social_channels(brand_id,platform,external_id,display_name,is_active) values ('pinosoecolife','facebook','fb-pinoso','Pinoso Facebook',true),('pinosoecolife','youtube','yt-pinoso','Pinoso YouTube',false),('zeneco','facebook','fb-zen','Zen Facebook',true)");
