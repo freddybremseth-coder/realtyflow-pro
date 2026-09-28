@@ -279,6 +279,10 @@ export default function FocusedWorkspacePage() {
               <p className="mt-3 text-xs text-slate-500">
                 RealtyFlow holder kundearbeidet innenfor {title}. Økonomi, gamle private CRM-notater og andre merkevarer er ikke tilgjengelige her.
               </p>
+              {showJointTasks && <div className="mt-5 border-t border-slate-800 pt-5">
+                <ZenJointTasks contacts={[selectedCustomer]} canWrite={canWriteJointTasks}
+                  selectedContactId={selectedCustomer.id} hideContactSelector />
+              </div>}
             </div>}
             {canEditCrm && (canCreateCrm || editingId) && <form className="mt-5 space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
               <h3 className="font-semibold">{editingId ? "Rediger kunde" : "Legg til kunde"}</h3>
@@ -320,16 +324,12 @@ export default function FocusedWorkspacePage() {
               <button type="button" disabled={!crmHasMore || crmPage >= 1000} onClick={() => setCrmPage(page => page + 1)}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-40">Neste</button>
             </div>}
+            {!selectedCustomer && showJointTasks && <p className="mt-4 rounded-xl border border-dashed border-slate-800 p-4 text-sm text-slate-500">
+              Åpne en kunde for å samle kontakt, neste handling og felles oppgaver i samme kundekort.
+            </p>}
             <p className="mt-4 text-xs text-slate-500">Søk og visning er avgrenset til merkevaren. Opprettelse og redigering er begrenset til kontaktopplysninger; status, notater, avtaler og økonomi er ikke åpnet for medarbeidere.</p>
           </section>
         )}
-        {!loading && !error && showJointTasks && tab === "leads" && selectedCustomer &&
-          <ZenJointTasks contacts={[selectedCustomer]} canWrite={canWriteJointTasks}
-            selectedContactId={selectedCustomer.id} hideContactSelector />}
-        {!loading && !error && showJointTasks && tab === "leads" && !selectedCustomer &&
-          <p className="rounded-xl border border-dashed border-slate-800 p-4 text-sm text-slate-500">
-            Åpne en kunde over for å se og opprette felles oppgaver.
-          </p>}
         {!loading && !error && showProperties && tab === "properties" &&
           <WorkspacePropertyCatalogue brandKey={brandKey} />}
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
