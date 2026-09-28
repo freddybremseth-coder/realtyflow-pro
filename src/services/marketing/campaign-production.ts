@@ -468,7 +468,7 @@ export async function createCampaignDraft(
       caption: ensureBrandWebsiteLink({
         brandId: input.brandId,
         channel: brief.channel,
-        content: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n\n"),
+        content: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
       }), imageUrl: creative.asset.media?.imageUrl ?? null,
       brandId: input.brandId, accountId: account?.accountId ?? null, assetHash: d.assetHash, factSources: creative.asset.factSources ?? [],
       propertyId: inventoryProperty?.id ?? null, propertyRef: inventoryProperty?.ref ?? null, propertyTitle: inventoryProperty?.title ?? null,
