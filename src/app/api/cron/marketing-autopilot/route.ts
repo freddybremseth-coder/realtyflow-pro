@@ -5,6 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
+import {
+  isSystemNextActionRequest,
+  nextActionPublicationMode,
+  resolveAutopilotRunChannels,
+} from "@/lib/marketing/next-action-execution";
 import { summarizeMarketingAutopilotHeartbeat } from "@/lib/marketing/autopilot-heartbeat";
 import {
   autopilotRunIdentity,
@@ -18,6 +23,7 @@ import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { createCampaignDraft, getServiceSupabase } from "@/services/marketing/campaign-production";
 import { generateAutopilotInstagramImage } from "@/services/marketing/autopilot-media";
+import { enqueueNextBestMarketingAction } from "@/services/marketing/next-action-executor";
 import { pinosoAutopilotIdea } from "@/lib/marketing/pinoso-marketing-skills";
 import {
   loadRemasterPromotionSource,
@@ -35,7 +41,7 @@ const RECOVERABLE_PROPERTY_COPY_ERRORS = [
   "BRAND_ROLE_MISMATCH",
   "CHANNEL_FORMAT_MISMATCH",
 ] as const;
-type RunRequest = { id: string; brand_ids: string[] | null; channels: string[] | null };
+type RunRequest = { id: string; brand_ids: string[] | null; channels: string[] | null; requested_by: string | null };
 type CampaignRun = Awaited<ReturnType<typeof createCampaignDraft>>;
 
 function configuredChannels(metadata: Record<string, unknown> | null | undefined): Array<"instagram" | "facebook"> {
@@ -112,9 +118,9 @@ async function recordAutopilotHeartbeat(supabase: any, status: string, details: 
 async function claimRunRequest(supabase: any): Promise<RunRequest | null> {
   const now = new Date().toISOString();
   await supabase.from("marketing_autopilot_run_requests").update({ status: "expired", completed_at: now }).eq("status", "pending").lt("expires_at", now);
-  const { data } = await supabase.from("marketing_autopilot_run_requests").select("id,brand_ids,channels").eq("status", "pending").gt("expires_at", now).order("requested_at", { ascending: true }).limit(1).maybeSingle();
+  const { data } = await supabase.from("marketing_autopilot_run_requests").select("id,brand_ids,channels,requested_by").eq("status", "pending").gt("expires_at", now).order("requested_at", { ascending: true }).limit(1).maybeSingle();
   if (!data?.id) return null;
-  const { data: claimed } = await supabase.from("marketing_autopilot_run_requests").update({ status: "claimed", claimed_at: now }).eq("id", data.id).eq("status", "pending").select("id,brand_ids,channels").maybeSingle();
+  const { data: claimed } = await supabase.from("marketing_autopilot_run_requests").update({ status: "claimed", claimed_at: now }).eq("id", data.id).eq("status", "pending").select("id,brand_ids,channels,requested_by").maybeSingle();
   return claimed?.id ? claimed as RunRequest : null;
 }
 
@@ -143,10 +149,15 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   const timeZone = process.env.MARKETING_LEARNING_TIMEZONE || "Europe/Madrid";
   const { hour: localHour, dayIndex, localDate } = localAutopilotSlot(new Date(), timeZone);
+  const queuedNextAction = await enqueueNextBestMarketingAction(supabase as any).catch((error) => ({
+    queued: false as const,
+    reason: `NEXT_ACTION_QUEUE_ERROR: ${error instanceof Error ? error.message : String(error)}`,
+  }));
   const runRequest = await claimRunRequest(supabase).catch(() => null);
   const requestedBrands = new Set((runRequest?.brand_ids ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean));
   const requestedChannels = new Set((runRequest?.channels ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean));
   const manualRun = !!runRequest;
+  const systemNextActionRun = isSystemNextActionRequest(runRequest?.requested_by);
 
   try {
     const { data: plans, error } = await supabase.from("marketing_brand_growth_plans").select("brand_id,status,autonomy_mode,metadata,source_types,posting_strategy").eq("status", "active").eq("autonomy_mode", "controlled_auto");
@@ -155,12 +166,37 @@ export async function GET(request: NextRequest) {
     for (const plan of plans ?? []) {
       const brandId = String(plan.brand_id ?? "").trim().toLowerCase();
       if (!brandId || EXCLUDED_BRANDS.has(brandId)) continue;
-      if (manualRun && requestedBrands.size && !requestedBrands.has(brandId)) continue;
-      const channels = configuredChannels((plan.metadata ?? {}) as Record<string, unknown>).filter((channel) => !manualRun || !requestedChannels.size || requestedChannels.has(channel));
-      if (!channels.length) { results.push({ brandId, skipped: true, reason: "No requested/preapproved autopilot channels" }); continue; }
+      if (manualRun && !systemNextActionRun && requestedBrands.size && !requestedBrands.has(brandId)) continue;
+      const preapprovedChannels = configuredChannels((plan.metadata ?? {}) as Record<string, unknown>);
+      const requestedRunChannels = resolveAutopilotRunChannels({
+        brandId,
+        configuredChannels: preapprovedChannels,
+        requestedChannels: manualRun ? Array.from(requestedChannels) : [],
+        systemNextAction: systemNextActionRun,
+        supportedChannels: SUPPORTED_CHANNELS,
+      });
+      const channels = systemNextActionRun
+        ? Array.from(new Set([...preapprovedChannels, ...requestedRunChannels]))
+        : requestedRunChannels;
+      if (!channels.length) {
+        results.push({
+          brandId,
+          skipped: true,
+          reason: systemNextActionRun
+            ? "requested_channel_not_pilot_or_supported"
+            : "No requested/preapproved autopilot channels",
+        });
+        continue;
+      }
 
       for (const channel of channels) {
-        if (!manualRun && !isPlannedAutopilotDay(dayIndex, plan?.posting_strategy?.days)) {
+        const forcedRunForChannel = manualRun
+          && requestedChannels.has(channel)
+          && (!requestedBrands.size || requestedBrands.has(brandId));
+        const requestedPublicationMode = systemNextActionRun && forcedRunForChannel
+          ? nextActionPublicationMode({ configuredChannels: preapprovedChannels, targetChannel: channel })
+          : null;
+        if (!forcedRunForChannel && !isPlannedAutopilotDay(dayIndex, plan?.posting_strategy?.days)) {
           results.push({ brandId, channel, skipped: true, reason: "not_configured_publishing_day", localDate });
           continue;
         }
@@ -168,7 +204,7 @@ export async function GET(request: NextRequest) {
         const recommendation = await recommendForGeneration(supabase as any, { scope: channelLearningScope(brandId, channel) }).catch(() => undefined);
         const learnedHour = parseLearnedAutopilotHour(recommendation?.favor?.publishHour?.value);
         const targetHour = autopilotTargetHour(dayIndex, learnedHour);
-        if (!manualRun && !shouldRunAutopilotSlot(localHour, targetHour)) { results.push({ brandId, channel, skipped: true, reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due", localHour, learnedHour, targetHour }); continue; }
+        if (!forcedRunForChannel && !shouldRunAutopilotSlot(localHour, targetHour)) { results.push({ brandId, channel, skipped: true, reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due", localHour, learnedHour, targetHour }); continue; }
 
         try {
           const guidance = recommendation ? ` Bruk dokumentert læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "";
@@ -182,7 +218,7 @@ export async function GET(request: NextRequest) {
             continue;
           }
 
-          const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
+          const runIdentity = forcedRunForChannel ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
           const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
           let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
           const mediaType = remasterSource ? remasterPromotionMediaType(remasterSource) : undefined;
@@ -287,6 +323,9 @@ export async function GET(request: NextRequest) {
             channel,
             marketingRunId: run.marketingRunId,
             manualRun,
+            systemNextActionRun,
+            forcedRunForChannel,
+            requestedPublicationMode,
             localHour,
             learnedHour,
             targetHour,
@@ -308,11 +347,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const payload = { success: true, manualRun, runRequestId: runRequest?.id ?? null, brands: Array.from(new Set(results.map((r) => String(r.brandId ?? "")).filter(Boolean))), localHour, timeZone, results };
+    const payload = {
+      success: true,
+      manualRun,
+      systemNextActionRun,
+      runRequestId: runRequest?.id ?? null,
+      requestedBy: runRequest?.requested_by ?? null,
+      queuedNextAction,
+      brands: Array.from(new Set(results.map((r) => String(r.brandId ?? "")).filter(Boolean))),
+      localHour,
+      timeZone,
+      results,
+    };
     const heartbeat = summarizeMarketingAutopilotHeartbeat(results);
     await recordAutopilotHeartbeat(supabase, heartbeat.status, {
       manual_run: manualRun,
+      system_next_action_run: systemNextActionRun,
       run_request_id: runRequest?.id ?? null,
+      requested_by: runRequest?.requested_by ?? null,
+      queued_next_action: queuedNextAction,
       local_hour: localHour,
       time_zone: timeZone,
       brands: heartbeat.brands,
@@ -329,10 +382,19 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     await recordAutopilotHeartbeat(supabase, "error", {
       manual_run: manualRun,
+      system_next_action_run: systemNextActionRun,
       run_request_id: runRequest?.id ?? null,
+      requested_by: runRequest?.requested_by ?? null,
+      queued_next_action: queuedNextAction,
       error_type: error instanceof Error ? error.name : "unknown",
     });
     if (runRequest?.id) await supabase.from("marketing_autopilot_run_requests").update({ status: "failed", completed_at: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) }).eq("id", runRequest.id);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Marketing autopilot failed", manualRun, runRequestId: runRequest?.id ?? null }, { status: 500 });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Marketing autopilot failed",
+      manualRun,
+      systemNextActionRun,
+      runRequestId: runRequest?.id ?? null,
+      queuedNextAction,
+    }, { status: 500 });
   }
 }
