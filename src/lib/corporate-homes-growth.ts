@@ -21,6 +21,11 @@ export const CORPORATE_HOME_UTM = {
     medium: "outbound",
     campaign: "zeneco_corporate_homes_no",
   },
+  event: {
+    source: "realtyflow",
+    medium: "webinar",
+    campaign: "zeneco_corporate_webinar_no",
+  },
 } as const;
 
 export const CORPORATE_GOOGLE_SEARCH = {
@@ -149,6 +154,47 @@ function trackingUrl(params: { source: string; medium: string; campaign: string 
   url.searchParams.set("utm_content", content);
   return url.toString();
 }
+
+export const CORPORATE_EVENT_PLAYBOOK = {
+  status: "READY_FOR_MANUAL_INVITE",
+  automaticInvitesAllowed: false,
+  automaticFollowUpAllowed: false,
+  objective: "Qualified B2B assessment / booked discovery",
+  format: "30 min faglig webinar + 15 min spørsmål og svar",
+  audience: [
+    "Daglig leder / eier",
+    "HR / People & Culture",
+    "CFO / økonomiansvarlig",
+    "Styreleder / styremedlem",
+    "Leder i forening eller medlemsorganisasjon",
+  ],
+  topics: [
+    {
+      title: "Kan bedriftshytten ligge i Spania?",
+      promise: "En praktisk gjennomgang av bruk, budsjett, beslutningsprosess, boligvalg og lokal drift før styret tar stilling.",
+    },
+    {
+      title: "Fra ansattgode til langsiktig eiendel på Costa Blanca",
+      promise: "Hvordan virksomheter kan skille mellom velferdstiltak, kapitalbinding, bruksmodell og reelt boligbehov.",
+    },
+    {
+      title: "Medlemsbolig i Spania — hvordan kan modellen fungere?",
+      promise: "For organisasjoner og foreninger som vil vurdere bolig som medlemsfordel med tydelige regler for bruk og drift.",
+    },
+  ],
+  attendeeCta: "Be om kostnadsfri bedriftsvurdering",
+  trackingUrl: trackingUrl(CORPORATE_HOME_UTM.event, "live_webinar_assessment"),
+  followUp: [
+    "Dag 0: del opptak/oppsummering og lenke til bedriftsvurderingen.",
+    "Dag 2–3: menneskelig oppfølging av virksomheter som selv har bedt om vurdering eller møte.",
+    "Dag 7: vurder kvalifisering, beslutningsprosess og om Corporate Home Assessment skal opprettes.",
+  ],
+  guardrails: [
+    "Ingen invitasjoner sendes automatisk fra RealtyFlow.",
+    "Ingen deltaker tolkes som salgsklar uten dokumentert handling eller menneskelig kvalifisering.",
+    "Webinar/event måles på kvalifiserte leads, møter og videre funnel — ikke bare registreringer.",
+  ],
+} as const;
 
 export const CORPORATE_META = {
   name: "Zen Corporate Homes · Norway · Meta",
