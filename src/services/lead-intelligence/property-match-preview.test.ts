@@ -9,6 +9,7 @@ import {
   previewLeadPropertyMatchesForProfile,
 } from "./property-match-preview";
 import type { LeadMatchProfile } from "./property-matching";
+import { applyLeadPropertyLocationGuard } from "./location-guard";
 
 const buyerProfileId = "11111111-1111-4111-8111-111111111111";
 const intakeId = "55555555-5555-4555-8555-555555555555";
@@ -852,4 +853,96 @@ test("auto preview can rank a land-plot candidate as a phased-development option
   assert.equal(result.matches[0]?.property.propertyType, "plot");
   assert.equal(result.matches[0]?.eligibility, "conditional");
   assert.equal(result.matches[0]?.budgetResult?.outcome, "unknown");
+});
+
+
+test("location guard keeps inland matches when preferred area is explicitly flexible", () => {
+  const flexibleProfile: LeadMatchProfile = {
+    ...approvedProfile(),
+    propertyTypes: ["villa", "country_house", "plot"],
+    locations: {
+      preferred: ["Albir"],
+      excluded: [],
+      flexible: true,
+    },
+  };
+
+  const result = {
+    buyerProfileId,
+    discoveryMode: "auto" as const,
+    bestEffort: false,
+    analyzed: 2,
+    matched: 2,
+    candidateLimit: 20,
+    missingPropertyReferences: [],
+    skippedProperties: [],
+    matches: [
+      {
+        propertyId: "plot-pinoso",
+        eligibility: "conditional" as const,
+        score: 70,
+        dataQualityScore: 70,
+        hardRequirementResults: [],
+        preferenceResults: [],
+        exclusionResults: [],
+        budgetResult: null,
+        locationResult: null,
+        reasonsForMatch: [],
+        concerns: [],
+        questionsToVerify: [],
+        missingFacts: [],
+        property: {
+          id: "plot-pinoso",
+          sourceKind: "land_plot" as const,
+          reference: "Pinoso plot",
+          title: "Tomt i Pinoso",
+          location: "Pinoso",
+          propertyType: "plot",
+          price: 60000,
+          bedrooms: null,
+          bathrooms: null,
+          primaryImageUrl: null,
+          publicUrl: null,
+        },
+      },
+      {
+        propertyId: "villa-albir",
+        eligibility: "eligible" as const,
+        score: 80,
+        dataQualityScore: 80,
+        hardRequirementResults: [],
+        preferenceResults: [],
+        exclusionResults: [],
+        budgetResult: null,
+        locationResult: null,
+        reasonsForMatch: [],
+        concerns: [],
+        questionsToVerify: [],
+        missingFacts: [],
+        property: {
+          id: "villa-albir",
+          sourceKind: "property" as const,
+          reference: "A1",
+          title: "Villa i Albir",
+          location: "Albir",
+          propertyType: "villa",
+          price: 440000,
+          bedrooms: 3,
+          bathrooms: 2,
+          primaryImageUrl: null,
+          publicUrl: null,
+        },
+      },
+    ],
+    sideEffects: {
+      leadsCreated: false as const,
+      contactsCreated: false as const,
+      emailsSent: false as const,
+      matchesPersisted: false as const,
+      shortlistCreated: false as const,
+    },
+  };
+
+  const guarded = applyLeadPropertyLocationGuard(result as any, flexibleProfile);
+  assert.deepEqual(guarded.matches.map((match) => match.propertyId), ["plot-pinoso", "villa-albir"]);
 });
