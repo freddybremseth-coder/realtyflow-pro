@@ -33,6 +33,41 @@ export const SEO_BRAND_PUBLISHERS = [
 ] as const;
 export type BrandPublisher = typeof SEO_BRAND_PUBLISHERS[number];
 export type BrandMetadata = { title: string; description: string };
+
+export const SEO_BRAND_SECOND_VARIANTS: Record<BrandPublisher["brandId"], BrandMetadata> = {
+  pinosoecolife: {
+    title: "Pinoso EcoLife | Tomter, nybygg og landlig liv i Spania",
+    description: "Utforsk tomter, nybygg og boliger i Pinoso og innlandet i Alicante og Murcia. Sammenlign områder, boligmuligheter og praktiske valg før du kjøper i Spania.",
+  },
+  freddyb: {
+    title: "Freddy Bremseth | Eiendom i Spania, teknologi, bøker og kunst",
+    description: "Utforsk Freddy Bremseths arbeid med eiendom i Spania, AI og teknologi, bøker, kunst og musikk. Finn prosjekter, artikler og riktig kontaktvei.",
+  },
+  freddypublishing: {
+    title: "Freddy Bremseth Books | Thrillere, krim og sakprosa",
+    description: "Oppdag bøker og serier av Freddy Bremseth, fra psykologiske thrillere og krim til sakprosa. Utforsk titler, omslag og tilgjengelige leseprøver.",
+  },
+  freddyart: {
+    title: "Freddy Bremseth Art | Contemporary Digital Art Collections",
+    description: "Discover contemporary digital art by Freddy Bremseth, including symbolic portraits, Mediterranean-inspired works and imagined worlds. Explore artworks and curated collections.",
+  },
+  remasterfreddy: {
+    title: "Re-Master Freddy | Original Electronic Music and Chill Tracks",
+    description: "Explore original electronic music by Re-Master Freddy, from house and energetic tracks to calm chill and meditation-inspired releases. Discover music and videos.",
+  },
+  donaanna: {
+    title: "Doña Anna | Oliven fra Biar, Alicante",
+    description: "Utforsk Doña Anna og oliven fra Biar i Alicante. Les om olivensorter, innhøsting, smak, gårdsliv, olivenolje og bordoliven fra området.",
+  },
+  chatgenius: {
+    title: "ChatGenius.pro | Praktiske AI-løsninger for bedrifter",
+    description: "Utforsk praktiske AI-løsninger, apper, nettsider og opplæring fra ChatGenius.pro. Se hvordan bedrifter kan bruke AI i arbeid, markedsføring og kundedialog.",
+  },
+};
+
+export function secondVariantForBrand(brandId: BrandPublisher["brandId"]): BrandMetadata {
+  return SEO_BRAND_SECOND_VARIANTS[brandId];
+}
 export type BrandEvidence = { query: string; start: string; end: string; impressions: number; clicks: number; position: number };
 export function publisherForBrand(brandId: string) { return SEO_BRAND_PUBLISHERS.find(site => site.brandId === brandId); }
 
