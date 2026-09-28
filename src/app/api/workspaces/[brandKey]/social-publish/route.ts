@@ -9,7 +9,8 @@ export const maxDuration = 120;
 const noStore = { "Cache-Control": "private, no-store" };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type SupportedPlatform = "facebook" | "instagram";
-type SafeChannel = { id: string; platform: SupportedPlatform; displayName: string };
+type SafeChannel = { platform: SupportedPlatform; displayName: string };
+type PreparedChannel = SafeChannel & { id: string };
 type SafePublishResult = {
   platform: SupportedPlatform;
   success: boolean;
@@ -36,10 +37,15 @@ function safeWrite(request: NextRequest) {
 
 function safeChannel(value: any): SafeChannel | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (typeof value.id !== "string" || !uuid.test(value.id)) return null;
   if (typeof value.platform !== "string" || !platforms.has(value.platform as SupportedPlatform)) return null;
   if (typeof value.displayName !== "string" || !value.displayName.trim()) return null;
-  return { id: value.id, platform: value.platform as SupportedPlatform, displayName: value.displayName.trim().slice(0, 160) };
+  return { platform: value.platform as SupportedPlatform, displayName: value.displayName.trim().slice(0, 160) };
+}
+
+function safePreparedChannel(value: any): PreparedChannel | null {
+  const channel = safeChannel(value);
+  if (!channel || typeof value?.id !== "string" || !uuid.test(value.id)) return null;
+  return { ...channel, id: value.id };
 }
 
 function safePublication(value: any) {
@@ -139,11 +145,12 @@ export async function POST(
   const body: any = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "INVALID_PUBLISH_REQUEST");
   const publicationId = typeof body.publicationId === "string" ? body.publicationId.trim() : "";
-  const channelIds: string[] = Array.isArray(body.channelIds)
-    ? body.channelIds.map((item: unknown) => String(item || "").trim()).filter((item: string) => Boolean(item))
+  const requestedPlatforms: string[] = Array.isArray(body.platforms)
+    ? body.platforms.map((item: unknown) => String(item || "").trim().toLowerCase()).filter(Boolean)
     : [];
-  if (!uuid.test(publicationId) || channelIds.length < 1 || channelIds.length > 2 ||
-      new Set(channelIds).size !== channelIds.length || channelIds.some(id => !uuid.test(id))) {
+  if (!uuid.test(publicationId) || requestedPlatforms.length < 1 || requestedPlatforms.length > 2 ||
+      new Set(requestedPlatforms).size !== requestedPlatforms.length ||
+      requestedPlatforms.some(platform => !platforms.has(platform as SupportedPlatform))) {
     return fail(400, "INVALID_PUBLISH_REQUEST");
   }
 
@@ -154,7 +161,7 @@ export async function POST(
       p_user_id: access.value.verifiedUserId,
       p_email: access.value.verifiedEmail,
       p_publication_id: publicationId,
-      p_channel_ids: channelIds,
+      p_platforms: requestedPlatforms,
     },
   );
   if (prepareError || !prepared) return fail(503, "SOCIAL_PUBLISH_PREPARE_FAILED");
@@ -163,7 +170,8 @@ export async function POST(
     const messages: Record<string, string> = {
       PUBLICATION_NOT_PUBLISHABLE: "Dette innholdet kan ikke publiseres fra medarbeiderflaten.",
       CHANNEL_SCOPE_INVALID: "En valgt kanal tilhører ikke denne merkevaren eller er ikke aktiv.",
-      PLATFORM_NOT_PLANNED_FOR_DRAFT: "Valgt kanal samsvarer ikke med målkanalene i utkastet.",
+      CHANNEL_AMBIGUOUS: "Merkevaren har mer enn én aktiv konto for en valgt plattform. Eier må rydde kanalbindingen før publisering.",
+      PLATFORM_NOT_PLANNED_FOR_DRAFT: "Valgt plattform var ikke valgt som målkanal da utkastet ble lagret.",
       INSTAGRAM_IMAGE_REQUIRED: "Instagram krever at utkastet allerede har et bilde.",
       PUBLISH_ATTEMPT_REQUIRES_REVIEW: "En tidligere publisering av dette utkastet må gjennomgås før nytt forsøk.",
       ACCESS_DENIED: "Publiseringstilgangen er ikke lenger aktiv.",
@@ -174,13 +182,14 @@ export async function POST(
   const attemptId = typeof prepared.attemptId === "string" ? prepared.attemptId : "";
   const content = typeof prepared.content === "string" ? prepared.content.trim() : "";
   const imageUrl = typeof prepared.imageUrl === "string" ? prepared.imageUrl.trim() : undefined;
-  const channels: SafeChannel[] = Array.isArray(prepared.channels)
+  const channels: PreparedChannel[] = Array.isArray(prepared.channels)
     ? prepared.channels.flatMap((item: unknown) => {
-        const safe = safeChannel(item);
+        const safe = safePreparedChannel(item);
         return safe ? [safe] : [];
       })
     : [];
-  if (!uuid.test(attemptId) || !content || channels.length !== channelIds.length) {
+  if (!uuid.test(attemptId) || !content || channels.length !== requestedPlatforms.length ||
+      channels.some(channel => !requestedPlatforms.includes(channel.platform))) {
     if (uuid.test(attemptId)) {
       await finalize(access.value.supabase, {
         brandKey: params.brandKey,
