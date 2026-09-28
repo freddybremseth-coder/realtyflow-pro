@@ -26,6 +26,7 @@ import {
   parseWeeklyManagementSettings,
 } from "@/lib/revenue/weekly-management-review";
 import { buildCorporateGrowthImprovementCandidate } from "@/lib/corporate-growth-improvement";
+import { buildCorporateImprovementObservedEffect } from "@/lib/corporate-improvement-observed-effect";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -77,12 +78,13 @@ async function loadSettings(supabase: NonNullable<ReturnType<typeof getSupabase>
       .eq("action", "corporate_homes_growth_review")
       .in("status", ["success", "partial"])
       .order("created_at", { ascending: false })
-      .limit(8),
+      .limit(60),
   ]);
   return {
     improvement: parseContinuousImprovementSettings(improvementResult.data?.settings, improvementResult.data?.updated_at),
     weekly: parseWeeklyManagementSettings(weeklyResult.data?.settings, weeklyResult.data?.updated_at),
     corporateCandidate: buildCorporateGrowthImprovementCandidate(corporateGrowthResult.data || []),
+    corporateGrowthRows: corporateGrowthResult.data || [],
     improvementError: improvementResult.error?.message || null,
     weeklyError: weeklyResult.error?.message || null,
     corporateGrowthError: corporateGrowthResult.error?.message || null,
@@ -144,8 +146,22 @@ export async function GET(request: NextRequest) {
     new Date(),
     additionalCandidates,
   );
+  const corporateObservedEffects = Object.fromEntries(
+    register.improvements
+      .map((item) => [
+        item.id,
+        buildCorporateImprovementObservedEffect(
+          loaded.corporateGrowthRows,
+          { candidateId: item.candidateId, createdAt: item.createdAt },
+        ),
+      ] as const)
+      .filter((entry): entry is [string, NonNullable<ReturnType<typeof buildCorporateImprovementObservedEffect>>] =>
+        entry[1] !== null,
+      ),
+  );
   return NextResponse.json({
     register,
+    corporateObservedEffects,
     weeklyWarning: loaded.weeklyError,
     corporateGrowthWarning: loaded.corporateGrowthError,
     user: { email: session.email, role: session.role },

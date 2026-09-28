@@ -14,7 +14,7 @@ test("Continuous Improvement surfaces Corporate Growth candidates but keeps crea
 
   assert.match(source, /buildCorporateGrowthImprovementCandidate/);
   assert.match(source, /corporate_homes_growth_review/);
-  assert.match(source, /\.limit\(8\)/);
+  assert.match(source, /\.limit\(60\)/);
   assert.match(source, /additionalCandidates/);
   assert.match(source, /action === "CREATE_IMPROVEMENT"/);
   assert.match(source, /candidateById\(register, candidateId\)/);
@@ -97,4 +97,31 @@ test("Corporate observed effect stays read-only and explicitly non-causal", () =
   assert.match(page, /baseline/);
   assert.match(page, /snitt etter tiltak/);
   assert.match(page, /pp/);
+});
+
+
+test("Continuous Improvement uses Corporate Growth Review effect for Corporate improvements", () => {
+  const source = fs.readFileSync(
+    "src/app/api/revenue/command/continuous-improvement/route.ts",
+    "utf8",
+  );
+  const page = fs.readFileSync(
+    "src/app/(realty)/continuous-improvement/page.tsx",
+    "utf8",
+  );
+
+  assert.match(source, /buildCorporateImprovementObservedEffect/);
+  assert.match(source, /corporateGrowthRows/);
+  assert.match(source, /corporateObservedEffects/);
+  assert.match(source, /createdAt: item\.createdAt/);
+  assert.match(source, /\.limit\(60\)/);
+
+  assert.match(page, /corporateObservedEffects/);
+  assert.match(page, /selectedCorporateEffect/);
+  assert.match(page, /Corporate baseline/);
+  assert.match(page, /Snitt etter tiltak/);
+  assert.match(page, /Målt Corporate-bevegelse/);
+  assert.match(page, /Siste kvalifiserte rate/);
+  assert.match(page, /Corporate: /);
+  assert.match(page, /selectedCorporateEffect\.note/);
 });
