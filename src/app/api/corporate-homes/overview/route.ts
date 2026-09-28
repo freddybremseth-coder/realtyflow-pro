@@ -215,7 +215,6 @@ export async function GET(request: NextRequest) {
         closedAt: tracked.closedAt,
         rootCauseCategory: tracked.rootCauseCategory,
         actionType: tracked.actionType,
-        effectTrend: tracked.effect.trend,
         updatedAt: tracked.updatedAt,
       };
     }
