@@ -69,6 +69,19 @@ test("portfolio Reel branding is rasterized before ffmpeg with no ASS, drawtext 
   assert.equal(poster.toString("ascii",0,2),"P6");
 });
 
+test("portfolio Reel poster keeps the lower social-platform safe area free of baked-in branding",()=>{
+  const poster=buildPortfolioReelPoster("ZEN ECO HOMES","Costa Blanca homes","zenecohomes.com",true);
+  const marker=Buffer.from("\n255\n","ascii");
+  const pixelOffset=poster.indexOf(marker)+marker.length;
+  assert.ok(pixelOffset>marker.length);
+
+  const pixel=(x:number,y:number)=>Array.from(poster.subarray(pixelOffset+((y*1080+x)*3),pixelOffset+((y*1080+x)*3)+3));
+  const background=[7,19,31];
+  for(const [x,y] of [[42,1600],[584,1662],[42,1766],[42,1820],[900,1880]]){
+    assert.deepEqual(pixel(x,y),background,`expected footer-safe pixel ${x},${y} to be clean background`);
+  }
+});
+
 test("six-brand Reels use their own images and destinations", () => {
   const song={id:"song",title:"Sunset",audioUrl:"https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/song.mp3"};
   const artImage="https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/art-previews/work/view.webp";

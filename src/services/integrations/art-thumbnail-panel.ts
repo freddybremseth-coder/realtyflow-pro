@@ -165,8 +165,10 @@ export function buildArtShortPoster(category: string, title: string, variant: 'a
 
 /**
  * Dependency-free 1080x1920 branding poster for portfolio Reels.
- * FFmpeg overlays the visual gallery into the center area, so text never needs
- * libass, drawtext, fontconfig or an SVG decoder in serverless.
+ * FFmpeg overlays the visual gallery into the center area, while all baked-in
+ * copy stays in the upper editorial band. The lower 400px remain text-free so
+ * Facebook/Instagram caption and action overlays never collide with branding.
+ * This also avoids libass, drawtext, fontconfig and SVG decoders in serverless.
  */
 export function buildPortfolioReelPoster(brand: string, title: string, site: string, zenEco = false): Buffer {
   const width = 1080, height = 1920;
@@ -195,15 +197,13 @@ export function buildPortfolioReelPoster(brand: string, title: string, site: str
   }
 
   rect(0,0,width,height,bg);
-  label(brand.slice(0,32),42,42,5,white);
-  titleLines(title,28).forEach((line,i)=>label(line,42,104+i*38,3,pale));
-  rect(0,1728,width,192,bg);
-  label(site.slice(0,40),42,1766,4,white);
-  label('MUSIC BY RE-MASTER FREDDY',42,1820,3,pale);
-  if(zenEco){
-    rect(560,1646,478,58,teal);
-    label('ZEN ECO HOMES',584,1662,3,gold);
-    label('COSTA BLANCA',822,1662,2,white);
-  }
+
+  // Keep the top-left platform controls clear, then place all brand copy
+  // above the visual gallery. No baked-in text is allowed in the lower safe area.
+  if(zenEco) rect(42,84,996,5,teal);
+  label(brand.slice(0,32),42,108,5,white);
+  titleLines(title,28).forEach((line,i)=>label(line,42,174+i*38,3,pale));
+  label(site.slice(0,40),42,266,2,zenEco?gold:pale);
+
   return Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`, 'ascii'), pixels]);
 }
