@@ -24,14 +24,8 @@ export function summarizeSocialAutopilot(rows: SocialAutopilotRow[]) {
   const published = destinationRows.reduce((sum, row) => sum + Number(row.published || 0), 0);
   const eligible = destinationRows.reduce((sum, row) => sum + Number(row.measuredEligible || 0), 0);
   const quarantined = destinationRows.reduce((sum, row) => sum + Number(row.quarantined || 0), 0);
-  const blockers = destinationRows.filter((row) =>
-    row.connected
-    && !row.pilotReady
-    && Boolean(row.pilotBlockReason)
-    && (row.attentionRequired ?? true),
-  );
   const attentionRows = destinationRows.filter((row) => row.attentionRequired === true);
-  const quarantineAlreadyRepresented = attentionRows.some((row) => Number(row.quarantined || 0) > 0);
+  const blockers = attentionRows.filter((row) => Boolean(row.attentionReason || row.pilotBlockReason));
 
   return {
     connected,
@@ -43,6 +37,6 @@ export function summarizeSocialAutopilot(rows: SocialAutopilotRow[]) {
     quarantined,
     blockers,
     attentionRows,
-    needsAttention: attentionRows.length + (!quarantineAlreadyRepresented && quarantined > 0 ? 1 : 0),
+    needsAttention: attentionRows.length,
   };
 }
