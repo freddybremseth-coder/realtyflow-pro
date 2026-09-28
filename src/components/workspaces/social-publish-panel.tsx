@@ -5,7 +5,7 @@ import { CheckCircle2, ExternalLink, ImageIcon, RefreshCw, Send, ShieldCheck } f
 
 type Channel = {
   id: string;
-  platform: "facebook" | "instagram" | "linkedin";
+  platform: "facebook" | "instagram";
   displayName: string;
 };
 type Publishable = {
@@ -32,7 +32,6 @@ type Result = {
 const label: Record<string, string> = {
   facebook: "Facebook",
   instagram: "Instagram",
-  linkedin: "LinkedIn",
 };
 
 export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) {
@@ -164,7 +163,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
           <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Sosiale medier · live</p>
           <h2 className="mt-2 flex items-center gap-2 text-xl font-bold"><Send size={19}/> Publiser godkjent utkast</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
-            RealtyFlow viser bare SoMe-utkast som tilhører denne merkevaren og bare aktive Facebook-, Instagram- og LinkedIn-kanaler som er koblet til samme brand.
+            RealtyFlow viser bare SoMe-utkast som tilhører denne merkevaren og bare aktive Facebook- og Instagram-kanaler som er koblet til samme brand.
           </p>
         </div>
         <button type="button" onClick={() => void load()} disabled={busy}
@@ -185,7 +184,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
     <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
         <h3 className="font-semibold">Velg utkast</h3>
-        <p className="mt-1 text-xs text-slate-500">Nettsideartikler, Reels, interne poster og allerede publiserte innlegg er filtrert bort av serveren.</p>
+        <p className="mt-1 text-xs text-slate-500">Bare dine egne workspace-utkast vises. Nettsideartikler, Reels, eier-/autopilotinnhold og allerede publiserte innlegg er filtrert bort av serveren.</p>
         <div className="mt-4 max-h-[520px] space-y-2 overflow-y-auto">
           {rows.map(item => <button key={item.id} type="button" onClick={() => choosePublication(item.id)}
             className={`w-full rounded-xl border p-3 text-left ${selectedPublicationId === item.id
