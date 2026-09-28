@@ -39,6 +39,9 @@ function fakeDatabase() {
         });
       }
       if (name === "workspace_brand_marketing_draft_create_v2") {
+        if (args?.p_image_url === "https://cdn.example.test/unapproved.jpg") {
+          return Promise.resolve({ data: { ok: false, error: "IMAGE_NOT_APPROVED_FOR_BRAND" }, error: null });
+        }
         const requested = Array.isArray(args?.p_platforms) ? args?.p_platforms as string[] : [];
         const active = new Set(channels
           .filter(row => row.brand_id === args?.p_brand_key && row.is_active === true)
@@ -190,7 +193,7 @@ test("marketing draft requires explicit draft permission and active brand channe
   assert.equal(calls.filter(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_draft_create_v2").length, 1);
 });
 
-test("Instagram draft requires a safe public HTTPS image", async () => {
+test("Instagram draft requires HTTPS media that the server approves for the brand", async () => {
   const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
 
   const missing = await POST(request(cookie, "POST", {
@@ -212,6 +215,14 @@ test("Instagram draft requires a safe public HTTPS image", async () => {
     assert.equal(invalid.status, 400);
     assert.equal((await invalid.json()).error.code, "INVALID_DRAFT");
   }
+
+  const unapproved = await POST(request(cookie, "POST", {
+    description: "Instagram post with unrelated public image",
+    platforms: ["instagram"],
+    imageUrl: "https://cdn.example.test/unapproved.jpg",
+  }) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(unapproved.status, 409);
+  assert.equal((await unapproved.json()).error.code, "IMAGE_NOT_APPROVED_FOR_BRAND");
 
   const before = calls.filter(call => call.method === "rpc" &&
     call.args[0] === "workspace_brand_marketing_draft_create_v2").length;
