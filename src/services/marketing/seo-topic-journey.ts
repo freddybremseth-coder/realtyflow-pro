@@ -54,6 +54,7 @@ export type SEOTopicJourneyStage =
   | "PUBLISHED"
   | "MEASURED"
   | "LEAD_SIGNAL"
+  | "QUALIFIED_SIGNAL"
   | "BUSINESS_PROVEN";
 
 export type SEOTopicJourney = {
@@ -132,7 +133,8 @@ function stageFor(input: {
   qualified: number;
   sales: number;
 }): SEOTopicJourneyStage {
-  if (input.sales > 0 || input.qualified > 0) return "BUSINESS_PROVEN";
+  if (input.sales > 0) return "BUSINESS_PROVEN";
+  if (input.qualified > 0) return "QUALIFIED_SIGNAL";
   if (input.leads > 0) return "LEAD_SIGNAL";
   if (input.measuredContentCount > 0) return "MEASURED";
   if (input.publishedCount > 0) return "PUBLISHED";
@@ -269,7 +271,8 @@ export function buildSEOTopicJourneys(input: {
     PUBLISHED: 2,
     MEASURED: 3,
     LEAD_SIGNAL: 4,
-    BUSINESS_PROVEN: 5,
+    QUALIFIED_SIGNAL: 5,
+    BUSINESS_PROVEN: 6,
   };
 
   return journeys.sort((a, b) =>
