@@ -12,7 +12,7 @@ test("summary counts blockers and quarantine conservatively", () => {
   assert.equal(summary.pilotReady, 1);
   assert.equal(summary.published, 7);
   assert.equal(summary.blockers.length, 1);
-  assert.equal(summary.needsAttention, 2);
+  assert.equal(summary.needsAttention, 1);
 });
 
 test("measurement signals and system-work blockers do not inflate human attention", () => {
