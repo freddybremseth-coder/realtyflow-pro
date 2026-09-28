@@ -96,14 +96,13 @@ export function buildMarketingNextActions(
         brandName: row.brandName,
         channel,
         sourceChannel: null,
-        title: `${row.brandName} · kontroller karantene`,
-        reason: `${row.quarantined} learning-måling(er) er satt i karantene og skal ikke påvirke videre skalering før de er kontrollert.`,
-        href: "/posts",
-        execution: "HUMAN_REQUIRED",
-        priority: "HIGH",
+        title: `${row.brandName} · datakvalitet i karantene`,
+        reason: `${row.quarantined} måling(er) er allerede ekskludert fra læringen. Systemet beholder dem som audit/data-hygiene uten at de får påvirke nye regler.`,
+        href: "/analytics",
+        execution: "SYSTEM_WORK",
+        priority: "LOW",
         evidence: [`quarantined=${row.quarantined}`, `published=${row.published}`],
       });
-      continue;
     }
 
     if (row.connected && !row.brandBrainReady) {
@@ -191,8 +190,7 @@ export function buildMarketingNextActions(
         candidate.brandId === row.brandId
         && candidate.platform
         && candidate.platform !== row.platform
-        && candidate.liveLearning
-        && candidate.quarantined === 0,
+        && candidate.liveLearning,
       )
       .sort((a, b) =>
         b.actionableRules - a.actionableRules

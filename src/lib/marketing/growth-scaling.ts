@@ -43,10 +43,10 @@ export function decideGrowthScaling(input: GrowthScalingInput): GrowthScalingDec
   if (input.pilotReadyChannels < 1) blockers.push("Ingen kanal har godkjent pilot-governance.");
   if (input.readySources < GROWTH_SCALING_THRESHOLDS.readySources) blockers.push(`For få publiseringsklare kilder (${input.readySources}/${GROWTH_SCALING_THRESHOLDS.readySources}).`);
   if (input.blockedSources > 0) evidence.push(`${input.blockedSources} kilder er blokkert og skal ikke brukes.`);
-  if (input.quarantined > 0) blockers.push(`${input.quarantined} målinger er i karantene.`);
+  if (input.quarantined > 0) evidence.push(`${input.quarantined} målinger er ekskludert fra læringen av datakvalitetsgrunner; de teller ikke som evidens.`);
 
   const foundationReady = input.active && input.connectedChannels > 0 && input.pilotReadyChannels > 0
-    && input.readySources >= GROWTH_SCALING_THRESHOLDS.readySources && input.quarantined === 0;
+    && input.readySources >= GROWTH_SCALING_THRESHOLDS.readySources;
   const learningReady = foundationReady
     && input.published30d >= GROWTH_SCALING_THRESHOLDS.published30d
     && input.eligibleObservations >= GROWTH_SCALING_THRESHOLDS.eligibleObservations
@@ -63,9 +63,9 @@ export function decideGrowthScaling(input: GrowthScalingInput): GrowthScalingDec
 
   let stage: GrowthScalingStage;
   let nextAction: string;
-  if (!input.active || input.connectedChannels < 1 || input.quarantined > 0) {
+  if (!input.active || input.connectedChannels < 1) {
     stage = "HOLD";
-    nextAction = "Løs plan-, kanal- eller datakvalitetsblokkeringen før ny produksjon.";
+    nextAction = "Løs plan- eller kanalblokkeringen før ny produksjon.";
   } else if (!foundationReady) {
     stage = "FOUNDATION";
     nextAction = input.pilotReadyChannels < 1
@@ -91,5 +91,5 @@ export function decideGrowthScaling(input: GrowthScalingInput): GrowthScalingDec
     + Math.min(input.qualified / GROWTH_SCALING_THRESHOLDS.qualified, 1) * 15
   );
 
-  return { stage, score: input.quarantined > 0 ? Math.min(score, 39) : score, canScale: stage === "SCALE", blockers, evidence, nextAction };
+  return { stage, score, canScale: stage === "SCALE", blockers, evidence, nextAction };
 }

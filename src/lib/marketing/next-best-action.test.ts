@@ -23,7 +23,7 @@ test("chooses a generic same-brand canary from an existing live-learning control
       pilotReady: true,
       published: 31,
       measuredEligible: 17,
-      quarantined: 0,
+      quarantined: 14,
       evaluatedRules: 97,
       actionableRules: 16,
       liveLearning: true,
@@ -79,7 +79,7 @@ test("does not turn measurement signals into human attention work", () => {
   assert.deepEqual(actions, []);
 });
 
-test("quarantine remains a human-required safety action", () => {
+test("excluded metric quarantine is system hygiene while clean learning remains usable", () => {
   const actions = buildMarketingNextActions([
     {
       brandId: "zeneco",
@@ -99,9 +99,13 @@ test("quarantine remains a human-required safety action", () => {
     },
   ]);
 
-  assert.equal(actions[0]?.kind, "REVIEW_QUARANTINE");
-  assert.equal(actions[0]?.execution, "HUMAN_REQUIRED");
-  assert.equal(actions[0]?.priority, "HIGH");
+  const quarantine = actions.find((action) => action.kind === "REVIEW_QUARANTINE");
+  const optimize = actions.find((action) => action.kind === "OPTIMIZE_WITH_LEARNING");
+  assert.ok(quarantine);
+  assert.equal(quarantine.execution, "SYSTEM_WORK");
+  assert.equal(quarantine.priority, "LOW");
+  assert.ok(optimize);
+  assert.equal(optimize.execution, "AUTO_READY");
 });
 
 test("known canary route lookup remains explicit and deny-by-default", () => {
