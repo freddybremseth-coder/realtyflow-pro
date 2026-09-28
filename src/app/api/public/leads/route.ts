@@ -37,6 +37,15 @@ function positiveInteger(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
+function queryParamFromUrl(value: string, key: string) {
+  if (!value) return "";
+  try {
+    return new URL(value).searchParams.get(key) || "";
+  } catch {
+    return "";
+  }
+}
+
 function budgetRange(value: string) {
   const values = (value.match(/\d[\d\s.]*/g) || [])
     .map((part) => Number(part.replace(/[\s.]/g, "")))
@@ -181,7 +190,10 @@ export async function POST(request: NextRequest) {
   const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
   const partnerType = normalizePartnerType(body.partner_type || body.partnerType);
   const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);
-  const eventId = cleanText(body.event_id || body.eventId, 160);
+  const eventId = cleanText(
+    body.event_id || body.eventId || queryParamFromUrl(pageUrl, "event_id"),
+    160,
+  );
   const eventName = cleanText(body.event_name || body.eventName, 240);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
   const visitorId = cleanText(body.visitor_id || body.visitorId, 160);
@@ -245,6 +257,86 @@ export async function POST(request: NextRequest) {
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (isCorporateEventRegistration) {
+    const { data: existingParticipant, error: participantLookupError } = await supabase
+      .from("corporate_event_participants")
+      .select("*")
+      .eq("brand_id", "zeneco")
+      .eq("event_id", eventId)
+      .eq("email", email)
+      .maybeSingle();
+
+    if (participantLookupError) {
+      return NextResponse.json({ error: participantLookupError.message }, { status: 500 });
+    }
+
+    const participantPayload = {
+      brand_id: "zeneco",
+      event_id: eventId,
+      event_name: eventName,
+      email,
+      name,
+      organization_name: organizationName || null,
+      organization_type: organizationType || null,
+      contact_role: contactRole || null,
+      contact_id: existing?.id || null,
+      source_url: pageUrl || null,
+      utm_source: utmSource || null,
+      utm_medium: utmMedium || "webinar",
+      utm_campaign: utmCampaign || null,
+      utm_content: utmContent || null,
+      evidence: {
+        ...(existingParticipant?.evidence && typeof existingParticipant.evidence === "object" ? existingParticipant.evidence : {}),
+        voluntary_registration: true,
+        registration_submission_id: submissionId || null,
+        registration_message: message || null,
+        sales_qualified: false,
+        automatic_pipeline_change: false,
+      },
+      updated_at: now,
+    };
+
+    const participantWrite = existingParticipant?.id
+      ? supabase
+          .from("corporate_event_participants")
+          .update(participantPayload)
+          .eq("id", existingParticipant.id)
+          .select("*")
+          .single()
+      : supabase
+          .from("corporate_event_participants")
+          .insert({
+            ...participantPayload,
+            status: "REGISTERED",
+            registered_at: now,
+            created_at: now,
+          })
+          .select("*")
+          .single();
+
+    const { data: participant, error: participantError } = await participantWrite;
+    if (participantError) {
+      return NextResponse.json({ error: participantError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      accepted: true,
+      brandId,
+      contact: null,
+      corporateEventRegistration: {
+        id: participant.id,
+        eventId: participant.event_id,
+        eventName: participant.event_name,
+        status: participant.status,
+        salesQualified: false,
+        contactCreated: false,
+        workItemCreated: false,
+        revenueEventCreated: false,
+      },
+    });
+  }
 
   const incomingInteraction = {
     id: submissionId ? `website-${submissionId}` : `website-${Date.now()}`,
@@ -445,6 +537,45 @@ export async function POST(request: NextRequest) {
         } else {
           corporateProspect = createdProspect;
         }
+      }
+    }
+  }
+
+  if (isCorporateHome && eventId) {
+    const { data: eventParticipant, error: eventParticipantError } = await supabase
+      .from("corporate_event_participants")
+      .select("id,evidence")
+      .eq("brand_id", "zeneco")
+      .eq("event_id", eventId)
+      .eq("email", email)
+      .maybeSingle();
+
+    if (eventParticipantError) {
+      console.warn("[public-leads] corporate event participant lookup failed", eventParticipantError.message);
+    } else if (eventParticipant?.id) {
+      const currentEvidence = objectValue(eventParticipant.evidence);
+      const { error: eventParticipantUpdateError } = await supabase
+        .from("corporate_event_participants")
+        .update({
+          status: "ASSESSMENT_REQUESTED",
+          assessment_requested_at: now,
+          contact_id: data.id,
+          evidence: {
+            ...currentEvidence,
+            assessment_requested: true,
+            assessment_submission_id: submissionId || null,
+            assessment_contact_id: data.id,
+            sales_qualified: false,
+            automatic_pipeline_change: false,
+            automatic_prospect_qualification: false,
+            qualified_by: "voluntary_assessment_request",
+          },
+          updated_at: now,
+        })
+        .eq("id", eventParticipant.id);
+
+      if (eventParticipantUpdateError) {
+        console.warn("[public-leads] corporate event participant update failed", eventParticipantUpdateError.message);
       }
     }
   }
