@@ -477,6 +477,53 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
     ],
   },
   {
+    id: "reels-studio",
+    title: "Reels Studio – lag video uten å åpne Re-Master",
+    shortTitle: "Reels Studio",
+    summary: "En enkel arbeidsflyt for å velge uttrykk, lage video, kontrollere resultatet og publisere på riktig brand-kanal.",
+    readMinutes: 5,
+    brands: ["zeneco", "pinosoecolife"],
+    anyPermissions: ["reels.read", "reels.create", "reels.publish"],
+    sections: [
+      {
+        heading: "Re-Master er motoren – RealtyFlow er arbeidsflaten",
+        paragraphs: [
+          "Du trenger ikke åpne det avanserte Re-Master-adminområdet. I RealtyFlow velger du tittel, musikk, lengde, område og hva slags boligbilder som skal brukes. Re-Master renderer videoen i bakgrunnen og leverer den tilbake til samme brand-workspace.",
+        ],
+        emphasis: "Arbeid alltid fra riktig merkevare. Zen Eco Homes og Pinoso EcoLife har egne bilder, kanaler og publiseringsgrenser.",
+      },
+      {
+        heading: "Den enkle arbeidsflyten",
+        bullets: [
+          "1. Skriv en kort tittel som beskriver hva Reelen handler om.",
+          "2. Velg Re-Master-låt, varighet og eventuelt område.",
+          "3. Velg relevante bilder: villaer, leiligheter, basseng, havutsikt, interiør eller blandet.",
+          "4. Lag Reelen og se hele forhåndsvisningen før du publiserer.",
+          "5. Publiser bare til Facebook eller Instagram når video, tekst og brand er riktig.",
+        ],
+      },
+      {
+        heading: "Hva RealtyFlow beskytter deg mot",
+        bullets: [
+          "En Zen-bruker kan ikke lage eller publisere en Pinoso-Reel ved å endre data i nettleseren – brand verifiseres på serveren.",
+          "Publisering bruker bare den aktive Facebook- eller Instagram-kontoen som er koblet til akkurat merkevaren.",
+          "Et publiseringsforsøk reserveres før utsending, slik at et uklart resultat ikke skal føre til blind retry og duplikater.",
+          "YouTube er en separat arbeidsflate og er ikke åpnet gjennom medarbeider-Reels.",
+        ],
+        emphasis: "Ingen Reel publiseres automatisk fra denne arbeidsflaten. Lag først, forhåndsvis, og publiser deretter bare hvis du har egen publiseringsrettighet.",
+      },
+      {
+        heading: "Hva som gjør en Reel nyttig",
+        bullets: [
+          "Ett tydelig tema er bedre enn mange budskap i samme video.",
+          "Bruk område og boligtype som faktisk passer målgruppen du vil nå.",
+          "Kontroller at bildene støtter budskapet – ikke publiser bare fordi renderingen er teknisk vellykket.",
+          "Tenk på neste steg: Reelen skal bygge interesse for merkevaren, området, en boligtype eller et konkret kundespørsmål.",
+        ],
+      },
+    ],
+  },
+  {
     id: "social-publishing",
     title: "Publisering til sosiale medier – kvalitet før send",
     shortTitle: "SoMe-publisering",

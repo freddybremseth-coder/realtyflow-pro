@@ -74,3 +74,30 @@ test("visibility and campaigns guides appear when those tools are available", ()
   assert.equal(ids.includes("visibility-content"), true);
   assert.equal(ids.includes("campaigns-events"), true);
 });
+
+
+test("Reels guide appears only for supported brands with Reel access", () => {
+  const zen = trainingArticlesFor({
+    brandKey: "zeneco",
+    permissions: ["reels.read"],
+  });
+  assert.equal(zen.some(article => article.id === "reels-studio"), true);
+
+  const pinoso = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["reels.create"],
+  });
+  assert.equal(pinoso.some(article => article.id === "reels-studio"), true);
+
+  const withoutReels = trainingArticlesFor({
+    brandKey: "zeneco",
+    permissions: ["marketing.read"],
+  });
+  assert.equal(withoutReels.some(article => article.id === "reels-studio"), false);
+
+  const otherBrand = trainingArticlesFor({
+    brandKey: "otherbrand",
+    permissions: ["reels.read"] as any,
+  });
+  assert.equal(otherBrand.some(article => article.id === "reels-studio"), false);
+});
