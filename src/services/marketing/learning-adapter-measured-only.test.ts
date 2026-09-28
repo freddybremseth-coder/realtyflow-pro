@@ -51,3 +51,14 @@ test("empty canonical outcome does not manufacture learning evidence", () => {
     commissionEur: 0,
   }), false);
 });
+
+
+test("non-canonical analytics events do not enter observed learning metrics", () => {
+  const row = {
+    eventType: "content_viewed",
+    metrics: { impressions: 5000, clicks: 300 },
+    metadata: { source: "unified_analytics" },
+  };
+  assert.equal(learningEligible(row), false);
+  assert.equal(hasLearningEvidence([row]), false);
+});
