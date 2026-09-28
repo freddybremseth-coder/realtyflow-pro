@@ -174,7 +174,7 @@ export async function dispatchGeneratedAsset(
   const publicationId = args.publicationId ?? `pub_${asset.contentId}_${asset.channel}`;
   const idempotencyKey = publicationIdempotencyKey(run.marketingRunId, publicationId);
   const nowIso = () => new Date(deps.now?.() ?? new Date()).toISOString();
-  const rawCaption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
+  const rawCaption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n\n");
   const caption = ensureBrandWebsiteLink({ brandId: run.brandId, channel: asset.channel, content: rawCaption });
   const trace: ActionTraceEntry[] = [];
 
