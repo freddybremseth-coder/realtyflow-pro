@@ -94,6 +94,19 @@ type Overview = {
       rootCauseCategory: string;
       actionType: string;
       updatedAt?: string | null;
+      observedEffect?: {
+        status: "NOT_ENOUGH_DATA" | "MEASURED_UP" | "MEASURED_DOWN" | "UNCHANGED";
+        stage: string;
+        label: string;
+        baselineAt?: string | null;
+        baselineRatePct?: number | null;
+        postSnapshots: number;
+        latestAt?: string | null;
+        latestRatePct?: number | null;
+        postAveragePct?: number | null;
+        deltaPctPoints?: number | null;
+        note: string;
+      } | null;
     } | null;
     review?: {
       status: "READY" | "LEARNING" | "DATA_GAP";
@@ -668,6 +681,41 @@ export default function CorporateHomesGrowthPage() {
                               : "Ikke dokumentert ennå"}
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {data.growthReview.improvement?.observedEffect && (
+                    <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                      <div className="text-xs font-black uppercase tracking-wide text-cyan-900">
+                        Målt utvikling etter at tiltaket ble opprettet
+                      </div>
+                      {data.growthReview.improvement.observedEffect.status === "NOT_ENOUGH_DATA" ? (
+                        <p className="mt-1 text-sm font-bold text-slate-800">
+                          Venter på mer data · {data.growthReview.improvement.observedEffect.postSnapshots}/2 nye kvalifiserte ukessnapshots.
+                        </p>
+                      ) : (
+                        <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                          <span className="text-2xl font-black text-cyan-950">
+                            {(data.growthReview.improvement.observedEffect.deltaPctPoints || 0) > 0 ? "+" : ""}
+                            {data.growthReview.improvement.observedEffect.deltaPctPoints} pp
+                          </span>
+                          <span className="text-sm font-bold text-slate-800">
+                            baseline {data.growthReview.improvement.observedEffect.baselineRatePct}% → snitt etter tiltak {data.growthReview.improvement.observedEffect.postAveragePct}%
+                          </span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-black ${
+                            data.growthReview.improvement.observedEffect.status === "MEASURED_UP"
+                              ? "bg-emerald-100 text-emerald-900"
+                              : data.growthReview.improvement.observedEffect.status === "MEASURED_DOWN"
+                                ? "bg-rose-100 text-rose-900"
+                                : "bg-slate-200 text-slate-800"
+                          }`}>
+                            {data.growthReview.improvement.observedEffect.status.replaceAll("_", " ")}
+                          </span>
+                        </div>
+                      )}
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        {data.growthReview.improvement.observedEffect.note}
+                      </p>
                     </div>
                   )}
                 </div>
