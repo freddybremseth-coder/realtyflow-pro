@@ -175,6 +175,8 @@ export interface CreateCampaignDraftInput {
   language?: string;
   /** Stable cross-channel learning key, e.g. a SAM SEO topic mission. */
   topic?: string;
+  /** Exact verified URL that must survive generation into the final CTA. */
+  requiredCtaUrl?: string;
   publishingAccountId?: string;
   publishingCapacityPerWeek?: number;
   legacyPublicationId?: string;
@@ -437,6 +439,21 @@ export async function createCampaignDraft(
       continue;
     }
 
+    if (input.requiredCtaUrl) {
+      let requiredUrl: string;
+      try {
+        const parsed = new URL(input.requiredCtaUrl);
+        if (parsed.protocol !== "https:") throw new Error("non-https");
+        requiredUrl = parsed.toString();
+      } catch {
+        throw new Error("REQUIRED_CTA_URL_INVALID");
+      }
+      const currentCta = String(creative.asset.cta ?? "").trim();
+      const combined = [currentCta, currentCta.includes(requiredUrl) ? "" : `Les mer: ${requiredUrl}`]
+        .filter(Boolean)
+        .join("\n");
+      creative = { ...creative, asset: { ...creative.asset, cta: combined } };
+    }
     creative = dedupeCreativeCta(creative);
     await persistAsset(supabase, creative).catch(() => undefined);
 
