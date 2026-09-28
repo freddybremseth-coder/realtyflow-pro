@@ -26,8 +26,8 @@ describe("social website link guard", () => {
     expect(ensureBrandWebsiteLink({ brandId: "zeneco", channel: "website", content: "Artikkel" })).toBe("Artikkel");
   });
 
-  it("fails closed when a social brand has no configured website", () => {
-    expect(() => ensureBrandWebsiteLink({ brandId: "unknown-brand", channel: "facebook", content: "Hei" }))
-      .toThrow(/SOCIAL_WEBSITE_URL_NOT_CONFIGURED/);
+  it("leaves non-owned tenant brands unchanged when no canonical website is registered", () => {
+    expect(ensureBrandWebsiteLink({ brandId: "unknown-brand", channel: "facebook", content: "Hei" }))
+      .toBe("Hei");
   });
 });
