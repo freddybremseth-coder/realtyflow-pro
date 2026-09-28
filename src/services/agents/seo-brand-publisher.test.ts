@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GSCBrandSnapshot } from "./seo-search-console";
-import { runBrandPublisher, brandPublicationId, requestBrandRollback, portfolioPublicationStatuses } from "./seo-brand-publisher";
-import { SEO_BRAND_PUBLISHERS, patchBrandHtml } from "./seo-brand-publishing";
+import { runBrandPublisher, brandPublicationId, requestBrandRollback, portfolioPublicationStatuses, secondExperimentReady } from "./seo-brand-publisher";
+import { SEO_BRAND_PUBLISHERS, patchBrandHtml, secondVariantForBrand } from "./seo-brand-publishing";
 import { githubForSite, type GithubRequest } from "./seo-brand-github";
 const site=SEO_BRAND_PUBLISHERS[1],now=new Date("2026-09-27T12:00:00Z");
 const A="a".repeat(40),B="b".repeat(40),C="c".repeat(40);
@@ -174,4 +174,45 @@ test("GitHub gate requires exact brand deployment plus complete passing checks",
   checks={total_count:0,check_runs:[]};status.statuses[0].context="Vercel – freddybremseth-books";
   assert.equal(await gh.green(A),false);
   await assert.rejects(gh.green("main"),/revision/);
+});
+
+
+test("every portfolio brand has a distinct fixed v2 metadata variant",()=>{
+  for(const configured of SEO_BRAND_PUBLISHERS){
+    const second=secondVariantForBrand(configured.brandId);
+    assert.ok(second.title.length > 10);
+    assert.ok(second.description.length > 30);
+    assert.notEqual(second.title,configured.title);
+    assert.notEqual(second.description,configured.description);
+  }
+});
+
+test("v2 remains locked until v1 has a complete measured post-change period",()=>{
+  const measured=structuredClone(snapshot);
+  measured.period.currentStart="2026-09-02";
+  measured.period.currentEnd="2026-10-01";
+  measured.topPages=[{path:"/",clicks:2,impressions:180,ctr:2/180,position:7}];
+  measured.topQueryPages=[{page:"/",query:"relevant search",clicks:2,impressions:60,ctr:2/60,position:7}];
+  const effect={
+    change_id:"sam_"+site.brandId+"_homepage_v1",
+    brand_id:site.brandId,
+    page:"/",
+    query:"relevant search",
+    commit_sha:C,
+    applied_at:"2026-08-01T12:00:00Z",
+    site_verified:true,
+    publisher:"github_metadata_v1",
+    baseline_period_start:"2026-07-01",
+    baseline_period_end:"2026-07-30",
+    baseline_impressions:50,
+    baseline_clicks:1,
+    baseline_position:8,
+  };
+  assert.equal(secondExperimentReady(effect,measured),true);
+  const overlapping=structuredClone(measured);
+  overlapping.period.currentStart="2026-08-01";
+  overlapping.period.currentEnd="2026-08-30";
+  assert.equal(secondExperimentReady(effect,overlapping),false);
+  assert.equal(secondExperimentReady({...effect,site_verified:false},measured),false);
+  assert.equal(secondExperimentReady(effect,null),false);
 });
