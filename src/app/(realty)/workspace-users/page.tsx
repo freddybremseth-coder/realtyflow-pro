@@ -595,7 +595,10 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.crmRead}
                       onChange={e => updateChoice(brand.brandKey, { crmRead: e.target.checked, ...(e.target.checked ? {} : { crmWrite: false, tasksRead: false, tasksWrite: false }) })}/> Se leads og kunder</label>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.crmWrite}
-                      onChange={e => updateChoice(brand.brandKey, { crmWrite: e.target.checked })}/> Opprette og redigere leads</label>
+                      onChange={e => updateChoice(brand.brandKey, { crmWrite: e.target.checked })}/>
+                      {isZen ? "Redigere kontaktdata på godkjente felleskunder" : "Opprette og redigere leads"}
+                    </label>
+                    {isZen && <p className="mt-2 text-[11px] text-slate-500">Zen workspace oppretter ikke nye CRM-kontakter og åpner ikke eldre/private Zen-kunder.</p>}
                   </div>
                   <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Eiendommer</strong>
