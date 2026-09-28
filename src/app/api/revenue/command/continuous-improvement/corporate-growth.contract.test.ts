@@ -74,3 +74,26 @@ test("Corporate overview reads tracked improvement status without creating or up
   assert.match(page, /Tiltak \/ rotårsak/);
   assert.match(page, /forfalt/);
 });
+
+
+test("Corporate improvement effect is sourced from Growth Review history, not generic weekly effect", () => {
+  const overview = fs.readFileSync(
+    "src/app/api/corporate-homes/overview/route.ts",
+    "utf8",
+  );
+  const page = fs.readFileSync(
+    "src/app/(business)/corporate-homes/page.tsx",
+    "utf8",
+  );
+
+  assert.match(overview, /buildCorporateGrowthImprovementEffect/);
+  assert.match(overview, /recentCorporateGrowthReviews/);
+  assert.match(overview, /tracked\.createdAt/);
+  assert.match(overview, /effect: corporateEffect/);
+  assert.doesNotMatch(overview, /effectTrend: tracked\.effect\.trend/);
+
+  assert.match(page, /Corporate effekt siden tiltak/);
+  assert.match(page, /Baseline/);
+  assert.match(page, /kvalifiserte snapshot etter tiltaket/);
+  assert.match(page, /deltaPctPoints/);
+});
