@@ -178,6 +178,23 @@ function snapshotsFromDetails(details: unknown): GSCBrandSnapshot[] {
   return [...out.values()];
 }
 
+export function mergeNewestGSCBrandSnapshots(
+  ...groups: GSCBrandSnapshot[][]
+): GSCBrandSnapshot[] {
+  const byBrand = new Map<string, GSCBrandSnapshot>();
+  for (const group of groups) {
+    for (const snapshot of group) {
+      const current = byBrand.get(snapshot.brandId);
+      const currentAt = Date.parse(String(current?.collectedAt ?? ""));
+      const nextAt = Date.parse(String(snapshot.collectedAt ?? ""));
+      if (!current || (Number.isFinite(nextAt) && (!Number.isFinite(currentAt) || nextAt >= currentAt))) {
+        byBrand.set(snapshot.brandId, snapshot);
+      }
+    }
+  }
+  return [...byBrand.values()];
+}
+
 export async function loadSEOChangeJourneys(
   supabase: any,
   topicJourneys: SEOTopicJourney[],
@@ -211,11 +228,7 @@ export async function loadSEOChangeJourneys(
 
   const liveSnapshots = snapshotsFromDetails(liveR.data?.details);
   const reviewSnapshots = snapshotsFromDetails(reviewR.data?.details);
-  const liveAt = Date.parse(String(liveR.data?.created_at ?? ""));
-  const reviewAt = Date.parse(String(reviewR.data?.created_at ?? ""));
-  const snapshots = liveSnapshots.length && (!reviewSnapshots.length || liveAt >= reviewAt)
-    ? liveSnapshots
-    : reviewSnapshots;
+  const snapshots = mergeNewestGSCBrandSnapshots(reviewSnapshots, liveSnapshots);
 
   return buildSEOChangeJourneys({
     changes: changesR.data ?? [],
