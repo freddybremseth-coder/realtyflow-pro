@@ -88,7 +88,8 @@ test("Corporate observed effect stays read-only and explicitly non-causal", () =
 
   assert.match(overview, /buildCorporateImprovementObservedEffect/);
   assert.match(overview, /recentCorporateGrowthReviews/);
-  assert.match(overview, /\.limit\(12\)/);
+  assert.match(overview, /\.in\("status", \["success", "partial"\]\)/);
+  assert.match(overview, /\.limit\(60\)/);
   assert.match(overview, /createdAt: tracked\.createdAt/);
   assert.doesNotMatch(overview, /EFFECTIVE|INEFFECTIVE|UPDATE_IMPROVEMENT/);
 
