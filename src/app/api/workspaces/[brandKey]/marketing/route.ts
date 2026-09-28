@@ -133,7 +133,7 @@ export async function POST(
     return fail(400, "INVALID_DRAFT");
   }
   if (platforms.includes("instagram") && !imageUrl) {
-    return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha en offentlig HTTPS-bildeadresse.");
+    return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha et brand-godkjent bilde.");
   }
 
   if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
@@ -155,7 +155,11 @@ export async function POST(
     return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
   }
   if (data?.ok === false && data?.error === "INSTAGRAM_IMAGE_REQUIRED") {
-    return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha en offentlig HTTPS-bildeadresse.");
+    return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha et bilde som RealtyFlow kan knytte til denne merkevaren.");
+  }
+  if (data?.ok === false && data?.error === "IMAGE_NOT_APPROVED_FOR_BRAND") {
+    return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
+      "Bildeadressen er ikke knyttet til en synlig eiendom eller godkjent mediefil for denne merkevaren.");
   }
   const publication = safePublication(data?.publication, params.brandKey);
   if (!data?.ok || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
