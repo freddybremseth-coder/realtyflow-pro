@@ -140,7 +140,7 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
     const caption = ensureBrandWebsiteLink({
       brandId: String(pub.brand_id),
       channel: asset.channel,
-      content: [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n\n"),
+      content: [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n"),
     });
     const pub2 = contentPublishabilityGate(caption);
     if (!pub2.publishable) throw new Error(`PUBLISHABILITY_FAILED: ${pub2.result} — ${pub2.reason}`);
