@@ -47,7 +47,7 @@ function safePublication(value: any) {
   if (typeof value.id !== "string" || !uuid.test(value.id)) return null;
   const plannedPlatforms = Array.isArray(value.plannedPlatforms)
     ? value.plannedPlatforms.filter((item: unknown): item is string =>
-        typeof item === "string" && platforms.has(item)).slice(0, 3)
+        typeof item === "string" && platforms.has(item as SupportedPlatform)).slice(0, 2)
     : [];
   return { id: value.id, hasImage: value.hasImage === true, plannedPlatforms };
 }
@@ -142,7 +142,7 @@ export async function POST(
   const channelIds: string[] = Array.isArray(body.channelIds)
     ? body.channelIds.map((item: unknown) => String(item || "").trim()).filter((item: string) => Boolean(item))
     : [];
-  if (!uuid.test(publicationId) || channelIds.length < 1 || channelIds.length > 3 ||
+  if (!uuid.test(publicationId) || channelIds.length < 1 || channelIds.length > 2 ||
       new Set(channelIds).size !== channelIds.length || channelIds.some(id => !uuid.test(id))) {
     return fail(400, "INVALID_PUBLISH_REQUEST");
   }
@@ -196,7 +196,7 @@ export async function POST(
   }
 
   // Revalidate exact current user + brand + marketing.publish immediately
-  // before the irreversible external Graph/LinkedIn call.
+  // before the irreversible external Meta API call.
   const recheck = await requireBrandWorkspace(request, params.brandKey, "marketing.publish");
   if (!recheck.value || recheck.value.verifiedUserId !== access.value.verifiedUserId) {
     await finalize(access.value.supabase, {
