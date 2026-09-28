@@ -67,3 +67,12 @@ test("Next adapter is reversible, chainable and refuses pre-existing or changed 
   assert.throws(()=>patchNextHomepage('export async function generateMetadata() {}',before),/dedicated/);
   assert.deepEqual(readNextLayoutMetadata('export const metadata: Metadata = {\n title: { default: "Old title" },\n description: "Old description",\n};'),{title:"Old title",description:"Old description"});
 });
+
+
+test("second metadata variants stay within search-snippet safety bounds",()=>{
+  for(const configured of SEO_BRAND_PUBLISHERS){
+    const second=secondVariantForBrand(configured.brandId);
+    assert.ok(second.title.length<=65);
+    assert.ok(second.description.length<=160);
+  }
+});
