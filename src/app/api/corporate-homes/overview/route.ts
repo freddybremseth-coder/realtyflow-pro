@@ -4,6 +4,8 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-readiness";
 import { corporateArticleUrl, corporateOrganicTopicsForWeek } from "@/lib/corporate-organic-content";
 import { corporateGrowthCandidateId } from "@/lib/corporate-growth-improvement";
+import { buildCorporateGrowthImprovementEffect } from "@/lib/corporate-growth-improvement-effect";
+import type { CorporateGrowthReviewStage } from "@/lib/corporate-growth-review";
 import {
   CONTINUOUS_IMPROVEMENT_SETTINGS_KEY,
   buildContinuousImprovementRegister,
@@ -132,13 +134,14 @@ export async function GET(request: NextRequest) {
     .limit(1)
     .maybeSingle();
 
-  const { data: lastCorporateGrowthReview, error: lastCorporateGrowthReviewError } = await supabase
+  const { data: recentCorporateGrowthReviews, error: lastCorporateGrowthReviewError } = await supabase
     .from("automation_logs")
     .select("id,status,details,created_at")
     .eq("action", "corporate_homes_growth_review")
+    .in("status", ["success", "partial"])
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(16);
+  const lastCorporateGrowthReview = recentCorporateGrowthReviews?.[0] || null;
 
   const growthDetails =
     lastCorporateGrowthReview?.details &&
@@ -158,10 +161,20 @@ export async function GET(request: NextRequest) {
     typeof latestGrowthReview.bottleneck === "object"
       ? String(latestGrowthReview.bottleneck.stage || "")
       : "";
+  const validGrowthStages = new Set([
+    "prospect_to_contact",
+    "contact_to_meeting",
+    "meeting_to_opportunity",
+    "opportunity_to_viewing",
+    "viewing_to_offer",
+  ]);
+  const typedGrowthBottleneckStage = validGrowthStages.has(growthBottleneckStage)
+    ? growthBottleneckStage as CorporateGrowthReviewStage
+    : null;
 
   let corporateGrowthImprovement: Record<string, any> | null = null;
   let continuousImprovementWarning: { message: string } | null = null;
-  if (growthBottleneckStage) {
+  if (typedGrowthBottleneckStage) {
     const [
       { data: improvementSettingsRow, error: improvementSettingsError },
       { data: weeklySettingsRow, error: weeklySettingsError },
@@ -198,12 +211,17 @@ export async function GET(request: NextRequest) {
       ),
       "OWNER",
     );
-    const candidateId = corporateGrowthCandidateId(growthBottleneckStage);
+    const candidateId = corporateGrowthCandidateId(typedGrowthBottleneckStage);
     const tracked = improvementRegister.improvements.find(
       (item) => item.candidateId === candidateId,
     ) || null;
 
     if (tracked) {
+      const corporateEffect = buildCorporateGrowthImprovementEffect(
+        typedGrowthBottleneckStage,
+        tracked.createdAt,
+        recentCorporateGrowthReviews || [],
+      );
       corporateGrowthImprovement = {
         id: tracked.id,
         candidateId: tracked.candidateId,
@@ -216,6 +234,7 @@ export async function GET(request: NextRequest) {
         rootCauseCategory: tracked.rootCauseCategory,
         actionType: tracked.actionType,
         updatedAt: tracked.updatedAt,
+        effect: corporateEffect,
       };
     }
   }
