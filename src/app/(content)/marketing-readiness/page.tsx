@@ -121,7 +121,7 @@ export default function MarketingReadinessPage() {
 
       <section style={{ marginTop: 18, padding: 16, borderRadius: 12, border: "1px solid #bbf7d0", background: "#f0fdf4" }}>
         <div style={{ fontSize: 12, fontWeight: 900, color: "#166534" }}>NEXT BEST MARKETING ACTIONS</div>
-        <div style={{ marginTop: 4, fontSize: 13, color: "#475569" }}>Nexus velger handling ut fra brand × kanal-læring. Measurement-signaler kan gi evidens, men blir aldri behandlet som publiseringskanaler.</div>
+        <div style={{ marginTop: 4, fontSize: 13, color: "#475569" }}>Nexus velger handling ut fra brand × kanal-læring. AUTO READY køes automatisk av Marketing Autopilot; measurement-signaler kan gi evidens, men blir aldri behandlet som publiseringskanaler.</div>
         <div style={{ marginTop: 12, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
           {actions.filter((action) => action.execution !== "WAIT").slice(0, 8).map((action) => (
             <div key={action.id} style={{ border: "1px solid #d1fae5", borderRadius: 10, padding: 12, background: "white" }}>
@@ -132,7 +132,8 @@ export default function MarketingReadinessPage() {
               <div style={{ marginTop: 6, fontWeight: 900 }}>{action.title}</div>
               <div style={{ marginTop: 5, fontSize: 12, lineHeight: 1.5, color: "#475569" }}>{action.reason}</div>
               {action.sourceChannel && action.sourceChannel !== action.channel && <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#64748b" }}>Læring: {action.sourceChannel} → {action.channel}</div>}
-              {action.href && <Link href={action.href} style={{ display: "inline-block", marginTop: 9, fontSize: 12, fontWeight: 800, color: "#1d4ed8", textDecoration: "none" }}>Åpne kontrollflate →</Link>}
+              {action.execution === "AUTO_READY" && <div style={{ marginTop: 9, fontSize: 12, fontWeight: 800, color: "#166534" }}>Kjøres automatisk · ingen knapp nødvendig</div>}
+              {action.href && action.execution !== "AUTO_READY" && <Link href={action.href} style={{ display: "inline-block", marginTop: 9, fontSize: 12, fontWeight: 800, color: "#1d4ed8", textDecoration: "none" }}>Åpne kontrollflate →</Link>}
             </div>
           ))}
           {!loading && actions.filter((action) => action.execution !== "WAIT").length === 0 && <div style={{ fontSize: 13, color: "#166534" }}>Ingen ny handling må startes akkurat nå.</div>}
@@ -177,7 +178,7 @@ export default function MarketingReadinessPage() {
       </div>
 
       <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: "#f8fafc", color: "#475569", fontSize: 13 }}>
-        <b>Policy:</b> Destinations kan publisere og lære i brand × kanal-scope. Signals er read-only målekilder. AUTO READY betyr at Nexus har evidens for neste kontrollerte steg; eksisterende approval-, claim- og rollback-guards gjelder fortsatt før ekstern publisering. SYSTEM WORK skal løses i plattformen og teller ikke som en daglig brukeroppgave.
+        <b>Policy:</b> Destinations kan publisere og lære i brand × kanal-scope. Signals er read-only målekilder. AUTO READY betyr at Nexus har evidens for neste kontrollerte steg og legger det i Autopilot-køen. En kanal uten eksplisitt live-forhåndsgodkjenning går til review; approval-, claim-, account- og rollback-guards gjelder fortsatt før ekstern publisering. SYSTEM WORK skal løses i plattformen og teller ikke som en daglig brukeroppgave.
       </div>
     </div>
   );
