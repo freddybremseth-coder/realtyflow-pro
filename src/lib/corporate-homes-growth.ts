@@ -155,7 +155,14 @@ function trackingUrl(params: { source: string; medium: string; campaign: string 
   return url.toString();
 }
 
+function corporateEventTrackingUrl(eventId: string) {
+  const url = new URL(trackingUrl(CORPORATE_HOME_UTM.event, "live_webinar_assessment"));
+  url.searchParams.set("event_id", eventId);
+  return url.toString();
+}
+
 export const CORPORATE_EVENT_PLAYBOOK = {
+  eventId: "zeneco-corporate-webinar-pilot",
   status: "READY_FOR_MANUAL_INVITE",
   automaticInvitesAllowed: false,
   automaticFollowUpAllowed: false,
@@ -183,7 +190,7 @@ export const CORPORATE_EVENT_PLAYBOOK = {
     },
   ],
   attendeeCta: "Be om kostnadsfri bedriftsvurdering",
-  trackingUrl: trackingUrl(CORPORATE_HOME_UTM.event, "live_webinar_assessment"),
+  trackingUrl: corporateEventTrackingUrl("zeneco-corporate-webinar-pilot"),
   followUp: [
     "Dag 0: del opptak/oppsummering og lenke til bedriftsvurderingen.",
     "Dag 2–3: menneskelig oppfølging av virksomheter som selv har bedt om vurdering eller møte.",
