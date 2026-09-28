@@ -74,3 +74,13 @@ test("learning/performance surface stays read-only", () => {
   assert.doesNotMatch(readiness, /marketing_learning_rules"[\s\S]*\.update\(/);
   assert.doesNotMatch(readiness, /marketing_learning_rules"[\s\S]*\.insert\(/);
 });
+
+
+test("Social Automation separates user decisions from automatic work", () => {
+  assert.match(page, /Dette må du gjøre/);
+  assert.match(page, /Dette gjør RealtyFlow automatisk/);
+  assert.match(page, /Ingen marketing-handling krever deg nå/);
+  assert.match(page, /Køes automatisk/);
+  assert.match(page, /Ingen handling fra deg/);
+  assert.match(page, /Dette er status, ikke «Needs attention»/);
+});
