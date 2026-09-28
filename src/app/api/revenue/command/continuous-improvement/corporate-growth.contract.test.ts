@@ -126,3 +126,23 @@ test("Continuous Improvement uses Corporate Growth Review effect for Corporate i
   assert.match(page, /Corporate: /);
   assert.match(page, /selectedCorporateEffect\.note/);
 });
+
+
+test("Corporate EFFECTIVE conclusion always requires explicit human evidence", () => {
+  const source = fs.readFileSync(
+    "src/app/api/revenue/command/continuous-improvement/route.ts",
+    "utf8",
+  );
+  const page = fs.readFileSync(
+    "src/app/(realty)/continuous-improvement/page.tsx",
+    "utf8",
+  );
+
+  assert.match(source, /corporateStageFromCandidateId\(improvement\.candidateId\)/);
+  assert.match(source, /status === "EFFECTIVE" && corporateStage && !note/);
+  assert.match(source, /Corporate-tiltak krever eksplisitt dokumentasjon før EFFECTIVE/);
+  assert.match(source, /støttende observasjon, ikke bevis på årsakssammenheng/);
+
+  assert.match(page, /påkrevd ved EFFECTIVE/);
+  assert.match(page, /Målt Corporate-funnelbevegelse alene er ikke bevis på årsak/);
+});
