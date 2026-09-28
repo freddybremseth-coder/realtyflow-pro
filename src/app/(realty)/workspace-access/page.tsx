@@ -44,7 +44,6 @@ const readinessLabels: Record<string, string> = {
   INVALID_DRAFT_PERMISSIONS: "Utkastet inneholder en ukjent eller ugyldig rettighet.",
   EMPTY_PERMISSIONS: "Utkastet har ingen rettigheter.",
   INVALID_BRAND_SCOPE: "Rettighetene passer ikke med denne merkevarens avgrensning.",
-  MARKETING_PUBLISH_NOT_IMPLEMENTED: "Direkte publisering er fortsatt sperret for medarbeidere. Markedsoversikt og innholdsutkast kan brukes.",
   AUTH_USER_MISSING: "Supabase Auth-brukeren finnes ikke ennå.",
   ACCESS_PROFILE_MISSING: "RealtyFlow-profilen WORKSPACE_MEMBER finnes ikke ennå.",
   ACCESS_PROFILE_WRONG_ROLE: "Eksisterende RealtyFlow-profil har feil rolle.",
