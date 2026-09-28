@@ -133,6 +133,13 @@ test("moving main refreshes and rechecks before merge; manual metadata conflict 
   const conflict=environment();await conflict.run();conflict.state.main="d".repeat(40);conflict.state.source=html("Manual edit");
   await assert.rejects(conflict.run(),/changed/);assert.equal(conflict.state.merges,0);assert.equal(conflict.state.refreshes,0);
 });
+test("dashboard recovers pending state from durable intent when daily summary is missing",async()=>{
+  const e=environment();await e.run();
+  const states=await portfolioPublicationStatuses(e.db.client,null);
+  const current=states.find(s=>s.brandId===site.brandId)!;
+  assert.equal(current.status,"pending");assert.match(current.pullUrl!,/\/pull\/1$/);
+  assert.equal(states.filter(s=>s.status==="monitor").length,6);
+});
 test("merge success with lost DB save is recovered without merging again",async()=>{
   const e=environment();await e.run();await e.run();e.db.rows[0].details.phase="checks";
   await e.run();assert.equal(e.state.merges,1);assert.equal(e.db.rows[0].details.phase,"deploy");

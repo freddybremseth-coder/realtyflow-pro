@@ -237,6 +237,12 @@ export async function portfolioPublicationStatuses(db: SupabaseClient, last: unk
       if (job.phase.startsWith("rollback_") && saved?.status === "blocked") return saved;
       if (job.phase.startsWith("rollback_")) return {...common,status:"pending",reason:"Tilbakeføring er satt i kø. Sam følger den opp i den daglige syklusen."};
       if (job.phase === "done") return {...common,status:"verified",reason:"Publisering bekreftet offentlig. Sam følger effektmålingen videre.",rollbackAvailable:true,revision:job.mergeSha};
+      if (saved?.status === "blocked") return saved;
+      return {...common,status:"pending",reason:job.phase === "prepare"
+        ? "Metadataforsøket er registrert. Sam følger opp endringsforslaget automatisk."
+        : job.phase === "checks" ? "Endringsforslaget avventer ferske søketall og grønne publiseringskontroller."
+        : "Endringen er slått sammen. Sam avventer bekreftet offentlig resultat.",
+        ...(job.pullNumber ? {pullUrl:"https://github.com/"+site.repository+"/pull/"+job.pullNumber} : {})};
     }
     return saved || {...common,status:"monitor",reason:"Konfigurert for automatisk kontroll. Publiseringsadgang er ennå ikke målt i en daglig syklus."};
   });
