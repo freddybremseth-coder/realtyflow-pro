@@ -133,6 +133,11 @@ export async function runBrandPublisher(
       return result("pending","Sammenslåing registrert. Venter på offentlig verifisering.",{pullUrl:pull.html_url});
     }
     if (pull.state !== "open") return result("blocked","Publiseringsforslaget er lukket.",{pullUrl:pull.html_url});
+    // A PR can wait days for checks. A stored intent is not permission to
+    // publish after its Google evidence has disappeared or expired.
+    if (!rollback && !brandPublishingEvidence(site, snapshot ? {...snapshot,
+      topQueryPages: snapshot.topQueryPages.filter(row=>row.query===job!.baseline.query)} : null, now))
+      return result("pending","Venter på ferske Google-tall som fortsatt støtter dette forsøket.",{pullUrl:pull.html_url});
     const main = await gh.main();
     if (main !== job.baseSha) {
       // Check exact metadata before allowing the normal Git merge to preserve

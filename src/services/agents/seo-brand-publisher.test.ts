@@ -110,6 +110,13 @@ test("complete lifecycle requires green checks and actual public HTML; retries c
   assert.equal(e.db.rows.filter(r=>r.action==="seo_autopilot_change").length,1);
   assert.equal(e.db.rows[0].details.phase,"done");
 });
+test("prepared PR waits when fresh Google evidence expires or disappears",async()=>{
+  const e=environment();await e.run();
+  assert.match((await e.run(null)).reason,/ferske Google/);
+  await e.run(snapshot,new Date(+now+8*86400000));assert.equal(e.state.merges,0);
+  const changed=structuredClone(snapshot);changed.topQueryPages[0].query="other search";
+  await e.run(changed);assert.equal(e.state.merges,0);
+});
 test("changed target, extra files and foreign head repo cannot be auto merged",async()=>{
   for(const fault of ["file","extra","repo"]){
     const e=environment();await e.run();
