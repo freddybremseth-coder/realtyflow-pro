@@ -27,15 +27,35 @@ import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-interface ObservedMetricRow {
+export interface ObservedMetricRow {
   metrics?: ContentMetrics | null;
   eventType?: string | null;
   metadata?: Record<string, unknown> | null;
 }
 
-function learningEligible(row: ObservedMetricRow): boolean {
+export function learningEligible(row: ObservedMetricRow): boolean {
   if (row.eventType !== "metrics_snapshot") return true;
   return row.metadata?.learning_eligible !== false;
+}
+
+export function hasLearningEvidence(
+  rows: ObservedMetricRow[],
+  canonicalMetrics?: Partial<ContentMetrics>,
+): boolean {
+  const measured = rows.some((row) =>
+    row.eventType === "metrics_snapshot" && learningEligible(row),
+  );
+  const business = canonicalMetrics
+    ? [
+        canonicalMetrics.leads,
+        canonicalMetrics.qualifiedLeads,
+        canonicalMetrics.viewings,
+        canonicalMetrics.offers,
+        canonicalMetrics.sales,
+        canonicalMetrics.commissionEur,
+      ].some((value) => num(value) > 0)
+    : false;
+  return measured || business;
 }
 
 function sumObserved(rows: ObservedMetricRow[]): ContentMetrics {
@@ -72,7 +92,8 @@ export async function refreshLearningRules(
     .select("content_id, brand_id, channel, genome")
     .eq("brand_id", opts.brandId);
   if (channel) contentQuery = contentQuery.eq("channel", channel);
-  const { data: contentRows } = await contentQuery;
+  const { data: contentRows, error: contentError } = await contentQuery;
+  if (contentError) throw new Error(`LEARNING_CONTENT_READ_FAILED: ${contentError.message}`);
   const genomes = new Map<string, ContentGenome>();
   for (const r of contentRows ?? []) {
     if (r.content_id && r.genome) genomes.set(String(r.content_id), r.genome as ContentGenome);
@@ -84,7 +105,8 @@ export async function refreshLearningRules(
     .select("content_id, channel, metrics, event_type, metadata")
     .eq("brand_id", opts.brandId);
   if (channel) eventQuery = eventQuery.eq("channel", channel);
-  const { data: evRows } = await eventQuery;
+  const { data: evRows, error: eventError } = await eventQuery;
+  if (eventError) throw new Error(`LEARNING_EVENTS_READ_FAILED: ${eventError.message}`);
   const observedByContent = new Map<string, ObservedMetricRow[]>();
   for (const r of evRows ?? []) {
     if (!r.content_id) continue;
@@ -101,19 +123,31 @@ export async function refreshLearningRules(
   // create observations in this scope.
   const canonical = await attributeAll(supabase, { model: opts.model ?? "last_touch", brandId: opts.brandId });
 
-  // 4) Par sammen til observasjoner. combineMetrics: canonical vinner.
+  // 4) Pair only content with real evidence. A draft/unpublished genome with
+  // no eligible metrics and no canonical outcome must never become an
+  // artificial zero-value observation that lowers the learning baseline.
   const observations: LearningObservation[] = [];
   for (const [contentId, genome] of genomes) {
-    const observed = sumObserved(observedByContent.get(contentId) ?? []);
+    const observedRows = observedByContent.get(contentId) ?? [];
+    const observed = sumObserved(observedRows);
     const biz = canonical.get(contentId);
     const canonicalMetrics: Partial<ContentMetrics> | undefined = biz
       ? { leads: biz.leads, qualifiedLeads: biz.qualifiedLeads, viewings: biz.viewings, offers: biz.offers, sales: biz.sales, commissionEur: biz.commissionEur }
       : undefined;
+    if (!hasLearningEvidence(observedRows, canonicalMetrics)) continue;
     const metrics = combineMetrics({ observed: [observed], canonical: canonicalMetrics });
     observations.push({ genome, metrics, contentId });
   }
 
-  // 5) Utled + persistér idempotent inside the explicit scope.
+  // 5) Derive measured-only rules. Read current keys before writing so stale
+  // values from the same explicit scope can be retired only AFTER the new
+  // measured dataset has persisted successfully.
+  const { data: existingRules, error: existingRuleError } = await supabase
+    .from("marketing_learning_rules")
+    .select("rule_key")
+    .eq("scope", scope);
+  if (existingRuleError) throw new Error(`LEARNING_RULE_INDEX_READ_FAILED: ${existingRuleError.message}`);
+
   const rules = deriveLearningRules(observations, { scope });
   if (rules.length > 0) {
     const rows = rules.map((r) => ({
@@ -137,6 +171,20 @@ export async function refreshLearningRules(
     const { error } = await supabase.from("marketing_learning_rules").upsert(rows, { onConflict: "rule_key" });
     if (error) throw new Error(`refreshLearningRules failed: ${error.message}`);
   }
+
+  const nextKeys = new Set(rules.map((rule) => rule.ruleKey));
+  const staleKeys = (existingRules ?? [])
+    .map((row: any) => String(row.rule_key ?? ""))
+    .filter((key: string) => key && !nextKeys.has(key));
+  if (staleKeys.length > 0) {
+    const { error: staleError } = await supabase
+      .from("marketing_learning_rules")
+      .delete()
+      .eq("scope", scope)
+      .in("rule_key", staleKeys);
+    if (staleError) throw new Error(`LEARNING_STALE_RULE_CLEANUP_FAILED: ${staleError.message}`);
+  }
+
   return { rulesWritten: rules.length, observations: observations.length };
 }
 
