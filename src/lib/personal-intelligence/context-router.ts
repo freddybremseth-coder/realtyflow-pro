@@ -81,7 +81,7 @@ export async function buildPersonalContextPack(
       .eq("subject_entity_id", request.subjectEntityId)
       .in("status", ["active", "idea", "paused"])
       .in("privacy_level", privacyLevels)
-      .order("priority", { ascending: true })
+      .order("priority", { ascending: false })
       .limit(20);
 
     if (goalsResult.error) {

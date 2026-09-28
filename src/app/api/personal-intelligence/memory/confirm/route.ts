@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
     const predicate = typeof body.predicate === "string" ? body.predicate.trim() : "";
     const statement = typeof body.statement === "string" ? body.statement.trim() : "";
     const privacyLevel = (typeof body.privacyLevel === "string" ? body.privacyLevel : "internal") as PersonalPrivacyLevel;
+    const sourceStage = body.sourceStage === "orient" || body.sourceStage === "interview" ? body.sourceStage : null;
+    const sourceQuestionId = typeof body.sourceQuestionId === "string" ? body.sourceQuestionId.trim().slice(0, 80) : null;
 
     if (!subjectEntityId || !predicate || !statement) {
       return NextResponse.json({ error: "subjectEntityId, predicate and statement are required" }, { status: 400 });
@@ -42,6 +44,12 @@ export async function POST(request: NextRequest) {
       confidence: typeof body.confidence === "number" ? body.confidence : 0.99,
       privacyLevel,
       sourceExcerpt: typeof body.sourceExcerpt === "string" ? body.sourceExcerpt : statement,
+      sourceName: sourceStage === "orient" ? "orientation_confirmation" : sourceStage === "interview" ? "interview_confirmation" : null,
+      sourceSystem: "personal_intelligence",
+      sourceMetadata: sourceStage ? {
+        onboarding_stage: sourceStage,
+        source_question_id: sourceQuestionId,
+      } : null,
     });
 
     return NextResponse.json({ ok: true, ...result });

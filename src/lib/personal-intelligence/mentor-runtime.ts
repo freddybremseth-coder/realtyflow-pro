@@ -83,7 +83,7 @@ export async function runMentorTurn(supabase: SupabaseClient, input: RunMentorTu
     sessionScope: privacyScope,
     explicitSensitivePermission: input.explicitSensitivePermission,
     includeGoals: true,
-    limit: input.thinkDeeper ? 60 : 30,
+    limit: input.thinkDeeper ? 100 : 60,
   });
   await logPersonalContextUsage(supabase, { ownerUserId: input.ownerUserId, sessionId, context });
 
