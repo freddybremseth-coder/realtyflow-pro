@@ -8,7 +8,7 @@ export const maxDuration = 120;
 
 const noStore = { "Cache-Control": "private, no-store" };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-type SupportedPlatform = "facebook" | "instagram" | "linkedin";
+type SupportedPlatform = "facebook" | "instagram";
 type SafeChannel = { id: string; platform: SupportedPlatform; displayName: string };
 type SafePublishResult = {
   platform: SupportedPlatform;
@@ -18,7 +18,7 @@ type SafePublishResult = {
   channelName?: string;
 };
 
-const platforms = new Set<SupportedPlatform>(["facebook", "instagram", "linkedin"]);
+const platforms = new Set<SupportedPlatform>(["facebook", "instagram"]);
 
 function fail(status: number, code: string, message?: string) {
   return NextResponse.json(
@@ -123,7 +123,7 @@ export async function GET(
     brand: params.brandKey,
     channels,
     publications,
-    supportedPlatforms: ["facebook", "instagram", "linkedin"],
+    supportedPlatforms: ["facebook", "instagram"],
   }, { headers: noStore });
 }
 
@@ -181,6 +181,17 @@ export async function POST(
       })
     : [];
   if (!uuid.test(attemptId) || !content || channels.length !== channelIds.length) {
+    if (uuid.test(attemptId)) {
+      await finalize(access.value.supabase, {
+        brandKey: params.brandKey,
+        userId: access.value.verifiedUserId,
+        email: access.value.verifiedEmail,
+        attemptId,
+        success: false,
+        result: [],
+        error: "Forberedelsen returnerte et ugyldig publiseringsgrunnlag.",
+      });
+    }
     return fail(503, "SOCIAL_PUBLISH_PREPARE_FAILED");
   }
 
