@@ -49,11 +49,11 @@ export const SEO_BRAND_SECOND_VARIANTS: Record<BrandPublisher["brandId"], BrandM
   },
   freddyart: {
     title: "Freddy Bremseth Art | Contemporary Digital Art Collections",
-    description: "Discover contemporary digital art by Freddy Bremseth, including symbolic portraits, Mediterranean-inspired works and imagined worlds. Explore artworks and curated collections.",
+    description: "Discover contemporary digital art by Freddy Bremseth, including symbolic portraits, Mediterranean-inspired works and imagined worlds. Explore curated collections.",
   },
   remasterfreddy: {
     title: "Re-Master Freddy | Original Electronic Music and Chill Tracks",
-    description: "Explore original electronic music by Re-Master Freddy, from house and energetic tracks to calm chill and meditation-inspired releases. Discover music and videos.",
+    description: "Explore original electronic music by Re-Master Freddy, from house and energetic tracks to calm chill and meditation-inspired releases. Discover tracks and videos.",
   },
   donaanna: {
     title: "Doña Anna | Oliven fra Biar, Alicante",
