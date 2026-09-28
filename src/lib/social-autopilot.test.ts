@@ -14,3 +14,41 @@ test("summary counts blockers and quarantine conservatively", () => {
   assert.equal(summary.blockers.length, 1);
   assert.equal(summary.needsAttention, 2);
 });
+
+test("measurement signals and system-work blockers do not inflate human attention", () => {
+  const summary = summarizeSocialAutopilot([
+    {
+      brandId: "a",
+      brandName: "A",
+      platform: "google_search_console",
+      connected: true,
+      pilotReady: false,
+      pilotBlockReason: null,
+      published: 0,
+      measuredEligible: 0,
+      quarantined: 0,
+      liveLearning: false,
+      surfaceKind: "signal",
+      attentionRequired: false,
+    },
+    {
+      brandId: "a",
+      brandName: "A",
+      platform: "youtube",
+      connected: true,
+      pilotReady: false,
+      pilotBlockReason: "Publisher governance pending",
+      published: 0,
+      measuredEligible: 0,
+      quarantined: 0,
+      liveLearning: false,
+      surfaceKind: "destination",
+      attentionRequired: false,
+    },
+  ]);
+
+  assert.equal(summary.connected, 1);
+  assert.equal(summary.connectedSignals, 1);
+  assert.equal(summary.blockers.length, 0);
+  assert.equal(summary.needsAttention, 0);
+});
