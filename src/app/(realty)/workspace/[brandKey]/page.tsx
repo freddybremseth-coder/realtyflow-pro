@@ -13,11 +13,20 @@ import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
 import { WorkspaceReelsPanel } from "@/components/workspaces/reels-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
-type Contact = { id: string; name: string | null; email: string | null; phone: string | null; pipeline_status: string | null };
+type Contact = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  pipeline_status: string | null;
+  source?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
 type Tab = "today" | "leads" | "growth" | "properties";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
   { id: "today", label: "I dag", icon: Building2 },
-  { id: "leads", label: "Leads", icon: Users, permitted: ["crm.read", "crm.joint.read", "tasks.joint.read"] },
+  { id: "leads", label: "Kunder & leads", icon: Users, permitted: ["crm.read", "crm.joint.read", "tasks.joint.read"] },
   { id: "growth", label: "Vekst & innhold", icon: TrendingUp, permitted: [
     "marketing.read", "marketing.draft", "marketing.publish",
     "reels.read", "reels.create", "reels.publish",
@@ -52,6 +61,7 @@ export default function FocusedWorkspacePage() {
   const [contactNotice, setContactNotice] = useState("");
   const [contactError, setContactError] = useState("");
   const [showTraining, setShowTraining] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
@@ -85,13 +95,17 @@ export default function FocusedWorkspacePage() {
       if (!result.ok) throw new Error(result.status === 403
         ? "Du har ikke CRM-tilgang i dette arbeidsområdet." : "CRM er ikke tilgjengelig ennå.");
       const body = await result.json();
-      setContacts(body.contacts || []);
+      const nextContacts = Array.isArray(body.contacts) ? body.contacts : [];
+      setContacts(nextContacts);
+      setSelectedCustomerId(current =>
+        current && nextContacts.some((contact: Contact) => contact.id === current) ? current : "");
       setCrmHasMore(Boolean(body.hasMore));
     } catch (cause) { setContacts([]); setCrmHasMore(false); setCrmError(cause instanceof Error ? cause.message : "Kunne ikke hente CRM."); }
     finally { setCrmBusy(false); }
   }
   useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery]);
   const filtered = contacts;
+  const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
   const visibleTabs = tabs.filter(item => !item.permitted || item.permitted.some(permission => permissions.includes(permission)));
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
   const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
@@ -181,8 +195,8 @@ export default function FocusedWorkspacePage() {
             <div className="grid gap-4 md:grid-cols-2">
               {showCrm && <button onClick={() => setTab("leads")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
                 <Users size={25} className="text-cyan-400"/>
-                <h3 className="mt-3 text-lg font-semibold">Følg opp leads</h3>
-                <p className="mt-1 text-sm text-slate-400">Finn kunde, registrer kontakt og se hva som må følges opp.</p>
+                <h3 className="mt-3 text-lg font-semibold">Følg opp kunder og leads</h3>
+                <p className="mt-1 text-sm text-slate-400">Åpne én kunde og jobb med kontakt, oppgaver, boligforslag og neste steg samlet.</p>
               </button>}
               {showGrowth && <button onClick={() => setTab("growth")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
                 <TrendingUp size={25} className="text-cyan-400"/>
