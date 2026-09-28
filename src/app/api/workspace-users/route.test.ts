@@ -269,6 +269,27 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
       error: "INVALID_BRAND_ACCESS", field: "brandAccess",
     },
   ];
+  cases.push(
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
+        accountKind: "vendor",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
+      },
+      error: "INVALID_ACCOUNT_KIND", field: "accountKind",
+    },
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
+        accountKind: "external", accessExpiresAt: "not-a-date",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
+      },
+      error: "INVALID_ACCESS_EXPIRY", field: "accessExpiresAt",
+    },
+  );
+
   for (const testCase of cases) {
     const response = await POST(req("POST", owner, testCase.body) as any);
     assert.equal(response.status, 400);
