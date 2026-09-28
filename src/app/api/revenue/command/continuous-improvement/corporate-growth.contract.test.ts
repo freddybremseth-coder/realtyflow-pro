@@ -74,3 +74,27 @@ test("Corporate overview reads tracked improvement status without creating or up
   assert.match(page, /Tiltak \/ rotårsak/);
   assert.match(page, /forfalt/);
 });
+
+
+test("Corporate observed effect stays read-only and explicitly non-causal", () => {
+  const overview = fs.readFileSync(
+    "src/app/api/corporate-homes/overview/route.ts",
+    "utf8",
+  );
+  const page = fs.readFileSync(
+    "src/app/(business)/corporate-homes/page.tsx",
+    "utf8",
+  );
+
+  assert.match(overview, /buildCorporateImprovementObservedEffect/);
+  assert.match(overview, /recentCorporateGrowthReviews/);
+  assert.match(overview, /\.limit\(12\)/);
+  assert.match(overview, /createdAt: tracked\.createdAt/);
+  assert.doesNotMatch(overview, /EFFECTIVE|INEFFECTIVE|UPDATE_IMPROVEMENT/);
+
+  assert.match(page, /Målt utvikling etter at tiltaket ble opprettet/);
+  assert.match(page, /Venter på mer data/);
+  assert.match(page, /baseline/);
+  assert.match(page, /snitt etter tiltak/);
+  assert.match(page, /pp/);
+});
