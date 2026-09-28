@@ -9,6 +9,7 @@ import { MobileNexusMenu } from "@/components/layout/mobile-nexus-menu";
 import { UniversalNexusCommand } from "@/components/layout/universal-nexus-command";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
 import { JarvisOverlay } from "@/components/agentic/jarvis-overlay";
+import { DailySpanishNudge } from "@/components/layout/daily-spanish-nudge";
 
 export const metadata: Metadata = {
   title: "RealtyFlow Pro · Nexus OS",
@@ -70,6 +71,7 @@ export default function RootLayout({
               voiceAutoSend
               voiceSilenceMs={9000}
             />
+            <DailySpanishNudge />
             <JarvisOverlay />
           </>
         )}
