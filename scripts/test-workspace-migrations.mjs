@@ -1062,6 +1062,8 @@ try {
     "Workspace user configure rejected complete Pinoso Reel scope");
   verify(await configureManaged([{ brandKey: "zeneco", permissions: ["reels.read","reels.create"] }]) === true,
     "Workspace user configure rejected Zen Reel scope");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft","marketing.publish"] }]) === true,
+    "Workspace user configure fixture did not restore marketing scope after Reel permission tests");
 
   await sql("insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','social','Pinoso draft','Safe Pinoso content','draft'),('zeneco','social','Private Zen','Must not leak','published')");
   await sql("insert into public.social_channels(brand_id,platform,external_id,display_name,is_active) values ('pinosoecolife','facebook','fb-pinoso','Pinoso Facebook',true),('pinosoecolife','youtube','yt-pinoso','Pinoso YouTube',false),('zeneco','facebook','fb-zen','Zen Facebook',true)");
