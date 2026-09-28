@@ -60,7 +60,10 @@ export function buildSEOTopicMissions(snapshots: readonly GSCBrandSnapshot[]): T
     const sourceUrl = absoluteBrandUrl(brandId, page);
     if (!sourceUrl) return [];
 
-    const recommendedChannels = brand.pilotChannels.filter(isMetaGrowthChannel);
+    // First rollout is Facebook-only: it can carry the exact canonical link
+    // without inventing or resolving a new visual asset. Instagram joins only
+    // after a verified media source exists for the mission.
+    const recommendedChannels = brand.pilotChannels.filter((channel) => isMetaGrowthChannel(channel) && channel === "facebook");
     if (!recommendedChannels.length) return [];
 
     const topicId = `seo:${brandId}:${opportunity.issueId}`;
