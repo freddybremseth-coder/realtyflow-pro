@@ -37,6 +37,18 @@ test("GSC review remains an evidence-backed proposal scoped to brand and period"
   assert.match(items[0].description, /100 visninger/);
   assert.match(items[0].nextAction, /Foreslå én faktabasert endring/);
 });
+test("Page-level visibility with low CTR becomes an evidence-backed review opportunity", () => {
+  const items = planGSCOpportunities([snapshot({
+    topPages: [{
+      path: "/kjopsprosess/skatt-ved-salg-bolig-spania", clicks: 0, impressions: 27,
+      ctr: 0, position: 6.9,
+    }],
+  })]);
+  assert.equal(items.length, 1);
+  assert.match(items[0].issueId, /^gsc-page-snippet:zeneco:/);
+  assert.match(items[0].description, /27 visninger/);
+  assert.match(items[0].nextAction, /verifisert, reversibel kanal/);
+});
 test("Truncated Google page data must be reviewed before any growth calculations", () => {
   const items = planGSCOpportunities([snapshot({
     dataQuality: { truncated: true, queryRowsSampled: true, note: "capped" },

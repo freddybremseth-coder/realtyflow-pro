@@ -9,7 +9,7 @@ import { planSEODiagnostics, type SEODiagnostic } from "@/services/agents/seo-di
 import { getGSCConnectionStatus, isFreddyFamilyDomainProperty, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
-import { SEO_AUTOPILOT_BRANDS } from "@/services/agents/seo-autopilot-policy";
+import { evaluateSeoPilotBrand, SEO_AUTOPILOT_BRANDS } from "@/services/agents/seo-autopilot-policy";
 import { portfolioPublicationStatuses } from "@/services/agents/seo-brand-publisher";
 import { checkGithubSeoCapability } from "@/services/agents/seo-github-capability";
 
@@ -150,6 +150,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const pilotSupersededByGoogleRead = Boolean(
+      pilotCycle.data?.created_at && lastLiveRead.data?.created_at &&
+      Date.parse(lastLiveRead.data.created_at) > Date.parse(pilotCycle.data.created_at) &&
+      snapshots.length > 0
+    );
+    const freshAssessments = pilotSupersededByGoogleRead
+      ? readings.map(item => evaluateSeoPilotBrand(
+          item.brandId,
+          item.status === "connected" ? item.result : null,
+          "error" in item && typeof item.error === "string" ? item.error : undefined,
+        ))
+      : null;
+
     const gscSuggestions = planGSCOpportunities(snapshots);
     // A zero-visibility observation is already measured and recorded: it
     // cannot itself trigger publishing or demand an editorial approval.
@@ -208,10 +221,12 @@ export async function GET(request: NextRequest) {
         : Array.isArray(liveStored?.diagnostics) ? lastLiveRead.data?.created_at || null : null,
       seoPilot: pilotCycle.data ? {
         at: pilotCycle.data.created_at, status: pilotCycle.data.status,
-        assessments: ((pilotCycle.data.details as { assessed?: unknown[] } | null)?.assessed || []),
+        assessments: freshAssessments || ((pilotCycle.data.details as { assessed?: unknown[] } | null)?.assessed || []),
         websiteChangesPublished: pilotCycle.data.status === "error" ? null : ((pilotCycle.data.details as { website_changes_published?: number } | null)?.website_changes_published || 0),
         writeStatus: (pilotCycle.data.details as { public_write_status?: string } | null)?.public_write_status || "unverified",
-        zenEcoMetadataPilot: (pilotCycle.data.details as {
+        supersededByGoogleRead: pilotSupersededByGoogleRead,
+        evidenceAt: pilotSupersededByGoogleRead ? lastLiveRead.data?.created_at || null : pilotCycle.data.created_at,
+        zenEcoMetadataPilot: pilotSupersededByGoogleRead ? null : (pilotCycle.data.details as {
           zeneco_metadata_pilot?: { status: string; reason: string; page: string | null; published: number }
         } | null)?.zeneco_metadata_pilot || null,
       } : null,
