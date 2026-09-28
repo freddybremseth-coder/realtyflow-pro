@@ -143,7 +143,7 @@ function safeSnapshot(value: unknown) {
         updatedAt: typeof m.updated_at === "string" ? m.updated_at : null,
       };
     }).filter(Boolean);
-    const accountKind = row.account_kind === "external" ? "external" : "staff";
+    const accountKind: AccountKind = row.account_kind === "external" ? "external" : "staff";
     const organization = typeof row.organization === "string" && row.organization.trim() ? row.organization.trim() : null;
     const accessExpiresAt = typeof row.access_expires_at === "string" ? row.access_expires_at : null;
     return {
