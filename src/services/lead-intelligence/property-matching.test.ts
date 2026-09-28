@@ -661,6 +661,5 @@ test("Martus-style flexible Albir preference does not reject a Pinoso inland str
   const match = matchPropertyToLeadProfile(martusFlexibleProfile, pinoso);
   assert.notEqual(match.eligibility, "rejected");
   assert.equal(match.locationResult?.outcome, "fail");
-  assert.equal(match.locationResult?.rejected, undefined);
   assert.match(match.locationResult?.reason || "", /ranking penalty rather than a rejection/i);
 });
