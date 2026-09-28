@@ -68,7 +68,7 @@ test.beforeEach(() => {
       if (name === "workspace_staff_security_preflight") {
         return { data: { safe_for_workspace_auth: preflightSafe }, error: null };
       }
-      if (name === "workspace_user_configure") return { data: true, error: null };
+      if (name === "workspace_user_configure_v2") return { data: true, error: null };
       if (name === "workspace_user_disable") return { data: true, error: null };
       throw new Error("Unexpected RPC " + name);
     },
@@ -154,6 +154,9 @@ test("create user sends password only to Supabase Auth and configures safe multi
     email: "andrea@example.test",
     displayName: "Andrea",
     password,
+    accountKind: "external",
+    organization: "Search Partner AS",
+    accessExpiresAt: "2027-03-31T21:59:59.000Z",
     brandAccess: [
       { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read"] },
       { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read"] },
@@ -165,10 +168,13 @@ test("create user sends password only to Supabase Auth and configures safe multi
   assert.equal(body.loginEnabled, false);
   const create = authCalls.find(call => call.method === "createUser");
   assert.equal((create?.args[0] as any).password, password);
-  const configure = rpcCalls.find(call => call.name === "workspace_user_configure");
+  const configure = rpcCalls.find(call => call.name === "workspace_user_configure_v2");
   assert.ok(configure);
   assert.equal(JSON.stringify(configure?.args).includes(password), false);
   assert.equal(configure?.args?.p_username, "andrea");
+  assert.equal(configure?.args?.p_account_kind, "external");
+  assert.equal(configure?.args?.p_organization, "Search Partner AS");
+  assert.equal(configure?.args?.p_access_expires_at, "2027-03-31T21:59:59.000Z");
 });
 
 test("invalid workspace-user input returns the exact field before Auth mutation", async () => {
@@ -279,8 +285,9 @@ test("existing managed user can update access, reset password and disable withou
   snapshot = {
     users: [{
       user_id: userId, username: "andrea", email: "andrea@example.test",
-      display_name: "Andrea", status: "active", created_at: null, updated_at: null,
-      memberships: [],
+      display_name: "Andrea", status: "active", account_kind: "external",
+      organization: "Search Partner AS", access_expires_at: null, expired: false,
+      created_at: null, updated_at: null, memberships: [],
     }],
     brands: [{ id: "brand-pinoso", brand_key: "pinosoecolife", display_name: "Pinoso EcoLife" }],
   };
@@ -288,10 +295,14 @@ test("existing managed user can update access, reset password and disable withou
 
   const updated = await POST(req("POST", owner, {
     action: "UPDATE_ACCESS", userId, username: "andrea", displayName: "Andrea T.",
+    accountKind: "external", organization: "Search Partner AS", accessExpiresAt: "2027-04-30T21:59:59.000Z",
     brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read","marketing.read","marketing.draft","marketing.publish","content.read","content.edit","content.publish","email.read","email.draft","email.send"] }],
   }) as any);
   assert.equal(updated.status, 200);
-  assert.ok(rpcCalls.some(call => call.name === "workspace_user_configure"));
+  const updateConfigure = rpcCalls.find(call => call.name === "workspace_user_configure_v2");
+  assert.ok(updateConfigure);
+  assert.equal(updateConfigure?.args?.p_account_kind, "external");
+  assert.equal(updateConfigure?.args?.p_access_expires_at, "2027-04-30T21:59:59.000Z");
 
   const password = "Another!Strong8Password";
   const reset = await POST(req("POST", owner, {
