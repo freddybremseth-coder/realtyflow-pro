@@ -51,6 +51,7 @@ test("Corporate event registration and attendance stay outside sales qualificati
   assert.match(publicLead, /workItemCreated: false/);
   assert.match(publicLead, /revenueEventCreated: false/);
   assert.match(publicLead, /corporate_event_participants/);
+  assert.match(publicLead, /queryParamFromUrl\(pageUrl, "event_id"\)/);
   assert.match(publicLead, /event_id and event_name are required/);
 
   assert.match(signal, /ATTENDED/);
