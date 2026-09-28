@@ -17,13 +17,16 @@ export function DailySpanishNudge() {
   const [loading, setLoading] = useState(true);
   const [launched, setLaunched] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   async function load() {
     try {
       const response = await fetch("/api/personal-intelligence/spanish/daily", { cache: "no-store", credentials: "same-origin" });
-      if (!response.ok) return;
+      if (!response.ok) throw new Error(`Spanish status failed (${response.status})`);
       const body = await response.json();
       setStatus(body);
+    } catch {
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -53,10 +56,20 @@ export function DailySpanishNudge() {
     if (response.ok) setStatus(await response.json());
   }
 
-  if (loading || !status || dismissed) return null;
+  if (loading || dismissed) return null;
+  if (!status && failed) return (
+    <div className="fixed right-4 top-4 z-[70] w-[min(92vw,360px)] rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400/15 text-amber-300"><Languages size={19}/></div>
+        <div className="min-w-0 flex-1"><div className="font-black text-white">5 minutter spansk</div><div className="text-xs text-slate-500">Åpne Spanish ChatGenius direkte</div></div>
+        <a href="https://spanish.chatgenius.pro/?source=realtyflow&mode=daily5&minutes=5" target="_blank" rel="noreferrer" className="rounded-xl bg-amber-400 px-3 py-2 text-xs font-black text-slate-950">Start</a>
+      </div>
+    </div>
+  );
+  if (!status) return null;
 
   return (
-    <div className="fixed right-4 top-4 z-30 w-[min(92vw,360px)] rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
+    <div className="fixed right-4 top-4 z-[70] w-[min(92vw,360px)] rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
       <div className="flex items-start gap-3">
         <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/15 text-amber-300">
           <Languages size={19} />
