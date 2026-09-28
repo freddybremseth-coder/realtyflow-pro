@@ -750,3 +750,106 @@ test("preview reports unknown buyer profile as stable safe error", async () => {
       (error as { code?: string }).code === "BUYER_PROFILE_NOT_FOUND",
   );
 });
+
+test("approved plot strategy scopes dwelling-only hard requirements away from land", async () => {
+  class PlotProfileDb implements QueryClient {
+    async query<T>(sql: string) {
+      if (sql.includes("from public.buyer_profiles")) {
+        return { rows: [{
+          id: buyerProfileId,
+          intakeId,
+          budgetAmount: 450000,
+          budgetCurrency: "EUR",
+          budgetIncludesCosts: null,
+          budgetApproximate: true,
+          locationFlexible: true,
+        }] as T[] };
+      }
+      if (sql.includes("from public.buyer_profile_criteria")) {
+        const base = {
+          otherKey: null,
+          weight: null,
+          severity: null,
+          appliesToPropertyTypes: [],
+          sourceText: "customer evidence",
+          confidence: 1,
+        };
+        return { rows: [
+          { ...base, criterionType: "preference", key: "property_type", operator: "in", value: ["villa", "country_house", "plot"], weight: 0.9 },
+          { ...base, criterionType: "hard_requirement", key: "bedrooms", operator: "gte", value: 3 },
+          { ...base, criterionType: "hard_requirement", key: "parking", operator: "eq", value: true },
+          { ...base, criterionType: "hard_requirement", key: "purchase_price", operator: "gte", value: 300000 },
+          { ...base, criterionType: "hard_requirement", key: "purchase_price", operator: "lte", value: 450000 },
+        ] as T[] };
+      }
+      if (sql.includes("from public.lead_analysis_runs")) return { rows: [] as T[] };
+      return { rows: [] as T[] };
+    }
+  }
+
+  const loaded = await loadApprovedLeadMatchProfileWithDb(new PlotProfileDb(), {
+    brand: "zeneco",
+    buyerProfileId,
+  });
+
+  assert.ok(loaded);
+  assert.deepEqual(loaded?.propertyTypes, ["villa", "country_house", "plot"]);
+  const bedrooms = loaded?.hardRequirements.find((row) => row.key === "bedrooms");
+  const parking = loaded?.hardRequirements.find((row) => row.key === "parking");
+  const minPrice = loaded?.hardRequirements.find((row) => row.key === "purchase_price" && row.operator === "gte");
+  const maxPrice = loaded?.hardRequirements.find((row) => row.key === "purchase_price" && row.operator === "lte");
+  assert.deepEqual(bedrooms?.appliesToPropertyTypes, ["villa", "country_house"]);
+  assert.deepEqual(parking?.appliesToPropertyTypes, ["villa", "country_house"]);
+  assert.deepEqual(minPrice?.appliesToPropertyTypes, ["villa", "country_house"]);
+  assert.equal(maxPrice?.appliesToPropertyTypes, undefined);
+});
+
+test("auto preview can rank a land-plot candidate as a phased-development option", async () => {
+  const plotProfile: LeadMatchProfile = {
+    buyerProfileId,
+    budget: { amount: 450000, currency: "EUR", includesCosts: null, approximate: true, hardLimit: null },
+    propertyTypes: ["villa", "country_house", "plot"],
+    locations: { preferred: [], excluded: [], flexible: true },
+    hardRequirements: [
+      { key: "bedrooms", operator: "gte", value: 3, sourceText: "3 bedrooms", appliesToPropertyTypes: ["villa", "country_house"] },
+      { key: "parking", operator: "eq", value: true, sourceText: "parking", appliesToPropertyTypes: ["villa", "country_house"] },
+      { key: "purchase_price", operator: "gte", value: 300000, sourceText: "dwelling min", appliesToPropertyTypes: ["villa", "country_house"] },
+      { key: "purchase_price", operator: "lte", value: 450000, sourceText: "phase 1 max" },
+    ],
+    preferences: [
+      { key: "property_type", operator: "in", value: ["villa", "country_house", "plot"], weight: 0.9, sourceText: "plot is a strong option" },
+    ],
+    exclusions: [],
+  };
+
+  const result = await previewLeadPropertyMatchesForProfile(
+    {
+      brand: "zeneco",
+      buyerProfileId,
+      propertyReferences: [],
+      autoDiscover: true,
+      candidateLimit: 20,
+      maxResults: 5,
+    },
+    plotProfile,
+    async () => [{
+      id: "721fcfac-f74d-47e6-8afe-ed328c5aacd6",
+      __source_kind: "land_plot",
+      brand_id: "zeneco",
+      ref: "Aspe - 29 / 13",
+      title: "Tomt · Aspe - 29 / 13",
+      location: "Aspe",
+      property_type: "plot",
+      price: 69000,
+      plot_size: 15098,
+      description: "Rustic 15,098 m2 plot with irrigation water and solar panels.",
+    }],
+  );
+
+  assert.equal(result.bestEffort, false);
+  assert.equal(result.matches.length, 1);
+  assert.equal(result.matches[0]?.property.sourceKind, "land_plot");
+  assert.equal(result.matches[0]?.property.propertyType, "plot");
+  assert.equal(result.matches[0]?.eligibility, "conditional");
+  assert.equal(result.matches[0]?.budgetResult?.outcome, "unknown");
+});

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import "leaflet/dist/leaflet.css";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -259,6 +260,8 @@ function StatCard({ label, value, tone = "text-white" }: { label: string; value:
 }
 
 export default function TomtebaseCatastroWorkspaceV2() {
+  const searchParams = useSearchParams();
+  const requestedPlotId = searchParams.get("plotId");
   const [plots, setPlots] = useState<LandPlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlot, setSelectedPlot] = useState<LandPlot | null>(null);
@@ -275,9 +278,15 @@ export default function TomtebaseCatastroWorkspaceV2() {
     fetch("/api/plots").then((res) => res.json()).then((data) => {
       const mapped = Array.isArray(data.plots) ? data.plots.map(mapPlot) : [];
       setPlots(mapped);
-      if (mapped.length > 0) setSelectedPlot(mapped.find((plot: LandPlot) => plot.lat && plot.lng) || mapped[0]);
+      if (mapped.length > 0) {
+        setSelectedPlot(
+          mapped.find((plot: LandPlot) => plot.id === requestedPlotId)
+          || mapped.find((plot: LandPlot) => plot.lat && plot.lng)
+          || mapped[0],
+        );
+      }
     }).finally(() => setLoading(false));
-  }, []);
+  }, [requestedPlotId]);
 
   const filtered = useMemo(() => plots.filter((plot) => (!searchText || plotSearchText(plot).includes(normalize(searchText))) && matchesPolygonParcel(plot, filterPolygon, filterParcel) && (filterZoning === "alle" || plot.zoning === filterZoning) && (!filterMinArea || plot.area >= Number(filterMinArea)) && (!filterMaxPrice || plot.price <= Number(filterMaxPrice))), [plots, searchText, filterPolygon, filterParcel, filterZoning, filterMinArea, filterMaxPrice]);
 

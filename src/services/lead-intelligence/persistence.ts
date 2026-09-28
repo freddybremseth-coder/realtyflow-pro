@@ -492,6 +492,7 @@ export const LeadPropertyShortlistItemInputSchema = z
     brand: BrandSchema,
     propertyId: UUIDSchema,
     propertyReference: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText).nullable(),
+    propertySourceKind: z.enum(["property", "land_plot"]).default("property"),
     propertyTitle: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText).nullable(),
     propertyLocation: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText).nullable(),
     propertyPrice: z.number().nonnegative().nullable(),
@@ -682,6 +683,7 @@ export type CreateLeadCustomerPresentationDraftInput = z.infer<typeof CreateLead
 export interface LeadCustomerPresentationShortlistItemRow {
   propertyId: string;
   propertyReference: string | null;
+  propertySourceKind?: "property" | "land_plot";
   propertyTitle: string | null;
   propertyLocation: string | null;
   propertyPrice: number | null;
@@ -1969,6 +1971,7 @@ export class LeadIntelligencePersistenceRepository {
         brand: item.brand,
         property_id: item.propertyId,
         property_reference: item.propertyReference,
+        property_source_kind: item.propertySourceKind,
         property_title: item.propertyTitle,
         property_location: item.propertyLocation,
         property_price: item.propertyPrice,
@@ -2081,6 +2084,7 @@ export class LeadIntelligencePersistenceRepository {
               brand text,
               property_id uuid,
               property_reference text,
+              property_source_kind text,
               property_title text,
               property_location text,
               property_price numeric,
@@ -2109,6 +2113,7 @@ export class LeadIntelligencePersistenceRepository {
               brand,
               property_id,
               property_reference,
+              property_source_kind,
               property_title,
               property_location,
               property_price,
@@ -2135,6 +2140,7 @@ export class LeadIntelligencePersistenceRepository {
               brand,
               property_id,
               property_reference,
+              property_source_kind,
               property_title,
               property_location,
               property_price,
@@ -2226,6 +2232,7 @@ export class LeadIntelligencePersistenceRepository {
     const itemResult = await this.db.query<{
       property_id: string;
       property_reference: string | null;
+      property_source_kind: "property" | "land_plot";
       property_title: string | null;
       property_location: string | null;
       property_price: string | number | null;
@@ -2250,6 +2257,7 @@ export class LeadIntelligencePersistenceRepository {
         select
           property_id::text,
           property_reference,
+          property_source_kind,
           property_title,
           property_location,
           property_price,
@@ -2295,6 +2303,7 @@ export class LeadIntelligencePersistenceRepository {
       items: itemResult.rows.map((row) => ({
         propertyId: row.property_id,
         propertyReference: row.property_reference,
+        propertySourceKind: row.property_source_kind || "property",
         propertyTitle: row.property_title,
         propertyLocation: row.property_location,
         propertyPrice: row.property_price === null ? null : Number(row.property_price),

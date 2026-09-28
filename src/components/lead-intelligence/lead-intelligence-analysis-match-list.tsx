@@ -82,6 +82,7 @@ export function LeadIntelligenceAnalysisMatchList({
                   <div className="mt-2">
                     <PropertyNavigationLinks
                       propertyId={match.propertyId}
+                      sourceKind={match.property.sourceKind}
                       publicUrl={match.property.publicUrl}
                       returnTo={leadIntelligenceMatchReturnUrl(returnBaseUrl, match.propertyId)}
                     />
