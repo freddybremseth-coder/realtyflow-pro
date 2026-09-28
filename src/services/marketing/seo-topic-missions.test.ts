@@ -55,6 +55,7 @@ test("turns a measured GSC content opportunity into one stable shared topic miss
   assert.equal(mission.payload.canonical_url, mission.sourceUrl);
   assert.equal(mission.payload.topic_id, `seo:zeneco:${mission.sourceId}`);
   assert.equal(mission.payload.content_cluster_id, mission.payload.topic_id);
+  assert.match(String(mission.payload.genome_topic), /^seo_zeneco_[a-f0-9]{12}$/);
 });
 
 test("does not turn portfolio/technical Search Console warnings into social topic missions", () => {
