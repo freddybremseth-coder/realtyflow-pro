@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, KeyRound, LockKeyhole, RefreshCw, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { WORKSPACE_PROGRAM_CATALOG, programPermissions } from "@/lib/workspaces/module-catalog";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
+import { WORKSPACE_ACCESS_PRESETS, workspaceAccessPresetChoice, type WorkspaceAccessPresetId } from "@/lib/workspaces/access-presets";
 
 type Brand = { id: string; brandKey: string; name: string };
 type Membership = {
@@ -230,6 +231,29 @@ export default function WorkspaceUsersPage() {
       if (brandKey === "zeneco" && (next.tasksRead || next.tasksWrite)) next.crmRead = true;
       return { ...current, [brandKey]: next };
     });
+  }
+
+  function applyAccessPreset(presetId: WorkspaceAccessPresetId) {
+    const enabledBrands = (snapshot?.brands || []).filter(brand => choices[brand.brandKey]?.enabled);
+    if (enabledBrands.length === 0) {
+      setError("Velg minst én merkevare før du bruker en tilgangsmal.");
+      setNotice("");
+      return;
+    }
+    setChoices(current => {
+      const next = { ...current };
+      for (const brand of enabledBrands) {
+        next[brand.brandKey] = {
+          ...emptyChoice(),
+          enabled: true,
+          ...workspaceAccessPresetChoice(brand.brandKey, presetId),
+        };
+      }
+      return next;
+    });
+    const preset = WORKSPACE_ACCESS_PRESETS.find(item => item.id === presetId);
+    setError("");
+    setNotice(`Malen «${preset?.label || presetId}» er lagt på valgte merkevarer. Kontroller rettighetene under før du lagrer.`);
   }
 
   function brandAccess() {
@@ -536,6 +560,23 @@ export default function WorkspaceUsersPage() {
           <div>
             <h3 className="font-semibold">Merkevarer og programmer</h3>
             <p className="text-xs text-slate-400">Velg merkevare først. Hver rettighet kontrolleres på nytt på serveren ved bruk.</p>
+          </div>
+          <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/10 p-4">
+            <h4 className="text-sm font-semibold text-cyan-100">Hurtigoppsett</h4>
+            <p className="mt-1 text-xs text-slate-400">
+              Velg én eller flere merkevarer under, og bruk en mal for å fylle ut rettighetene. Malen lagrer ingenting automatisk.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {WORKSPACE_ACCESS_PRESETS.map(preset => <button key={preset.id} type="button"
+                onClick={() => applyAccessPreset(preset.id)}
+                title={preset.description}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-cyan-200 hover:border-cyan-600">
+                {preset.label}
+              </button>)}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              «Eksternt byrå» kan lage utkast og Reels, men får ikke CRM, e-post eller publiseringsrettighet. Alle maler kan finjusteres før lagring.
+            </p>
           </div>
           <div className="space-y-3">
             {snapshot?.brands.map(brand => {
