@@ -9,25 +9,40 @@ export interface SocialAutopilotRow {
   measuredEligible: number;
   quarantined: number;
   liveLearning: boolean;
+  surfaceKind?: "destination" | "signal";
+  attentionRequired?: boolean;
+  attentionReason?: string | null;
 }
 
 export function summarizeSocialAutopilot(rows: SocialAutopilotRow[]) {
-  const connected = rows.filter((row) => row.connected).length;
-  const pilotReady = rows.filter((row) => row.pilotReady).length;
-  const liveLearning = rows.filter((row) => row.liveLearning).length;
-  const published = rows.reduce((sum, row) => sum + Number(row.published || 0), 0);
-  const eligible = rows.reduce((sum, row) => sum + Number(row.measuredEligible || 0), 0);
-  const quarantined = rows.reduce((sum, row) => sum + Number(row.quarantined || 0), 0);
-  const blockers = rows.filter((row) => row.connected && !row.pilotReady && Boolean(row.pilotBlockReason));
+  const destinationRows = rows.filter((row) => (row.surfaceKind ?? "destination") === "destination");
+  const signalRows = rows.filter((row) => row.surfaceKind === "signal");
+  const connected = destinationRows.filter((row) => row.connected).length;
+  const connectedSignals = signalRows.filter((row) => row.connected).length;
+  const pilotReady = destinationRows.filter((row) => row.pilotReady).length;
+  const liveLearning = destinationRows.filter((row) => row.liveLearning).length;
+  const published = destinationRows.reduce((sum, row) => sum + Number(row.published || 0), 0);
+  const eligible = destinationRows.reduce((sum, row) => sum + Number(row.measuredEligible || 0), 0);
+  const quarantined = destinationRows.reduce((sum, row) => sum + Number(row.quarantined || 0), 0);
+  const blockers = destinationRows.filter((row) =>
+    row.connected
+    && !row.pilotReady
+    && Boolean(row.pilotBlockReason)
+    && (row.attentionRequired ?? true),
+  );
+  const attentionRows = destinationRows.filter((row) => row.attentionRequired === true);
+  const quarantineAlreadyRepresented = attentionRows.some((row) => Number(row.quarantined || 0) > 0);
 
   return {
     connected,
+    connectedSignals,
     pilotReady,
     liveLearning,
     published,
     eligible,
     quarantined,
     blockers,
-    needsAttention: blockers.length + (quarantined > 0 ? 1 : 0),
+    attentionRows,
+    needsAttention: attentionRows.length + (!quarantineAlreadyRepresented && quarantined > 0 ? 1 : 0),
   };
 }
