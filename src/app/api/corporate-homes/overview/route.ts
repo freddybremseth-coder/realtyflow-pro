@@ -50,6 +50,7 @@ function acquisitionChannel(row: any) {
   if (signal.includes("google")) return { key: "google", label: "Google", ...attribution };
   if (signal.includes("linkedin")) return { key: "linkedin", label: "LinkedIn", ...attribution };
   if (/facebook|instagram|meta/.test(signal)) return { key: "meta", label: "Meta", ...attribution };
+  if (/webinar|event|seminar/.test(signal)) return { key: "event", label: "Webinar / event", ...attribution };
   if (/realtyflow|outbound|email/.test(signal)) return { key: "outbound", label: "Outbound", ...attribution };
   if (!attribution.source || /organic|direct|zeneco-corporate-homes/.test(signal)) {
     return { key: "organic", label: "Organisk / direkte", ...attribution };
