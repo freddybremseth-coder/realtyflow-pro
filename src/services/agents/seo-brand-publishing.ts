@@ -135,6 +135,19 @@ export function patchBrandHtml(html: string, before: BrandMetadata, after: Brand
 }
 const START = "// SAM SEO HOMEPAGE METADATA START";
 const END = "// SAM SEO HOMEPAGE METADATA END";
+export function readNextHomepageMetadata(source: string): BrandMetadata | null {
+  const block = source.match(/\/\/ SAM SEO HOMEPAGE METADATA START\nexport const metadata = (\{[^\n]+\});\n\/\/ SAM SEO HOMEPAGE METADATA END\n/);
+  if (!block) return null;
+  try {
+    const stored = JSON.parse(block[1]);
+    return typeof stored?.title?.absolute === "string" && typeof stored?.description === "string"
+      ? { title: stored.title.absolute, description: stored.description }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function patchNextHomepage(source: string, after: BrandMetadata | null, expected?: BrandMetadata): string {
   const block = source.match(/\/\/ SAM SEO HOMEPAGE METADATA START\nexport const metadata = (\{[^\n]+\});\n\/\/ SAM SEO HOMEPAGE METADATA END\n/);
   if (block) {
