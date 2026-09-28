@@ -1166,7 +1166,7 @@ export default function AgentsCommandCenter() {
           </div>
           <details className="mt-3 rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs">
             <summary className="cursor-pointer font-semibold text-emerald-300">
-              Oppsettguide: Legg alle syv nettstedene til i Google Search Console (fem domener)
+              Oppsettguide: Dekk alle åtte offentlige nettstedene i Google Search Console (fem domener)
             </summary>
             <p className="mt-2 text-slate-200">
               1. Åpne <a href="https://search.google.com/search-console/" target="_blank" rel="noopener noreferrer" className="underline text-emerald-300">Google Search Console</a> med Google-kontoen din.
