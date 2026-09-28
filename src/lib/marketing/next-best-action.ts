@@ -2,6 +2,18 @@ export type MarketingSurfaceKind = "destination" | "signal";
 export type MarketingActionExecution = "AUTO_READY" | "HUMAN_REQUIRED" | "SYSTEM_WORK" | "WAIT";
 export type MarketingActionPriority = "HIGH" | "MEDIUM" | "LOW";
 
+export type MarketingBusinessSignal = {
+  brandId: string;
+  channel: string;
+  unifiedScore: number;
+  attributionCoveragePct: number;
+  evidence: string;
+  leads: number;
+  qualifiedLeads: number;
+  sales: number;
+  commissionEur: number;
+};
+
 export type MarketingDecisionRow = {
   brandId: string;
   brandName: string;
@@ -39,6 +51,16 @@ export type MarketingNextAction = {
   execution: MarketingActionExecution;
   priority: MarketingActionPriority;
   evidence: string[];
+  business: null | {
+    trustedForPriority: boolean;
+    unifiedScore: number;
+    attributionCoveragePct: number;
+    evidence: string;
+    leads: number;
+    qualifiedLeads: number;
+    sales: number;
+    commissionEur: number;
+  };
 };
 
 const SIGNAL_PLATFORMS = new Set([
@@ -66,6 +88,67 @@ export function controlledCanaryRoute(brandId: string, channel: string | null | 
   return CONTROLLED_CANARY_ROUTES[`${brandId}:${channel.toLowerCase()}`] ?? null;
 }
 
+const BUSINESS_EVIDENCE_WEIGHT: Record<string, number> = {
+  insufficient: 0,
+  directional: 1,
+  promising: 2,
+  reliable: 3,
+  strong: 4,
+};
+
+function businessKey(brandId: string, channel: string | null | undefined) {
+  return `${brandId}:${String(channel ?? "").toLowerCase()}`;
+}
+
+function businessContext(signal: MarketingBusinessSignal | undefined) {
+  if (!signal) return null;
+  const evidenceRank = BUSINESS_EVIDENCE_WEIGHT[String(signal.evidence).toLowerCase()] ?? 0;
+  return {
+    trustedForPriority: evidenceRank >= 3 && signal.attributionCoveragePct >= 70,
+    unifiedScore: signal.unifiedScore,
+    attributionCoveragePct: signal.attributionCoveragePct,
+    evidence: signal.evidence,
+    leads: signal.leads,
+    qualifiedLeads: signal.qualifiedLeads,
+    sales: signal.sales,
+    commissionEur: signal.commissionEur,
+  };
+}
+
+function businessWeight(signal: MarketingBusinessSignal | undefined) {
+  const context = businessContext(signal);
+  if (!context?.trustedForPriority) return 0;
+  return (
+    context.sales * 1_000_000_000
+    + context.qualifiedLeads * 10_000_000
+    + Math.min(9_999_999, Math.round(context.commissionEur))
+    + context.unifiedScore
+  );
+}
+
+function businessEvidence(signal: MarketingBusinessSignal | undefined): string[] {
+  const context = businessContext(signal);
+  if (!context) return [];
+  return [
+    `businessEvidence=${context.evidence}`,
+    `attributionCoverage=${context.attributionCoveragePct}%`,
+    `qualified=${context.qualifiedLeads}`,
+    `sales=${context.sales}`,
+    `commissionEur=${Math.round(context.commissionEur)}`,
+  ];
+}
+
+function businessReason(signal: MarketingBusinessSignal | undefined) {
+  const context = businessContext(signal);
+  if (!context?.trustedForPriority || (context.qualifiedLeads <= 0 && context.sales <= 0)) return null;
+  const parts = [
+    context.qualifiedLeads > 0 ? `${context.qualifiedLeads} kvalifiserte` : null,
+    context.sales > 0 ? `${context.sales} salg` : null,
+    context.commissionEur > 0 ? `€${Math.round(context.commissionEur).toLocaleString("nb-NO")} attribuert provisjon` : null,
+  ].filter(Boolean);
+  return `30d business-evidens: ${parts.join(" · ")} · ${Math.round(context.attributionCoveragePct)}% attribusjonsdekning · ${context.evidence} evidens.`;
+}
+
 function priorityWeight(priority: MarketingActionPriority) {
   return priority === "HIGH" ? 3 : priority === "MEDIUM" ? 2 : 1;
 }
@@ -80,8 +163,14 @@ function executionWeight(execution: MarketingActionExecution) {
 export function buildMarketingNextActions(
   rows: MarketingDecisionRow[],
   requiredObservations = 10,
+  businessSignals: MarketingBusinessSignal[] = [],
 ): MarketingNextAction[] {
   const destinations = rows.filter((row) => (row.surfaceKind ?? marketingSurfaceKind(row.platform)) === "destination");
+  const businessByChannel = new Map(
+    businessSignals.map((signal) => [businessKey(signal.brandId, signal.channel), signal] as const),
+  );
+  const signalFor = (row: MarketingDecisionRow) =>
+    businessByChannel.get(businessKey(row.brandId, row.platform));
   const actions: MarketingNextAction[] = [];
 
   for (const row of destinations) {
@@ -101,6 +190,7 @@ export function buildMarketingNextActions(
         href: "/analytics",
         execution: "SYSTEM_WORK",
         priority: "LOW",
+        business: businessContext(signalFor(row)),
         evidence: [`quarantined=${row.quarantined}`, `published=${row.published}`],
       });
     }
@@ -118,6 +208,7 @@ export function buildMarketingNextActions(
         href: "/nexus-os/brand-brain",
         execution: "HUMAN_REQUIRED",
         priority: "HIGH",
+        business: businessContext(signalFor(row)),
         evidence: ["connected=true", "brandBrainReady=false"],
       });
       continue;
@@ -136,6 +227,7 @@ export function buildMarketingNextActions(
         href: "/marketing-readiness",
         execution: "SYSTEM_WORK",
         priority: "LOW",
+        business: businessContext(signalFor(row)),
         evidence: ["connected=true", "brandBrainReady=true", "planned=true", "pilotReady=false"],
       });
       continue;
@@ -156,12 +248,15 @@ export function buildMarketingNextActions(
         href: "/analytics",
         execution: "SYSTEM_WORK",
         priority: "HIGH",
+        business: businessContext(signalFor(row)),
         evidence: [`eligible=${row.measuredEligible}/${requiredObservations}`, "evaluatedRules=0"],
       });
       continue;
     }
 
     if (row.liveLearning) {
+      const signal = signalFor(row);
+      const commercialReason = businessReason(signal);
       actions.push({
         id: `optimize:${row.brandId}:${channel}`,
         kind: "OPTIMIZE_WITH_LEARNING",
@@ -170,16 +265,21 @@ export function buildMarketingNextActions(
         channel,
         sourceChannel: channel,
         title: `${row.brandName} · bruk dokumentert læring`,
-        reason: row.actionableRules > 0
-          ? `Learning Engine har ${row.actionableRules} handlingsregler. Marketing Autopilot bruker dem automatisk ved neste planlagte generering.`
-          : "Kanalen har tilstrekkelig læring. Marketing Autopilot fortsetter kontrollert produksjon og samler business-outcomes automatisk.",
+        reason: [
+          row.actionableRules > 0
+            ? `Learning Engine har ${row.actionableRules} handlingsregler. Marketing Autopilot bruker dem automatisk ved neste planlagte generering.`
+            : "Kanalen har tilstrekkelig læring. Marketing Autopilot fortsetter kontrollert produksjon og samler business-outcomes automatisk.",
+          commercialReason,
+        ].filter(Boolean).join(" "),
         href: "/content-studio",
         execution: "SYSTEM_WORK",
-        priority: "MEDIUM",
+        priority: commercialReason ? "HIGH" : "MEDIUM",
+        business: businessContext(signal),
         evidence: [
           `eligible=${row.measuredEligible}`,
           `evaluatedRules=${row.evaluatedRules}`,
           `actionableRules=${row.actionableRules}`,
+          ...businessEvidence(signal),
         ],
       });
       continue;
@@ -193,12 +293,15 @@ export function buildMarketingNextActions(
         && candidate.liveLearning,
       )
       .sort((a, b) =>
-        b.actionableRules - a.actionableRules
+        businessWeight(signalFor(b)) - businessWeight(signalFor(a))
+        || b.actionableRules - a.actionableRules
         || b.measuredEligible - a.measuredEligible,
       )[0];
 
     const canaryHref = controlledCanaryRoute(row.brandId, channel);
     if (source && canaryHref && row.measuredEligible < requiredObservations) {
+      const sourceSignal = signalFor(source);
+      const sourceCommercialReason = businessReason(sourceSignal);
       actions.push({
         id: `prepare-canary:${row.brandId}:${channel}`,
         kind: "PREPARE_CANARY",
@@ -207,15 +310,20 @@ export function buildMarketingNextActions(
         channel,
         sourceChannel: source.platform,
         title: `${row.brandName} · klargjør ${channel}-canary`,
-        reason: `${source.platform} har dokumentert live learning. ${channel} er pilotklar, men trenger egne modne observasjoner før kanalen kan lære selv.`,
+        reason: [
+          `${source.platform} har dokumentert live learning. ${channel} er pilotklar, men trenger egne modne observasjoner før kanalen kan lære selv.`,
+          sourceCommercialReason ? `Kildekanalen prioriteres også av business-data: ${sourceCommercialReason}` : null,
+        ].filter(Boolean).join(" "),
         href: canaryHref,
         execution: "AUTO_READY",
-        priority: "MEDIUM",
+        priority: sourceCommercialReason ? "HIGH" : "MEDIUM",
+        business: businessContext(sourceSignal),
         evidence: [
           `source=${source.platform}`,
           `sourceEligible=${source.measuredEligible}`,
           `sourceRules=${source.evaluatedRules}/${source.actionableRules}`,
           `targetEligible=${row.measuredEligible}/${requiredObservations}`,
+          ...businessEvidence(sourceSignal),
         ],
       });
       continue;
@@ -234,6 +342,7 @@ export function buildMarketingNextActions(
         href: null,
         execution: "WAIT",
         priority: "LOW",
+        business: businessContext(signalFor(row)),
         evidence: [`eligible=${row.measuredEligible}/${requiredObservations}`, `published=${row.published}`],
       });
     }
@@ -242,6 +351,10 @@ export function buildMarketingNextActions(
   return actions.sort((a, b) =>
     priorityWeight(b.priority) - priorityWeight(a.priority)
     || executionWeight(b.execution) - executionWeight(a.execution)
+    || Number(b.business?.trustedForPriority ?? false) - Number(a.business?.trustedForPriority ?? false)
+    || Number(b.business?.sales ?? 0) - Number(a.business?.sales ?? 0)
+    || Number(b.business?.qualifiedLeads ?? 0) - Number(a.business?.qualifiedLeads ?? 0)
+    || Number(b.business?.commissionEur ?? 0) - Number(a.business?.commissionEur ?? 0)
     || a.brandName.localeCompare(b.brandName)
     || String(a.channel).localeCompare(String(b.channel)),
   );
