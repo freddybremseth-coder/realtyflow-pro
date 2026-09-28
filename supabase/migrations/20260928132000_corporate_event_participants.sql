@@ -26,7 +26,7 @@ create table if not exists public.corporate_event_participants (
 );
 
 create unique index if not exists corporate_event_participants_event_email_unique
-  on public.corporate_event_participants (event_id, lower(email));
+  on public.corporate_event_participants (event_id, email);
 
 create index if not exists corporate_event_participants_status_idx
   on public.corporate_event_participants (event_id, status, updated_at desc);
