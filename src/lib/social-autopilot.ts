@@ -31,6 +31,7 @@ export function summarizeSocialAutopilot(rows: SocialAutopilotRow[]) {
     && (row.attentionRequired ?? true),
   );
   const attentionRows = destinationRows.filter((row) => row.attentionRequired === true);
+  const quarantineAlreadyRepresented = attentionRows.some((row) => Number(row.quarantined || 0) > 0);
 
   return {
     connected,
@@ -42,6 +43,6 @@ export function summarizeSocialAutopilot(rows: SocialAutopilotRow[]) {
     quarantined,
     blockers,
     attentionRows,
-    needsAttention: attentionRows.length + (quarantined > 0 ? 1 : 0),
+    needsAttention: attentionRows.length + (!quarantineAlreadyRepresented && quarantined > 0 ? 1 : 0),
   };
 }
