@@ -82,6 +82,20 @@ type Overview = {
       continuousImprovementCandidate: boolean;
       note: string;
     } | null;
+    improvement?: {
+      id: string;
+      candidateId: string;
+      status: string;
+      ownerEmail?: string | null;
+      dueAt?: string | null;
+      overdue: boolean;
+      closed: boolean;
+      closedAt?: string | null;
+      rootCauseCategory: string;
+      actionType: string;
+      effectTrend: string;
+      updatedAt?: string | null;
+    } | null;
     review?: {
       status: "READY" | "LEARNING" | "DATA_GAP";
       minimumDenominator: number;
@@ -616,15 +630,56 @@ export default function CorporateHomesGrowthPage() {
                       </p>
                     )}
                   <p className="mt-2 max-w-4xl text-xs leading-5 text-slate-600">{data.growthReview.comparison.note}</p>
+
+                  {data.growthReview.improvement && (
+                    <div className={`mt-3 grid gap-2 rounded-xl border p-3 text-xs sm:grid-cols-2 xl:grid-cols-4 ${
+                      data.growthReview.improvement.overdue
+                        ? "border-rose-300 bg-rose-50"
+                        : data.growthReview.improvement.closed
+                          ? "border-slate-300 bg-slate-100"
+                          : "border-emerald-300 bg-emerald-50"
+                    }`}>
+                      <div>
+                        <div className="font-black uppercase tracking-wide text-slate-500">Tiltaksstatus</div>
+                        <div className="mt-1 font-black text-slate-950">
+                          {data.growthReview.improvement.status.replaceAll("_", " ")}
+                          {data.growthReview.improvement.closed ? " · lukket" : ""}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-black uppercase tracking-wide text-slate-500">Ansvarlig</div>
+                        <div className="mt-1 font-bold text-slate-900">
+                          {data.growthReview.improvement.ownerEmail || "Ikke satt"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-black uppercase tracking-wide text-slate-500">Frist</div>
+                        <div className="mt-1 font-bold text-slate-900">
+                          {data.growthReview.improvement.dueAt || "Ikke satt"}
+                          {data.growthReview.improvement.overdue ? " · forfalt" : ""}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-black uppercase tracking-wide text-slate-500">Målt effekt</div>
+                        <div className="mt-1 font-bold text-slate-900">
+                          {data.growthReview.improvement.effectTrend.replaceAll("_", " ")}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {data.growthReview.comparison.continuousImprovementCandidate && (
                   <Link
                     href={`/continuous-improvement?candidate=${encodeURIComponent(
                       corporateGrowthCandidateId(data.growthReview.review?.bottleneck?.stage || "unknown"),
                     )}`}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-amber-900 px-4 py-2.5 text-sm font-black text-white hover:bg-amber-800"
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black text-white ${
+                      data.growthReview.improvement
+                        ? "bg-emerald-800 hover:bg-emerald-700"
+                        : "bg-amber-900 hover:bg-amber-800"
+                    }`}
                   >
-                    Vurder i Kontinuerlig forbedring
+                    {data.growthReview.improvement ? "Åpne forbedringstiltak" : "Vurder i Kontinuerlig forbedring"}
                     <ArrowRight size={16} />
                   </Link>
                 )}
