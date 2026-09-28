@@ -187,7 +187,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       }
 
       const graph = cfg.graph!;
-      const brandId = String(opts.brandId || "").trim();
+      const brandId = String(opts.brandId || asset.genome?.brandId || "").trim();
       if (!brandId) throw new Error("SOCIAL_WEBSITE_BRAND_CONTEXT_MISSING");
       const target = opts.accountId ?? (asset.channel === "facebook" ? cfg.pageId : cfg.igUserId);
       if (!target) throw new Error(`ACCOUNT_NOT_FOUND: mangler eksplisitt ${asset.channel === "facebook" ? "Facebook-side" : "Instagram-konto"}`);
