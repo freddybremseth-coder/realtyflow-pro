@@ -71,6 +71,7 @@ export function LeadIntelligenceShortlistPropertyCards({
                 </div>
                 <PropertyNavigationLinks
                   propertyId={match.propertyId}
+                  sourceKind={match.property.sourceKind}
                   publicUrl={match.property.publicUrl}
                   returnTo={leadIntelligenceMatchReturnUrl(returnBaseUrl, match.propertyId)}
                 />
