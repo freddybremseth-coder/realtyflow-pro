@@ -103,12 +103,13 @@ export default function FocusedWorkspacePage() {
   const showProperties = permissions.includes("properties.catalog.read");
   const showMarketing = permissions.some(p => p.startsWith("marketing."));
   const showReels = ["zeneco", "pinosoecolife"].includes(brandKey) && permissions.includes("reels.read");
-  const showGrowth = showReels || permissions.some(p => [
+  const showGrowthTools = permissions.some(p => [
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
     "email.read", "email.draft", "email.send",
   ].includes(p));
+  const showGrowth = showReels || showGrowthTools;
 
   function resetContactForm() {
     setEditingId(null); setFormName(""); setFormEmail(""); setFormPhone("");
@@ -278,7 +279,7 @@ export default function FocusedWorkspacePage() {
           <WorkspacePropertyCatalogue brandKey={brandKey} />}
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
-            {showGrowth && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
+            {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
             {showReels && <details open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">Reels Studio</strong>
