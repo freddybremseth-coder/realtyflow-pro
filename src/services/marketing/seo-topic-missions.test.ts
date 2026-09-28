@@ -92,3 +92,24 @@ test("fails closed when a measured page cannot be mapped to an owned brand websi
 
   assert.deepEqual(missions, []);
 });
+
+
+test("keeps the exact measured canonical page even when the issue id is truncated", () => {
+  const longPath = "/guides/" + "very-long-location-name-".repeat(8) + "buyer-guide/";
+  const missions = buildSEOTopicMissions([
+    snapshot({
+      topQueryPages: [{
+        query: "buyer guide costa blanca",
+        page: longPath,
+        clicks: 1,
+        impressions: 140,
+        ctr: 0.007,
+        position: 12,
+      }],
+    }),
+  ]);
+
+  assert.equal(missions.length, 1);
+  assert.equal(missions[0].sourceUrl, new URL(longPath, "https://www.zenecohomes.com").toString());
+  assert.ok(missions[0].sourceId.length < longPath.length + 40);
+});
