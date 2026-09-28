@@ -11,6 +11,7 @@ import {
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { loadUnifiedGrowthScore } from "@/services/marketing/unified-growth-score";
 import { loadSEOTopicJourneys } from "@/services/marketing/seo-topic-journey";
+import { loadSEOChangeJourneys } from "@/services/marketing/seo-change-journey";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +126,7 @@ export async function GET(request: NextRequest) {
       .select("scope, dimension, value, sample, lift, evidence, verdict, finding, avg_business_value, avg_qualified_lead_rate, total_leads, total_qualified, total_sales, total_commission_eur, updated_at")
       .in("scope", ruleScopes),
     loadUnifiedGrowthScore(supabase as any, { days: 30 }).catch(() => null),
-    loadSEOTopicJourneys(supabase as any, { limit: 8 }).catch(() => []),
+    loadSEOTopicJourneys(supabase as any, { limit: 30 }).catch(() => []),
   ]);
 
   const contextByBrand = new Map((contexts ?? []).map((row: any) => [String(row.brand_id), row]));
@@ -344,6 +345,12 @@ export async function GET(request: NextRequest) {
     )
     .slice(0, 8);
 
+  const seoChangeJourneys = await loadSEOChangeJourneys(
+    supabase as any,
+    seoTopicJourneys,
+    { limit: 8 },
+  ).catch(() => []);
+
   const performanceSummary = growthReport ? {
     periodDays: growthReport.period.days,
     portfolio: growthReport.portfolio,
@@ -359,7 +366,8 @@ export async function GET(request: NextRequest) {
     automationSummary,
     learningInsights,
     performanceSummary,
-    seoTopicJourneys,
+    seoTopicJourneys: seoTopicJourneys.slice(0, 8),
+    seoChangeJourneys,
     rows,
   });
 }

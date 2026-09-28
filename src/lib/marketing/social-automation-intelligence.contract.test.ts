@@ -19,6 +19,8 @@ test("readiness exposes actionable learning evidence and unified business perfor
   assert.match(readiness, /performanceSummary/);
   assert.match(readiness, /loadSEOTopicJourneys/);
   assert.match(readiness, /seoTopicJourneys/);
+  assert.match(readiness, /loadSEOChangeJourneys/);
+  assert.match(readiness, /seoChangeJourneys/);
 });
 
 test("social automation explains what Nexus learned using persisted rules", () => {
@@ -39,6 +41,15 @@ test("social automation exposes the measured SAM to Social topic journey", () =>
   assert.match(page, /journey\.business\.leads/);
   assert.match(page, /journey\.business\.sales/);
   assert.match(page, /journey\.canonicalUrl/);
+});
+
+test("social automation shows verified SAM website changes without causal overclaiming", () => {
+  assert.match(page, /SAM website change → Google → Social → CRM/);
+  assert.match(page, /SEO Change Journey/);
+  assert.match(page, /seoChangeJourneys/);
+  assert.match(page, /observasjon — ikke som bevist årsak/);
+  assert.match(page, /change\.samePageTopics/);
+  assert.match(page, /change\.measurementStatus/);
 });
 
 test("performance surface shows business outcomes instead of reach-only status", () => {
