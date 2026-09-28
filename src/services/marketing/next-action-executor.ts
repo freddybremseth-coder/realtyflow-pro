@@ -6,6 +6,7 @@ import {
   nextActionRequestIdentity,
 } from "@/lib/marketing/next-action-execution";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
+import { loadUnifiedGrowthScore } from "@/services/marketing/unified-growth-score";
 
 const REQUIRED_OBSERVATIONS = 10;
 const ACTION_COOLDOWN_HOURS = 20;
@@ -58,7 +59,7 @@ export async function enqueueNextBestMarketingAction(
   const sinceIso = new Date(now.getTime() - ACTION_COOLDOWN_HOURS * 3_600_000).toISOString();
   const brandIds = [...OWNED_GROWTH_BRAND_IDS];
 
-  const [plansR, contextsR, channelsR, publicationsR, eventsR, rulesR] = await Promise.all([
+  const [plansR, contextsR, channelsR, publicationsR, eventsR, rulesR, growthReport] = await Promise.all([
     supabase
       .from("marketing_brand_growth_plans")
       .select("brand_id,status,autonomy_mode,metadata")
@@ -70,6 +71,7 @@ export async function enqueueNextBestMarketingAction(
     supabase.from("marketing_publications").select("brand_id,channel,state,content_id,created_at,updated_at").in("brand_id", brandIds).limit(10000),
     supabase.from("marketing_events").select("brand_id,channel,content_id,metadata").in("brand_id", brandIds).eq("event_type", "metrics_snapshot").limit(10000),
     supabase.from("marketing_learning_rules").select("scope,verdict").limit(10000),
+    loadUnifiedGrowthScore(supabase, { days: 30 }).catch(() => null),
   ]);
 
   const error = plansR.error || contextsR.error || channelsR.error || publicationsR.error || eventsR.error || rulesR.error;
@@ -141,7 +143,18 @@ export async function enqueueNextBestMarketingAction(
       };
     });
 
-  const action = buildMarketingNextActions(rows, REQUIRED_OBSERVATIONS)
+  const businessSignals = (growthReport?.channels ?? []).map((channel) => ({
+    brandId: channel.brandId,
+    channel: channel.channel,
+    unifiedScore: channel.unifiedScore,
+    attributionCoveragePct: channel.attributionCoveragePct,
+    evidence: channel.evidence,
+    leads: channel.funnel.leads,
+    qualifiedLeads: channel.funnel.qualifiedLeads,
+    sales: channel.funnel.sales,
+    commissionEur: channel.funnel.commissionEur,
+  }));
+  const action = buildMarketingNextActions(rows, REQUIRED_OBSERVATIONS, businessSignals)
     .find((candidate) =>
       candidate.kind === "PREPARE_CANARY"
       && candidate.execution === "AUTO_READY"
