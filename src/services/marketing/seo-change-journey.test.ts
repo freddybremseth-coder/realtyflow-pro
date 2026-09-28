@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSEOChangeJourneys } from "@/services/marketing/seo-change-journey";
+import { buildSEOChangeJourneys, mergeNewestGSCBrandSnapshots } from "@/services/marketing/seo-change-journey";
 
 const snapshot = {
   brandId: "pinosoecolife",
@@ -147,4 +147,21 @@ test("does not invent an effect before a complete post-change GSC period", () =>
   assert.equal(journeys[0].measurementStatus, "waiting");
   assert.equal(journeys[0].current, null);
   assert.equal(journeys[0].observedDelta, null);
+});
+
+
+test("merges Search Console batches per brand instead of dropping older valid brand snapshots", () => {
+  const olderPinoso = { ...snapshot, collectedAt: "2026-11-01T08:00:00Z" };
+  const newerPinoso = { ...snapshot, collectedAt: "2026-11-10T08:00:00Z", totals: { ...snapshot.totals, currentClicks: 99 } };
+  const zeneco = {
+    ...snapshot,
+    brandId: "zeneco",
+    property: "https://www.zenecohomes.com/",
+    collectedAt: "2026-11-05T08:00:00Z",
+  };
+
+  const merged = mergeNewestGSCBrandSnapshots([olderPinoso, zeneco], [newerPinoso]);
+  assert.equal(merged.length, 2);
+  assert.equal(merged.find((row) => row.brandId === "pinosoecolife")?.totals.currentClicks, 99);
+  assert.equal(merged.find((row) => row.brandId === "zeneco")?.collectedAt, "2026-11-05T08:00:00Z");
 });
