@@ -127,3 +127,53 @@ test("keeps an unproduced current SAM mission visible as MISSION_READY", () => {
   assert.equal(journeys[0].publishedCount, 0);
   assert.equal(journeys[0].measuredContentCount, 0);
 });
+
+
+test("qualified lead is a qualified signal and not business proven without a sale", () => {
+  const journeys = buildSEOTopicJourneys({
+    sources: [{
+      brand_id: "zeneco",
+      source_id: "gsc-content:qualified",
+      source_url: "https://www.zenecohomes.com/finestrat",
+      title: "Finestrat villas",
+      priority: 90,
+      recommended_channels: ["facebook"],
+      status: "drafted",
+      payload: {
+        topic_id: "seo:zeneco:gsc-content:qualified",
+        genome_topic: "seo_zeneco_feedfeedfeed",
+        canonical_url: "https://www.zenecohomes.com/finestrat",
+      },
+    }],
+    contents: [{
+      content_id: "content-qualified",
+      brand_id: "zeneco",
+      channel: "facebook",
+      genome: { topic: "seo_zeneco_feedfeedfeed" },
+    }],
+    publications: [{
+      content_id: "content-qualified",
+      brand_id: "zeneco",
+      channel: "facebook",
+      state: "published",
+    }],
+    events: [],
+    touchpoints: [
+      {
+        content_id: "content-qualified",
+        brand_id: "zeneco",
+        contact_id: "lead-qualified",
+        touch_type: "lead_created",
+      },
+      {
+        content_id: "content-qualified",
+        brand_id: "zeneco",
+        contact_id: "lead-qualified",
+        touch_type: "qualified",
+      },
+    ],
+  });
+
+  assert.equal(journeys[0].stage, "QUALIFIED_SIGNAL");
+  assert.equal(journeys[0].business.sales, 0);
+});
