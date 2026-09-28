@@ -484,7 +484,7 @@ export default function SocialAutomationPage() {
                 <h2 className="mt-1 text-xl font-black text-slate-950">SEO Change Journey</h2>
                 <p className="mt-1 max-w-4xl text-sm text-slate-600">Viser bare endringer SAM faktisk har publisert og verifisert offentlig. Google-effekt vises først etter en komplett 30-dagersperiode for samme søk og side. Endringen og resultatet vises sammen som observasjon — ikke som bevist årsak.</p>
               </div>
-              <Link href="/hub" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-950">Åpne SEO SAM →</Link>
+              <Link href="/growth-hub" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-950">Åpne SEO SAM →</Link>
             </div>
             <div className="mt-4 grid gap-3 xl:grid-cols-2">
               {seoChangeJourneys.slice(0, 6).map((change) => {
