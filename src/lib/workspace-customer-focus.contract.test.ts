@@ -1,6 +1,7 @@
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import test from "node:test";
 
 const workspace = fs.readFileSync(
   path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"),
@@ -11,24 +12,22 @@ const tasks = fs.readFileSync(
   "utf8",
 );
 
-describe("workspace customer focus UX contract", () => {
-  it("opens one customer and binds Zen tasks to that exact customer", () => {
-    expect(workspace).toContain("selectedCustomerId");
-    expect(workspace).toContain('selectedContactId={selectedCustomer.id}');
-    expect(workspace).toContain("hideContactSelector");
-    expect(tasks).toContain("selectedContactId?: string");
-    expect(tasks).toContain("hideContactSelector?: boolean");
-  });
+test("focused workspace customer binds Zen tasks to the opened customer", () => {
+  assert.match(workspace, /selectedCustomerId/);
+  assert.match(workspace, /selectedContactId=\{selectedCustomer\.id\}/);
+  assert.match(workspace, /hideContactSelector/);
+  assert.match(tasks, /selectedContactId\?: string/);
+  assert.match(tasks, /hideContactSelector\?: boolean/);
+});
 
-  it("keeps customer focus inside scoped workspace APIs", () => {
-    expect(workspace).not.toContain('fetch("/api/customers');
-    expect(workspace).not.toContain('fetch("/api/revenue');
-    expect(tasks).toContain('const endpoint = "/api/workspaces/zeneco/joint-tasks"');
-  });
+test("focused workspace customer stays inside scoped workspace APIs", () => {
+  assert.doesNotMatch(workspace, /fetch\(["']\/api\/customers/);
+  assert.doesNotMatch(workspace, /fetch\(["']\/api\/revenue/);
+  assert.match(tasks, /\/api\/workspaces\/zeneco\/joint-tasks/);
+});
 
-  it("does not expose finance or legacy notes in the focused customer card", () => {
-    expect(workspace).not.toContain("commission_amount");
-    expect(workspace).not.toContain("pipeline_value");
-    expect(workspace).not.toContain("contacts.notes");
-  });
+test("focused workspace customer does not expose finance or legacy note fields", () => {
+  for (const forbidden of ["commission_amount", "pipeline_value", "contacts.notes"]) {
+    assert.equal(workspace.includes(forbidden), false, forbidden);
+  }
 });
