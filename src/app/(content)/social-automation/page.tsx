@@ -106,6 +106,55 @@ type SEOTopicJourney = {
   };
 };
 
+type SEOChangeJourney = {
+  changeId: string;
+  brandId: string;
+  page: string;
+  pageUrl: string | null;
+  query: string;
+  appliedAt: string;
+  publisher: string | null;
+  commitSha: string | null;
+  metadataRevision: number | null;
+  measurementStatus: "waiting" | "unavailable" | "incomplete" | "measured";
+  measurementNote: string;
+  baseline: {
+    start: string;
+    end: string;
+    impressions: number;
+    clicks: number;
+    ctrPct: number;
+    position: number;
+  };
+  current: null | {
+    start: string;
+    end: string;
+    impressions: number;
+    clicks: number;
+    ctrPct: number;
+    position: number;
+  };
+  observedDelta: null | {
+    impressions: number;
+    clicks: number;
+    ctrPoints: number;
+    position: number;
+  };
+  samePageTopics: Array<{
+    topicId: string;
+    title: string;
+    stage: SEOTopicJourney["stage"];
+    publishedCount: number;
+    measuredContentCount: number;
+    reach: number;
+    clicks: number;
+    leads: number;
+    qualified: number;
+    sales: number;
+    commissionEur: number;
+  }>;
+};
+
 type GrowthRow = {
   brandId: string;
   channel: string;
@@ -155,6 +204,7 @@ type Payload = {
   nextActions?: NextAction[];
   learningInsights?: LearningInsight[];
   seoTopicJourneys?: SEOTopicJourney[];
+  seoChangeJourneys?: SEOChangeJourney[];
   performanceSummary?: {
     periodDays: number;
     portfolio: GrowthRow;
@@ -225,6 +275,25 @@ function journeyStageTone(stage: SEOTopicJourney["stage"]) {
   return "bg-slate-100 text-slate-700";
 }
 
+function seoMeasurementLabel(status: SEOChangeJourney["measurementStatus"]) {
+  if (status === "measured") return "30d measured";
+  if (status === "waiting") return "Waiting 30d";
+  if (status === "incomplete") return "Measurement incomplete";
+  return "GSC unavailable";
+}
+
+function seoMeasurementTone(status: SEOChangeJourney["measurementStatus"]) {
+  if (status === "measured") return "bg-emerald-100 text-emerald-800";
+  if (status === "waiting") return "bg-blue-100 text-blue-800";
+  if (status === "incomplete") return "bg-amber-100 text-amber-800";
+  return "bg-slate-100 text-slate-700";
+}
+
+function signed(value: number, digits = 0) {
+  const rounded = Number(value.toFixed(digits));
+  return `${rounded > 0 ? "+" : ""}${rounded}`;
+}
+
 export default function SocialAutomationPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -258,6 +327,7 @@ export default function SocialAutomationPage() {
   const destinations = rows.filter((row) => row.surfaceKind === "destination");
   const learningInsights = data?.learningInsights ?? [];
   const seoTopicJourneys = data?.seoTopicJourneys ?? [];
+  const seoChangeJourneys = data?.seoChangeJourneys ?? [];
   const performance = data?.performanceSummary ?? null;
   const portfolio = performance?.portfolio;
 
@@ -404,6 +474,76 @@ export default function SocialAutomationPage() {
                 );
               })}
               {!loading && seoTopicJourneys.length === 0 && <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Ingen aktive SAM SEO topic-missions har ennå en målbar Topic Journey.</div>}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-emerald-700">SAM website change → Google → Social → CRM</div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">SEO Change Journey</h2>
+                <p className="mt-1 max-w-4xl text-sm text-slate-600">Viser bare endringer SAM faktisk har publisert og verifisert offentlig. Google-effekt vises først etter en komplett 30-dagersperiode for samme søk og side. Endringen og resultatet vises sammen som observasjon — ikke som bevist årsak.</p>
+              </div>
+              <Link href="/hub" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-950">Åpne SEO SAM →</Link>
+            </div>
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {seoChangeJourneys.slice(0, 6).map((change) => {
+                const brandName = destinations.find((row) => row.brandId === change.brandId)?.brandName ?? change.brandId;
+                return (
+                  <article key={change.changeId} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-black text-slate-900">{brandName} · {change.page}</div>
+                        <div className="mt-1 text-sm font-black text-slate-950">Søk: “{change.query}”</div>
+                      </div>
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${seoMeasurementTone(change.measurementStatus)}`}>{seoMeasurementLabel(change.measurementStatus)}</span>
+                    </div>
+
+                    <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
+                      <b>Verifisert endring:</b> publisert {new Date(change.appliedAt).toLocaleDateString("nb-NO")}{change.publisher ? ` · ${change.publisher}` : ""}.
+                    </div>
+
+                    {change.current && change.observedDelta ? (
+                      <>
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          <div className="rounded-lg bg-white p-2"><div className="text-[10px] font-bold uppercase text-slate-400">Impressions</div><div className="text-lg font-black text-slate-950">{change.current.impressions.toLocaleString("nb-NO")}</div><div className="text-[10px] font-bold text-slate-500">{signed(change.observedDelta.impressions)}</div></div>
+                          <div className="rounded-lg bg-white p-2"><div className="text-[10px] font-bold uppercase text-slate-400">Clicks</div><div className="text-lg font-black text-slate-950">{change.current.clicks}</div><div className="text-[10px] font-bold text-slate-500">{signed(change.observedDelta.clicks)}</div></div>
+                          <div className="rounded-lg bg-white p-2"><div className="text-[10px] font-bold uppercase text-slate-400">CTR</div><div className="text-lg font-black text-slate-950">{change.current.ctrPct}%</div><div className="text-[10px] font-bold text-slate-500">{signed(change.observedDelta.ctrPoints, 2)} pp</div></div>
+                          <div className="rounded-lg bg-white p-2"><div className="text-[10px] font-bold uppercase text-slate-400">Position</div><div className="text-lg font-black text-slate-950">{change.current.position.toFixed(1)}</div><div className="text-[10px] font-bold text-slate-500">{signed(change.observedDelta.position, 1)} pos.</div></div>
+                        </div>
+                        <div className="mt-2 text-[11px] text-slate-500">Baseline: {change.baseline.impressions.toLocaleString("nb-NO")} impressions · {change.baseline.clicks} clicks · {change.baseline.ctrPct}% CTR · pos. {change.baseline.position.toFixed(1)}.</div>
+                      </>
+                    ) : (
+                      <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-950">{change.measurementNote}</div>
+                    )}
+
+                    {change.samePageTopics.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <div className="text-[10px] font-black uppercase tracking-wider text-cyan-700">Samme canonical-side i Topic Journey</div>
+                        {change.samePageTopics.slice(0, 3).map((topic) => (
+                          <div key={topic.topicId} className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-950">
+                            <div className="font-black">{topic.title}</div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-bold text-cyan-800">
+                              <span>{topic.reach.toLocaleString("nb-NO")} reach</span>
+                              <span>{topic.clicks} clicks</span>
+                              <span>{topic.leads} leads</span>
+                              {topic.qualified > 0 && <span>{topic.qualified} qualified</span>}
+                              {topic.sales > 0 && <span>{topic.sales} sales</span>}
+                              {topic.commissionEur > 0 && <span>€{topic.commissionEur.toLocaleString("nb-NO")}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs font-black">
+                      {change.pageUrl && <a href={change.pageUrl} target="_blank" rel="noreferrer" className="text-emerald-800">Åpne live side →</a>}
+                      <Link href="/analytics" className="text-slate-700">Se måling →</Link>
+                    </div>
+                  </article>
+                );
+              })}
+              {!loading && seoChangeJourneys.length === 0 && <div className="xl:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">SAM har ennå ingen offentlig verifiserte SEO-endringer som kan følges i denne kjeden.</div>}
             </div>
           </section>
 
