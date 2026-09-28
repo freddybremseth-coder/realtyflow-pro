@@ -488,7 +488,7 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
       {
         heading: "Utkast først, publisering etterpå",
         paragraphs: [
-          "Live publisering er en egen høyere rettighet. Lag og kvalitetssikre innholdet i utkastflaten først. Når teksten, bildet og målkanalen er klar, åpner du publiseringsflaten og velger det eksisterende utkastet.",
+          "Live publisering er en egen høyere rettighet. Lag og kvalitetssikre ditt eget innhold i utkastflaten først. Når teksten, bildet og målkanalen er klar, åpner du publiseringsflaten. Du kan bare publisere workspace-utkast du selv har opprettet.",
         ],
         emphasis: "Ikke bruk Publiser-knappen som siste redigeringssteg. Den er siste kontroll før innholdet går ut eksternt.",
       },
@@ -496,7 +496,7 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
         heading: "Kontroller tre ting før du sender",
         bullets: [
           "Budskap: Er teksten nyttig, konkret og riktig for Zen Eco Homes eller Pinoso EcoLife?",
-          "Kanal: Passer innholdet til Facebook, Instagram eller LinkedIn – og er riktig brand-konto valgt av RealtyFlow?",
+          "Kanal: Passer innholdet til Facebook eller Instagram – og er riktig brand-konto valgt av RealtyFlow?",
           "Neste steg: Har innlegget en naturlig CTA eller tydelig verdi for personen vi ønsker å nå?",
         ],
       },
