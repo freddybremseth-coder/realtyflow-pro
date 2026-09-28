@@ -17,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import {
+  CORPORATE_EVENT_PLAYBOOK,
   CORPORATE_GOOGLE_SEARCH,
   CORPORATE_HOMES_LANDING_URL,
   CORPORATE_LINKEDIN,
@@ -1256,6 +1257,68 @@ export default function CorporateHomesGrowthPage() {
             ))}
           </div>
         </CampaignCard>
+      </section>
+
+      <section className="rounded-3xl border border-cyan-200 bg-cyan-50/50 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-cyan-900">
+              <CalendarClock size={16} /> Webinar / event
+            </div>
+            <h2 className="mt-2 text-xl font-black text-slate-950">Bygg etterspørsel med faglig verdi — og spor den helt til salg</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              Webinar og mindre digitale events brukes som en egen Corporate-kanal for ledere, HR, økonomi, styrer og medlemsorganisasjoner.
+              Deltakere går videre via en sporbar bedriftsvurdering, slik at faktisk kvalifisering, møte, visning og tilbud kan måles i samme funnel.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-emerald-900">{CORPORATE_EVENT_PLAYBOOK.status}</span>
+            <span className="rounded-full bg-white px-3 py-1.5 text-slate-700">Ingen automatisk invitasjon</span>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1.45fr_.85fr]">
+          <div className="space-y-3">
+            {CORPORATE_EVENT_PLAYBOOK.topics.map((topic, index) => (
+              <article key={topic.title} className="rounded-2xl border border-cyan-200 bg-white p-4">
+                <div className="text-xs font-black text-cyan-800">0{index + 1}</div>
+                <div className="mt-1 font-black text-slate-950">{topic.title}</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{topic.promise}</p>
+              </article>
+            ))}
+          </div>
+
+          <aside className="rounded-2xl border border-cyan-200 bg-white p-4">
+            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Format og CTA</div>
+            <div className="mt-2 font-black text-slate-950">{CORPORATE_EVENT_PLAYBOOK.format}</div>
+            <div className="mt-1 text-sm text-slate-600">{CORPORATE_EVENT_PLAYBOOK.objective}</div>
+            <div className="mt-4 rounded-xl bg-cyan-50 p-3">
+              <div className="text-xs font-black uppercase tracking-wide text-cyan-900">Deltaker-CTA</div>
+              <div className="mt-1 text-sm font-bold text-slate-950">{CORPORATE_EVENT_PLAYBOOK.attendeeCta}</div>
+            </div>
+            <a
+              href={CORPORATE_EVENT_PLAYBOOK.trackingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center gap-1 text-xs font-black text-cyan-900 hover:underline"
+            >
+              Test webinar-sporingslenke <ExternalLink size={13} />
+            </a>
+            <div className="mt-4 text-xs font-black uppercase tracking-wide text-slate-500">Målgruppe</div>
+            <div className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+              {CORPORATE_EVENT_PLAYBOOK.audience.map((item) => <div key={item}>✓ {item}</div>)}
+            </div>
+          </aside>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          {CORPORATE_EVENT_PLAYBOOK.followUp.map((item) => (
+            <div key={item} className="rounded-xl border border-cyan-200 bg-white px-4 py-3 text-xs leading-5 text-slate-700">{item}</div>
+          ))}
+        </div>
+        <p className="mt-4 text-xs leading-5 text-slate-500">
+          {CORPORATE_EVENT_PLAYBOOK.guardrails.join(" · ")}
+        </p>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
