@@ -117,3 +117,13 @@ test("unclear messages remain manual review", () => {
   assert.equal(governed.safety.tier, "REVIEW");
   assert.equal(governed.canApplyAutomatically, false);
 });
+
+test("explicit golf and short-term-rental neighbourhood constraints refresh the buyer profile", () => {
+  const classification = classifyInboundReply({
+    body: "Jeg er opptatt av at datter kan leke med andre barn, ikke en golf bane air bnb område. Bo der det ikke er for mye korttids beboere.",
+  });
+  assert.equal(classification.intent, "update_preferences");
+  assert.equal(classification.shouldRefreshBuyerProfile, true);
+  assert.equal(classification.shouldRunPropertyMatching, true);
+  assert.ok(classification.confidence >= 0.95);
+});
