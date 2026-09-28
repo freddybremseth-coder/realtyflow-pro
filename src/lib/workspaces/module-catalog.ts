@@ -103,7 +103,7 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   {
     id: "socialPublish",
     label: "Publisere til sosiale medier",
-    description: "Publiser godkjente brand-utkast til eksakt aktive Facebook-, Instagram- og LinkedIn-kanaler med server-side kanal- og brandkontroll.",
+    description: "Publiser egne workspace-utkast til eksakt aktive Facebook- og Instagram-kanaler med server-side kanal-, merkevare- og rettighetskontroll.",
     status: "ready",
     brandScope: "all",
     readPermissions: ["marketing.read"],
