@@ -200,16 +200,21 @@ function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
   if (pathname === "/api/auth/me" && verb === "GET") return true;
   if (pathname === "/api/workspaces/available" && verb === "GET") return true;
   const parts = pathname.split("/");
-  if (parts.length !== 5 || parts[1] !== "api" || parts[2] !== "workspaces" ||
+  if (![5, 6].includes(parts.length) || parts[1] !== "api" || parts[2] !== "workspaces" ||
       !/^[a-z0-9][a-z0-9-]{1,62}$/.test(parts[3])) return false;
   const brand = parts[3];
   const resource = parts[4];
+  if (parts.length === 6) {
+    return resource === "reels" && parts[5] === "publish" &&
+      ["zeneco", "pinosoecolife"].includes(brand) && verb === "POST";
+  }
   if (["capabilities", "properties"].includes(resource)) return verb === "GET";
   if (resource === "marketing") return ["GET", "POST"].includes(verb);
   if (resource === "growth") return ["GET", "POST"].includes(verb);
   if (resource === "content") return ["GET", "POST"].includes(verb);
   if (resource === "email") return ["GET", "POST"].includes(verb);
   if (resource === "social-publish") return ["GET", "POST"].includes(verb);
+  if (resource === "reels") return ["zeneco", "pinosoecolife"].includes(brand) && ["GET", "POST"].includes(verb);
   if (resource === "contacts") return brand !== "zeneco" && ["GET", "POST", "PATCH"].includes(verb);
   if (resource === "joint-contacts") return brand === "zeneco" && ["GET", "PATCH"].includes(verb);
   if (resource === "joint-tasks") return brand === "zeneco" && ["GET", "POST", "PATCH"].includes(verb);

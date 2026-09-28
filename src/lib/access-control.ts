@@ -136,9 +136,15 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
   // The route itself verifies the current membership, Auth user and row scope.
   // Access-plan administration and any unknown workspace route remain OWNER_ONLY.
   const workspaceParts = path.split("/");
-  if (workspaceParts.length === 5 &&
+  if ([5, 6].includes(workspaceParts.length) &&
     workspaceParts[1] === "api" && workspaceParts[2] === "workspaces" &&
     /^[a-z0-9][a-z0-9-]{1,62}$/.test(workspaceParts[3])) {
+    if (workspaceParts.length === 6) {
+      if (workspaceParts[4] === "reels" && workspaceParts[5] === "publish" &&
+        ["zeneco", "pinosoecolife"].includes(workspaceParts[3]) &&
+        method.toUpperCase() === "POST") return "AUTHENTICATED";
+      return "OWNER_ONLY";
+    }
     const workspaceRoute = workspaceParts[4];
     if (method.toUpperCase() === "GET" &&
       (["contacts", "properties", "capabilities"].includes(workspaceRoute) ||
@@ -151,6 +157,8 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
       ["GET", "POST", "PATCH"].includes(method.toUpperCase())) return "AUTHENTICATED";
     if (workspaceRoute === "contacts" && ["POST", "PATCH"].includes(method.toUpperCase()))
       return "AUTHENTICATED";
+    if (workspaceRoute === "reels" && ["zeneco", "pinosoecolife"].includes(workspaceParts[3]) &&
+      ["GET", "POST"].includes(method.toUpperCase())) return "AUTHENTICATED";
   }
   if (path.startsWith("/api/access-control")) return "OWNER_ONLY";
   if (path.startsWith("/api/platform")) return "OWNER_ONLY";

@@ -53,6 +53,13 @@ export async function GET(
         (Array.isArray(grant.permissions) &&
          grant.permissions.includes("marketing.read") &&
          grant.permissions.includes("marketing.draft"))) &&
+      (!permission.startsWith("reels.") || ["zeneco", "pinosoecolife"].includes(brandKey)) &&
+      (permission !== "reels.create" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("reels.read"))) &&
+      (permission !== "reels.publish" ||
+        (Array.isArray(grant.permissions) &&
+         grant.permissions.includes("reels.read") &&
+         grant.permissions.includes("reels.create"))) &&
       (permission !== "corporate.plan" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("corporate.read"))) &&
       (permission !== "visibility.plan" ||

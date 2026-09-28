@@ -113,10 +113,10 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
     id: "reels",
     label: "Reels Studio",
     description: "RealtyFlow/Re-Master produksjon for valgt merkevare. Krever egen kanal- og publiseringsavgrensning.",
-    status: "planned",
+    status: "ready",
     brandScope: "all",
-    readPermissions: [],
-    writePermissions: [],
+    readPermissions: ["reels.read"],
+    writePermissions: ["reels.create", "reels.publish"],
   },
   {
     id: "youtube",
@@ -170,6 +170,9 @@ export function programPermissions(params: {
   marketingRead: boolean;
   marketingDraft: boolean;
   marketingPublish: boolean;
+  reelsRead: boolean;
+  reelsCreate: boolean;
+  reelsPublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -200,6 +203,11 @@ export function programPermissions(params: {
   if (params.marketingRead || params.marketingDraft || params.marketingPublish) result.add("marketing.read");
   if (params.marketingDraft || params.marketingPublish) result.add("marketing.draft");
   if (params.marketingPublish) result.add("marketing.publish");
+  if (["zeneco", "pinosoecolife"].includes(params.brandKey)) {
+    if (params.reelsRead || params.reelsCreate || params.reelsPublish) result.add("reels.read");
+    if (params.reelsCreate || params.reelsPublish) result.add("reels.create");
+    if (params.reelsPublish) result.add("reels.publish");
+  }
   if (params.brandKey === "zeneco" && (params.corporateRead || params.corporatePlan)) result.add("corporate.read");
   if (params.brandKey === "zeneco" && params.corporatePlan) result.add("corporate.plan");
   if (params.visibilityRead || params.visibilityPlan) result.add("visibility.read");
