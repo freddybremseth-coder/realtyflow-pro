@@ -365,7 +365,7 @@ export default function SocialAutomationPage() {
                 <h2 className="mt-1 text-xl font-black text-slate-950">Topic Journey</h2>
                 <p className="mt-1 max-w-3xl text-sm text-slate-600">Følg samme målte søkemulighet fra SAM/GSC til content mission, publisering, social metrics og attribuerte CRM-resultater. Ingen proxy-resultater blir fremstilt som leads eller salg.</p>
               </div>
-              <Link href="/nexus-os/source-queue" className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-950">Source Queue →</Link>
+              <Link href="/nexus-os/director" className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-950">Nexus Director →</Link>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               {seoTopicJourneys.slice(0, 6).map((journey) => {
