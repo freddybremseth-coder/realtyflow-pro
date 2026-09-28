@@ -11,6 +11,7 @@ export type LeadIntelligencePropertyMatch = {
   propertyId: string;
   property: {
     id: string;
+    sourceKind?: "property" | "land_plot";
     reference: string | null;
     title: string | null;
     location: string | null;
