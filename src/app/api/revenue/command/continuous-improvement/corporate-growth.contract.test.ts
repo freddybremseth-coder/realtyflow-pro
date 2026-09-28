@@ -98,3 +98,33 @@ test("Corporate observed effect stays read-only and explicitly non-causal", () =
   assert.match(page, /snitt etter tiltak/);
   assert.match(page, /pp/);
 });
+
+
+test("Continuous Improvement uses Corporate Growth effect evidence only for Corporate improvements", () => {
+  const source = fs.readFileSync(
+    "src/app/api/revenue/command/continuous-improvement/route.ts",
+    "utf8",
+  );
+  const page = fs.readFileSync(
+    "src/app/(realty)/continuous-improvement/page.tsx",
+    "utf8",
+  );
+  const getStart = source.indexOf("export async function GET");
+  const postStart = source.indexOf("export async function POST");
+  assert.ok(getStart >= 0 && postStart > getStart);
+  const getSource = source.slice(getStart, postStart);
+
+  assert.match(source, /buildCorporateImprovementObservedEffect/);
+  assert.match(source, /corporateGrowthRows/);
+  assert.match(getSource, /corporateObservedEffects/);
+  assert.match(getSource, /candidateId: item\.candidateId/);
+  assert.match(getSource, /createdAt: item\.createdAt/);
+  assert.doesNotMatch(getSource, /saveSettings|makeImprovementEvent|IMPROVEMENT_CREATED|\.upsert\(/);
+
+  assert.match(page, /corporateObservedEffects/);
+  assert.match(page, /Corporate-trend/);
+  assert.match(page, /Corporate baseline/);
+  assert.match(page, /Corporate-målingen kommer fra Growth Review-snapshots/);
+  assert.match(page, /setter aldri tiltaket automatisk til effektivt eller ineffektivt/);
+  assert.match(page, /EFFECT_LABELS\[item\.effect\.trend\]/);
+});
