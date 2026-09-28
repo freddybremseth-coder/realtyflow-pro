@@ -348,6 +348,16 @@ begin
   for share of m;
   if v_brand_id is null then return jsonb_build_object('ok',false,'error','ACCESS_DENIED'); end if;
 
+  -- Detect an unresolved external publish before looking at publication status.
+  -- A reserved row is status=processing, so checking the publication first
+  -- would collapse this important ambiguity into PUBLICATION_NOT_PUBLISHABLE.
+  if exists (
+    select 1 from core.brand_workspace_social_publish_attempts a
+    where a.publication_id=p_publication_id and a.status='publishing'
+  ) then
+    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
+  end if;
+
   select cp.id,cp.brand_id,cp.content_type,cp.description,cp.ai_image_url,
          cp.thumbnail_url,cp.media_urls,cp.scheduled_platforms,cp.status
   into v_pub
@@ -364,13 +374,6 @@ begin
   for update of cp;
   if v_pub.id is null then
     return jsonb_build_object('ok',false,'error','PUBLICATION_NOT_PUBLISHABLE');
-  end if;
-
-  if exists (
-    select 1 from core.brand_workspace_social_publish_attempts a
-    where a.publication_id=p_publication_id and a.status='publishing'
-  ) then
-    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
   end if;
 
   select count(*)::integer,count(distinct c.platform)::integer,
