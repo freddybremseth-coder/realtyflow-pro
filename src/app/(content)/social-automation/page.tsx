@@ -39,6 +39,16 @@ type NextAction = {
   execution: "AUTO_READY" | "HUMAN_REQUIRED" | "SYSTEM_WORK" | "WAIT";
   priority: "HIGH" | "MEDIUM" | "LOW";
   evidence: string[];
+  business: null | {
+    trustedForPriority: boolean;
+    unifiedScore: number;
+    attributionCoveragePct: number;
+    evidence: string;
+    leads: number;
+    qualifiedLeads: number;
+    sales: number;
+    commissionEur: number;
+  };
 };
 
 type LearningInsight = {
@@ -385,6 +395,14 @@ export default function SocialAutomationPage() {
                   <div className="mt-3 font-black">{action.title}</div>
                   <p className="mt-2 text-sm leading-5 opacity-80">{action.reason}</p>
                   {action.sourceChannel && action.sourceChannel !== action.channel && <div className="mt-2 text-xs font-bold opacity-70">Læring fra {action.sourceChannel} → {action.channel}</div>}
+                  {action.business && (
+                    <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] font-bold leading-5 ${action.business.trustedForPriority ? "border-emerald-200 bg-white/80 text-emerald-950" : "border-slate-200 bg-white/60 text-slate-600"}`}>
+                      <span className="font-black">{action.business.trustedForPriority ? "Business-prioritert" : "Business-signal, ikke styrende"}:</span>{" "}
+                      {action.business.qualifiedLeads} qualified · {action.business.sales} sales
+                      {action.business.commissionEur > 0 ? ` · €${Math.round(action.business.commissionEur).toLocaleString("nb-NO")}` : ""}
+                      {" · "}{Math.round(action.business.attributionCoveragePct)}% attribution · {action.business.evidence}
+                    </div>
+                  )}
                   {action.execution === "AUTO_READY" && <div className="mt-3 text-xs font-black text-emerald-800">Kjøres automatisk · ingen knapp nødvendig</div>}
                   {action.href && action.execution !== "AUTO_READY" && <Link href={action.href} className="mt-3 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm">Åpne kontrollflate →</Link>}
                 </div>
