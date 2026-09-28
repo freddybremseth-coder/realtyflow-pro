@@ -65,22 +65,27 @@ type PortfolioPayload = {
   };
 };
 
+type MarketingAction = {
+  id: string;
+  kind: string;
+  brandId: string;
+  brandName: string;
+  channel: string | null;
+  title: string;
+  reason: string;
+  href: string | null;
+  execution: "AUTO_READY" | "HUMAN_REQUIRED" | "SYSTEM_WORK" | "WAIT";
+  priority: "HIGH" | "MEDIUM" | "LOW";
+};
+
 type MarketingPayload = {
   rows?: SocialAutopilotRow[];
-  controlGate?: {
-    status?: "WAIT" | "RUN_NEXT_CANARY";
-    controlBrandId?: string;
-    controlChannel?: string;
-    eligibleObservations?: number;
-    requiredObservations?: number;
-    evaluatedRules?: number;
-    actionableRules?: number;
-    reason?: string;
-    nextRecommendedCanary?: {
-      brandId: string;
-      channel: string;
-      path: string;
-    } | null;
+  nextActions?: MarketingAction[];
+  automationSummary?: {
+    autoReady: number;
+    humanRequired: number;
+    systemWork: number;
+    waiting: number;
   };
 };
 type LoadState<T> = { data: T | null; error: string | null };
@@ -107,19 +112,6 @@ function priorityTone(priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW") {
   if (priority === "HIGH") return "border-amber-200 bg-amber-50 text-amber-950";
   if (priority === "MEDIUM") return "border-cyan-200 bg-cyan-50 text-cyan-950";
   return "border-slate-200 bg-slate-50 text-slate-950";
-}
-
-function brandLabel(brandId?: string) {
-  if (brandId === "zeneco") return "ZenEco Homes";
-  if (brandId === "donaanna") return "Dona Anna";
-  if (brandId === "pinosoecolife") return "Pinoso EcoLife";
-  if (brandId === "chatgenius") return "ChatGenius";
-  return brandId || "Brand";
-}
-
-function channelLabel(channel?: string) {
-  if (!channel) return "kanal";
-  return channel.charAt(0).toUpperCase() + channel.slice(1);
 }
 
 export default function NexusTodayPage() {
@@ -155,28 +147,35 @@ export default function NexusTodayPage() {
     () => summarizeSocialAutopilot(marketing.data?.rows ?? []),
     [marketing.data?.rows],
   );
-  const marketingCanary = marketing.data?.controlGate?.status === "RUN_NEXT_CANARY"
-    ? marketing.data.controlGate.nextRecommendedCanary ?? null
-    : null;
+  const marketingActions = marketing.data?.nextActions ?? [];
+  const humanMarketingActions = marketingActions.filter((action) => action.execution === "HUMAN_REQUIRED");
+  const automaticMarketingActions = marketingActions.filter((action) => action.execution === "AUTO_READY" || action.execution === "SYSTEM_WORK");
+  const waitingMarketingActions = marketingActions.filter((action) => action.execution === "WAIT");
   const errors = [attention.error, revenue.error, portfolio.error, marketing.error].filter((value): value is string => Boolean(value));
   const summary = revenue.data?.summary;
   const portfolioSummary = portfolio.data?.summary;
-  const totalAttention = actionableAttention.length + marketingSummary.needsAttention;
+  const marketingNeedsYou = humanMarketingActions.length;
+  const totalAttention = actionableAttention.length + marketingNeedsYou;
   const topActions = useMemo(
     () => buildNexusTodayTopActions({
       attention: actionableAttention,
       revenue: revenue.data?.recommendedPlay,
-      marketingBlockers: marketingSummary.blockers,
-      quarantined: marketingSummary.quarantined,
+      marketingHumanActions: humanMarketingActions.map((action) => ({
+        id: action.id,
+        title: action.title,
+        reason: action.reason,
+        href: action.href,
+        priority: action.priority,
+      })),
     }),
-    [actionableAttention, marketingSummary.blockers, marketingSummary.quarantined, revenue.data?.recommendedPlay],
+    [actionableAttention, humanMarketingActions, revenue.data?.recommendedPlay],
   );
 
   const topCards = [
     { label: "Trenger oppmerksomhet", value: totalAttention, icon: AlertTriangle, href: "/nexus-os/today#attention" },
     { label: "Varme leads", value: summary?.hotSignals ?? "—", icon: Flame, href: "/today?filter=hot" },
     { label: "Forsinket oppfølging", value: summary?.overdueFollowups ?? "—", icon: Users, href: "/today?filter=overdue" },
-    { label: "Marketing attention", value: marketingSummary.needsAttention, icon: Megaphone, href: "/social-automation?view=attention" },
+    { label: "Marketing · trenger deg", value: marketingNeedsYou, icon: Megaphone, href: "/social-automation?view=attention" },
   ];
 
   return (
@@ -197,24 +196,39 @@ export default function NexusTodayPage() {
 
       {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex items-start gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><strong>Nexus mangler én eller flere datakilder.</strong><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
 
-      {marketingCanary && (
-        <section className="rounded-3xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm sm:p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-cyan-800"><Sparkles size={16} /> Anbefalt nå</div>
-              <h2 className="mt-2 text-2xl font-black text-slate-950">{brandLabel(marketingCanary.brandId)} · {channelLabel(marketingCanary.channel)}</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-700">Growth OS har nok læring fra kontrollkanalen og anbefaler at neste kontrollerte test kjøres nå. RealtyFlow tar deg direkte til riktig test — du trenger ikke finne Canary, Preflight eller learning-regler selv.</p>
-              <details className="mt-3 text-xs text-slate-600">
-                <summary className="cursor-pointer font-bold text-slate-700">Vis tekniske detaljer</summary>
-                <div className="mt-2 leading-5">Kontroll: {brandLabel(marketing.data?.controlGate?.controlBrandId)} · {channelLabel(marketing.data?.controlGate?.controlChannel)} · observasjoner {marketing.data?.controlGate?.eligibleObservations ?? "—"}/{marketing.data?.controlGate?.requiredObservations ?? "—"} · evaluerte regler {marketing.data?.controlGate?.evaluatedRules ?? "—"} · handlingsregler {marketing.data?.controlGate?.actionableRules ?? "—"}</div>
-              </details>
-            </div>
-            <Link href={marketingCanary.path} className="inline-flex shrink-0 items-center justify-center rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              Kjør {brandLabel(marketingCanary.brandId)} {channelLabel(marketingCanary.channel)}-test <ArrowRight size={16} className="ml-2" />
-            </Link>
+      <section className="rounded-3xl border border-blue-200 bg-blue-50 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-blue-800"><Sparkles size={16} /> RealtyFlow jobber automatisk</div>
+            <h2 className="mt-2 text-2xl font-black text-slate-950">Dette trenger ingen handling fra deg</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-700">Canary-tester, learning-evaluering, publisher-governance og annen trygg systemjobb kjøres av Growth Autopilot når portene er klare. Du skal bare få en oppgave når <b>HUMAN_REQUIRED</b> er satt eksplisitt.</p>
           </div>
-        </section>
-      )}
+          <Link href="/social-automation" className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-xs font-black text-blue-900">Se marketing-status →</Link>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {automaticMarketingActions.slice(0, 3).map((action) => (
+            <div key={action.id} className="rounded-xl border border-blue-200 bg-white p-4 text-blue-950">
+              <div className="flex items-center justify-between gap-2">
+                <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black uppercase">{action.execution === "AUTO_READY" ? "Køes automatisk" : "Systemet håndterer"}</span>
+                <span className="text-[10px] font-black uppercase text-blue-500">{action.priority}</span>
+              </div>
+              <div className="mt-3 font-black">{action.title}</div>
+              <p className="mt-2 text-sm leading-5 text-blue-800">{action.reason}</p>
+              <div className="mt-3 text-xs font-black text-emerald-700">✓ Ingen handling fra deg</div>
+            </div>
+          ))}
+          {!loading && automaticMarketingActions.length === 0 && (
+            <div className="lg:col-span-3 rounded-xl border border-blue-200 bg-white p-4 text-sm text-blue-900">Ingen ny automatisk marketing-handling er klar akkurat nå. Autopilot overvåker og venter på nye signaler.</div>
+          )}
+        </div>
+        {(waitingMarketingActions.length > 0 || marketingSummary.quarantined > 0) && (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white/70 p-3 text-xs leading-5 text-slate-600">
+            {waitingMarketingActions.length > 0 && <span><b>{waitingMarketingActions.length}</b> marketing-løp venter på modne data. </span>}
+            {marketingSummary.quarantined > 0 && <span><b>{marketingSummary.quarantined}</b> målinger er automatisk holdt utenfor læringen av datakvalitetsreglene. </span>}
+            Dette er statusinformasjon, ikke oppgaver til deg.
+          </div>
+        )}
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -237,9 +251,7 @@ export default function NexusTodayPage() {
           <div className="mt-4 space-y-3">
             {actionableAttention.map((item) => <Link key={item.id} href={item.href} className={`block rounded-xl border p-4 transition hover:shadow-sm ${attentionTone(item.severity)}`}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-black uppercase tracking-wider opacity-60">{item.source} · score {item.score}</div><div className="mt-1 font-black">{item.title}</div><div className="mt-1 text-sm opacity-75">{item.detail}</div></div><ArrowRight size={16} className="mt-1 shrink-0 opacity-50" /></div></Link>)}
 
-            {marketingSummary.blockers.slice(0, 3).map((row) => <Link key={`${row.brandId}-${row.platform ?? "none"}`} href="/social-automation?view=attention" className="block rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 transition hover:shadow-sm"><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-black uppercase tracking-wider text-amber-700">Marketing · blocker</div><div className="mt-1 font-black">{row.brandName} · {row.platform ?? "kanal"}</div><div className="mt-1 text-sm text-amber-800">{row.pilotBlockReason}</div></div><ArrowRight size={16} className="mt-1 shrink-0 text-amber-600" /></div></Link>)}
-
-            {marketingSummary.quarantined > 0 && <Link href="/social-automation?view=attention" className="block rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-950 transition hover:shadow-sm"><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-black uppercase tracking-wider text-rose-700">Marketing · quarantine</div><div className="mt-1 font-black">{marketingSummary.quarantined} publiseringer krever kontroll</div><div className="mt-1 text-sm text-rose-800">Åpne Marketing Autopilot for å se og rydde det som er satt i quarantine.</div></div><ArrowRight size={16} className="mt-1 shrink-0 text-rose-600" /></div></Link>}
+            {humanMarketingActions.slice(0, 3).map((action) => <Link key={action.id} href={action.href ?? "/social-automation?view=attention"} className="block rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 transition hover:shadow-sm"><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-black uppercase tracking-wider text-amber-700">Marketing · trenger deg</div><div className="mt-1 font-black">{action.title}</div><div className="mt-1 text-sm text-amber-800">{action.reason}</div></div><ArrowRight size={16} className="mt-1 shrink-0 text-amber-600" /></div></Link>)}
 
             {!loading && totalAttention === 0 && errors.length === 0 && <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950"><CheckCircle2 size={19} className="mt-0.5" /><div><div className="font-black">Ingen blokkering krever handling nå</div><div className="mt-1 text-sm text-emerald-800">Du kan prioritere salgs- og vekstarbeid.</div></div></div>}
           </div>
@@ -257,7 +269,7 @@ export default function NexusTodayPage() {
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Link href="/today" className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50"><Users size={19} className="text-cyan-700" /><div className="mt-3 font-black">Contacts & Sales</div><div className="mt-1 text-xs text-slate-500">Leads, oppfølging og next best action</div></Link>
           <Link href="/inventory" className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50"><Building2 size={19} className="text-cyan-700" /><div className="mt-3 font-black">Properties</div><div className="mt-1 text-xs text-slate-500">Boliger, matching og inventory</div></Link>
-          <Link href="/social-automation" className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50"><Megaphone size={19} className="text-cyan-700" /><div className="mt-3 font-black">Marketing</div><div className="mt-1 text-xs text-slate-500">{marketingSummary.needsAttention > 0 ? `${marketingSummary.needsAttention} ting trenger oppmerksomhet` : "Autopilot, innhold og publisering"}</div></Link>
+          <Link href="/social-automation" className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50"><Megaphone size={19} className="text-cyan-700" /><div className="mt-3 font-black">Marketing</div><div className="mt-1 text-xs text-slate-500">{marketingNeedsYou > 0 ? `${marketingNeedsYou} beslutning(er) trenger deg` : "Autopilot kjører · ingen handling fra deg"}</div></Link>
           <Link href="/nexus-os" className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50"><Sparkles size={19} className="text-cyan-700" /><div className="mt-3 font-black">Nexus</div><div className="mt-1 text-xs text-slate-500">System, brands, læring og advanced control</div></Link>
         </div>
       </section>
