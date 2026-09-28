@@ -14,6 +14,7 @@ export type LeadIntelligencePresentationPreview = {
   verification: string[];
   properties: Array<{
     propertyId: string | null;
+    sourceKind?: "property" | "land_plot";
     reference: string | null;
     title: string;
     location: string | null;
@@ -60,23 +61,31 @@ export function leadIntelligenceMatchReturnUrl(baseReturnTo: string | null | und
   return `${withoutHash}#${anchor}`;
 }
 
-export function internalInventoryPropertyUrl(propertyId: string | null, returnTo?: string | null) {
+export function internalInventoryPropertyUrl(
+  propertyId: string | null,
+  returnTo?: string | null,
+  sourceKind: "property" | "land_plot" = "property",
+) {
   if (!propertyId) return null;
-  const params = new URLSearchParams({ propertyId });
+  const params = new URLSearchParams(sourceKind === "land_plot" ? { plotId: propertyId } : { propertyId });
   if (returnTo) params.set("returnTo", returnTo);
-  return `/inventory?${params.toString()}`;
+  return sourceKind === "land_plot"
+    ? `/tomtebase?${params.toString()}`
+    : `/inventory?${params.toString()}`;
 }
 
 export function PropertyNavigationLinks({
   propertyId,
+  sourceKind = "property",
   publicUrl,
   returnTo,
 }: {
   propertyId: string | null;
+  sourceKind?: "property" | "land_plot";
   publicUrl?: string | null;
   returnTo?: string | null;
 }) {
-  const realtyFlowUrl = internalInventoryPropertyUrl(propertyId, returnTo);
+  const realtyFlowUrl = internalInventoryPropertyUrl(propertyId, returnTo, sourceKind);
 
   if (!publicUrl && !realtyFlowUrl) {
     return (
@@ -92,7 +101,7 @@ export function PropertyNavigationLinks({
         <Button asChild size="sm" variant="outline">
           <a href={realtyFlowUrl}>
             <ExternalLink className="mr-2 h-4 w-4" />
-            Åpne boligkort
+            {sourceKind === "land_plot" ? "Åpne tomt" : "Åpne boligkort"}
           </a>
         </Button>
       )}
