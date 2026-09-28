@@ -35,6 +35,7 @@ const ADVANCED_LINKS = [
   { href: "/os", label: "Systemstatus" },
   { href: "/nexus-os/communications/nurture", label: "Nurture Control" },
   { href: "/nexus-os/communications/readiness", label: "E-post readiness" },
+  { href: "/nexus-os/communications/whatsapp", label: "WhatsApp readiness" },
   { href: "/nexus-os/communications/audit", label: "E-post audit" },
   { href: "/nexus-os/runtime", label: "Automatisering – status" },
   { href: "/nexus-os/autonomy", label: "Autopilot-regler" },

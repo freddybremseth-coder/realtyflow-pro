@@ -240,7 +240,7 @@ export async function GET(request: NextRequest) {
       score: 96,
       title: "WhatsApp lead capture is blocked",
       detail: `Nexus cannot rely on WhatsApp inbound capture. Missing: ${whatsappReadiness.missingRequired.join(", ") || "required configuration"}.`,
-      href: "/nexus-os/communications",
+      href: "/nexus-os/communications/whatsapp",
       source: "Nexus WhatsApp Readiness",
     });
   } else if (whatsappReadiness.status === "PARTIAL" && whatsappReadiness.inboundReady) {
@@ -252,7 +252,7 @@ export async function GET(request: NextRequest) {
       detail: whatsappReadiness.autoReplyEnabled
         ? `Inbound capture is healthy, but automatic replies are incomplete. Missing: ${whatsappReadiness.missingRequired.join(", ") || "outbound configuration"}.`
         : "Inbound lead capture is healthy. Automatic replies remain intentionally disabled.",
-      href: "/nexus-os/communications",
+      href: "/nexus-os/communications/whatsapp",
       source: "Nexus WhatsApp Readiness",
     });
   }
