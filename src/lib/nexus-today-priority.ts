@@ -30,11 +30,12 @@ type RevenueInput = {
   score: number;
 } | null | undefined;
 
-type MarketingBlocker = {
-  brandId: string;
-  brandName: string;
-  platform?: string | null;
-  pilotBlockReason?: string | null;
+type MarketingHumanAction = {
+  id: string;
+  title: string;
+  reason: string;
+  href: string | null;
+  priority: "HIGH" | "MEDIUM" | "LOW";
 };
 
 const priorityWeight: Record<NexusTodayPriority, number> = {
@@ -53,8 +54,7 @@ function attentionPriority(severity: AttentionInput["severity"]): NexusTodayPrio
 export function buildNexusTodayTopActions(input: {
   attention: AttentionInput[];
   revenue: RevenueInput;
-  marketingBlockers: MarketingBlocker[];
-  quarantined: number;
+  marketingHumanActions: MarketingHumanAction[];
   limit?: number;
 }): NexusTodayAction[] {
   const actions: NexusTodayAction[] = [];
@@ -88,31 +88,18 @@ export function buildNexusTodayTopActions(input: {
     });
   }
 
-  if (input.quarantined > 0) {
+  for (const item of input.marketingHumanActions) {
+    const priority: NexusTodayPriority = item.priority;
     actions.push({
-      id: "marketing:quarantine",
+      id: `marketing:${item.id}`,
       source: "marketing",
-      priority: "CRITICAL",
-      score: priorityWeight.CRITICAL + Math.min(99, input.quarantined * 5),
-      title: `${input.quarantined} publiseringer står i quarantine`,
-      action: "Kontroller quarantine-køen",
-      reason: "Publiseringer er stoppet av eksisterende sikkerhets- eller kvalitetsgate.",
-      impact: "Distribusjonsrisiko: innhold kommer ikke videre før køen er kontrollert.",
-      href: "/social-automation?view=attention",
-    });
-  }
-
-  for (const row of input.marketingBlockers) {
-    actions.push({
-      id: `marketing:${row.brandId}:${row.platform || "channel"}`,
-      source: "marketing",
-      priority: "HIGH",
-      score: priorityWeight.HIGH + 20,
-      title: `${row.brandName} · ${row.platform || "kanal"}`,
-      action: "Rydd kanalblokkeringen",
-      reason: row.pilotBlockReason || "Kanalen er ikke klar for autopilot.",
-      impact: "Vekstfremdrift: blokkerer planlagt distribusjon for merkevaren.",
-      href: "/social-automation?view=attention",
+      priority,
+      score: priorityWeight[priority] + 20,
+      title: item.title,
+      action: "Ta menneskelig beslutning",
+      reason: item.reason,
+      impact: "Vekstfremdrift: dette er eksplisitt markert av Marketing Autopilot som en beslutning systemet ikke skal ta alene.",
+      href: item.href || "/social-automation?view=attention",
     });
   }
 
