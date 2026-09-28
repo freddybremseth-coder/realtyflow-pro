@@ -121,7 +121,11 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   if (specificProperty) return result("property_interest", 0.93, "prioritize_property_match", ["Customer references a specific property or property link."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
 
   const changed = /\b(changed|different area|different budget|new budget|other area|other location|requirements changed|endret|andre ønsker|annet område|nytt budsjett|annet budsjett|ser etter noe annet)\b/i.test(text);
-  if (changed) return result("update_preferences", 0.91, "refresh_buyer_profile", ["Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
+  const explicitBuyerCriteria =
+    /\b(ikke|not|avoid|unngå)[^.!?]{0,55}\b(golf(?:bane| course| resort)?|air\s?bnb|korttidsutleie|short[- ]term rental)\b/i.test(text)
+    || /\b(internasjonal skole|international school|barnefamil|families with children|minimum\s+\d+\s+soverom|min(?:imum)?\s+\d+\s+bedroom|albir er øverst|kjøpe tomt|buy a plot|eldre hus|older house)\b/i.test(text)
+    || /\b(bo der det ikke|not live in)[^.!?]{0,70}\b(golf|air\s?bnb|korttids|short[- ]term)\b/i.test(text);
+  if (changed || explicitBuyerCriteria) return result("update_preferences", explicitBuyerCriteria ? 0.95 : 0.91, "refresh_buyer_profile", [explicitBuyerCriteria ? "Customer states explicit property or neighbourhood criteria." : "Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
   const later = /\b(later|next year|in a few months|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|etter sommeren|etter jul)\b/i.test(text);
   if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], { shouldPauseNurture: true });

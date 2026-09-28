@@ -14,6 +14,11 @@ const AUTO_REVISION_KEYS = new Set([
   "bathrooms",
   "living_area_m2",
   "plot_area_m2",
+  "parking",
+  "pool",
+  "new_build_or_resale",
+  "golf_course_setting",
+  "short_term_rental_area",
 ]);
 
 type EvidenceCriterion =

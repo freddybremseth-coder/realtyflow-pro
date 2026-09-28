@@ -13,6 +13,7 @@ import { extractLatestReplyText } from "@/services/email/latest-reply-text";
 export const maxDuration = 300;
 const PATH = "/api/cron/nexus-buyer-profile-sync";
 const PROFILE_INTENTS = new Set(["active_interest", "property_interest", "viewing_request", "update_preferences"]);
+const RECLASSIFIABLE_PROFILE_INTENTS = new Set([...PROFILE_INTENTS, "unclear"]);
 const OPEN_STATUSES = ["TO_DO", "IN_PROGRESS", "REVIEW"];
 
 function getSupabase() {
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
   for (const row of rows || []) {
     const metadata = record(row.metadata);
     const storedIntent = String(metadata.classification || "");
-    if (!PROFILE_INTENTS.has(storedIntent)) continue;
+    if (!RECLASSIFIABLE_PROFILE_INTENTS.has(storedIntent)) continue;
     if (metadata.buyer_profile_sync_at) continue;
 
     const contactId = String(metadata.contact_id || "");
