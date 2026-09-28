@@ -12,6 +12,8 @@ const reply = (body: unknown, status = 200) => NextResponse.json(body, { status,
 
 function planScopeValid(brandKey: string, permissions: WorkspacePermission[]) {
   if (permissions.includes("marketing.draft") && !permissions.includes("marketing.read")) return false;
+  if (permissions.includes("marketing.publish") &&
+      (!permissions.includes("marketing.read") || !permissions.includes("marketing.draft"))) return false;
   if (permissions.includes("corporate.plan") && !permissions.includes("corporate.read")) return false;
   if (permissions.includes("visibility.plan") && !permissions.includes("visibility.read")) return false;
   if (permissions.includes("ads.draft") && !permissions.includes("ads.read")) return false;
@@ -112,8 +114,6 @@ export async function GET(request: NextRequest) {
   if (plan && permissions.length !== plan.permissions.length) blockers.push("INVALID_DRAFT_PERMISSIONS");
   if (plan && permissions.length === 0) blockers.push("EMPTY_PERMISSIONS");
   if (plan && !planScopeValid(brandKey, permissions)) blockers.push("INVALID_BRAND_SCOPE");
-  if (permissions.includes("marketing.publish"))
-    blockers.push("MARKETING_PUBLISH_NOT_IMPLEMENTED");
   if (!authUser) blockers.push("AUTH_USER_MISSING");
   if (!profile) blockers.push("ACCESS_PROFILE_MISSING");
   else {
