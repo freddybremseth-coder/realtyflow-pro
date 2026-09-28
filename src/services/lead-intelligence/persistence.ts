@@ -1208,6 +1208,7 @@ export class LeadIntelligencePersistenceRepository {
         updatedAt: normalizeDateString(row.updated_at),
         approvedAt: row.approved_at ? normalizeDateString(row.approved_at) : null,
         nextAction: buildLeadWorklistNextAction({
+          profileStatus: row.profile_status,
           analysisRunId,
           contactLinked,
           criterionCount,
