@@ -183,6 +183,7 @@ function hasAllowedRegion(
   profile: LeadMatchProfile,
   match: PropertyMatchPreviewResult["matches"][number],
 ) {
+  if (profile.locations.flexible === true) return true;
   const allowedRegions = allowedRegionsFromProfile(profile);
   if (allowedRegions.size === 0) return true;
 
@@ -247,6 +248,7 @@ function isAllowedAutoLocationMatch(
   const preferred = cleanLocationValues(profile.locations.preferred);
   const propertyText = matchTextForProperty(match);
   if (preferred.length === 0 || !propertyText) return true;
+  if (profile.locations.flexible === true) return true;
   if (preferred.some((preferredLocation) => locationTextMatches(propertyText, preferredLocation))) return true;
 
   const nearest = nearestPreferredLocationDistance(propertyText, preferred);
