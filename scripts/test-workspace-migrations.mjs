@@ -1075,15 +1075,24 @@ try {
     instagramMissingImageDraft.rows[0].result?.error === "INSTAGRAM_IMAGE_REQUIRED",
     "Workspace marketing v2 accepted Instagram target without an image");
 
+  const unapprovedInstagramDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create_v2($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[],$8::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test","Instagram foreign image",
+      "Must reject unrelated media",[],["instagram"],"https://cdn.example.test/unapproved.jpg"],
+  );
+  verify(unapprovedInstagramDraft.rows[0].result?.ok === false &&
+    unapprovedInstagramDraft.rows[0].result?.error === "IMAGE_NOT_APPROVED_FOR_BRAND",
+    "Workspace marketing v2 accepted an arbitrary external image URL");
+
   const instagramDraft = await serviceSql(
     "select public.workspace_brand_marketing_draft_create_v2($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[],$8::text) as result",
     ["pinosoecolife",managedUser,"managed@example.test","Instagram with image",
-      "Safe Instagram image post",[],["instagram"],"https://cdn.example.test/pinoso.jpg"],
+      "Safe Instagram image post",[],["instagram"],"https://example.test/p1.jpg"],
   );
   const instagramDraftId = instagramDraft.rows[0].result?.publication?.id;
   verify(Boolean(instagramDraftId) &&
-    instagramDraft.rows[0].result?.publication?.thumbnail_url === "https://cdn.example.test/pinoso.jpg",
-    "Workspace marketing v2 did not persist the safe Instagram image");
+    instagramDraft.rows[0].result?.publication?.thumbnail_url === "https://example.test/p1.jpg",
+    "Workspace marketing v2 did not persist the brand-approved Instagram image");
 
   const ownerSocialDraft = await sql(
     "insert into public.content_publications(brand_id,content_type,title,description,scheduled_platforms,status) values ('pinosoecolife','social','Owner same-brand draft','Staff must not publish this',array['facebook']::text[],'draft') returning id",
@@ -1104,7 +1113,7 @@ try {
   );
   verify(socialSnapshot.rows[0].result?.channels?.length === 2 &&
     socialSnapshot.rows[0].result.channels.every(row =>
-      ["facebook","instagram"].includes(row.platform) && !("externalId" in row)) &&
+      ["facebook","instagram"].includes(row.platform) && !("id" in row) && !("externalId" in row)) &&
     JSON.stringify(socialSnapshot.rows[0].result).includes(staffSocialDraftId) &&
     JSON.stringify(socialSnapshot.rows[0].result).includes(instagramDraftId) &&
     !JSON.stringify(socialSnapshot.rows[0].result).includes(ownerSocialDraftId) &&
@@ -1112,29 +1121,21 @@ try {
     !JSON.stringify(socialSnapshot.rows[0].result).includes(reelDraftId),
     "Social publish snapshot leaked unsupported content/channel identifiers or omitted safe draft");
 
-  const wrongBrandChannel = await serviceSql(
-    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,[zenFacebookId]],
-  );
-  verify(wrongBrandChannel.rows[0].result?.ok === false &&
-    wrongBrandChannel.rows[0].result?.error === "CHANNEL_SCOPE_INVALID",
-    "Social publish prepare accepted another brand's channel");
-
   const sameBrandOwnerBlocked = await serviceSql(
-    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",ownerSocialDraftId,[pinosoFacebookId]],
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",ownerSocialDraftId,["facebook"]],
   );
   verify(sameBrandOwnerBlocked.rows[0].result?.ok === false &&
     sameBrandOwnerBlocked.rows[0].result?.error === "PUBLICATION_NOT_PUBLISHABLE",
     "Workspace member could publish a same-brand draft they did not create");
 
   const preparedInstagram = await serviceSql(
-    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",instagramDraftId,[pinosoInstagramId]],
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",instagramDraftId,["instagram"]],
   );
   const instagramAttemptId = preparedInstagram.rows[0].result?.attemptId;
   verify(preparedInstagram.rows[0].result?.ok === true &&
-    preparedInstagram.rows[0].result?.imageUrl === "https://cdn.example.test/pinoso.jpg" &&
+    preparedInstagram.rows[0].result?.imageUrl === "https://example.test/p1.jpg" &&
     preparedInstagram.rows[0].result?.channels?.[0]?.platform === "instagram",
     "Safe own Instagram draft did not prepare with its server-approved image");
   const finalizedInstagram = await serviceSql(
@@ -1147,8 +1148,8 @@ try {
 
   for (const blockedPublicationId of [websiteDraftId,reelDraftId]) {
     const blocked = await serviceSql(
-      "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-      ["pinosoecolife",managedUser,"managed@example.test",blockedPublicationId,[pinosoFacebookId]],
+      "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+      ["pinosoecolife",managedUser,"managed@example.test",blockedPublicationId,["facebook"]],
     );
     verify(blocked.rows[0].result?.ok === false &&
       blocked.rows[0].result?.error === "PUBLICATION_NOT_PUBLISHABLE",
@@ -1156,14 +1157,15 @@ try {
   }
 
   const preparedSocial = await serviceSql(
-    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,[pinosoFacebookId]],
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,["facebook"]],
   );
   const socialAttemptId = preparedSocial.rows[0].result?.attemptId;
   verify(preparedSocial.rows[0].result?.ok === true &&
     preparedSocial.rows[0].result?.content === "Draft only body" &&
     preparedSocial.rows[0].result?.channels?.length === 1 &&
     preparedSocial.rows[0].result.channels[0].id === pinosoFacebookId &&
+    preparedSocial.rows[0].result.channels[0].id !== zenFacebookId &&
     !JSON.stringify(preparedSocial.rows[0].result).includes("fb-pinoso"),
     "Social publish preparation failed exact brand/channel resolution");
 
@@ -1174,8 +1176,8 @@ try {
     "Social publish prepare did not reserve publication before external action");
 
   const duplicatePrepare = await serviceSql(
-    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,[pinosoFacebookId]],
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,["facebook"]],
   );
   verify(duplicatePrepare.rows[0].result?.error === "PUBLISH_ATTEMPT_REQUIRES_REVIEW",
     "Unresolved publish attempt did not block blind retry");
@@ -1189,27 +1191,19 @@ try {
     "Failed social publish was not finalized as failed");
 
   const retrySocial = await serviceSql(
-    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,[pinosoFacebookId]],
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,["facebook"]],
   );
-  verify(retrySocial.rows[0].result?.ok === true,
-    "Reviewed failed social publish could not be retried safely");
-  const retryAttemptId = retrySocial.rows[0].result.attemptId;
-  const completedSocial = await serviceSql(
-    "select public.workspace_brand_social_publish_finalize($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::jsonb,$7::text) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",retryAttemptId,true,
-      JSON.stringify([{platform:"facebook",success:true,postUrl:"https://facebook.test/post"}]),null],
-  );
-  verify(completedSocial.rows[0].result?.status === "published",
-    "Successful social publish was not finalized as published");
+  verify(retrySocial.rows[0].result?.ok === false &&
+    retrySocial.rows[0].result?.error === "PUBLICATION_NOT_PUBLISHABLE",
+    "Failed external publish remained blindly retryable from the employee surface");
 
   const publishAttempts = await sql(
     "select status from core.brand_workspace_social_publish_attempts where publication_id=$1 order by created_at,id",
     [staffSocialDraftId],
   );
-  verify(publishAttempts.rowCount === 2 &&
-    publishAttempts.rows.map(row => row.status).join() === "failed,published",
-    "Social publish audit did not preserve failed and successful attempts");
+  verify(publishAttempts.rowCount === 1 && publishAttempts.rows[0].status === "failed",
+    "Social publish audit did not preserve the failed one-shot attempt");
 
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["corporate.read"] }]) === false,
     "Workspace user configure accepted Corporate Homes outside Zen Eco Homes");
