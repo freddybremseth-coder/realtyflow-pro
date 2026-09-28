@@ -364,7 +364,7 @@ export async function loadPropertiesByReferencesFromSupabase(
     }
     for (const plot of (plotData || []) as RawProperty[]) {
       if (plotMatchesBrand(plot, _brand)) {
-        const mapped = landPlotToRawProperty(plot);
+        const mapped = landPlotToRawProperty(plot, _brand);
         const id = typeof mapped.id === "string" ? mapped.id : "";
         if (id) rows.set(id, mapped);
       }
@@ -542,11 +542,11 @@ async function loadLandPlotCandidates(
     .filter((plot) => plotMatchesBrand(plot, brand))
     .filter((plot) => !/\b(sold|vendido|reservado|reserved)\b/i.test(String(plot.plot_number || plot.location || "")))
     .filter((plot) => Number(plot.price || 0) > 0)
-    .map(landPlotToRawProperty)
+    .map((plot) => landPlotToRawProperty(plot, brand))
     .slice(0, limit);
 }
 
-function landPlotToRawProperty(plot: RawProperty): RawProperty {
+function landPlotToRawProperty(plot: RawProperty, brand: string): RawProperty {
   const plotNumber = cleanDisplayText(plot.plot_number) || "Tomt";
   const municipality = cleanDisplayText(plot.municipality);
   const location = municipality || cleanDisplayText(plot.location) || plotNumber;
@@ -554,6 +554,7 @@ function landPlotToRawProperty(plot: RawProperty): RawProperty {
   return {
     id: plot.id,
     __source_kind: "land_plot",
+    brand_id: brand,
     ref: plotNumber,
     reference: plotNumber,
     title: `Tomt · ${plotNumber}`,
