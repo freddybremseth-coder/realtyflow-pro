@@ -683,7 +683,7 @@ export type CreateLeadCustomerPresentationDraftInput = z.infer<typeof CreateLead
 export interface LeadCustomerPresentationShortlistItemRow {
   propertyId: string;
   propertyReference: string | null;
-  propertySourceKind: "property" | "land_plot";
+  propertySourceKind?: "property" | "land_plot";
   propertyTitle: string | null;
   propertyLocation: string | null;
   propertyPrice: number | null;
