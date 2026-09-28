@@ -97,7 +97,7 @@ function accessExpiryInput(value: string | null) {
 
 function accessExpiryIso(value: string) {
   if (!value) return null;
-  const parsed = new Date(`${value}T23:59:59.999Z`);
+  const parsed = new Date(`${value}T23:59:59.999`);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
