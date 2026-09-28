@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GSCBrandSnapshot } from "./seo-search-console";
 import { brandPublishingEvidence, patchBrandHtml, patchNextHomepage, publisherForBrand, readBrandHtml,
-  readNextLayoutMetadata, SEO_BRAND_PUBLISHERS, type BrandEvidence, type BrandMetadata, type BrandPublisher } from "./seo-brand-publishing";
+  readNextLayoutMetadata, secondVariantForBrand, SEO_BRAND_PUBLISHERS, type BrandEvidence, type BrandMetadata, type BrandPublisher } from "./seo-brand-publishing";
+import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "./seo-change-monitor";
 import { githubForSite, githubRequest, type GithubRequest } from "./seo-brand-github";
 
 const ACTION = "seo_brand_publication_v1";
@@ -16,6 +17,8 @@ export type BrandPublicationJob = {
   brandId: string; phase: Phase; baseSha: string; before: BrandMetadata;
   baseline: BrandEvidence; createdAt: string; pullNumber?: number; mergeSha?: string; mergedAt?: string;
   rollbackRequestedAt?: string; originalMergeSha?: string;
+  experimentVersion?: "v1" | "v2";
+  target?: BrandMetadata;
 };
 export function brandPublicationId(brandId: string, suffix = "") {
   const hash = createHash("sha256").update(ACTION + ":" + brandId + suffix).digest("hex");
@@ -35,8 +38,11 @@ function publicMatches(html: string, site: BrandPublisher, metadata: BrandMetada
   const current = readBrandHtml(html);
   return Boolean(current && !current.noindex && (current.canonical === site.origin + "/" || current.canonical === site.origin) && same(current, metadata));
 }
-function validJob(job: BrandPublicationJob, site: BrandPublisher) {
-  return job.brandId === site.brandId && ["prepare","checks","deploy","rollback_prepare","rollback_checks","rollback_deploy","done","rolled_back"].includes(job.phase) &&
+function validJob(job: BrandPublicationJob, site: BrandPublisher, version: "v1" | "v2" = "v1", target: BrandMetadata = site) {
+  const versionOk = version === "v1"
+    ? job.experimentVersion === undefined || job.experimentVersion === "v1"
+    : job.experimentVersion === "v2" && job.target?.title === target.title && job.target?.description === target.description;
+  return versionOk && job.brandId === site.brandId && ["prepare","checks","deploy","rollback_prepare","rollback_checks","rollback_deploy","done","rolled_back"].includes(job.phase) &&
     /^[a-f0-9]{40}$/.test(job.baseSha) && typeof job.before?.title === "string" && job.before.title.length <= 500 &&
     typeof job.before.description === "string" && job.before.description.length <= 1000 && Number.isFinite(Date.parse(job.createdAt)) &&
     typeof job.baseline?.query === "string" && job.baseline.query.length > 0 && job.baseline.query.length <= 180 &&
@@ -51,8 +57,11 @@ function validJob(job: BrandPublicationJob, site: BrandPublisher) {
 export async function runBrandPublisher(
   db: SupabaseClient, site: BrandPublisher, snapshot: GSCBrandSnapshot | null,
   dependencies: { github: GithubRequest; publicHtml: (site: BrandPublisher) => Promise<string>; now: Date },
+  experiment: { version: "v1" | "v2"; target: BrandMetadata } = { version: "v1", target: site },
 ): Promise<BrandPublicationStatus> {
-  const id = brandPublicationId(site.brandId), gh = githubForSite(site, dependencies.github), now = dependencies.now;
+  const { version, target } = experiment;
+  const id = brandPublicationId(site.brandId, version === "v1" ? "" : ":v2");
+  const gh = githubForSite(site, dependencies.github), now = dependencies.now;
   const result = (status: BrandPublicationStatus["status"], reason: string, extra: Partial<BrandPublicationStatus> = {}): BrandPublicationStatus =>
     ({ brandId: site.brandId, page: "/", status, reason, published: 0, jobId: id, ...extra });
   const loaded = await db.from("automation_logs").select("details").eq("id",id).eq("action",ACTION).maybeSingle();
@@ -74,28 +83,33 @@ export async function runBrandPublisher(
     const before = site.adapter === "html" ? readBrandHtml(source.content)
       : readNextLayoutMetadata((await gh.file(site.layout,baseSha)).content);
     if (!before || !publicMatches(html,site,before)) return result("blocked", "Kildens metadata samsvarer ikke med offentlig hovedside. Ingen automatisk endring.");
-    if (same(before,site)) return result("monitor", "Den godkjente metadatavarianten er allerede synlig.");
+    if (same(before,target)) return result("monitor", "Den godkjente metadatavarianten er allerede synlig.");
     // Validate the adapter even when traffic is too low to publish.
-    if (site.adapter === "next-home") patchNextHomepage(source.content,site);
+    if (site.adapter === "next-home") patchNextHomepage(source.content,target);
     const baseline = brandPublishingEvidence(site,snapshot,now);
     if (!baseline) return result("monitor", "Publiseringskilde kontrollert. Venter på tilstrekkelig søkesignal for hovedsiden.");
-    job = { brandId:site.brandId,phase:"prepare",baseSha,before:{title:before.title,description:before.description},baseline,createdAt:now.toISOString() };
+    job = {
+      brandId:site.brandId,phase:"prepare",baseSha,
+      before:{title:before.title,description:before.description},
+      baseline,createdAt:now.toISOString(),
+      ...(version === "v2" ? { experimentVersion:"v2" as const, target } : {}),
+    };
     const claim = await db.from("automation_logs").insert({ id, action:ACTION,agent_name:"Sam SEO Expert",status:"partial",details:job });
     if (claim.error) {
       if (claim.error.code === "23505") return result("pending", "En annen kjøring har allerede registrert dette forsøket.");
       throw new Error("Cannot record publication intent; no GitHub write attempted");
     }
   }
-  if (!validJob(job,site)) return result("blocked", "Ufullstendig publiseringslogg må kontrolleres.");
+  if (!validJob(job,site,version,target)) return result("blocked", "Ufullstendig publiseringslogg må kontrolleres.");
   if (job.phase === "done") return result("verified", "Publiseringen er tidligere verifisert. Effektmålingen følges videre.",
     { rollbackAvailable:true,revision:job.mergeSha });
   if (job.phase === "rolled_back") return result("rollback", "Tidligere metadata er gjenopprettet og bekreftet offentlig.");
   const rollback = job.phase.startsWith("rollback_");
-  const branch = "codex/sam-seo-" + site.brandId + "-v1" + (rollback ? "-rollback" : "");
-  const targetMetadata = rollback ? job.before : site;
-  const sourceMetadata = rollback ? site : job.before;
+  const branch = "codex/sam-seo-" + site.brandId + "-" + version + (rollback ? "-rollback" : "");
+  const targetMetadata = rollback ? job.before : target;
+  const sourceMetadata = rollback ? target : job.before;
   const patch = (source: string) => site.adapter === "html" ? patchBrandHtml(source,sourceMetadata,targetMetadata)
-    : rollback ? patchNextHomepage(source,null,site) : patchNextHomepage(source,site);
+    : rollback ? patchNextHomepage(source,null,target) : patchNextHomepage(source,target);
 
   if (job.phase === "prepare" || job.phase === "rollback_prepare") {
     const base = rollback ? await gh.main() : job.baseSha;
@@ -115,7 +129,7 @@ export async function runBrandPublisher(
     let pull = pulls.find((p:any)=>p.head?.ref===branch && p.base?.ref==="main");
     if (!pull) {
       try { pull = await gh.call("POST", "/pulls", { head:branch,base:"main",
-        title:"Sam SEO · "+site.brandId+" · "+(rollback?"tilbakeføring":"metadata på hovedsiden"),
+        title:"Sam SEO · "+site.brandId+" · "+version+" · "+(rollback?"tilbakeføring":"metadata på hovedsiden"),
         body:"Automatisk avgrenset metadataendring fra RealtyFlow. Kun tittel og metabeskrivelse på "+site.origin+"/.\n\nEndringen skal passere GitHub- og Vercel-kontroller før sammenslåing. Sam verifiserer offentlig HTML etter publisering. Ingen priser, sideinnhold, canonical eller kundedata endres." }); }
       catch { pulls = await findPull(); pull = pulls.find((p:any)=>p.head?.ref===branch && p.base?.ref==="main"); if (!pull) throw new Error("Publication PR could not be created"); }
     }
@@ -163,18 +177,20 @@ export async function runBrandPublisher(
   if (green && publicMatches(html,site,targetMetadata)) {
     if (!rollback) {
       // Deterministic primary key makes effect logging retryable and deduplicated.
-      const effect = await db.from("automation_logs").upsert({ id:brandPublicationId(site.brandId,":effect"),
+      const effectSuffix = version === "v1" ? ":effect" : ":effect:v2";
+      const effect = await db.from("automation_logs").upsert({ id:brandPublicationId(site.brandId,effectSuffix),
         action:"seo_autopilot_change",agent_name:"Sam SEO Expert",status:"success",details:{
-          change_id:"sam_"+site.brandId+"_homepage_v1",brand_id:site.brandId,page:"/",query:job.baseline.query,
-          commit_sha:job.mergeSha,applied_at:job.mergedAt,site_verified:true,publisher:"github_metadata_v1",
+          change_id:"sam_"+site.brandId+"_homepage_"+version,brand_id:site.brandId,page:"/",query:job.baseline.query,
+          commit_sha:job.mergeSha,applied_at:job.mergedAt,site_verified:true,publisher:"github_metadata_"+version,
           baseline_period_start:job.baseline.start,baseline_period_end:job.baseline.end,
           baseline_impressions:job.baseline.impressions,baseline_clicks:job.baseline.clicks,baseline_position:job.baseline.position,
         } },{onConflict:"id",ignoreDuplicates:true});
       if (effect.error) throw new Error("Effect measurement could not be stored; will retry");
     }
     if (rollback) {
+      const effectSuffix = version === "v1" ? ":effect" : ":effect:v2";
       const closed = await db.from("automation_logs").update({status:"partial"})
-        .eq("id",brandPublicationId(site.brandId,":effect")).eq("action","seo_autopilot_change");
+        .eq("id",brandPublicationId(site.brandId,effectSuffix)).eq("action","seo_autopilot_change");
       if (closed.error) throw new Error("Restored experiment measurement could not be closed; will retry");
     }
     const saved = await save(job.phase,{...job,phase:rollback?"rolled_back":"done"});
@@ -188,6 +204,23 @@ export async function runBrandPublisher(
   return result("pending",rollback?"Tilbakeføringen avventer verifisert offentlig resultat.":"Venter på at nettstedet viser den publiserte endringen.");
 }
 
+async function v1EffectMeasured(
+  db: SupabaseClient,
+  site: BrandPublisher,
+  snapshot: GSCBrandSnapshot | null,
+): Promise<boolean> {
+  if (!snapshot) return false;
+  const effect = await db.from("automation_logs")
+    .select("details,status")
+    .eq("id",brandPublicationId(site.brandId,":effect"))
+    .eq("action","seo_autopilot_change")
+    .maybeSingle();
+  if (effect.error || effect.data?.status !== "success") return false;
+  const tracked = parseTrackedSEOChange(effect.data.details);
+  if (!tracked) return false;
+  return evaluateTrackedSEOChanges([tracked],[snapshot])[0]?.status === "measured";
+}
+
 export async function runPortfolioPublishers(db: SupabaseClient, snapshots: readonly GSCBrandSnapshot[]): Promise<BrandPublicationStatus[]> {
   const token=process.env.GITHUB_TOKEN;
   if (!token) return SEO_BRAND_PUBLISHERS.map(site=>({brandId:site.brandId,page:"/",status:"blocked",reason:"Serverens GitHub-tilgang mangler.",published:0}));
@@ -198,8 +231,18 @@ export async function runPortfolioPublishers(db: SupabaseClient, snapshots: read
   const groups = await Promise.all(repositories.map(async repository => {
     const results: BrandPublicationStatus[] = [];
     for (const site of SEO_BRAND_PUBLISHERS.filter(item=>item.repository===repository)) {
-      try { results.push(await runBrandPublisher(db,site,snapshots.find(s=>s.brandId===site.brandId)||null,{github,publicHtml:readBrandPublicHtml,now})); }
-      catch(error) { results.push({brandId:site.brandId,page:"/",status:"blocked",published:0,
+      try {
+        const snapshot = snapshots.find(s=>s.brandId===site.brandId)||null;
+        const first = await runBrandPublisher(db,site,snapshot,{github,publicHtml:readBrandPublicHtml,now});
+        if (first.status === "verified" && await v1EffectMeasured(db,site,snapshot)) {
+          results.push(await runBrandPublisher(
+            db,site,snapshot,{github,publicHtml:readBrandPublicHtml,now},
+            { version:"v2", target:secondVariantForBrand(site.brandId) },
+          ));
+        } else {
+          results.push(first);
+        }
+      } catch(error) { results.push({brandId:site.brandId,page:"/",status:"blocked",published:0,
         reason:"Publiseringskontrollen må prøves igjen: "+(error instanceof Error?error.message:"ukjent feil").slice(0,180)}); }
     }
     return results;
