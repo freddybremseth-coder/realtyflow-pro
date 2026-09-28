@@ -48,7 +48,8 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
           typeof permission === "string" &&
           WORKSPACE_PERMISSIONS.includes(permission as WorkspacePermission))) return null;
     const typed = permissions as WorkspacePermission[];
-    if (typed.includes("marketing.publish")) return null;
+    if (typed.includes("marketing.publish") &&
+        (!typed.includes("marketing.read") || !typed.includes("marketing.draft"))) return null;
     if (typed.includes("marketing.draft") && !typed.includes("marketing.read")) return null;
     if (typed.includes("corporate.plan") && !typed.includes("corporate.read")) return null;
     if (typed.includes("visibility.plan") && !typed.includes("visibility.read")) return null;

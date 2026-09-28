@@ -38,7 +38,10 @@ function fakeDatabase() {
           error: null,
         });
       }
-      if (name === "workspace_brand_marketing_draft_create") {
+      if (name === "workspace_brand_marketing_draft_create_v2") {
+        if (args?.p_image_url === "https://cdn.example.test/unapproved.jpg") {
+          return Promise.resolve({ data: { ok: false, error: "IMAGE_NOT_APPROVED_FOR_BRAND" }, error: null });
+        }
         const requested = Array.isArray(args?.p_platforms) ? args?.p_platforms as string[] : [];
         const active = new Set(channels
           .filter(row => row.brand_id === args?.p_brand_key && row.is_active === true)
@@ -53,7 +56,7 @@ function fakeDatabase() {
           title: args?.p_title || null,
           description: args?.p_description,
           tags: args?.p_tags || [],
-          thumbnail_url: null,
+          thumbnail_url: args?.p_image_url || null,
           scheduled_platforms: requested,
           status: "draft",
           scheduled_at: null,
@@ -155,19 +158,21 @@ test("marketing draft write is brand-fixed and cannot publish", async () => {
     description: "Et trygt utkast for Pinoso EcoLife.",
     tags: ["Pinoso", "Villa"],
     platforms: ["facebook", "instagram"],
+    imageUrl: "https://cdn.example.test/pinoso.jpg",
     status: "published",
     brand_id: "zeneco",
   }) as any, { params: { brandKey: "pinosoecolife" } });
   assert.equal(response.status, 201);
   const body = await response.json();
   assert.equal(body.published, false);
-  const draftCall = calls.find(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_draft_create");
+  const draftCall = calls.find(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_draft_create_v2");
   assert.ok(draftCall);
   const draftArgs = draftCall?.args[1] as any;
   assert.equal(draftArgs.p_brand_key, "pinosoecolife");
   assert.equal(draftArgs.p_description, "Et trygt utkast for Pinoso EcoLife.");
   assert.deepEqual(draftArgs.p_tags, ["pinoso", "villa"]);
   assert.deepEqual(draftArgs.p_platforms, ["facebook", "instagram"]);
+  assert.equal(draftArgs.p_image_url, "https://cdn.example.test/pinoso.jpg");
   assert.equal(JSON.stringify(draftArgs).includes("zeneco"), false);
 });
 
@@ -185,7 +190,53 @@ test("marketing draft requires explicit draft permission and active brand channe
     platforms: ["youtube"],
   }) as any, { params: { brandKey: "pinosoecolife" } });
   assert.equal(badChannel.status, 409);
-  assert.equal(calls.filter(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_draft_create").length, 1);
+  assert.equal(calls.filter(call => call.method === "rpc" && call.args[0] === "workspace_brand_marketing_draft_create_v2").length, 1);
+});
+
+test("Instagram draft requires HTTPS media that the server approves for the brand", async () => {
+  const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+
+  const missing = await POST(request(cookie, "POST", {
+    description: "Instagram post without image",
+    platforms: ["instagram"],
+  }) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(missing.status, 400);
+  assert.equal((await missing.json()).error.code, "INSTAGRAM_IMAGE_REQUIRED");
+
+  for (const imageUrl of [
+    "http://cdn.example.test/not-secure.jpg",
+    "https://cdn.example.test/bad image.jpg",
+  ]) {
+    const invalid = await POST(request(cookie, "POST", {
+      description: "Instagram post with invalid image",
+      platforms: ["instagram"],
+      imageUrl,
+    }) as any, { params: { brandKey: "pinosoecolife" } });
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error.code, "INVALID_DRAFT");
+  }
+
+  const unapproved = await POST(request(cookie, "POST", {
+    description: "Instagram post with unrelated public image",
+    platforms: ["instagram"],
+    imageUrl: "https://cdn.example.test/unapproved.jpg",
+  }) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(unapproved.status, 409);
+  assert.equal((await unapproved.json()).error.code, "IMAGE_NOT_APPROVED_FOR_BRAND");
+
+  const before = calls.filter(call => call.method === "rpc" &&
+    call.args[0] === "workspace_brand_marketing_draft_create_v2").length;
+  const valid = await POST(request(cookie, "POST", {
+    description: "Instagram post with safe image",
+    platforms: ["instagram"],
+    imageUrl: "https://cdn.example.test/safe.jpg",
+  }) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(valid.status, 201);
+  const body = await valid.json();
+  assert.equal(body.publication.thumbnailUrl, "https://cdn.example.test/safe.jpg");
+  const after = calls.filter(call => call.method === "rpc" &&
+    call.args[0] === "workspace_brand_marketing_draft_create_v2").length;
+  assert.equal(after, before + 1);
 });
 
 test("other-brand workspace is denied before marketing table access", async () => {
@@ -193,5 +244,5 @@ test("other-brand workspace is denied before marketing table access", async () =
   calls.length = 0;
   const response = await GET(request(cookie) as any, { params: { brandKey: "zeneco" } });
   assert.equal(response.status, 403);
-  assert.equal(calls.some(call => call.method === "rpc" && ["workspace_brand_marketing_snapshot","workspace_brand_marketing_draft_create"].includes(String(call.args[0]))), false);
+  assert.equal(calls.some(call => call.method === "rpc" && ["workspace_brand_marketing_snapshot","workspace_brand_marketing_draft_create_v2"].includes(String(call.args[0]))), false);
 });

@@ -209,6 +209,7 @@ function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
   if (resource === "growth") return ["GET", "POST"].includes(verb);
   if (resource === "content") return ["GET", "POST"].includes(verb);
   if (resource === "email") return ["GET", "POST"].includes(verb);
+  if (resource === "social-publish") return ["GET", "POST"].includes(verb);
   if (resource === "contacts") return brand !== "zeneco" && ["GET", "POST", "PATCH"].includes(verb);
   if (resource === "joint-contacts") return brand === "zeneco" && ["GET", "PATCH"].includes(verb);
   if (resource === "joint-tasks") return brand === "zeneco" && ["GET", "POST", "PATCH"].includes(verb);

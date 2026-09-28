@@ -37,6 +37,20 @@ test("brand and role training stays focused on the user's actual work", () => {
   assert.equal(ids.includes("visibility-content"), false);
 });
 
+test("social publishing guide appears only with live publish permission", () => {
+  const draftOnly = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["marketing.read", "marketing.draft"],
+  });
+  assert.equal(draftOnly.some(article => article.id === "social-publishing"), false);
+
+  const publisher = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["marketing.read", "marketing.draft", "marketing.publish"],
+  });
+  assert.equal(publisher.some(article => article.id === "social-publishing"), true);
+});
+
 test("email Reach guide appears only when email work is assigned", () => {
   const withoutEmail = trainingArticlesFor({
     brandKey: "pinosoecolife",

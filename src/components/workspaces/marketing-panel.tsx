@@ -52,6 +52,7 @@ export function WorkspaceMarketingPanel({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [platforms, setPlatforms] = useState<string[]>([]);
 
   async function load() {
@@ -88,6 +89,10 @@ export function WorkspaceMarketingPanel({
 
   async function createDraft() {
     if (!canDraft || !description.trim() || busy) return;
+    if (platforms.includes("instagram") && !imageUrl.trim()) {
+      setError("Instagram krever et brand-godkjent bilde. Legg inn en bildeadresse fra en synlig eiendom/RealtyFlow-media eller fjern Instagram som målkanal.");
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
@@ -100,20 +105,26 @@ export function WorkspaceMarketingPanel({
           description: description.trim(),
           tags: tags.split(",").map(tag => tag.trim()).filter(Boolean),
           platforms: platforms.filter(platform => activePlatforms.has(platform)),
+          imageUrl: imageUrl.trim(),
         }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(
         body?.error?.code === "CHANNEL_NOT_ACTIVE_FOR_BRAND"
           ? "En valgt kanal er ikke aktiv for denne merkevaren."
-          : body?.error?.code === "INVALID_DRAFT"
-            ? "Kontroller tekst, tags og valgte kanaler."
-            : "Utkastet kunne ikke lagres.",
+          : body?.error?.code === "INSTAGRAM_IMAGE_REQUIRED"
+            ? "Instagram krever et brand-godkjent bilde."
+            : body?.error?.code === "IMAGE_NOT_APPROVED_FOR_BRAND"
+              ? "Bildeadressen er ikke godkjent for denne merkevaren. Bruk bilde fra en synlig eiendom eller RealtyFlow-media."
+              : body?.error?.code === "INVALID_DRAFT"
+                ? "Kontroller tekst, bildeadresse, tags og valgte kanaler."
+              : "Utkastet kunne ikke lagres.",
       );
       setNotice("Utkastet er lagret i Content Hub for denne merkevaren. Ingenting er publisert.");
       setTitle("");
       setDescription("");
       setTags("");
+      setImageUrl("");
       setPlatforms([]);
       await load();
     } catch (cause) {
@@ -163,7 +174,7 @@ export function WorkspaceMarketingPanel({
     {canDraft && <form onSubmit={event => { event.preventDefault(); void createDraft(); }}
       className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><FilePlus2 size={19}/> Nytt innholdsutkast</h2>
-      <p className="mt-1 text-xs text-slate-400">Lagrer bare utkast. Denne arbeidsflaten kan ikke publisere til sosiale medier.</p>
+      <p className="mt-1 text-xs text-slate-400">Denne delen lagrer bare utkast. Har du egen publiseringsrettighet, bruker du «Publiser til sosiale medier» etter at utkastet er klart.</p>
       <div className="mt-4 grid gap-3">
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={200}
@@ -180,6 +191,12 @@ export function WorkspaceMarketingPanel({
           <input value={tags} onChange={event => setTags(event.target.value)} maxLength={800}
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="pinoso, villa, costa blanca"/>
+        </label>
+        <label className="text-xs text-slate-300">Bildeadresse
+          <input type="url" value={imageUrl} onChange={event => setImageUrl(event.target.value)} maxLength={2000}
+            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+            placeholder="https://…"/>
+          <span className="mt-1 block text-[11px] text-slate-500">Valgfritt for Facebook. Påkrevd for Instagram. Adressen må finnes på en synlig eiendom eller en godkjent mediefil for denne merkevaren.</span>
         </label>
         <div>
           <div className="text-xs text-slate-300">Målkanaler</div>

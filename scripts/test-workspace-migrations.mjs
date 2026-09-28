@@ -19,6 +19,7 @@ const files = [
   "20260927143000_workspace_marketing_modules.sql",
   "20260927160000_workspace_content_studio.sql",
   "20260927190000_workspace_email_reach.sql",
+  "20260928103000_workspace_social_publish.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -118,10 +119,11 @@ try {
   await sql("grant usage on schema olivia_private to authenticated");
   await sql("create table core.brands (id uuid primary key, brand_key text not null unique, display_name text not null)");
   await sql("create table public.contacts (id uuid primary key default gen_random_uuid(), name text not null, email text, phone text, brand_id text, brand text, pipeline_status text default 'NEW', source text default 'manual', do_not_contact boolean not null default false, email_suppressed boolean not null default false, created_at timestamptz default now(), updated_at timestamptz default now())");
-  await sql("create table public.content_publications (id uuid primary key default gen_random_uuid(), brand_id text not null, content_type text not null, title text, description text, tags text[], media_urls text[], thumbnail_url text, scheduled_platforms text[], status text default 'draft' check (status in ('draft','processing','published','scheduled','failed')), scheduled_at timestamptz, published_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), total_views integer default 0, total_likes integer default 0, total_comments integer default 0, total_shares integer default 0, ai_generated boolean default false, ai_title text, ai_description text, ai_tags text[], ai_image_url text, last_publish_error text, content_features jsonb not null default '{}'::jsonb)");
+  await sql("create table public.content_publications (id uuid primary key default gen_random_uuid(), brand_id text not null, content_type text not null, title text, description text, tags text[], media_urls text[], thumbnail_url text, scheduled_platforms text[], status text default 'draft' check (status in ('draft','processing','published','scheduled','failed')), scheduled_at timestamptz, published_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), total_views integer default 0, total_likes integer default 0, total_comments integer default 0, total_shares integer default 0, ai_generated boolean default false, ai_title text, ai_description text, ai_tags text[], ai_image_url text, publish_attempts integer not null default 0, last_publish_error text, content_features jsonb not null default '{}'::jsonb)");
   await sql("create table public.social_channels (id uuid primary key default gen_random_uuid(), brand_id text not null, platform text not null, external_id text not null, display_name text not null, metadata jsonb not null default '{}'::jsonb, is_active boolean not null default true, created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("grant select,insert,update on public.content_publications to service_role; grant select on public.social_channels to service_role");
-  await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
+  await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, images text[], gallery text[], created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
+  await sql("create table public.media_assets (id uuid primary key default gen_random_uuid(), brand_id text, public_url text, thumbnail_url text, signed_url_required boolean not null default false, deleted_at timestamptz)");
   await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
   await sql("create table public.work_items (id uuid primary key default gen_random_uuid(), title text not null, description text, status text not null default 'TO_DO' check (status in ('TO_DO','IN_PROGRESS','REVIEW','DONE','CANCELLED')), priority text not null default 'MEDIUM' check (priority in ('CRITICAL','HIGH','MEDIUM','LOW')), due_date date, brand_id text, source_type text not null default 'manual' check (source_type in ('manual','ai_agent','content','automation','market_intelligence')), source_id text, assigned_agent text, next_action text, metadata jsonb default '{}'::jsonb, created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.search_discovery_events (id uuid primary key default gen_random_uuid(), brand_id text not null, source text not null, path text not null, occurred_at timestamptz not null default now())");
@@ -173,7 +175,7 @@ try {
   await sql("grant select, insert, update on public.contacts to service_role");
   await sql("grant select, insert, update on public.work_items to service_role");
   await sql("grant select on public.search_discovery_events, public.automation_logs, public.corporate_prospects, public.corporate_partner_prospects, public.ad_campaigns to service_role");
-  await sql("grant select on public.properties, public.property_brand_visibility to service_role");
+  await sql("grant select on public.properties, public.property_brand_visibility, public.media_assets to service_role");
   for (const filename of files) {
     const contents = await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8");
     await sql(contents);
@@ -230,13 +232,16 @@ try {
     "workspace_brand_contact_create", "workspace_brand_contact_update",
     "workspace_brand_property_catalogue", "workspace_staff_security_preflight",
     "workspace_brand_marketing_snapshot", "workspace_brand_marketing_draft_create",
+    "workspace_brand_marketing_draft_create_v2",
     "workspace_brand_growth_snapshot", "workspace_brand_growth_work_create",
     "workspace_brand_content_snapshot", "workspace_brand_content_draft_save",
     "workspace_brand_content_publish_payload", "workspace_brand_content_publish_finalize",
     "workspace_brand_content_versions", "workspace_brand_content_restore_version",
     "workspace_brand_email_target_resolve", "workspace_brand_email_snapshot",
     "workspace_brand_email_draft_save", "workspace_brand_email_send_prepare",
-    "workspace_brand_email_send_finalize"]) {
+    "workspace_brand_email_send_finalize",
+    "workspace_brand_social_publish_snapshot", "workspace_brand_social_publish_prepare",
+    "workspace_brand_social_publish_finalize"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -252,7 +257,7 @@ try {
     "brand_workspace_contact_write_audit", "brand_workspace_marketing_draft_audit",
     "brand_workspace_growth_work_audit",
     "brand_workspace_content_drafts", "brand_workspace_content_versions",
-    "brand_workspace_email_drafts"]) {
+    "brand_workspace_email_drafts", "brand_workspace_social_publish_attempts"]) {
     const rls = await sql("select relrowsecurity from pg_class where oid=$1::regclass", ["core." + table]);
     verify(rls.rows[0]?.relrowsecurity === true, table + " must use RLS");
   }
@@ -295,6 +300,16 @@ try {
   verify(emailDraftPrivileges.rows[0].sel && emailDraftPrivileges.rows[0].ins &&
     emailDraftPrivileges.rows[0].upd && !emailDraftPrivileges.rows[0].del,
     "Email drafts must be editable but never hard-deletable by service_role");
+
+  const socialPublishPrivileges = await sql(
+    "select has_table_privilege('service_role','core.brand_workspace_social_publish_attempts','SELECT') as sel, " +
+    "has_table_privilege('service_role','core.brand_workspace_social_publish_attempts','INSERT') as ins, " +
+    "has_table_privilege('service_role','core.brand_workspace_social_publish_attempts','UPDATE') as upd, " +
+    "has_table_privilege('service_role','core.brand_workspace_social_publish_attempts','DELETE') as del",
+  );
+  verify(socialPublishPrivileges.rows[0].sel && socialPublishPrivileges.rows[0].ins &&
+    socialPublishPrivileges.rows[0].upd && !socialPublishPrivileges.rows[0].del,
+    "Social publish attempts must be auditable but never hard-deletable by service_role");
 
   const planAuditPrivileges = await sql(
     "select has_table_privilege('service_role','core.brand_workspace_access_plan_audit','SELECT') as sel, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','INSERT') as ins, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','UPDATE') as upd, has_table_privilege('service_role','core.brand_workspace_access_plan_audit','DELETE') as del",
@@ -991,8 +1006,12 @@ try {
     "Workspace user configure accepted marketing draft without read access");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft"] }]) === true,
     "Workspace user configure rejected implemented marketing draft access");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.publish"] }]) === false,
+    "Workspace user configure accepted social publishing without marketing read/draft");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.publish"] }]) === false,
-    "Workspace user configure accepted workspace social publishing before scoped publish safety exists");
+    "Workspace user configure accepted social publishing without marketing draft");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft","marketing.publish"] }]) === true,
+    "Workspace user configure rejected complete social publishing scope");
 
   await sql("insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','social','Pinoso draft','Safe Pinoso content','draft'),('zeneco','social','Private Zen','Must not leak','published')");
   await sql("insert into public.social_channels(brand_id,platform,external_id,display_name,is_active) values ('pinosoecolife','facebook','fb-pinoso','Pinoso Facebook',true),('pinosoecolife','youtube','yt-pinoso','Pinoso YouTube',false),('zeneco','facebook','fb-zen','Zen Facebook',true)");
@@ -1032,6 +1051,159 @@ try {
   verify(inactiveChannelDraft.rows[0].result?.ok === false &&
     inactiveChannelDraft.rows[0].result?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND",
     "Marketing draft accepted an inactive brand channel");
+
+  await sql(
+    "insert into public.social_channels(brand_id,platform,external_id,display_name,is_active) values ('pinosoecolife','instagram','ig-pinoso','Pinoso Instagram',true)",
+  );
+  const pinosoFacebookId = (await sql(
+    "select id from public.social_channels where brand_id='pinosoecolife' and platform='facebook' and is_active=true limit 1",
+  )).rows[0].id;
+  const pinosoInstagramId = (await sql(
+    "select id from public.social_channels where brand_id='pinosoecolife' and platform='instagram' and is_active=true limit 1",
+  )).rows[0].id;
+  const zenFacebookId = (await sql(
+    "select id from public.social_channels where brand_id='zeneco' and platform='facebook' and is_active=true limit 1",
+  )).rows[0].id;
+  const staffSocialDraftId = createdMarketingDraft.rows[0].result.publication.id;
+
+  const instagramMissingImageDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create_v2($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[],$8::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test","Instagram missing image",
+      "Image required test",[],["instagram"],null],
+  );
+  verify(instagramMissingImageDraft.rows[0].result?.ok === false &&
+    instagramMissingImageDraft.rows[0].result?.error === "INSTAGRAM_IMAGE_REQUIRED",
+    "Workspace marketing v2 accepted Instagram target without an image");
+
+  const unapprovedInstagramDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create_v2($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[],$8::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test","Instagram foreign image",
+      "Must reject unrelated media",[],["instagram"],"https://cdn.example.test/unapproved.jpg"],
+  );
+  verify(unapprovedInstagramDraft.rows[0].result?.ok === false &&
+    unapprovedInstagramDraft.rows[0].result?.error === "IMAGE_NOT_APPROVED_FOR_BRAND",
+    "Workspace marketing v2 accepted an arbitrary external image URL");
+
+  const instagramDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create_v2($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[],$8::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test","Instagram with image",
+      "Safe Instagram image post",[],["instagram"],"https://example.test/p1.jpg"],
+  );
+  const instagramDraftId = instagramDraft.rows[0].result?.publication?.id;
+  verify(Boolean(instagramDraftId) &&
+    instagramDraft.rows[0].result?.publication?.thumbnail_url === "https://example.test/p1.jpg",
+    "Workspace marketing v2 did not persist the brand-approved Instagram image");
+
+  const ownerSocialDraft = await sql(
+    "insert into public.content_publications(brand_id,content_type,title,description,scheduled_platforms,status) values ('pinosoecolife','social','Owner same-brand draft','Staff must not publish this',array['facebook']::text[],'draft') returning id",
+  );
+  const ownerSocialDraftId = ownerSocialDraft.rows[0].id;
+  const websiteDraft = await sql(
+    "insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','website_magazine','Private website draft','Must never reach social publisher','draft') returning id",
+  );
+  const websiteDraftId = websiteDraft.rows[0].id;
+  const reelDraft = await sql(
+    "insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','reel','Separate Reels module','Must remain in Reels Studio','draft') returning id",
+  );
+  const reelDraftId = reelDraft.rows[0].id;
+
+  const socialSnapshot = await serviceSql(
+    "select public.workspace_brand_social_publish_snapshot($1::text,$2::uuid,$3::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test"],
+  );
+  verify(socialSnapshot.rows[0].result?.channels?.length === 2 &&
+    socialSnapshot.rows[0].result.channels.every(row =>
+      ["facebook","instagram"].includes(row.platform) && !("id" in row) && !("externalId" in row)) &&
+    JSON.stringify(socialSnapshot.rows[0].result).includes(staffSocialDraftId) &&
+    JSON.stringify(socialSnapshot.rows[0].result).includes(instagramDraftId) &&
+    !JSON.stringify(socialSnapshot.rows[0].result).includes(ownerSocialDraftId) &&
+    !JSON.stringify(socialSnapshot.rows[0].result).includes(websiteDraftId) &&
+    !JSON.stringify(socialSnapshot.rows[0].result).includes(reelDraftId),
+    "Social publish snapshot leaked unsupported content/channel identifiers or omitted safe draft");
+
+  const sameBrandOwnerBlocked = await serviceSql(
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",ownerSocialDraftId,["facebook"]],
+  );
+  verify(sameBrandOwnerBlocked.rows[0].result?.ok === false &&
+    sameBrandOwnerBlocked.rows[0].result?.error === "PUBLICATION_NOT_PUBLISHABLE",
+    "Workspace member could publish a same-brand draft they did not create");
+
+  const preparedInstagram = await serviceSql(
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",instagramDraftId,["instagram"]],
+  );
+  const instagramAttemptId = preparedInstagram.rows[0].result?.attemptId;
+  verify(preparedInstagram.rows[0].result?.ok === true &&
+    preparedInstagram.rows[0].result?.imageUrl === "https://example.test/p1.jpg" &&
+    preparedInstagram.rows[0].result?.channels?.[0]?.platform === "instagram",
+    "Safe own Instagram draft did not prepare with its server-approved image");
+  const finalizedInstagram = await serviceSql(
+    "select public.workspace_brand_social_publish_finalize($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::jsonb,$7::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",instagramAttemptId,true,
+      JSON.stringify([{platform:"instagram",success:true,postUrl:"https://instagram.example.test/p/1"}]),null],
+  );
+  verify(finalizedInstagram.rows[0].result?.status === "published",
+    "Prepared Instagram workspace post could not be finalized");
+
+  for (const blockedPublicationId of [websiteDraftId,reelDraftId]) {
+    const blocked = await serviceSql(
+      "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+      ["pinosoecolife",managedUser,"managed@example.test",blockedPublicationId,["facebook"]],
+    );
+    verify(blocked.rows[0].result?.ok === false &&
+      blocked.rows[0].result?.error === "PUBLICATION_NOT_PUBLISHABLE",
+      "Non-social content escaped into employee social publishing");
+  }
+
+  const preparedSocial = await serviceSql(
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,["facebook"]],
+  );
+  const socialAttemptId = preparedSocial.rows[0].result?.attemptId;
+  verify(preparedSocial.rows[0].result?.ok === true &&
+    preparedSocial.rows[0].result?.content === "Draft only body" &&
+    preparedSocial.rows[0].result?.channels?.length === 1 &&
+    preparedSocial.rows[0].result.channels[0].id === pinosoFacebookId &&
+    preparedSocial.rows[0].result.channels[0].id !== zenFacebookId &&
+    !JSON.stringify(preparedSocial.rows[0].result).includes("fb-pinoso"),
+    "Social publish preparation failed exact brand/channel resolution");
+
+  const processingRow = await sql(
+    "select status from public.content_publications where id=$1", [staffSocialDraftId],
+  );
+  verify(processingRow.rows[0].status === "processing",
+    "Social publish prepare did not reserve publication before external action");
+
+  const duplicatePrepare = await serviceSql(
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,["facebook"]],
+  );
+  verify(duplicatePrepare.rows[0].result?.error === "PUBLISH_ATTEMPT_REQUIRES_REVIEW",
+    "Unresolved publish attempt did not block blind retry");
+
+  const failedSocial = await serviceSql(
+    "select public.workspace_brand_social_publish_finalize($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::jsonb,$7::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",socialAttemptId,false,
+      JSON.stringify([{platform:"facebook",success:false,error:"test failure"}]),"test failure"],
+  );
+  verify(failedSocial.rows[0].result?.status === "failed",
+    "Failed social publish was not finalized as failed");
+
+  const retrySocial = await serviceSql(
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::text[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",staffSocialDraftId,["facebook"]],
+  );
+  verify(retrySocial.rows[0].result?.ok === false &&
+    retrySocial.rows[0].result?.error === "PUBLICATION_NOT_PUBLISHABLE",
+    "Failed external publish remained blindly retryable from the employee surface");
+
+  const publishAttempts = await sql(
+    "select status from core.brand_workspace_social_publish_attempts where publication_id=$1 order by created_at,id",
+    [staffSocialDraftId],
+  );
+  verify(publishAttempts.rowCount === 1 && publishAttempts.rows[0].status === "failed",
+    "Social publish audit did not preserve the failed one-shot attempt");
 
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["corporate.read"] }]) === false,
     "Workspace user configure accepted Corporate Homes outside Zen Eco Homes");

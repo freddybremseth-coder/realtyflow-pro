@@ -6,6 +6,7 @@ import { BookOpen, Building2, LockKeyhole, RefreshCw, Search, TrendingUp, Users 
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
+import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
 import { GrowthCorporatePanel } from "@/components/workspaces/growth-corporate-panel";
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
@@ -277,6 +278,15 @@ export default function FocusedWorkspacePage() {
               </summary>
               <div className="border-t border-slate-800 p-5">
                 <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />
+              </div>
+            </details>}
+            {permissions.includes("marketing.publish") && <details className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+              <summary className="cursor-pointer list-none p-5">
+                <strong className="text-lg text-cyan-100">Publiser til sosiale medier</strong>
+                <p className="mt-1 text-sm text-slate-400">Velg et eksisterende brand-utkast og publiser bare til de kanalene RealtyFlow har verifisert.</p>
+              </summary>
+              <div className="border-t border-slate-800 p-5">
+                <WorkspaceSocialPublishPanel brandKey={brandKey} />
               </div>
             </details>}
           </section>}
