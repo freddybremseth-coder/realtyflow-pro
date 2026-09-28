@@ -52,6 +52,23 @@ export function planGSCOpportunities(snapshots: readonly GSCBrandSnapshot[]): SE
         evidence: evidencePeriod,
       });
     }
+    const pageOpportunity = snapshot.topPages.find(row =>
+      row.path !== "/" && row.impressions >= 20 &&
+      row.position >= 4 && row.position <= 20 &&
+      row.ctr >= 0 && row.ctr < 0.02 &&
+      (!snippet || row.path !== snippet.page));
+    if (pageOpportunity) {
+      proposals.push({
+        issueId: "gsc-page-snippet:" + brandId + ":" + encodeURIComponent(pageOpportunity.path).slice(0, 105),
+        brandId, priority: "MEDIUM",
+        title: "Sam SEO: Undersøk side med synlighet og lav klikkrate",
+        description: pageOpportunity.impressions + " visninger · " + pageOpportunity.clicks + " klikk · " +
+          (100 * pageOpportunity.ctr).toFixed(1) + " % CTR · snittposisjon " + pageOpportunity.position.toFixed(1) +
+          " · side " + pageOpportunity.path + ". Dette er et målt side-signal, ikke bevis for at metadata er årsaken.",
+        nextAction: "Se hvilke faktiske søk som viser siden, kontroller søkeintensjon mot synlig innhold og vurder én avgrenset tittel/metabeskrivelse eller innholdsforbedring. Publiser bare gjennom verifisert, reversibel kanal.",
+        evidence: evidencePeriod,
+      });
+    }
     const content = snapshot.topQueryPages.find(row =>
       row.impressions >= 80 && row.position >= 8 && row.position <= 25 &&
       (!snippet || row.page !== snippet.page));

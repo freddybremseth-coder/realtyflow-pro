@@ -56,6 +56,7 @@ type Payload = {
   connectionSummary: { registered: number; readable: number; measured: number };
   seoPilot: null | {
     at: string; status: string; websiteChangesPublished: number | null; writeStatus: string;
+    supersededByGoogleRead?: boolean; evidenceAt?: string | null;
     assessments: Array<{ brandId: string; status: string; note: string;
       page: string | null; currentImpressions: number | null; currentClicks: number | null }>;
     zenEcoMetadataPilot: null | {
@@ -251,6 +252,11 @@ export function SamSEOActionBoard() {
               <div><h4 className="font-bold">Din oppmerksomhet</h4><p className="mt-1 text-sm">Tilkoblingsfeil og uttrykkelige godkjenningsoppgaver vises separat. Funn uten publiseringskanal trenger teknisk oppfølging. Du skal ikke godkjenne hver måling.</p></div>
             </div>
             <p className="mt-3 text-sm font-semibold">Siste automatiske syklus: {data.seoPilot ? new Date(data.seoPilot.at).toLocaleString("nb-NO") : "Ingen lagret kjøring"}. Verifiserte publiseringer i denne syklusen: {data.seoPilot?.websiteChangesPublished ?? "ikke målt"}.</p>
+            {data.seoPilot?.supersededByGoogleRead && data.seoPilot.evidenceAt && (
+              <p role="status" className="mt-2 text-sm font-bold text-emerald-950">
+                Nyere Google-lesing {new Date(data.seoPilot.evidenceAt).toLocaleString("nb-NO")} er grønn og erstatter eldre målingsblokkeringer som søkegrunnlag. Sam bruker de nye tallene i prioriteringen nå og i neste automatiske publiseringssyklus.
+              </p>
+            )}
             {(!data.seoPilot || !Number.isFinite(Date.parse(data.seoPilot.at)) || Date.now() - Date.parse(data.seoPilot.at) > 36 * 3600_000) &&
               <p role="status" className="mt-2 text-sm font-bold text-amber-950">Ingen fersk automatisk syklus er dokumentert siste 36 timer. Kontroller kjøringen i <Link href="/automation" className="underline">Automation Center</Link>. Manuell oppdatering bekrefter ikke at tidsplanen kjører.</p>}
             {data.seoPilot?.status === "error" && <p role="alert" className="mt-2 text-sm font-bold text-rose-900">Siste automatiske syklus feilet. Kontroller Automation Center; tidligere målinger er ikke bevis for en vellykket ny kjøring.</p>}
@@ -313,7 +319,11 @@ export function SamSEOActionBoard() {
             <p className="mt-1 text-sm">Automatisk Search Console-måling og intern prioritering for alle åtte godkjente offentlige nettsteder; Care kontrolleres kun teknisk. Publisering omfatter titler og metabeskrivelser på fire Zen Eco Homes-sider og hovedsiden hos de øvrige sju nettstedene. Sam kontrollerer søkegrunnlag og publiseringsadgang før endringer, og følger opp resultat og eventuell tilbakeføring automatisk. Boligpriser, kundedata og større omskrivinger ligger utenfor piloten.</p>
             {data?.seoPilot ? (
               <>
-                <p className="mt-2 text-xs font-semibold">Sist målt: {new Date(data.seoPilot.at).toLocaleString("nb-NO")} · Automatisk publisert i denne syklusen: {data.seoPilot.websiteChangesPublished ?? "ikke målt"}</p>
+                <p className="mt-2 text-xs font-semibold">
+                  Automatisk syklus: {new Date(data.seoPilot.at).toLocaleString("nb-NO")}
+                  {data.seoPilot.evidenceAt ? " · Nyeste Google-grunnlag: " + new Date(data.seoPilot.evidenceAt).toLocaleString("nb-NO") : ""}
+                  {" · "}Automatisk publisert i syklusen: {data.seoPilot.websiteChangesPublished ?? "ikke målt"}
+                </p>
                 <div className="mt-2 space-y-1">
                   {data.seoPilot.assessments.map(item => (
                     <p key={item.brandId} className="text-xs leading-5">
