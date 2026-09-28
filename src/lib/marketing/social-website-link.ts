@@ -58,7 +58,9 @@ export function contentHasBrandWebsite(content: string, website: string) {
 /**
  * Every public social post for a configured brand must contain an owned-site
  * URL. A deep link on the same host satisfies the rule; otherwise the canonical
- * brand homepage is appended. Unknown/missing brand websites fail closed.
+ * brand homepage is appended. Brands without a configured owned website are
+ * left unchanged; owned/public RealtyFlow brands are configured in the canonical
+ * registries and are therefore always enriched.
  */
 export function ensureBrandWebsiteLink(input: {
   brandId: string;
@@ -69,7 +71,7 @@ export function ensureBrandWebsiteLink(input: {
   if (!socialChannelRequiresWebsite(input.channel)) return content;
 
   const website = canonicalBrandWebsite(input.brandId);
-  if (!website) throw new Error(`SOCIAL_WEBSITE_URL_NOT_CONFIGURED:${input.brandId}`);
+  if (!website) return content;
   if (contentHasBrandWebsite(content, website)) return content;
   return content ? `${content}\n\n${website}` : website;
 }
