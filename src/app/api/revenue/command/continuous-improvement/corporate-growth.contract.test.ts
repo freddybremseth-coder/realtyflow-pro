@@ -62,7 +62,9 @@ test("Corporate overview reads tracked improvement status without creating or up
   assert.match(overview, /buildContinuousImprovementRegister/);
   assert.match(overview, /corporateGrowthCandidateId/);
   assert.match(overview, /item\.candidateId === candidateId/);
-  assert.match(overview, /effectTrend: tracked\.effect\.trend/);
+  assert.match(overview, /rootCauseCategory: tracked\.rootCauseCategory/);
+  assert.match(overview, /actionType: tracked\.actionType/);
+  assert.doesNotMatch(overview, /effectTrend: tracked\.effect\.trend/);
   assert.doesNotMatch(overview, /CREATE_IMPROVEMENT|IMPROVEMENT_CREATED|\.upsert\(/);
 
   assert.match(page, /Åpne forbedringstiltak/);
