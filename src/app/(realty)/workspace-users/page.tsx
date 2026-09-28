@@ -491,7 +491,7 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingDraft}
                       onChange={e => updateChoice(brand.brandKey, { marketingDraft: e.target.checked, ...(e.target.checked ? {} : { marketingPublish: false }) })}/> Lage innholdsutkast</label>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingPublish}
-                      onChange={e => updateChoice(brand.brandKey, { marketingPublish: e.target.checked })}/> Publisere til Facebook / Instagram / LinkedIn</label>
+                      onChange={e => updateChoice(brand.brandKey, { marketingPublish: e.target.checked })}/> Publisere til Facebook / Instagram</label>
                     <p className="mt-2 text-[11px] text-slate-500">Publisering krever eksakt aktiv brand-kanal og serverkontroll rett før utsending.</p>
                   </div>
                   {isZen && <div className="rounded-lg border border-slate-800 p-3">
