@@ -2,6 +2,7 @@ import { LEAD_INTELLIGENCE_LIMITS } from "./contracts";
 
 export interface LeadCustomerPresentationPreviewProperty {
   propertyId: string | null;
+  sourceKind: "property" | "land_plot";
   reference: string | null;
   title: string;
   location: string | null;
@@ -140,6 +141,7 @@ export function buildLeadCustomerPresentationPreview(value: unknown): LeadCustom
       .slice(0, LEAD_INTELLIGENCE_LIMITS.draftProperties)
       .map((item) => ({
         propertyId: safeText(item.propertyId, LEAD_INTELLIGENCE_LIMITS.id),
+        sourceKind: item.sourceKind === "land_plot" ? "land_plot" : "property",
         reference: safeText(item.reference, LEAD_INTELLIGENCE_LIMITS.shortText),
         title: safeText(item.title) || safeText(item.reference) || "Uten tittel",
         location: safeText(item.location),
