@@ -8,7 +8,17 @@ export const maxDuration = 120;
 
 const noStore = { "Cache-Control": "private, no-store" };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const platforms = new Set(["facebook", "instagram", "linkedin"]);
+type SupportedPlatform = "facebook" | "instagram" | "linkedin";
+type SafeChannel = { id: string; platform: SupportedPlatform; displayName: string };
+type SafePublishResult = {
+  platform: SupportedPlatform;
+  success: boolean;
+  postUrl?: string;
+  error?: string;
+  channelName?: string;
+};
+
+const platforms = new Set<SupportedPlatform>(["facebook", "instagram", "linkedin"]);
 
 function fail(status: number, code: string, message?: string) {
   return NextResponse.json(
@@ -24,12 +34,12 @@ function safeWrite(request: NextRequest) {
     request.headers.get("sec-fetch-site") !== "cross-site";
 }
 
-function safeChannel(value: any) {
+function safeChannel(value: any): SafeChannel | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   if (typeof value.id !== "string" || !uuid.test(value.id)) return null;
-  if (typeof value.platform !== "string" || !platforms.has(value.platform)) return null;
+  if (typeof value.platform !== "string" || !platforms.has(value.platform as SupportedPlatform)) return null;
   if (typeof value.displayName !== "string" || !value.displayName.trim()) return null;
-  return { id: value.id, platform: value.platform, displayName: value.displayName.trim().slice(0, 160) };
+  return { id: value.id, platform: value.platform as SupportedPlatform, displayName: value.displayName.trim().slice(0, 160) };
 }
 
 function safePublication(value: any) {
@@ -42,11 +52,11 @@ function safePublication(value: any) {
   return { id: value.id, hasImage: value.hasImage === true, plannedPlatforms };
 }
 
-function safeResult(result: any) {
+function safeResult(result: any): SafePublishResult | null {
   if (!result || typeof result !== "object" || Array.isArray(result)) return null;
-  if (typeof result.platform !== "string" || !platforms.has(result.platform)) return null;
+  if (typeof result.platform !== "string" || !platforms.has(result.platform as SupportedPlatform)) return null;
   return {
-    platform: result.platform,
+    platform: result.platform as SupportedPlatform,
     success: result.success === true,
     ...(typeof result.postUrl === "string" && /^https:\/\//i.test(result.postUrl)
       ? { postUrl: result.postUrl.slice(0, 1000) } : {}),
@@ -164,7 +174,7 @@ export async function POST(
   const attemptId = typeof prepared.attemptId === "string" ? prepared.attemptId : "";
   const content = typeof prepared.content === "string" ? prepared.content.trim() : "";
   const imageUrl = typeof prepared.imageUrl === "string" ? prepared.imageUrl.trim() : undefined;
-  const channels = Array.isArray(prepared.channels)
+  const channels: SafeChannel[] = Array.isArray(prepared.channels)
     ? prepared.channels.flatMap((item: unknown) => {
         const safe = safeChannel(item);
         return safe ? [safe] : [];
@@ -217,7 +227,7 @@ export async function POST(
     return fail(502, "SOCIAL_PUBLISH_FAILED", "Publiseringen feilet før en kanal bekreftet innlegget.");
   }
 
-  const results = Array.isArray(outcome.results)
+  const results: SafePublishResult[] = Array.isArray(outcome.results)
     ? outcome.results.flatMap(item => {
         const safe = safeResult(item);
         return safe ? [safe] : [];
