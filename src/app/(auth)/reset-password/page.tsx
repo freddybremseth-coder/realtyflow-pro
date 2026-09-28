@@ -48,8 +48,9 @@ export default function ResetPasswordPage() {
     setError("");
     setMessage("");
 
-    if (password.length < 8) {
-      setError("Passordet må være minst 8 tegn.");
+    const groups = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(pattern => pattern.test(password)).length;
+    if (password.length < 12 || password.length > 128 || groups < 3) {
+      setError("Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.");
       return;
     }
     if (password !== confirmPassword) {
@@ -78,7 +79,7 @@ export default function ResetPasswordPage() {
             <span className="text-2xl font-bold text-white">RF</span>
           </div>
           <CardTitle className="text-2xl">Velg nytt passord</CardTitle>
-          <p className="text-sm text-slate-400 mt-1">Kun godkjent administrator</p>
+          <p className="text-sm text-slate-400 mt-1">Kun godkjent RealtyFlow-bruker</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleUpdatePassword} className="space-y-4">
@@ -131,7 +132,7 @@ export default function ResetPasswordPage() {
             </button>
 
             <p className="flex items-center justify-center gap-2 text-xs text-slate-500">
-              <ShieldCheck size={14} /> Lenken kan bare brukes fra Supabase recovery-epost.
+              <ShieldCheck size={14} /> Sikker engangslenke fra RealtyFlow / Supabase Auth.
             </p>
           </form>
         </CardContent>
