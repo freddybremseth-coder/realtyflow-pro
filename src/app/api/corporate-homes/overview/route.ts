@@ -267,6 +267,7 @@ export async function GET(request: NextRequest) {
   const [
     { data: partnerRows, error: partnerError },
     { data: lastPartnerDiscovery, error: lastPartnerDiscoveryError },
+    { data: eventParticipantRows, error: eventParticipantsError },
   ] = await Promise.all([
     supabase
       .from("corporate_partner_prospects")
@@ -282,6 +283,12 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("corporate_event_participants")
+      .select("id,event_id,event_name,email,status,registered_at,attended_at,cta_clicked_at,assessment_requested_at,utm_source,utm_medium,utm_campaign,utm_content,contact_id,updated_at")
+      .eq("brand_id", "zeneco")
+      .order("updated_at", { ascending: false })
+      .limit(2000),
   ]);
 
   const rows = contacts || [];
@@ -404,47 +411,27 @@ export async function GET(request: NextRequest) {
       return rank(a.key) - rank(b.key);
     });
 
-  const eventRegistrations = rows.flatMap((row: any) =>
-    contactInteractions(row)
-      .filter((item: any) => {
-        const metadata = interactionMetadata(item);
-        return metadata.request_type === "corporate-event-registration" && metadata.event_action === "REGISTERED";
-      })
-      .map((item: any) => {
-        const metadata = interactionMetadata(item);
-        return {
-          key: `${row.id}:${metadata.event_id || item.id || "unknown"}`,
-          contactId: String(row.id || ""),
-          eventId: String(metadata.event_id || ""),
-        };
-      }),
+  const eventParticipants = eventParticipantRows || [];
+  const eventRegistrations = eventParticipants.length;
+  const eventAttended = eventParticipants.filter((row: any) =>
+    ["ATTENDED", "CTA_CLICKED", "ASSESSMENT_REQUESTED"].includes(String(row.status || "").toUpperCase()),
+  ).length;
+  const eventNoShows = eventParticipants.filter((row: any) =>
+    String(row.status || "").toUpperCase() === "NO_SHOW",
+  ).length;
+  const eventCtaClicks = eventParticipants.filter((row: any) =>
+    Boolean(row.cta_clicked_at) ||
+    ["CTA_CLICKED", "ASSESSMENT_REQUESTED"].includes(String(row.status || "").toUpperCase()),
+  ).length;
+  const eventAssessmentRequestsFromLedger = eventParticipants.filter((row: any) =>
+    Boolean(row.assessment_requested_at) ||
+    String(row.status || "").toUpperCase() === "ASSESSMENT_REQUESTED",
+  ).length;
+  const eventAssessmentRequestsFromLeads = leadRows.filter(isEventSourcedAssessment).length;
+  const eventAssessmentRequests = Math.max(
+    eventAssessmentRequestsFromLedger,
+    eventAssessmentRequestsFromLeads,
   );
-  const attendanceByRegistration = new Map<string, string>();
-  for (const row of rows) {
-    for (const item of contactInteractions(row)) {
-      const metadata = interactionMetadata(item);
-      if (metadata.request_type !== "corporate-event-attendance") continue;
-      const eventId = String(metadata.event_id || "");
-      if (!eventId) continue;
-      const key = `${row.id}:${eventId}`;
-      if (!attendanceByRegistration.has(key)) {
-        attendanceByRegistration.set(key, String(metadata.event_action || "").toUpperCase());
-      }
-    }
-  }
-  const eventCtaClicks = rows.filter((row: any) =>
-    contactInteractions(row).some((item: any) => {
-      const metadata = interactionMetadata(item);
-      return metadata.request_type === "corporate-event-cta" && metadata.event_action === "CTA_CLICKED";
-    }),
-  ).length;
-  const eventAssessmentRequests = leadRows.filter(isEventSourcedAssessment).length;
-  const eventAttended = eventRegistrations.filter((entry: any) =>
-    ["ATTENDED", "LEFT_EARLY"].includes(attendanceByRegistration.get(entry.key) || ""),
-  ).length;
-  const eventNoShows = eventRegistrations.filter((entry: any) =>
-    attendanceByRegistration.get(entry.key) === "NO_SHOW",
-  ).length;
 
   const prospectTierCounts = prospectRows.reduce<Record<string, number>>((acc, row: any) => {
     const tier = String(row.fit_tier || "UNSCORED").toUpperCase();
@@ -719,6 +706,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError, lastCorporateGrowthReviewError, continuousImprovementWarning, corporateRevenueEventsError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, eventParticipantsError, lastSignalResearchRunError, lastGenericContactRunError, lastCorporateGrowthReviewError, continuousImprovementWarning, corporateRevenueEventsError].filter(Boolean).map((item: any) => item.message),
   });
 }
