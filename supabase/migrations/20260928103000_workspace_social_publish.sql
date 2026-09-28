@@ -251,7 +251,7 @@ begin
   if p_brand_key is null or p_brand_key !~ '^[a-z0-9][a-z0-9-]{1,62}$'
     or p_user_id is null or p_email is null or p_email<>lower(btrim(p_email))
     or p_publication_id is null or p_channel_ids is null
-    or cardinality(p_channel_ids) not between 1 and 3
+    or cardinality(p_channel_ids) not between 1 and 2
     or cardinality(p_channel_ids) <> (select count(distinct x) from unnest(p_channel_ids) x)
   then return jsonb_build_object('ok',false,'error','INVALID_PUBLISH_REQUEST'); end if;
 
@@ -262,13 +262,6 @@ begin
     and m.permissions @> array['marketing.read','marketing.draft','marketing.publish']::text[]
   for share of m;
   if v_brand_id is null then return jsonb_build_object('ok',false,'error','ACCESS_DENIED'); end if;
-
-  if exists (
-    select 1 from core.brand_workspace_social_publish_attempts a
-    where a.publication_id=p_publication_id and a.status='publishing'
-  ) then
-    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
-  end if;
 
   select cp.id,cp.brand_id,cp.content_type,cp.description,cp.ai_image_url,
          cp.thumbnail_url,cp.media_urls,cp.scheduled_platforms,cp.status
@@ -286,6 +279,13 @@ begin
   for update;
   if v_pub.id is null then
     return jsonb_build_object('ok',false,'error','PUBLICATION_NOT_PUBLISHABLE');
+  end if;
+
+  if exists (
+    select 1 from core.brand_workspace_social_publish_attempts a
+    where a.publication_id=p_publication_id and a.status='publishing'
+  ) then
+    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
   end if;
 
   select count(*)::integer,count(distinct c.platform)::integer,
@@ -513,7 +513,7 @@ begin
   if p_brand_key is null or p_brand_key !~ '^[a-z0-9][a-z0-9-]{1,62}$'
     or p_user_id is null or p_email is null or p_email<>lower(btrim(p_email))
     or p_publication_id is null or p_channel_ids is null
-    or cardinality(p_channel_ids) not between 1 and 3
+    or cardinality(p_channel_ids) not between 1 and 2
     or cardinality(p_channel_ids) <> (select count(distinct x) from unnest(p_channel_ids) x)
   then return jsonb_build_object('ok',false,'error','INVALID_PUBLISH_REQUEST'); end if;
 
@@ -524,13 +524,6 @@ begin
     and m.permissions @> array['marketing.read','marketing.draft','marketing.publish']::text[]
   for share of m;
   if v_brand_id is null then return jsonb_build_object('ok',false,'error','ACCESS_DENIED'); end if;
-
-  if exists (
-    select 1 from core.brand_workspace_social_publish_attempts a
-    where a.publication_id=p_publication_id and a.status='publishing'
-  ) then
-    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
-  end if;
 
   select cp.id,cp.brand_id,cp.content_type,cp.description,cp.ai_image_url,
          cp.thumbnail_url,cp.media_urls,cp.scheduled_platforms,cp.status
@@ -548,6 +541,13 @@ begin
   for update;
   if v_pub.id is null then
     return jsonb_build_object('ok',false,'error','PUBLICATION_NOT_PUBLISHABLE');
+  end if;
+
+  if exists (
+    select 1 from core.brand_workspace_social_publish_attempts a
+    where a.publication_id=p_publication_id and a.status='publishing'
+  ) then
+    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
   end if;
 
   select count(*)::integer,count(distinct c.platform)::integer,
@@ -777,7 +777,7 @@ begin
   if p_brand_key is null or p_brand_key !~ '^[a-z0-9][a-z0-9-]{1,62}$'
     or p_user_id is null or p_email is null or p_email<>lower(btrim(p_email))
     or p_publication_id is null or p_channel_ids is null
-    or cardinality(p_channel_ids) not between 1 and 3
+    or cardinality(p_channel_ids) not between 1 and 2
     or cardinality(p_channel_ids) <> (select count(distinct x) from unnest(p_channel_ids) x)
   then return jsonb_build_object('ok',false,'error','INVALID_PUBLISH_REQUEST'); end if;
 
@@ -788,13 +788,6 @@ begin
     and m.permissions @> array['marketing.read','marketing.draft','marketing.publish']::text[]
   for share of m;
   if v_brand_id is null then return jsonb_build_object('ok',false,'error','ACCESS_DENIED'); end if;
-
-  if exists (
-    select 1 from core.brand_workspace_social_publish_attempts a
-    where a.publication_id=p_publication_id and a.status='publishing'
-  ) then
-    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
-  end if;
 
   select cp.id,cp.brand_id,cp.content_type,cp.description,cp.ai_image_url,
          cp.thumbnail_url,cp.media_urls,cp.scheduled_platforms,cp.status
@@ -812,6 +805,13 @@ begin
   for update;
   if v_pub.id is null then
     return jsonb_build_object('ok',false,'error','PUBLICATION_NOT_PUBLISHABLE');
+  end if;
+
+  if exists (
+    select 1 from core.brand_workspace_social_publish_attempts a
+    where a.publication_id=p_publication_id and a.status='publishing'
+  ) then
+    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
   end if;
 
   select count(*)::integer,count(distinct c.platform)::integer,
@@ -949,8 +949,8 @@ grant execute on function public.workspace_brand_social_publish_finalize(
 
   foreach v_platform in array v_platforms loop
     if not exists (
-      select 1 from public.social_channels c
-      where c.brand_id=p_brand_key and c.platform=v_platform and c.is_active=true
+      select 1 from public.social_channels sc
+      where sc.brand_id=p_brand_key and sc.platform=v_platform and sc.is_active=true
     ) then
       return jsonb_build_object('ok',false,'error','CHANNEL_NOT_ACTIVE_FOR_BRAND');
     end if;
@@ -998,7 +998,7 @@ end; $workspace_marketing_draft_v2$;
 
 revoke execute on function public.workspace_brand_marketing_draft_create_v2(
   text,uuid,text,text,text,text[],text[],text
-) from public, anon, authenticated;
+) from public,anon,authenticated;
 grant execute on function public.workspace_brand_marketing_draft_create_v2(
   text,uuid,text,text,text,text[],text[],text
 ) to service_role;
@@ -1113,7 +1113,7 @@ begin
   if p_brand_key is null or p_brand_key !~ '^[a-z0-9][a-z0-9-]{1,62}$'
     or p_user_id is null or p_email is null or p_email<>lower(btrim(p_email))
     or p_publication_id is null or p_channel_ids is null
-    or cardinality(p_channel_ids) not between 1 and 3
+    or cardinality(p_channel_ids) not between 1 and 2
     or cardinality(p_channel_ids) <> (select count(distinct x) from unnest(p_channel_ids) x)
   then return jsonb_build_object('ok',false,'error','INVALID_PUBLISH_REQUEST'); end if;
 
@@ -1124,13 +1124,6 @@ begin
     and m.permissions @> array['marketing.read','marketing.draft','marketing.publish']::text[]
   for share of m;
   if v_brand_id is null then return jsonb_build_object('ok',false,'error','ACCESS_DENIED'); end if;
-
-  if exists (
-    select 1 from core.brand_workspace_social_publish_attempts a
-    where a.publication_id=p_publication_id and a.status='publishing'
-  ) then
-    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
-  end if;
 
   select cp.id,cp.brand_id,cp.content_type,cp.description,cp.ai_image_url,
          cp.thumbnail_url,cp.media_urls,cp.scheduled_platforms,cp.status
@@ -1148,6 +1141,13 @@ begin
   for update;
   if v_pub.id is null then
     return jsonb_build_object('ok',false,'error','PUBLICATION_NOT_PUBLISHABLE');
+  end if;
+
+  if exists (
+    select 1 from core.brand_workspace_social_publish_attempts a
+    where a.publication_id=p_publication_id and a.status='publishing'
+  ) then
+    return jsonb_build_object('ok',false,'error','PUBLISH_ATTEMPT_REQUIRES_REVIEW');
   end if;
 
   select count(*)::integer,count(distinct c.platform)::integer,
