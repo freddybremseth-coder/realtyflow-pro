@@ -268,12 +268,14 @@ export async function requestBrandRollback(db: SupabaseClient, brandId: string, 
   const ids = [brandPublicationId(brandId,":v2"), brandPublicationId(brandId)];
   const rows = await db.from("automation_logs").select("id,details").eq("action",ACTION).in("id",ids);
   if (rows.error) throw new Error("Rollback state unavailable");
-  const match = (rows.data || []).map(row => {
+  const candidates = (rows.data || []).map(row => {
     const job = row.details as BrandPublicationJob;
     const version: "v1" | "v2" = row.id === brandPublicationId(brandId,":v2") ? "v2" : "v1";
     const target = version === "v2" ? secondVariantForBrand(site.brandId) : site;
     return { id: row.id as string, job, version, target, valid: validJob(job,site,version,target) };
-  }).find(item => item.valid && item.job.phase === "done" && item.job.mergeSha === revision);
+  }).filter(item => item.valid);
+  const latest = candidates.find(item => item.version === "v2") || candidates.find(item => item.version === "v1");
+  const match = latest?.job.phase === "done" && latest.job.mergeSha === revision ? latest : null;
   if (!match) return false;
   const saved=await db.from("automation_logs").update({status:"partial",details:{...match.job,phase:"rollback_prepare",
     originalMergeSha:revision,rollbackRequestedAt:new Date().toISOString()}}).eq("id",match.id).eq("action",ACTION)
