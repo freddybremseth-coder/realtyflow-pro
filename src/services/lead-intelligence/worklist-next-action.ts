@@ -1,6 +1,7 @@
 export type LeadWorklistNextActionPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
 export interface LeadWorklistNextActionInput {
+  profileStatus: string | null;
   analysisRunId: string | null;
   contactLinked: boolean;
   criterionCount: number;
@@ -36,6 +37,15 @@ function isHotLead(value: string | null | undefined) {
 }
 
 export function buildLeadWorklistNextAction(input: LeadWorklistNextActionInput): LeadWorklistNextAction {
+  const profileStatus = normalized(input.profileStatus);
+  if (profileStatus === "superseded" || profileStatus === "archived") {
+    return {
+      priority: "LOW",
+      label: "Historikk – ingen handling",
+      reason: "denne profilversjonen er erstattet og skal ikke brukes til matching, shortlist eller oppfølging",
+    };
+  }
+
   if (!input.analysisRunId) {
     return {
       priority: "HIGH",
