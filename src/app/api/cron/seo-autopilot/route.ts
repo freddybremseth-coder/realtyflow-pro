@@ -11,6 +11,7 @@ import { evaluateSeoPilotBrand, SEO_AUTOPILOT_BRANDS } from "@/services/agents/s
 import { runZenEcoMetadataPublisher } from "@/services/agents/seo-zeneco-publisher";
 
 import { runSEOControls } from "@/services/agents/seo-controls";
+import { syncSEOTopicMissions } from "@/services/marketing/seo-topic-missions";
 
 const PATH = "/api/cron/seo-autopilot";
 const ACTION = "seo_autopilot_pilot_cycle";
@@ -63,9 +64,15 @@ export async function GET(request: NextRequest) {
     // Daily, low-risk, evidence-tagged technical/lead/referral diagnostics for
     // every approved public host. A failing site or data source must not erase
     // successful Google readings or create an owner approval queue item.
+    const measuredSnapshots = readings.flatMap(item => item.status === "connected" && item.result ? [item.result] : []);
     const { signals, leads, audits, collectorPreflight, diagnostics, controlReport } = await runSEOControls(
-      readings.flatMap(item => item.status === "connected" && item.result ? [item.result] : []),
+      measuredSnapshots,
     );
+    // Convert only measured, content-relevant GSC opportunities into the
+    // canonical Growth OS source queue. No social/site publication happens
+    // here; Nexus can rank the shared topic and downstream publishers retain
+    // their own brand/channel/autonomy gates.
+    const topicMissions = await syncSEOTopicMissions(supabase as any, measuredSnapshots);
     // Share the factual measurements and zero-approval diagnostics with
     // Sam's main panel after reload. These checks NEVER authorize site writes.
     const storedReadings = await supabase.from("automation_logs").insert({
@@ -106,6 +113,7 @@ export async function GET(request: NextRequest) {
           unknown: collectorPreflight.filter(check => check.status === "unknown").length,
         } : null,
         website_changes_published: published,
+        seo_topic_missions: topicMissions,
         public_write_status: zeneco.status === "monitor" ? "armed_evidence_gated"
           : zeneco.status === "pending" ? "pending_site_confirmation"
           : zeneco.status,
@@ -120,6 +128,7 @@ export async function GET(request: NextRequest) {
       success: true, analyzed: assessments.length, measured: verified,
       publicSitesAudited: audits.length, diagnosticsRecorded: diagnostics.length,
       candidates: assessments.filter(item => item.status === "candidate").length,
+      topicMissions,
       published,
       brandPublishers,
       approvalTasksCreated: 0,
