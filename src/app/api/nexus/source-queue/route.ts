@@ -9,6 +9,7 @@ function goalFor(sourceType: string) {
   if (sourceType === "property") return "leads" as const;
   if (sourceType === "book") return "sales" as const;
   if (sourceType === "demo_site") return "leads" as const;
+  if (sourceType === "seo_topic") return "awareness" as const;
   if (sourceType === "song") return "awareness" as const;
   return "awareness" as const;
 }
@@ -58,6 +59,20 @@ function masterIdea(source: any) {
   if (source.source_type === "song") {
     const youtube = p.youtube_url || source.source_url || "";
     return `Promote the Re-Master Freddy song "${source.title}" using its verified song metadata. This is MUSIC-FIRST content. For Facebook and Instagram, prefer the approved Re-Master Reel/video with audible music whenever one is available; static artwork is fallback only. Always include the exact verified YouTube song URL ${youtube} as the primary listen/watch CTA, and optionally also point to https://remaster.freddybremseth.com/. Do not publish a text-only Re-Master post when a Reel asset exists. Do not invent streaming numbers, chart positions, reviews or ownership claims.`;
+  }
+  if (source.source_type === "seo_topic") {
+    const canonical = String(p.canonical_url || source.source_url || "");
+    return [
+      `Create channel-native content that supports the verified SAM SEO topic "${source.title}".`,
+      `Canonical destination: ${canonical}.`,
+      `Planning evidence: ${String(p.evidence || "Google Search Console measured signal")}.`,
+      `Observed opportunity: ${String(p.observation || "")}.`,
+      `Recommended review action: ${String(p.next_action || "")}.`,
+      "Use the search evidence to understand audience intent, but NEVER expose Search Console metrics, internal task wording or SEO instructions in the public post.",
+      "Do not invent facts, rankings, demand, popularity or market claims. Public copy must stand on verified Brand Brain/site facts.",
+      "Always send the user to the exact canonical destination above when a link is appropriate for the channel.",
+      "Create a genuinely channel-native angle, not a copy of the website title or a keyword-stuffed SEO post.",
+    ].join("\n");
   }
   if (source.brand_id === "donaanna") {
     return `Create Doña Anna content that sends relevant users to donaanna.com. Focus on olive oil, farm, harvest, origin, food use or Mediterranean agriculture. Avoid medical/health claims unless independently verified.`;
@@ -183,6 +198,7 @@ export async function POST(request: NextRequest) {
       goal: { kind: goalFor(String(source.source_type)), target: 10, horizonDays: 30 },
       channel: requestedChannel,
       language: source.payload?.language || undefined,
+      topic: source.source_type === "seo_topic" ? String(source.payload?.genome_topic || "") || undefined : undefined,
       mediaUrl,
       mediaType,
       reuseCooldownDays: isUmbrellaStory ? 14 : undefined,
