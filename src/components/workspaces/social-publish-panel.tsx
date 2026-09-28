@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ExternalLink, ImageIcon, RefreshCw, Send, ShieldCheck } from "lucide-react";
 
 type Channel = {
-  id: string;
   platform: "facebook" | "instagram";
   displayName: string;
 };
@@ -39,7 +38,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
   const [publishable, setPublishable] = useState<Publishable[]>([]);
   const [marketing, setMarketing] = useState<MarketingPublication[]>([]);
   const [selectedPublicationId, setSelectedPublicationId] = useState("");
-  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [selectedPlatforms, setSelectedChannels] = useState<string[]>([]);
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -93,7 +92,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
     if (!selected) return [];
     const planned = new Set(selected.plannedPlatforms || []);
     return channels.filter(channel => {
-      if (planned.size > 0 && !planned.has(channel.platform)) return false;
+      if (!planned.has(channel.platform)) return false;
       if (channel.platform === "instagram" && !selected.hasImage) return false;
       return true;
     });
@@ -114,9 +113,9 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
   }
 
   async function publish() {
-    if (!selected || selectedChannels.length === 0 || busy) return;
-    const chosen = eligibleChannels.filter(channel => selectedChannels.includes(channel.id));
-    if (chosen.length !== selectedChannels.length) {
+    if (!selected || selectedPlatforms.length === 0 || busy) return;
+    const chosen = eligibleChannels.filter(channel => selectedPlatforms.includes(channel.platform));
+    if (chosen.length !== selectedPlatforms.length) {
       setError("Kanalvalget er endret. Velg kanalene på nytt.");
       return;
     }
@@ -132,7 +131,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           publicationId: selected.id,
-          channelIds: selectedChannels,
+          platforms: selectedPlatforms,
         }),
       });
       const body = await response.json();
@@ -173,7 +172,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {channels.map(channel => <span key={channel.id}
+        {channels.map(channel => <span key={channel.platform}
           className="rounded-full border border-emerald-800 bg-emerald-950/25 px-3 py-1.5 text-xs text-emerald-200">
           {label[channel.platform]} · {channel.displayName}
         </span>)}
@@ -219,10 +218,10 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
           <div className="mt-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Publiser til</div>
             <div className="mt-2 space-y-2">
-              {eligibleChannels.map(channel => <label key={channel.id}
+              {eligibleChannels.map(channel => <label key={channel.platform}
                 className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-sm">
-                <input type="checkbox" checked={selectedChannels.includes(channel.id)}
-                  onChange={event => toggleChannel(channel.id, event.target.checked)}/>
+                <input type="checkbox" checked={selectedPlatforms.includes(channel.platform)}
+                  onChange={event => togglePlatform(channel.platform, event.target.checked)}/>
                 <span><strong>{label[channel.platform]}</strong> · {channel.displayName}</span>
               </label>)}
               {!eligibleChannels.length && <p className="text-sm text-slate-500">
@@ -232,12 +231,12 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
           </div>
 
           <button type="button" onClick={() => void publish()}
-            disabled={busy || selectedChannels.length === 0}
+            disabled={busy || selectedPlatforms.length === 0}
             className="mt-5 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">
             <ShieldCheck size={16}/>{busy ? "Publiserer…" : "Kontroller og publiser nå"}
           </button>
           <p className="mt-3 text-[11px] leading-5 text-slate-500">
-            Før eksternt API-kall kontrollerer RealtyFlow medlemskapet, merkevaren, innholdstypen og hver kanal på nytt. Kanal-ID-er og tokens kan ikke overstyres fra skjemaet.
+            Før eksternt API-kall kontrollerer RealtyFlow medlemskapet, merkevaren, innholdstypen og hver kanal på nytt. Skjemaet sender bare plattformnavn; konto-ID og token løses server-side.
           </p>
         </>}
       </div>
