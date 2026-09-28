@@ -251,20 +251,6 @@ function badge(status: string) {
   return "bg-slate-100 text-slate-600 border-slate-200";
 }
 
-function executionTone(execution: NextAction["execution"]) {
-  if (execution === "HUMAN_REQUIRED") return "border-amber-200 bg-amber-50 text-amber-950";
-  if (execution === "AUTO_READY") return "border-emerald-200 bg-emerald-50 text-emerald-950";
-  if (execution === "SYSTEM_WORK") return "border-blue-200 bg-blue-50 text-blue-950";
-  return "border-slate-200 bg-slate-50 text-slate-700";
-}
-
-function executionLabel(execution: NextAction["execution"]) {
-  if (execution === "HUMAN_REQUIRED") return "Needs you";
-  if (execution === "AUTO_READY") return "Auto ready";
-  if (execution === "SYSTEM_WORK") return "System work";
-  return "Watching";
-}
-
 function journeyStageLabel(stage: SEOTopicJourney["stage"]) {
   if (stage === "BUSINESS_PROVEN") return "Business proven";
   if (stage === "QUALIFIED_SIGNAL") return "Qualified signal";
