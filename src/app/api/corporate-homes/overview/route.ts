@@ -3,6 +3,16 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-readiness";
 import { corporateArticleUrl, corporateOrganicTopicsForWeek } from "@/lib/corporate-organic-content";
+import { corporateGrowthCandidateId } from "@/lib/corporate-growth-improvement";
+import {
+  CONTINUOUS_IMPROVEMENT_SETTINGS_KEY,
+  buildContinuousImprovementRegister,
+  parseContinuousImprovementSettings,
+} from "@/lib/revenue/continuous-improvement";
+import {
+  WEEKLY_MANAGEMENT_SETTINGS_KEY,
+  parseWeeklyManagementSettings,
+} from "@/lib/revenue/weekly-management-review";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -129,6 +139,86 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  const growthDetails =
+    lastCorporateGrowthReview?.details &&
+    typeof lastCorporateGrowthReview.details === "object" &&
+    !Array.isArray(lastCorporateGrowthReview.details)
+      ? lastCorporateGrowthReview.details as Record<string, any>
+      : {};
+  const latestGrowthReview = growthDetails.review && typeof growthDetails.review === "object"
+    ? growthDetails.review as Record<string, any>
+    : null;
+  const latestGrowthComparison = growthDetails.comparison && typeof growthDetails.comparison === "object"
+    ? growthDetails.comparison as Record<string, any>
+    : null;
+  const growthBottleneckStage =
+    latestGrowthComparison?.continuousImprovementCandidate &&
+    latestGrowthReview?.bottleneck &&
+    typeof latestGrowthReview.bottleneck === "object"
+      ? String(latestGrowthReview.bottleneck.stage || "")
+      : "";
+
+  let corporateGrowthImprovement: Record<string, any> | null = null;
+  let continuousImprovementWarning: { message: string } | null = null;
+  if (growthBottleneckStage) {
+    const [
+      { data: improvementSettingsRow, error: improvementSettingsError },
+      { data: weeklySettingsRow, error: weeklySettingsError },
+    ] = await Promise.all([
+      supabase
+        .from("brand_settings")
+        .select("settings,updated_at")
+        .eq("brand_id", CONTINUOUS_IMPROVEMENT_SETTINGS_KEY)
+        .maybeSingle(),
+      supabase
+        .from("brand_settings")
+        .select("settings,updated_at")
+        .eq("brand_id", WEEKLY_MANAGEMENT_SETTINGS_KEY)
+        .maybeSingle(),
+    ]);
+
+    if (improvementSettingsError || weeklySettingsError) {
+      continuousImprovementWarning = {
+        message:
+          improvementSettingsError?.message ||
+          weeklySettingsError?.message ||
+          "Continuous Improvement status could not be read",
+      };
+    }
+
+    const improvementRegister = buildContinuousImprovementRegister(
+      parseContinuousImprovementSettings(
+        improvementSettingsRow?.settings,
+        improvementSettingsRow?.updated_at,
+      ),
+      parseWeeklyManagementSettings(
+        weeklySettingsRow?.settings,
+        weeklySettingsRow?.updated_at,
+      ),
+      "OWNER",
+    );
+    const candidateId = corporateGrowthCandidateId(growthBottleneckStage);
+    const tracked = improvementRegister.improvements.find(
+      (item) => item.candidateId === candidateId,
+    ) || null;
+
+    if (tracked) {
+      corporateGrowthImprovement = {
+        id: tracked.id,
+        candidateId: tracked.candidateId,
+        status: tracked.status,
+        ownerEmail: tracked.ownerEmail,
+        dueAt: tracked.dueAt,
+        overdue: tracked.overdue,
+        closed: tracked.closed,
+        closedAt: tracked.closedAt,
+        rootCauseCategory: tracked.rootCauseCategory,
+        actionType: tracked.actionType,
+        updatedAt: tracked.updatedAt,
+      };
+    }
+  }
 
   const [
     { data: partnerRows, error: partnerError },
@@ -446,6 +536,7 @@ export async function GET(request: NextRequest) {
             at: lastCorporateGrowthReview.created_at,
             review: (lastCorporateGrowthReview.details as any)?.review || null,
             comparison: (lastCorporateGrowthReview.details as any)?.comparison || null,
+            improvement: corporateGrowthImprovement,
           }
         : null,
       acquisition: {
@@ -530,6 +621,6 @@ export async function GET(request: NextRequest) {
       })),
       workItems: corporateWorkItems.slice(0, 100),
     },
-    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError, lastCorporateGrowthReviewError, corporateRevenueEventsError].filter(Boolean).map((item: any) => item.message),
+    warnings: [workItemsError, prospectsError, lastDiscoveryError, discoveryControlError, lastContentDraftRunError, partnerError, lastPartnerDiscoveryError, lastSignalResearchRunError, lastGenericContactRunError, lastCorporateGrowthReviewError, continuousImprovementWarning, corporateRevenueEventsError].filter(Boolean).map((item: any) => item.message),
   });
 }

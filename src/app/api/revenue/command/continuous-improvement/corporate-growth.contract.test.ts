@@ -45,3 +45,32 @@ test("Corporate Growth deep link focuses the exact candidate without auto-creati
   assert.match(improvementPage, /må fortsatt opprettes manuelt/);
   assert.doesNotMatch(improvementPage, /useSearchParams/);
 });
+
+
+test("Corporate overview reads tracked improvement status without creating or updating it", () => {
+  const overview = fs.readFileSync(
+    "src/app/api/corporate-homes/overview/route.ts",
+    "utf8",
+  );
+  const page = fs.readFileSync(
+    "src/app/(business)/corporate-homes/page.tsx",
+    "utf8",
+  );
+
+  assert.match(overview, /CONTINUOUS_IMPROVEMENT_SETTINGS_KEY/);
+  assert.match(overview, /WEEKLY_MANAGEMENT_SETTINGS_KEY/);
+  assert.match(overview, /buildContinuousImprovementRegister/);
+  assert.match(overview, /corporateGrowthCandidateId/);
+  assert.match(overview, /item\.candidateId === candidateId/);
+  assert.match(overview, /rootCauseCategory: tracked\.rootCauseCategory/);
+  assert.match(overview, /actionType: tracked\.actionType/);
+  assert.doesNotMatch(overview, /effectTrend: tracked\.effect\.trend/);
+  assert.doesNotMatch(overview, /CREATE_IMPROVEMENT|IMPROVEMENT_CREATED|\.upsert\(/);
+
+  assert.match(page, /Åpne forbedringstiltak/);
+  assert.match(page, /Tiltaksstatus/);
+  assert.match(page, /Ansvarlig/);
+  assert.match(page, /Frist/);
+  assert.match(page, /Tiltak \/ rotårsak/);
+  assert.match(page, /forfalt/);
+});
