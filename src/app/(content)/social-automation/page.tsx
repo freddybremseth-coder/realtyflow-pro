@@ -41,6 +41,51 @@ type NextAction = {
   evidence: string[];
 };
 
+type LearningInsight = {
+  id: string;
+  brandId: string;
+  brandName: string;
+  channel: string | null;
+  verdict: "favor" | "avoid";
+  dimension: string;
+  value: string;
+  sample: number;
+  lift: number;
+  finding: string | null;
+  businessValue: number;
+  qualifiedLeadRate: number;
+  leads: number;
+  qualified: number;
+  sales: number;
+  commissionEur: number;
+  updatedAt: string | null;
+};
+
+type GrowthRow = {
+  brandId: string;
+  channel: string;
+  unifiedScore: number;
+  attributionCoveragePct: number;
+  evidence: string;
+  funnel: {
+    impressions: number;
+    views: number;
+    clicks: number;
+    leads: number;
+    qualifiedLeads: number;
+    viewings: number;
+    offers: number;
+    sales: number;
+    commissionEur: number;
+  };
+  rates: {
+    engagementRatePct: number;
+    clickThroughRatePct: number;
+    qualificationRatePct: number;
+    closeRatePct: number;
+  };
+};
+
 type Payload = {
   generatedAt: string;
   controlGate: {
@@ -63,6 +108,21 @@ type Payload = {
     connectedDestinations: number;
   };
   nextActions?: NextAction[];
+  learningInsights?: LearningInsight[];
+  performanceSummary?: {
+    periodDays: number;
+    portfolio: GrowthRow;
+    brands: GrowthRow[];
+    channels: GrowthRow[];
+    diagnostics: {
+      marketingMetricRows: number;
+      canonicalRevenueRows: number;
+      attributionTouchpoints: number;
+      canonicalLeads: number;
+      attributedLeadTouches: number;
+      portfolioAttributionCoveragePct: number;
+    };
+  } | null;
   rows: Row[];
 };
 
@@ -130,6 +190,9 @@ export default function SocialAutomationPage() {
   const systemActions = actions.filter((action) => action.execution === "SYSTEM_WORK");
   const signals = rows.filter((row) => row.surfaceKind === "signal");
   const destinations = rows.filter((row) => row.surfaceKind === "destination");
+  const learningInsights = data?.learningInsights ?? [];
+  const performance = data?.performanceSummary ?? null;
+  const portfolio = performance?.portfolio;
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 p-6">
@@ -193,6 +256,37 @@ export default function SocialAutomationPage() {
             </div>
           </section>
 
+          <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-violet-600">What Nexus learned</div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">Dokumentert læring som påvirker neste innhold</h2>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600">Bare favor/avoid-regler fra Learning Engine vises her. Business-resultater prioriteres foran ren reach når evidensen finnes.</p>
+              </div>
+              <Link href="/analytics" className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-900">Se full analyse →</Link>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {learningInsights.slice(0, 6).map((insight) => (
+                <div key={insight.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${insight.verdict === "favor" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>{insight.verdict}</span>
+                    <span className="text-xs font-black text-slate-900">{insight.brandName}{insight.channel ? ` · ${insight.channel}` : ""}</span>
+                  </div>
+                  <div className="mt-2 text-sm font-black text-slate-900">{insight.dimension}: {insight.value || "—"}</div>
+                  <p className="mt-1 text-sm leading-5 text-slate-600">{insight.finding || `${insight.sample} observasjoner · lift ${Math.round(insight.lift * 100) / 100}`}</p>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-slate-500">
+                    <span>Sample {insight.sample}</span>
+                    {insight.leads > 0 && <span>{insight.leads} leads</span>}
+                    {insight.qualified > 0 && <span>{insight.qualified} kvalifiserte</span>}
+                    {insight.sales > 0 && <span>{insight.sales} salg</span>}
+                    {insight.commissionEur > 0 && <span>€{Math.round(insight.commissionEur).toLocaleString("nb-NO")}</span>}
+                  </div>
+                </div>
+              ))}
+              {!loading && learningInsights.length === 0 && <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Nexus har ennå ingen handlingsregler med nok evidens til å vise her.</div>}
+            </div>
+          </section>
+
           <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {[
               ["Content Studio", "/content-studio", "Lag og klargjør dagens innhold."],
@@ -238,11 +332,37 @@ export default function SocialAutomationPage() {
       )}
 
       {view === "performance" && (
-        <section className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-slate-400">Learning eligible</div><div className="mt-2 text-4xl font-black text-slate-900">{summary.eligible}</div></div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-slate-400">Live learning</div><div className="mt-2 text-4xl font-black text-slate-900">{summary.liveLearning}</div></div>
-          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-violet-500">Measurement signals</div><div className="mt-2 text-4xl font-black text-violet-950">{signals.filter((row) => row.connected).length}</div><p className="mt-2 text-xs text-violet-800">GSC og andre read-only signals.</p></div>
-          <Link href="/analytics" className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-fuchsia-500">Business performance</div><div className="mt-2 text-lg font-black text-fuchsia-950">Åpne Analytics →</div><p className="mt-2 text-sm text-fuchsia-900">Reach → clicks → leads → kvalifisering → salg.</p></Link>
+        <section className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-slate-400">Impressions/views</div><div className="mt-2 text-3xl font-black text-slate-900">{Math.max(portfolio?.funnel.impressions ?? 0, portfolio?.funnel.views ?? 0).toLocaleString("nb-NO")}</div></div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-slate-400">Clicks</div><div className="mt-2 text-3xl font-black text-slate-900">{(portfolio?.funnel.clicks ?? 0).toLocaleString("nb-NO")}</div></div>
+            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-cyan-700">Leads</div><div className="mt-2 text-3xl font-black text-cyan-950">{portfolio?.funnel.leads ?? 0}</div></div>
+            <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-violet-700">Qualified</div><div className="mt-2 text-3xl font-black text-violet-950">{portfolio?.funnel.qualifiedLeads ?? 0}</div></div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-emerald-700">Sales</div><div className="mt-2 text-3xl font-black text-emerald-950">{portfolio?.funnel.sales ?? 0}</div></div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-amber-700">Attribution</div><div className="mt-2 text-3xl font-black text-amber-950">{Math.round(portfolio?.attributionCoveragePct ?? 0)}%</div></div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-wider text-slate-500">Brand performance · siste {performance?.periodDays ?? 30} dager</div><h2 className="mt-1 text-xl font-black text-slate-950">Fra oppmerksomhet til business-resultat</h2></div><Link href="/analytics" className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white">Analytics →</Link></div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[900px] border-collapse text-sm">
+                <thead><tr className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">{["Brand", "Score", "Views/imp.", "Clicks", "Leads", "Qualified", "Sales", "Attribution"].map((h) => <th key={h} className="border-b border-slate-200 p-3">{h}</th>)}</tr></thead>
+                <tbody>{(performance?.brands ?? []).map((row) => (
+                  <tr key={row.brandId}>
+                    <td className="border-b border-slate-100 p-3 font-black text-slate-900">{destinations.find((d) => d.brandId === row.brandId)?.brandName ?? row.brandId}</td>
+                    <td className="border-b border-slate-100 p-3">{row.unifiedScore}</td>
+                    <td className="border-b border-slate-100 p-3">{Math.max(row.funnel.impressions, row.funnel.views).toLocaleString("nb-NO")}</td>
+                    <td className="border-b border-slate-100 p-3">{row.funnel.clicks}</td>
+                    <td className="border-b border-slate-100 p-3">{row.funnel.leads}</td>
+                    <td className="border-b border-slate-100 p-3">{row.funnel.qualifiedLeads}</td>
+                    <td className="border-b border-slate-100 p-3">{row.funnel.sales}</td>
+                    <td className="border-b border-slate-100 p-3">{Math.round(row.attributionCoveragePct)}%</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              {!performance && <div className="p-5 text-sm text-slate-500">Business performance kunne ikke leses akkurat nå. Readiness og autopilot fortsetter uavhengig.</div>}
+            </div>
+          </div>
         </section>
       )}
 
