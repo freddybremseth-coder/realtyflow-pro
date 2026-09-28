@@ -279,6 +279,7 @@ export async function GET(request: NextRequest) {
             mediaUrl,
             mediaType,
             topic: seoTopicSource ? String(seoTopicSource.payload.genome_topic) : undefined,
+            requiredCtaUrl: seoTopicSource?.source_url,
             goal: { kind: role === "real_estate" ? "qualified_leads" as const : "awareness" as const, target: 10, horizonDays: 30 },
             publishingCapacityPerWeek: 4,
             reuseCooldownDays: 14,
