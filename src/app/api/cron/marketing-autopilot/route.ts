@@ -32,6 +32,11 @@ import {
   remasterPromotionMediaUrl,
   remasterPromotionMediaType,
 } from "@/services/marketing/remaster-promotion-source";
+import {
+  loadSEOTopicSource,
+  markSEOTopicSourcePlanned,
+  seoTopicMasterIdea,
+} from "@/services/marketing/seo-topic-source";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
@@ -213,13 +218,20 @@ export async function GET(request: NextRequest) {
           const remasterSource = isRemasterCreator
             ? await loadRemasterPromotionSource(supabase, channel, { cooldownDays: 14 })
             : null;
+          const seoTopicSource = !isRemasterCreator
+            ? await loadSEOTopicSource(supabase, brandId, channel)
+            : null;
           if (isRemasterCreator && !remasterSource) {
             results.push({ brandId, channel, skipped: true, reason: "no_eligible_remaster_song_source", cooldownDays: 14 });
             continue;
           }
 
           const runIdentity = forcedRunForChannel ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
-          const masterIdea = remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
+          const masterIdea = remasterSource
+            ? remasterPromotionMasterIdea(remasterSource, guidance)
+            : seoTopicSource
+              ? seoTopicMasterIdea(seoTopicSource, guidance)
+              : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
           let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
           const mediaType = remasterSource ? remasterPromotionMediaType(remasterSource) : undefined;
           let generatedMedia: Record<string, unknown> | null = null;
@@ -262,10 +274,11 @@ export async function GET(request: NextRequest) {
           const baseInput = {
             brandId,
             channel,
-            useInventoryProperty: role === "real_estate",
+            useInventoryProperty: role === "real_estate" && !seoTopicSource,
             masterIdea,
             mediaUrl,
             mediaType,
+            topic: seoTopicSource ? String(seoTopicSource.payload.genome_topic) : undefined,
             goal: { kind: role === "real_estate" ? "qualified_leads" as const : "awareness" as const, target: 10, horizonDays: 30 },
             publishingCapacityPerWeek: 4,
             reuseCooldownDays: 14,
@@ -316,6 +329,13 @@ export async function GET(request: NextRequest) {
             } catch (markError) {
               sourceMarkError = markError instanceof Error ? markError.message : String(markError);
             }
+          } else if (seoTopicSource && generated) {
+            try {
+              await markSEOTopicSourcePlanned(supabase, seoTopicSource.id);
+              sourceMarked = true;
+            } catch (markError) {
+              sourceMarkError = markError instanceof Error ? markError.message : String(markError);
+            }
           }
 
           results.push({
@@ -335,9 +355,19 @@ export async function GET(request: NextRequest) {
             failureState,
             source: remasterSource ? {
               sourceQueueId: remasterSource.id,
+              sourceType: "song",
               songId: remasterSource.source_id,
               title: remasterSource.title,
               youtubeUrl: remasterSource.payload?.youtube_url ?? remasterSource.source_url,
+              sourceMarked,
+              sourceMarkError,
+            } : seoTopicSource ? {
+              sourceQueueId: seoTopicSource.id,
+              sourceType: "seo_topic",
+              topicId: seoTopicSource.payload.topic_id ?? seoTopicSource.source_id,
+              genomeTopic: seoTopicSource.payload.genome_topic,
+              title: seoTopicSource.title,
+              canonicalUrl: seoTopicSource.source_url,
               sourceMarked,
               sourceMarkError,
             } : null,
