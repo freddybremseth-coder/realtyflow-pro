@@ -129,8 +129,8 @@ export async function POST(
   const body: any = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "INVALID_PUBLISH_REQUEST");
   const publicationId = typeof body.publicationId === "string" ? body.publicationId.trim() : "";
-  const channelIds = Array.isArray(body.channelIds)
-    ? body.channelIds.map((item: unknown) => String(item || "").trim()).filter(Boolean)
+  const channelIds: string[] = Array.isArray(body.channelIds)
+    ? body.channelIds.map((item: unknown) => String(item || "").trim()).filter((item: string) => Boolean(item))
     : [];
   if (!uuid.test(publicationId) || channelIds.length < 1 || channelIds.length > 3 ||
       new Set(channelIds).size !== channelIds.length || channelIds.some(id => !uuid.test(id))) {
