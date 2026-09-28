@@ -25,6 +25,7 @@ import { resolveInventoryMarketingProperty, type InventoryMarketingProperty } fr
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
+import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 const PREAPPROVED_REUSABLE_SOURCES = new Set(["ad_creative", "content_hub_approved"]);
@@ -237,7 +238,7 @@ export function makeConfiguredMetaPublisher(supabase: MarketingSupabaseLike, bra
           pageId: platform === "facebook" ? target : undefined,
           live: true,
         });
-        return publisher.publish(asset, { ...opts, accountId: target });
+        return publisher.publish(asset, { ...opts, brandId, accountId: target });
       }
 
       const igUserId = process.env.META_IG_USER_ID;
@@ -464,7 +465,11 @@ export async function createCampaignDraft(
     results.push({
       contentId: brief.contentId, channel: brief.channel, publicationId: d.publicationId, state: String(d.state), mode: d.mode,
       qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error, source: sourceType,
-      caption: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"), imageUrl: creative.asset.media?.imageUrl ?? null,
+      caption: ensureBrandWebsiteLink({
+        brandId: input.brandId,
+        channel: brief.channel,
+        content: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
+      }), imageUrl: creative.asset.media?.imageUrl ?? null,
       brandId: input.brandId, accountId: account?.accountId ?? null, assetHash: d.assetHash, factSources: creative.asset.factSources ?? [],
       propertyId: inventoryProperty?.id ?? null, propertyRef: inventoryProperty?.ref ?? null, propertyTitle: inventoryProperty?.title ?? null,
       propertyLocation: inventoryProperty?.location ?? null, selectionReason: inventoryProperty?.selectionReason ?? null,
@@ -508,7 +513,7 @@ export async function runApprovedPublicationProd(supabase: MarketingSupabaseLike
       if (error) throw new Error(`PUBLICATION_BRAND_LOOKUP_FAILED: ${error.message}`);
       const brandId = String(publication?.brand_id ?? "").trim();
       if (!brandId) throw new Error("BRAND_UNRESOLVED: publikasjonen mangler brand_id for Meta OAuth");
-      return makeConfiguredMetaPublisher(supabase, brandId).publish(asset, opts);
+      return makeConfiguredMetaPublisher(supabase, brandId).publish(asset, { ...opts, brandId });
     },
   };
   const live = process.env.MARKETING_META_LIVE === "true";
