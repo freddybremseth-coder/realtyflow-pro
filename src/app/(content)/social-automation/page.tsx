@@ -333,6 +333,8 @@ export default function SocialAutomationPage() {
   const autoActions = actions.filter((action) => action.execution === "AUTO_READY");
   const humanActions = actions.filter((action) => action.execution === "HUMAN_REQUIRED");
   const systemActions = actions.filter((action) => action.execution === "SYSTEM_WORK");
+  const waitingActions = actions.filter((action) => action.execution === "WAIT");
+  const automaticActions = [...autoActions, ...systemActions];
   const signals = rows.filter((row) => row.surfaceKind === "signal");
   const destinations = rows.filter((row) => row.surfaceKind === "destination");
   const learningInsights = data?.learningInsights ?? [];
@@ -369,46 +371,75 @@ export default function SocialAutomationPage() {
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {[
               ["Destinations", data?.automationSummary?.connectedDestinations ?? summary.connected],
-              ["Signals", data?.automationSummary?.connectedSignals ?? summary.connectedSignals],
-              ["Auto ready", data?.automationSummary?.autoReady ?? autoActions.length],
               ["Live learning", summary.liveLearning],
-              ["Needs you", data?.automationSummary?.humanRequired ?? humanActions.length],
+              ["Systemet håndterer", (data?.automationSummary?.autoReady ?? autoActions.length) + (data?.automationSummary?.systemWork ?? systemActions.length)],
+              ["Venter på data", data?.automationSummary?.waiting ?? waitingActions.length],
+              ["Trenger deg", data?.automationSummary?.humanRequired ?? humanActions.length],
             ].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-slate-400">{label}</div><div className="mt-2 text-3xl font-black text-slate-900">{value}</div></div>)}
           </section>
 
-          <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+          <section className={`rounded-2xl border p-5 shadow-sm ${humanActions.length > 0 ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-xs font-black uppercase tracking-wider text-emerald-700">Growth Autopilot queue</div>
-                <h2 className="mt-1 text-xl font-black text-slate-950">Neste handlinger valgt av Nexus</h2>
-                <p className="mt-1 max-w-3xl text-sm text-slate-700">AUTO READY køes automatisk av den timebaserte Marketing Autopilot. Hvis kanalen ikke er live-forhåndsgodkjent, lages bare kontrollert utkast/review; eksisterende claim-, account-, approval- og rollback-guards gjelder alltid.</p>
+                <div className={`text-xs font-black uppercase tracking-wider ${humanActions.length > 0 ? "text-amber-700" : "text-emerald-700"}`}>Dette må du gjøre</div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">{humanActions.length > 0 ? `${humanActions.length} marketing-beslutning(er) trenger deg` : "Ingen marketing-handling krever deg nå"}</h2>
+                <p className="mt-1 max-w-3xl text-sm text-slate-700">Denne delen inneholder bare handlinger med <b>HUMAN_REQUIRED</b>. Alt annet håndteres av RealtyFlow eller venter på data.</p>
               </div>
-              <Link href="/nexus-os/growth-scaling" className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white">Scaling Control →</Link>
+              {humanActions.length > 0 && <Link href="/social-automation?view=attention" className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white">Åpne beslutningene →</Link>}
+            </div>
+            {humanActions.length > 0 && (
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {humanActions.slice(0, 6).map((action) => (
+                  <Link key={action.id} href={action.href ?? "/marketing-readiness"} className="rounded-xl border border-amber-200 bg-white p-4 text-amber-950">
+                    <div className="text-[10px] font-black uppercase text-amber-700">{action.priority} · trenger deg</div>
+                    <div className="mt-2 font-black">{action.title}</div>
+                    <p className="mt-2 text-sm leading-5 text-amber-900">{action.reason}</p>
+                    <div className="mt-3 text-xs font-black">Åpne beslutning →</div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-blue-700">Dette gjør RealtyFlow automatisk</div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">Growth Autopilot jobber videre uten at du trykker på noe</h2>
+                <p className="mt-1 max-w-4xl text-sm text-slate-700">Canary, learning-evaluering, datakvalitet og publisher-governance vises her som status. <b>AUTO_READY</b> køes av den timebaserte autopiloten; <b>SYSTEM_WORK</b> utføres eller overvåkes av systemet. Ingen av disse er en oppgave til deg.</p>
+              </div>
+              <Link href="/nexus-os/growth-scaling" className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-black text-blue-950">Scaling Control →</Link>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              {actions.filter((action) => action.execution !== "WAIT").slice(0, 6).map((action) => (
-                <div key={action.id} className={`rounded-xl border p-4 ${executionTone(action.execution)}`}>
+              {automaticActions.slice(0, 6).map((action) => (
+                <div key={action.id} className="rounded-xl border border-blue-200 bg-white p-4 text-blue-950">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-black uppercase">{executionLabel(action.execution)}</span>
-                    <span className="text-[10px] font-black uppercase opacity-60">{action.priority}</span>
+                    <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black uppercase">{action.execution === "AUTO_READY" ? "Køes automatisk" : "Systemet håndterer"}</span>
+                    <span className="text-[10px] font-black uppercase text-blue-500">{action.priority}</span>
                   </div>
                   <div className="mt-3 font-black">{action.title}</div>
-                  <p className="mt-2 text-sm leading-5 opacity-80">{action.reason}</p>
-                  {action.sourceChannel && action.sourceChannel !== action.channel && <div className="mt-2 text-xs font-bold opacity-70">Utvidelsessignal: {action.sourceChannel} → {action.channel} · målkanalen lærer på egne data</div>}
+                  <p className="mt-2 text-sm leading-5 text-blue-800">{action.reason}</p>
+                  {action.sourceChannel && action.sourceChannel !== action.channel && <div className="mt-2 text-xs font-bold text-blue-700">Utvidelsessignal: {action.sourceChannel} → {action.channel} · målkanalen lærer på egne data</div>}
                   {action.business && (
-                    <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] font-bold leading-5 ${action.business.trustedForPriority ? "border-emerald-200 bg-white/80 text-emerald-950" : "border-slate-200 bg-white/60 text-slate-600"}`}>
+                    <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] font-bold leading-5 ${action.business.trustedForPriority ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
                       <span className="font-black">{action.business.trustedForPriority ? "Business-prioritert" : "Business-signal, ikke styrende"}:</span>{" "}
                       {action.business.qualifiedLeads} qualified · {action.business.sales} sales
                       {action.business.commissionEur > 0 ? ` · €${Math.round(action.business.commissionEur).toLocaleString("nb-NO")}` : ""}
                       {" · "}{Math.round(action.business.attributionCoveragePct)}% attribution · {action.business.evidence}
                     </div>
                   )}
-                  {action.execution === "AUTO_READY" && <div className="mt-3 text-xs font-black text-emerald-800">Kjøres automatisk · ingen knapp nødvendig</div>}
-                  {action.href && action.execution !== "AUTO_READY" && <Link href={action.href} className="mt-3 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm">Åpne kontrollflate →</Link>}
+                  <div className="mt-3 text-xs font-black text-emerald-700">✓ Ingen handling fra deg</div>
                 </div>
               ))}
-              {!loading && actions.filter((action) => action.execution !== "WAIT").length === 0 && <div className="lg:col-span-3 rounded-xl border border-emerald-200 bg-white/70 p-4 text-sm text-emerald-900">Ingen ny handling må startes nå. Autopilot venter på nye modne signaler.</div>}
+              {!loading && automaticActions.length === 0 && <div className="lg:col-span-3 rounded-xl border border-blue-200 bg-white p-4 text-sm text-blue-900">Ingen ny automatisk handling er klar akkurat nå. Autopilot overvåker videre.</div>}
             </div>
+            {(waitingActions.length > 0 || summary.quarantined > 0) && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white/70 p-3 text-xs leading-5 text-slate-600">
+                {waitingActions.length > 0 && <span><b>{waitingActions.length}</b> handling(er) venter på modne data. </span>}
+                {summary.quarantined > 0 && <span><b>{summary.quarantined}</b> målinger holdes automatisk utenfor læringen av datakvalitetsreglene. </span>}
+                Dette er status, ikke «Needs attention».
+              </div>
+            )}
           </section>
 
           <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
