@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
     supabase.from("marketing_publications").select("brand_id, channel, state, content_id, updated_at").in("brand_id", brandIds).eq("state", "published"),
     supabase.from("marketing_events").select("brand_id, channel, content_id, metadata").in("brand_id", brandIds).eq("event_type", "metrics_snapshot"),
     supabase.from("marketing_learning_rules")
-      .select("scope, dimension, value, sample, lift, verdict, finding, avg_business_value, avg_qualified_lead_rate, total_leads, total_qualified, total_sales, total_commission_eur, updated_at")
+      .select("scope, dimension, value, sample, lift, evidence, verdict, finding, avg_business_value, avg_qualified_lead_rate, total_leads, total_qualified, total_sales, total_commission_eur, updated_at")
       .in("scope", ruleScopes),
     loadUnifiedGrowthScore(supabase as any, { days: 30 }).catch(() => null),
   ]);
@@ -279,6 +279,13 @@ export async function GET(request: NextRequest) {
       .filter((row) => row.surfaceKind === "destination" && row.platform)
       .map((row) => [channelLearningScope(row.brandId, String(row.platform)), row] as const),
   );
+  const evidenceWeight: Record<string, number> = {
+    insufficient: 0,
+    directional: 1,
+    promising: 2,
+    reliable: 3,
+    strong: 4,
+  };
   const learningInsights = (rules ?? [])
     .filter((rule: any) => ["favor", "avoid"].includes(String(rule.verdict)))
     .map((rule: any) => {
@@ -287,15 +294,33 @@ export async function GET(request: NextRequest) {
       const sample = Number(rule.sample ?? 0);
       const businessValue = Number(rule.avg_business_value ?? 0);
       const qualifiedRate = Number(rule.avg_qualified_lead_rate ?? 0);
+      const evidence = String(rule.evidence ?? "insufficient");
+      const updatedAt = rule.updated_at ? String(rule.updated_at) : null;
+      const updatedMs = updatedAt ? Date.parse(updatedAt) : NaN;
+      const ageDays = Number.isFinite(updatedMs)
+        ? Math.max(0, Math.floor((Date.now() - updatedMs) / 86_400_000))
+        : null;
+      const freshness = ageDays == null ? "unknown" : ageDays <= 14 ? "fresh" : ageDays <= 30 ? "recent" : "stale";
+      const dimension = String(rule.dimension ?? "signal");
+      const value = String(rule.value ?? "");
+      const label = dimension === "tag" && value ? `#${value}` : `${dimension}=${value || "—"}`;
+      const nextBehavior = String(rule.verdict) === "favor"
+        ? `Nexus vil favorisere ${label} i neste relevante generering for ${owner?.brandName ?? String(rule.scope)}.`
+        : `Nexus vil nedprioritere ${label} og velge andre dokumenterte alternativer når de finnes.`;
       return {
         id: `${rule.scope}:${rule.dimension}:${String(rule.value ?? "")}`,
         brandId: owner?.brandId ?? String(rule.scope).split(":")[0] ?? "",
         brandName: owner?.brandName ?? String(rule.scope),
         channel: owner?.platform ?? null,
         verdict: String(rule.verdict) as "favor" | "avoid",
-        dimension: String(rule.dimension ?? "signal"),
-        value: String(rule.value ?? ""),
+        dimension,
+        value,
         sample,
+        evidence,
+        evidenceRank: evidenceWeight[evidence] ?? 0,
+        freshness,
+        ageDays,
+        nextBehavior,
         lift: Number.isFinite(lift) ? lift : 0,
         finding: rule.finding ? String(rule.finding) : null,
         businessValue: Number.isFinite(businessValue) ? businessValue : 0,
@@ -304,11 +329,12 @@ export async function GET(request: NextRequest) {
         qualified: Number(rule.total_qualified ?? 0),
         sales: Number(rule.total_sales ?? 0),
         commissionEur: Number(rule.total_commission_eur ?? 0),
-        updatedAt: rule.updated_at ? String(rule.updated_at) : null,
+        updatedAt,
       };
     })
     .sort((a, b) =>
-      Number(b.sales > 0) - Number(a.sales > 0)
+      b.evidenceRank - a.evidenceRank
+      || Number(b.sales > 0) - Number(a.sales > 0)
       || b.commissionEur - a.commissionEur
       || b.businessValue - a.businessValue
       || Math.abs(b.lift) - Math.abs(a.lift)

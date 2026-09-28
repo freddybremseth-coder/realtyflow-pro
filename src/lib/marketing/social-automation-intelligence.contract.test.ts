@@ -9,6 +9,9 @@ const page = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/social-
 test("readiness exposes actionable learning evidence and unified business performance", () => {
   assert.match(readiness, /loadUnifiedGrowthScore/);
   assert.match(readiness, /avg_business_value/);
+  assert.match(readiness, /evidenceWeight/);
+  assert.match(readiness, /nextBehavior/);
+  assert.match(readiness, /freshness/);
   assert.match(readiness, /avg_qualified_lead_rate/);
   assert.match(readiness, /total_leads/);
   assert.match(readiness, /total_sales/);
@@ -21,6 +24,10 @@ test("social automation explains what Nexus learned using persisted rules", () =
   assert.match(page, /Dokumentert læring som påvirker neste innhold/);
   assert.match(page, /insight\.verdict/);
   assert.match(page, /insight\.finding/);
+  assert.match(page, /Evidens:/);
+  assert.match(page, /Dette endrer Nexus:/);
+  assert.match(page, /insight\.nextBehavior/);
+  assert.match(page, /insight\.freshness/);
 });
 
 test("performance surface shows business outcomes instead of reach-only status", () => {
