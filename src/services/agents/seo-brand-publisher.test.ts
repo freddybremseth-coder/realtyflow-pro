@@ -216,3 +216,31 @@ test("v2 remains locked until v1 has a complete measured post-change period",()=
   assert.equal(secondExperimentReady({...effect,site_verified:false},measured),false);
   assert.equal(secondExperimentReady(effect,null),false);
 });
+
+
+test("owner rollback only accepts the latest valid experiment revision",async()=>{
+  const e=environment();
+  await e.run();
+  await e.run();
+  e.state.live=html(site.title,site.description);
+  await e.run();
+  const v1=e.db.rows.find(r=>r.action==="seo_brand_publication_v1")!;
+  assert.equal(v1.details.phase,"done");
+  const v2Revision="d".repeat(40);
+  e.db.rows.push({
+    id:brandPublicationId(site.brandId,":v2"),
+    action:"seo_brand_publication_v1",
+    agent_name:"Sam SEO Expert",
+    status:"success",
+    details:{
+      ...structuredClone(v1.details),
+      experimentVersion:"v2",
+      target:secondVariantForBrand(site.brandId),
+      phase:"done",
+      mergeSha:v2Revision,
+      mergedAt:"2026-09-27T13:00:00Z",
+    },
+  });
+  assert.equal(await requestBrandRollback(e.db.client,site.brandId,C),false);
+  assert.equal(await requestBrandRollback(e.db.client,site.brandId,v2Revision),true);
+});
