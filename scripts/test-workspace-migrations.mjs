@@ -20,6 +20,7 @@ const files = [
   "20260927160000_workspace_content_studio.sql",
   "20260927190000_workspace_email_reach.sql",
   "20260928103000_workspace_social_publish.sql",
+  "20260928205000_workspace_external_collaborators.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -241,7 +242,7 @@ try {
     "workspace_brand_email_draft_save", "workspace_brand_email_send_prepare",
     "workspace_brand_email_send_finalize",
     "workspace_brand_social_publish_snapshot", "workspace_brand_social_publish_prepare",
-    "workspace_brand_social_publish_finalize"]) {
+    "workspace_brand_social_publish_finalize", "workspace_user_configure_v2"]) {
     const grants = await sql(
       "select has_function_privilege('anon',p.oid,'EXECUTE') as anon, has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1",
       [func],
@@ -985,6 +986,46 @@ try {
   );
   verify(managedDirectoryByEmail.rows[0].result?.username === "andrea.test",
     "Email login directory did not resolve the configured username");
+
+  const configureExternal = async (expiresAt) => {
+    const result = await serviceSql(
+      "select public.workspace_user_configure_v2($1::uuid,$2::text,$3::text,$4::text,$5::jsonb,$6::text,$7::text,$8::text,$9::timestamptz) as ok",
+      [managedUser, "andrea.test", "managed@example.test", "Managed Workspace User",
+        JSON.stringify([{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read"] }]),
+        "owner@example.test", "external", "Search Partner AS", expiresAt],
+    );
+    return result.rows[0].ok;
+  };
+  verify(await configureExternal("2099-12-31T23:59:59Z") === true,
+    "External collaborator metadata configuration failed");
+  const externalDirectory = await serviceSql(
+    "select public.workspace_login_directory($1::text) as result", ["andrea.test"],
+  );
+  verify(externalDirectory.rows[0].result?.status === "active" &&
+    externalDirectory.rows[0].result?.account_kind === "external" &&
+    externalDirectory.rows[0].result?.organization === "Search Partner AS" &&
+    externalDirectory.rows[0].result?.expired === false,
+    "External collaborator directory metadata was not exposed safely");
+
+  verify(await configureExternal("2020-01-01T00:00:00Z") === true,
+    "Expired external collaborator fixture could not be configured");
+  const expiredDirectory = await serviceSql(
+    "select public.workspace_login_directory($1::text) as result", ["andrea.test"],
+  );
+  verify(expiredDirectory.rows[0].result?.status === "disabled" &&
+    expiredDirectory.rows[0].result?.expired === true,
+    "Expired external collaborator remained login-active");
+
+  const restoreManaged = await serviceSql(
+    "select public.workspace_user_configure_v2($1::uuid,$2::text,$3::text,$4::text,$5::jsonb,$6::text,$7::text,$8::text,$9::timestamptz) as ok",
+    [managedUser, "andrea.test", "managed@example.test", "Managed Workspace User",
+      JSON.stringify([
+        { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read"] },
+        { brandKey: "zeneco", permissions: ["crm.joint.read","crm.joint.write","tasks.joint.read","tasks.joint.write","properties.catalog.read"] },
+      ]),
+      "owner@example.test", "staff", null, null],
+  );
+  verify(restoreManaged.rows[0].ok === true, "Workspace user fixture restore failed");
 
   const managedMemberships = await sql(
     "select b.brand_key,m.status,m.permissions from core.brand_workspace_memberships m " +

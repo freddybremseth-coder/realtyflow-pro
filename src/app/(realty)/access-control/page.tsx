@@ -79,7 +79,7 @@ export default function AccessControlPage() {
         </header>
 
         <div className="rounded-xl border border-amber-600/60 bg-amber-950/30 p-4 text-sm text-amber-100">
-          <strong>Viktig: Disse eldre rollene er globale.</strong> Ikke bruk denne siden til å gi Andrea eller en ny merkevaremedarbeider tilgang. For avgrenset tilgang til Pinoso EcoLife eller andre merkevarer, bruk <Link href="/workspace-access" className="font-semibold text-cyan-300 underline">Brukere og arbeidsområder</Link> (utkastmodus). Aktivering er sperret inntil alle dataruter er sikret.
+          <strong>Viktig: Disse eldre rollene er globale.</strong> Ikke bruk denne siden til brand-avgrensede medarbeidere eller eksterne samarbeidspartnere. Bruk <Link href="/workspace-users" className="font-semibold text-cyan-300 underline">Brukere & tilgang</Link> for å velge eksakt merkevare, modul og handling per person. Den gamle tilgangsutkast-siden er kun et planleggingsverktøy.
         </div>
         {error && <div className="rounded-xl border border-red-700/60 bg-red-950/40 p-4 text-red-200"><AlertTriangle className="mr-2 inline" size={17}/>{error}</div>}
         {notice && <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/40 p-4 text-emerald-200"><CheckCircle2 className="mr-2 inline" size={17}/>{notice}</div>}

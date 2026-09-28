@@ -46,10 +46,10 @@ export default function WorkspacesPage() {
       </div>
       <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
         <div className="flex items-start gap-3"><Users className="shrink-0 text-cyan-400" size={23}/><div>
-          <h2 className="text-xl font-semibold">Medarbeidere og tilganger</h2>
-          <p className="mt-2 text-sm text-slate-400">Planlegg egne arbeidsområder og rettigheter per person og merkevare. Dette er foreløpig en sikker utkastmodus; ingen ny bruker aktiveres.</p>
-          <Link href="/workspace-access" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 font-medium text-white hover:bg-cyan-500">
-            <LockKeyhole size={16}/> Administrer tilgangsutkast <ArrowRight size={16}/>
+          <h2 className="text-xl font-semibold">Brukere & tilgang</h2>
+          <p className="mt-2 text-sm text-slate-400">Opprett interne medarbeidere og eksterne samarbeidspartnere. Velg eksakte merkevarer, moduler og handlinger per person, med valgfri utløpsdato.</p>
+          <Link href="/workspace-users" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 font-medium text-white hover:bg-cyan-500">
+            <LockKeyhole size={16}/> Administrer brukere & tilgang <ArrowRight size={16}/>
           </Link>
         </div></div>
       </div>
