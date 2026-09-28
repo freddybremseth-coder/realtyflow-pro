@@ -27,9 +27,11 @@ test("buyer profile autopilot requires a useful matching dimension and readiness
   assert.match(serviceSource, /readinessConfidence < 0\.75/);
 });
 
-test("existing profile updates are never overwritten automatically", () => {
-  assert.match(serviceSource, /existing && input\.intent === "update_preferences"/);
+test("existing profile updates are versioned and never overwritten automatically", () => {
+  assert.match(serviceSource, /if \(existing\)/);
+  assert.match(serviceSource, /verified\.length > 0/);
   assert.match(serviceSource, /status: "revision_required"/);
+  assert.match(cronSource, /autoReviseBuyerProfileFromInboundEvidence/);
   assert.match(cronSource, /Review kundeendring i Buyer Profile/);
 });
 
