@@ -199,6 +199,7 @@ export async function POST(request: NextRequest) {
       channel: requestedChannel,
       language: source.payload?.language || undefined,
       topic: source.source_type === "seo_topic" ? String(source.payload?.genome_topic || "") || undefined : undefined,
+      requiredCtaUrl: source.source_type === "seo_topic" ? String(source.payload?.canonical_url || source.source_url || "") || undefined : undefined,
       mediaUrl,
       mediaType,
       reuseCooldownDays: isUmbrellaStory ? 14 : undefined,
