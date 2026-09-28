@@ -90,7 +90,7 @@ export function WorkspaceMarketingPanel({
   async function createDraft() {
     if (!canDraft || !description.trim() || busy) return;
     if (platforms.includes("instagram") && !imageUrl.trim()) {
-      setError("Instagram krever et offentlig HTTPS-bilde. Legg inn bildeadresse eller fjern Instagram som målkanal.");
+      setError("Instagram krever et brand-godkjent bilde. Legg inn en bildeadresse fra en synlig eiendom/RealtyFlow-media eller fjern Instagram som målkanal.");
       return;
     }
     setBusy(true);
@@ -113,9 +113,11 @@ export function WorkspaceMarketingPanel({
         body?.error?.code === "CHANNEL_NOT_ACTIVE_FOR_BRAND"
           ? "En valgt kanal er ikke aktiv for denne merkevaren."
           : body?.error?.code === "INSTAGRAM_IMAGE_REQUIRED"
-            ? "Instagram krever et offentlig HTTPS-bilde."
-            : body?.error?.code === "INVALID_DRAFT"
-              ? "Kontroller tekst, bildeadresse, tags og valgte kanaler."
+            ? "Instagram krever et brand-godkjent bilde."
+            : body?.error?.code === "IMAGE_NOT_APPROVED_FOR_BRAND"
+              ? "Bildeadressen er ikke godkjent for denne merkevaren. Bruk bilde fra en synlig eiendom eller RealtyFlow-media."
+              : body?.error?.code === "INVALID_DRAFT"
+                ? "Kontroller tekst, bildeadresse, tags og valgte kanaler."
               : "Utkastet kunne ikke lagres.",
       );
       setNotice("Utkastet er lagret i Content Hub for denne merkevaren. Ingenting er publisert.");
@@ -194,7 +196,7 @@ export function WorkspaceMarketingPanel({
           <input type="url" value={imageUrl} onChange={event => setImageUrl(event.target.value)} maxLength={2000}
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="https://…"/>
-          <span className="mt-1 block text-[11px] text-slate-500">Valgfritt for Facebook. Påkrevd for Instagram. Bruk en offentlig HTTPS-adresse.</span>
+          <span className="mt-1 block text-[11px] text-slate-500">Valgfritt for Facebook. Påkrevd for Instagram. Adressen må finnes på en synlig eiendom eller en godkjent mediefil for denne merkevaren.</span>
         </label>
         <div>
           <div className="text-xs text-slate-300">Målkanaler</div>
