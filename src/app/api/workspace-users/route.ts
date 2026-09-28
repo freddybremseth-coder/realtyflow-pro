@@ -77,6 +77,11 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
     if (typed.includes("marketing.publish") &&
         (!typed.includes("marketing.read") || !typed.includes("marketing.draft"))) return null;
     if (typed.includes("marketing.draft") && !typed.includes("marketing.read")) return null;
+    if (typed.includes("reels.create") && !typed.includes("reels.read")) return null;
+    if (typed.includes("reels.publish") &&
+        (!typed.includes("reels.read") || !typed.includes("reels.create"))) return null;
+    if (typed.some(permission => permission.startsWith("reels.")) &&
+        !["zeneco", "pinosoecolife"].includes(brandKey)) return null;
     if (typed.includes("corporate.plan") && !typed.includes("corporate.read")) return null;
     if (typed.includes("visibility.plan") && !typed.includes("visibility.read")) return null;
     if (typed.includes("ads.draft") && !typed.includes("ads.read")) return null;
