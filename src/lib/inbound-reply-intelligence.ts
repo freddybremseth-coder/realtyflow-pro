@@ -120,6 +120,14 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   const specificProperty = /\b(this property|that property|the apartment|the villa|the house|denne boligen|den boligen|denne leiligheten|denne villaen|ref\.?\s*[a-z0-9-]+|reference\s*[a-z0-9-]+)\b/i.test(text) || /https?:\/\//i.test(text);
   if (specificProperty) return result("property_interest", 0.93, "prioritize_property_match", ["Customer references a specific property or property link."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
 
+  // A positive reply can describe a future family move, not an immediate purchase.
+  // Treat an explicit no-rush or delayed-purchase statement as planned follow-up
+  // before generic "interested" language triggers hot-lead matching.
+  // Viewing requests and concrete property interest are handled above this rule.
+  const longTermBuyer = /\b(ikke (?:noe )?hastverk|ingen hast|vi har god tid|har god tid|no rush|not in a hurry|no hurry)\b/i.test(text)
+    || /\b(?:kjøpe|kjøp|boligkjøp|flytte|flytting|purchase|buy|move)\b.{0,55}\b(?:om|in)\s+(?:ett|to|1|2|1[–-]2|one|two)\s+(?:års?\s*tid|years?|år)\b/i.test(text);
+  if (longTermBuyer) return result("follow_up_later", 0.94, "schedule_followup", ["Customer describes a no-rush or future purchase; clarify timing before matching."], { shouldPauseNurture: true });
+
   const changed = /\b(changed|different area|different budget|new budget|other area|other location|requirements changed|endret|andre ønsker|annet område|nytt budsjett|annet budsjett|ser etter noe annet)\b/i.test(text);
   if (changed) return result("update_preferences", 0.91, "refresh_buyer_profile", ["Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
