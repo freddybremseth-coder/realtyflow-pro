@@ -22,11 +22,27 @@ test("keeps a learning-ready brand in prove when sales throughput is not attribu
   assert.match(result.nextAction, /attribuerte leads/i);
 });
 
-test("quarantined data always forces hold and caps the score", () => {
-  const result = decideGrowthScaling({ ...ready, quarantined: 2, sales: 3 });
-  assert.equal(result.stage, "HOLD");
-  assert.ok(result.score <= 39);
-  assert.ok(result.blockers.some((value) => /karantene/i.test(value)));
+test("excluded historical metrics do not block clean learning evidence", () => {
+  const result = decideGrowthScaling({ ...ready, quarantined: 14, sales: 3 });
+  assert.equal(result.stage, "SCALE");
+  assert.equal(result.canScale, true);
+  assert.ok(result.evidence.some((value) => /ekskludert fra læringen/i.test(value)));
+  assert.equal(result.blockers.some((value) => /karantene/i.test(value)), false);
+});
+
+test("a brand with only excluded observations stays in pilot until clean evidence exists", () => {
+  const result = decideGrowthScaling({
+    ...ready,
+    quarantined: 14,
+    eligibleObservations: 0,
+    evaluatedRules: 0,
+    leads: 0,
+    qualified: 0,
+    attributionCoveragePercent: 0,
+  });
+  assert.equal(result.stage, "PILOT");
+  assert.equal(result.canScale, false);
+  assert.match(result.nextAction, /learning-eligible/i);
 });
 
 test("a connected brand without enough verified supply remains foundation", () => {
