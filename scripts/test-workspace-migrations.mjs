@@ -231,6 +231,7 @@ try {
     "workspace_brand_contact_create", "workspace_brand_contact_update",
     "workspace_brand_property_catalogue", "workspace_staff_security_preflight",
     "workspace_brand_marketing_snapshot", "workspace_brand_marketing_draft_create",
+    "workspace_brand_marketing_draft_create_v2",
     "workspace_brand_growth_snapshot", "workspace_brand_growth_work_create",
     "workspace_brand_content_snapshot", "workspace_brand_content_draft_save",
     "workspace_brand_content_publish_payload", "workspace_brand_content_publish_finalize",
@@ -1064,10 +1065,29 @@ try {
   )).rows[0].id;
   const staffSocialDraftId = createdMarketingDraft.rows[0].result.publication.id;
 
-  const instagramNoImage = await sql(
-    "insert into public.content_publications(brand_id,content_type,title,description,scheduled_platforms,status) values ('pinosoecolife','image_post','Instagram no image','Image required test',array['instagram']::text[],'draft') returning id",
+  const instagramMissingImageDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create_v2($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[],$8::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test","Instagram missing image",
+      "Image required test",[],["instagram"],null],
   );
-  const instagramNoImageId = instagramNoImage.rows[0].id;
+  verify(instagramMissingImageDraft.rows[0].result?.ok === false &&
+    instagramMissingImageDraft.rows[0].result?.error === "INSTAGRAM_IMAGE_REQUIRED",
+    "Workspace marketing v2 accepted Instagram target without an image");
+
+  const instagramDraft = await serviceSql(
+    "select public.workspace_brand_marketing_draft_create_v2($1::text,$2::uuid,$3::text,$4::text,$5::text,$6::text[],$7::text[],$8::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test","Instagram with image",
+      "Safe Instagram image post",[],["instagram"],"https://cdn.example.test/pinoso.jpg"],
+  );
+  const instagramDraftId = instagramDraft.rows[0].result?.publication?.id;
+  verify(Boolean(instagramDraftId) &&
+    instagramDraft.rows[0].result?.publication?.thumbnail_url === "https://cdn.example.test/pinoso.jpg",
+    "Workspace marketing v2 did not persist the safe Instagram image");
+
+  const ownerSocialDraft = await sql(
+    "insert into public.content_publications(brand_id,content_type,title,description,scheduled_platforms,status) values ('pinosoecolife','social','Owner same-brand draft','Staff must not publish this',array['facebook']::text[],'draft') returning id",
+  );
+  const ownerSocialDraftId = ownerSocialDraft.rows[0].id;
   const websiteDraft = await sql(
     "insert into public.content_publications(brand_id,content_type,title,description,status) values ('pinosoecolife','website_magazine','Private website draft','Must never reach social publisher','draft') returning id",
   );
@@ -1085,6 +1105,8 @@ try {
     socialSnapshot.rows[0].result.channels.every(row =>
       ["facebook","instagram"].includes(row.platform) && !("externalId" in row)) &&
     JSON.stringify(socialSnapshot.rows[0].result).includes(staffSocialDraftId) &&
+    JSON.stringify(socialSnapshot.rows[0].result).includes(instagramDraftId) &&
+    !JSON.stringify(socialSnapshot.rows[0].result).includes(ownerSocialDraftId) &&
     !JSON.stringify(socialSnapshot.rows[0].result).includes(websiteDraftId) &&
     !JSON.stringify(socialSnapshot.rows[0].result).includes(reelDraftId),
     "Social publish snapshot leaked unsupported content/channel identifiers or omitted safe draft");
@@ -1097,13 +1119,30 @@ try {
     wrongBrandChannel.rows[0].result?.error === "CHANNEL_SCOPE_INVALID",
     "Social publish prepare accepted another brand's channel");
 
-  const noImageInstagram = await serviceSql(
+  const sameBrandOwnerBlocked = await serviceSql(
     "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
-    ["pinosoecolife",managedUser,"managed@example.test",instagramNoImageId,[pinosoInstagramId]],
+    ["pinosoecolife",managedUser,"managed@example.test",ownerSocialDraftId,[pinosoFacebookId]],
   );
-  verify(noImageInstagram.rows[0].result?.ok === false &&
-    noImageInstagram.rows[0].result?.error === "INSTAGRAM_IMAGE_REQUIRED",
-    "Social publish prepare allowed Instagram without an existing image");
+  verify(sameBrandOwnerBlocked.rows[0].result?.ok === false &&
+    sameBrandOwnerBlocked.rows[0].result?.error === "PUBLICATION_NOT_PUBLISHABLE",
+    "Workspace member could publish a same-brand draft they did not create");
+
+  const preparedInstagram = await serviceSql(
+    "select public.workspace_brand_social_publish_prepare($1::text,$2::uuid,$3::text,$4::uuid,$5::uuid[]) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",instagramDraftId,[pinosoInstagramId]],
+  );
+  const instagramAttemptId = preparedInstagram.rows[0].result?.attemptId;
+  verify(preparedInstagram.rows[0].result?.ok === true &&
+    preparedInstagram.rows[0].result?.imageUrl === "https://cdn.example.test/pinoso.jpg" &&
+    preparedInstagram.rows[0].result?.channels?.[0]?.platform === "instagram",
+    "Safe own Instagram draft did not prepare with its server-approved image");
+  const finalizedInstagram = await serviceSql(
+    "select public.workspace_brand_social_publish_finalize($1::text,$2::uuid,$3::text,$4::uuid,$5::boolean,$6::jsonb,$7::text) as result",
+    ["pinosoecolife",managedUser,"managed@example.test",instagramAttemptId,true,
+      JSON.stringify([{platform:"instagram",success:true,postUrl:"https://instagram.example.test/p/1"}]),null],
+  );
+  verify(finalizedInstagram.rows[0].result?.status === "published",
+    "Prepared Instagram workspace post could not be finalized");
 
   for (const blockedPublicationId of [websiteDraftId,reelDraftId]) {
     const blocked = await serviceSql(
