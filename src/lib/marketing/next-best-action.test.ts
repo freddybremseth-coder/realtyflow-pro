@@ -105,10 +105,37 @@ test("excluded metric quarantine is system hygiene while clean learning remains 
   assert.equal(quarantine.execution, "SYSTEM_WORK");
   assert.equal(quarantine.priority, "LOW");
   assert.ok(optimize);
-  assert.equal(optimize.execution, "AUTO_READY");
+  assert.equal(optimize.execution, "SYSTEM_WORK");
 });
 
 test("known canary route lookup remains explicit and deny-by-default", () => {
   assert.equal(controlledCanaryRoute("pinosoecolife", "facebook"), "/marketing-canary-pinoso-facebook");
   assert.equal(controlledCanaryRoute("pinosoecolife", "youtube"), null);
+});
+
+
+test("learning evaluation is system work because metrics sync refreshes rules automatically", () => {
+  const actions = buildMarketingNextActions([
+    {
+      brandId: "zeneco",
+      brandName: "Zen Eco Homes",
+      platform: "instagram",
+      connected: true,
+      brandBrainReady: true,
+      planned: true,
+      pilotReady: true,
+      published: 12,
+      measuredEligible: 10,
+      quarantined: 0,
+      evaluatedRules: 0,
+      actionableRules: 0,
+      liveLearning: false,
+      surfaceKind: "destination",
+    },
+  ]);
+
+  const evaluation = actions.find((action) => action.kind === "RUN_LEARNING_EVALUATION");
+  assert.ok(evaluation);
+  assert.equal(evaluation.execution, "SYSTEM_WORK");
+  assert.match(evaluation.reason, /automatically|automatisk/i);
 });
