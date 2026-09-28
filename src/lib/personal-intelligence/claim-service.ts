@@ -27,6 +27,7 @@ export interface CreateConfirmedClaimInput {
   sourceExcerpt?: string | null;
   sourceName?: string | null;
   sourceSystem?: string | null;
+  sourceMetadata?: Record<string, unknown> | null;
 }
 
 export interface CorrectClaimInput {
@@ -92,7 +93,7 @@ export async function createConfirmedClaim(
       reliability_class: "direct_current_user_confirmation",
       privacy_level: input.privacyLevel ?? "internal",
       source_date: new Date().toISOString(),
-      metadata: { confirmation: true },
+      metadata: { confirmation: true, ...(input.sourceMetadata || {}) },
     })
     .select("id")
     .single();

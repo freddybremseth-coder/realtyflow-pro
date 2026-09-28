@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
     const description = typeof body.description === "string" ? body.description.trim().slice(0, 4000) : null;
     const sourceExcerpt = typeof body.sourceExcerpt === "string" ? body.sourceExcerpt.trim().slice(0, 4000) : title;
     const privacyLevel = (typeof body.privacyLevel === "string" ? body.privacyLevel : "internal") as PersonalPrivacyLevel;
+    const sourceStage = body.sourceStage === "orient" || body.sourceStage === "interview" ? body.sourceStage : "orient";
+    const sourceQuestionId = typeof body.sourceQuestionId === "string" ? body.sourceQuestionId.trim().slice(0, 80) : null;
 
     if (!subjectEntityId || !title) return NextResponse.json({ error: "subjectEntityId and title are required" }, { status: 400 });
     if (!PRIVACY_LEVELS.has(privacyLevel)) return NextResponse.json({ error: "Invalid privacyLevel" }, { status: 400 });
@@ -32,12 +34,18 @@ export async function POST(request: NextRequest) {
     const { data: source, error: sourceError } = await supabase.schema("personal_core").from("sources").insert({
       owner_user_id: ownerUserId,
       source_type: "direct_user_statement",
-      source_name: "orientation_confirmation",
+      source_name: sourceStage === "interview" ? "interview_confirmation" : "orientation_confirmation",
       source_system: "personal_intelligence",
       reliability_class: "direct_current_user_confirmation",
       privacy_level: privacyLevel,
       source_date: new Date().toISOString(),
-      metadata: { source_excerpt: sourceExcerpt, orientation: true },
+      metadata: {
+        source_excerpt: sourceExcerpt,
+        onboarding_stage: sourceStage,
+        source_question_id: sourceQuestionId,
+        orientation: sourceStage === "orient",
+        interview: sourceStage === "interview",
+      },
     }).select("id").single();
     if (sourceError || !source?.id) throw new Error(sourceError?.message || "Goal source creation failed");
     sourceId = source.id;

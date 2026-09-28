@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Check, Compass, Loader2, Save, Trash2 } from "lucide-react";
 
 type PrivacyLevel = "public" | "internal" | "private" | "sensitive" | "restricted";
@@ -12,6 +12,8 @@ type Candidate = {
   status?: "pending" | "saved" | "dropped";
 };
 
+type SavedProgressItem = { id:string; kind:string; label:string; questionId?:string|null; sourceExcerpt?:string|null };
+type OnboardingProgress = { stages:{ orient:{ completed:boolean; savedItems:SavedProgressItem[]; sourceExcerpts:string[] }; interview:{ completed:boolean; savedItems:SavedProgressItem[]; sourceExcerpts:string[] } }; map:{ domains:number; topics:number; completed:boolean } };
 type Prompt = { id: string; section: string; question: string };
 const PROMPTS: Prompt[] = [
   { id: "history_turning_points", section: "History", question: "Which experiences or turning points have shaped how you see the world?" },
@@ -35,9 +37,24 @@ export default function LifeInterviewPage() {
   const [answers, setAnswers] = useState<Record<string,string>>({});
   const [subjectEntityId, setSubjectEntityId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [progress, setProgress] = useState<OnboardingProgress | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const p = await jsonRequest<OnboardingProgress>("/api/personal-intelligence/onboarding/progress");
+        setProgress(p);
+        const restored: Record<string,string> = {};
+        for (const item of p.stages.interview.savedItems) {
+          if (item.questionId && item.sourceExcerpt && !restored[item.questionId]) restored[item.questionId] = item.sourceExcerpt;
+        }
+        if (Object.keys(restored).length) setAnswers((current) => Object.keys(current).length ? current : restored);
+      } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+    })();
+  }, []);
 
   async function extract(event: FormEvent) {
     event.preventDefault();
@@ -58,9 +75,9 @@ export default function LifeInterviewPage() {
     setSaving(candidate.id); setError(null);
     try {
       if (candidate.type === "goal") {
-        await jsonRequest("/api/personal-intelligence/goals/confirm", { method: "POST", body: JSON.stringify({ subjectEntityId, title: candidate.statement, description: candidate.reason, privacyLevel: candidate.privacyLevel, sourceExcerpt: candidate.sourceExcerpt }) });
+        await jsonRequest("/api/personal-intelligence/goals/confirm", { method: "POST", body: JSON.stringify({ subjectEntityId, title: candidate.statement, description: candidate.reason, privacyLevel: candidate.privacyLevel, sourceExcerpt: candidate.sourceExcerpt, sourceStage: "interview", sourceQuestionId: candidate.sourceQuestionId }) });
       } else {
-        await jsonRequest("/api/personal-intelligence/memory/confirm", { method: "POST", body: JSON.stringify({ subjectEntityId, predicate: candidate.predicate, statement: candidate.statement, claimType: candidate.type, confidence: candidate.confidence, privacyLevel: candidate.privacyLevel, sourceExcerpt: candidate.sourceExcerpt }) });
+        await jsonRequest("/api/personal-intelligence/memory/confirm", { method: "POST", body: JSON.stringify({ subjectEntityId, predicate: candidate.predicate, statement: candidate.statement, claimType: candidate.type, confidence: candidate.confidence, privacyLevel: candidate.privacyLevel, sourceExcerpt: candidate.sourceExcerpt, sourceStage: "interview", sourceQuestionId: candidate.sourceQuestionId }) });
       }
       setCandidates((items) => items.map((item) => item.id === candidate.id ? { ...item, status: "saved" } : item));
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
@@ -74,6 +91,12 @@ export default function LifeInterviewPage() {
       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Svar bare på det du ønsker. Intervjuet lager kandidater, ikke sannheter. Ingenting lagres før du eksplisitt velger Remember.</p>
     </header>
     {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-900">{error}</div>}
+    {progress?.stages.interview.completed && <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
+      <div className="flex items-center gap-2 text-sm font-black text-emerald-900"><Check size={16}/> Interview er allerede lagret</div>
+      <p className="mt-1 text-xs leading-5 text-emerald-800">Det du bekreftet i intervjuet ligger fortsatt i Personal Intelligence. Du kan legge til mer uten å starte på nytt.</p>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">{progress.stages.interview.savedItems.map((item) => <div key={item.id} className="rounded-xl bg-white/80 p-3 text-xs text-slate-700"><strong>{item.kind === "goal" ? "Mål" : "Husket"}:</strong> {item.label}</div>)}</div>
+      {!!progress.stages.interview.sourceExcerpts.length && <details className="mt-3 rounded-xl bg-white/70 p-3 text-xs text-slate-600"><summary className="cursor-pointer font-black">Vis tidligere svartekst</summary><div className="mt-2 space-y-2">{progress.stages.interview.sourceExcerpts.map((excerpt,index) => <p key={index} className="whitespace-pre-wrap">{excerpt}</p>)}</div></details>}
+    </section>}
 
     <form onSubmit={extract} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       {PROMPTS.map((prompt) => <label key={prompt.id} className="block rounded-2xl border border-slate-200 p-4">

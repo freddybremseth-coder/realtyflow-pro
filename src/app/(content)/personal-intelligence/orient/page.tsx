@@ -7,6 +7,8 @@ import { Check, Compass, Loader2, Save, Trash2 } from "lucide-react";
 type PrivacyLevel = "public" | "internal" | "private" | "sensitive" | "restricted";
 type Candidate = { id:string; type:string; predicate:string; statement:string; confidence:number; privacyLevel:PrivacyLevel; reason:string; sourceQuestionId:string; sourceExcerpt:string; status?:"pending"|"saved"|"discarded" };
 type Subject = { id:string; display_name:string };
+type SavedProgressItem = { id:string; kind:string; label:string; questionId?:string|null; sourceExcerpt?:string|null };
+type OnboardingProgress = { stages:{ orient:{ completed:boolean; savedItems:SavedProgressItem[]; sourceExcerpts:string[] }; interview:{ completed:boolean; savedItems:SavedProgressItem[]; sourceExcerpts:string[] } }; map:{ domains:number; topics:number; completed:boolean } };
 
 const QUESTIONS = [
   ["priorities", "Hva prøver du å få fremdrift på akkurat nå?"],
@@ -27,11 +29,23 @@ export default function OrientationPage(){
   const [subject,setSubject]=useState<Subject|null>(null);
   const [answers,setAnswers]=useState<Record<string,string>>({});
   const [candidates,setCandidates]=useState<Candidate[]>([]);
+  const [progress,setProgress]=useState<OnboardingProgress|null>(null);
   const [extracting,setExtracting]=useState(false);
   const [saving,setSaving]=useState<string|null>(null);
   const [error,setError]=useState<string|null>(null);
 
-  useEffect(()=>{void (async()=>{try{const b=await jsonRequest<{subject:Subject}>("/api/personal-intelligence/bootstrap",{method:"POST",body:"{}"});setSubject(b.subject);}catch(e){setError(e instanceof Error?e.message:String(e));}})();},[]);
+  useEffect(()=>{void (async()=>{try{
+    const [b,p]=await Promise.all([
+      jsonRequest<{subject:Subject}>("/api/personal-intelligence/bootstrap",{method:"POST",body:"{}"}),
+      jsonRequest<OnboardingProgress>("/api/personal-intelligence/onboarding/progress"),
+    ]);
+    setSubject(b.subject); setProgress(p);
+    const restored:Record<string,string>={};
+    for(const item of p.stages.orient.savedItems){
+      if(item.questionId&&item.sourceExcerpt&&!restored[item.questionId]) restored[item.questionId]=item.sourceExcerpt;
+    }
+    if(Object.keys(restored).length) setAnswers(current=>Object.keys(current).length?current:restored);
+  }catch(e){setError(e instanceof Error?e.message:String(e));}})();},[]);
 
   async function extract(){
     setExtracting(true);setError(null);setCandidates([]);
@@ -46,9 +60,9 @@ export default function OrientationPage(){
     if(!subject)return;setSaving(candidate.id);setError(null);
     try{
       if(candidate.type==="goal"){
-        await jsonRequest("/api/personal-intelligence/goals/confirm",{method:"POST",body:JSON.stringify({subjectEntityId:subject.id,title:candidate.statement,description:candidate.reason,privacyLevel:candidate.privacyLevel,sourceExcerpt:candidate.sourceExcerpt})});
+        await jsonRequest("/api/personal-intelligence/goals/confirm",{method:"POST",body:JSON.stringify({subjectEntityId:subject.id,title:candidate.statement,description:candidate.reason,privacyLevel:candidate.privacyLevel,sourceExcerpt:candidate.sourceExcerpt,sourceStage:"orient",sourceQuestionId:candidate.sourceQuestionId})});
       }else{
-        await jsonRequest("/api/personal-intelligence/memory/confirm",{method:"POST",body:JSON.stringify({subjectEntityId:subject.id,predicate:candidate.predicate,statement:candidate.statement,claimType:candidate.type,confidence:candidate.confidence,privacyLevel:candidate.privacyLevel,sourceExcerpt:candidate.sourceExcerpt})});
+        await jsonRequest("/api/personal-intelligence/memory/confirm",{method:"POST",body:JSON.stringify({subjectEntityId:subject.id,predicate:candidate.predicate,statement:candidate.statement,claimType:candidate.type,confidence:candidate.confidence,privacyLevel:candidate.privacyLevel,sourceExcerpt:candidate.sourceExcerpt,sourceStage:"orient",sourceQuestionId:candidate.sourceQuestionId})});
       }
       setCandidates(current=>current.map(x=>x.id===candidate.id?{...x,status:"saved"}:x));
     }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setSaving(null);}
@@ -61,6 +75,12 @@ export default function OrientationPage(){
       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Svar bare på det du vil. Svarene analyseres til mulige memory candidates, men ingenting lagres før du eksplisitt velger Remember. Mål lagres først som idé, aldri som commitment.</p>
     </header>
     {error&&<div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-900">{error}</div>}
+    {progress?.stages.orient.completed&&<section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
+      <div className="flex items-center gap-2 text-sm font-black text-emerald-900"><Check size={16}/> Orient er allerede lagret</div>
+      <p className="mt-1 text-xs leading-5 text-emerald-800">Svarene dine er ikke borte. Under ser du de bekreftede signalene som allerede ligger i Personal Intelligence.</p>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">{progress.stages.orient.savedItems.map(item=><div key={item.id} className="rounded-xl bg-white/80 p-3 text-xs text-slate-700"><strong>{item.kind==="goal"?"Mål":"Husket"}:</strong> {item.label}</div>)}</div>
+      {!!progress.stages.orient.sourceExcerpts.length&&<details className="mt-3 rounded-xl bg-white/70 p-3 text-xs text-slate-600"><summary className="cursor-pointer font-black">Vis tidligere svartekst</summary><div className="mt-2 space-y-2">{progress.stages.orient.sourceExcerpts.map((excerpt,index)=><p key={index} className="whitespace-pre-wrap">{excerpt}</p>)}</div></details>}
+    </section>}
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
       {QUESTIONS.map(([id,label])=><label key={id} className="block"><span className="text-sm font-black text-slate-900">{label}</span><textarea rows={3} value={answers[id]||""} onChange={e=>setAnswers(v=>({...v,[id]:e.target.value}))} className="mt-2 w-full rounded-2xl border border-slate-200 p-3 text-sm outline-none focus:border-cyan-400" placeholder="Valgfritt svar…"/></label>)}
       <button disabled={extracting||!Object.values(answers).some(v=>v.trim())} onClick={()=>void extract()} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white disabled:opacity-40">{extracting?<Loader2 size={16} className="animate-spin"/>:<Compass size={16}/>} Find possible memories</button>

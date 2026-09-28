@@ -108,7 +108,7 @@ export default function PersonalIntelligencePage() {
   const [today, setToday] = useState<TodaySnapshot | null>(null);
   const [message, setMessage] = useState("");
   const [thinkDeeper, setThinkDeeper] = useState(false);
-  const [privacyScope, setPrivacyScope] = useState<"internal" | "private">("private");
+  const [privacyScope, setPrivacyScope] = useState<PrivacyLevel>("private");
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [candidates, setCandidates] = useState<CandidateState[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,7 +150,7 @@ export default function PersonalIntelligencePage() {
     try {
       const result = await jsonRequest<MentorTurn>("/api/personal-intelligence/mentor", {
         method: "POST",
-        body: JSON.stringify({ subjectEntityId: subject.id, message: text, privacyScope, thinkDeeper }),
+        body: JSON.stringify({ subjectEntityId: subject.id, message: text, privacyScope, thinkDeeper, explicitSensitivePermission: privacyScope === "sensitive" || privacyScope === "restricted" }),
       });
       const id = result.sessionId || crypto.randomUUID();
       setTurns((current) => [...current, {
@@ -243,7 +243,7 @@ export default function PersonalIntelligencePage() {
             <div className="mt-1 text-xs text-slate-500">{loading ? "Initialiserer…" : subject ? `Klar for ${subject.display_name}` : "Ikke tilgjengelig"}</div>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => setPrivacyScope((value) => value === "private" ? "internal" : "private")} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700">{privacyScope === "private" ? "Privat" : "Intern"}</button>
+            <select aria-label="Privacy scope" value={privacyScope} onChange={(event) => setPrivacyScope(event.target.value as PrivacyLevel)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700"><option value="internal">Intern</option><option value="private">Privat</option><option value="sensitive">Sensitiv</option><option value="restricted">Begrenset</option></select>
             <button type="button" onClick={() => setThinkDeeper((value) => !value)} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black ${thinkDeeper ? "border-violet-300 bg-violet-50 text-violet-800" : "border-slate-200 text-slate-700"}`}><Sparkles size={14} /> Think Deeper {thinkDeeper ? "ON" : "OFF"}</button>
           </div>
         </div>
@@ -275,7 +275,7 @@ export default function PersonalIntelligencePage() {
               <button disabled={!subject || sending || !message.trim()} className="rounded-xl bg-slate-950 p-3 text-white disabled:opacity-40">{sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}</button>
             </div>
           </div>
-          <div className="mt-2 text-[11px] text-slate-400">Mikrofonen transkriberer til redigerbar tekst. Opptaket lagres ikke av Personal Intelligence.</div>
+          <div className="mt-2 text-[11px] text-slate-400">Mikrofonen transkriberer til redigerbar tekst. Opptaket lagres ikke av Personal Intelligence. Sensitiv og Begrenset kontekst brukes bare når du velger nivået eksplisitt for samtalen.</div>
         </form>
       </div>
 
