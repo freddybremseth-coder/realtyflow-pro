@@ -361,7 +361,7 @@ begin
     and cp.status in ('draft','failed')
     and cp.content_type in ('image_post','marketing_post','post','social','social_post')
     and length(btrim(coalesce(cp.description,''))) > 0
-  for update;
+  for update of cp;
   if v_pub.id is null then
     return jsonb_build_object('ok',false,'error','PUBLICATION_NOT_PUBLISHABLE');
   end if;
