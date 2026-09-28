@@ -228,7 +228,22 @@ export async function GET(request: NextRequest) {
 
   rows.sort((a, b) => `${a.brandName}|${a.surfaceKind}|${a.platform ?? ""}`.localeCompare(`${b.brandName}|${b.surfaceKind}|${b.platform ?? ""}`));
 
-  const nextActions = buildMarketingNextActions(rows, CONTROL_REQUIRED_OBSERVATIONS);
+  const businessSignals = (growthReport?.channels ?? []).map((channel) => ({
+    brandId: channel.brandId,
+    channel: channel.channel,
+    unifiedScore: channel.unifiedScore,
+    attributionCoveragePct: channel.attributionCoveragePct,
+    evidence: channel.evidence,
+    leads: channel.funnel.leads,
+    qualifiedLeads: channel.funnel.qualifiedLeads,
+    sales: channel.funnel.sales,
+    commissionEur: channel.funnel.commissionEur,
+  }));
+  const nextActions = buildMarketingNextActions(
+    rows,
+    CONTROL_REQUIRED_OBSERVATIONS,
+    businessSignals,
+  );
   const nextCanary = nextActions.find((action) => action.kind === "PREPARE_CANARY") ?? null;
   const fallbackControl = rows
     .filter((row) => row.surfaceKind === "destination" && row.pilotReady)
