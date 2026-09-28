@@ -28,6 +28,7 @@ import {
   type ImprovementView,
   type RootCauseCategory,
 } from "@/lib/revenue/continuous-improvement";
+import type { CorporateImprovementObservedEffect } from "@/lib/corporate-improvement-observed-effect";
 
 const STATUS_LABELS: Record<ImprovementStatus, string> = {
   OPEN: "Åpen",
@@ -73,10 +74,18 @@ const EFFECT_LABELS = {
   RESOLVED: "Ikke gjentatt",
 } as const;
 
+const CORPORATE_EFFECT_LABELS: Record<CorporateImprovementObservedEffect["status"], string> = {
+  NOT_ENOUGH_DATA: "Venter på data",
+  MEASURED_UP: "Målt opp",
+  MEASURED_DOWN: "Målt ned",
+  UNCHANGED: "Målt uendret",
+};
+
 type ResponseBody = {
   register: ContinuousImprovementRegister | null;
   weeklyWarning?: string | null;
   corporateGrowthWarning?: string | null;
+  corporateObservedEffects?: Record<string, CorporateImprovementObservedEffect>;
   user?: { email: string; role: string };
   canWrite?: boolean;
   error?: string;
@@ -187,6 +196,10 @@ export default function ContinuousImprovementPage() {
 
   const register = body.register;
   const selected = useMemo(() => register?.improvements.find((item) => item.id === selectedId) || null, [register, selectedId]);
+  const selectedCorporateEffect = useMemo(
+    () => selectedId ? body.corporateObservedEffects?.[selectedId] || null : null,
+    [body.corporateObservedEffects, selectedId],
+  );
   const visibleImprovements = useMemo(() => register?.improvements.filter((item) => showClosed || !item.closed) || [], [register, showClosed]);
   const focusedCandidate = useMemo(
     () => focusCandidateId ? register?.candidates.find((item) => item.id === focusCandidateId) || null : null,
@@ -310,13 +323,23 @@ export default function ContinuousImprovementPage() {
               <aside className="space-y-3">
                 <div className="flex items-center justify-between"><h2 className="text-sm font-semibold text-slate-300">Forbedringsregister</h2><label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={showClosed} onChange={(event) => setShowClosed(event.target.checked)}/> Vis lukkede</label></div>
                 {visibleImprovements.length === 0 && <div className="rounded-xl border border-slate-800 p-4 text-sm text-slate-500">Ingen forbedringstiltak er opprettet.</div>}
-                {visibleImprovements.map((item) => (
-                  <button key={item.id} onClick={() => setSelectedId(item.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === item.id ? "border-primary-600 bg-primary-950/30" : "border-slate-800 bg-slate-900/60 hover:border-slate-700"}`}>
-                    <div className="flex items-start justify-between gap-2"><span className="text-sm font-medium">{item.subject}</span>{item.overdue && <AlertTriangle size={14} className="text-red-400"/>}</div>
-                    <p className="mt-1 text-xs text-slate-500">{item.role} · {STATUS_LABELS[item.status]}</p>
-                    <p className="mt-2 text-xs text-slate-400">Målt trend: {EFFECT_LABELS[item.effect.trend]}</p>
-                  </button>
-                ))}
+                {visibleImprovements.map((item) => {
+                  const corporateEffect = body.corporateObservedEffects?.[item.id] || null;
+                  return (
+                    <button key={item.id} onClick={() => setSelectedId(item.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === item.id ? "border-primary-600 bg-primary-950/30" : "border-slate-800 bg-slate-900/60 hover:border-slate-700"}`}>
+                      <div className="flex items-start justify-between gap-2"><span className="text-sm font-medium">{item.subject}</span>{item.overdue && <AlertTriangle size={14} className="text-red-400"/>}</div>
+                      <p className="mt-1 text-xs text-slate-500">{item.role} · {STATUS_LABELS[item.status]}</p>
+                      {corporateEffect ? (
+                        <p className="mt-2 text-xs text-cyan-300">
+                          Corporate-trend: {CORPORATE_EFFECT_LABELS[corporateEffect.status]}
+                          {corporateEffect.deltaPctPoints !== null ? ` · ${corporateEffect.deltaPctPoints > 0 ? "+" : ""}${corporateEffect.deltaPctPoints} pp` : ""}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-400">Målt trend: {EFFECT_LABELS[item.effect.trend]}</p>
+                      )}
+                    </button>
+                  );
+                })}
               </aside>
 
               <main id="improvement-detail" className="min-w-0">
@@ -330,11 +353,44 @@ export default function ContinuousImprovementPage() {
                     </section>
 
                     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <Metric label="Baseline-frekvens" value={percentage(selected.baseline.occurrenceRate)} detail={`${selected.baseline.occurrenceWeeks}/${selected.baseline.observedWeeks} uker`} icon={Target}/>
-                      <Metric label="Etter tiltak" value={percentage(selected.effect.postRate)} detail={`${selected.effect.postOccurrenceWeeks}/${selected.effect.postObservedWeeks} uker`} icon={BarChart3}/>
-                      <Metric label="Målt trend" value={EFFECT_LABELS[selected.effect.trend]} detail={selected.effect.detail} icon={selected.effect.trend === "WORSENING" ? TrendingDown : TrendingUp}/>
-                      <Metric label="Frist" value={date(selected.dueAt)} detail={selected.overdue ? "Forfalt" : selected.ownerEmail || "Ingen journalansvarlig"} icon={ClipboardList}/>
+                      {selectedCorporateEffect ? (
+                        <>
+                          <Metric
+                            label="Corporate baseline"
+                            value={percentage(selectedCorporateEffect.baselineRatePct)}
+                            detail={selectedCorporateEffect.label}
+                            icon={Target}
+                          />
+                          <Metric
+                            label="Etter tiltak"
+                            value={selectedCorporateEffect.postAveragePct === null ? "–" : `${selectedCorporateEffect.postAveragePct}%`}
+                            detail={`${selectedCorporateEffect.postSnapshots}/2+ kvalifiserte snapshots`}
+                            icon={BarChart3}
+                          />
+                          <Metric
+                            label="Målt endring"
+                            value={selectedCorporateEffect.deltaPctPoints === null
+                              ? CORPORATE_EFFECT_LABELS[selectedCorporateEffect.status]
+                              : `${selectedCorporateEffect.deltaPctPoints > 0 ? "+" : ""}${selectedCorporateEffect.deltaPctPoints} pp`}
+                            detail={selectedCorporateEffect.note}
+                            icon={selectedCorporateEffect.status === "MEASURED_DOWN" ? TrendingDown : TrendingUp}
+                          />
+                          <Metric label="Frist" value={date(selected.dueAt)} detail={selected.overdue ? "Forfalt" : selected.ownerEmail || "Ingen journalansvarlig"} icon={ClipboardList}/>
+                        </>
+                      ) : (
+                        <>
+                          <Metric label="Baseline-frekvens" value={percentage(selected.baseline.occurrenceRate)} detail={`${selected.baseline.occurrenceWeeks}/${selected.baseline.observedWeeks} uker`} icon={Target}/>
+                          <Metric label="Etter tiltak" value={percentage(selected.effect.postRate)} detail={`${selected.effect.postOccurrenceWeeks}/${selected.effect.postObservedWeeks} uker`} icon={BarChart3}/>
+                          <Metric label="Målt trend" value={EFFECT_LABELS[selected.effect.trend]} detail={selected.effect.detail} icon={selected.effect.trend === "WORSENING" ? TrendingDown : TrendingUp}/>
+                          <Metric label="Frist" value={date(selected.dueAt)} detail={selected.overdue ? "Forfalt" : selected.ownerEmail || "Ingen journalansvarlig"} icon={ClipboardList}/>
+                        </>
+                      )}
                     </section>
+                    {selectedCorporateEffect && (
+                      <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/20 px-4 py-3 text-xs leading-5 text-cyan-100">
+                        Corporate-målingen kommer fra Growth Review-snapshots. Den viser utvikling etter opprettelse, men setter aldri tiltaket automatisk til effektivt eller ineffektivt og dokumenterer ikke årsakssammenheng.
+                      </div>
+                    )}
 
                     <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
                       <h2 className="font-semibold">Rotårsak, tiltak og verifisering</h2>
