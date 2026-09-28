@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
     source.toLowerCase().includes("corporate-partner") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania/partnere")
   );
-  const isCorporateHome = brandId === "zeneco" && !isCorporateEventRegistration && !isCorporatePartner && (
+  const isCorporateHome = brandId === "zeneco" && !isCorporatePartner && !isCorporateEventRegistration && (
     requestType === "corporate-home" ||
     source.toLowerCase().includes("corporate-homes") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania")
