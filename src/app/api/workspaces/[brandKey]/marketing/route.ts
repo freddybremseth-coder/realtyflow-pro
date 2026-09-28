@@ -9,8 +9,11 @@ const ALLOWED_DRAFT_PLATFORMS = new Set([
   "facebook","instagram","linkedin","youtube","tiktok","pinterest",
 ]);
 
-function fail(status: number, code: string) {
-  return NextResponse.json({ ok: false, error: { code } }, { status, headers: noStore });
+function fail(status: number, code: string, message?: string) {
+  return NextResponse.json(
+    { ok: false, error: { code, ...(message ? { message } : {}) } },
+    { status, headers: noStore },
+  );
 }
 
 function safePublication(row: unknown, brandKey: string) {
@@ -119,18 +122,23 @@ export async function POST(
   const platforms = Array.isArray(body.platforms)
     ? body.platforms.map(platform => String(platform).trim().toLowerCase()).filter(Boolean)
     : [];
+  const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
+      imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
       tags.length > 20 || new Set(tags).size !== tags.length ||
       tags.some(tag => tag.length > 60) ||
       platforms.length > 6 || new Set(platforms).size !== platforms.length ||
       platforms.some(platform => !ALLOWED_DRAFT_PLATFORMS.has(platform))) {
     return fail(400, "INVALID_DRAFT");
   }
+  if (platforms.includes("instagram") && !imageUrl) {
+    return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha en offentlig HTTPS-bildeadresse.");
+  }
 
   if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
   const { data, error } = await access.value.supabase.rpc(
-    "workspace_brand_marketing_draft_create",
+    "workspace_brand_marketing_draft_create_v2",
     {
       p_brand_key: params.brandKey,
       p_user_id: access.value.verifiedUserId,
@@ -139,11 +147,15 @@ export async function POST(
       p_description: description,
       p_tags: tags,
       p_platforms: platforms,
+      p_image_url: imageUrl || null,
     },
   );
   if (error) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
   if (data?.ok === false && data?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND") {
     return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
+  }
+  if (data?.ok === false && data?.error === "INSTAGRAM_IMAGE_REQUIRED") {
+    return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha en offentlig HTTPS-bildeadresse.");
   }
   const publication = safePublication(data?.publication, params.brandKey);
   if (!data?.ok || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
