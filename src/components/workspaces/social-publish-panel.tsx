@@ -38,7 +38,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
   const [publishable, setPublishable] = useState<Publishable[]>([]);
   const [marketing, setMarketing] = useState<MarketingPublication[]>([]);
   const [selectedPublicationId, setSelectedPublicationId] = useState("");
-  const [selectedPlatforms, setSelectedChannels] = useState<string[]>([]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -69,7 +69,7 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
       setMarketing(Array.isArray(marketingBody.publications) ? marketingBody.publications : []);
       setSelectedPublicationId(current =>
         current && nextPublishable.some((item: Publishable) => item.id === current) ? current : "");
-      setSelectedChannels([]);
+      setSelectedPlatforms([]);
     } catch (cause) {
       setChannels([]); setPublishable([]); setMarketing([]);
       setError(cause instanceof Error ? cause.message : "Publisering er ikke tilgjengelig.");
@@ -100,14 +100,14 @@ export function WorkspaceSocialPublishPanel({ brandKey }: { brandKey: string }) 
 
   function choosePublication(id: string) {
     setSelectedPublicationId(id);
-    setSelectedChannels([]);
+    setSelectedPlatforms([]);
     setResults([]);
     setError("");
     setNotice("");
   }
 
   function toggleChannel(id: string, checked: boolean) {
-    setSelectedChannels(current => checked
+    setSelectedPlatforms(current => checked
       ? Array.from(new Set([...current, id]))
       : current.filter(item => item !== id));
   }
