@@ -152,9 +152,9 @@ export function buildMarketingNextActions(
         channel,
         sourceChannel: channel,
         title: `${row.brandName} · evaluer læringen`,
-        reason: "Kanalen har nok modne, learning-eligible observasjoner, men Learning Engine har ennå ikke skrevet kanalregler.",
+        reason: "Kanalen har nok modne, learning-eligible observasjoner. Marketing Growth Metrics kjører Learning Engine automatisk; dette er systemarbeid og krever ingen knapp.",
         href: "/analytics",
-        execution: "AUTO_READY",
+        execution: "SYSTEM_WORK",
         priority: "HIGH",
         evidence: [`eligible=${row.measuredEligible}/${requiredObservations}`, "evaluatedRules=0"],
       });
