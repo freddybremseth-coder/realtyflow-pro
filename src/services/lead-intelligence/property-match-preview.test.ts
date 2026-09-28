@@ -580,7 +580,7 @@ test("auto-discovery does not return rejected properties outside the flexible lo
   assert.equal(JSON.stringify(result).includes("Finestrat"), false);
 });
 
-test("auto-discovery returns best-effort alternatives when every candidate is rejected", async () => {
+test("auto-discovery keeps distant candidates when preferred location is flexible", async () => {
   const morairaProfile = {
     ...approvedProfile(),
     budget: {
@@ -655,13 +655,13 @@ test("auto-discovery returns best-effort alternatives when every candidate is re
   );
 
   assert.equal(result.discoveryMode, "auto");
-  assert.equal(result.bestEffort, true);
+  assert.equal(result.bestEffort, false);
   assert.equal(result.analyzed, 2);
-  assert.equal(result.matched, 0);
+  assert.equal(result.matched, 2);
   assert.equal(result.matches.length, 2);
-  assert.ok(result.matches.every((match) => match.eligibility === "rejected"));
+  assert.ok(result.matches.every((match) => match.eligibility !== "rejected"));
   assert.ok(result.matches.every((match) =>
-    match.concerns.some((concern) => concern.includes("outside the flexible 30 km radius")),
+    match.concerns.some((concern) => concern.includes("ranking penalty rather than a rejection")),
   ));
   assert.equal(result.sideEffects.matchesPersisted, false);
 });
