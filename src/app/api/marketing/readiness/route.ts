@@ -261,7 +261,9 @@ export async function GET(request: NextRequest) {
     : [];
 
   const controlGate = {
-    status: nextCanary ? "RUN_NEXT_CANARY" : "WAIT",
+    status: nextCanary ? "AUTO_QUEUE_NEXT_CANARY" : "WAIT",
+    execution: nextCanary ? "AUTO_READY" : "WAIT",
+    userActionRequired: false,
     controlBrandId: controlRow?.brandId ?? "",
     controlChannel: controlRow?.platform ?? "",
     learningScope: controlScope,
