@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, ExternalLink, Loader2, RefreshCw, SearchCheck } from "lucide-react";
 
+import { SamSEOBrandPublishing } from "./sam-seo-brand-publishing";
+import type { BrandPublicationStatus } from "@/services/agents/seo-brand-publisher";
 import type { SEOControlReport } from "@/services/agents/seo-control-report";
 
 type Action = {
@@ -33,12 +35,13 @@ type Metric = {
   quality: string;
 };
 type Payload = {
+  brandPublishers?: BrandPublicationStatus[];
   controlReport?: SEOControlReport | null;
   persistenceWarning?: string | null;
   actions: Action[]; diagnostics: Diagnostic[];
   observations: Array<{ id: string; brandId: string | null; description: string; evidence: string }>;
   connections: Connection[]; metrics: Metric[]; latestReviewAt: string | null;
-  publisherChecks?: Array<{ brandId: "freddyb" | "zeneco"; repository: string; tokenConfigured: boolean;
+  publisherChecks?: Array<{ brandId: string; repository: string; tokenConfigured: boolean;
     canReadTarget: boolean; hasPushPermission: boolean; status: string; message: string }>;
   lastDiagnosticAt: string | null;
   changeEvaluations: Array<{
@@ -190,8 +193,8 @@ export function SamSEOActionBoard() {
           <h2 className="mt-2 text-2xl font-black text-slate-950">Autopilot · utført, funn og neste steg</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
             Sam henter søketall og kontrollerer offentlige sider automatisk hver dag.
-            Du trenger ikke starte de daglige kontrollene. Publisering skjer foreløpig automatisk
-            bare for titler og metabeskrivelser på fire Zen Eco Homes-sider når kravene er oppfylt.
+            Du trenger ikke starte de daglige kontrollene. Avgrenset automatisk publisering er konfigurert
+            for alle åtte offentlige nettsteder. Status per nettsted viser hva som faktisk er kontrollert og gjort.
             Et funn eller en anbefaling betyr ikke at nettsiden er endret.
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-600">
@@ -244,7 +247,7 @@ export function SamSEOActionBoard() {
             <h3 className="text-lg font-black">Dette gjør Sam for deg</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div><h4 className="font-bold">Kontrollerer automatisk</h4><p className="mt-1 text-sm">Daglig Google-innhenting, offentlig HTML, sitemap, metadata, tilgjengelighetssignaler, JSON-LD og kontaktmuligheter. Sideutvalget roterer daglig. Ukentlig analyse oppsummerer muligheter.</p></div>
-              <div><h4 className="font-bold">Kan endre automatisk</h4><p className="mt-1 text-sm">Fire Zen Eco Homes-metadatasider, med dokumentert søkegrunnlag, versjonering, kontroll av offentlig resultat og tilbakeføring. Andre nettsteder og innholdsfelt har ikke en aktiv automatisk skriver.</p></div>
+              <div><h4 className="font-bold">Kan endre automatisk</h4><p className="mt-1 text-sm">Titler og metabeskrivelser på fire Zen Eco Homes-sider og hovedsiden hos de øvrige sju nettstedene. Krever dokumentert søkegrunnlag, verifisert publiseringsadgang, tidligere versjon og kontroll av offentlig resultat.</p></div>
               <div><h4 className="font-bold">Din oppmerksomhet</h4><p className="mt-1 text-sm">Tilkoblingsfeil og uttrykkelige godkjenningsoppgaver vises separat. Funn uten publiseringskanal trenger teknisk oppfølging. Du skal ikke godkjenne hver måling.</p></div>
             </div>
             <p className="mt-3 text-sm font-semibold">Siste automatiske syklus: {data.seoPilot ? new Date(data.seoPilot.at).toLocaleString("nb-NO") : "Ingen lagret kjøring"}. Verifiserte publiseringer i denne syklusen: {data.seoPilot?.websiteChangesPublished ?? "ikke målt"}.</p>
@@ -307,12 +310,12 @@ export function SamSEOActionBoard() {
           </section>
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
             <h3 className="font-black">Sam SEO · automatisk porteføljekontroll og avgrenset publiseringspilot</h3>
-            <p className="mt-1 text-sm">Automatisk Search Console-måling og intern prioritering for alle åtte godkjente offentlige nettsteder; Care kontrolleres kun teknisk. Automatisk publisering er foreløpig avgrenset til fire forhåndsgodkjente Zen Eco Homes-metadatasider. Andre små offentlige endringer kan bare gjennomføres når eksakt redigerbar side, publiseringskanal, tidligere versjon og reversering er kontrollert. Boligpriser, kundedata og større omskrivinger ligger utenfor piloten.</p>
+            <p className="mt-1 text-sm">Automatisk Search Console-måling og intern prioritering for alle åtte godkjente offentlige nettsteder; Care kontrolleres kun teknisk. Publisering omfatter titler og metabeskrivelser på fire Zen Eco Homes-sider og hovedsiden hos de øvrige sju nettstedene. Sam kontrollerer søkegrunnlag og publiseringsadgang før endringer, og følger opp resultat og eventuell tilbakeføring automatisk. Boligpriser, kundedata og større omskrivinger ligger utenfor piloten.</p>
             {data?.seoPilot ? (
               <>
                 <p className="mt-2 text-xs font-semibold">Sist målt: {new Date(data.seoPilot.at).toLocaleString("nb-NO")} · Automatisk publisert i denne syklusen: {data.seoPilot.websiteChangesPublished ?? "ikke målt"}</p>
                 <div className="mt-2 space-y-1">
-                  {data.seoPilot.assessments.filter(item => ["zeneco", "freddyb"].includes(item.brandId)).map(item => (
+                  {data.seoPilot.assessments.map(item => (
                     <p key={item.brandId} className="text-xs leading-5">
                       <strong>{LABELS[item.brandId]} · {item.status === "candidate" ? "Målt mulighet" : item.status === "blocked" ? "Måling blokkert" : "Overvåkes"}:</strong> {item.note}
                     </p>
@@ -335,6 +338,7 @@ export function SamSEOActionBoard() {
               </>
             ) : <p className="mt-2 text-xs">Første planlagte automatiske målesyklus er ennå ikke lagret.</p>}
           </div>
+          <SamSEOBrandPublishing statuses={data.brandPublishers || []} onChanged={() => read(false)} />
           {data.publisherChecks && data.publisherChecks.length > 0 && (
             <section aria-label="Sam SEO GitHub publiseringskontroll"
               className="mt-3 rounded-xl border border-slate-300 bg-slate-50 p-4 text-slate-950">
@@ -348,7 +352,7 @@ export function SamSEOActionBoard() {
                 {data.publisherChecks.map(item => (
                   <div key={item.brandId} className="rounded-lg border border-slate-300 bg-white p-3 text-xs">
                     <strong>{LABELS[item.brandId]} · {item.status === "permission_detected"
-                      ? "Tilgang funnet – publisering ikke aktivert" : "Publiseringsadgang ikke bekreftet"}</strong>
+                      ? "Tilgang funnet – se publiseringsstatus over" : "Publiseringsadgang ikke bekreftet"}</strong>
                     <p className="mt-1">{item.message}</p>
                     <p className="mt-1 text-slate-700">Målfil lesbar: {item.canReadTarget ? "ja" : "nei"} ·
                       Push-rettighet: {item.hasPushPermission ? "registrert" : "ikke bekreftet"}</p>

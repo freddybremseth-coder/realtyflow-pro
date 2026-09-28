@@ -1,3 +1,4 @@
+import { SEO_AUTOPILOT_BRANDS } from "./seo-autopilot-policy";
 import type { GSCBrandSnapshot } from "./seo-search-console";
 
 /** Read-only, evidence-based follow-up of an already deployed and audited
@@ -37,7 +38,7 @@ export function parseTrackedSEOChange(raw: unknown): TrackedSEOChange | null {
   const clicks = Number(x.baseline_clicks);
   const position = Number(x.baseline_position);
   if (!/^[a-z0-9_-]{5,90}$/.test(changeId) ||
-      !["freddyb", "zeneco"].includes(brandId) ||
+      !(SEO_AUTOPILOT_BRANDS as readonly string[]).includes(brandId) ||
       !/^\/(?!\/)[a-z0-9/_-]*\/?$/i.test(page) ||
       !query || query.length > 180 ||
       !/^\d{4}-\d{2}-\d{2}T/.test(appliedAt) || !Number.isFinite(Date.parse(appliedAt)) ||
