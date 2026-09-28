@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GSCBrandSnapshot } from "./seo-search-console";
 import { brandPublishingEvidence, patchBrandHtml, patchNextHomepage, publisherForBrand, readBrandHtml,
-  readNextLayoutMetadata, secondVariantForBrand, SEO_BRAND_PUBLISHERS, type BrandEvidence, type BrandMetadata, type BrandPublisher } from "./seo-brand-publishing";
+  readNextHomepageMetadata, readNextLayoutMetadata, secondVariantForBrand, SEO_BRAND_PUBLISHERS, type BrandEvidence, type BrandMetadata, type BrandPublisher } from "./seo-brand-publishing";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "./seo-change-monitor";
 import { githubForSite, githubRequest, type GithubRequest } from "./seo-brand-github";
 
@@ -81,11 +81,14 @@ export async function runBrandPublisher(
     const baseSha = await gh.main();
     const [source, html] = await Promise.all([gh.file(site.file,baseSha), dependencies.publicHtml(site)]);
     const before = site.adapter === "html" ? readBrandHtml(source.content)
-      : readNextLayoutMetadata((await gh.file(site.layout,baseSha)).content);
+      : readNextHomepageMetadata(source.content) ?? readNextLayoutMetadata((await gh.file(site.layout,baseSha)).content);
     if (!before || !publicMatches(html,site,before)) return result("blocked", "Kildens metadata samsvarer ikke med offentlig hovedside. Ingen automatisk endring.");
     if (same(before,target)) return result("monitor", "Den godkjente metadatavarianten er allerede synlig.");
     // Validate the adapter even when traffic is too low to publish.
-    if (site.adapter === "next-home") patchNextHomepage(source.content,target);
+    if (site.adapter === "next-home") {
+      if (version === "v2") patchNextHomepage(source.content,target,before);
+      else patchNextHomepage(source.content,target);
+    }
     const baseline = brandPublishingEvidence(site,snapshot,now);
     if (!baseline) return result("monitor", "Publiseringskilde kontrollert. Venter på tilstrekkelig søkesignal for hovedsiden.");
     job = {
@@ -109,7 +112,11 @@ export async function runBrandPublisher(
   const targetMetadata = rollback ? job.before : target;
   const sourceMetadata = rollback ? target : job.before;
   const patch = (source: string) => site.adapter === "html" ? patchBrandHtml(source,sourceMetadata,targetMetadata)
-    : rollback ? patchNextHomepage(source,null,target) : patchNextHomepage(source,target);
+    : rollback
+      ? patchNextHomepage(source,null,target)
+      : version === "v2"
+        ? patchNextHomepage(source,target,job.before)
+        : patchNextHomepage(source,target);
 
   if (job.phase === "prepare" || job.phase === "rollback_prepare") {
     const base = rollback ? await gh.main() : job.baseSha;
