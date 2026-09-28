@@ -531,3 +531,76 @@ test("a golf course listed seven kilometres away is not treated as living on a g
   });
   assert.equal(property.facts.golf_course_setting.value, false);
 });
+
+test("plot strategy keeps land viable while total plot-plus-build cost remains a verification item", () => {
+  const plotProfile = {
+    ...profile,
+    budget: { amount: 450000, currency: "EUR" as const, includesCosts: null, approximate: true, hardLimit: null },
+    propertyTypes: ["villa" as const, "country_house" as const, "plot" as const],
+    locations: { preferred: [], excluded: [], flexible: true },
+    hardRequirements: [
+      {
+        key: "bedrooms" as const,
+        operator: "gte" as const,
+        value: 3,
+        sourceText: "minimum 3 bedrooms",
+        appliesToPropertyTypes: ["villa" as const, "country_house" as const],
+      },
+      {
+        key: "parking" as const,
+        operator: "eq" as const,
+        value: true,
+        sourceText: "parking required",
+        appliesToPropertyTypes: ["villa" as const, "country_house" as const],
+      },
+      {
+        key: "purchase_price" as const,
+        operator: "gte" as const,
+        value: 300000,
+        sourceText: "phase 1 dwelling budget",
+        appliesToPropertyTypes: ["villa" as const, "country_house" as const],
+      },
+      {
+        key: "purchase_price" as const,
+        operator: "lte" as const,
+        value: 450000,
+        sourceText: "phase 1 max budget",
+      },
+    ],
+    preferences: [
+      {
+        key: "property_type" as const,
+        operator: "in" as const,
+        value: ["villa", "country_house", "plot"],
+        weight: 0.9,
+        sourceText: "plot or house can work",
+      },
+    ],
+    exclusions: [],
+  };
+
+  const land = normalizePropertyForLeadMatching({
+    id: "plot-aspe-1",
+    brand_id: "zeneco",
+    property_type: "plot",
+    price: 69000,
+    plot_size: 15098,
+    location: "Aspe",
+    description: "Rustic plot with irrigation water and solar option.",
+  });
+  const match = matchPropertyToLeadProfile(plotProfile, land);
+
+  assert.notEqual(match.eligibility, "rejected");
+  assert.equal(match.budgetResult?.outcome, "unknown");
+  assert.match(match.budgetResult?.reason || "", /plot and build cost/i);
+  assert.equal(match.hardRequirementResults.find((row) => row.key === "bedrooms")?.outcome, "not_applicable");
+  assert.equal(match.hardRequirementResults.find((row) => row.key === "parking")?.outcome, "not_applicable");
+  assert.equal(
+    match.hardRequirementResults.find((row) => row.key === "purchase_price" && row.expected === 300000)?.outcome,
+    "not_applicable",
+  );
+  assert.equal(
+    match.hardRequirementResults.find((row) => row.key === "purchase_price" && row.expected === 450000)?.outcome,
+    "pass",
+  );
+});
