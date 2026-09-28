@@ -37,6 +37,15 @@ function positiveInteger(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
+function queryParamFromUrl(value: string, key: string) {
+  if (!value) return "";
+  try {
+    return new URL(value).searchParams.get(key) || "";
+  } catch {
+    return "";
+  }
+}
+
 function budgetRange(value: string) {
   const values = (value.match(/\d[\d\s.]*/g) || [])
     .map((part) => Number(part.replace(/[\s.]/g, "")))
@@ -181,7 +190,10 @@ export async function POST(request: NextRequest) {
   const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
   const partnerType = normalizePartnerType(body.partner_type || body.partnerType);
   const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);
-  const eventId = cleanText(body.event_id || body.eventId, 160);
+  const eventId = cleanText(
+    body.event_id || body.eventId || queryParamFromUrl(pageUrl, "event_id"),
+    160,
+  );
   const eventName = cleanText(body.event_name || body.eventName, 240);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
   const visitorId = cleanText(body.visitor_id || body.visitorId, 160);
