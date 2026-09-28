@@ -38,6 +38,7 @@ import {
 import type { MarketingChannel } from "@/lib/marketing/genome";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { evaluateNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
+import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 export interface ActionTraceEntry {
   step: string;
@@ -57,6 +58,8 @@ export interface PublishContext {
   marketingRunId?: string;
   correlationId?: string;
   channel?: string;
+  /** Merkevaren må følge publikasjonen helt til provider-kallet. */
+  brandId?: string;
   /** Eksplisitt konto (external_id) — publisher velger aldri selv (P0). */
   accountId?: string;
 }
@@ -171,7 +174,8 @@ export async function dispatchGeneratedAsset(
   const publicationId = args.publicationId ?? `pub_${asset.contentId}_${asset.channel}`;
   const idempotencyKey = publicationIdempotencyKey(run.marketingRunId, publicationId);
   const nowIso = () => new Date(deps.now?.() ?? new Date()).toISOString();
-  const caption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
+  const rawCaption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
+  const caption = ensureBrandWebsiteLink({ brandId: run.brandId, channel: asset.channel, content: rawCaption });
   const trace: ActionTraceEntry[] = [];
 
   const persist = async (fields: Record<string, unknown>) => {
@@ -328,7 +332,7 @@ export async function dispatchGeneratedAsset(
       detail: { actionType: executionBoundary.actionType, evaluatedAt: executionBoundary.evaluatedAt },
     });
     if (verdict.allowed && deps.publisher && executionBoundary.automaticExecutionAllowed) {
-      const res = await deps.publisher.publish(asset, { idempotencyKey, publicationId, contentId: asset.contentId, campaignId: brief.campaignId, marketingRunId: run.marketingRunId, channel: asset.channel, accountId: args.account?.accountId });
+      const res = await deps.publisher.publish(asset, { idempotencyKey, publicationId, contentId: asset.contentId, campaignId: brief.campaignId, marketingRunId: run.marketingRunId, brandId: run.brandId, channel: asset.channel, accountId: args.account?.accountId });
       state = res.state; published = res.state === "published" || res.state === "scheduled";
       trace.push({ step: "publish", actor: "publisher", summary: `publisert (${res.state})` });
     } else {
