@@ -212,8 +212,11 @@ export async function runBrandPublisher(
 }
 
 export function secondExperimentReady(effectDetails: unknown, snapshot: GSCBrandSnapshot | null): boolean {
-  if (!snapshot) return false;
-  const tracked = parseTrackedSEOChange(effectDetails);
+  if (!snapshot || !effectDetails || typeof effectDetails !== "object" || Array.isArray(effectDetails)) return false;
+  const details = effectDetails as Record<string, unknown>;
+  if (details.site_verified !== true || details.publisher !== "github_metadata_v1" ||
+      !String(details.change_id || "").endsWith("_homepage_v1")) return false;
+  const tracked = parseTrackedSEOChange(details);
   if (!tracked || tracked.brandId !== snapshot.brandId) return false;
   return evaluateTrackedSEOChanges([tracked],[snapshot])[0]?.status === "measured";
 }
