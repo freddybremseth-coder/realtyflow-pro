@@ -177,7 +177,7 @@ function LeafletMap({ plots, selectedId, onSelectPlot, catastroEnabled }: { plot
       }
       setMapReady(false);
     };
-  }, [requestedPlotId]);
+  }, []);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -286,7 +286,7 @@ export default function TomtebaseCatastroWorkspaceV2() {
         );
       }
     }).finally(() => setLoading(false));
-  }, []);
+  }, [requestedPlotId]);
 
   const filtered = useMemo(() => plots.filter((plot) => (!searchText || plotSearchText(plot).includes(normalize(searchText))) && matchesPolygonParcel(plot, filterPolygon, filterParcel) && (filterZoning === "alle" || plot.zoning === filterZoning) && (!filterMinArea || plot.area >= Number(filterMinArea)) && (!filterMaxPrice || plot.price <= Number(filterMaxPrice))), [plots, searchText, filterPolygon, filterParcel, filterZoning, filterMinArea, filterMaxPrice]);
 
