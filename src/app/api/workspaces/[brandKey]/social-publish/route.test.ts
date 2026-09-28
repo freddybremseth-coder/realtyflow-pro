@@ -169,6 +169,7 @@ test("snapshot exposes exact safe channel IDs without tokens or external IDs", a
   assert.equal(body.channels.length, 2);
   assert.equal(body.channels[0].id, facebookChannelId);
   assert.equal(body.publications[0].id, publicationId);
+  assert.deepEqual(body.supportedPlatforms, ["facebook", "instagram"]);
   assert.equal(JSON.stringify(body).includes("MUST-NOT-LEAK"), false);
   assert.equal(JSON.stringify(body).includes("externalId"), false);
   assert.equal(JSON.stringify(body).includes("token"), false);
@@ -227,6 +228,32 @@ test("request cannot forge brand content image platform or external account", as
     call.name === "workspace_brand_social_publish_finalize" &&
     call.args?.p_success === true);
   assert.ok(final);
+});
+
+test("malformed prepared payload is finalized failed before any external publish", async () => {
+  const cookie = "realtyflow_admin=" +
+    await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  preparedOverride = {
+    ok: true,
+    attemptId,
+    publicationId,
+    content: "",
+    imageUrl: "https://cdn.example.test/pinoso.jpg",
+    channels: [{ id: facebookChannelId, platform: "facebook", displayName: "Pinoso Facebook" }],
+  };
+
+  const response = await POST(request("pinosoecolife", "POST", {
+    publicationId,
+    channelIds: [facebookChannelId],
+  }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
+
+  assert.equal(response.status, 503);
+  assert.equal(publishCalls.length, 0);
+  const final = rpcCalls.find(call =>
+    call.name === "workspace_brand_social_publish_finalize" &&
+    call.args?.p_success === false);
+  assert.ok(final);
+  assert.match(String(final?.args?.p_error || ""), /ugyldig publiseringsgrunnlag/i);
 });
 
 test("wrong-brand or invalid channel resolution fails before external publish", async () => {
