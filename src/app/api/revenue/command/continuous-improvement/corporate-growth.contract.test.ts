@@ -21,3 +21,27 @@ test("Continuous Improvement surfaces Corporate Growth candidates but keeps crea
 
   assert.doesNotMatch(getSource, /saveSettings|makeImprovementEvent|IMPROVEMENT_CREATED|\.upsert\(/);
 });
+
+
+test("Corporate Growth deep link focuses the exact candidate without auto-creating it", () => {
+  const corporatePage = fs.readFileSync(
+    "src/app/(business)/corporate-homes/page.tsx",
+    "utf8",
+  );
+  const improvementPage = fs.readFileSync(
+    "src/app/(realty)/continuous-improvement/page.tsx",
+    "utf8",
+  );
+
+  assert.match(corporatePage, /corporateGrowthCandidateId/);
+  assert.match(corporatePage, /continuous-improvement\?candidate=/);
+
+  assert.match(improvementPage, /URLSearchParams\(window\.location\.search\)/);
+  assert.match(improvementPage, /focusCandidateId/);
+  assert.match(improvementPage, /existingImprovementId/);
+  assert.match(improvementPage, /candidate-\$\{candidate\.id\}/);
+  assert.match(improvementPage, /improvement-detail/);
+  assert.match(improvementPage, /Åpnet fra Corporate Growth Review/);
+  assert.match(improvementPage, /må fortsatt opprettes manuelt/);
+  assert.doesNotMatch(improvementPage, /useSearchParams/);
+});

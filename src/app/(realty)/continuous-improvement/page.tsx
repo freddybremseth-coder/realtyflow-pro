@@ -76,6 +76,7 @@ const EFFECT_LABELS = {
 type ResponseBody = {
   register: ContinuousImprovementRegister | null;
   weeklyWarning?: string | null;
+  corporateGrowthWarning?: string | null;
   user?: { email: string; role: string };
   canWrite?: boolean;
   error?: string;
@@ -133,8 +134,9 @@ export default function ContinuousImprovementPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
+  const [focusCandidateId, setFocusCandidateId] = useState<string | null>(null);
 
-  const load = async (preferredId?: string | null) => {
+  const load = async (preferredId?: string | null, preferredCandidateId?: string | null) => {
     setLoading(true);
     setError(null);
     try {
@@ -143,14 +145,33 @@ export default function ContinuousImprovementPage() {
       if (!response.ok) throw new Error(next.error || "Kunne ikke hente forbedringsregisteret.");
       setBody(next);
       const improvements: ImprovementView[] = next.register?.improvements || [];
+      const candidates = next.register?.candidates || [];
+      const requestedCandidateId = preferredCandidateId || focusCandidateId;
+      const focusedCandidate = requestedCandidateId
+        ? candidates.find((item: { id: string }) => item.id === requestedCandidateId) || null
+        : null;
+      const trackedImprovementId = focusedCandidate?.existingImprovementId &&
+        improvements.some((item) => item.id === focusedCandidate.existingImprovementId)
+          ? focusedCandidate.existingImprovementId
+          : null;
       const id = preferredId && improvements.some((item) => item.id === preferredId)
         ? preferredId
-        : selectedId && improvements.some((item) => item.id === selectedId)
-          ? selectedId
-          : improvements[0]?.id || null;
+        : trackedImprovementId
+          ? trackedImprovementId
+          : selectedId && improvements.some((item) => item.id === selectedId)
+            ? selectedId
+            : improvements[0]?.id || null;
       setSelectedId(id);
       const selected = improvements.find((item) => item.id === id) || null;
       setForm(selected ? formFrom(selected) : null);
+      if (requestedCandidateId) {
+        window.setTimeout(() => {
+          const targetId = trackedImprovementId
+            ? "improvement-detail"
+            : `candidate-${requestedCandidateId}`;
+          document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 0);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Ukjent feil");
     } finally {
@@ -158,11 +179,25 @@ export default function ContinuousImprovementPage() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const candidateId = new URLSearchParams(window.location.search).get("candidate");
+    if (candidateId) setFocusCandidateId(candidateId);
+    void load(null, candidateId);
+  }, []);
 
   const register = body.register;
   const selected = useMemo(() => register?.improvements.find((item) => item.id === selectedId) || null, [register, selectedId]);
   const visibleImprovements = useMemo(() => register?.improvements.filter((item) => showClosed || !item.closed) || [], [register, showClosed]);
+  const focusedCandidate = useMemo(
+    () => focusCandidateId ? register?.candidates.find((item) => item.id === focusCandidateId) || null : null,
+    [register, focusCandidateId],
+  );
+  const visibleCandidates = useMemo(() => {
+    const candidates = register?.candidates.filter((item) => !item.existingImprovementId) || [];
+    return [...candidates]
+      .sort((a, b) => Number(b.id === focusCandidateId) - Number(a.id === focusCandidateId))
+      .slice(0, 8);
+  }, [register, focusCandidateId]);
 
   useEffect(() => { if (selected) setForm(formFrom(selected)); }, [selectedId]);
 
@@ -224,6 +259,15 @@ export default function ContinuousImprovementPage() {
         {error && <div className="rounded-xl border border-red-700/60 bg-red-950/40 p-4 text-red-200"><AlertTriangle className="mr-2 inline" size={17}/>{error}</div>}
         {message && <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/30 p-4 text-emerald-200"><CheckCircle2 className="mr-2 inline" size={17}/>{message}</div>}
         {body.weeklyWarning && <div className="rounded-xl border border-amber-800/50 bg-amber-950/20 p-4 text-sm text-amber-200">Ukesdata har en advarsel: {body.weeklyWarning}</div>}
+        {body.corporateGrowthWarning && <div className="rounded-xl border border-amber-800/50 bg-amber-950/20 p-4 text-sm text-amber-200">Corporate Growth Review har en advarsel: {body.corporateGrowthWarning}</div>}
+        {focusCandidateId && focusedCandidate && (
+          <div className="rounded-xl border border-cyan-800/60 bg-cyan-950/25 p-4 text-sm text-cyan-100">
+            Åpnet fra Corporate Growth Review · {focusedCandidate.subject}
+            {focusedCandidate.existingImprovementId
+              ? " · eksisterende forbedring er åpnet nedenfor."
+              : " · kandidaten er fremhevet nedenfor og må fortsatt opprettes manuelt."}
+          </div>
+        )}
 
         {register && (
           <>
@@ -242,8 +286,16 @@ export default function ContinuousImprovementPage() {
                 <span className="text-xs text-slate-500">{register.candidates.filter((item) => !item.existingImprovementId).length} nye</span>
               </div>
               <div className="grid gap-3 lg:grid-cols-2">
-                {register.candidates.filter((item) => !item.existingImprovementId).slice(0, 8).map((candidate) => (
-                  <div key={candidate.id} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                {visibleCandidates.map((candidate) => (
+                  <div
+                    id={`candidate-${candidate.id}`}
+                    key={candidate.id}
+                    className={`rounded-xl border p-4 transition ${
+                      candidate.id === focusCandidateId
+                        ? "border-cyan-500 bg-cyan-950/25 ring-1 ring-cyan-500/40"
+                        : "border-slate-800 bg-slate-950/50"
+                    }`}
+                  >
                     <div className="flex items-start justify-between gap-3"><div><p className="text-xs uppercase text-slate-500">{candidate.role} · {candidate.source}</p><h3 className="mt-1 font-medium">{candidate.subject}</h3></div><span className={`text-xs ${candidate.severity === "CRITICAL" ? "text-red-400" : candidate.severity === "HIGH" ? "text-amber-400" : "text-slate-400"}`}>{candidate.severity}</span></div>
                     <p className="mt-2 text-sm text-slate-400">{candidate.detail}</p>
                     <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500"><span>{candidate.occurrenceWeeks} uker</span><span>{candidate.totalOccurrences} forekomster</span><span>{candidate.repeatedDeferrals} utsettelser</span><span>{percentage(candidate.occurrenceRate)} frekvens</span></div>
@@ -267,7 +319,7 @@ export default function ContinuousImprovementPage() {
                 ))}
               </aside>
 
-              <main className="min-w-0">
+              <main id="improvement-detail" className="min-w-0">
                 {!selected || !form ? <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-slate-500">Velg eller opprett et forbedringstiltak.</div> : (
                   <div className="space-y-5">
                     <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
