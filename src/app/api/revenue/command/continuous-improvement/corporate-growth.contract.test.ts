@@ -69,6 +69,6 @@ test("Corporate overview reads tracked improvement status without creating or up
   assert.match(page, /Tiltaksstatus/);
   assert.match(page, /Ansvarlig/);
   assert.match(page, /Frist/);
-  assert.match(page, /Målt effekt/);
+  assert.match(page, /Tiltak \/ rotårsak/);
   assert.match(page, /forfalt/);
 });
