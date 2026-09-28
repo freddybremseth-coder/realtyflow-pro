@@ -529,6 +529,45 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (isCorporateHome && eventId) {
+    const { data: eventParticipant, error: eventParticipantError } = await supabase
+      .from("corporate_event_participants")
+      .select("id,evidence")
+      .eq("brand_id", "zeneco")
+      .eq("event_id", eventId)
+      .eq("email", email)
+      .maybeSingle();
+
+    if (eventParticipantError) {
+      console.warn("[public-leads] corporate event participant lookup failed", eventParticipantError.message);
+    } else if (eventParticipant?.id) {
+      const currentEvidence = objectValue(eventParticipant.evidence);
+      const { error: eventParticipantUpdateError } = await supabase
+        .from("corporate_event_participants")
+        .update({
+          status: "ASSESSMENT_REQUESTED",
+          assessment_requested_at: now,
+          contact_id: data.id,
+          evidence: {
+            ...currentEvidence,
+            assessment_requested: true,
+            assessment_submission_id: submissionId || null,
+            assessment_contact_id: data.id,
+            sales_qualified: false,
+            automatic_pipeline_change: false,
+            automatic_prospect_qualification: false,
+            qualified_by: "voluntary_assessment_request",
+          },
+          updated_at: now,
+        })
+        .eq("id", eventParticipant.id);
+
+      if (eventParticipantUpdateError) {
+        console.warn("[public-leads] corporate event participant update failed", eventParticipantUpdateError.message);
+      }
+    }
+  }
+
   if (isCorporatePartner && organizationName) {
     const { data: candidatePartners, error: candidatePartnerError } = await supabase
       .from("corporate_partner_prospects")
