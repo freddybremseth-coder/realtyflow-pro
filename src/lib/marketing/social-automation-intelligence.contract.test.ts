@@ -17,10 +17,19 @@ test("readiness exposes actionable learning evidence and unified business perfor
   assert.match(readiness, /total_sales/);
   assert.match(readiness, /learningInsights/);
   assert.match(readiness, /performanceSummary/);
+  assert.match(readiness, /businessSignals/);
+  assert.match(readiness, /buildMarketingNextActions[\s\S]*businessSignals/);
   assert.match(readiness, /loadSEOTopicJourneys/);
   assert.match(readiness, /seoTopicJourneys/);
   assert.match(readiness, /loadSEOChangeJourneys/);
   assert.match(readiness, /seoChangeJourneys/);
+});
+
+test("next action cards explain when business evidence is allowed to steer priority", () => {
+  assert.match(page, /Business-prioritert/);
+  assert.match(page, /Business-signal, ikke styrende/);
+  assert.match(page, /trustedForPriority/);
+  assert.match(page, /attributionCoveragePct/);
 });
 
 test("social automation explains what Nexus learned using persisted rules", () => {
