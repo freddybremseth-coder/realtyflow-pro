@@ -911,16 +911,17 @@ function locationMatchResult(
         outcome: withinRadius ? "pass" : "fail",
         expected: {
           preferred,
-          maxDistanceKm: DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM,
+          preferredRadiusKm: DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM,
+          flexible: true,
         },
         actual,
         sourceField,
         reason: withinRadius
-          ? `Property location ${actual} is about ${roundedDistance} km from preferred area ${flexibleDistance.preferredLocation.name}, within the flexible ${DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM} km radius.`
-          : `Property location ${actual} is about ${roundedDistance} km from preferred area ${flexibleDistance.preferredLocation.name}, outside the flexible ${DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM} km radius.`,
+          ? `Property location ${actual} is about ${roundedDistance} km from preferred area ${flexibleDistance.preferredLocation.name}, within the preferred ${DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM} km radius.`
+          : `Property location ${actual} is about ${roundedDistance} km from preferred area ${flexibleDistance.preferredLocation.name}. The buyer is flexible on area, so this is a ranking penalty rather than a rejection.`,
       },
-      rejected: !withinRadius,
-      penalty: withinRadius ? 0 : 30,
+      rejected: false,
+      penalty: withinRadius ? 0 : 10,
       bonus: withinRadius ? 5 : 0,
     };
   }
