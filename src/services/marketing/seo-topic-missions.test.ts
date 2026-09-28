@@ -50,7 +50,7 @@ test("turns a measured GSC content opportunity into one stable shared topic miss
   assert.equal(mission.brandId, "zeneco");
   assert.equal(mission.sourceId, "gsc-snippet:zeneco:%2Fnew-build-villas%2F");
   assert.equal(mission.sourceUrl, "https://www.zenecohomes.com/new-build-villas/");
-  assert.deepEqual(mission.recommendedChannels, ["instagram", "facebook"]);
+  assert.deepEqual(mission.recommendedChannels, ["facebook"]);
   assert.equal(mission.payload.origin, "sam_seo");
   assert.equal(mission.payload.canonical_url, mission.sourceUrl);
   assert.equal(mission.payload.topic_id, `seo:zeneco:${mission.sourceId}`);
