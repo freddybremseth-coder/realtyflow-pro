@@ -78,17 +78,22 @@ test.afterEach(() => {
   }
 });
 
-test("marketing-only Pinoso membership is advertised with implemented rights only", async () => {
-  permissions = ["marketing.read", "marketing.draft", "marketing.publish"];
+test("social publishing is advertised only with complete marketing read draft publish scope", async () => {
   const cookie = "realtyflow_admin=" +
     await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
-  const response = await GET(request(cookie) as any);
+
+  permissions = ["marketing.read", "marketing.publish"];
+  let response = await GET(request(cookie) as any);
   assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.deepEqual(body.workspaces, [{
-    brandKey: "pinosoecolife", name: "Pinoso EcoLife",
-    permissions: ["marketing.read", "marketing.draft"],
-  }]);
+  let body = await response.json();
+  assert.deepEqual(body.workspaces[0].permissions, ["marketing.read"]);
+
+  permissions = ["marketing.read", "marketing.draft", "marketing.publish"];
+  response = await GET(request(cookie) as any);
+  assert.equal(response.status, 200);
+  body = await response.json();
+  assert.deepEqual(body.workspaces[0].permissions,
+    ["marketing.read", "marketing.draft", "marketing.publish"]);
 });
 
 test("implemented Pinoso permissions include scoped marketing read and drafts", async () => {
@@ -139,7 +144,7 @@ test("email send is advertised only with complete read and draft scope", async (
   assert.deepEqual(body.workspaces[0].permissions, ["email.read", "email.draft", "email.send"]);
 });
 
-test("Zen available workspace never inherits generic CRM or workspace publishing rights", async () => {
+test("Zen available workspace never inherits generic historical CRM and filters incomplete publish grants", async () => {
   currentBrand = "zeneco";
   permissions = ["crm.read", "crm.write", "crm.joint.read", "properties.catalog.read",
     "marketing.read", "marketing.publish"];

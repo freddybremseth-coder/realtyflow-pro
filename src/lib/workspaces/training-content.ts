@@ -477,6 +477,49 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
     ],
   },
   {
+    id: "social-publishing",
+    title: "Publisering til sosiale medier – kvalitet før send",
+    shortTitle: "SoMe-publisering",
+    summary: "Slik bruker du live publisering på riktig merkevare og kanal uten å gjøre utkast, kanalvalg eller timing til tilfeldigheter.",
+    readMinutes: 7,
+    brands: "all",
+    anyPermissions: ["marketing.publish"],
+    sections: [
+      {
+        heading: "Utkast først, publisering etterpå",
+        paragraphs: [
+          "Live publisering er en egen høyere rettighet. Lag og kvalitetssikre ditt eget innhold i utkastflaten først. Når teksten, bildet og målkanalen er klar, åpner du publiseringsflaten. Du kan bare publisere workspace-utkast du selv har opprettet.",
+        ],
+        emphasis: "Ikke bruk Publiser-knappen som siste redigeringssteg. Den er siste kontroll før innholdet går ut eksternt.",
+      },
+      {
+        heading: "Kontroller tre ting før du sender",
+        bullets: [
+          "Budskap: Er teksten nyttig, konkret og riktig for Zen Eco Homes eller Pinoso EcoLife?",
+          "Kanal: Passer innholdet til Facebook eller Instagram – og er riktig brand-konto valgt av RealtyFlow?",
+          "Neste steg: Har innlegget en naturlig CTA eller tydelig verdi for personen vi ønsker å nå?",
+        ],
+      },
+      {
+        heading: "Bilder og kanalvalg",
+        bullets: [
+          "Instagram krever at utkastet allerede har et bilde. Mangler bildet, skal du forbedre utkastet – ikke prøve å omgå sperren.",
+          "Hvis utkastet allerede er planlagt for bestemte plattformer, kan du bare velge disse i publiseringsflaten.",
+          "Reels og YouTube er egne arbeidsflater. Ikke prøv å presse videoarbeid gjennom vanlig SoMe-publisering.",
+        ],
+      },
+      {
+        heading: "Hvis noe feiler",
+        bullets: [
+          "Les kanalresultatet før du prøver igjen. Én kanal kan ha lykkes selv om en annen feilet.",
+          "Ikke blindt retry et utkast som står med uavklart publiseringsforsøk. Det kan skape duplikater.",
+          "Når Facebook eller Instagram allerede har publisert, behandle den publiseringen som reell selv om RealtyFlow viser en audit-advarsel.",
+        ],
+        emphasis: "Målet er færre feilpubliseringer og duplikater – ikke flest mulig trykk på Publiser.",
+      },
+    ],
+  },
+  {
     id: "campaigns-events",
     title: "Annonser, video og informasjonsmøter – skap etterspørsel, ikke bare rekkevidde",
     shortTitle: "Kampanjer & møter",

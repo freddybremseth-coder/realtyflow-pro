@@ -218,6 +218,22 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
       body: {
         action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
         displayName: "Andrea", password: "Strong!Workspace7Password",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["marketing.publish"] }],
+      },
+      error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+    },
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.publish"] }],
+      },
+      error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+    },
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea", password: "Strong!Workspace7Password",
         brandAccess: [{ brandKey: "pinosoecolife", permissions: ["content.edit"] }],
       },
       error: "INVALID_BRAND_ACCESS", field: "brandAccess",
@@ -272,7 +288,7 @@ test("existing managed user can update access, reset password and disable withou
 
   const updated = await POST(req("POST", owner, {
     action: "UPDATE_ACCESS", userId, username: "andrea", displayName: "Andrea T.",
-    brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read","marketing.read","marketing.draft","content.read","content.edit","content.publish","email.read","email.draft","email.send"] }],
+    brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read","marketing.read","marketing.draft","marketing.publish","content.read","content.edit","content.publish","email.read","email.draft","email.send"] }],
   }) as any);
   assert.equal(updated.status, 200);
   assert.ok(rpcCalls.some(call => call.name === "workspace_user_configure"));

@@ -30,6 +30,7 @@ type BrandChoice = {
   tasksWrite: boolean;
   marketingRead: boolean;
   marketingDraft: boolean;
+  marketingPublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -48,7 +49,7 @@ type BrandChoice = {
 const emptyChoice = (): BrandChoice => ({
   enabled: false, crmRead: false, crmWrite: false,
   properties: false, tasksRead: false, tasksWrite: false,
-  marketingRead: false, marketingDraft: false,
+  marketingRead: false, marketingDraft: false, marketingPublish: false,
   corporateRead: false, corporatePlan: false,
   visibilityRead: false, visibilityPlan: false,
   adsRead: false, adsDraft: false, eventsPlan: false,
@@ -98,6 +99,7 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       tasksWrite: permissions.includes("tasks.joint.write"),
       marketingRead: permissions.includes("marketing.read"),
       marketingDraft: permissions.includes("marketing.draft"),
+      marketingPublish: permissions.includes("marketing.publish"),
       corporateRead: permissions.includes("corporate.read"),
       corporatePlan: permissions.includes("corporate.plan"),
       visibilityRead: permissions.includes("visibility.read"),
@@ -181,6 +183,7 @@ export default function WorkspaceUsersPage() {
       if (next.crmWrite) next.crmRead = true;
       if (next.tasksWrite) next.tasksRead = true;
       if (next.marketingDraft) next.marketingRead = true;
+      if (next.marketingPublish) { next.marketingRead = true; next.marketingDraft = true; }
       if (next.corporatePlan) next.corporateRead = true;
       if (next.visibilityPlan) next.visibilityRead = true;
       if (next.adsDraft) next.adsRead = true;
@@ -207,6 +210,7 @@ export default function WorkspaceUsersPage() {
         jointTasksWrite: choice.tasksWrite,
         marketingRead: choice.marketingRead,
         marketingDraft: choice.marketingDraft,
+        marketingPublish: choice.marketingPublish,
         corporateRead: choice.corporateRead,
         corporatePlan: choice.corporatePlan,
         visibilityRead: choice.visibilityRead,
@@ -483,10 +487,12 @@ export default function WorkspaceUsersPage() {
                   <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Markedsføring</strong>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingRead}
-                      onChange={e => updateChoice(brand.brandKey, { marketingRead: e.target.checked, ...(e.target.checked ? {} : { marketingDraft: false }) })}/> Se markedsoversikt og innhold</label>
+                      onChange={e => updateChoice(brand.brandKey, { marketingRead: e.target.checked, ...(e.target.checked ? {} : { marketingDraft: false, marketingPublish: false }) })}/> Se markedsoversikt og innhold</label>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingDraft}
-                      onChange={e => updateChoice(brand.brandKey, { marketingDraft: e.target.checked })}/> Lage innholdsutkast</label>
-                    <p className="mt-2 text-[11px] text-slate-500">Publisering er en separat rettighet og er ikke åpnet for medarbeidere ennå.</p>
+                      onChange={e => updateChoice(brand.brandKey, { marketingDraft: e.target.checked, ...(e.target.checked ? {} : { marketingPublish: false }) })}/> Lage innholdsutkast</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.marketingPublish}
+                      onChange={e => updateChoice(brand.brandKey, { marketingPublish: e.target.checked })}/> Publisere til Facebook / Instagram</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Publisering krever eksakt aktiv brand-kanal og serverkontroll rett før utsending.</p>
                   </div>
                   {isZen && <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Corporate Homes</strong>

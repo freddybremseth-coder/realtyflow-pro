@@ -26,7 +26,10 @@ import {
   parseWeeklyManagementSettings,
 } from "@/lib/revenue/weekly-management-review";
 import { buildCorporateGrowthImprovementCandidate } from "@/lib/corporate-growth-improvement";
-import { buildCorporateImprovementObservedEffect } from "@/lib/corporate-improvement-observed-effect";
+import {
+  buildCorporateImprovementObservedEffect,
+  corporateStageFromCandidateId,
+} from "@/lib/corporate-improvement-observed-effect";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -241,7 +244,17 @@ export async function POST(request: NextRequest) {
       if (["VERIFYING", "EFFECTIVE", "INEFFECTIVE"].includes(status) && !successMetric) {
         return NextResponse.json({ error: "Verifisering og effektkonklusjon krever et definert suksessmål." }, { status: 400 });
       }
-      if (status === "EFFECTIVE" && !["IMPROVING", "RESOLVED"].includes(improvement.effect.trend) && !note) {
+      const corporateStage = corporateStageFromCandidateId(improvement.candidateId);
+      if (status === "EFFECTIVE" && corporateStage && !note) {
+        return NextResponse.json(
+          {
+            error:
+              "Corporate-tiltak krever eksplisitt dokumentasjon før EFFECTIVE. Målt funnelbevegelse er støttende observasjon, ikke bevis på årsakssammenheng.",
+          },
+          { status: 409 },
+        );
+      }
+      if (status === "EFFECTIVE" && !corporateStage && !["IMPROVING", "RESOLVED"].includes(improvement.effect.trend) && !note) {
         return NextResponse.json({ error: "Målt uketrend støtter ikke effekt ennå. Legg inn en forklaring på annet dokumentert bevis." }, { status: 409 });
       }
       if (status === "INEFFECTIVE" && !note) return NextResponse.json({ error: "Ineffektivt tiltak krever en kort forklaring." }, { status: 400 });
