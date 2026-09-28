@@ -513,7 +513,7 @@ export async function runApprovedPublicationProd(supabase: MarketingSupabaseLike
       if (error) throw new Error(`PUBLICATION_BRAND_LOOKUP_FAILED: ${error.message}`);
       const brandId = String(publication?.brand_id ?? "").trim();
       if (!brandId) throw new Error("BRAND_UNRESOLVED: publikasjonen mangler brand_id for Meta OAuth");
-      return makeConfiguredMetaPublisher(supabase, brandId).publish(asset, { ...opts, brandId });
+      return makeConfiguredMetaPublisher(supabase, brandId).publish(asset, opts);
     },
   };
   const live = process.env.MARKETING_META_LIVE === "true";
