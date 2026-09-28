@@ -29,14 +29,51 @@ function getSupabase() {
 const ACTIVE = new Set(["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "ON_HOLD"]);
 const QUALIFIED_STAGES = new Set(["QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "WON"]);
 
+function interactionMetadata(item: any) {
+  return item?.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+    ? item.metadata as Record<string, any>
+    : {};
+}
+
+function contactInteractions(row: any) {
+  return Array.isArray(row?.interactions) ? row.interactions : [];
+}
+
+function isCorporateEventRegistrationOnly(row: any) {
+  const interactions = contactInteractions(row);
+  const registered = interactions.some((item: any) => {
+    const metadata = interactionMetadata(item);
+    return metadata.request_type === "corporate-event-registration" && metadata.event_action === "REGISTERED";
+  });
+  const corporateSalesSignal = interactions.some((item: any) => {
+    const metadata = interactionMetadata(item);
+    return metadata.request_type === "corporate-home";
+  });
+  return registered &&
+    !corporateSalesSignal &&
+    String(row?.source || "").toLowerCase().includes("corporate-event-registration");
+}
+
+function isEventSourcedAssessment(row: any) {
+  return contactInteractions(row).some((item: any) => {
+    const metadata = interactionMetadata(item);
+    if (metadata.request_type !== "corporate-home") return false;
+    const signal = `${metadata.utm_source || ""} ${metadata.utm_medium || ""} ${metadata.utm_campaign || ""} ${metadata.utm_content || ""}`.toLowerCase();
+    return /webinar|event|seminar/.test(signal);
+  });
+}
+
 function acquisitionIdentity(row: any) {
-  const interactions = Array.isArray(row?.interactions) ? [...row.interactions].reverse() : [];
+  const interactions = [...contactInteractions(row)].reverse();
   const website = interactions.find((item: any) => {
-    const metadata = item?.metadata && typeof item.metadata === "object" ? item.metadata : {};
+    const metadata = interactionMetadata(item);
+    if (["corporate-event-registration", "corporate-event-attendance"].includes(String(metadata.request_type || ""))) {
+      return false;
+    }
     const page = String(metadata.page_url || "").toLowerCase();
     return Boolean(metadata.utm_source || metadata.utm_campaign || page.includes("/bedriftshytte-spania"));
   });
-  const metadata = website?.metadata && typeof website.metadata === "object" ? website.metadata : {};
+  const metadata = website ? interactionMetadata(website) : {};
   return {
     source: String(metadata.utm_source || row?.source || "").trim().toLowerCase(),
     medium: String(metadata.utm_medium || "").trim().toLowerCase(),
@@ -248,6 +285,7 @@ export async function GET(request: NextRequest) {
   ]);
 
   const rows = contacts || [];
+  const leadRows = rows.filter((row: any) => !isCorporateEventRegistrationOnly(row));
   const prospectRows = prospects || [];
   const partners = partnerRows || [];
   const partnerTierCounts = partners.reduce<Record<string, number>>((acc, row: any) => {
@@ -282,7 +320,7 @@ export async function GET(request: NextRequest) {
       sourceUrl: row.source_url || null,
       nextAction: row.next_action || null,
     }));
-  const ids = new Set(rows.map((row: any) => String(row.id)));
+  const ids = new Set(leadRows.map((row: any) => String(row.id)));
   const corporateWorkItems = (workItems || []).filter((item: any) => {
     if (ids.has(String(item.source_id || ""))) return true;
     const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
@@ -291,15 +329,15 @@ export async function GET(request: NextRequest) {
 
   const now = Date.now();
   const thirtyDaysAgo = now - 30 * 86_400_000;
-  const stages = rows.reduce<Record<string, number>>((acc, row: any) => {
+  const stages = leadRows.reduce<Record<string, number>>((acc, row: any) => {
     const stage = String(row.pipeline_status || "NEW").toUpperCase();
     acc[stage] = (acc[stage] || 0) + 1;
     return acc;
   }, {});
 
-  const activeRows = rows.filter((row: any) => ACTIVE.has(String(row.pipeline_status || "NEW").toUpperCase()));
+  const activeRows = leadRows.filter((row: any) => ACTIVE.has(String(row.pipeline_status || "NEW").toUpperCase()));
   const pipelineValue = activeRows.reduce((sum: number, row: any) => sum + Number(row.pipeline_value || 0), 0);
-  const new30d = rows.filter((row: any) => {
+  const new30d = leadRows.filter((row: any) => {
     const value = Date.parse(String(row.created_at || row.updated_at || ""));
     return Number.isFinite(value) && value >= thirtyDaysAgo;
   }).length;
@@ -308,7 +346,7 @@ export async function GET(request: NextRequest) {
     return Number.isFinite(value) && value <= now;
   }).length;
 
-  const channelOrder = ["google", "linkedin", "meta", "outbound", "organic", "other"];
+  const channelOrder = ["google", "linkedin", "meta", "event", "outbound", "organic", "other"];
   const channelMap = new Map<string, {
     key: string;
     label: string;
@@ -319,7 +357,7 @@ export async function GET(request: NextRequest) {
     pipelineValue: number;
     campaigns: Map<string, number>;
   }>();
-  for (const row of rows) {
+  for (const row of leadRows) {
     const attribution = acquisitionChannel(row);
     const current = channelMap.get(attribution.key) || {
       key: attribution.key,
@@ -365,6 +403,48 @@ export async function GET(request: NextRequest) {
       };
       return rank(a.key) - rank(b.key);
     });
+
+  const eventRegistrations = rows.flatMap((row: any) =>
+    contactInteractions(row)
+      .filter((item: any) => {
+        const metadata = interactionMetadata(item);
+        return metadata.request_type === "corporate-event-registration" && metadata.event_action === "REGISTERED";
+      })
+      .map((item: any) => {
+        const metadata = interactionMetadata(item);
+        return {
+          key: `${row.id}:${metadata.event_id || item.id || "unknown"}`,
+          contactId: String(row.id || ""),
+          eventId: String(metadata.event_id || ""),
+        };
+      }),
+  );
+  const attendanceByRegistration = new Map<string, string>();
+  for (const row of rows) {
+    for (const item of contactInteractions(row)) {
+      const metadata = interactionMetadata(item);
+      if (metadata.request_type !== "corporate-event-attendance") continue;
+      const eventId = String(metadata.event_id || "");
+      if (!eventId) continue;
+      const key = `${row.id}:${eventId}`;
+      if (!attendanceByRegistration.has(key)) {
+        attendanceByRegistration.set(key, String(metadata.event_action || "").toUpperCase());
+      }
+    }
+  }
+  const eventCtaClicks = rows.filter((row: any) =>
+    contactInteractions(row).some((item: any) => {
+      const metadata = interactionMetadata(item);
+      return metadata.request_type === "corporate-event-cta" && metadata.event_action === "CTA_CLICKED";
+    }),
+  ).length;
+  const eventAssessmentRequests = leadRows.filter(isEventSourcedAssessment).length;
+  const eventAttended = eventRegistrations.filter((entry: any) =>
+    ["ATTENDED", "LEFT_EARLY"].includes(attendanceByRegistration.get(entry.key) || ""),
+  ).length;
+  const eventNoShows = eventRegistrations.filter((entry: any) =>
+    attendanceByRegistration.get(entry.key) === "NO_SHOW",
+  ).length;
 
   const prospectTierCounts = prospectRows.reduce<Record<string, number>>((acc, row: any) => {
     const tier = String(row.fit_tier || "UNSCORED").toUpperCase();
@@ -462,7 +542,7 @@ export async function GET(request: NextRequest) {
   };
 
   const outcomeByChannel = new Map<string, { viewingCompanies: number; offerCompanies: number }>();
-  for (const row of rows) {
+  for (const row of leadRows) {
     const contactId = String(row.id || "");
     if (!contactId || (!viewingContactIds.has(contactId) && !offerContactIds.has(contactId))) continue;
     const channel = acquisitionChannel(row);
@@ -529,7 +609,7 @@ export async function GET(request: NextRequest) {
     corporateHomes: {
       generatedAt: new Date().toISOString(),
       summary: {
-        totalLeads: rows.length,
+        totalLeads: leadRows.length,
         activeLeads: activeRows.length,
         new30d,
         dueNow,
@@ -537,6 +617,17 @@ export async function GET(request: NextRequest) {
         pipelineValue,
       },
       revenueFunnel: corporateRevenueFunnel,
+      eventFunnel: {
+        registered: eventRegistrations.length,
+        attended: eventAttended,
+        noShow: eventNoShows,
+        ctaClicks: eventCtaClicks,
+        assessmentRequests: eventAssessmentRequests,
+        attendanceRate: rate(eventAttended, eventRegistrations.length),
+        attendeeToAssessmentRate: rate(eventAssessmentRequests, eventAttended),
+        registrationIsLead: false,
+        attendanceQualifiesAutomatically: false,
+      },
       growthReview: lastCorporateGrowthReview
         ? {
             status: lastCorporateGrowthReview.status,
@@ -613,7 +704,7 @@ export async function GET(request: NextRequest) {
         lastRun: lastContentDraftRun || null,
       },
       stages,
-      contacts: rows.slice(0, 100).map((row: any) => ({
+      contacts: leadRows.slice(0, 100).map((row: any) => ({
         id: row.id,
         name: row.name,
         email: row.email,
