@@ -36,6 +36,9 @@ type BrandChoice = {
   marketingRead: boolean;
   marketingDraft: boolean;
   marketingPublish: boolean;
+  reelsRead: boolean;
+  reelsCreate: boolean;
+  reelsPublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -55,6 +58,7 @@ const emptyChoice = (): BrandChoice => ({
   enabled: false, crmRead: false, crmWrite: false,
   properties: false, tasksRead: false, tasksWrite: false,
   marketingRead: false, marketingDraft: false, marketingPublish: false,
+  reelsRead: false, reelsCreate: false, reelsPublish: false,
   corporateRead: false, corporatePlan: false,
   visibilityRead: false, visibilityPlan: false,
   adsRead: false, adsDraft: false, eventsPlan: false,
@@ -118,6 +122,9 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       marketingRead: permissions.includes("marketing.read"),
       marketingDraft: permissions.includes("marketing.draft"),
       marketingPublish: permissions.includes("marketing.publish"),
+      reelsRead: permissions.includes("reels.read"),
+      reelsCreate: permissions.includes("reels.create"),
+      reelsPublish: permissions.includes("reels.publish"),
       corporateRead: permissions.includes("corporate.read"),
       corporatePlan: permissions.includes("corporate.plan"),
       visibilityRead: permissions.includes("visibility.read"),
@@ -209,6 +216,9 @@ export default function WorkspaceUsersPage() {
       if (next.tasksWrite) next.tasksRead = true;
       if (next.marketingDraft) next.marketingRead = true;
       if (next.marketingPublish) { next.marketingRead = true; next.marketingDraft = true; }
+      if (next.reelsCreate) next.reelsRead = true;
+      if (next.reelsPublish) { next.reelsRead = true; next.reelsCreate = true; }
+      if (!["zeneco", "pinosoecolife"].includes(brandKey)) { next.reelsRead = false; next.reelsCreate = false; next.reelsPublish = false; }
       if (next.corporatePlan) next.corporateRead = true;
       if (next.visibilityPlan) next.visibilityRead = true;
       if (next.adsDraft) next.adsRead = true;
@@ -236,6 +246,9 @@ export default function WorkspaceUsersPage() {
         marketingRead: choice.marketingRead,
         marketingDraft: choice.marketingDraft,
         marketingPublish: choice.marketingPublish,
+        reelsRead: choice.reelsRead,
+        reelsCreate: choice.reelsCreate,
+        reelsPublish: choice.reelsPublish,
         corporateRead: choice.corporateRead,
         corporatePlan: choice.corporatePlan,
         visibilityRead: choice.visibilityRead,
@@ -528,6 +541,7 @@ export default function WorkspaceUsersPage() {
             {snapshot?.brands.map(brand => {
               const choice = choices[brand.brandKey] || emptyChoice();
               const isZen = brand.brandKey === "zeneco";
+              const supportsReels = isZen || brand.brandKey === "pinosoecolife";
               return <article key={brand.brandKey} className="rounded-xl border border-slate-700 bg-slate-950/55 p-4">
                 <label className="flex items-center gap-3 font-semibold">
                   <input type="checkbox" checked={choice.enabled}
@@ -564,6 +578,16 @@ export default function WorkspaceUsersPage() {
                       onChange={e => updateChoice(brand.brandKey, { marketingPublish: e.target.checked })}/> Publisere til Facebook / Instagram</label>
                     <p className="mt-2 text-[11px] text-slate-500">Publisering krever eksakt aktiv brand-kanal og serverkontroll rett før utsending.</p>
                   </div>
+                  {supportsReels && <div className="rounded-lg border border-cyan-900/60 bg-cyan-950/10 p-3">
+                    <strong className="text-sm">Reels Studio</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.reelsRead}
+                      onChange={e => updateChoice(brand.brandKey, { reelsRead: e.target.checked, ...(e.target.checked ? {} : { reelsCreate: false, reelsPublish: false }) })}/> Se Reels og forhåndsvisning</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.reelsCreate}
+                      onChange={e => updateChoice(brand.brandKey, { reelsCreate: e.target.checked, ...(e.target.checked ? {} : { reelsPublish: false }) })}/> Lage Reels med Re-Master-motoren</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.reelsPublish}
+                      onChange={e => updateChoice(brand.brandKey, { reelsPublish: e.target.checked })}/> Publisere Reel til Facebook / Instagram</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Re-Master gjør rendering i bakgrunnen. Brukeren ser bare denne merkevaren og dens verifiserte kanaler.</p>
+                  </div>}
                   {isZen && <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Corporate Homes</strong>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.corporateRead}
