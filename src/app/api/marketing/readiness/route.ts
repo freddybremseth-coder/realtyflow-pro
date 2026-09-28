@@ -9,6 +9,7 @@ import {
   type MarketingSurfaceKind,
 } from "@/lib/marketing/next-best-action";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
+import { loadUnifiedGrowthScore } from "@/services/marketing/unified-growth-score";
 
 export const dynamic = "force-dynamic";
 
@@ -114,12 +115,15 @@ export async function GET(request: NextRequest) {
       brand.plannedChannels.map((channel) => channelLearningScope(brand.id, channel)),
     ),
   ]));
-  const [{ data: contexts }, { data: channels }, { data: publications }, { data: events }, { data: rules }] = await Promise.all([
+  const [{ data: contexts }, { data: channels }, { data: publications }, { data: events }, { data: rules }, growthReport] = await Promise.all([
     supabase.from("brand_context").select("brand_id, brand_name").in("brand_id", brandIds),
     supabase.from("social_channels").select("brand_id, platform, external_id, display_name, is_active").in("brand_id", brandIds).eq("is_active", true),
     supabase.from("marketing_publications").select("brand_id, channel, state, content_id, updated_at").in("brand_id", brandIds).eq("state", "published"),
     supabase.from("marketing_events").select("brand_id, channel, content_id, metadata").in("brand_id", brandIds).eq("event_type", "metrics_snapshot"),
-    supabase.from("marketing_learning_rules").select("scope, dimension, verdict").in("scope", ruleScopes),
+    supabase.from("marketing_learning_rules")
+      .select("scope, dimension, value, sample, lift, verdict, finding, avg_business_value, avg_qualified_lead_rate, total_leads, total_qualified, total_sales, total_commission_eur, updated_at")
+      .in("scope", ruleScopes),
+    loadUnifiedGrowthScore(supabase as any, { days: 30 }).catch(() => null),
   ]);
 
   const contextByBrand = new Map((contexts ?? []).map((row: any) => [String(row.brand_id), row]));
@@ -270,11 +274,63 @@ export async function GET(request: NextRequest) {
     connectedDestinations: rows.filter((row) => row.surfaceKind === "destination" && row.connected).length,
   };
 
+  const scopeOwner = new Map(
+    rows
+      .filter((row) => row.surfaceKind === "destination" && row.platform)
+      .map((row) => [channelLearningScope(row.brandId, String(row.platform)), row] as const),
+  );
+  const learningInsights = (rules ?? [])
+    .filter((rule: any) => ["favor", "avoid"].includes(String(rule.verdict)))
+    .map((rule: any) => {
+      const owner = scopeOwner.get(String(rule.scope));
+      const lift = Number(rule.lift ?? 0);
+      const sample = Number(rule.sample ?? 0);
+      const businessValue = Number(rule.avg_business_value ?? 0);
+      const qualifiedRate = Number(rule.avg_qualified_lead_rate ?? 0);
+      return {
+        id: `${rule.scope}:${rule.dimension}:${String(rule.value ?? "")}`,
+        brandId: owner?.brandId ?? String(rule.scope).split(":")[0] ?? "",
+        brandName: owner?.brandName ?? String(rule.scope),
+        channel: owner?.platform ?? null,
+        verdict: String(rule.verdict) as "favor" | "avoid",
+        dimension: String(rule.dimension ?? "signal"),
+        value: String(rule.value ?? ""),
+        sample,
+        lift: Number.isFinite(lift) ? lift : 0,
+        finding: rule.finding ? String(rule.finding) : null,
+        businessValue: Number.isFinite(businessValue) ? businessValue : 0,
+        qualifiedLeadRate: Number.isFinite(qualifiedRate) ? qualifiedRate : 0,
+        leads: Number(rule.total_leads ?? 0),
+        qualified: Number(rule.total_qualified ?? 0),
+        sales: Number(rule.total_sales ?? 0),
+        commissionEur: Number(rule.total_commission_eur ?? 0),
+        updatedAt: rule.updated_at ? String(rule.updated_at) : null,
+      };
+    })
+    .sort((a, b) =>
+      Number(b.sales > 0) - Number(a.sales > 0)
+      || b.commissionEur - a.commissionEur
+      || b.businessValue - a.businessValue
+      || Math.abs(b.lift) - Math.abs(a.lift)
+      || b.sample - a.sample,
+    )
+    .slice(0, 8);
+
+  const performanceSummary = growthReport ? {
+    periodDays: growthReport.period.days,
+    portfolio: growthReport.portfolio,
+    brands: growthReport.brands.slice(0, 8),
+    channels: growthReport.channels.slice(0, 12),
+    diagnostics: growthReport.diagnostics,
+  } : null;
+
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     controlGate,
     nextActions,
     automationSummary,
+    learningInsights,
+    performanceSummary,
     rows,
   });
 }
