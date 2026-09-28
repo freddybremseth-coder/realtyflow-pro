@@ -8,6 +8,7 @@ import {
 } from "./worklist-next-action";
 
 const BASE: LeadWorklistNextActionInput = {
+  profileStatus: "approved",
   analysisRunId: "analysis-1",
   contactLinked: true,
   criterionCount: 4,
@@ -87,4 +88,22 @@ test("lead worklist next action ranks urgent profiles before low-touch follow-up
   ].sort(compareLeadWorklistNextActionPriority);
 
   assert.deepEqual(sorted.map((item) => item.priority), ["CRITICAL", "HIGH", "LOW"]);
+});
+
+
+test("superseded buyer profiles are history only and never receive sales actions", () => {
+  const action = buildLeadWorklistNextAction({
+    ...BASE,
+    profileStatus: "superseded",
+    shortlistCount: 0,
+    latestShortlistStatus: null,
+    latestShortlistItemCount: 0,
+    latestPresentationId: null,
+    latestMessageDraftId: null,
+    purchaseReadiness: "hot",
+  });
+
+  assert.equal(action.priority, "LOW");
+  assert.equal(action.label, "Historikk – ingen handling");
+  assert.match(action.reason, /erstattet/i);
 });
