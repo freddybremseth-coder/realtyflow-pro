@@ -156,6 +156,7 @@ export default function WorkspaceUsersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [onboardingMode, setOnboardingMode] = useState<"invite" | "temporary_password">("invite");
   const [accountKind, setAccountKind] = useState<"staff" | "external">("staff");
   const [organization, setOrganization] = useState("");
   const [accessExpiry, setAccessExpiry] = useState("");
@@ -188,6 +189,7 @@ export default function WorkspaceUsersPage() {
   function startNew() {
     setSelectedUserId(null);
     setDisplayName(""); setUsername(""); setEmail(""); setPassword("");
+    setOnboardingMode("invite");
     setAccountKind("staff"); setOrganization(""); setAccessExpiry("");
     setError(""); setNotice("");
     const next: Record<string, BrandChoice> = {};
@@ -201,6 +203,7 @@ export default function WorkspaceUsersPage() {
     setUsername(user.username);
     setEmail(user.email);
     setPassword("");
+    setOnboardingMode("invite");
     setAccountKind(user.accountKind || "staff");
     setOrganization(user.organization || "");
     setAccessExpiry(accessExpiryInput(user.accessExpiresAt));
@@ -342,7 +345,7 @@ export default function WorkspaceUsersPage() {
       setError("Velg en gyldig sluttdato for tilgangen.");
       return;
     }
-    if (!selectedUser && !strongPassword(password)) {
+    if (!selectedUser && onboardingMode === "temporary_password" && !strongPassword(password)) {
       setError("Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.");
       return;
     }
@@ -361,7 +364,9 @@ export default function WorkspaceUsersPage() {
           : {
               action: "CREATE_USER", username: username.trim().toLowerCase(),
               displayName: displayName.trim(), email: email.trim().toLowerCase(),
-              password, accountKind, organization: organization.trim() || null,
+              onboardingMode,
+              ...(onboardingMode === "temporary_password" ? { password } : {}),
+              accountKind, organization: organization.trim() || null,
               accessExpiresAt: expiresAt, brandAccess: access,
             }),
       });
@@ -369,9 +374,13 @@ export default function WorkspaceUsersPage() {
       if (!response.ok) throw new Error(apiError(body, "Brukeren kunne ikke lagres."));
       setNotice(selectedUser
         ? "Tilgangen er oppdatert. Endringen er avgrenset til valgte merkevarer og programmer."
-        : body.loginEnabled
-          ? "Brukeren er opprettet og kan logge inn med brukernavn eller e-post."
-          : "Brukeren er opprettet, men workspace-innlogging er fortsatt globalt deaktivert.");
+        : onboardingMode === "invite"
+          ? body.inviteSent
+            ? "Brukeren er opprettet og en sikker lenke for å velge passord er sendt til e-postadressen."
+            : "Brukeren er opprettet, men invitasjons-e-posten kunne ikke bekreftes. Åpne brukeren og send lenken på nytt."
+          : body.loginEnabled
+            ? "Brukeren er opprettet og kan logge inn med brukernavn eller e-post."
+            : "Brukeren er opprettet, men workspace-innlogging er fortsatt globalt deaktivert.");
       setPassword("");
       await reload();
       if (!selectedUser && body.user?.userId) setSelectedUserId(body.user.userId);
