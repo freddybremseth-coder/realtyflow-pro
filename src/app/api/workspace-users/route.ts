@@ -21,17 +21,18 @@ type AccountKind = "staff" | "external";
 type DirectoryMetadata = { accountKind: AccountKind; organization: string | null; accessExpiresAt: string | null };
 
 function directoryMetadata(body: Record<string, unknown>, fallback?: Partial<DirectoryMetadata>) {
-  const rawKind = body.accountKind ?? fallback?.accountKind ?? "staff";
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+  const rawKind = has("accountKind") ? body.accountKind : (fallback?.accountKind ?? "staff");
   if (rawKind !== "staff" && rawKind !== "external") {
     return { value: null, error: { error: "INVALID_ACCOUNT_KIND", field: "accountKind", message: "Velg intern medarbeider eller ekstern samarbeidspartner." } };
   }
-  const rawOrganization = body.organization ?? fallback?.organization ?? null;
+  const rawOrganization = has("organization") ? body.organization : (fallback?.organization ?? null);
   const organization = rawOrganization == null || String(rawOrganization).trim() === ""
     ? null : String(rawOrganization).trim();
   if (organization && organization.length > 160) {
     return { value: null, error: { error: "INVALID_ORGANIZATION", field: "organization", message: "Firma/organisasjon kan være maks 160 tegn." } };
   }
-  const rawExpiry = body.accessExpiresAt ?? fallback?.accessExpiresAt ?? null;
+  const rawExpiry = has("accessExpiresAt") ? body.accessExpiresAt : (fallback?.accessExpiresAt ?? null);
   let accessExpiresAt: string | null = null;
   if (rawExpiry != null && String(rawExpiry).trim() !== "") {
     const timestamp = Date.parse(String(rawExpiry));
