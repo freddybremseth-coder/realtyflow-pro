@@ -96,7 +96,7 @@ export async function syncSEOTopicMissions(
   snapshots: readonly GSCBrandSnapshot[],
 ): Promise<{ discovered: number; insertedOrUpdated: number; blockedStale: number }> {
   const missions = buildSEOTopicMissions(snapshots);
-  const brandIds = Array.from(new Set(missions.map((mission) => mission.brandId)));
+  const brandIds = Array.from(new Set(snapshots.map((snapshot) => snapshot.brandId)));
 
   let existing: any[] = [];
   if (brandIds.length) {
