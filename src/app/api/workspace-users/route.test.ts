@@ -325,6 +325,17 @@ test("existing managed user can update access, reset password and disable withou
   assert.equal(updateConfigure?.args?.p_account_kind, "external");
   assert.equal(updateConfigure?.args?.p_access_expires_at, "2027-04-30T21:59:59.000Z");
 
+  const cleared = await POST(req("POST", owner, {
+    action: "UPDATE_ACCESS", userId, username: "andrea", displayName: "Andrea T.",
+    accountKind: "staff", organization: null, accessExpiresAt: null,
+    brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read","properties.catalog.read"] }],
+  }) as any);
+  assert.equal(cleared.status, 200);
+  const clearConfigure = rpcCalls.filter(call => call.name === "workspace_user_configure_v2").at(-1);
+  assert.equal(clearConfigure?.args?.p_account_kind, "staff");
+  assert.equal(clearConfigure?.args?.p_organization, null);
+  assert.equal(clearConfigure?.args?.p_access_expires_at, null);
+
   const password = "Another!Strong8Password";
   const reset = await POST(req("POST", owner, {
     action: "SET_PASSWORD", userId, password,
