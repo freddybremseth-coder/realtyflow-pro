@@ -204,6 +204,13 @@ export async function runBrandPublisher(
   return result("pending",rollback?"Tilbakeføringen avventer verifisert offentlig resultat.":"Venter på at nettstedet viser den publiserte endringen.");
 }
 
+export function secondExperimentReady(effectDetails: unknown, snapshot: GSCBrandSnapshot | null): boolean {
+  if (!snapshot) return false;
+  const tracked = parseTrackedSEOChange(effectDetails);
+  if (!tracked || tracked.brandId !== snapshot.brandId) return false;
+  return evaluateTrackedSEOChanges([tracked],[snapshot])[0]?.status === "measured";
+}
+
 async function v1EffectMeasured(
   db: SupabaseClient,
   site: BrandPublisher,
@@ -216,9 +223,7 @@ async function v1EffectMeasured(
     .eq("action","seo_autopilot_change")
     .maybeSingle();
   if (effect.error || effect.data?.status !== "success") return false;
-  const tracked = parseTrackedSEOChange(effect.data.details);
-  if (!tracked) return false;
-  return evaluateTrackedSEOChanges([tracked],[snapshot])[0]?.status === "measured";
+  return secondExperimentReady(effect.data.details,snapshot);
 }
 
 export async function runPortfolioPublishers(db: SupabaseClient, snapshots: readonly GSCBrandSnapshot[]): Promise<BrandPublicationStatus[]> {
