@@ -10,6 +10,7 @@ import {
 } from "@/lib/marketing/next-best-action";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { loadUnifiedGrowthScore } from "@/services/marketing/unified-growth-score";
+import { loadSEOTopicJourneys } from "@/services/marketing/seo-topic-journey";
 
 export const dynamic = "force-dynamic";
 
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
       brand.plannedChannels.map((channel) => channelLearningScope(brand.id, channel)),
     ),
   ]));
-  const [{ data: contexts }, { data: channels }, { data: publications }, { data: events }, { data: rules }, growthReport] = await Promise.all([
+  const [{ data: contexts }, { data: channels }, { data: publications }, { data: events }, { data: rules }, growthReport, seoTopicJourneys] = await Promise.all([
     supabase.from("brand_context").select("brand_id, brand_name").in("brand_id", brandIds),
     supabase.from("social_channels").select("brand_id, platform, external_id, display_name, is_active").in("brand_id", brandIds).eq("is_active", true),
     supabase.from("marketing_publications").select("brand_id, channel, state, content_id, updated_at").in("brand_id", brandIds).eq("state", "published"),
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest) {
       .select("scope, dimension, value, sample, lift, evidence, verdict, finding, avg_business_value, avg_qualified_lead_rate, total_leads, total_qualified, total_sales, total_commission_eur, updated_at")
       .in("scope", ruleScopes),
     loadUnifiedGrowthScore(supabase as any, { days: 30 }).catch(() => null),
+    loadSEOTopicJourneys(supabase as any, { limit: 8 }).catch(() => []),
   ]);
 
   const contextByBrand = new Map((contexts ?? []).map((row: any) => [String(row.brand_id), row]));
@@ -357,6 +359,7 @@ export async function GET(request: NextRequest) {
     automationSummary,
     learningInsights,
     performanceSummary,
+    seoTopicJourneys,
     rows,
   });
 }
