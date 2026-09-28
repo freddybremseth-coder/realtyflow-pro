@@ -417,7 +417,24 @@ export default function ContinuousImprovementPage() {
                         <Field label="Frist"><input type="date" value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} disabled={!body.canWrite || selected.closed} className="input"/></Field>
                         <Field label="Suksessmål"><input value={form.successMetric} onChange={(e) => setForm({ ...form, successMetric: e.target.value })} maxLength={500} disabled={!body.canWrite || selected.closed} className="input" placeholder="Eksempel: forekomstrate per uke"/></Field>
                         <Field label="Målverdi"><input value={form.targetValue} onChange={(e) => setForm({ ...form, targetValue: e.target.value })} maxLength={300} disabled={!body.canWrite || selected.closed} className="input" placeholder="Eksempel: under 25 %"/></Field>
-                        <Field label="Dokumentasjon ved effektkonklusjon" wide><textarea value={form.evidenceNote} onChange={(e) => setForm({ ...form, evidenceNote: e.target.value })} maxLength={1000} rows={2} disabled={!body.canWrite || selected.closed} className="input" placeholder="Brukes når annen dokumentasjon enn uketrenden støtter konklusjonen."/></Field>
+                        <Field
+                          label={selectedCorporateEffect
+                            ? "Dokumentasjon ved effektkonklusjon · påkrevd ved EFFECTIVE"
+                            : "Dokumentasjon ved effektkonklusjon"}
+                          wide
+                        >
+                          <textarea
+                            value={form.evidenceNote}
+                            onChange={(e) => setForm({ ...form, evidenceNote: e.target.value })}
+                            maxLength={1000}
+                            rows={2}
+                            disabled={!body.canWrite || selected.closed}
+                            className="input"
+                            placeholder={selectedCorporateEffect
+                              ? "Beskriv hvilket dokumentert bevis som støtter effektkonklusjonen. Målt Corporate-funnelbevegelse alene er ikke bevis på årsak."
+                              : "Brukes når annen dokumentasjon enn uketrenden støtter konklusjonen."}
+                          />
+                        </Field>
                       </div>
                       {body.canWrite && !selected.closed && <button onClick={saveImprovement} disabled={saving} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-500 disabled:opacity-50"><Save size={15}/> Lagre kontrollert oppdatering</button>}
                     </section>
