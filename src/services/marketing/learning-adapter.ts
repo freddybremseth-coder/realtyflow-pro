@@ -34,17 +34,14 @@ export interface ObservedMetricRow {
 }
 
 export function learningEligible(row: ObservedMetricRow): boolean {
-  if (row.eventType !== "metrics_snapshot") return true;
-  return row.metadata?.learning_eligible !== false;
+  return row.eventType === "metrics_snapshot" && row.metadata?.learning_eligible !== false;
 }
 
 export function hasLearningEvidence(
   rows: ObservedMetricRow[],
   canonicalMetrics?: Partial<ContentMetrics>,
 ): boolean {
-  const measured = rows.some((row) =>
-    row.eventType === "metrics_snapshot" && learningEligible(row),
-  );
+  const measured = rows.some((row) => learningEligible(row));
   const business = canonicalMetrics
     ? [
         canonicalMetrics.leads,
