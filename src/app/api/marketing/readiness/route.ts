@@ -60,13 +60,9 @@ function blocker(params: {
 function humanAttention(params: {
   connected: boolean;
   brandBrainReady: boolean;
-  quarantined: number;
   surfaceKind: MarketingSurfaceKind;
 }) {
   if (params.surfaceKind === "signal") return { required: false, reason: null };
-  if (params.quarantined > 0) {
-    return { required: true, reason: `${params.quarantined} learning-måling(er) er i karantene.` };
-  }
   if (params.connected && !params.brandBrainReady) {
     return { required: true, reason: "Brand Brain mangler og krever eier-/brandbeslutning før autonom produksjon." };
   }
@@ -155,7 +151,7 @@ export async function GET(request: NextRequest) {
     const pilotReady = surfaceKind === "destination" && connected && brandBrainReady && isPilotChannel(brandId, platform);
     const pilotBlockReason = blocker({ connected, brandBrainReady, planned, pilotReady, platform, surfaceKind });
     const liveLearning = surfaceKind === "destination" && pilotReady && eligible >= CONTROL_REQUIRED_OBSERVATIONS && evaluatedRules > 0;
-    const attention = humanAttention({ connected, brandBrainReady, quarantined, surfaceKind });
+    const attention = humanAttention({ connected, brandBrainReady, surfaceKind });
 
     return {
       brandId,
@@ -198,7 +194,7 @@ export async function GET(request: NextRequest) {
     const planned = Boolean(definition?.plannedChannels.length);
     const pilotReady = false;
     const surfaceKind: MarketingSurfaceKind = "destination";
-    const attention = humanAttention({ connected, brandBrainReady, quarantined: 0, surfaceKind });
+    const attention = humanAttention({ connected, brandBrainReady, surfaceKind });
     rows.push({
       brandId,
       brandName: (context as any)?.brand_name ?? definition?.name ?? brandId,
