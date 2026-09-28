@@ -333,7 +333,7 @@ test("flexible preferred location gives a bonus without rejecting other areas", 
   assert.ok(finestratMatch.score > alteaMatch.score);
 });
 
-test("flexible preferred Moraira rejects known areas outside the 30 km radius", () => {
+test("flexible preferred Moraira ranks distant areas lower without rejecting them", () => {
   const flexibleMorairaProfile = {
     ...profile,
     budget: {
@@ -401,11 +401,13 @@ test("flexible preferred Moraira rejects known areas outside the 30 km radius", 
   }));
 
   assert.notEqual(benissaMatch.eligibility, "rejected");
-  assert.ok(benissaMatch.reasonsForMatch.some((reason) => reason.includes("within the flexible 30 km radius")));
-  assert.equal(finestratMatch.eligibility, "rejected");
-  assert.equal(elcheMatch.eligibility, "rejected");
-  assert.ok(finestratMatch.concerns.some((concern) => concern.includes("outside the flexible 30 km radius")));
-  assert.ok(elcheMatch.concerns.some((concern) => concern.includes("outside the flexible 30 km radius")));
+  assert.ok(benissaMatch.reasonsForMatch.some((reason) => reason.includes("within the preferred 30 km radius")));
+  assert.notEqual(finestratMatch.eligibility, "rejected");
+  assert.notEqual(elcheMatch.eligibility, "rejected");
+  assert.ok(finestratMatch.concerns.some((concern) => concern.includes("ranking penalty rather than a rejection")));
+  assert.ok(elcheMatch.concerns.some((concern) => concern.includes("ranking penalty rather than a rejection")));
+  assert.ok(benissaMatch.score > finestratMatch.score);
+  assert.ok(benissaMatch.score > elcheMatch.score);
 });
 
 test("matching is deterministic and ranking is stable", () => {
@@ -603,4 +605,62 @@ test("plot strategy keeps land viable while total plot-plus-build cost remains a
     match.hardRequirementResults.find((row) => row.key === "purchase_price" && row.expected === 450000)?.outcome,
     "pass",
   );
+});
+
+
+test("Martus-style flexible Albir preference does not reject a Pinoso inland strategy", () => {
+  const martusFlexibleProfile = {
+    ...profile,
+    budget: { amount: 450000, currency: "EUR" as const, includesCosts: null, approximate: true, hardLimit: null },
+    propertyTypes: ["villa" as const, "country_house" as const, "plot" as const],
+    locations: {
+      preferred: ["Albir"],
+      excluded: [],
+      flexible: true,
+    },
+    hardRequirements: [
+      {
+        key: "bedrooms" as const,
+        operator: "gte" as const,
+        value: 3,
+        sourceText: "minimum 3 bedrooms",
+        appliesToPropertyTypes: ["villa" as const, "country_house" as const],
+      },
+      {
+        key: "parking" as const,
+        operator: "eq" as const,
+        value: true,
+        sourceText: "parking required",
+        appliesToPropertyTypes: ["villa" as const, "country_house" as const],
+      },
+    ],
+    preferences: [
+      {
+        key: "property_type" as const,
+        operator: "in" as const,
+        value: ["villa", "country_house", "plot"],
+        weight: 0.9,
+        sourceText: "plot or older house is a strong option",
+      },
+    ],
+    exclusions: [],
+  };
+
+  const pinoso = normalizePropertyForLeadMatching({
+    id: "pinoso-strategy",
+    property_type: "villa",
+    price: 365000,
+    bedrooms: 3,
+    bathrooms: 2,
+    parking: true,
+    town: "Pinoso",
+    plot_size: 10116,
+    description: "Inland villa on a large plot with room for phased development.",
+  });
+
+  const match = matchPropertyToLeadProfile(martusFlexibleProfile, pinoso);
+  assert.notEqual(match.eligibility, "rejected");
+  assert.equal(match.locationResult?.outcome, "fail");
+  assert.equal(match.locationResult?.rejected, undefined);
+  assert.match(match.locationResult?.reason || "", /ranking penalty rather than a rejection/i);
 });
