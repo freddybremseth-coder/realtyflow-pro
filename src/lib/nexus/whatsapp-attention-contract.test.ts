@@ -21,6 +21,7 @@ test("blocked WhatsApp inbound becomes a high operational attention signal", asy
   assert.match(text, /severity: "high"/);
   assert.match(text, /score: 96/);
   assert.match(text, /WhatsApp lead capture is blocked/);
+  assert.match(text, /href: "\/nexus-os\/communications\/whatsapp"/);
 });
 
 test("partial inbound-ready state remains a low alert rather than blocking sales attention", async () => {

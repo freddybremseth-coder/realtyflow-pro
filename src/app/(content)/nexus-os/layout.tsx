@@ -35,6 +35,7 @@ const ADVANCED_LINKS = [
   { href: "/os", label: "Systemstatus" },
   { href: "/nexus-os/communications/nurture", label: "Nurture Control" },
   { href: "/nexus-os/communications/readiness", label: "E-post readiness" },
+  { href: "/nexus-os/communications/whatsapp", label: "WhatsApp readiness" },
   { href: "/nexus-os/communications/audit", label: "E-post audit" },
   { href: "/nexus-os/runtime", label: "Automatisering – status" },
   { href: "/nexus-os/autonomy", label: "Autopilot-regler" },
@@ -59,12 +60,12 @@ export default function NexusOsLayout({ children }: { children: ReactNode }) {
           </div>
           <div className="flex gap-2">
             <Link href="/nexus-os/today" className="rounded-xl border border-emerald-400/50 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20">Åpne I dag →</Link>
-            <Link href="/nexus-os/communications" className="rounded-xl border border-cyan-300/60 bg-cyan-300/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-300/20">E-post →</Link>
+            <a href="/nexus-os/communications" className="rounded-xl border border-cyan-300/60 bg-cyan-300/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-300/20">E-post →</a>
           </div>
         </div>
 
         <nav aria-label="Nexus hovedvalg" className="mt-4 flex gap-2 overflow-x-auto pb-1">
-          {PRIMARY_LINKS.map((item) => <Link key={item.href} href={item.href} className="whitespace-nowrap rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs font-black text-slate-200 transition hover:border-cyan-400 hover:bg-cyan-400/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">{item.label}</Link>)}
+          {PRIMARY_LINKS.map((item) => item.href === "/nexus-os/communications" ? <a key={item.href} href={item.href} className="whitespace-nowrap rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs font-black text-slate-200 transition hover:border-cyan-400 hover:bg-cyan-400/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">{item.label}</a> : <Link key={item.href} href={item.href} className="whitespace-nowrap rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs font-black text-slate-200 transition hover:border-cyan-400 hover:bg-cyan-400/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">{item.label}</Link>)}
         </nav>
 
         <details className="mt-3 rounded-xl border border-slate-800 bg-slate-950/45">

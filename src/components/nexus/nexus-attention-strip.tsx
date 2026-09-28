@@ -80,7 +80,7 @@ export function NexusAttentionStrip() {
         <span className="text-slate-400">IG comment-read <b className="text-slate-200">{summary?.instagramCommentReadReady ?? "—"}/{summary?.instagramConnected ?? "—"}</b></span>
         <span className="text-slate-500">Social sync {ageLabel(data?.social?.lastSync?.createdAt)}</span>
         {summary?.socialAutoReplyLive && <Link href="/nexus-os/runtime" className="rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-1 font-black text-rose-300">AUTO-REPLY LIVE</Link>}
-        {top && top.id !== "os:clear" && <Link href={top.href} className="ml-auto max-w-[520px] truncate font-bold text-amber-300 hover:text-amber-200">Neste: {top.title} →</Link>}
+        {top && top.id !== "os:clear" && <a href={top.href} className="ml-auto max-w-[520px] truncate rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 font-bold text-amber-300 hover:bg-amber-400/20 hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">Neste: {top.title} →</a>}
       </>}
 
       <button type="button" onClick={() => void load()} disabled={loading} className="ml-auto inline-flex items-center gap-1 text-slate-500 hover:text-slate-200 disabled:opacity-50" aria-label="Oppdater Nexus-status">
