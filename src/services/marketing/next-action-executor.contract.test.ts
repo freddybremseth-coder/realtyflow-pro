@@ -14,6 +14,8 @@ test("next-action executor only queues controlled-auto canary preparation", () =
   assert.match(executor, /candidate\.execution === "AUTO_READY"/);
   assert.match(executor, /marketing_autopilot_run_requests/);
   assert.match(executor, /nextActionRequestIdentity\(action\.id\)/);
+  assert.match(executor, /loadUnifiedGrowthScore/);
+  assert.match(executor, /buildMarketingNextActions\(rows, REQUIRED_OBSERVATIONS, businessSignals\)/);
 });
 
 test("executor has both publication and request cooldowns before enqueue", () => {
@@ -36,4 +38,13 @@ test("review-only canary cannot silently become live through the request path", 
   assert.match(campaign, /autonomy\.preapprovedChannels\.has\(String\(brief\.channel\)\.toLowerCase\(\)\)/);
   assert.match(campaign, /preapprovedFormat/);
   assert.doesNotMatch(executor, /marketing_brand_growth_plans[\s\S]*\.update\(/);
+});
+
+
+test("business-aware executor remains fail-safe and cannot expand autonomy", () => {
+  assert.match(executor, /loadUnifiedGrowthScore\(supabase, \{ days: 30 \}\)\.catch\(\(\) => null\)/);
+  assert.match(executor, /candidate\.kind === "PREPARE_CANARY"/);
+  assert.match(executor, /controlledBrands\.has\(candidate\.brandId\)/);
+  assert.match(executor, /nextActionPublicationMode/);
+  assert.doesNotMatch(executor, /preapprovedChannels\.add/);
 });
