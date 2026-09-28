@@ -354,7 +354,7 @@ function buildPresentationJson(input: {
         title: "Valgte alternativer",
         items: snapshot.items.map((item) => ({
           propertyId: item.propertyId,
-          sourceKind: item.propertySourceKind,
+          sourceKind: item.propertySourceKind === "land_plot" ? "land_plot" : "property",
           reference: item.propertyReference,
           title: propertyName(item),
           location: item.propertyLocation,
