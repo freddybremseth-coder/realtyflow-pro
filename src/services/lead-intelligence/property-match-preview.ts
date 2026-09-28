@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
-import { propertyMatchesBrand } from "@/lib/realty/brand-rules";
+import { plotMatchesBrand, propertyMatchesBrand } from "@/lib/realty/brand-rules";
 import {
   BoundedJsonSchema,
   CanonicalCriterionKeySchema,
@@ -35,6 +35,20 @@ const LOCATION_DISCOVERY_COLUMNS = [
   "title",
   "title_no",
   "title_en",
+] as const;
+const STRATEGIC_INLAND_TOWNS = [
+  "Pinoso",
+  "Aspe",
+  "Novelda",
+  "La Romana",
+  "Hondón de las Nieves",
+  "Hondón de los Frailes",
+  "Monforte del Cid",
+  "Monóvar",
+  "Sax",
+  "Villena",
+  "Salinas",
+  "Fortuna",
 ] as const;
 const PropertyReferenceSchema = z
   .string()
@@ -130,6 +144,7 @@ type SupabaseInventoryClient = {
 
 export interface PropertyMatchPreviewPropertySummary {
   id: string;
+  sourceKind: "property" | "land_plot";
   reference: string | null;
   title: string | null;
   location: string | null;
@@ -334,6 +349,26 @@ export async function loadPropertiesByReferencesFromSupabase(
 
   if (uuidReferences.length > 0) {
     await queryPropertiesByColumn("id", uuidReferences);
+
+    const { data: plotData, error: plotError } = await supabase
+      .from("land_plots")
+      .select("*")
+      .in("id", uuidReferences)
+      .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
+    if (plotError && !isMissingOptionalVisibilityTableError(plotError)) {
+      throw new LeadIntelligenceError(
+        "PROPERTY_MATCHING_UNAVAILABLE",
+        "Land plot lookup failed",
+        503,
+      );
+    }
+    for (const plot of (plotData || []) as RawProperty[]) {
+      if (plotMatchesBrand(plot, _brand)) {
+        const mapped = landPlotToRawProperty(plot);
+        const id = typeof mapped.id === "string" ? mapped.id : "";
+        if (id) rows.set(id, mapped);
+      }
+    }
   }
 
   if (textVariants.length > 0) {
@@ -394,6 +429,22 @@ export async function loadCandidatePropertiesFromSupabase(
     profile,
     scanLimit,
   );
+  const strategicMode = profileNeedsDevelopmentStrategy(profile);
+  const strategicInlandRows = strategicMode
+    ? await loadStrategicInlandCandidates(
+        supabase,
+        profile,
+        Math.min(60, Math.max(20, Math.ceil(safeCandidateLimit * 0.45))),
+      )
+    : [];
+  const landPlotRows = profile.propertyTypes.includes("plot")
+    ? await loadLandPlotCandidates(
+        supabase,
+        brand,
+        profile,
+        Math.min(30, Math.max(10, Math.ceil(safeCandidateLimit * 0.25))),
+      )
+    : [];
 
   let { data, error } = await runCandidateQuery(true, true);
   if (error && isMissingPropertyReferenceColumnError(error)) {
@@ -412,14 +463,120 @@ export async function loadCandidatePropertiesFromSupabase(
   const broadRows = (data || []) as RawProperty[];
   const candidateRows =
     preferredLocationRows.length > 0 && profile.locations.flexible === false
-      ? preferredLocationRows
-      : mergePropertyRows(preferredLocationRows, broadRows);
+      ? mergePropertyRowGroups([preferredLocationRows, strategicInlandRows, landPlotRows])
+      : strategicMode
+        ? mergePropertyRowGroups([strategicInlandRows, landPlotRows, preferredLocationRows, broadRows])
+        : mergePropertyRowGroups([preferredLocationRows, broadRows]);
   const filtered = await filterAutoDiscoveredPropertiesForBrand(
     supabase,
     brand,
     candidateRows.filter(isWebsiteVisible),
   );
   return filtered.slice(0, safeCandidateLimit);
+}
+
+function profileNeedsDevelopmentStrategy(profile: LeadMatchProfile) {
+  return profile.propertyTypes.some((type) => type === "plot" || type === "country_house" || type === "finca");
+}
+
+async function loadStrategicInlandCandidates(
+  supabase: SupabaseInventoryClient,
+  profile: LeadMatchProfile,
+  limit: number,
+) {
+  const rows = new Map<string, RawProperty>();
+  const addRows = (data: RawProperty[] | null) => {
+    for (const property of data || []) {
+      const id = typeof property.id === "string" ? property.id : "";
+      if (id) rows.set(id, property);
+    }
+  };
+  let townQuery = supabase
+    .from("properties")
+    .select("*")
+    .in("town", [...STRATEGIC_INLAND_TOWNS])
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (profile.budget.amount) townQuery = townQuery.lte("price", Math.ceil(profile.budget.amount * 1.15));
+  const townResult = await townQuery;
+  if (townResult.error) {
+    throw new LeadIntelligenceError("PROPERTY_MATCHING_UNAVAILABLE", "Inland property lookup failed", 503);
+  }
+  addRows((townResult.data || []) as RawProperty[]);
+
+  let inlandQuery = supabase
+    .from("properties")
+    .select("*")
+    .ilike("location", "%Inland%")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (profile.budget.amount) inlandQuery = inlandQuery.lte("price", Math.ceil(profile.budget.amount * 1.15));
+  const inlandResult = await inlandQuery;
+  if (inlandResult.error) {
+    throw new LeadIntelligenceError("PROPERTY_MATCHING_UNAVAILABLE", "Inland property lookup failed", 503);
+  }
+  addRows((inlandResult.data || []) as RawProperty[]);
+
+  return Array.from(rows.values()).slice(0, limit);
+}
+
+async function loadLandPlotCandidates(
+  supabase: SupabaseInventoryClient,
+  brand: string,
+  profile: LeadMatchProfile,
+  limit: number,
+) {
+  let query = supabase
+    .from("land_plots")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(Math.min(limit * 4, 120));
+  if (profile.budget.amount) query = query.lte("price", profile.budget.amount);
+
+  const { data, error } = await query;
+  if (error) {
+    throw new LeadIntelligenceError("PROPERTY_MATCHING_UNAVAILABLE", "Land plot lookup failed", 503);
+  }
+
+  return ((data || []) as RawProperty[])
+    .filter((plot) => plotMatchesBrand(plot, brand))
+    .filter((plot) => !/\b(sold|vendido|reservado|reserved)\b/i.test(String(plot.plot_number || plot.location || "")))
+    .filter((plot) => Number(plot.price || 0) > 0)
+    .map(landPlotToRawProperty)
+    .slice(0, limit);
+}
+
+function landPlotToRawProperty(plot: RawProperty): RawProperty {
+  const plotNumber = cleanDisplayText(plot.plot_number) || "Tomt";
+  const municipality = cleanDisplayText(plot.municipality);
+  const location = municipality || cleanDisplayText(plot.location) || plotNumber;
+  const notes = cleanDisplayText(plot.notes);
+  return {
+    id: plot.id,
+    __source_kind: "land_plot",
+    ref: plotNumber,
+    reference: plotNumber,
+    title: `Tomt · ${plotNumber}`,
+    location,
+    town: municipality,
+    property_type: "plot",
+    type: "plot",
+    price: toNumberOrNull(plot.price),
+    plot_size: toNumberOrNull(plot.area),
+    description: notes,
+    source_description: notes,
+    zoning: plot.zoning,
+    water: plot.water,
+    electricity: plot.electricity,
+    road_access: plot.road_access,
+    lat: plot.lat,
+    lng: plot.lng,
+    source: plot.source || "land_plots",
+    updated_at: plot.updated_at,
+    created_at: plot.created_at,
+    show_on_website: true,
+    website_visible: true,
+  };
 }
 
 async function loadPreferredLocationCandidates(
@@ -471,8 +628,12 @@ async function loadPreferredLocationCandidates(
 }
 
 function mergePropertyRows(primary: RawProperty[], secondary: RawProperty[]) {
+  return mergePropertyRowGroups([primary, secondary]);
+}
+
+function mergePropertyRowGroups(groups: RawProperty[][]) {
   const rows = new Map<string, RawProperty>();
-  for (const property of [...primary, ...secondary]) {
+  for (const property of groups.flat()) {
     const id = typeof property.id === "string" ? property.id : "";
     if (id && !rows.has(id)) rows.set(id, property);
   }
@@ -626,6 +787,7 @@ function buildLeadMatchProfile(
   criteria: PersistedCriterion[],
   approvedAnalysis: ExtractedLead | null = null,
 ): LeadMatchProfile {
+  const propertyTypes = derivePropertyTypes(criteria);
   return {
     buyerProfileId: profile.id,
     budget: {
@@ -635,22 +797,22 @@ function buildLeadMatchProfile(
       approximate: profile.budgetApproximate,
       hardLimit: null,
     },
-    propertyTypes: derivePropertyTypes(criteria),
+    propertyTypes,
     locations: deriveLocations(profile, criteria, approvedAnalysis),
     hardRequirements: criteria
       .filter((criterion) => criterion.criterionType === "hard_requirement")
       .filter((criterion) => !isDuplicateBudgetHardRequirement(profile, criterion))
-      .map((criterion) => criterionToRequirement(criterion)),
+      .map((criterion) => criterionToRequirement(criterion, propertyTypes)),
     preferences: criteria
       .filter((criterion) => criterion.criterionType === "preference")
       .map((criterion) => ({
-        ...criterionToRequirement(criterion),
+        ...criterionToRequirement(criterion, propertyTypes),
         weight: criterion.weight ?? 0.5,
       })),
     exclusions: criteria
       .filter((criterion) => criterion.criterionType === "exclusion")
       .map((criterion) => ({
-        ...criterionToRequirement(criterion),
+        ...criterionToRequirement(criterion, propertyTypes),
         severity: criterion.severity || "major_penalty",
       })),
   };
@@ -666,13 +828,30 @@ function parseApprovedAnalysis(resultJson: unknown): ExtractedLead | null {
   return parsed.success ? parsed.data : null;
 }
 
-function criterionToRequirement(criterion: PersistedCriterion): ExtractedLead["hardRequirements"][number] {
+function criterionToRequirement(
+  criterion: PersistedCriterion,
+  profilePropertyTypes: ExtractedLead["propertyTypes"],
+): ExtractedLead["hardRequirements"][number] {
   const operator =
     ["bedrooms", "bathrooms"].includes(criterion.key) &&
     criterion.operator === "eq" &&
     criterionNumericValue(criterion.value) !== null
       ? "gte"
       : criterion.operator;
+
+  const implicitDwellingScope =
+    profilePropertyTypes.includes("plot") &&
+    criterion.appliesToPropertyTypes.length === 0 &&
+    (
+      ["bedrooms", "bathrooms", "parking"].includes(criterion.key) ||
+      (criterion.key === "purchase_price" && ["gt", "gte"].includes(operator))
+    )
+      ? profilePropertyTypes.filter((type) => !["plot", "other", "unknown"].includes(type))
+      : [];
+  const appliesToPropertyTypes =
+    criterion.appliesToPropertyTypes.length > 0
+      ? criterion.appliesToPropertyTypes
+      : implicitDwellingScope;
 
   return {
     key: criterion.key,
@@ -681,9 +860,7 @@ function criterionToRequirement(criterion: PersistedCriterion): ExtractedLead["h
     value: criterion.value,
     sourceText: criterion.sourceText || "Approved buyer profile criterion",
     ...(criterion.confidence === null ? {} : { confidence: criterion.confidence }),
-    ...(criterion.appliesToPropertyTypes.length > 0
-      ? { appliesToPropertyTypes: criterion.appliesToPropertyTypes }
-      : {}),
+    ...(appliesToPropertyTypes.length > 0 ? { appliesToPropertyTypes } : {}),
   } as ExtractedLead["hardRequirements"][number];
 }
 
@@ -803,6 +980,7 @@ function summarizePropertyForPreview(
 ): PropertyMatchPreviewPropertySummary {
   return {
     id: propertyId,
+    sourceKind: property.__source_kind === "land_plot" ? "land_plot" : "property",
     reference: cleanDisplayText(firstPropertyText(property, ["ref", "reference", "external_id", "source_property_id"])),
     title: cleanDisplayText(firstPropertyText(property, ["title", "title_no", "title_en", "title_es", "name", "project_name"])),
     location: cleanDisplayText(firstPropertyText(property, ["location", "town", "municipality", "area"])),
@@ -826,6 +1004,7 @@ function summarizePropertyForPreview(
 function fallbackPropertySummary(propertyId: string): PropertyMatchPreviewPropertySummary {
   return {
     id: propertyId,
+    sourceKind: "property",
     reference: null,
     title: null,
     location: null,
