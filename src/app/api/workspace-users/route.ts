@@ -17,6 +17,31 @@ const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type BrandAccess = { brandKey: string; permissions: WorkspacePermission[] };
+type AccountKind = "staff" | "external";
+type DirectoryMetadata = { accountKind: AccountKind; organization: string | null; accessExpiresAt: string | null };
+
+function directoryMetadata(body: Record<string, unknown>, fallback?: Partial<DirectoryMetadata>) {
+  const rawKind = body.accountKind ?? fallback?.accountKind ?? "staff";
+  if (rawKind !== "staff" && rawKind !== "external") {
+    return { value: null, error: { error: "INVALID_ACCOUNT_KIND", field: "accountKind", message: "Velg intern medarbeider eller ekstern samarbeidspartner." } };
+  }
+  const rawOrganization = body.organization ?? fallback?.organization ?? null;
+  const organization = rawOrganization == null || String(rawOrganization).trim() === ""
+    ? null : String(rawOrganization).trim();
+  if (organization && organization.length > 160) {
+    return { value: null, error: { error: "INVALID_ORGANIZATION", field: "organization", message: "Firma/organisasjon kan være maks 160 tegn." } };
+  }
+  const rawExpiry = body.accessExpiresAt ?? fallback?.accessExpiresAt ?? null;
+  let accessExpiresAt: string | null = null;
+  if (rawExpiry != null && String(rawExpiry).trim() !== "") {
+    const timestamp = Date.parse(String(rawExpiry));
+    if (!Number.isFinite(timestamp)) {
+      return { value: null, error: { error: "INVALID_ACCESS_EXPIRY", field: "accessExpiresAt", message: "Sluttdatoen for tilgang er ugyldig." } };
+    }
+    accessExpiresAt = new Date(timestamp).toISOString();
+  }
+  return { value: { accountKind: rawKind as AccountKind, organization, accessExpiresAt }, error: null };
+}
 
 function reply(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: noStore });
@@ -117,9 +142,13 @@ function safeSnapshot(value: unknown) {
         updatedAt: typeof m.updated_at === "string" ? m.updated_at : null,
       };
     }).filter(Boolean);
+    const accountKind = row.account_kind === "external" ? "external" : "staff";
+    const organization = typeof row.organization === "string" && row.organization.trim() ? row.organization.trim() : null;
+    const accessExpiresAt = typeof row.access_expires_at === "string" ? row.access_expires_at : null;
     return {
       userId: row.user_id, username: row.username, email: row.email,
       displayName: row.display_name, status: row.status,
+      accountKind, organization, accessExpiresAt, expired: row.expired === true,
       createdAt: typeof row.created_at === "string" ? row.created_at : null,
       updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
       memberships,
@@ -198,6 +227,7 @@ export async function POST(request: NextRequest) {
     const displayName = String(body.displayName || "").trim();
     const password = body.password;
     const brandAccess = validBrandAccess(body.brandAccess);
+    const metadata = directoryMetadata(body);
     if (!usernamePattern.test(username)) {
       return reply({
         error: "INVALID_USERNAME",
@@ -225,6 +255,7 @@ export async function POST(request: NextRequest) {
         message: "Velg minst én gyldig merkevare og minst ett tillatt program for hver valgt merkevare.",
       }, 400);
     }
+    if (!metadata.value) return reply(metadata.error, 400);
 
     const { snapshot: beforeCreate, error: beforeCreateError } = await loadSnapshot(supabase);
     if (beforeCreateError || !beforeCreate) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
@@ -241,13 +272,17 @@ export async function POST(request: NextRequest) {
       email,
       password: password as string,
       email_confirm: true,
-      user_metadata: { username, display_name: displayName, account_type: "realtyflow_workspace" },
+      user_metadata: {
+        username, display_name: displayName, account_type: "realtyflow_workspace",
+        account_kind: metadata.value.accountKind,
+        organization: metadata.value.organization,
+      },
     });
     if (authError || !created.user?.id) {
       return reply({ error: "AUTH_USER_CREATE_FAILED" }, authError?.status === 422 ? 409 : 503);
     }
 
-    const { data: configured, error: configureError } = await supabase.rpc("workspace_user_configure", {
+    const { data: configured, error: configureError } = await supabase.rpc("workspace_user_configure_v2", {
       p_user_id: created.user.id,
       p_username: username,
       p_email: email,
@@ -256,6 +291,9 @@ export async function POST(request: NextRequest) {
         brandKey: item.brandKey, permissions: item.permissions,
       })),
       p_actor: owner.context.email,
+      p_account_kind: metadata.value.accountKind,
+      p_organization: metadata.value.organization,
+      p_access_expires_at: metadata.value.accessExpiresAt,
     });
     if (configureError || configured !== true) {
       const rollback = await supabase.auth.admin.deleteUser(created.user.id).catch(() => ({ error: new Error("rollback failed") } as any));
@@ -267,7 +305,11 @@ export async function POST(request: NextRequest) {
     const runtime = await getWorkspaceRuntimeState(supabase);
     return reply({
       ok: true,
-      user: { userId: created.user.id, username, email, displayName, status: "active" },
+      user: {
+        userId: created.user.id, username, email, displayName, status: "active",
+        accountKind: metadata.value.accountKind, organization: metadata.value.organization,
+        accessExpiresAt: metadata.value.accessExpiresAt,
+      },
       passwordStoredInRealtyFlow: false,
       loginEnabled: runtime.enabled,
     }, 201);
@@ -284,6 +326,11 @@ export async function POST(request: NextRequest) {
     const username = String(body.username || existing.username).trim().toLowerCase();
     const displayName = String(body.displayName || existing.displayName).trim();
     const brandAccess = validBrandAccess(body.brandAccess);
+    const metadata = directoryMetadata(body, {
+      accountKind: existing.accountKind,
+      organization: existing.organization,
+      accessExpiresAt: existing.accessExpiresAt,
+    });
     if (!usernamePattern.test(username)) {
       return reply({
         error: "INVALID_USERNAME",
@@ -301,6 +348,7 @@ export async function POST(request: NextRequest) {
         message: "Velg minst én gyldig merkevare og minst ett tillatt program for hver valgt merkevare.",
       }, 400);
     }
+    if (!metadata.value) return reply(metadata.error, 400);
     const knownBrands = new Set(snapshot.brands.map((brand: any) => brand.brandKey));
     if (brandAccess.some(item => !knownBrands.has(item.brandKey))) {
       return reply({ error: "UNKNOWN_BRAND" }, 400);
@@ -314,7 +362,7 @@ export async function POST(request: NextRequest) {
         authResult.user.email?.trim().toLowerCase() !== existing.email) {
       return reply({ error: "AUTH_IDENTITY_MISMATCH" }, 409);
     }
-    const { data, error } = await supabase.rpc("workspace_user_configure", {
+    const { data, error } = await supabase.rpc("workspace_user_configure_v2", {
       p_user_id: userId,
       p_username: username,
       p_email: existing.email,
@@ -323,9 +371,16 @@ export async function POST(request: NextRequest) {
         brandKey: item.brandKey, permissions: item.permissions,
       })),
       p_actor: owner.context.email,
+      p_account_kind: metadata.value.accountKind,
+      p_organization: metadata.value.organization,
+      p_access_expires_at: metadata.value.accessExpiresAt,
     });
     if (error || data !== true) return reply({ error: "WORKSPACE_USER_CONFIGURE_FAILED" }, error ? 503 : 409);
-    return reply({ ok: true, userId, username, displayName });
+    return reply({
+      ok: true, userId, username, displayName,
+      accountKind: metadata.value.accountKind, organization: metadata.value.organization,
+      accessExpiresAt: metadata.value.accessExpiresAt,
+    });
   }
 
   if (action === "SET_PASSWORD") {
