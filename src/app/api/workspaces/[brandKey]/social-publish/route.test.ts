@@ -43,8 +43,8 @@ function fakeDb() {
         return Promise.resolve({
           data: {
             channels: [
-              { id: facebookChannelId, platform: "facebook", displayName: "Pinoso Facebook", externalId: "MUST-NOT-LEAK" },
-              { id: instagramChannelId, platform: "instagram", displayName: "Pinoso Instagram", token: "MUST-NOT-LEAK" },
+              { platform: "facebook", displayName: "Pinoso Facebook", externalId: "MUST-NOT-LEAK" },
+              { platform: "instagram", displayName: "Pinoso Instagram", token: "MUST-NOT-LEAK" },
             ],
             publications: [{
               id: publicationId,
@@ -158,7 +158,7 @@ test.afterEach(() => {
   globalThis.fetch = previousFetch;
 });
 
-test("snapshot exposes exact safe channel IDs without tokens or external IDs", async () => {
+test("snapshot exposes safe platform labels without account IDs, tokens or external IDs", async () => {
   const cookie = "realtyflow_admin=" +
     await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
 
@@ -167,7 +167,7 @@ test("snapshot exposes exact safe channel IDs without tokens or external IDs", a
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.channels.length, 2);
-  assert.equal(body.channels[0].id, facebookChannelId);
+  assert.equal("id" in body.channels[0], false);
   assert.equal(body.publications[0].id, publicationId);
   assert.deepEqual(body.supportedPlatforms, ["facebook", "instagram"]);
   assert.equal(JSON.stringify(body).includes("MUST-NOT-LEAK"), false);
@@ -186,7 +186,7 @@ test("publish is denied before prepare or external runtime without marketing.pub
 
   const response = await POST(request("pinosoecolife", "POST", {
     publicationId,
-    channelIds: [facebookChannelId],
+    platforms: ["facebook"],
   }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
 
   assert.equal(response.status, 403);
@@ -200,9 +200,10 @@ test("request cannot forge brand content image platform or external account", as
 
   const response = await POST(request("pinosoecolife", "POST", {
     publicationId,
-    channelIds: [facebookChannelId],
+    platforms: ["facebook"],
     brandId: "zeneco",
     platform: "linkedin",
+    channelIds: [instagramChannelId],
     content: "ATTACKER CONTENT",
     imageUrl: "https://attacker.example/evil.jpg",
     socialChannelIds: { facebook: "attacker-channel" },
@@ -244,7 +245,7 @@ test("malformed prepared payload is finalized failed before any external publish
 
   const response = await POST(request("pinosoecolife", "POST", {
     publicationId,
-    channelIds: [facebookChannelId],
+    platforms: ["facebook"],
   }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
 
   assert.equal(response.status, 503);
@@ -263,7 +264,7 @@ test("wrong-brand or invalid channel resolution fails before external publish", 
 
   const response = await POST(request("pinosoecolife", "POST", {
     publicationId,
-    channelIds: [facebookChannelId],
+    platforms: ["facebook"],
   }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
 
   assert.equal(response.status, 409);
@@ -277,7 +278,7 @@ test("instagram without an existing image fails before external publish", async 
 
   const response = await POST(request("pinosoecolife", "POST", {
     publicationId,
-    channelIds: [instagramChannelId],
+    platforms: ["instagram"],
   }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
 
   assert.equal(response.status, 409);
@@ -316,7 +317,7 @@ test("partial external success is returned without leaking channel external IDs"
 
   const response = await POST(request("pinosoecolife", "POST", {
     publicationId,
-    channelIds: [facebookChannelId, instagramChannelId],
+    platforms: ["facebook", "instagram"],
   }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
 
   assert.equal(response.status, 200);
@@ -341,7 +342,7 @@ test("publisher throw is audited failed and returned as controlled error", async
 
   const response = await POST(request("pinosoecolife", "POST", {
     publicationId,
-    channelIds: [facebookChannelId],
+    platforms: ["facebook"],
   }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
 
   assert.equal(response.status, 502);
