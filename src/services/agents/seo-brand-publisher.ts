@@ -308,7 +308,7 @@ export async function portfolioPublicationStatuses(db: SupabaseClient, last: unk
     if (job) {
       if (job.phase === "rolled_back") return {...common,status:"rollback",reason:`${version.toUpperCase()} er tilbakeført og bekreftet offentlig.`};
       if (job.phase.startsWith("rollback_") && saved?.status === "blocked") return saved;
-      if (job.phase.startsWith("rollback_")) return {...common,status:"pending",reason:`${version.toUpperCase()}-tilbakeføring er satt i kø. Sam følger den opp automatisk.`};
+      if (job.phase.startsWith("rollback_")) return {...common,status:"pending",reason:`Tilbakeføring av ${version.toUpperCase()} er satt i kø. Sam følger den opp automatisk.`};
       if (job.phase === "done") return {...common,status:"verified",reason:`${version.toUpperCase()} er publisert og verifisert. Sam følger effektmålingen videre.`,rollbackAvailable:true,revision:job.mergeSha};
       if (saved?.status === "blocked") return saved;
       return {...common,status:"pending",reason:job.phase === "prepare"
