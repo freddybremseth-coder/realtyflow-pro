@@ -14,7 +14,12 @@ type Membership = {
 };
 type WorkspaceUser = {
   userId: string; username: string; email: string; displayName: string;
-  status: "active" | "disabled"; memberships: Membership[];
+  status: "active" | "disabled";
+  accountKind: "staff" | "external";
+  organization: string | null;
+  accessExpiresAt: string | null;
+  expired: boolean;
+  memberships: Membership[];
 };
 type Snapshot = {
   users: WorkspaceUser[]; brands: Brand[]; featureEnabled: boolean;
@@ -83,6 +88,19 @@ function strongGeneratedPassword() {
   return value.slice(0, 18) + "aA7!";
 }
 
+function accessExpiryInput(value: string | null) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function accessExpiryIso(value: string) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T23:59:59.999Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
   const next: Record<string, BrandChoice> = {};
   for (const brand of brands) next[brand.brandKey] = emptyChoice();
@@ -130,6 +148,9 @@ export default function WorkspaceUsersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [accountKind, setAccountKind] = useState<"staff" | "external">("staff");
+  const [organization, setOrganization] = useState("");
+  const [accessExpiry, setAccessExpiry] = useState("");
   const [choices, setChoices] = useState<Record<string, BrandChoice>>({});
 
   const selectedUser = useMemo(
@@ -159,6 +180,7 @@ export default function WorkspaceUsersPage() {
   function startNew() {
     setSelectedUserId(null);
     setDisplayName(""); setUsername(""); setEmail(""); setPassword("");
+    setAccountKind("staff"); setOrganization(""); setAccessExpiry("");
     setError(""); setNotice("");
     const next: Record<string, BrandChoice> = {};
     for (const brand of snapshot?.brands || []) next[brand.brandKey] = emptyChoice();
@@ -171,6 +193,9 @@ export default function WorkspaceUsersPage() {
     setUsername(user.username);
     setEmail(user.email);
     setPassword("");
+    setAccountKind(user.accountKind || "staff");
+    setOrganization(user.organization || "");
+    setAccessExpiry(accessExpiryInput(user.accessExpiresAt));
     setChoices(choicesForUser(user, snapshot?.brands || []));
     setError(""); setNotice("");
   }
@@ -232,7 +257,7 @@ export default function WorkspaceUsersPage() {
   async function toggleLogin() {
     if (!snapshot || busy) return;
     const enabled = !snapshot.featureEnabled;
-    if (!enabled && !window.confirm("Deaktivere medarbeiderinnlogging globalt? Eksisterende workspace-sesjoner blir avvist ved neste beskyttede request.")) return;
+    if (!enabled && !window.confirm("Deaktivere workspace-innlogging globalt? Eksisterende brukerøkter blir avvist ved neste beskyttede request.")) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/workspace-users", {
@@ -241,13 +266,13 @@ export default function WorkspaceUsersPage() {
         body: JSON.stringify({ action: "SET_LOGIN_ENABLED", enabled }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(apiError(body, "Kunne ikke oppdatere medarbeiderinnloggingen."));
+      if (!response.ok) throw new Error(apiError(body, "Kunne ikke oppdatere workspace-innloggingen."));
       setNotice(body.featureEnabled
-        ? "Medarbeiderinnlogging er aktivert. Kun aktive brukere med verifiserte merkevarer og programmer slipper inn."
-        : "Medarbeiderinnlogging er deaktivert globalt.");
+        ? "Workspace-innlogging er aktivert. Kun aktive brukere med verifiserte merkevarer og programmer slipper inn."
+        : "Workspace-innlogging er deaktivert globalt.");
       await reload();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Kunne ikke oppdatere medarbeiderinnloggingen.");
+      setError(cause instanceof Error ? cause.message : "Kunne ikke oppdatere workspace-innloggingen.");
     } finally { setBusy(false); }
   }
 
@@ -271,6 +296,15 @@ export default function WorkspaceUsersPage() {
       setError("Velg minst én merkevare og minst ett program for brukeren.");
       return;
     }
+    if (organization.trim().length > 160) {
+      setError("Firma/organisasjon kan være maks 160 tegn.");
+      return;
+    }
+    const expiresAt = accessExpiry ? accessExpiryIso(accessExpiry) : null;
+    if (accessExpiry && !expiresAt) {
+      setError("Velg en gyldig sluttdato for tilgangen.");
+      return;
+    }
     if (!selectedUser && !strongPassword(password)) {
       setError("Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.");
       return;
@@ -284,12 +318,14 @@ export default function WorkspaceUsersPage() {
           ? {
               action: "UPDATE_ACCESS", userId: selectedUser.userId,
               username: username.trim().toLowerCase(), displayName: displayName.trim(),
-              brandAccess: access,
+              accountKind, organization: organization.trim() || null,
+              accessExpiresAt: expiresAt, brandAccess: access,
             }
           : {
               action: "CREATE_USER", username: username.trim().toLowerCase(),
               displayName: displayName.trim(), email: email.trim().toLowerCase(),
-              password, brandAccess: access,
+              password, accountKind, organization: organization.trim() || null,
+              accessExpiresAt: expiresAt, brandAccess: access,
             }),
       });
       const body = await response.json();
@@ -298,7 +334,7 @@ export default function WorkspaceUsersPage() {
         ? "Tilgangen er oppdatert. Endringen er avgrenset til valgte merkevarer og programmer."
         : body.loginEnabled
           ? "Brukeren er opprettet og kan logge inn med brukernavn eller e-post."
-          : "Brukeren er opprettet, men medarbeiderinnlogging er fortsatt globalt deaktivert.");
+          : "Brukeren er opprettet, men workspace-innlogging er fortsatt globalt deaktivert.");
       setPassword("");
       await reload();
       if (!selectedUser && body.user?.userId) setSelectedUserId(body.user.userId);
@@ -348,8 +384,8 @@ export default function WorkspaceUsersPage() {
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-400">Owner · tilgangsstyring</p>
         <h1 className="mt-2 text-3xl font-bold">Brukere & tilgang</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-400">
-          Opprett medarbeidere med brukernavn, e-post og passord. Velg deretter nøyaktig hvilke
-          merkevarer og RealtyFlow-programmer de kan bruke. Passord lagres aldri i RealtyFlow.
+          Opprett interne medarbeidere eller eksterne samarbeidspartnere. Velg nøyaktig hvilke
+          merkevarer og RealtyFlow-programmer hver person kan bruke, og sett valgfri sluttdato for ekstern tilgang. Passord lagres aldri i RealtyFlow.
         </p>
       </div>
       <button onClick={() => void reload()} disabled={loading || busy}
@@ -364,10 +400,10 @@ export default function WorkspaceUsersPage() {
       <div>
         <ShieldCheck size={17} className="mr-2 inline"/>
         {snapshot.featureStatus === "unavailable"
-          ? "Status for medarbeiderinnlogging kunne ikke verifiseres. Tilgang forblir fail-closed."
+          ? "Status for workspace-innlogging kunne ikke verifiseres. Tilgang forblir fail-closed."
           : snapshot.featureEnabled
-            ? "Medarbeiderinnlogging er aktivert. Hver rute kontrollerer fortsatt bruker, merkevare og programrettighet."
-            : "Medarbeiderinnlogging er globalt deaktivert. Opprettede brukere kan ikke komme inn før du aktiverer den."}
+            ? "Workspace-innlogging er aktivert. Hver rute kontrollerer fortsatt bruker, merkevare og programrettighet."
+            : "Workspace-innlogging er globalt deaktivert. Opprettede brukere kan ikke komme inn før du aktiverer den."}
       </div>
       <button type="button" onClick={() => void toggleLogin()}
         disabled={busy || snapshot.featureStatus === "unavailable"}
@@ -392,13 +428,19 @@ export default function WorkspaceUsersPage() {
           {snapshot?.users.map(user => <button key={user.userId} onClick={() => editUser(user)}
             className={`w-full rounded-xl border p-3 text-left ${selectedUserId === user.userId
               ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50"}`}>
-            <span className="block font-medium">{user.displayName}</span>
+            <span className="flex items-center justify-between gap-2">
+              <span className="font-medium">{user.displayName}</span>
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${user.accountKind === "external" ? "border-violet-700 text-violet-300" : "border-slate-700 text-slate-400"}`}>
+                {user.accountKind === "external" ? "Ekstern" : "Intern"}
+              </span>
+            </span>
             <span className="block text-xs text-slate-400">@{user.username} · {user.email}</span>
-            <span className={`mt-1 inline-block text-xs ${user.status === "active" ? "text-emerald-300" : "text-amber-300"}`}>
-              {user.status === "active" ? "Aktiv" : "Deaktivert"} · {user.memberships.filter(m => m.status === "active").length} merkevarer
+            {user.organization && <span className="block text-xs text-slate-500">{user.organization}</span>}
+            <span className={`mt-1 inline-block text-xs ${user.expired || user.status !== "active" ? "text-amber-300" : "text-emerald-300"}`}>
+              {user.expired ? "Tilgang utløpt" : user.status === "active" ? "Aktiv" : "Deaktivert"} · {user.memberships.filter(m => m.status === "active").length} merkevarer
             </span>
           </button>)}
-          {!loading && snapshot?.users.length === 0 && <p className="text-sm text-slate-500">Ingen medarbeidere er opprettet ennå.</p>}
+          {!loading && snapshot?.users.length === 0 && <p className="text-sm text-slate-500">Ingen workspace-brukere er opprettet ennå.</p>}
         </div>
       </aside>
 
@@ -413,6 +455,34 @@ export default function WorkspaceUsersPage() {
             Deaktiver bruker
           </button>}
         </div>
+
+        <section className="rounded-xl border border-slate-700 bg-slate-950/40 p-4">
+          <h3 className="font-semibold">Brukertype og varighet</h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <button type="button" onClick={() => setAccountKind("staff")}
+              className={`rounded-xl border p-3 text-left ${accountKind === "staff" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-700"}`}>
+              <span className="block font-medium">Intern medarbeider</span>
+              <span className="mt-1 block text-xs text-slate-400">Fast eller intern RealtyFlow-bruker. Får bare valgte brands og moduler.</span>
+            </button>
+            <button type="button" onClick={() => setAccountKind("external")}
+              className={`rounded-xl border p-3 text-left ${accountKind === "external" ? "border-violet-500 bg-violet-950/20" : "border-slate-700"}`}>
+              <span className="block font-medium">Ekstern samarbeidspartner</span>
+              <span className="mt-1 block text-xs text-slate-400">Byrå, freelancer, partner eller rådgiver. Samme brand-/modulsperrer, med valgfri sluttdato.</span>
+            </button>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm">Firma / organisasjon <span className="text-slate-500">(valgfritt)</span>
+              <input value={organization} onChange={e => setOrganization(e.target.value)} maxLength={160}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+                placeholder={accountKind === "external" ? "Firma eller samarbeidspartner" : "Avdeling eller firma"}/>
+            </label>
+            <label className="text-sm">Tilgang til og med <span className="text-slate-500">(valgfritt)</span>
+              <input type="date" value={accessExpiry} onChange={e => setAccessExpiry(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/>
+              <span className="mt-1 block text-xs text-slate-500">Når datoen er passert, blir innlogging automatisk avvist. Brand- og modulrettigheter endres ikke.</span>
+            </label>
+          </div>
+        </section>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="text-sm">Navn
