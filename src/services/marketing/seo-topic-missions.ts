@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { growthBrandDefinition, isMetaGrowthChannel } from "@/lib/marketing/brand-registry";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
@@ -63,6 +64,7 @@ export function buildSEOTopicMissions(snapshots: readonly GSCBrandSnapshot[]): T
     if (!recommendedChannels.length) return [];
 
     const topicId = `seo:${brandId}:${opportunity.issueId}`;
+    const genomeTopic = `seo_${brandId}_${createHash("sha1").update(topicId).digest("hex").slice(0, 12)}`;
     return [{
       brandId,
       sourceId: opportunity.issueId,
@@ -73,6 +75,7 @@ export function buildSEOTopicMissions(snapshots: readonly GSCBrandSnapshot[]): T
       payload: {
         topic_id: topicId,
         content_cluster_id: topicId,
+        genome_topic: genomeTopic,
         origin: "sam_seo",
         mission_kind: "gsc_content_opportunity",
         seo_issue_id: opportunity.issueId,
