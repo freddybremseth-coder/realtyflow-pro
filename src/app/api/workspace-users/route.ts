@@ -19,6 +19,7 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 type BrandAccess = { brandKey: string; permissions: WorkspacePermission[] };
 type AccountKind = "staff" | "external";
 type DirectoryMetadata = { accountKind: AccountKind; organization: string | null; accessExpiresAt: string | null };
+type OnboardingMode = "invite" | "temporary_password";
 
 function directoryMetadata(body: Record<string, unknown>, fallback?: Partial<DirectoryMetadata>) {
   const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
@@ -46,6 +47,23 @@ function directoryMetadata(body: Record<string, unknown>, fallback?: Partial<Dir
 
 function reply(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: noStore });
+}
+
+function onboardingMode(value: unknown): OnboardingMode | null {
+  if (value == null || value === "") return "temporary_password";
+  return value === "invite" || value === "temporary_password" ? value : null;
+}
+
+async function sendWorkspacePasswordSetupEmail(
+  supabase: NonNullable<ReturnType<typeof getPlatformSupabase>>,
+  email: string,
+  request: NextRequest,
+) {
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, "");
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${appUrl}/reset-password?workspace=1`,
+  });
+  return error ? { ok: false, error: error.message || "INVITE_EMAIL_FAILED" } : { ok: true, error: null };
 }
 function safeWrite(request: NextRequest) {
   const origin = request.headers.get("origin");
@@ -231,6 +249,7 @@ export async function POST(request: NextRequest) {
     const username = String(body.username || "").trim().toLowerCase();
     const email = String(body.email || "").trim().toLowerCase();
     const displayName = String(body.displayName || "").trim();
+    const mode = onboardingMode(body.onboardingMode);
     const password = body.password;
     const brandAccess = validBrandAccess(body.brandAccess);
     const metadata = directoryMetadata(body);
@@ -247,7 +266,14 @@ export async function POST(request: NextRequest) {
     if (!displayName || displayName.length > 120) {
       return reply({ error: "INVALID_DISPLAY_NAME", field: "displayName", message: "Navn må være mellom 1 og 120 tegn." }, 400);
     }
-    if (!strongPassword(password)) {
+    if (!mode) {
+      return reply({
+        error: "INVALID_ONBOARDING_MODE",
+        field: "onboardingMode",
+        message: "Velg sikker invitasjon eller midlertidig passord.",
+      }, 400);
+    }
+    if (mode === "temporary_password" && !strongPassword(password)) {
       return reply({
         error: "WEAK_PASSWORD",
         field: "password",
@@ -276,7 +302,7 @@ export async function POST(request: NextRequest) {
 
     const { data: created, error: authError } = await supabase.auth.admin.createUser({
       email,
-      password: password as string,
+      ...(mode === "temporary_password" ? { password: password as string } : {}),
       email_confirm: true,
       user_metadata: {
         username, display_name: displayName, account_type: "realtyflow_workspace",
@@ -308,6 +334,9 @@ export async function POST(request: NextRequest) {
       }
       return reply({ error: "WORKSPACE_USER_CONFIGURE_FAILED" }, configureError ? 503 : 409);
     }
+    const invite = mode === "invite"
+      ? await sendWorkspacePasswordSetupEmail(supabase, email, request)
+      : { ok: false, error: null };
     const runtime = await getWorkspaceRuntimeState(supabase);
     return reply({
       ok: true,
@@ -316,6 +345,9 @@ export async function POST(request: NextRequest) {
         accountKind: metadata.value.accountKind, organization: metadata.value.organization,
         accessExpiresAt: metadata.value.accessExpiresAt,
       },
+      onboardingMode: mode,
+      inviteSent: mode === "invite" ? invite.ok : null,
+      inviteError: mode === "invite" && !invite.ok ? "WORKSPACE_INVITE_SEND_FAILED" : null,
       passwordStoredInRealtyFlow: false,
       loginEnabled: runtime.enabled,
     }, 201);
@@ -387,6 +419,20 @@ export async function POST(request: NextRequest) {
       accountKind: metadata.value.accountKind, organization: metadata.value.organization,
       accessExpiresAt: metadata.value.accessExpiresAt,
     });
+  }
+
+  if (action === "SEND_INVITE") {
+    if (existing.status !== "active" || existing.expired === true) {
+      return reply({ error: "WORKSPACE_USER_NOT_ACTIVE" }, 409);
+    }
+    const { data: authResult, error: authError } = await supabase.auth.admin.getUserById(userId);
+    if (authError || !authResult.user ||
+        authResult.user.email?.trim().toLowerCase() !== existing.email) {
+      return reply({ error: "AUTH_IDENTITY_MISMATCH" }, 409);
+    }
+    const invite = await sendWorkspacePasswordSetupEmail(supabase, existing.email, request);
+    if (!invite.ok) return reply({ error: "WORKSPACE_INVITE_SEND_FAILED" }, 503);
+    return reply({ ok: true, userId, inviteSent: true });
   }
 
   if (action === "SET_PASSWORD") {
