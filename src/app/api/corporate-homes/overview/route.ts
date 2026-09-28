@@ -137,8 +137,9 @@ export async function GET(request: NextRequest) {
     .from("automation_logs")
     .select("id,status,details,created_at")
     .eq("action", "corporate_homes_growth_review")
+    .in("status", ["success", "partial"])
     .order("created_at", { ascending: false })
-    .limit(12);
+    .limit(60);
   const lastCorporateGrowthReview = recentCorporateGrowthReviews?.[0] || null;
 
   const growthDetails =
