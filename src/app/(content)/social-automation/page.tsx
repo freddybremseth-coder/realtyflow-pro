@@ -51,6 +51,11 @@ type LearningInsight = {
   value: string;
   sample: number;
   lift: number;
+  evidence: string;
+  evidenceRank: number;
+  freshness: "fresh" | "recent" | "stale" | "unknown";
+  ageDays: number | null;
+  nextBehavior: string;
   finding: string | null;
   businessValue: number;
   qualifiedLeadRate: number;
@@ -261,7 +266,7 @@ export default function SocialAutomationPage() {
               <div>
                 <div className="text-xs font-black uppercase tracking-wider text-violet-600">What Nexus learned</div>
                 <h2 className="mt-1 text-xl font-black text-slate-950">Dokumentert læring som påvirker neste innhold</h2>
-                <p className="mt-1 max-w-3xl text-sm text-slate-600">Bare favor/avoid-regler fra Learning Engine vises her. Business-resultater prioriteres foran ren reach når evidensen finnes.</p>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600">Bare favor/avoid-regler fra Learning Engine vises her. Sterkere evidens prioriteres først, deretter dokumenterte business-resultater. Du ser også hva Nexus faktisk endrer i neste generering.</p>
               </div>
               <Link href="/analytics" className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-900">Se full analyse →</Link>
             </div>
@@ -272,10 +277,16 @@ export default function SocialAutomationPage() {
                     <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${insight.verdict === "favor" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>{insight.verdict}</span>
                     <span className="text-xs font-black text-slate-900">{insight.brandName}{insight.channel ? ` · ${insight.channel}` : ""}</span>
                   </div>
-                  <div className="mt-2 text-sm font-black text-slate-900">{insight.dimension}: {insight.value || "—"}</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-black text-slate-900">{insight.dimension}: {insight.value || "—"}</div>
+                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase text-slate-600">Evidens: {insight.evidence}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${insight.freshness === "fresh" ? "bg-emerald-100 text-emerald-700" : insight.freshness === "recent" ? "bg-cyan-100 text-cyan-700" : insight.freshness === "stale" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{insight.freshness === "fresh" ? "Fersk" : insight.freshness === "recent" ? "Nylig" : insight.freshness === "stale" ? "Eldre" : "Ukjent alder"}</span>
+                  </div>
                   <p className="mt-1 text-sm leading-5 text-slate-600">{insight.finding || `${insight.sample} observasjoner · lift ${Math.round(insight.lift * 100) / 100}`}</p>
+                  <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-xs font-bold leading-5 text-violet-950"><span className="text-violet-600">Dette endrer Nexus:</span> {insight.nextBehavior}</div>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-slate-500">
                     <span>Sample {insight.sample}</span>
+                    {insight.ageDays != null && <span>{insight.ageDays} dager siden læring</span>}
                     {insight.leads > 0 && <span>{insight.leads} leads</span>}
                     {insight.qualified > 0 && <span>{insight.qualified} kvalifiserte</span>}
                     {insight.sales > 0 && <span>{insight.sales} salg</span>}
