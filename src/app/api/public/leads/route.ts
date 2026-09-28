@@ -157,20 +157,22 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "No DB" }, { status: 500 });
 
   const rawSource = cleanText(body.source, 120);
+  const requestType = cleanText(body.request_type || body.requestType, 120);
   const requestedBrand = cleanText(
     request.headers.get("x-realtyflow-brand") || body.brand_id || body.brandId || body.brand,
     120,
   );
   const brandId = resolvePublicLeadBrand(requestedBrand, rawSource);
   const brandLabel = PUBLIC_REAL_ESTATE_BRAND_LABELS[brandId];
-  const source = rawSource || `${brandId}-public-lead`;
+  const source = rawSource || (requestType === "corporate-event-registration"
+    ? "zeneco-corporate-event-registration"
+    : `${brandId}-public-lead`);
   const pageUrl = cleanText(body.page_url || body.pageUrl, 600);
   const propertyRef = cleanText(body.property_ref || body.propertyRef, 120);
   const propertyTitle = cleanText(body.property_title || body.propertyTitle, 240);
   const preferredArea = cleanText(body.preferred_area || body.preferredArea, 160);
   const budget = cleanText(body.budget, 80);
   const timeline = cleanText(body.timeline, 120);
-  const requestType = cleanText(body.request_type || body.requestType, 120);
   const message = cleanText(body.message, 3000);
   const organizationName = cleanText(body.organization_name || body.organizationName, 240);
   const organizationType = cleanText(body.organization_type || body.organizationType, 120);
@@ -179,6 +181,8 @@ export async function POST(request: NextRequest) {
   const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
   const partnerType = normalizePartnerType(body.partner_type || body.partnerType);
   const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);
+  const eventId = cleanText(body.event_id || body.eventId, 160);
+  const eventName = cleanText(body.event_name || body.eventName, 240);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
   const visitorId = cleanText(body.visitor_id || body.visitorId, 160);
   const sessionId = cleanText(body.session_id || body.sessionId, 160);
@@ -191,16 +195,21 @@ export async function POST(request: NextRequest) {
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
   const pipelineValue = incomingPipelineValue || (budget ? Number(budget.replace(/[^0-9]/g, "")) || 0 : 0);
-  const isCorporatePartner = brandId === "zeneco" && (
+  const isCorporateEventRegistration = brandId === "zeneco" && requestType === "corporate-event-registration";
+  const isCorporatePartner = brandId === "zeneco" && !isCorporateEventRegistration && (
     requestType === "corporate-partner" ||
     source.toLowerCase().includes("corporate-partner") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania/partnere")
   );
-  const isCorporateHome = brandId === "zeneco" && !isCorporatePartner && (
+  const isCorporateHome = brandId === "zeneco" && !isCorporatePartner && !isCorporateEventRegistration && (
     requestType === "corporate-home" ||
     source.toLowerCase().includes("corporate-homes") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania")
   );
+
+  if (isCorporateEventRegistration && (!eventId || !eventName)) {
+    return NextResponse.json({ error: "event_id and event_name are required for Corporate event registration" }, { status: 400 });
+  }
 
   const notes = [
     `Brand: ${brandLabel}`,
@@ -220,6 +229,7 @@ export async function POST(request: NextRequest) {
     corporateModel ? `Corporate-modell: ${corporateModel}` : "",
     isCorporatePartner ? `Partnertype: ${partnerType}` : "",
     partnershipInterest ? `Partnerinteresse: ${partnershipInterest}` : "",
+    isCorporateEventRegistration ? `Corporate-event: ${eventName} (${eventId})` : "",
     utmSource || utmCampaign || utmContent
       ? `UTM: ${utmSource} / ${utmCampaign} / ${utmContent}`
       : "",
@@ -230,7 +240,7 @@ export async function POST(request: NextRequest) {
   const now = new Date().toISOString();
   const { data: existing } = await supabase
     .from("contacts")
-    .select("id,notes,interactions,pipeline_status,brand_id,brand")
+    .select("id,notes,interactions,pipeline_status,pipeline_value,property_interest,next_followup,source,brand_id,brand")
     .eq("email", email)
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -250,6 +260,10 @@ export async function POST(request: NextRequest) {
     direction: "in",
     brand_id: brandId,
     metadata: {
+      request_type: requestType || null,
+      event_id: isCorporateEventRegistration ? eventId : null,
+      event_name: isCorporateEventRegistration ? eventName : null,
+      event_action: isCorporateEventRegistration ? "REGISTERED" : null,
       utm_source: utmSource || null,
       utm_medium: utmMedium || null,
       utm_campaign: utmCampaign || null,
@@ -282,15 +296,19 @@ export async function POST(request: NextRequest) {
     name,
     email,
     phone: cleanText(body.phone, 80) || null,
-    source,
+    source: isCorporateEventRegistration && existing?.id ? existing.source : source,
     notes: mergedNotes,
     pipeline_status: nextStatus,
-    pipeline_value: pipelineValue,
-    property_interest: [propertyRef, propertyTitle].filter(Boolean).join(" - ") || incomingPropertyInterest || preferredArea,
+    pipeline_value: isCorporateEventRegistration && existing?.id ? Number(existing.pipeline_value || 0) : pipelineValue,
+    property_interest: isCorporateEventRegistration && existing?.id
+      ? existing.property_interest
+      : [propertyRef, propertyTitle].filter(Boolean).join(" - ") || incomingPropertyInterest || preferredArea,
     brand: canonicalBrandId,
     brand_id: canonicalBrandId,
     last_contact: now,
-    next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    next_followup: isCorporateEventRegistration
+      ? existing?.next_followup || null
+      : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     interactions: [incomingInteraction, ...existingInteractions],
     updated_at: now,
   };
@@ -533,7 +551,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await supabase.from("work_items").insert({
+  if (!isCorporateEventRegistration) {
+    await supabase.from("work_items").insert({
     title: `${existing?.id ? "Ny aktivitet fra" : `Ny ${brandLabel}-lead:`} ${name}`,
     description: `${email}${preferredArea || incomingPropertyInterest ? ` · ${preferredArea || incomingPropertyInterest}` : ""}${budget || pipelineValue ? ` · ${budget || `€${pipelineValue}`}` : ""}`,
     status: "TO_DO",
@@ -583,10 +602,12 @@ export async function POST(request: NextRequest) {
     },
     created_at: now,
     updated_at: now,
-  }).then(() => null);
+    }).then(() => null);
+  }
 
   const revenueSourceId = submissionId || propertyRef || pageUrl || String(incomingInteraction.id);
-  const eventResult = await insertRevenueEvent(supabase, {
+  if (!isCorporateEventRegistration) {
+    const eventResult = await insertRevenueEvent(supabase, {
     eventType: existing?.id ? "contact_updated" : "lead_created",
     title: existing?.id ? `Ny public aktivitet: ${name}` : `Ny public lead: ${name}`,
     description: interactionSummary({
@@ -640,14 +661,18 @@ export async function POST(request: NextRequest) {
     createdBy: "api/public/leads",
   });
 
-  if (!eventResult.ok && !eventResult.tableNotReady) {
-    console.warn("[public-leads] revenue event insert failed", eventResult.error);
+    if (!eventResult.ok && !eventResult.tableNotReady) {
+      console.warn("[public-leads] revenue event insert failed", eventResult.error);
+    }
   }
 
   return NextResponse.json({
     success: true,
     contact: data,
     brandId,
+    corporateEventRegistration: isCorporateEventRegistration
+      ? { eventId, eventName, status: "REGISTERED", salesQualified: false }
+      : null,
     corporateProspect: corporateProspect
       ? { id: corporateProspect.id, status: corporateProspect.status, fitTier: corporateProspect.fit_tier }
       : null,

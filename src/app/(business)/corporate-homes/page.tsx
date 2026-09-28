@@ -72,6 +72,17 @@ type Overview = {
     latestConfirmedOutcomeAt?: string | null;
     revenueEventsReady: boolean;
   };
+  eventFunnel: {
+    registered: number;
+    attended: number;
+    noShow: number;
+    ctaClicks: number;
+    assessmentRequests: number;
+    attendanceRate: number;
+    attendeeToAssessmentRate: number;
+    registrationIsLead: boolean;
+    attendanceQualifiesAutomatically: boolean;
+  };
   growthReview?: {
     status: string;
     at?: string | null;
@@ -1277,6 +1288,25 @@ export default function CorporateHomesGrowthPage() {
           </div>
         </div>
 
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <MiniStat label="Påmeldt" value={data?.eventFunnel.registered ?? "—"} />
+          <MiniStat label="Møtt" value={data?.eventFunnel.attended ?? "—"} />
+          <MiniStat label="No-show" value={data?.eventFunnel.noShow ?? "—"} />
+          <MiniStat label="CTA-klikk" value={data?.eventFunnel.ctaClicks ?? "—"} />
+          <MiniStat label="Bedt om vurdering" value={data?.eventFunnel.assessmentRequests ?? "—"} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+          <span className="rounded-full bg-white px-3 py-1.5 text-slate-700">
+            Oppmøte {data?.eventFunnel.attendanceRate ?? 0}%
+          </span>
+          <span className="rounded-full bg-white px-3 py-1.5 text-slate-700">
+            Møtt → vurdering {data?.eventFunnel.attendeeToAssessmentRate ?? 0}%
+          </span>
+          <span className="rounded-full bg-amber-100 px-3 py-1.5 text-amber-950">
+            Påmelding og oppmøte er ikke salgskvalifisering
+          </span>
+        </div>
+
         <div className="mt-5 grid gap-4 xl:grid-cols-[1.45fr_.85fr]">
           <div className="space-y-3">
             {CORPORATE_EVENT_PLAYBOOK.topics.map((topic, index) => (
@@ -1318,6 +1348,7 @@ export default function CorporateHomesGrowthPage() {
         </div>
         <p className="mt-4 text-xs leading-5 text-slate-500">
           {CORPORATE_EVENT_PLAYBOOK.guardrails.join(" · ")}
+          {" "}RealtyFlow holder registrering og oppmøte utenfor Corporate lead- og pipeline-tallene til personen selv ber om bedriftsvurdering eller møte.
         </p>
       </section>
 
