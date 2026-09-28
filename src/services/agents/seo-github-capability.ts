@@ -3,11 +3,12 @@
  * nor a passing probe proves that a reversible website publisher is active.
  * Never return a token, file contents or an arbitrary user-supplied URL.
  */
-type Brand = "freddyb" | "zeneco";
-const TARGETS: Record<Brand, { repository: string; path: string }> = {
-  freddyb: { repository: "freddybremseth-coder/freddybremseth", path: "es/index.html" },
-  zeneco: { repository: "freddybremseth-coder/zenecohomes", path: "src/app/page.tsx" },
-};
+import { SEO_BRAND_PUBLISHERS } from "./seo-brand-publishing";
+type Brand = typeof SEO_BRAND_PUBLISHERS[number]["brandId"] | "zeneco";
+const TARGETS = Object.fromEntries([
+  ...SEO_BRAND_PUBLISHERS.map(site=>[site.brandId,{repository:site.repository,path:site.file}]),
+  ["zeneco",{repository:"freddybremseth-coder/zenecohomes",path:"src/app/page.tsx"}],
+]) as Record<Brand,{repository:string;path:string}>;
 export type GithubSeoCapability = {
   brandId: Brand;
   repository: string;
@@ -75,7 +76,7 @@ export async function checkGithubSeoCapability(brandId: Brand): Promise<GithubSe
     return {
       ...common, tokenConfigured: true, ...result,
       message: result.status === "permission_detected"
-        ? "Repo, målfil og push-rettighet er funnet. Automatisk publisering og tilbakeføring er IKKE verifisert eller aktivert av denne kontrollen."
+        ? "Repo, målfil og push-rettighet er funnet. Se publiseringsstatus per nettsted for kontroll av endringsforslag, nettsidevisning og tilbakeføring."
         : result.status === "read_only"
           ? "Repo og målfil kan leses, men push-rettighet er ikke bekreftet."
           : "Den forventede målfilen kunne ikke verifiseres; ingen publisering tillates.",

@@ -7,7 +7,7 @@
  */
 import type { GSCBrandSnapshot } from "./seo-search-console";
 
-export const SEO_AUTOPILOT_BRANDS = ["zeneco", "freddyb"] as const;
+export const SEO_AUTOPILOT_BRANDS = ["zeneco", "pinosoecolife", "freddyb", "freddypublishing", "freddyart", "remasterfreddy", "donaanna", "chatgenius"] as const;
 export type SeoPilotBrand = typeof SEO_AUTOPILOT_BRANDS[number];
 export type SeoPilotDisposition = "monitor" | "candidate" | "human_review" | "blocked";
 export type SeoPilotAssessment = {
@@ -39,7 +39,7 @@ export function evaluateSeoPilotBrand(
     publicChangePermitted: false as const,
   };
   if (!PILOT_BRANDS.has(brandId)) return {
-    ...base, status: "monitor", note: "Utenfor den godkjente pilotens to nettsteder; bare måling.",
+    ...base, status: "monitor", note: "Utenfor de åtte godkjente offentlige nettstedene; bare måling.",
   };
   if (!snapshot) return {
     ...base, status: "blocked",
@@ -67,7 +67,7 @@ export function evaluateSeoPilotBrand(
   };
   return {
     ...base, status: "candidate", page: signal.page,
-    note: "Målt mulighet. Neste trinn: verifiser eksakt publiseringskilde, faktagrunnlag, gammel versjon, trygg endringsflate og tilbakeføring. Ingen publisering fra målesyklusen.",
+    note: "Målt mulighet. Neste trinn: verifiser eksakt publiseringskilde, faktagrunnlag, gammel versjon, trygg endringsflate og tilbakeføring. Publiseringsmotoren kontrollerer disse kravene separat.",
   };
 }
 

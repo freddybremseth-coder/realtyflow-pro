@@ -9,6 +9,8 @@ import { planSEODiagnostics, type SEODiagnostic } from "@/services/agents/seo-di
 import { getGSCConnectionStatus, isFreddyFamilyDomainProperty, readGSCAllBrands, type GSCBrandSnapshot } from "@/services/agents/seo-search-console";
 import { planGSCOpportunities } from "@/services/agents/seo-priorities";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "@/services/agents/seo-change-monitor";
+import { SEO_AUTOPILOT_BRANDS } from "@/services/agents/seo-autopilot-policy";
+import { portfolioPublicationStatuses } from "@/services/agents/seo-brand-publisher";
 import { checkGithubSeoCapability } from "@/services/agents/seo-github-capability";
 
 import { runSEOControls } from "@/services/agents/seo-controls";
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
       supabase.from("automation_logs").select("details")
         .eq("action", "seo_autopilot_change").eq("status", "success")
         .order("created_at", { ascending: false }).limit(25),
-      Promise.all([checkGithubSeoCapability("freddyb"), checkGithubSeoCapability("zeneco")]),
+      Promise.all(SEO_AUTOPILOT_BRANDS.map(brand=>checkGithubSeoCapability(brand))),
     ]);
     if (saved.error) throw new Error("SEO review lookup: " + saved.error.message);
     if (lastLiveRead.error) throw new Error("Last Google read lookup: " + lastLiveRead.error.message);
@@ -196,7 +198,9 @@ export async function GET(request: NextRequest) {
       brandId: item.brandId, property: item.property, collectedAt: item.collectedAt,
       period: item.period, totals: item.totals, quality: item.dataQuality.note,
     }));
+    const brandPublishers = await portfolioPublicationStatuses(supabase, (pilotCycle.data?.details as {brand_publishers?: unknown} | null)?.brand_publishers);
     return NextResponse.json({
+      brandPublishers,
       controlReport, persistenceWarning,
       actions, observations, diagnostics, changeEvaluations, publisherChecks, connections: connected, metrics,
       latestReviewAt: saved.data?.created_at || null,

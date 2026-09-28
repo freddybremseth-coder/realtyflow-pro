@@ -25,8 +25,8 @@ test("Zero Google views are monitored without creating an approval or declaring 
   assert.equal(result.publicChangePermitted, false);
 });
 
-test("Only two user-approved brands are in the pilot", () => {
-  assert.equal(evaluateSeoPilotBrand("chatgenius", snapshot("chatgenius", 250)).status, "monitor");
+test("All eight public brands are eligible; private Care is excluded", () => {
+  assert.equal(evaluateSeoPilotBrand("chatgenius", snapshot("chatgenius", 250)).status, "candidate");
   assert.equal(evaluateSeoPilotBrand("freddyb", null).status, "blocked");
 });
 
@@ -43,7 +43,7 @@ test("Only reversible verified small own-site edits can pass execution boundary"
     reversibleRevisionRecorded: true, sourceMatchedExactly: true,
     hasFactualClaims: false, contentScope: "meta_description" as const };
   assert.equal(seoPublicWriteAllowed(safe), true);
-  assert.equal(seoPublicWriteAllowed({ ...safe, brandId: "donaanna" }), false);
+  assert.equal(seoPublicWriteAllowed({ ...safe, brandId: "zenecocare" }), false);
   assert.equal(seoPublicWriteAllowed({ ...safe, publisherVerified: false }), false);
   assert.equal(seoPublicWriteAllowed({ ...safe, reversibleRevisionRecorded: false }), false);
   assert.equal(seoPublicWriteAllowed({ ...safe, contentScope: "price" }), false);

@@ -6,7 +6,8 @@ import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { readGSCAllBrands } from "@/services/agents/seo-search-console";
-import { evaluateSeoPilotBrand } from "@/services/agents/seo-autopilot-policy";
+import { runPortfolioPublishers } from "@/services/agents/seo-brand-publisher";
+import { evaluateSeoPilotBrand, SEO_AUTOPILOT_BRANDS } from "@/services/agents/seo-autopilot-policy";
 import { runZenEcoMetadataPublisher } from "@/services/agents/seo-zeneco-publisher";
 
 import { runSEOControls } from "@/services/agents/seo-controls";
@@ -15,9 +16,8 @@ const PATH = "/api/cron/seo-autopilot";
 const ACTION = "seo_autopilot_pilot_cycle";
 
 /**
- * Automatic read-only pilot cycle. The owner has also authorized narrowly
- * reversible public edits, but THIS endpoint does not impersonate a CMS:
- * only an independently verified, exact-page, versioned writer may publish.
+ * Automatic portfolio cycle with narrowly authorized metadata publishers.
+ * Only independently verified, exact-page, versioned writers may publish.
  * No extra approval work item is created just because a page was measured.
  */
 export async function GET(request: NextRequest) {
@@ -52,6 +52,14 @@ export async function GET(request: NextRequest) {
     ));
     const verified = readings.filter(item => item.status === "connected" && item.result !== null).length;
     const timestamp = new Date().toISOString();
+    // Each writer records a durable intent and advances only a bounded phase.
+    // Run independent public controls in parallel to stay within the cron budget.
+    const publication = Promise.all([
+      runZenEcoMetadataPublisher(supabase,
+        readings.find(item => item.brandId === "zeneco" && item.status === "connected")?.result || null,
+        url).catch(() => ({status: "blocked" as const, reason: "Zen-publisering kunne ikke kontrolleres.", page: null, published: 0})),
+      runPortfolioPublishers(supabase, readings.flatMap(item => item.status === "connected" && item.result ? [item.result] : [])),
+    ]);
     // Daily, low-risk, evidence-tagged technical/lead/referral diagnostics for
     // every approved public host. A failing site or data source must not erase
     // successful Google readings or create an owner approval queue item.
@@ -77,20 +85,8 @@ export async function GET(request: NextRequest) {
     });
     if (storedReadings.error) throw new Error("Cannot store Google readings: " + storedReadings.error.message);
 
-    // User-approved safe write pilot: ONLY four fixed Zen metadata pages, and
-    // only with recent exact-page/query Google evidence, public same-database
-    // readiness, optimistic revision audit and a separately verified live page.
-    // Failure never blocks Google metrics or sends anything to customers.
-    const zeneco = await runZenEcoMetadataPublisher(
-      supabase,
-      readings.find(item => item.brandId === "zeneco" && item.status === "connected")?.result || null,
-      url,
-    ).catch(error => ({
-      status: "blocked" as const,
-      reason: "Metadata publisher failed safely: " + (error instanceof Error ? error.message : "unknown").slice(0,130),
-      page: null,
-      published: 0,
-    }));
+    const [zeneco, brandPublishers] = await publication;
+    const published = zeneco.published + brandPublishers.reduce((sum, item) => sum + item.published, 0);
 
     const result = await supabase.from("automation_logs").insert({
       action: ACTION, agent_name: "Sam SEO Expert",
@@ -98,7 +94,7 @@ export async function GET(request: NextRequest) {
       details: {
         collected_at: timestamp,
         monitored_brands: readings.map(item => item.brandId),
-        pilot_brands: ["zeneco", "freddyb"],
+        pilot_brands: SEO_AUTOPILOT_BRANDS,
         assessed: assessments,
         search_console_brands_measured: verified,
         controlReport,
@@ -109,12 +105,13 @@ export async function GET(request: NextRequest) {
           blocked: collectorPreflight.filter(check => check.status === "blocked").length,
           unknown: collectorPreflight.filter(check => check.status === "unknown").length,
         } : null,
-        website_changes_published: zeneco.published,
+        website_changes_published: published,
         public_write_status: zeneco.status === "monitor" ? "armed_evidence_gated"
           : zeneco.status === "pending" ? "pending_site_confirmation"
           : zeneco.status,
         zeneco_metadata_pilot: zeneco,
-        note: "Search Console is read-only. Only four hardcoded Zen landing-page title/description variants can be staged after exact Google evidence and same-database readiness. A live change is counted only after its public HTML is verified; failed confirmation triggers exact revision rollback. Customer messages, pricing, body content and other brands remain untouched.",
+        brand_publishers: brandPublishers,
+        note: "Eight public brands: four fixed Zen metadata pages plus one homepage experiment per other brand. GitHub writers require exact source/public agreement, fresh Google evidence, a durable before-version, green checks and verified public HTML. Prices, body content, canonical and customer data are outside this scope.",
       },
     });
     if (result.error) throw new Error("Cannot store SEO pilot cycle: " + result.error.message);
@@ -123,7 +120,8 @@ export async function GET(request: NextRequest) {
       success: true, analyzed: assessments.length, measured: verified,
       publicSitesAudited: audits.length, diagnosticsRecorded: diagnostics.length,
       candidates: assessments.filter(item => item.status === "candidate").length,
-      published: zeneco.published,
+      published,
+      brandPublishers,
       approvalTasksCreated: 0,
       writeStatus: zeneco.status === "monitor" ? "armed_evidence_gated"
         : zeneco.status === "pending" ? "pending_site_confirmation"
