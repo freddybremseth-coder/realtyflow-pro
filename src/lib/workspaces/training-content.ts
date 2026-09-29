@@ -524,6 +524,42 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
     ],
   },
   {
+    id: "youtube-studio",
+    title: "YouTube Studio – publiser en ferdig Zen Reel som Short",
+    shortTitle: "YouTube Studio",
+    summary: "Slik kontrollerer du Zen-kanalen, forhåndsviser videoen og publiserer uten tilgang til kanaladmin.",
+    readMinutes: 4,
+    brands: ["zeneco"],
+    anyPermissions: ["youtube.read", "youtube.publish"],
+    sections: [
+      {
+        heading: "Fase 1 er bevisst enkel",
+        paragraphs: [
+          "YouTube Studio i medarbeider-workspacet tar utgangspunkt i en Reel som allerede er ferdig rendret for Zen Eco Homes. Du skal se videoen først, og publisere den som Short bare når uttrykk, tekst og merkevare er riktig.",
+        ],
+        emphasis: "Pinoso EcoLife er ikke åpnet for YouTube i denne fasen. RealtyFlow krever en egen verifisert Pinoso-kanal før den merkevaren kan få samme funksjon.",
+      },
+      {
+        heading: "Før du publiserer",
+        bullets: [
+          "Se hele videoen i forhåndsvisningen.",
+          "Kontroller at tittel og tekst passer Zen Eco Homes og innholdet i videoen.",
+          "Kontroller at RealtyFlow viser den verifiserte Zen Eco Homes-kanalen som tilkoblet.",
+          "Publiser bare én gang. Hvis status blir uavklart, kontroller YouTube før du gjør noe mer.",
+        ],
+      },
+      {
+        heading: "Hva systemet beskytter",
+        bullets: [
+          "Videoen må komme fra et ferdig Zen Reel-jobbkort; fri filopplasting er ikke åpnet.",
+          "Serveren verifiserer YouTube OAuth mot samme kanal-ID som er lagret for Zen.",
+          "Et publiseringsforsøk reserveres før opplasting for å hindre blind dobbelpublisering.",
+          "Beskrivelsen peker tilbake til zenecohomes.com når lenken ikke allerede finnes.",
+        ],
+      },
+    ],
+  },
+  {
     id: "social-publishing",
     title: "Publisering til sosiale medier – kvalitet før send",
     shortTitle: "SoMe-publisering",
