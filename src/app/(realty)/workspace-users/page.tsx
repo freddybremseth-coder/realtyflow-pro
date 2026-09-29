@@ -644,6 +644,14 @@ export default function WorkspaceUsersPage() {
                       onChange={e => updateChoice(brand.brandKey, { reelsPublish: e.target.checked })}/> Publisere Reel til Facebook / Instagram</label>
                     <p className="mt-2 text-[11px] text-slate-500">Re-Master gjør rendering i bakgrunnen. Brukeren ser bare denne merkevaren og dens verifiserte kanaler.</p>
                   </div>}
+                  {isZen && <div className="rounded-lg border border-red-900/60 bg-red-950/10 p-3">
+                    <strong className="text-sm">YouTube Studio</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.youtubeRead}
+                      onChange={e => updateChoice(brand.brandKey, { youtubeRead: e.target.checked, ...(e.target.checked ? {} : { youtubePublish: false }) })}/> Se Zen-kanal, videoer og klare Shorts</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.youtubePublish}
+                      onChange={e => updateChoice(brand.brandKey, { youtubePublish: e.target.checked })}/> Publisere ferdig forhåndsvist Reel som YouTube Short</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Fase 1 er kun Zen Eco Homes. Publisering krever eksakt verifisert Zen-kanal og en ferdig Reel fra samme workspace.</p>
+                  </div>}
                   {isZen && <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Corporate Homes</strong>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.corporateRead}
