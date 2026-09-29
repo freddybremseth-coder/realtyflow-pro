@@ -25,6 +25,14 @@ type Draft = {
   updatedAt?: string | null;
   sentAt?: string | null;
 };
+export type WorkspaceEmailHandoff = {
+  targetType: Target["type"];
+  targetId: string;
+  subject: string;
+  bodyText: string;
+  sourceLabel?: string | null;
+};
+
 type Data = {
   sender: {
     configured: boolean;
@@ -40,10 +48,14 @@ export function WorkspaceEmailReachPanel({
   brandKey,
   canDraft,
   canSend,
+  initialDirectDraft = null,
+  onInitialDirectDraftConsumed,
 }: {
   brandKey: string;
   canDraft: boolean;
   canSend: boolean;
+  initialDirectDraft?: WorkspaceEmailHandoff | null;
+  onInitialDirectDraftConsumed?: () => void;
 }) {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,6 +100,35 @@ export function WorkspaceEmailReachPanel({
     const [type, id] = selectedTargetKey.split(":");
     return data?.targets.find(target => target.type === type && target.id === id) || null;
   }, [data, selectedTargetKey]);
+
+  useEffect(() => {
+    if (!initialDirectDraft || !data) return;
+    const target = data.targets.find(item =>
+      item.type === initialDirectDraft.targetType && item.id === initialDirectDraft.targetId,
+    );
+
+    setMode("direct");
+    setDraftId(null);
+    setError("");
+
+    if (!target) {
+      setSelectedTargetKey("");
+      setSubject("");
+      setBodyText("");
+      setNotice("");
+      setError(
+        `${initialDirectDraft.sourceLabel || "Selskapet"} har ikke en godkjent e-postmottaker i E-post / Reach ennå. Kjør selskapskanal-research i Corporate først.`,
+      );
+      onInitialDirectDraftConsumed?.();
+      return;
+    }
+
+    setSelectedTargetKey(`${target.type}:${target.id}`);
+    setSubject(initialDirectDraft.subject);
+    setBodyText(initialDirectDraft.bodyText);
+    setNotice(`Utkastet for ${target.label} er klargjort. Kontroller teksten før du lagrer eller sender.`);
+    onInitialDirectDraftConsumed?.();
+  }, [data, initialDirectDraft, onInitialDirectDraftConsumed]);
 
   function resetDirect() {
     setSelectedTargetKey(""); setDraftId(null); setSubject(""); setBodyText("");
