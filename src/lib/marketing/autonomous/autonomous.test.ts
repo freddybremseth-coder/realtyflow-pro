@@ -7,6 +7,7 @@ import {
   atomizeCampaign,
   buildMarketingPlan,
   outcomeAwareExplorationMix,
+  shouldProduceChannelWithinOutcomeQuota,
   contentNoveltyScore,
   contentQualityGate,
   createMarketingRun,
@@ -172,6 +173,43 @@ test("qualified-pipeline channel receives 40 percent of weekly capacity", () => 
   const website = plan.channelProduction.find((item) => item.channel === "website");
   assert.equal(website?.count, 4);
   assert.equal(plan.channelProduction.reduce((sum, item) => sum + item.count, 0), directorInput.publishingCapacityPerWeek);
+});
+
+test("two-channel outcome winner still receives more production than the peer", () => {
+  const channelRec: GenomeRecommendation = {
+    favor: {
+      channel: { value: "instagram", lift: 1.5, evidence: "reliable", outcomeTier: "sale" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  const allocation = allocateChannelProduction(8, ["instagram", "facebook"], channelRec);
+  const instagram = allocation.find((item) => item.channel === "instagram")!;
+  const facebook = allocation.find((item) => item.channel === "facebook")!;
+  assert.ok(instagram.count > facebook.count);
+  assert.deepEqual([instagram.count, facebook.count], [6, 2]);
+});
+
+test("weekly outcome quota lets winner run more often while preserving loser exploration", () => {
+  const allocation = [
+    { channel: "instagram" as const, count: 75 },
+    { channel: "facebook" as const, count: 25 },
+  ];
+  assert.equal(shouldProduceChannelWithinOutcomeQuota({
+    channel: "instagram",
+    allocation,
+    actualCounts: { instagram: 5, facebook: 1 },
+  }), true);
+  assert.equal(shouldProduceChannelWithinOutcomeQuota({
+    channel: "facebook",
+    allocation,
+    actualCounts: { instagram: 5, facebook: 1 },
+  }), false);
+  assert.equal(shouldProduceChannelWithinOutcomeQuota({
+    channel: "facebook",
+    allocation,
+    actualCounts: { instagram: 6, facebook: 1 },
+  }), true);
 });
 
 test("experiment-backed favored dim ender opp i brief-genome", () => {
