@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Building2, FileText, Mail, Megaphone, RefreshCw, Search, Video } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
-import { WorkspaceEmailReachPanel } from "@/components/workspaces/email-reach-panel";
+import { WorkspaceEmailReachPanel, type WorkspaceEmailHandoff } from "@/components/workspaces/email-reach-panel";
+import { corporateOutreachTemplates, personalizeCorporateOutreach } from "@/lib/corporate-outreach";
+import { buildCorporatePartnerOutreach } from "@/lib/corporate-partner-outreach";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type CorporateRow = {
@@ -69,6 +71,7 @@ export function GrowthCorporatePanel({
   const [priority, setPriority] = useState("MEDIUM");
   const [sourceId, setSourceId] = useState("");
   const [area, setArea] = useState<WorkArea>("corporate");
+  const [emailHandoff, setEmailHandoff] = useState<WorkspaceEmailHandoff | null>(null);
 
   const allowedKinds = useMemo(() => {
     const values: string[] = [];
@@ -104,6 +107,32 @@ export function GrowthCorporatePanel({
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
   ].includes(permission));
+
+  function prepareCorporateEmail(row: CorporateRow, targetType: "corporate" | "partner") {
+    if (!permissions.includes("email.draft")) return;
+
+    const prepared = targetType === "partner"
+      ? buildCorporatePartnerOutreach({
+          company_name: row.companyName,
+          partner_type: row.partnerType || "other",
+          referral_angle: row.referralAngle || null,
+        })[0]
+      : personalizeCorporateOutreach(corporateOutreachTemplates[0], {
+          firstName: null,
+          companyName: row.companyName,
+        });
+
+    setEmailHandoff({
+      targetType,
+      targetId: row.id,
+      subject: prepared.subject,
+      bodyText: prepared.body,
+      sourceLabel: row.companyName,
+    });
+    setArea("email");
+    setNotice("");
+    setError("");
+  }
 
   async function load() {
     setLoading(true); setError("");
@@ -217,10 +246,16 @@ export function GrowthCorporatePanel({
               <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
               <p className="mt-1 text-xs text-slate-400">{[row.city,row.industry,row.status].filter(Boolean).join(" · ")}</p>
               {row.nextAction && <p className="mt-2 text-xs text-slate-300">Neste: {row.nextAction}</p>}
-              {permissions.includes("corporate.plan") && <button type="button" className="mt-2 text-xs text-cyan-300 underline"
-                onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
-                Lag arbeidsoppgave
-              </button>}
+              {<div className="mt-2 flex flex-wrap gap-3">
+                {permissions.includes("email.draft") && <button type="button" className="text-xs font-semibold text-cyan-300 underline"
+                  onClick={() => prepareCorporateEmail(row, "corporate")}>
+                  Lag e-postutkast
+                </button>}
+                {permissions.includes("corporate.plan") && <button type="button" className="text-xs text-cyan-300 underline"
+                  onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
+                  Lag arbeidsoppgave
+                </button>}
+              </div>}
             </article>)}
           </div>
         </div>
@@ -231,10 +266,16 @@ export function GrowthCorporatePanel({
               <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
               <p className="mt-1 text-xs text-slate-400">{[row.partnerType,row.city,row.status].filter(Boolean).join(" · ")}</p>
               {row.referralAngle && <p className="mt-2 text-xs text-slate-300">{row.referralAngle}</p>}
-              {permissions.includes("corporate.plan") && <button type="button" className="mt-2 text-xs text-cyan-300 underline"
-                onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate partner · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
-                Lag arbeidsoppgave
-              </button>}
+              {<div className="mt-2 flex flex-wrap gap-3">
+                {permissions.includes("email.draft") && <button type="button" className="text-xs font-semibold text-cyan-300 underline"
+                  onClick={() => prepareCorporateEmail(row, "partner")}>
+                  Lag e-postutkast
+                </button>}
+                {permissions.includes("corporate.plan") && <button type="button" className="text-xs text-cyan-300 underline"
+                  onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate partner · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
+                  Lag arbeidsoppgave
+                </button>}
+              </div>}
             </article>)}
           </div>
         </div>
@@ -251,6 +292,8 @@ export function GrowthCorporatePanel({
       brandKey={brandKey}
       canDraft={permissions.includes("email.draft")}
       canSend={permissions.includes("email.send")}
+      initialDirectDraft={emailHandoff}
+      onInitialDirectDraftConsumed={() => setEmailHandoff(null)}
     />}
 
     {area === "visibility" && data?.visibility && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
