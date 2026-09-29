@@ -27,6 +27,13 @@ describe("workspace Reels security contract", () => {
     expect(publish).toContain('.eq("id", jobId).eq("brand", brandKey)');
   });
 
+
+  it("requires catalogue permission before an exact property can drive a Reel", () => {
+    expect(reels).toContain("propertyId: z.string().uuid().optional()");
+    expect(reels).toContain('requireBrandWorkspace(request, brandKey, "properties.catalog.read")');
+    expect(reels).toContain("propertyId: input.propertyId");
+  });
+
   it("publishes only Facebook and Instagram from the workspace route", () => {
     expect(reels).toContain('z.array(z.enum(["instagram", "facebook"]))');
     expect(publish).toContain('z.enum(["instagram", "facebook"])');
