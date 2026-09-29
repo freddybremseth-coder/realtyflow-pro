@@ -54,6 +54,21 @@ type Opportunity = {
   detectedAt?: string | null;
   expiresAt?: string | null;
 };
+type LearningObservation = {
+  id: string;
+  opportunityId: string;
+  opportunityType: string;
+  articleTitle: string;
+  articlePath: string;
+  ageDays: number;
+  searchArrivals: number;
+  touchpoints: number;
+  leadTouchpoints: number;
+  publicationViews: number;
+  evidenceLevel: "insufficient" | "emerging" | "measured" | string;
+  learningNote: string;
+  observedAt?: string | null;
+};
 type Version = {
   id: string;
   version: number;
@@ -68,6 +83,7 @@ type StudioData = {
   drafts: Draft[];
   published: Published[];
   opportunities: Opportunity[];
+  learningObservations: LearningObservation[];
 };
 
 function splitCsv(value: string) {
@@ -120,6 +136,7 @@ export function WorkspaceWebsiteContentStudio({
         drafts: Array.isArray(body.drafts) ? body.drafts : [],
         published: Array.isArray(body.published) ? body.published : [],
         opportunities: Array.isArray(body.opportunities) ? body.opportunities : [],
+        learningObservations: Array.isArray(body.learningObservations) ? body.learningObservations : [],
       };
       setData(next);
       setDestinationId(current => current || next.defaultDestinationId || next.destinations[0]?.id || "");
@@ -386,6 +403,43 @@ export function WorkspaceWebsiteContentStudio({
               </button>}
             </article>
           ))}
+        </div>
+      </div>
+    )}
+
+    {data.learningObservations.length > 0 && (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/55 p-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Nexus lærer · observer-only</p>
+          <h3 className="mt-1 text-lg font-semibold text-white">Hva publiserte Nexus-artikler faktisk gir</h3>
+          <p className="mt-1 max-w-3xl text-sm text-slate-400">
+            Dette er evidens, ikke automatisk optimalisering. Nexus endrer ikke strategi før datagrunnlaget er stort nok.
+          </p>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {data.learningObservations.map(item => {
+            const evidenceLabel = item.evidenceLevel === "measured"
+              ? "Målt"
+              : item.evidenceLevel === "emerging"
+                ? "Signal"
+                : "Samler data";
+            return (
+              <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{evidenceLabel}</span>
+                  <span className="text-[11px] text-slate-500">{item.ageDays} dager gammel</span>
+                </div>
+                <h4 className="mt-2 font-semibold text-white">{item.articleTitle}</h4>
+                <p className="mt-1 text-xs text-slate-500">{item.opportunityType}</p>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-slate-900 p-2"><strong className="block text-sm text-white">{item.searchArrivals}</strong><span className="text-[10px] text-slate-500">Søk/AI</span></div>
+                  <div className="rounded-lg bg-slate-900 p-2"><strong className="block text-sm text-white">{item.touchpoints}</strong><span className="text-[10px] text-slate-500">Touchpoints</span></div>
+                  <div className="rounded-lg bg-slate-900 p-2"><strong className="block text-sm text-white">{item.leadTouchpoints}</strong><span className="text-[10px] text-slate-500">Leads</span></div>
+                </div>
+                {item.learningNote && <p className="mt-3 text-xs leading-5 text-slate-400">{item.learningNote}</p>}
+              </article>
+            );
+          })}
         </div>
       </div>
     )}
