@@ -212,8 +212,9 @@ export function SamSEOActionBoard() {
         <button type="button" onClick={() => void read(true)} disabled={loading || refreshing}
           className="inline-flex max-w-full items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-60">
           {refreshing || loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          {refreshing ? "Leser Google-data og kontrollerer nettstedene…" : "Oppdater kontroller"}
+          {refreshing ? "Henter fersk status…" : "Hent fersk status"}
         </button>
+        <p className="w-full text-right text-[11px] font-semibold text-slate-500">Valgfritt: oppdaterer visningen nå. Den planlagte SAM-autopiloten kjører uavhengig av denne knappen.</p>
       </div>
       {oauthReturn && (
         <div role="status" className={oauthReturn.errorCode
