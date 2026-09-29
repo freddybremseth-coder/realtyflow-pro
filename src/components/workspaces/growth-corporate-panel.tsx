@@ -12,6 +12,11 @@ type CorporateRow = {
   id: string; companyName: string; status: string; fitScore: number; fitTier: string;
   city?: string | null; industry?: string | null; nextAction?: string | null;
   websiteUrl?: string | null; partnerType?: string | null; referralAngle?: string | null;
+  companyChannelReady?: boolean;
+  readiness?: {
+    score: number; label: string; qualificationReady: boolean; manualContactReady: boolean;
+    suggestedStage: string;
+  } | null;
 };
 type Visibility = {
   searchDiscovery?: Array<{ source: string; arrivals: number }>;
@@ -92,6 +97,31 @@ export function GrowthCorporatePanel({
     if (allowedKinds.length > 0) values.push("plan");
     return values;
   }, [brandKey, permissions, allowedKinds]);
+
+  const orderedCorporateProspects = useMemo(() => {
+    const rows = [...(data?.corporate?.prospects || [])];
+    return rows.sort((a, b) => {
+      const manualDelta = Number(Boolean(b.readiness?.manualContactReady)) - Number(Boolean(a.readiness?.manualContactReady));
+      if (manualDelta) return manualDelta;
+      const qualificationDelta = Number(Boolean(b.readiness?.qualificationReady)) - Number(Boolean(a.readiness?.qualificationReady));
+      if (qualificationDelta) return qualificationDelta;
+      const readinessDelta = Number(b.readiness?.score || 0) - Number(a.readiness?.score || 0);
+      if (readinessDelta) return readinessDelta;
+      return Number(b.fitScore || 0) - Number(a.fitScore || 0);
+    });
+  }, [data?.corporate?.prospects]);
+
+  const orderedPartnerProspects = useMemo(() => {
+    const rows = [...(data?.corporate?.partners || [])];
+    const tierRank = (tier: string) => tier === "A" ? 2 : tier === "B" ? 1 : 0;
+    return rows.sort((a, b) => {
+      const readyDelta = Number(Boolean(b.companyChannelReady)) - Number(Boolean(a.companyChannelReady));
+      if (readyDelta) return readyDelta;
+      const tierDelta = tierRank(String(b.fitTier || "").toUpperCase()) - tierRank(String(a.fitTier || "").toUpperCase());
+      if (tierDelta) return tierDelta;
+      return Number(b.fitScore || 0) - Number(a.fitScore || 0);
+    });
+  }, [data?.corporate?.partners]);
 
   useEffect(() => {
     if (!allowedKinds.includes(kind)) setKind(allowedKinds[0] || "");
@@ -321,14 +351,17 @@ export function GrowthCorporatePanel({
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div>
-          <h3 className="text-sm font-semibold text-cyan-200">Bedriftsprospekter · {data.corporate.prospects?.length || 0}</h3>
+          <h3 className="text-sm font-semibold text-cyan-200">Bedriftsprospekter · {orderedCorporateProspects.length}</h3>
           <div className="mt-2 max-h-[420px] space-y-2 overflow-y-auto">
-            {(data.corporate.prospects || []).map(row => <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+            {orderedCorporateProspects.map(row => <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
               <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
               <p className="mt-1 text-xs text-slate-400">{[row.city,row.industry,row.status].filter(Boolean).join(" · ")}</p>
+              {row.readiness && <p className={`mt-2 text-xs ${row.readiness.manualContactReady ? "text-emerald-300" : row.readiness.qualificationReady ? "text-cyan-300" : "text-slate-500"}`}>
+                {row.readiness.label}
+              </p>}
               {row.nextAction && <p className="mt-2 text-xs text-slate-300">Neste: {row.nextAction}</p>}
               {<div className="mt-2 flex flex-wrap gap-3">
-                {permissions.includes("email.draft") && <button type="button" className="text-xs font-semibold text-cyan-300 underline"
+                {permissions.includes("email.draft") && row.readiness?.manualContactReady && <button type="button" className="text-xs font-semibold text-emerald-300 underline"
                   onClick={() => prepareCorporateEmail(row, "corporate")}>
                   Lag e-postutkast
                 </button>}
@@ -341,14 +374,17 @@ export function GrowthCorporatePanel({
           </div>
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-cyan-200">Partnerprospekter · {data.corporate.partners?.length || 0}</h3>
+          <h3 className="text-sm font-semibold text-cyan-200">Partnerprospekter · {orderedPartnerProspects.length}</h3>
           <div className="mt-2 max-h-[420px] space-y-2 overflow-y-auto">
-            {(data.corporate.partners || []).map(row => <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+            {orderedPartnerProspects.map(row => <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
               <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
               <p className="mt-1 text-xs text-slate-400">{[row.partnerType,row.city,row.status].filter(Boolean).join(" · ")}</p>
+              <p className={`mt-2 text-xs ${row.companyChannelReady ? "text-emerald-300" : "text-slate-500"}`}>
+                {row.companyChannelReady ? "Offisiell selskapskanal klar" : "Selskapskanal mangler"}
+              </p>
               {row.referralAngle && <p className="mt-2 text-xs text-slate-300">{row.referralAngle}</p>}
               {<div className="mt-2 flex flex-wrap gap-3">
-                {permissions.includes("email.draft") && <button type="button" className="text-xs font-semibold text-cyan-300 underline"
+                {permissions.includes("email.draft") && row.companyChannelReady && <button type="button" className="text-xs font-semibold text-emerald-300 underline"
                   onClick={() => prepareCorporateEmail(row, "partner")}>
                   Lag e-postutkast
                 </button>}

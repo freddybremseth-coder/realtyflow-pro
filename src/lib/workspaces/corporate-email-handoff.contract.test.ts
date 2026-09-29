@@ -42,3 +42,15 @@ test("Corporate next-step guidance remains planning-only and status-aware", () =
   assert.doesNotMatch(growth, /status:\s*"MEETING"/);
   assert.doesNotMatch(growth, /status:\s*"OPPORTUNITY"/);
 });
+
+
+test("Corporate workspace uses canonical readiness and company-channel gates before drafting", () => {
+  const route = fs.readFileSync("src/app/api/workspaces/[brandKey]/growth/route.ts", "utf8");
+  assert.match(route, /evaluateCorporateProspectReadiness/);
+  assert.match(route, /companyChannelReady/);
+  assert.match(growth, /manualContactReady/);
+  assert.match(growth, /Offisiell selskapskanal klar/);
+  assert.match(growth, /Selskapskanal mangler/);
+  assert.match(growth, /row\.readiness\?\.manualContactReady/);
+  assert.match(growth, /row\.companyChannelReady/);
+});

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
+import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-readiness";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,7 +55,69 @@ export async function GET(
   if (error || !data || typeof data !== "object" || Array.isArray(data)) {
     return fail(503, "GROWTH_WORKSPACE_UNAVAILABLE");
   }
-  return NextResponse.json({ ok: true, brand: params.brandKey, ...data }, { headers: noStore });
+
+  let payload = data as Record<string, any>;
+  if (params.brandKey === "zeneco" && payload.corporate && typeof payload.corporate === "object") {
+    const prospects = Array.isArray(payload.corporate.prospects) ? payload.corporate.prospects : [];
+    const partners = Array.isArray(payload.corporate.partners) ? payload.corporate.partners : [];
+    const prospectIds = prospects.map((row: any) => String(row?.id || "")).filter(Boolean);
+    const partnerIds = partners.map((row: any) => String(row?.id || "")).filter(Boolean);
+
+    const [prospectDetails, partnerDetails] = await Promise.all([
+      prospectIds.length
+        ? access.value.supabase
+            .from("corporate_prospects")
+            .select("id,organization_number,domain,website_url,industry,employee_count,employee_band,member_count,organization_type,status,fit_tier,fit_score,source_url,decision_roles,evidence_gaps,evidence")
+            .eq("brand_id", "zeneco")
+            .in("id", prospectIds)
+        : Promise.resolve({ data: [], error: null }),
+      partnerIds.length
+        ? access.value.supabase
+            .from("corporate_partner_prospects")
+            .select("id,evidence")
+            .eq("brand_id", "zeneco")
+            .in("id", partnerIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (prospectDetails.error || partnerDetails.error) return fail(503, "GROWTH_WORKSPACE_UNAVAILABLE");
+
+    const readinessById = new Map(
+      (prospectDetails.data || []).map((row: any) => [
+        String(row.id),
+        evaluateCorporateProspectReadiness(row),
+      ]),
+    );
+    const partnerChannelById = new Map(
+      (partnerDetails.data || []).map((row: any) => {
+        const evidence = row?.evidence && typeof row.evidence === "object" ? row.evidence : {};
+        const companyContact = evidence.generic_company_contact && typeof evidence.generic_company_contact === "object"
+          ? evidence.generic_company_contact as Record<string, unknown>
+          : {};
+        return [String(row.id), Boolean(
+          String(companyContact.generic_email || "").trim() ||
+          String(companyContact.contact_page_url || "").trim(),
+        )];
+      }),
+    );
+
+    payload = {
+      ...payload,
+      corporate: {
+        ...payload.corporate,
+        prospects: prospects.map((row: any) => ({
+          ...row,
+          readiness: readinessById.get(String(row.id)) || null,
+        })),
+        partners: partners.map((row: any) => ({
+          ...row,
+          companyChannelReady: partnerChannelById.get(String(row.id)) || false,
+        })),
+      },
+    };
+  }
+
+  return NextResponse.json({ ok: true, brand: params.brandKey, ...payload }, { headers: noStore });
 }
 
 export async function POST(
