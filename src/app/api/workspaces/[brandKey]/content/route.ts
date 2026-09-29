@@ -185,7 +185,7 @@ export async function POST(
 
     const { data: opportunity, error: opportunityError } = await access.value.supabase
       .from("property_content_opportunities")
-      .select("id,brand_id,status,title,summary,draft_markdown,image_url,primary_keyword,supporting_keywords,audience,property_refs,draft_id")
+      .select("id,brand_id,status,opportunity_type,title,summary,draft_markdown,image_url,primary_keyword,supporting_keywords,audience,property_refs,draft_id")
       .eq("id", opportunityId)
       .eq("brand_id", params.brandKey)
       .maybeSingle();
@@ -240,7 +240,13 @@ export async function POST(
       p_summary: text(opportunity.summary, 700),
       p_markdown: typeof opportunity.draft_markdown === "string" ? opportunity.draft_markdown.slice(0, 60000) : "",
       p_image_url: text(opportunity.image_url, 2000),
-      p_tags: ["marked-akkurat-na", "nexus-editorial-signal", ...refs.map(ref => `property:${ref}`)].slice(0, 30),
+      p_tags: [
+        "marked-akkurat-na",
+        "nexus-editorial-signal",
+        `nexus-opportunity:${opportunityId}`,
+        `nexus-angle:${String(opportunity.opportunity_type || "unknown").slice(0, 60)}`,
+        ...refs.map(ref => `property:${ref}`),
+      ].slice(0, 30),
       p_primary_keyword: text(opportunity.primary_keyword, 160),
       p_supporting_keywords: stringArray(opportunity.supporting_keywords, 20, 160),
       p_audience: text(opportunity.audience, 500),
