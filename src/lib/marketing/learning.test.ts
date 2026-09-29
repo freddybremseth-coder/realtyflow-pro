@@ -4,7 +4,9 @@ import {
   applyExperimentEvidence,
   baselineBusinessValue,
   classifyOutcomeTier,
+  contentRecipeValue,
   deriveLearningRules,
+  parseContentRecipe,
   recommendGenome,
   type ExperimentEvidence,
   type LearningObservation,
@@ -233,4 +235,62 @@ test("derived rules retain funnel evidence needed for Nexus channel and content 
   assert.equal(rule.totalViewings, 6);
   assert.equal(rule.totalOffers, 6);
   assert.equal(rule.totalSales, 6);
+});
+
+
+test("content recipe round-trips the exact observed combination", () => {
+  const genome = g({
+    format: "reel",
+    hookType: "price_first",
+    ctaType: "book_viewing",
+    contentPillar: "buyer_guides",
+    topic: "finestrat_villas",
+    area: "finestrat",
+    propertyType: "villa",
+  });
+  const recipe = contentRecipeValue(genome);
+  assert.ok(recipe);
+  const parsed = parseContentRecipe(recipe);
+  assert.equal(parsed?.channel, "instagram");
+  assert.equal(parsed?.format, "reel");
+  assert.equal(parsed?.hookType, "price_first");
+  assert.equal(parsed?.ctaType, "book_viewing");
+  assert.equal(parsed?.contentPillar, "buyer_guides");
+  assert.equal(parsed?.topic, "finestrat_villas");
+  assert.equal(parsed?.area, "finestrat");
+  assert.equal(parsed?.propertyType, "villa");
+});
+
+test("learning favors an exact sale-backed content recipe instead of inventing a combination", () => {
+  const winning = {
+    format: "reel" as const,
+    hookType: "price_first" as const,
+    ctaType: "book_viewing" as const,
+    contentPillar: "buyer_guides",
+    topic: "finestrat_villas",
+    area: "finestrat",
+    propertyType: "villa",
+  };
+  const losing = {
+    format: "reel" as const,
+    hookType: "question" as const,
+    ctaType: "learn_more" as const,
+    contentPillar: "lifestyle",
+    topic: "generic_costa_blanca",
+    area: "costa_blanca",
+    propertyType: "apartment",
+  };
+  const rules = deriveLearningRules([
+    ...Array.from({ length: 25 }, () => obs(winning, { impressions: 2500, clicks: 30, qualifiedLeads: 1, sales: 1 })),
+    ...Array.from({ length: 25 }, () => obs(losing, { impressions: 12000, clicks: 80 })),
+  ], { scope: "b1:instagram" });
+
+  const rec = recommendGenome(rules, { dimensions: ["recipe"] });
+  assert.equal(rec.favor.recipe?.evidence, "reliable");
+  assert.equal(rec.favor.recipe?.outcomeTier, "sale");
+  const parsed = parseContentRecipe(rec.favor.recipe?.value);
+  assert.equal(parsed?.topic, "finestrat_villas");
+  assert.equal(parsed?.hookType, "price_first");
+  assert.equal(parsed?.ctaType, "book_viewing");
+  assert.equal(parsed?.propertyType, "villa");
 });
