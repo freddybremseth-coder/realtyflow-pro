@@ -27,6 +27,7 @@ type AttentionItem = {
   detail: string;
   href: string;
   source: string;
+  responsibility?: "USER" | "SYSTEM" | "WATCH";
 };
 
 type AttentionPayload = {
@@ -154,7 +155,17 @@ export default function NexusTodayPage() {
 
   const attentionItems = attention.data?.attention ?? [];
   const actionableAttention = useMemo(
-    () => attentionItems.filter((item) => item.id !== "os:clear").slice(0, 5),
+    () => attentionItems
+      .filter((item) => item.id !== "os:clear" && (item.responsibility ?? "USER") === "USER")
+      .slice(0, 5),
+    [attentionItems],
+  );
+  const systemAttention = useMemo(
+    () => attentionItems.filter((item) => item.id !== "os:clear" && item.responsibility === "SYSTEM"),
+    [attentionItems],
+  );
+  const watchAttention = useMemo(
+    () => attentionItems.filter((item) => item.id !== "os:clear" && item.responsibility === "WATCH"),
     [attentionItems],
   );
   const marketingSummary = useMemo(
@@ -171,6 +182,8 @@ export default function NexusTodayPage() {
   const marketingAutomation = marketing.data?.automationSummary;
   const systemMarketingWork = Number(marketingAutomation?.autoReady ?? 0) + Number(marketingAutomation?.systemWork ?? 0);
   const waitingMarketing = Number(marketingAutomation?.waiting ?? 0);
+  const totalSystemWork = systemMarketingWork + systemAttention.length;
+  const totalWatching = waitingMarketing + watchAttention.length;
   const topActions = useMemo(
     () => buildNexusTodayTopActions({
       attention: actionableAttention,
@@ -214,12 +227,12 @@ export default function NexusTodayPage() {
         </div>
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
           <div className="text-xs font-black uppercase tracking-wider text-emerald-700">Systemet gjør</div>
-          <div className="mt-2 text-3xl font-black text-slate-950">{systemMarketingWork}</div>
+          <div className="mt-2 text-3xl font-black text-slate-950">{totalSystemWork}</div>
           <p className="mt-1 text-sm text-emerald-900">AUTO READY og systemarbeid kjøres uten at du skal trykke på en testknapp.</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="text-xs font-black uppercase tracking-wider text-slate-500">Følger med</div>
-          <div className="mt-2 text-3xl font-black text-slate-950">{waitingMarketing}</div>
+          <div className="mt-2 text-3xl font-black text-slate-950">{totalWatching}</div>
           <p className="mt-1 text-sm text-slate-600">Venter på modne data eller neste planlagte evaluering. Ingen handling fra deg.</p>
         </div>
       </section>
@@ -278,6 +291,32 @@ export default function NexusTodayPage() {
           <Link href="/today" className="mt-4 flex items-center justify-between rounded-xl border border-slate-200 p-4 text-sm font-black text-slate-800 hover:bg-slate-50"><span className="flex items-center gap-2"><Users size={17} className="text-cyan-700" />Åpne hele kundeprioriteringen</span><ArrowRight size={15} /></Link>
         </div>
       </section>
+
+      {(systemAttention.length > 0 || watchAttention.length > 0) && (
+        <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+          <div>
+            <div className="text-xs font-black uppercase tracking-wider text-slate-500">Ikke oppgaver til deg</div>
+            <h2 className="mt-1 text-xl font-black text-slate-950">Systemarbeid og overvåking</h2>
+            <p className="mt-1 text-sm text-slate-600">Disse signalene er fortsatt synlige, men de ligger ikke i din handlingskø. SYSTEM betyr at RealtyFlow/teknisk drift skal håndtere eller diagnostisere det. WATCH er informasjon som følges med på.</p>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {systemAttention.slice(0, 6).map((item) => (
+              <Link key={item.id} href={item.href} className="rounded-xl border border-cyan-200 bg-white p-4 text-slate-950 transition hover:shadow-sm">
+                <div className="text-[10px] font-black uppercase tracking-wider text-cyan-700">SYSTEM · {item.source}</div>
+                <div className="mt-1 font-black">{item.title}</div>
+                <div className="mt-1 text-sm text-slate-600">{item.detail}</div>
+              </Link>
+            ))}
+            {watchAttention.slice(0, 6).map((item) => (
+              <Link key={item.id} href={item.href} className="rounded-xl border border-slate-200 bg-white p-4 text-slate-950 transition hover:shadow-sm">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">WATCH · {item.source}</div>
+                <div className="mt-1 font-black">{item.title}</div>
+                <div className="mt-1 text-sm text-slate-600">{item.detail}</div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><div className="text-xs font-black uppercase tracking-wider text-slate-400">Arbeidsområder</div><h2 className="mt-1 text-xl font-black text-slate-950">Gå direkte til arbeidet</h2></div><div className="text-xs text-slate-500">{portfolioSummary?.connectedChannels ?? marketingSummary.connected ?? "—"} tilkoblede brand-kanaler · {portfolioSummary?.published30d ?? marketingSummary.published ?? "—"} publisert siste 30 dager</div></div>
