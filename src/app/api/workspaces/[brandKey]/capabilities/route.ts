@@ -60,6 +60,9 @@ export async function GET(
         (Array.isArray(grant.permissions) &&
          grant.permissions.includes("reels.read") &&
          grant.permissions.includes("reels.create"))) &&
+      (!permission.startsWith("youtube.") || brandKey === "zeneco") &&
+      (permission !== "youtube.publish" ||
+        (Array.isArray(grant.permissions) && grant.permissions.includes("youtube.read"))) &&
       (permission !== "corporate.plan" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("corporate.read"))) &&
       (permission !== "visibility.plan" ||
