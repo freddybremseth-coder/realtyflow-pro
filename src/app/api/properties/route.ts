@@ -51,6 +51,38 @@ const PUBLIC_PROPERTY_SELECT = [
   "created_at",
 ].join(",");
 
+
+const PUBLIC_PROPERTY_SUMMARY_SELECT = [
+  "id",
+  "title",
+  "title_no",
+  "location",
+  "town",
+  "price",
+  "bedrooms",
+  "bathrooms",
+  "area_m2",
+  "built_area",
+  "plot_size",
+  "status",
+  "images",
+  "featured",
+  "garage",
+  "pool",
+  "energy_rating",
+  "ref",
+  "primary_image",
+  "property_type",
+  "type",
+  "show_on_website",
+  "website_visible",
+  "brand_id",
+  "region_bucket",
+  "is_inland",
+  "model_name",
+  "floor_label",
+  "created_at",
+].join(",");
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -218,21 +250,28 @@ export async function GET(req: NextRequest) {
   // A brand-scoped employee never receives internal listing fields from this
   // legacy public route, even with a signed workspace session.
   const authenticated = Boolean(accessContext && accessContext.role !== "WORKSPACE_MEMBER");
-  const selectColumns = authenticated ? "*" : PUBLIC_PROPERTY_SELECT;
   const { searchParams } = new URL(req.url);
+  const summaryView = !authenticated && searchParams.get("view") === "summary";
+  const selectColumns = authenticated ? "*" : summaryView ? PUBLIC_PROPERTY_SUMMARY_SELECT : PUBLIC_PROPERTY_SELECT;
   const id = searchParams.get("id");
+  const ref = searchParams.get("ref");
   const brandId = searchParams.get("brandId") || searchParams.get("brand_id");
+  const requestedLimit = Number(searchParams.get("limit") || 0);
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(Math.floor(requestedLimit), 500) : 0;
 
-  if (id) {
-    const { data, error } = await supabase
-      .from("properties")
-      .select(selectColumns)
-      .eq("id", id)
-      .single();
+  if (id || ref) {
+    let query = supabase.from("properties").select(selectColumns);
+    query = id ? query.eq("id", id) : query.eq("ref", ref as string);
+    const { data, error } = await query.maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const property = data as unknown as Record<string, unknown> | null;
-    if (!authenticated && (!property || !isWebsiteVisible(property))) {
-      return NextResponse.json({ error: "Property not found" }, { status: 404 });
+    if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
+    if (!authenticated) {
+      if (!isWebsiteVisible(property)) return NextResponse.json({ error: "Property not found" }, { status: 404 });
+      if (brandId) {
+        const scoped = await filterPropertiesForBrand(supabase, [property], brandId);
+        if (scoped.length === 0) return NextResponse.json({ error: "Property not found" }, { status: 404 });
+      }
     }
     return NextResponse.json(property);
   }
@@ -240,10 +279,10 @@ export async function GET(req: NextRequest) {
   try {
     const allData = await getAllProperties(supabase, selectColumns);
     const scopedData = authenticated ? allData : allData.filter(isWebsiteVisible);
-    if (!brandId) return NextResponse.json(scopedData);
+    if (!brandId) return NextResponse.json(limit ? scopedData.slice(0, limit) : scopedData);
 
     const filteredData = await filterPropertiesForBrand(supabase, scopedData, brandId);
-    return NextResponse.json(filteredData);
+    return NextResponse.json(limit ? filteredData.slice(0, limit) : filteredData);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch properties";
     return NextResponse.json({ error: message }, { status: 500 });
