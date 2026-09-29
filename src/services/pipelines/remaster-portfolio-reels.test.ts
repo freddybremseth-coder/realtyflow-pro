@@ -29,6 +29,12 @@ test("brand captions point to the correct site and explain what the viewer sees"
   assert.match(art,/Golden Heart/);assert.match(art,/art\.freddybremseth\.com/);assert.match(art,/Re-Master Freddy/);
   const homes=buildPortfolioReelCaption({brand:"zeneco",title:"Homes",durationSeconds:15,song,imageUrls:["x","y"],areaQuery:"Benidorm",region:"north"});
   assert.match(homes,/Benidorm/);assert.match(homes,/zenecohomes\.com/);assert.match(homes,/Availability and prices can change/);
+  const exact=buildPortfolioReelCaption({brand:"zeneco",title:"Exact home",durationSeconds:15,song,imageUrls:["x","y"],
+    propertyUrl:"https://www.zenecohomes.com/eiendommer/N5798"});
+  assert.match(exact,/Se boligen: https:\/\/www\.zenecohomes\.com\/eiendommer\/N5798/);
+  const rejected=buildPortfolioReelCaption({brand:"zeneco",title:"Unsafe",durationSeconds:15,song,imageUrls:["x","y"],
+    propertyUrl:"https://evil.example/eiendommer/N5798"});
+  assert.doesNotMatch(rejected,/evil\.example/);
 });
 test("production FFmpeg renders a real 15-second 1080x1920 Reel with two approved art previews",{timeout:120_000},async()=>{
   assert.ok(ffmpegStatic);
