@@ -120,6 +120,7 @@ export async function GET(
   }
 
   let opportunities: Array<Record<string, unknown>> = [];
+  let learningObservations: Array<Record<string, unknown>> = [];
   if (params.brandKey === "zeneco") {
     const { data: opportunityRows, error: opportunityError } = await access.value.supabase
       .from("property_content_opportunities")
@@ -144,6 +145,30 @@ export async function GET(
         expiresAt: row.expires_at ? String(row.expires_at) : null,
       })).filter((row) => row.id && row.title);
     }
+
+    const { data: learningRows, error: learningError } = await access.value.supabase
+      .from("property_content_learning_snapshots")
+      .select("id,opportunity_id,opportunity_type,article_title,article_path,age_days,search_arrivals,touchpoints,lead_touchpoints,publication_views,evidence_level,learning_note,observed_at")
+      .eq("brand_id", params.brandKey)
+      .order("observed_at", { ascending: false })
+      .limit(6);
+    if (!learningError && Array.isArray(learningRows)) {
+      learningObservations = learningRows.map((row: any) => ({
+        id: String(row.id || ""),
+        opportunityId: String(row.opportunity_id || ""),
+        opportunityType: String(row.opportunity_type || ""),
+        articleTitle: String(row.article_title || ""),
+        articlePath: String(row.article_path || ""),
+        ageDays: Number(row.age_days || 0),
+        searchArrivals: Number(row.search_arrivals || 0),
+        touchpoints: Number(row.touchpoints || 0),
+        leadTouchpoints: Number(row.lead_touchpoints || 0),
+        publicationViews: Number(row.publication_views || 0),
+        evidenceLevel: String(row.evidence_level || "insufficient"),
+        learningNote: String(row.learning_note || ""),
+        observedAt: row.observed_at ? String(row.observed_at) : null,
+      })).filter((row) => row.id && row.articleTitle);
+    }
   }
 
   return NextResponse.json({
@@ -162,6 +187,7 @@ export async function GET(
     drafts: Array.isArray(snapshot.drafts) ? snapshot.drafts : [],
     published: Array.isArray(snapshot.published) ? snapshot.published : [],
     opportunities,
+    learningObservations,
   }, { headers: noStore });
 }
 
