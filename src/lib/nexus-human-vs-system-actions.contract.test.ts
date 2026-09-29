@@ -45,3 +45,20 @@ test("Nexus Today filters OS attention by USER SYSTEM and WATCH responsibility",
   assert.match(page, /SYSTEM · \{item\.source\}/);
   assert.match(page, /WATCH · \{item\.source\}/);
 });
+
+
+const socialPath = fileURLToPath(new URL("../app/(content)/social-automation/page.tsx", import.meta.url));
+
+test("Social Automation physically separates human, automatic, system and waiting work", async () => {
+  const page = await readFile(socialPath, "utf8");
+
+  assert.match(page, /Handlinger som faktisk krever deg/);
+  assert.match(page, /humanActions\.slice/);
+  assert.match(page, /Ingen marketing-oppgave krever deg nå/);
+  assert.match(page, /Systemet gjør nå/);
+  assert.match(page, /\[\.\.\.autoActions, \.\.\.systemActions\]/);
+  assert.match(page, /Du skal ikke kjøre disse manuelt/);
+  assert.match(page, /Køes automatisk · ingen knapp nødvendig/);
+  assert.match(page, /Teknisk\/systemsteg · ikke din oppgave/);
+  assert.match(page, /WAIT er ikke en oppgave/);
+});
