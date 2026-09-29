@@ -5,7 +5,7 @@ import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-rea
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-const noStore = { "Cache-Control": "private, no-store" };
+const noStore = { "Cache-Control": "private, no-store" };\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const KIND_PERMISSION: Record<string, WorkspacePermission> = {
   corporate: "corporate.plan",
@@ -63,7 +63,7 @@ export async function GET(
     const prospectIds = prospects.map((row: any) => String(row?.id || "")).filter(Boolean);
     const partnerIds = partners.map((row: any) => String(row?.id || "")).filter(Boolean);
 
-    const [prospectDetails, partnerDetails] = await Promise.all([
+    const [prospectDetails, partnerDetails, referralContacts] = await Promise.all([
       prospectIds.length
         ? access.value.supabase
             .from("corporate_prospects")
@@ -74,13 +74,22 @@ export async function GET(
       partnerIds.length
         ? access.value.supabase
             .from("corporate_partner_prospects")
-            .select("id,evidence")
+            .select("id,evidence,status")
             .eq("brand_id", "zeneco")
             .in("id", partnerIds)
         : Promise.resolve({ data: [], error: null }),
+      partnerIds.length
+        ? access.value.supabase
+            .from("contacts")
+            .select("id,pipeline_status,pipeline_value,interactions")
+            .eq("brand_id", "zeneco")
+            .limit(2000)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (prospectDetails.error || partnerDetails.error) return fail(503, "GROWTH_WORKSPACE_UNAVAILABLE");
+    if (prospectDetails.error || partnerDetails.error || referralContacts.error) {
+      return fail(503, "GROWTH_WORKSPACE_UNAVAILABLE");
+    }
 
     const readinessById = new Map(
       (prospectDetails.data || []).map((row: any) => [
@@ -101,6 +110,36 @@ export async function GET(
       }),
     );
 
+    const partnerReferralStats = new Map<string, {
+      leads: number;
+      active: number;
+      qualified: number;
+      won: number;
+      pipelineValue: number;
+    }>();
+    for (const contact of referralContacts.data || []) {
+      const interactions = Array.isArray((contact as any).interactions) ? (contact as any).interactions : [];
+      const partnerIdsForContact = new Set<string>();
+      for (const interaction of interactions) {
+        const metadata = interaction?.metadata && typeof interaction.metadata === "object" ? interaction.metadata : {};
+        const referralPartnerId = String(metadata.referral_partner_id || "").trim();
+        if (uuid.test(referralPartnerId)) partnerIdsForContact.add(referralPartnerId);
+      }
+      for (const partnerId of partnerIdsForContact) {
+        if (!partnerIds.includes(partnerId)) continue;
+        const current = partnerReferralStats.get(partnerId) || {
+          leads: 0, active: 0, qualified: 0, won: 0, pipelineValue: 0,
+        };
+        const stage = String((contact as any).pipeline_status || "").toUpperCase();
+        current.leads += 1;
+        if (["NEW","CONTACT","QUALIFIED","MATCHING","VIEWING","NEGOTIATION","RESERVED","ON_HOLD"].includes(stage)) current.active += 1;
+        if (["QUALIFIED","MATCHING","VIEWING","NEGOTIATION","RESERVED","WON"].includes(stage)) current.qualified += 1;
+        if (stage === "WON") current.won += 1;
+        if (!["LOST"].includes(stage)) current.pipelineValue += Number((contact as any).pipeline_value || 0);
+        partnerReferralStats.set(partnerId, current);
+      }
+    }
+
     payload = {
       ...payload,
       corporate: {
@@ -112,6 +151,10 @@ export async function GET(
         partners: partners.map((row: any) => ({
           ...row,
           companyChannelReady: partnerChannelById.get(String(row.id)) || false,
+          referralUrl: `https://www.zenecohomes.com/bedriftshytte-spania?utm_source=corporate_partner&utm_medium=referral&partner=${encodeURIComponent(String(row.id))}`,
+          referralStats: partnerReferralStats.get(String(row.id)) || {
+            leads: 0, active: 0, qualified: 0, won: 0, pipelineValue: 0,
+          },
         })),
       },
     };
@@ -128,6 +171,84 @@ export async function POST(
   const input: unknown = await request.json().catch(() => null);
   if (!input || typeof input !== "object" || Array.isArray(input)) return fail(400, "INVALID_WORK_ITEM");
   const body = input as Record<string, unknown>;
+  const action = typeof body.action === "string" ? body.action.trim() : "";
+
+  if (action === "partner_progress") {
+    if (params.brandKey !== "zeneco") return fail(400, "INVALID_BRAND");
+    const access = await requireBrandWorkspace(request, params.brandKey, "corporate.plan");
+    if (!access.value) return access.response;
+    if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
+
+    const partnerId = typeof body.partnerId === "string" ? body.partnerId.trim() : "";
+    const progressAction = typeof body.progressAction === "string" ? body.progressAction.trim() : "";
+    if (!uuid.test(partnerId) || !["mark_engaged","record_meeting","activate_partner","disqualify"].includes(progressAction)) {
+      return fail(400, "INVALID_PARTNER_PROGRESS");
+    }
+
+    const { data: partner, error: partnerError } = await access.value.supabase
+      .from("corporate_partner_prospects")
+      .select("id,status,evidence")
+      .eq("id", partnerId)
+      .eq("brand_id", "zeneco")
+      .maybeSingle();
+    if (partnerError || !partner) return fail(404, "PARTNER_NOT_FOUND");
+
+    const now = new Date().toISOString();
+    const evidence = partner.evidence && typeof partner.evidence === "object" && !Array.isArray(partner.evidence)
+      ? partner.evidence as Record<string, unknown>
+      : {};
+    let status = String(partner.status || "DISCOVERED").toUpperCase();
+    let nextAction = "";
+    let nextFollowup: string | null = null;
+    const nextEvidence: Record<string, unknown> = { ...evidence };
+
+    if (progressAction === "mark_engaged") {
+      if (status !== "PARTNER") status = "ENGAGED";
+      nextEvidence.partner_engaged_at = now;
+      nextAction = "Avklar om partneren ønsker en kort partnersamtale og hvilken introduksjonsmodell som passer.";
+      nextFollowup = new Date(Date.now() + 3 * 86400000).toISOString();
+    } else if (progressAction === "record_meeting") {
+      if (status !== "PARTNER") status = "ENGAGED";
+      nextEvidence.partner_meeting_at = now;
+      nextAction = "Dokumenter avtalt samarbeidsmodell, ansvar og neste konkrete henvisnings- eller aktivitetstest.";
+      nextFollowup = new Date(Date.now() + 3 * 86400000).toISOString();
+    } else if (progressAction === "activate_partner") {
+      status = "PARTNER";
+      nextEvidence.partner_activated_at = now;
+      nextAction = "Del partnerlenken og følg henviste Corporate-leads fra første henvendelse til dokumentert salg.";
+      nextFollowup = new Date(Date.now() + 7 * 86400000).toISOString();
+    } else {
+      status = "DISQUALIFIED";
+      nextEvidence.partner_disqualified_at = now;
+      nextAction = "Ingen videre partneroppfølging.";
+      nextFollowup = null;
+    }
+
+    const { data: updated, error: updateError } = await access.value.supabase
+      .from("corporate_partner_prospects")
+      .update({
+        status,
+        evidence: nextEvidence,
+        next_action: nextAction,
+        next_followup: nextFollowup,
+        updated_at: now,
+      })
+      .eq("id", partnerId)
+      .eq("brand_id", "zeneco")
+      .select("id,status,next_action,next_followup,evidence")
+      .single();
+    if (updateError || !updated) return fail(409, "PARTNER_PROGRESS_UPDATE_FAILED");
+
+    return NextResponse.json({
+      ok: true,
+      brand: params.brandKey,
+      partner: updated,
+      externalAction: false,
+      emailSent: false,
+      invitationSent: false,
+    }, { headers: noStore });
+  }
+
   const kind = typeof body.kind === "string" ? body.kind.trim() : "";
   const permission = KIND_PERMISSION[kind];
   if (!permission) return fail(400, "INVALID_WORK_KIND");
