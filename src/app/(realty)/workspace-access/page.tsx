@@ -67,6 +67,8 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "reels.read": { title: "Reels Studio – se", description: "Se og forhåndsvise Reels kun for valgt merkevare." },
   "reels.create": { title: "Reels Studio – lage", description: "Lage Reels via Re-Master-motoren uten tilgang til det avanserte Re-Master-adminområdet." },
   "reels.publish": { title: "Reels Studio – publisere", description: "Publisere ferdig forhåndsvist Reel til merkevarens verifiserte Facebook- eller Instagram-kanal." },
+  "youtube.read": { title: "YouTube Studio – se", description: "Se verifisert Zen-kanal, kanalstatistikk og ferdige Zen Reels som kan brukes som Shorts." },
+  "youtube.publish": { title: "YouTube Studio – publisere", description: "Publisere ferdig forhåndsvist Zen Reel som YouTube Short til eksakt verifisert Zen-kanal." },
   "corporate.read": { title: "Corporate Homes – se", description: "Se Zen Eco Homes bedrifts- og partnerprospekter uten historisk CRM eller personberikelse." },
   "corporate.plan": { title: "Corporate Homes – planlegge", description: "Lage interne research- og neste-steg-oppgaver. Ingen automatisk kontakt eller statusendring." },
   "visibility.read": { title: "SEO · GEO · AEO – se", description: "Se brand-avgrensede søke-/AI-henvisninger og SEO-oppgaver." },
@@ -98,6 +100,7 @@ function togglePermission(current: WorkspacePermission[], permission: WorkspaceP
     if (permission === "marketing.publish") { next.add("marketing.read"); next.add("marketing.draft"); }
     if (permission === "reels.create") next.add("reels.read");
     if (permission === "reels.publish") { next.add("reels.read"); next.add("reels.create"); }
+    if (permission === "youtube.publish") next.add("youtube.read");
     if (permission === "corporate.plan") next.add("corporate.read");
     if (permission === "visibility.plan") next.add("visibility.read");
     if (permission === "ads.draft") next.add("ads.read");
