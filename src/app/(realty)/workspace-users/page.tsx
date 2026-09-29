@@ -40,6 +40,8 @@ type BrandChoice = {
   reelsRead: boolean;
   reelsCreate: boolean;
   reelsPublish: boolean;
+  youtubeRead: boolean;
+  youtubePublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -60,6 +62,7 @@ const emptyChoice = (): BrandChoice => ({
   properties: false, tasksRead: false, tasksWrite: false,
   marketingRead: false, marketingDraft: false, marketingPublish: false,
   reelsRead: false, reelsCreate: false, reelsPublish: false,
+  youtubeRead: false, youtubePublish: false,
   corporateRead: false, corporatePlan: false,
   visibilityRead: false, visibilityPlan: false,
   adsRead: false, adsDraft: false, eventsPlan: false,
@@ -126,6 +129,8 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       reelsRead: permissions.includes("reels.read"),
       reelsCreate: permissions.includes("reels.create"),
       reelsPublish: permissions.includes("reels.publish"),
+      youtubeRead: permissions.includes("youtube.read"),
+      youtubePublish: permissions.includes("youtube.publish"),
       corporateRead: permissions.includes("corporate.read"),
       corporatePlan: permissions.includes("corporate.plan"),
       visibilityRead: permissions.includes("visibility.read"),
@@ -220,6 +225,8 @@ export default function WorkspaceUsersPage() {
       if (next.reelsCreate) next.reelsRead = true;
       if (next.reelsPublish) { next.reelsRead = true; next.reelsCreate = true; }
       if (!["zeneco", "pinosoecolife"].includes(brandKey)) { next.reelsRead = false; next.reelsCreate = false; next.reelsPublish = false; }
+      if (next.youtubePublish) next.youtubeRead = true;
+      if (brandKey !== "zeneco") { next.youtubeRead = false; next.youtubePublish = false; }
       if (next.corporatePlan) next.corporateRead = true;
       if (next.visibilityPlan) next.visibilityRead = true;
       if (next.adsDraft) next.adsRead = true;
@@ -273,6 +280,8 @@ export default function WorkspaceUsersPage() {
         reelsRead: choice.reelsRead,
         reelsCreate: choice.reelsCreate,
         reelsPublish: choice.reelsPublish,
+        youtubeRead: choice.youtubeRead,
+        youtubePublish: choice.youtubePublish,
         corporateRead: choice.corporateRead,
         corporatePlan: choice.corporatePlan,
         visibilityRead: choice.visibilityRead,
