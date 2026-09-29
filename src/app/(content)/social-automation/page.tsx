@@ -73,6 +73,8 @@ type LearningInsight = {
   qualified: number;
   sales: number;
   commissionEur: number;
+  evidenceFirstAt: string | null;
+  evidenceLastAt: string | null;
   updatedAt: string | null;
 };
 
@@ -436,7 +438,7 @@ export default function SocialAutomationPage() {
                   <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-xs font-bold leading-5 text-violet-950"><span className="text-violet-600">Dette endrer Nexus:</span> {insight.nextBehavior}</div>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-slate-500">
                     <span>Sample {insight.sample}</span>
-                    {insight.ageDays != null && <span>{insight.ageDays} dager siden læring</span>}
+                    {insight.ageDays != null && <span>{insight.ageDays} dager siden siste evidens</span>}
                     {insight.leads > 0 && <span>{insight.leads} leads</span>}
                     {insight.qualified > 0 && <span>{insight.qualified} kvalifiserte</span>}
                     {insight.sales > 0 && <span>{insight.sales} salg</span>}
