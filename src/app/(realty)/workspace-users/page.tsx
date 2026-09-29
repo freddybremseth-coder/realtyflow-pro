@@ -378,6 +378,10 @@ export default function WorkspaceUsersPage() {
 
   async function resetPassword() {
     if (!selectedUser || !password) return;
+    if (!strongPassword(password)) {
+      setError("Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.");
+      return;
+    }
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/workspace-users", {
