@@ -1,4 +1,5 @@
 export type AttentionSeverity = "high" | "medium" | "low";
+export type AttentionResponsibility = "USER" | "SYSTEM" | "WATCH";
 
 export type OsAttentionItem = {
   id: string;
@@ -8,6 +9,7 @@ export type OsAttentionItem = {
   detail: string;
   href: string;
   source: string;
+  responsibility: AttentionResponsibility;
 };
 
 export type OsAttentionInput = {
@@ -54,6 +56,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: error.message,
       href: error.href,
       source: error.source,
+      responsibility: "SYSTEM",
     });
   }
 
@@ -66,6 +69,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Åpne Automation Center og kontroller siste feilede kjøringer før nye autonome steg får fortsette.",
       href: "/automation",
       source: "Automation",
+      responsibility: "SYSTEM",
     });
   } else if (input.automationPartial24h > 0) {
     items.push({
@@ -76,6 +80,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Kjøringene fullførte ikke helt rent. Se detaljene før du tolker subsystemet som grønt.",
       href: "/automation",
       source: "Automation",
+      responsibility: "SYSTEM",
     });
   }
 
@@ -88,6 +93,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Nexus har stoppet auto-fetch for minst én konto. Åpne Email Readiness og verifiser credentials/IMAP før reconnect eller historisk backfill vurderes.",
       href: "/nexus-os/communications/readiness",
       source: "Email",
+      responsibility: "USER",
     });
   } else if (input.emailAccountsNotReady > 0) {
     items.push({
@@ -98,6 +104,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Kontoene mangler verifisert readiness for stabil drift eller historisk backfill. Connection-check er diagnostikk og aktiverer ikke kontoen automatisk.",
       href: "/nexus-os/communications/readiness",
       source: "Email",
+      responsibility: "USER",
     });
   }
 
@@ -114,6 +121,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: `${labels.join(" · ")}. En aktiv Runtime/cron-konfigurasjon er ikke nok; Nexus krever fersk faktisk execution-logg.`,
       href: input.scheduledAutomationStale[0]?.href || "/automation",
       source: "Automation",
+      responsibility: "SYSTEM",
     });
   }
 
@@ -126,6 +134,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Dette er en high-risk write-path. Bekreft at dette er tilsiktet og at scopes, rate limits og policy fortsatt er gyldige.",
       href: "/nexus-os/runtime",
       source: "Social",
+      responsibility: "WATCH",
     });
   }
 
@@ -141,6 +150,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: `${input.approvalsHighRisk} high-risk${opportunity}. Approval betyr ikke utført handling; executor forblir separat.`,
       href: "/approvals",
       source: "Approvals",
+      responsibility: "USER",
     });
   }
 
@@ -154,6 +164,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: input.socialLastSyncAt ? `Siste loggede sync er ${syncAge} minutter gammel.` : "Ingen vellykket sync-logg er registrert.",
       href: "/nexus-os/communications/social",
       source: "Social",
+      responsibility: "SYSTEM",
     });
   } else if (input.socialSyncEnabled && input.socialLastSyncStatus && input.socialLastSyncStatus !== "success") {
     items.push({
@@ -164,6 +175,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Kontroller sync-loggen før 0 aktivitet tolkes som reelt 0.",
       href: "/nexus-os/communications/social",
       source: "Social",
+      responsibility: "SYSTEM",
     });
   }
 
@@ -177,6 +189,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Disse kanalene er ukjent/skipped i inbox-målingen, ikke 0 aktivitet. Re-authorize communications i Connections.",
       href: "/connections",
       source: "Social",
+      responsibility: "USER",
     });
   }
 
@@ -189,6 +202,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: `${input.bookApproved} approved · ${input.bookApplied} applied · ${input.bookMeasuring} measuring · ${input.bookRunningExperiments} running experiments. Ingen kandidat blir auto-applied.`,
       href: "/book-growth",
       source: "Book Growth",
+      responsibility: "USER",
     });
   }
 
@@ -201,6 +215,7 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "De verifiserte datakildene rapporterer ingen åpenbar blokkering eller feil.",
       href: "/today",
       source: "Nexus OS",
+      responsibility: "WATCH",
     });
   }
 
