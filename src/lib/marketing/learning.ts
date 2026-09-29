@@ -46,6 +46,8 @@ export const LEARNING_DIMENSIONS = [
   "headlineLengthBand",
   "headlineShape",
   "imageClass",
+  /** Exact observed combination used for outcome-aware exploit recipes. */
+  "recipe",
   /** Each published hashtag is evaluated individually. */
   "tag",
 ] as const;
@@ -107,18 +109,59 @@ export interface ExperimentEvidence {
 
 const n = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
+const CONTENT_RECIPE_FIELDS = [
+  "channel",
+  "format",
+  "hookType",
+  "ctaType",
+  "contentPillar",
+  "topic",
+  "area",
+  "propertyType",
+] as const;
+
+export type ContentRecipeField = (typeof CONTENT_RECIPE_FIELDS)[number];
+
+export function contentRecipeValue(genome: ContentGenome): string | undefined {
+  const params = new URLSearchParams();
+  for (const field of CONTENT_RECIPE_FIELDS) {
+    const value = genome[field];
+    if (typeof value === "string" && value.trim()) params.set(field, value.trim());
+  }
+  return Array.from(params.keys()).length >= 3 ? params.toString() : undefined;
+}
+
+export function parseContentRecipe(value: string | null | undefined): Partial<ContentGenome> | null {
+  if (!value) return null;
+  try {
+    const params = new URLSearchParams(value);
+    const recipe: Partial<ContentGenome> = {};
+    for (const field of CONTENT_RECIPE_FIELDS) {
+      const fieldValue = params.get(field);
+      if (fieldValue) (recipe as Record<string, string>)[field] = fieldValue;
+    }
+    return Object.keys(recipe).length >= 3 ? recipe : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Scalar genome dimensions used by the Experiment Engine. `tag` is multi-value
- * and therefore intentionally returns undefined here; controlled hashtag tests
+ * / `recipe` are multi-field dimensions and therefore intentionally return undefined here; controlled hashtag tests
  * should pass explicit experiment evidence instead of pretending one tag is the
  * whole genome value. */
 export function genomeDimensionValue(g: ContentGenome, dim: LearningDimension): string | undefined {
-  if (dim === "tag") return undefined;
+  if (dim === "tag" || dim === "recipe") return undefined;
   const v = (g as unknown as Record<string, unknown>)[dim];
   return typeof v === "string" && v.trim() ? v : undefined;
 }
 
 function dimensionValues(g: ContentGenome, dim: LearningDimension): string[] {
   if (dim === "tag") return Array.isArray(g.tags) ? Array.from(new Set(g.tags.filter(Boolean))) : [];
+  if (dim === "recipe") {
+    const recipe = contentRecipeValue(g);
+    return recipe ? [recipe] : [];
+  }
   const value = genomeDimensionValue(g, dim);
   return value ? [value] : [];
 }
@@ -162,7 +205,7 @@ function observationEvidenceWindow(group: LearningObservation[]): { firstAt: str
  * winners caused by one unusually strong listing.
  */
 function actionableMinSample(dimension: LearningDimension, defaultMinSample: number): number {
-  if (dimension === "tag") return Math.max(10, defaultMinSample);
+  if (dimension === "tag" || dimension === "recipe") return Math.max(10, defaultMinSample);
   if (["publishHour", "publishWeekday", "publishDaypart", "imageClass"].includes(dimension)) {
     return Math.max(8, defaultMinSample);
   }
@@ -251,7 +294,7 @@ function buildFinding(
   sales: number,
 ): string {
   const dir = lift >= 1 ? `${lift.toFixed(2)}× baseline` : `${lift.toFixed(2)}× (under baseline)`;
-  const label = dimension === "tag" ? `#${value}` : `${dimension}=${value}`;
+  const label = dimension === "tag" ? `#${value}` : dimension === "recipe" ? `recipe=${decodeURIComponent(value).slice(0, 180)}` : `${dimension}=${value}`;
   const base = `${label}: ${dir} forretningsverdi over ${sample} innhold (${evidence}${sales ? `, ${sales} salg` : ""})`;
   if (verdict === "favor") return `✅ Doble ned — ${base}`;
   if (verdict === "avoid") return `⛔ Nedprioritér — ${base}`;
