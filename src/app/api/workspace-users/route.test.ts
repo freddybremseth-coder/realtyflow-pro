@@ -73,8 +73,8 @@ test.beforeEach(() => {
       throw new Error("Unexpected RPC " + name);
     },
     auth: { admin: {
-      createUser: async (args: unknown) => {
-        authCalls.push({ method: "createUser", args: [args] });
+      inviteUserByEmail: async (...args: unknown[]) => {
+        authCalls.push({ method: "inviteUserByEmail", args });
         return { data: { user: { id: userId, email: "andrea@example.test" } }, error: null };
       },
       deleteUser: async (...args: unknown[]) => {
@@ -145,15 +145,14 @@ test("owner can enable database-backed workspace login only after green security
   assert.equal(runtimeEnabled, false);
 });
 
-test("create user sends password only to Supabase Auth and configures safe multi-brand permissions", async () => {
+test("create user sends a self-service invite and configures safe multi-brand permissions", async () => {
+  process.env.NEXT_PUBLIC_APP_URL = "https://realtyflow.test";
   const owner = "realtyflow_admin=" + await createAdminSession("owner@example.test");
-  const password = "Strong!Workspace7Password";
   const response = await POST(req("POST", owner, {
     action: "CREATE_USER",
     username: "andrea",
     email: "andrea@example.test",
     displayName: "Andrea",
-    password,
     accountKind: "external",
     organization: "Search Partner AS",
     accessExpiresAt: "2027-03-31T21:59:59.000Z",
@@ -165,12 +164,14 @@ test("create user sends password only to Supabase Auth and configures safe multi
   assert.equal(response.status, 201);
   const body = await response.json();
   assert.equal(body.passwordStoredInRealtyFlow, false);
+  assert.equal(body.inviteSent, true);
   assert.equal(body.loginEnabled, false);
-  const create = authCalls.find(call => call.method === "createUser");
-  assert.equal((create?.args[0] as any).password, password);
+  const invite = authCalls.find(call => call.method === "inviteUserByEmail");
+  assert.equal(invite?.args[0], "andrea@example.test");
+  assert.equal((invite?.args[1] as any).redirectTo, "https://realtyflow.test/reset-password?flow=workspace-invite");
+  assert.equal((invite?.args[1] as any).data.account_type, "realtyflow_workspace");
   const configure = rpcCalls.find(call => call.name === "workspace_user_configure_v2");
   assert.ok(configure);
-  assert.equal(JSON.stringify(configure?.args).includes(password), false);
   assert.equal(configure?.args?.p_username, "andrea");
   assert.equal(configure?.args?.p_account_kind, "external");
   assert.equal(configure?.args?.p_organization, "Search Partner AS");
@@ -183,7 +184,7 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
     {
       body: {
         action: "CREATE_USER", username: "an", email: "andrea@example.test",
-        displayName: "Andrea", password: "Strong!Workspace7Password",
+        displayName: "Andrea",
         brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
       },
       error: "INVALID_USERNAME", field: "username",
@@ -191,7 +192,7 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
     {
       body: {
         action: "CREATE_USER", username: "andrea", email: "not-an-email",
-        displayName: "Andrea", password: "Strong!Workspace7Password",
+        displayName: "Andrea",
         brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
       },
       error: "INVALID_EMAIL", field: "email",
@@ -199,15 +200,7 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
     {
       body: {
         action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
-        displayName: "Andrea", password: "weak",
-        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"] }],
-      },
-      error: "WEAK_PASSWORD", field: "password",
-    },
-    {
-      body: {
-        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
-        displayName: "Andrea", password: "Strong!Workspace7Password",
+        displayName: "Andrea",
         brandAccess: [{ brandKey: "zeneco", permissions: ["crm.read"] }],
       },
       error: "INVALID_BRAND_ACCESS", field: "brandAccess",

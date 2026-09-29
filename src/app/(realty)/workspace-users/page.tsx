@@ -342,10 +342,6 @@ export default function WorkspaceUsersPage() {
       setError("Velg en gyldig sluttdato for tilgangen.");
       return;
     }
-    if (!selectedUser && !strongPassword(password)) {
-      setError("Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.");
-      return;
-    }
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/workspace-users", {
@@ -361,7 +357,7 @@ export default function WorkspaceUsersPage() {
           : {
               action: "CREATE_USER", username: username.trim().toLowerCase(),
               displayName: displayName.trim(), email: email.trim().toLowerCase(),
-              password, accountKind, organization: organization.trim() || null,
+              accountKind, organization: organization.trim() || null,
               accessExpiresAt: expiresAt, brandAccess: access,
             }),
       });
@@ -370,8 +366,8 @@ export default function WorkspaceUsersPage() {
       setNotice(selectedUser
         ? "Tilgangen er oppdatert. Endringen er avgrenset til valgte merkevarer og programmer."
         : body.loginEnabled
-          ? "Brukeren er opprettet og kan logge inn med brukernavn eller e-post."
-          : "Brukeren er opprettet, men workspace-innlogging er fortsatt globalt deaktivert.");
+          ? "Brukeren er opprettet. Invitasjon er sendt på e-post slik at personen setter sitt eget passord."
+          : "Brukeren er opprettet og invitasjon er sendt, men workspace-innlogging er fortsatt globalt deaktivert.");
       setPassword("");
       await reload();
       if (!selectedUser && body.user?.userId) setSelectedUserId(body.user.userId);
@@ -382,6 +378,10 @@ export default function WorkspaceUsersPage() {
 
   async function resetPassword() {
     if (!selectedUser || !password) return;
+    if (!strongPassword(password)) {
+      setError("Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.");
+      return;
+    }
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/workspace-users", {
@@ -422,7 +422,7 @@ export default function WorkspaceUsersPage() {
         <h1 className="mt-2 text-3xl font-bold">Brukere & tilgang</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-400">
           Opprett interne medarbeidere eller eksterne samarbeidspartnere. Velg nøyaktig hvilke
-          merkevarer og RealtyFlow-programmer hver person kan bruke, og sett valgfri sluttdato for ekstern tilgang. Passord lagres aldri i RealtyFlow.
+          merkevarer og RealtyFlow-programmer hver person kan bruke, og sett valgfri sluttdato for ekstern tilgang. Nye brukere får en e-postinvitasjon og setter sitt eget passord.
         </p>
       </div>
       <button onClick={() => void reload()} disabled={loading || busy}
@@ -538,7 +538,7 @@ export default function WorkspaceUsersPage() {
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 disabled:opacity-60"
               placeholder="navn@firma.no"/>
           </label>
-          <label className="text-sm">{selectedUser ? "Nytt passord (valgfritt)" : "Førstegangspassord"}
+          {selectedUser ? <label className="text-sm">Nytt passord <span className="text-slate-500">(nødvalg)</span>
             <div className="mt-1 flex gap-2">
               <div className="relative flex-1">
                 <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
@@ -552,8 +552,11 @@ export default function WorkspaceUsersPage() {
               <button type="button" onClick={() => { setPassword(strongGeneratedPassword()); setShowPassword(true); }}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-xs">Generer</button>
             </div>
-            <span className="mt-1 block text-xs text-slate-500">Minst 12 tegn og minst tre av: små/store bokstaver, tall og symbol.</span>
-          </label>
+            <span className="mt-1 block text-xs text-slate-500">Bruk helst passordgjenoppretting. Dette er kun et owner-nødvalg.</span>
+          </label> : <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/15 p-3 text-sm">
+            <strong className="text-emerald-200">Passord settes av brukeren</strong>
+            <p className="mt-1 text-xs text-slate-400">Når du oppretter brukeren, sender Supabase en tidsbegrenset invitasjon til e-postadressen. Du trenger ikke lage eller dele et passord.</p>
+          </div>}
         </div>
 
         <section className="space-y-3">
@@ -700,14 +703,14 @@ export default function WorkspaceUsersPage() {
         <div className="flex flex-wrap gap-3">
           <button onClick={() => void submitUser()} disabled={busy}
             className="rounded-xl bg-cyan-600 px-5 py-3 font-semibold text-white disabled:opacity-50">
-            {busy ? "Lagrer…" : selectedUser ? "Lagre bruker og tilgang" : "Opprett bruker"}
+            {busy ? "Lagrer…" : selectedUser ? "Lagre bruker og tilgang" : "Opprett og send invitasjon"}
           </button>
           {selectedUser && password && <button onClick={() => void resetPassword()} disabled={busy}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-600 px-5 py-3 font-semibold disabled:opacity-50">
             <KeyRound size={16}/> Sett nytt passord
           </button>}
           <p className="flex items-center gap-2 text-xs text-slate-500">
-            <LockKeyhole size={14}/> Passord sendes direkte til Supabase Auth og lagres aldri i RealtyFlow-tabeller eller revisjonslogger.
+            <LockKeyhole size={14}/> Nye brukere setter passordet selv via Supabase Auth. RealtyFlow lagrer aldri passord i tabeller eller revisjonslogger.
           </p>
         </div>
       </main>

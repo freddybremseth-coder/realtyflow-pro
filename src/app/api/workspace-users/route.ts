@@ -231,7 +231,6 @@ export async function POST(request: NextRequest) {
     const username = String(body.username || "").trim().toLowerCase();
     const email = String(body.email || "").trim().toLowerCase();
     const displayName = String(body.displayName || "").trim();
-    const password = body.password;
     const brandAccess = validBrandAccess(body.brandAccess);
     const metadata = directoryMetadata(body);
     if (!usernamePattern.test(username)) {
@@ -246,13 +245,6 @@ export async function POST(request: NextRequest) {
     }
     if (!displayName || displayName.length > 120) {
       return reply({ error: "INVALID_DISPLAY_NAME", field: "displayName", message: "Navn må være mellom 1 og 120 tegn." }, 400);
-    }
-    if (!strongPassword(password)) {
-      return reply({
-        error: "WEAK_PASSWORD",
-        field: "password",
-        message: "Passordet må være 12–128 tegn og inneholde minst tre av: små bokstaver, store bokstaver, tall og symbol.",
-      }, 400);
     }
     if (!brandAccess) {
       return reply({
@@ -274,18 +266,17 @@ export async function POST(request: NextRequest) {
       return reply({ error: "UNKNOWN_BRAND" }, 400);
     }
 
-    const { data: created, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password: password as string,
-      email_confirm: true,
-      user_metadata: {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, "");
+    const { data: created, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
+      redirectTo: `${appUrl}/reset-password?flow=workspace-invite`,
+      data: {
         username, display_name: displayName, account_type: "realtyflow_workspace",
         account_kind: metadata.value.accountKind,
         organization: metadata.value.organization,
       },
     });
     if (authError || !created.user?.id) {
-      return reply({ error: "AUTH_USER_CREATE_FAILED" }, authError?.status === 422 ? 409 : 503);
+      return reply({ error: "AUTH_USER_INVITE_FAILED" }, authError?.status === 422 ? 409 : 503);
     }
 
     const { data: configured, error: configureError } = await supabase.rpc("workspace_user_configure_v2", {
@@ -316,6 +307,7 @@ export async function POST(request: NextRequest) {
         accountKind: metadata.value.accountKind, organization: metadata.value.organization,
         accessExpiresAt: metadata.value.accessExpiresAt,
       },
+      inviteSent: true,
       passwordStoredInRealtyFlow: false,
       loginEnabled: runtime.enabled,
     }, 201);
