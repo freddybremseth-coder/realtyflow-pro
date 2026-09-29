@@ -108,6 +108,87 @@ export function GrowthCorporatePanel({
     "ads.read", "ads.draft", "events.plan",
   ].includes(permission));
 
+  function corporatePlanPreset(row: CorporateRow, targetType: "corporate" | "partner") {
+    const status = String(row.status || "").toUpperCase();
+
+    if (targetType === "partner") {
+      if (status === "CONTACTED") {
+        return {
+          label: "Planlegg partneroppfølging",
+          title: `Følg opp partner · ${row.companyName}`,
+          description: "Første partnerhenvendelse er sendt. Avklar om virksomheten ønsker en kort samtale om henvisninger, webinar, medlemsopplegg eller annet samarbeid.",
+          nextAction: row.nextAction || "Følg opp den første partnerhenvendelsen og avklar interesse for en kort partnersamtale.",
+        };
+      }
+      if (status === "ENGAGED") {
+        return {
+          label: "Forbered partnersamtale",
+          title: `Partnersamtale · ${row.companyName}`,
+          description: "Partneren har vist interesse. Forbered en kort samtale med samarbeidsvinkel, målgruppe, introduksjonsmodell og tydelig ansvarsdeling.",
+          nextAction: row.nextAction || "Forbered partnersamtalen og avklar neste konkrete samarbeidstest.",
+        };
+      }
+      return {
+        label: "Lag arbeidsoppgave",
+        title: `Corporate partner · ${row.companyName}`,
+        description: row.referralAngle || "Planlegg neste kontrollerte steg for partnerprospektet.",
+        nextAction: row.nextAction || "",
+      };
+    }
+
+    if (status === "CONTACTED") {
+      return {
+        label: "Planlegg oppfølging",
+        title: `Følg opp Corporate · ${row.companyName}`,
+        description: "Første Corporate-henvendelse er sendt. Følg opp uten å gjenta budskapet og styr mot et tydelig ja/nei til en kort behovsavklaring.",
+        nextAction: row.nextAction || "Følg opp første henvendelse og avklar om selskapet ønsker et Corporate Home Assessment.",
+      };
+    }
+    if (status === "ENGAGED") {
+      return {
+        label: "Forbered discovery-møte",
+        title: `Corporate discovery · ${row.companyName}`,
+        description: "Forbered mål, brukere, budsjett, tidslinje, beslutningsprosess og ønsket boligmodell. Ingen møteinvitasjon sendes fra denne oppgaven.",
+        nextAction: row.nextAction || "Forbered discovery-møte og samle det som mangler til Corporate Home Assessment.",
+      };
+    }
+    if (status === "MEETING") {
+      return {
+        label: "Forbered registrert møte",
+        title: `Møteforberedelse · ${row.companyName}`,
+        description: "Møte er registrert. Samle selskapets mål, brukergruppe, budsjett, beslutningstakere, tidslinje og spørsmål som må avklares.",
+        nextAction: row.nextAction || "Gjør Corporate discovery klar før det registrerte møtet.",
+      };
+    }
+    if (status === "OPPORTUNITY") {
+      return {
+        label: "Forbered Decision Pack",
+        title: `Decision Pack · ${row.companyName}`,
+        description: "Selskapet er en aktiv opportunity. Samle beslutningskriterier, relevant shortlist, kostnadsbilde og åpne avklaringer før neste beslutningspunkt.",
+        nextAction: row.nextAction || "Forbered Decision Pack med beslutningskriterier og relevante boligalternativer.",
+      };
+    }
+    return {
+      label: "Lag arbeidsoppgave",
+      title: `Corporate · ${row.companyName}`,
+      description: "Planlegg neste kontrollerte steg for Corporate-prospektet.",
+      nextAction: row.nextAction || "",
+    };
+  }
+
+  function prepareCorporateWork(row: CorporateRow, targetType: "corporate" | "partner") {
+    if (!permissions.includes("corporate.plan")) return;
+    const preset = corporatePlanPreset(row, targetType);
+    setKind("corporate");
+    setSourceId(row.id);
+    setTitle(preset.title);
+    setDescription(preset.description);
+    setNextAction(preset.nextAction);
+    setArea("plan");
+    setNotice("");
+    setError("");
+  }
+
   function prepareCorporateEmail(row: CorporateRow, targetType: "corporate" | "partner") {
     if (!permissions.includes("email.draft")) return;
 
@@ -252,8 +333,8 @@ export function GrowthCorporatePanel({
                   Lag e-postutkast
                 </button>}
                 {permissions.includes("corporate.plan") && <button type="button" className="text-xs text-cyan-300 underline"
-                  onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
-                  Lag arbeidsoppgave
+                  onClick={() => prepareCorporateWork(row, "corporate")}>
+                  {corporatePlanPreset(row, "corporate").label}
                 </button>}
               </div>}
             </article>)}
@@ -272,8 +353,8 @@ export function GrowthCorporatePanel({
                   Lag e-postutkast
                 </button>}
                 {permissions.includes("corporate.plan") && <button type="button" className="text-xs text-cyan-300 underline"
-                  onClick={() => { setKind("corporate"); setSourceId(row.id); setTitle(`Corporate partner · ${row.companyName}`); setNextAction(row.nextAction || ""); setArea("plan"); }}>
-                  Lag arbeidsoppgave
+                  onClick={() => prepareCorporateWork(row, "partner")}>
+                  {corporatePlanPreset(row, "partner").label}
                 </button>}
               </div>}
             </article>)}
