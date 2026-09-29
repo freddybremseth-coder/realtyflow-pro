@@ -256,6 +256,7 @@ export async function GET(request: NextRequest) {
         : "Inbound lead capture is healthy. Automatic replies remain intentionally disabled.",
       href: "/nexus-os/communications/whatsapp",
       source: "Nexus WhatsApp Readiness",
+      responsibility: "WATCH",
     });
   }
 
