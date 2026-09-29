@@ -41,6 +41,7 @@ test("source errors outrank operational queues", () => {
   }), now);
   assert.equal(items[0].id, "source:Automation");
   assert.equal(items[0].severity, "high");
+  assert.equal(items[0].responsibility, "SYSTEM");
 });
 
 test("high-risk approval remains separate from execution", () => {
@@ -49,6 +50,7 @@ test("high-risk approval remains separate from execution", () => {
   assert.ok(approval);
   assert.equal(approval.severity, "high");
   assert.match(approval.detail, /Approval betyr ikke utført handling/);
+  assert.equal(approval.responsibility, "USER");
 });
 
 test("system-paused email account is high priority and routes to readiness", () => {
@@ -58,6 +60,7 @@ test("system-paused email account is high priority and routes to readiness", () 
   assert.equal(email.severity, "high");
   assert.equal(email.href, "/nexus-os/communications/readiness");
   assert.match(email.detail, /backfill/);
+  assert.equal(email.responsibility, "USER");
 });
 
 test("non-ready email account without system pause stays medium", () => {
@@ -76,6 +79,7 @@ test("active scheduled automation without a fresh execution log is high priority
   assert.ok(stale);
   assert.equal(stale.severity, "high");
   assert.match(stale.detail, /fersk faktisk execution-logg/);
+  assert.equal(stale.responsibility, "SYSTEM");
 });
 
 test("stale social sync is high priority when read-only sync is enabled", () => {
@@ -83,6 +87,7 @@ test("stale social sync is high priority when read-only sync is enabled", () => 
   const stale = items.find((item) => item.id === "social:sync-stale");
   assert.ok(stale);
   assert.equal(stale.severity, "high");
+  assert.equal(stale.responsibility, "SYSTEM");
 });
 
 test("missing Instagram comment capability is not interpreted as zero activity", () => {
@@ -90,6 +95,7 @@ test("missing Instagram comment capability is not interpreted as zero activity",
   const scope = items.find((item) => item.id === "social:instagram-scope");
   assert.ok(scope);
   assert.match(scope.detail, /ukjent\/skipped/);
+  assert.equal(scope.responsibility, "USER");
 });
 
 test("Book Growth pending review stays medium and never implies auto-apply", () => {
@@ -98,6 +104,7 @@ test("Book Growth pending review stays medium and never implies auto-apply", () 
   assert.ok(book);
   assert.equal(book.severity, "medium");
   assert.match(book.detail, /Ingen kandidat blir auto-applied/);
+  assert.equal(book.responsibility, "USER");
 });
 
 test("healthy quiet state produces a single low-severity clear signal", () => {
@@ -105,4 +112,19 @@ test("healthy quiet state produces a single low-severity clear signal", () => {
   assert.equal(items.length, 1);
   assert.equal(items[0].id, "os:clear");
   assert.equal(items[0].severity, "low");
+  assert.equal(items[0].responsibility, "WATCH");
+});
+
+test("high-risk live social write path is watch-only unless another condition requires action", () => {
+  const items = buildOsAttention(base({ socialAutoReplyLive: true }), now);
+  const live = items.find((item) => item.id === "social:auto-reply-live");
+  assert.ok(live);
+  assert.equal(live.responsibility, "WATCH");
+});
+
+test("automation failures stay visible but are owned by the system", () => {
+  const items = buildOsAttention(base({ automationFailures24h: 11 }), now);
+  const failures = items.find((item) => item.id === "automation:failures");
+  assert.ok(failures);
+  assert.equal(failures.responsibility, "SYSTEM");
 });
