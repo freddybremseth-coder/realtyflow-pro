@@ -73,6 +73,13 @@ export const MarketingPlanSchema = z.object({
   explorationMix: ExplorationMixSchema,
   /** Hvor mange innhold hver strategi-bucket skal produsere. */
   production: z.object({ exploit: z.number().int().min(0), adjacent: z.number().int().min(0), experiment: z.number().int().min(0) }),
+  /** Ukentlig produksjonsfordeling per kanal. Outcome-vinnere får mer kapasitet, men øvrige kanaler beholdes for læring. */
+  channelProduction: z.array(z.object({
+    channel: z.enum(MARKETING_CHANNELS),
+    count: z.number().int().min(0),
+    outcomeTier: z.enum(["none", "reach", "traffic", "lead", "qualified_pipeline", "sale"]),
+    reason: z.string().min(1),
+  })).default([]),
   favoredDimensions: z.record(z.string(), z.string()).default({}),
   avoidedDimensions: z.array(z.object({ dimension: z.string(), value: z.string() })).default([]),
   plannedExperiments: z.array(z.object({ hypothesis: z.string(), primaryVariable: z.string() })).default([]),
