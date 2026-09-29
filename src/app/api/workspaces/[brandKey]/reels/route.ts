@@ -22,6 +22,7 @@ const createSchema = z.object({
   region: regionSchema.default("any"),
   areaQuery: z.string().trim().max(80).default(""),
   visualTypes: z.array(visualSchema).min(1).max(6).default(["mixed"]),
+  propertyId: z.string().uuid().optional(),
 }).strict();
 
 const noStore = { "Cache-Control": "private, no-store" };
@@ -149,6 +150,10 @@ export async function POST(
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return fail(400, "INVALID_REEL_CONFIGURATION", "Kontroller tittel, lyd, varighet og bildevalg.");
   const input = parsed.data;
+  if (input.propertyId) {
+    const propertyAccess = await requireBrandWorkspace(request, brandKey, "properties.catalog.read");
+    if (!propertyAccess.value) return propertyAccess.response;
+  }
   const supabase = access.value.supabase;
 
   const { data: songRow, error: songError } = await supabase.from("songs")
@@ -176,6 +181,7 @@ export async function POST(
         region: input.region === "any" ? "inland" : input.region,
         areaQuery: input.areaQuery,
         visualTypes: input.visualTypes,
+        propertyId: input.propertyId,
       });
     } else {
       const result = await loadZenEcoHomesVisualUrls({
@@ -186,6 +192,7 @@ export async function POST(
         randomSeed: seed,
         strictSelection: true,
         areaQuery: input.areaQuery || undefined,
+        propertyId: input.propertyId,
       });
       imageUrls = [...new Set(result.urls)].slice(0, count);
     }
@@ -203,6 +210,7 @@ export async function POST(
     region: input.region,
     areaQuery: input.areaQuery,
     visualTypes: input.visualTypes,
+    propertyId: input.propertyId || null,
   };
   const { data: created, error: createError } = await supabase.from("remaster_reel_jobs").insert({
     brand: brandKey,
