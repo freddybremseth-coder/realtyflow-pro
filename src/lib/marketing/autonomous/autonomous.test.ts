@@ -60,6 +60,19 @@ test("learning-anbefaling går inn i planen (favored + avoided)", () => {
   assert.deepEqual(plan.production, { exploit: 7, adjacent: 2, experiment: 1 });
 });
 
+test("outcome-backed channel winner is prioritized without removing exploration channels", () => {
+  const channelRec: GenomeRecommendation = {
+    favor: {
+      channel: { value: "website", lift: 1.3, evidence: "reliable", outcomeTier: "qualified_pipeline" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  const plan = buildMarketingPlan(directorInput, { marketingRunId: "mr_channel", correlationId: "rf_channel", recommendation: channelRec });
+  assert.deepEqual(plan.channels, ["website", "instagram", "facebook", "youtube"]);
+  assert.equal(plan.channels.length, directorInput.channels.length);
+});
+
 test("experiment-backed favored dim ender opp i brief-genome", () => {
   const campaign: CampaignPlan = {
     campaignId: "camp1", marketingRunId: "mr1", brandId: "b1", strategy: "exploit",
