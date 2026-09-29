@@ -13,6 +13,8 @@ type CorporateRow = {
   city?: string | null; industry?: string | null; nextAction?: string | null;
   websiteUrl?: string | null; partnerType?: string | null; referralAngle?: string | null;
   companyChannelReady?: boolean;
+  referralUrl?: string | null;
+  referralStats?: { leads: number; active: number; qualified: number; won: number; pipelineValue: number } | null;
   readiness?: {
     score: number; label: string; qualificationReady: boolean; manualContactReady: boolean;
     suggestedStage: string;
@@ -77,6 +79,8 @@ export function GrowthCorporatePanel({
   const [sourceId, setSourceId] = useState("");
   const [area, setArea] = useState<WorkArea>("corporate");
   const [emailHandoff, setEmailHandoff] = useState<WorkspaceEmailHandoff | null>(null);
+  const [partnerProgressBusy, setPartnerProgressBusy] = useState("");
+  const [partnerLinkCopied, setPartnerLinkCopied] = useState("");
 
   const allowedKinds = useMemo(() => {
     const values: string[] = [];
@@ -245,6 +249,51 @@ export function GrowthCorporatePanel({
     setError("");
   }
 
+  async function updatePartnerProgress(row: CorporateRow, progressAction: "mark_engaged" | "record_meeting" | "activate_partner" | "disqualify") {
+    if (!permissions.includes("corporate.plan") || partnerProgressBusy) return;
+    setPartnerProgressBusy(`${row.id}:${progressAction}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/growth`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "partner_progress",
+          partnerId: row.id,
+          progressAction,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error("Partnerstatus kunne ikke oppdateres.");
+      const label = progressAction === "mark_engaged"
+        ? "Partneren er registrert som engasjert."
+        : progressAction === "record_meeting"
+          ? "Partnersamtalen er registrert."
+          : progressAction === "activate_partner"
+            ? "Partneren er aktivert. Henvisningslenken kan nå brukes."
+            : "Partnerprospektet er avsluttet.";
+      setNotice(label);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Partnerstatus kunne ikke oppdateres.");
+    } finally {
+      setPartnerProgressBusy("");
+    }
+  }
+
+  async function copyPartnerReferralLink(row: CorporateRow) {
+    if (!row.referralUrl) return;
+    try {
+      await navigator.clipboard.writeText(row.referralUrl);
+      setPartnerLinkCopied(row.id);
+      setNotice("Partnerlenken er kopiert. Leads via lenken blir attribuert til denne partneren.");
+      window.setTimeout(() => setPartnerLinkCopied(current => current === row.id ? "" : current), 2500);
+    } catch {
+      setError("Kunne ikke kopiere partnerlenken automatisk.");
+    }
+  }
+
   async function load() {
     setLoading(true); setError("");
     if (!needsGrowthSnapshot) {
@@ -376,24 +425,63 @@ export function GrowthCorporatePanel({
         <div>
           <h3 className="text-sm font-semibold text-cyan-200">Partnerprospekter · {orderedPartnerProspects.length}</h3>
           <div className="mt-2 max-h-[420px] space-y-2 overflow-y-auto">
-            {orderedPartnerProspects.map(row => <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
-              <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
-              <p className="mt-1 text-xs text-slate-400">{[row.partnerType,row.city,row.status].filter(Boolean).join(" · ")}</p>
-              <p className={`mt-2 text-xs ${row.companyChannelReady ? "text-emerald-300" : "text-slate-500"}`}>
-                {row.companyChannelReady ? "Offisiell selskapskanal klar" : "Selskapskanal mangler"}
-              </p>
-              {row.referralAngle && <p className="mt-2 text-xs text-slate-300">{row.referralAngle}</p>}
-              {<div className="mt-2 flex flex-wrap gap-3">
-                {permissions.includes("email.draft") && row.companyChannelReady && <button type="button" className="text-xs font-semibold text-emerald-300 underline"
-                  onClick={() => prepareCorporateEmail(row, "partner")}>
-                  Lag e-postutkast
-                </button>}
-                {permissions.includes("corporate.plan") && <button type="button" className="text-xs text-cyan-300 underline"
-                  onClick={() => prepareCorporateWork(row, "partner")}>
-                  {corporatePlanPreset(row, "partner").label}
-                </button>}
-              </div>}
-            </article>)}
+            {orderedPartnerProspects.map(row => {
+              const status = String(row.status || "").toUpperCase();
+              const stats = row.referralStats || { leads: 0, active: 0, qualified: 0, won: 0, pipelineValue: 0 };
+              return <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
+                <p className="mt-1 text-xs text-slate-400">{[row.partnerType,row.city,row.status].filter(Boolean).join(" · ")}</p>
+                <p className={`mt-2 text-xs ${row.companyChannelReady ? "text-emerald-300" : "text-slate-500"}`}>
+                  {row.companyChannelReady ? "Offisiell selskapskanal klar" : "Selskapskanal mangler"}
+                </p>
+                {row.referralAngle && <p className="mt-2 text-xs text-slate-300">{row.referralAngle}</p>}
+
+                {(stats.leads > 0 || status === "PARTNER") && <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2 text-center">
+                  <div><div className="text-lg font-black text-white">{stats.leads}</div><div className="text-[10px] uppercase text-slate-500">Leads</div></div>
+                  <div><div className="text-lg font-black text-cyan-300">{stats.qualified}</div><div className="text-[10px] uppercase text-slate-500">Kval.</div></div>
+                  <div><div className="text-lg font-black text-emerald-300">{stats.won}</div><div className="text-[10px] uppercase text-slate-500">Salg</div></div>
+                  {stats.pipelineValue > 0 && <div className="col-span-3 text-[11px] font-semibold text-slate-300">
+                    Aktiv pipeline €{Math.round(stats.pipelineValue).toLocaleString("no-NO")}
+                  </div>}
+                </div>}
+
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {permissions.includes("email.draft") && row.companyChannelReady && !["PARTNER","DISQUALIFIED"].includes(status) && <button type="button" className="text-xs font-semibold text-emerald-300 underline"
+                    onClick={() => prepareCorporateEmail(row, "partner")}>
+                    Lag e-postutkast
+                  </button>}
+                  {permissions.includes("corporate.plan") && !["DISQUALIFIED"].includes(status) && <button type="button" className="text-xs text-cyan-300 underline"
+                    onClick={() => prepareCorporateWork(row, "partner")}>
+                    {corporatePlanPreset(row, "partner").label}
+                  </button>}
+                  {permissions.includes("corporate.plan") && status === "CONTACTED" && <button type="button"
+                    disabled={partnerProgressBusy === `${row.id}:mark_engaged`}
+                    className="text-xs font-semibold text-amber-300 underline disabled:opacity-40"
+                    onClick={() => void updatePartnerProgress(row, "mark_engaged")}>
+                    Registrer svar
+                  </button>}
+                  {permissions.includes("corporate.plan") && status === "ENGAGED" && <>
+                    <button type="button"
+                      disabled={partnerProgressBusy === `${row.id}:record_meeting`}
+                      className="text-xs font-semibold text-amber-300 underline disabled:opacity-40"
+                      onClick={() => void updatePartnerProgress(row, "record_meeting")}>
+                      Registrer partnersamtale
+                    </button>
+                    <button type="button"
+                      disabled={partnerProgressBusy === `${row.id}:activate_partner`}
+                      className="text-xs font-semibold text-emerald-300 underline disabled:opacity-40"
+                      onClick={() => void updatePartnerProgress(row, "activate_partner")}>
+                      Aktiver partner
+                    </button>
+                  </>}
+                  {status === "PARTNER" && row.referralUrl && <button type="button"
+                    className="text-xs font-semibold text-emerald-300 underline"
+                    onClick={() => void copyPartnerReferralLink(row)}>
+                    {partnerLinkCopied === row.id ? "Kopiert" : "Kopier partnerlenke"}
+                  </button>}
+                </div>
+              </article>;
+            })}
           </div>
         </div>
       </div>
