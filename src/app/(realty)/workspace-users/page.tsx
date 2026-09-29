@@ -40,6 +40,8 @@ type BrandChoice = {
   reelsRead: boolean;
   reelsCreate: boolean;
   reelsPublish: boolean;
+  youtubeRead: boolean;
+  youtubePublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -60,6 +62,7 @@ const emptyChoice = (): BrandChoice => ({
   properties: false, tasksRead: false, tasksWrite: false,
   marketingRead: false, marketingDraft: false, marketingPublish: false,
   reelsRead: false, reelsCreate: false, reelsPublish: false,
+  youtubeRead: false, youtubePublish: false,
   corporateRead: false, corporatePlan: false,
   visibilityRead: false, visibilityPlan: false,
   adsRead: false, adsDraft: false, eventsPlan: false,
@@ -126,6 +129,8 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       reelsRead: permissions.includes("reels.read"),
       reelsCreate: permissions.includes("reels.create"),
       reelsPublish: permissions.includes("reels.publish"),
+      youtubeRead: permissions.includes("youtube.read"),
+      youtubePublish: permissions.includes("youtube.publish"),
       corporateRead: permissions.includes("corporate.read"),
       corporatePlan: permissions.includes("corporate.plan"),
       visibilityRead: permissions.includes("visibility.read"),
@@ -220,6 +225,8 @@ export default function WorkspaceUsersPage() {
       if (next.reelsCreate) next.reelsRead = true;
       if (next.reelsPublish) { next.reelsRead = true; next.reelsCreate = true; }
       if (!["zeneco", "pinosoecolife"].includes(brandKey)) { next.reelsRead = false; next.reelsCreate = false; next.reelsPublish = false; }
+      if (next.youtubePublish) next.youtubeRead = true;
+      if (brandKey !== "zeneco") { next.youtubeRead = false; next.youtubePublish = false; }
       if (next.corporatePlan) next.corporateRead = true;
       if (next.visibilityPlan) next.visibilityRead = true;
       if (next.adsDraft) next.adsRead = true;
@@ -273,6 +280,8 @@ export default function WorkspaceUsersPage() {
         reelsRead: choice.reelsRead,
         reelsCreate: choice.reelsCreate,
         reelsPublish: choice.reelsPublish,
+        youtubeRead: choice.youtubeRead,
+        youtubePublish: choice.youtubePublish,
         corporateRead: choice.corporateRead,
         corporatePlan: choice.corporatePlan,
         visibilityRead: choice.visibilityRead,
@@ -634,6 +643,14 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.reelsPublish}
                       onChange={e => updateChoice(brand.brandKey, { reelsPublish: e.target.checked })}/> Publisere Reel til Facebook / Instagram</label>
                     <p className="mt-2 text-[11px] text-slate-500">Re-Master gjør rendering i bakgrunnen. Brukeren ser bare denne merkevaren og dens verifiserte kanaler.</p>
+                  </div>}
+                  {isZen && <div className="rounded-lg border border-red-900/60 bg-red-950/10 p-3">
+                    <strong className="text-sm">YouTube Studio</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.youtubeRead}
+                      onChange={e => updateChoice(brand.brandKey, { youtubeRead: e.target.checked, ...(e.target.checked ? {} : { youtubePublish: false }) })}/> Se Zen-kanal, videoer og klare Shorts</label>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.youtubePublish}
+                      onChange={e => updateChoice(brand.brandKey, { youtubePublish: e.target.checked })}/> Publisere ferdig forhåndsvist Reel som YouTube Short</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Fase 1 er kun Zen Eco Homes. Publisering krever eksakt verifisert Zen-kanal og en ferdig Reel fra samme workspace.</p>
                   </div>}
                   {isZen && <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Corporate Homes</strong>

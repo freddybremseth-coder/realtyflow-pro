@@ -22,6 +22,7 @@ const files = [
   "20260928103000_workspace_social_publish.sql",
   "20260928205000_workspace_external_collaborators.sql",
   "20260928213000_workspace_reels_studio.sql",
+  "20260929213000_workspace_youtube_studio.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -1062,6 +1063,12 @@ try {
     "Workspace user configure rejected complete Pinoso Reel scope");
   verify(await configureManaged([{ brandKey: "zeneco", permissions: ["reels.read","reels.create"] }]) === true,
     "Workspace user configure rejected Zen Reel scope");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["youtube.publish"] }]) === false,
+    "Workspace user configure accepted YouTube publish without read");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["youtube.read"] }]) === false,
+    "Workspace user configure accepted phase-one YouTube access on Pinoso");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["youtube.read","youtube.publish"] }]) === true,
+    "Workspace user configure rejected complete Zen YouTube scope");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft","marketing.publish"] }]) === true,
     "Workspace user configure fixture did not restore marketing scope after Reel permission tests");
 

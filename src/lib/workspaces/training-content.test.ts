@@ -76,6 +76,26 @@ test("visibility and campaigns guides appear when those tools are available", ()
 });
 
 
+test("YouTube guide is Zen-only and appears with YouTube access", () => {
+  const zen = trainingArticlesFor({
+    brandKey: "zeneco",
+    permissions: ["youtube.read"],
+  });
+  assert.equal(zen.some(article => article.id === "youtube-studio"), true);
+
+  const pinoso = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["youtube.read"] as any,
+  });
+  assert.equal(pinoso.some(article => article.id === "youtube-studio"), false);
+
+  const noYoutube = trainingArticlesFor({
+    brandKey: "zeneco",
+    permissions: ["reels.read"],
+  });
+  assert.equal(noYoutube.some(article => article.id === "youtube-studio"), false);
+});
+
 test("Reels guide appears only for supported brands with Reel access", () => {
   const zen = trainingArticlesFor({
     brandKey: "zeneco",

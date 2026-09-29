@@ -7,6 +7,8 @@ test("external agency preset can create but not publish Reels and has no CRM/ema
   assert.equal(zen.reelsRead, true);
   assert.equal(zen.reelsCreate, true);
   assert.equal(zen.reelsPublish, false);
+  assert.equal(zen.youtubeRead, true);
+  assert.equal(zen.youtubePublish, false);
   assert.equal(zen.marketingPublish, false);
   assert.equal(zen.contentPublish, false);
   assert.equal(zen.crmRead, false);
@@ -25,6 +27,10 @@ test("marketing preset only enables Reels on supported brands", () => {
     assert.equal(choice.reelsCreate, true);
     assert.equal(choice.reelsPublish, true);
   }
+  assert.equal(zen.youtubeRead, true);
+  assert.equal(zen.youtubePublish, true);
+  assert.equal(pinoso.youtubeRead, false);
+  assert.equal(pinoso.youtubePublish, false);
   assert.equal(other.marketingPublish, true);
   assert.equal(other.reelsRead, false);
   assert.equal(other.reelsCreate, false);
@@ -48,7 +54,7 @@ test("read-only preset has no write or publish capabilities", () => {
   const choice = workspaceAccessPresetChoice("zeneco", "read-only");
   for (const value of [
     choice.crmWrite, choice.tasksWrite, choice.marketingDraft, choice.marketingPublish,
-    choice.reelsCreate, choice.reelsPublish, choice.corporatePlan, choice.visibilityPlan,
+    choice.reelsCreate, choice.reelsPublish, choice.youtubePublish, choice.corporatePlan, choice.visibilityPlan,
     choice.adsDraft, choice.eventsPlan, choice.contentEdit, choice.contentPublish,
     choice.emailDraft, choice.emailSend,
   ]) assert.equal(value, false);
@@ -64,4 +70,6 @@ test("SEO and content preset stays out of CRM and communications", () => {
   assert.equal(choice.crmRead, false);
   assert.equal(choice.emailRead, false);
   assert.equal(choice.reelsRead, false);
+  assert.equal(choice.youtubeRead, false);
+  assert.equal(choice.youtubePublish, false);
 });

@@ -158,7 +158,7 @@ test("create user sends a self-service invite and configures safe multi-brand pe
     accessExpiresAt: "2027-03-31T21:59:59.000Z",
     brandAccess: [
       { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read"] },
-      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read"] },
+      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read","youtube.read","youtube.publish"] },
     ],
   }) as any);
   assert.equal(response.status, 201);
@@ -258,6 +258,22 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
         action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
         displayName: "Andrea", password: "Strong!Workspace7Password",
         brandAccess: [{ brandKey: "pinosoecolife", permissions: ["email.read","email.send"] }],
+      },
+      error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+    },
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea",
+        brandAccess: [{ brandKey: "zeneco", permissions: ["youtube.publish"] }],
+      },
+      error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+    },
+    {
+      body: {
+        action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+        displayName: "Andrea",
+        brandAccess: [{ brandKey: "pinosoecolife", permissions: ["youtube.read"] }],
       },
       error: "INVALID_BRAND_ACCESS", field: "brandAccess",
     },
