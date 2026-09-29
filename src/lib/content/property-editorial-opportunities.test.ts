@@ -66,3 +66,12 @@ test("limits one area from dominating the editorial queue", () => {
   assert.ok(finestratOnly.length <= 3);
   assert.ok(opportunities.some((item) => item.propertyRefs.includes("V1") && item.propertyRefs.includes("V2")));
 });
+
+
+test("rejects inconsistent normalized town and source location", () => {
+  const opportunities = detectPropertyEditorialOpportunities([
+    p({ id:"m1", ref:"M1", town:"Dénia", location:"El Verger, El Verger", price:470000, areaM2:97 }),
+    p({ id:"m2", ref:"M2", town:"Polop", location:"Polop, Urbanizaciones", price:470000, areaM2:200 }),
+  ]);
+  assert.equal(opportunities.length, 0);
+});
