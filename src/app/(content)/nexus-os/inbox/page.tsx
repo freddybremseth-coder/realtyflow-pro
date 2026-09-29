@@ -6,7 +6,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardCheck, Eye, Inbox, Lo
 import { buildNexusInbox, summarizeNexusInbox, type NexusInboxItem, type NexusInboxSource } from "@/lib/nexus-inbox";
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 
-type OsPayload = { attention?: Array<{ id: string; severity: "high" | "medium" | "low"; title: string; detail: string; href: string }> };
+type OsPayload = { attention?: Array<{ id: string; severity: "high" | "medium" | "low"; title: string; detail: string; href: string; responsibility?: "USER" | "SYSTEM" | "WATCH" }> };
 type ApprovalPayload = { items?: Array<{ id: string; title: string; summary: string | null; ready: boolean; blocker: string | null; ageDays: number; customerName: string; reviewHref: string }> };
 type MarketingPayload = { rows?: SocialAutopilotRow[] };
 type EmailIdentityPayload = { items?: Array<{
