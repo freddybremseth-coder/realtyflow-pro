@@ -20,6 +20,8 @@ export type WorkspaceAccessPresetChoice = {
   reelsRead: boolean;
   reelsCreate: boolean;
   reelsPublish: boolean;
+  youtubeRead: boolean;
+  youtubePublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -40,6 +42,7 @@ function blank(): WorkspaceAccessPresetChoice {
     crmRead: false, crmWrite: false, properties: false, tasksRead: false, tasksWrite: false,
     marketingRead: false, marketingDraft: false, marketingPublish: false,
     reelsRead: false, reelsCreate: false, reelsPublish: false,
+    youtubeRead: false, youtubePublish: false,
     corporateRead: false, corporatePlan: false,
     visibilityRead: false, visibilityPlan: false,
     adsRead: false, adsDraft: false, eventsPlan: false,
@@ -92,6 +95,8 @@ export function workspaceAccessPresetChoice(
       reelsRead: supportsReels,
       reelsCreate: supportsReels,
       reelsPublish: supportsReels,
+      youtubeRead: isZen,
+      youtubePublish: isZen,
       visibilityRead: true,
       visibilityPlan: true,
       adsRead: true,
@@ -111,6 +116,7 @@ export function workspaceAccessPresetChoice(
       tasksRead: isZen,
       marketingRead: true,
       reelsRead: supportsReels,
+      youtubeRead: isZen,
       corporateRead: isZen,
       visibilityRead: true,
       adsRead: true,
@@ -125,6 +131,7 @@ export function workspaceAccessPresetChoice(
     marketingDraft: true,
     reelsRead: supportsReels,
     reelsCreate: supportsReels,
+    youtubeRead: isZen,
     visibilityRead: true,
     visibilityPlan: true,
     adsRead: true,
