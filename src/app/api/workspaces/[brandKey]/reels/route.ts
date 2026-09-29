@@ -202,6 +202,18 @@ export async function POST(
   imageUrls = [...new Set(imageUrls)].slice(0, count);
   if (imageUrls.length < 2) return fail(409, "REEL_NOT_ENOUGH_PROPERTY_VISUALS", "Velg et bredere område eller flere bildetyper.");
 
+  let propertyUrl: string | undefined;
+  if (input.propertyId) {
+    const { data: propertyMeta, error: propertyMetaError } = await supabase.from("properties")
+      .select("ref").eq("id", input.propertyId).maybeSingle();
+    const reference = typeof propertyMeta?.ref === "string" ? propertyMeta.ref.trim() : "";
+    if (propertyMetaError || !reference || !/^[A-Za-z0-9._~-]{1,100}$/.test(reference)) {
+      return fail(409, "REEL_PROPERTY_LINK_UNAVAILABLE", "Denne boligen mangler en verifiserbar offentlig boliglenke.");
+    }
+    const host = brandKey === "pinosoecolife" ? "www.pinosoecolife.com" : "www.zenecohomes.com";
+    propertyUrl = `https://${host}/eiendommer/${encodeURIComponent(reference)}`;
+  }
+
   const selection = {
     seed,
     workspace: true,
@@ -236,6 +248,7 @@ export async function POST(
       region: input.region,
       areaQuery: input.areaQuery,
       visualTypes: input.visualTypes,
+      propertyUrl,
     });
     const objectPath = String(created.id) + ".mp4";
     const { error: uploadError } = await supabase.storage.from("remaster-reels").upload(objectPath, rendered.buffer, {
