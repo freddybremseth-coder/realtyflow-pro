@@ -196,7 +196,7 @@ export default function NexusTodayPage() {
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Sparkles size={16} /> Nexus Today</div>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Hva trenger din oppmerksomhet i dag?</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Nexus finner neste beste handling på tvers av salg, drift og merkevarer. Du trenger ikke lete etter funksjonen selv — systemet viser hva som bør gjøres og hvorfor.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Nexus skiller nå mellom hva <strong>du må gjøre</strong>, hva <strong>systemet gjør automatisk</strong> og hva som bare <strong>overvåkes</strong>. Du skal ikke starte systemarbeid manuelt.</p>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">
             {loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater
@@ -245,7 +245,7 @@ export default function NexusTodayPage() {
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div><div className="text-xs font-black uppercase tracking-wider text-cyan-700">Nexus recommends</div><h2 className="mt-1 text-xl font-black text-slate-950">De 3 viktigste tingene å gjøre nå</h2></div>
+          <div><div className="text-xs font-black uppercase tracking-wider text-amber-700">Du må gjøre</div><h2 className="mt-1 text-xl font-black text-slate-950">De 3 viktigste tingene du skal gjøre nå</h2></div>
           <Link href="/nexus-os/inbox" className="text-xs font-black text-cyan-700">Åpne hele Inbox →</Link>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
