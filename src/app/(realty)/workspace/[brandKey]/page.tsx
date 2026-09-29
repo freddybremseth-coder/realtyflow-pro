@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users } from "lucide-react";
+import { BookOpen, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
