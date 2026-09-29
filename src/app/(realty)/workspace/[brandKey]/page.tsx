@@ -341,7 +341,7 @@ export default function FocusedWorkspacePage() {
                 <p className="mt-1 text-sm text-slate-400">Lag og forhåndsvis Reels uten å åpne Re-Master-admin.</p>
               </summary>
               <div className="border-t border-slate-800 p-5">
-                <WorkspaceReelsPanel brandKey={brandKey} canCreate={permissions.includes("reels.create")} canPublish={permissions.includes("reels.publish")} />
+                <WorkspaceReelsPanel brandKey={brandKey} canCreate={permissions.includes("reels.create")} canPublish={permissions.includes("reels.publish")} canUseProperties={permissions.includes("properties.catalog.read")} />
               </div>
             </details>}
             {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
