@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   adaptGenomeToChannel,
+  allocateChannelProduction,
   allocateExploration,
   atomizeCampaign,
   buildMarketingPlan,
+  outcomeAwareExplorationMix,
+  shouldProduceChannelWithinOutcomeQuota,
   contentNoveltyScore,
   contentQualityGate,
   createMarketingRun,
@@ -71,6 +74,142 @@ test("outcome-backed channel winner is prioritized without removing exploration 
   const plan = buildMarketingPlan(directorInput, { marketingRunId: "mr_channel", correlationId: "rf_channel", recommendation: channelRec });
   assert.deepEqual(plan.channels, ["website", "instagram", "facebook", "youtube"]);
   assert.equal(plan.channels.length, directorInput.channels.length);
+});
+
+test("qualified pipeline increases exploit while preserving exploration", () => {
+  const outcomeRec: GenomeRecommendation = {
+    favor: {
+      hookType: { value: "buyer_intent", lift: 1.4, evidence: "reliable", outcomeTier: "qualified_pipeline" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  assert.deepEqual(outcomeAwareExplorationMix(outcomeRec), { exploit: 0.75, adjacent: 0.15, experiment: 0.1 });
+  const plan = buildMarketingPlan({ ...directorInput, publishingCapacityPerWeek: 20 }, {
+    marketingRunId: "mr_qp",
+    correlationId: "rf_qp",
+    recommendation: outcomeRec,
+  });
+  assert.deepEqual(plan.production, { exploit: 15, adjacent: 3, experiment: 2 });
+});
+
+test("sale evidence increases exploit to 80 percent but never removes exploration", () => {
+  const saleRec: GenomeRecommendation = {
+    favor: {
+      ctaType: { value: "book_viewing", lift: 1.6, evidence: "reliable", outcomeTier: "sale" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  assert.deepEqual(outcomeAwareExplorationMix(saleRec), { exploit: 0.8, adjacent: 0.15, experiment: 0.05 });
+  const plan = buildMarketingPlan({ ...directorInput, publishingCapacityPerWeek: 20 }, {
+    marketingRunId: "mr_sale",
+    correlationId: "rf_sale",
+    recommendation: saleRec,
+  });
+  assert.deepEqual(plan.production, { exploit: 16, adjacent: 3, experiment: 1 });
+});
+
+test("weak outcome evidence cannot change production mix", () => {
+  const weakRec: GenomeRecommendation = {
+    favor: {
+      hookType: { value: "viral", lift: 2.4, evidence: "promising", outcomeTier: "sale" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  assert.deepEqual(outcomeAwareExplorationMix(weakRec), { exploit: 0.7, adjacent: 0.2, experiment: 0.1 });
+});
+
+test("explicit exploration override remains authoritative", () => {
+  const saleRec: GenomeRecommendation = {
+    favor: {
+      ctaType: { value: "book_viewing", lift: 1.6, evidence: "reliable", outcomeTier: "sale" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  const plan = buildMarketingPlan({ ...directorInput, publishingCapacityPerWeek: 20 }, {
+    marketingRunId: "mr_override",
+    correlationId: "rf_override",
+    recommendation: saleRec,
+    explorationMix: { exploit: 0.6, adjacent: 0.25, experiment: 0.15 },
+  });
+  assert.deepEqual(plan.production, { exploit: 12, adjacent: 5, experiment: 3 });
+});
+
+test("sale-proven channel receives half of weekly capacity while other channels retain slots", () => {
+  const channelRec: GenomeRecommendation = {
+    favor: {
+      channel: { value: "website", lift: 1.5, evidence: "reliable", outcomeTier: "sale" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  const allocation = allocateChannelProduction(10, directorInput.channels, channelRec);
+  assert.deepEqual(allocation.map(({ channel, count }) => ({ channel, count })), [
+    { channel: "instagram", count: 2 },
+    { channel: "facebook", count: 2 },
+    { channel: "youtube", count: 1 },
+    { channel: "website", count: 5 },
+  ]);
+  assert.equal(allocation.reduce((sum, item) => sum + item.count, 0), 10);
+  assert.ok(allocation.every((item) => item.count >= 1));
+});
+
+test("qualified-pipeline channel receives 40 percent of weekly capacity", () => {
+  const channelRec: GenomeRecommendation = {
+    favor: {
+      channel: { value: "website", lift: 1.3, evidence: "reliable", outcomeTier: "qualified_pipeline" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  const plan = buildMarketingPlan(directorInput, {
+    marketingRunId: "mr_channel_capacity",
+    correlationId: "rf_channel_capacity",
+    recommendation: channelRec,
+  });
+  const website = plan.channelProduction.find((item) => item.channel === "website");
+  assert.equal(website?.count, 4);
+  assert.equal(plan.channelProduction.reduce((sum, item) => sum + item.count, 0), directorInput.publishingCapacityPerWeek);
+});
+
+test("two-channel outcome winner still receives more production than the peer", () => {
+  const channelRec: GenomeRecommendation = {
+    favor: {
+      channel: { value: "instagram", lift: 1.5, evidence: "reliable", outcomeTier: "sale" },
+    },
+    avoid: [],
+    notes: [],
+  };
+  const allocation = allocateChannelProduction(8, ["instagram", "facebook"], channelRec);
+  const instagram = allocation.find((item) => item.channel === "instagram")!;
+  const facebook = allocation.find((item) => item.channel === "facebook")!;
+  assert.ok(instagram.count > facebook.count);
+  assert.deepEqual([instagram.count, facebook.count], [6, 2]);
+});
+
+test("weekly outcome quota lets winner run more often while preserving loser exploration", () => {
+  const allocation = [
+    { channel: "instagram" as const, count: 75 },
+    { channel: "facebook" as const, count: 25 },
+  ];
+  assert.equal(shouldProduceChannelWithinOutcomeQuota({
+    channel: "instagram",
+    allocation,
+    actualCounts: { instagram: 5, facebook: 1 },
+  }), true);
+  assert.equal(shouldProduceChannelWithinOutcomeQuota({
+    channel: "facebook",
+    allocation,
+    actualCounts: { instagram: 5, facebook: 1 },
+  }), false);
+  assert.equal(shouldProduceChannelWithinOutcomeQuota({
+    channel: "facebook",
+    allocation,
+    actualCounts: { instagram: 6, facebook: 1 },
+  }), true);
 });
 
 test("experiment-backed favored dim ender opp i brief-genome", () => {

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
+import { allocateChannelProduction, shouldProduceChannelWithinOutcomeQuota } from "@/lib/marketing/autonomous";
 import {
   isSystemNextActionRequest,
   nextActionPublicationMode,
@@ -80,6 +81,31 @@ async function hasRecentAutoPublication(supabase: any, brandId: string, channel:
     .limit(1);
   if (error) throw new Error(`RECENT_PUBLICATION_CHECK_FAILED: ${error.message}`);
   return !!data?.length;
+}
+
+
+async function loadWeeklyProductionCounts(
+  supabase: any,
+  brandId: string,
+  channels: Array<"instagram" | "facebook">,
+): Promise<Partial<Record<"instagram" | "facebook", number>> | null> {
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const { data, error } = await supabase
+    .from("marketing_publications")
+    .select("channel")
+    .eq("brand_id", brandId)
+    .in("channel", channels)
+    .in("state", ["draft", "approved", "publishing", "published", "scheduled"])
+    .gte("created_at", since)
+    .limit(500);
+  if (error) return null;
+  const counts: Partial<Record<"instagram" | "facebook", number>> = {};
+  for (const row of data ?? []) {
+    const channel = String(row.channel ?? "").toLowerCase();
+    if (channel !== "instagram" && channel !== "facebook") continue;
+    counts[channel] = (counts[channel] ?? 0) + 1;
+  }
+  return counts;
 }
 
 async function markFailedControlledAutoPublications(
@@ -194,13 +220,48 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      for (const channel of channels) {
+      const brandRecommendation = !manualRun
+        ? await recommendForGeneration(supabase as any, { scope: brandId }).catch(() => undefined)
+        : undefined;
+      const outcomeAllocation = allocateChannelProduction(100, channels, brandRecommendation);
+      const outcomeQuotaActive = outcomeAllocation.some((item) => item.outcomeTier !== "none");
+      const weeklyProductionCounts = outcomeQuotaActive
+        ? await loadWeeklyProductionCounts(supabase, brandId, channels)
+        : null;
+      const orderedChannels = outcomeQuotaActive
+        ? channels.slice().sort((a, b) =>
+            (outcomeAllocation.find((item) => item.channel === b)?.count ?? 0)
+            - (outcomeAllocation.find((item) => item.channel === a)?.count ?? 0),
+          )
+        : channels;
+
+      for (const channel of orderedChannels) {
         const forcedRunForChannel = manualRun
           && requestedChannels.has(channel)
           && (!requestedBrands.size || requestedBrands.has(brandId));
         const requestedPublicationMode = systemNextActionRun && forcedRunForChannel
           ? nextActionPublicationMode({ configuredChannels: preapprovedChannels, targetChannel: channel })
           : null;
+        if (
+          !forcedRunForChannel
+          && outcomeQuotaActive
+          && weeklyProductionCounts
+          && !shouldProduceChannelWithinOutcomeQuota({
+            channel,
+            allocation: outcomeAllocation,
+            actualCounts: weeklyProductionCounts,
+          })
+        ) {
+          results.push({
+            brandId,
+            channel,
+            skipped: true,
+            reason: "outcome_weekly_quota_reached",
+            weeklyProductionCounts,
+            outcomeAllocation,
+          });
+          continue;
+        }
         if (!forcedRunForChannel && !isPlannedAutopilotDay(dayIndex, plan?.posting_strategy?.days)) {
           results.push({ brandId, channel, skipped: true, reason: "not_configured_publishing_day", localDate });
           continue;
@@ -321,6 +382,9 @@ export async function GET(request: NextRequest) {
 
           const failureState = await markFailedControlledAutoPublications(supabase, brandId, run);
           const generated = run.results.some((item) => !item.error);
+          if (generated && weeklyProductionCounts) {
+            weeklyProductionCounts[channel] = (weeklyProductionCounts[channel] ?? 0) + 1;
+          }
           let sourceMarked = false;
           let sourceMarkError: string | null = null;
           if (remasterSource && generated) {
