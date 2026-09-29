@@ -172,6 +172,23 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
     const completeEmail = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
     assert.equal(completeEmail.status, 200);
     assert.deepEqual((await completeEmail.json()).permissions, ["email.read", "email.draft", "email.send"]);
+
+    currentBrand = "zeneco";
+    currentPermissions = ["properties.catalog.read", "youtube.publish"];
+    const incompleteYoutube = await GET(request(signed) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(incompleteYoutube.status, 200);
+    assert.deepEqual((await incompleteYoutube.json()).permissions, ["properties.catalog.read"]);
+
+    currentPermissions = ["youtube.read", "youtube.publish"];
+    const completeYoutube = await GET(request(signed) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(completeYoutube.status, 200);
+    assert.deepEqual((await completeYoutube.json()).permissions, ["youtube.read", "youtube.publish"]);
+
+    currentBrand = "pinosoecolife";
+    currentPermissions = ["properties.catalog.read", "youtube.read", "youtube.publish"];
+    const blockedPinosoYoutube = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
+    assert.equal(blockedPinosoYoutube.status, 200);
+    assert.deepEqual((await blockedPinosoYoutube.json()).permissions, ["properties.catalog.read"]);
   } finally {
     globalThis.fetch = previous.fetch;
     for (const [key, value] of [
