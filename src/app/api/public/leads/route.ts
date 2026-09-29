@@ -125,7 +125,8 @@ function interactionSummary(params: {
     params.userCount ? `Ansatte/medlemmer: ${params.userCount}` : "",
     params.corporateModel ? `Corporate-modell: ${params.corporateModel}` : "",
     params.partnerType ? `Partnertype: ${params.partnerType}` : "",
-    params.partnershipInterest ? `Partnerinteresse: ${params.partnershipInterest}` : "",\n    params.referralPartnerId ? `Henvisningspartner-ID: ${params.referralPartnerId}` : "",
+    params.partnershipInterest ? `Partnerinteresse: ${params.partnershipInterest}` : "",
+    params.referralPartnerId ? `Henvisningspartner-ID: ${params.referralPartnerId}` : "",
     params.message ? `Melding: ${params.message}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -181,7 +182,8 @@ export async function POST(request: NextRequest) {
   const userCount = positiveInteger(body.user_count || body.userCount);
   const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
   const partnerType = normalizePartnerType(body.partner_type || body.partnerType);
-  const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);\n  const referralPartnerId = cleanText(body.referral_partner_id || body.referralPartnerId, 80);
+  const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);
+  const referralPartnerId = cleanText(body.referral_partner_id || body.referralPartnerId, 80);
   const eventId = cleanText(body.event_id || body.eventId, 160);
   const eventName = cleanText(body.event_name || body.eventName, 240);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
@@ -245,7 +247,8 @@ export async function POST(request: NextRequest) {
     userCount ? `Ansatte/medlemmer: ${userCount}` : "",
     corporateModel ? `Corporate-modell: ${corporateModel}` : "",
     isCorporatePartner ? `Partnertype: ${partnerType}` : "",
-    partnershipInterest ? `Partnerinteresse: ${partnershipInterest}` : "",\n    referredByPartner ? `Henvisningspartner: ${referredByPartner.company_name}` : "",
+    partnershipInterest ? `Partnerinteresse: ${partnershipInterest}` : "",
+    referredByPartner ? `Henvisningspartner: ${referredByPartner.company_name}` : "",
     isCorporateEventRegistration ? `Corporate-event: ${eventName} (${eventId})` : "",
     utmSource || utmCampaign || utmContent
       ? `UTM: ${utmSource} / ${utmCampaign} / ${utmContent}`
