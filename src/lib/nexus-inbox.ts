@@ -23,6 +23,7 @@ type OsAttentionItem = {
   title: string;
   detail: string;
   href: string;
+  responsibility?: "USER" | "SYSTEM" | "WATCH";
 };
 
 type ApprovalItem = {
@@ -152,7 +153,9 @@ export function buildNexusInbox(input: {
 }): NexusInboxItem[] {
   const items: NexusInboxItem[] = [];
 
-  for (const row of input.attention.filter((item) => item.id !== "os:clear")) {
+  for (const row of input.attention.filter((item) =>
+    item.id !== "os:clear" && (item.responsibility ?? "USER") === "USER",
+  )) {
     items.push({
       id: `system:${row.id}`,
       source: "system",

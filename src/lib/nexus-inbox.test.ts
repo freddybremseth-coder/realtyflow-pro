@@ -18,7 +18,7 @@ test("Nexus Inbox combines system, approval, marketing and high email identity a
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.priority, "critical");
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.href, "/nexus-os/email-link-health?messageId=mail-conflict");
   const summary = summarizeNexusInbox(items);
-  assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, buyerCriteria: 0, shortlistReview: 0, noMatch: 0, viewingCoach: 0, system: 1 });
+  assert.deepEqual(summary, { total: 4, critical: 3, approvals: 1, marketing: 1, emailIdentity: 1, buyerCriteria: 0, shortlistReview: 0, noMatch: 0, viewingCoach: 0, system: 1 });
 });
 
 test("ambiguous buyer criteria reply becomes a high-priority human interpretation item", () => {
@@ -214,4 +214,19 @@ test("same-priority email identity review is ordered newest first without changi
     "email-identity:unknown-date",
   ]);
   assert.equal(items[0]?.occurredAt, "2026-08-30T10:00:00Z");
+});
+
+
+test("Nexus Inbox contains only USER-owned OS alerts, not SYSTEM or WATCH status", () => {
+  const items = buildNexusInbox({
+    attention: [
+      { id: "user", severity: "high", title: "Reconnect", detail: "User action", href: "/connections", responsibility: "USER" },
+      { id: "system", severity: "high", title: "Automation failed", detail: "System handles diagnostics", href: "/automation", responsibility: "SYSTEM" },
+      { id: "watch", severity: "high", title: "Auto reply live", detail: "Informational", href: "/runtime", responsibility: "WATCH" },
+    ],
+    approvals: [],
+    marketingRows: [],
+  });
+
+  assert.deepEqual(items.map((item) => item.id), ["system:user"]);
 });
