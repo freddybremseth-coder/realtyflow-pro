@@ -44,3 +44,25 @@ test("ignores properties outside Costa Blanca North and large price gaps", () =>
   ]);
   assert.equal(opportunities.length, 0);
 });
+
+
+test("limits one area from dominating the editorial queue", () => {
+  const finestrat = [
+    p({ id:"f1", ref:"F1", price:700000, areaM2:300 }),
+    p({ id:"f2", ref:"F2", price:701000, areaM2:120 }),
+    p({ id:"f3", ref:"F3", price:702000, areaM2:280 }),
+    p({ id:"f4", ref:"F4", price:703000, areaM2:125 }),
+    p({ id:"f5", ref:"F5", price:704000, areaM2:260 }),
+  ];
+  const other = [
+    p({ id:"v1", ref:"V1", town:"Villajoyosa", location:"Villajoyosa", price:500000, areaM2:180 }),
+    p({ id:"v2", ref:"V2", town:"Villajoyosa", location:"Villajoyosa", price:501000, areaM2:90 }),
+  ];
+  const opportunities = detectPropertyEditorialOpportunities([...finestrat, ...other], 12);
+  const finestratOnly = opportunities.filter((item) => {
+    const rows = Array.isArray(item.evidence.properties) ? item.evidence.properties : [];
+    return rows.every((row) => row && typeof row === "object" && String((row as EditorialPropertyFact).town) === "Finestrat");
+  });
+  assert.ok(finestratOnly.length <= 3);
+  assert.ok(opportunities.some((item) => item.propertyRefs.includes("V1") && item.propertyRefs.includes("V2")));
+});
