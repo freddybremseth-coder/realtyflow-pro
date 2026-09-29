@@ -356,7 +356,8 @@ export async function createCampaignDraft(
   const routedFormat = routeContentFormat(effectiveMediaUrl);
   const learnedRecipe = parseContentRecipe(fav.recipe);
   const targetChannel = input.channel ?? channels[0] ?? "instagram";
-  const recipeApplicable = learnedRecipe
+  const recipeApplicable = channels.length === 1
+    && learnedRecipe
     && (!learnedRecipe.channel || learnedRecipe.channel === targetChannel)
     && (!routedFormat || !learnedRecipe.format || learnedRecipe.format === routedFormat)
     ? learnedRecipe
