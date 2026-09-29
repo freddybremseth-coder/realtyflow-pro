@@ -5,6 +5,7 @@ import {
   buildContentUtm,
   buildCanonicalLeadAttribution,
   canonicalMetricsForContent,
+  rollupContentOutcomeEvidence,
   rollupContentOutcomes,
   stitchAttributionJourneys,
   touchConfidence,
@@ -184,4 +185,36 @@ test("canonical report keeps unknown dimensions explicit", () => {
   assert.equal(report.channels[0].campaignId, "all");
   assert.equal(report.channels[0].channel, "website");
   assert.equal(report.campaigns[0].campaignId, "unknown");
+});
+
+
+test("attributed outcome evidence follows actual CRM outcome time, not content touch time", () => {
+  const journeys: Journey[] = [{
+    touches: [
+      tp({ contentId: "ig-freshness", channel: "instagram", occurredAt: "2026-06-01T10:00:00Z" }),
+      tp({ touchType: "lead_created", occurredAt: "2026-07-01T10:00:00Z" }),
+      tp({ touchType: "qualified", occurredAt: "2026-07-10T10:00:00Z" }),
+      tp({ touchType: "sale", commissionEur: 18000, occurredAt: "2026-09-20T10:00:00Z" }),
+    ],
+  }];
+
+  const evidence = rollupContentOutcomeEvidence(journeys, "last_touch").get("ig-freshness");
+  assert.deepEqual(evidence, {
+    firstAt: "2026-07-01T10:00:00Z",
+    lastAt: "2026-09-20T10:00:00Z",
+  });
+});
+
+test("assisted-only content does not inherit primary business evidence freshness", () => {
+  const journeys: Journey[] = [{
+    touches: [
+      tp({ contentId: "ig-assisted", channel: "instagram", occurredAt: "2026-06-01T10:00:00Z" }),
+      tp({ contentId: "yt-primary", channel: "youtube", occurredAt: "2026-06-10T10:00:00Z" }),
+      tp({ touchType: "sale", commissionEur: 12000, occurredAt: "2026-09-20T10:00:00Z" }),
+    ],
+  }];
+
+  const evidence = rollupContentOutcomeEvidence(journeys, "last_touch");
+  assert.equal(evidence.has("ig-assisted"), false);
+  assert.equal(evidence.get("yt-primary")?.lastAt, "2026-09-20T10:00:00Z");
 });
