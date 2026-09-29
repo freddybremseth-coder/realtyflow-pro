@@ -16,6 +16,10 @@ type Payload = {
   songs: Song[];
   channels: { instagram: ChannelState; facebook: ChannelState };
 };
+type PropertyOption = {
+  id: string; ref: string | null; title: string | null;
+  town: string | null; location: string | null;
+};
 
 const visualOptions = [
   ["mixed", "Blandet"],
@@ -30,10 +34,12 @@ export function WorkspaceReelsPanel({
   brandKey,
   canCreate,
   canPublish,
+  canUseProperties,
 }: {
   brandKey: string;
   canCreate: boolean;
   canPublish: boolean;
+  canUseProperties: boolean;
 }) {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,6 +51,9 @@ export function WorkspaceReelsPanel({
   const [songId, setSongId] = useState("");
   const [durationSeconds, setDurationSeconds] = useState(30);
   const [areaQuery, setAreaQuery] = useState("");
+  const [propertyId, setPropertyId] = useState("");
+  const [propertySearch, setPropertySearch] = useState("");
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [visualTypes, setVisualTypes] = useState<string[]>(["mixed"]);
   const [channels, setChannels] = useState<Array<"instagram" | "facebook">>(["instagram", "facebook"]);
 
@@ -62,6 +71,21 @@ export function WorkspaceReelsPanel({
   }
 
   useEffect(() => { void load(); }, [brandKey]);
+
+  useEffect(() => {
+    if (!canUseProperties) { setProperties([]); setPropertyId(""); return; }
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/properties?page=1&q=${encodeURIComponent(propertySearch.trim())}`, {
+        cache: "no-store", signal: abort.signal,
+      }).then(async response => response.ok ? response.json() : null)
+        .then(body => {
+          if (abort.signal.aborted) return;
+          setProperties(Array.isArray(body?.properties) ? body.properties : []);
+        }).catch(() => undefined);
+    }, 250);
+    return () => { window.clearTimeout(timer); abort.abort(); };
+  }, [brandKey, canUseProperties, propertySearch]);
 
   const connectedChannels = useMemo(() => {
     if (!payload) return [];
@@ -108,7 +132,8 @@ export function WorkspaceReelsPanel({
           songId,
           channels,
           region: brandKey === "pinosoecolife" ? "inland" : "any",
-          areaQuery: areaQuery.trim(),
+          areaQuery: propertyId ? "" : areaQuery.trim(),
+          propertyId: propertyId || undefined,
           visualTypes,
         }),
       });
@@ -116,6 +141,7 @@ export function WorkspaceReelsPanel({
       if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "Reelen kunne ikke lages.");
       setNotice("Reelen er ferdig. Se gjennom videoen før du publiserer.");
       setTitle("");
+      setPropertyId("");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Reelen kunne ikke lages.");
@@ -167,6 +193,27 @@ export function WorkspaceReelsPanel({
         <h4 className="font-semibold">Lag ny Reel</h4>
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {canUseProperties && <label className="text-xs text-slate-300">Kilde
+          <input value={propertySearch} onChange={event => setPropertySearch(event.target.value)} maxLength={80}
+            placeholder="Søk bolig, referanse eller sted…"
+            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <select value={propertyId} onChange={event => {
+            const next = event.target.value;
+            setPropertyId(next);
+            const property = properties.find(item => item.id === next);
+            if (property) {
+              setTitle(property.title || property.ref || "Property Reel");
+              setAreaQuery("");
+              setVisualTypes(["mixed"]);
+            }
+          }} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+            <option value="">Generell brand-Reel</option>
+            {properties.map(property => <option key={property.id} value={property.id}>
+              {(property.title || property.ref || "Bolig")} · {property.town || property.location || "område"}
+            </option>)}
+          </select>
+          <span className="mt-1 block text-[11px] text-slate-500">Velg en publisert bolig for å bruke bare bilder fra den boligen.</span>
+        </label>}
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={100}
             placeholder={brandKey === "zeneco" ? "Mediterranean living in Altea" : "Build your home in inland Alicante"}
@@ -188,7 +235,7 @@ export function WorkspaceReelsPanel({
           </select>
         </label>
         <label className="text-xs text-slate-300">Område <span className="text-slate-500">(valgfritt)</span>
-          <input value={areaQuery} onChange={event => setAreaQuery(event.target.value)} maxLength={80}
+          <input value={areaQuery} disabled={Boolean(propertyId)} onChange={event => setAreaQuery(event.target.value)} maxLength={80}
             placeholder={brandKey === "zeneco" ? "Altea, Finestrat, Villajoyosa…" : "Pinoso, Aspe, Biar…"}
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
         </label>
