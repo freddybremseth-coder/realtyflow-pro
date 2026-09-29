@@ -215,3 +215,18 @@ test("same-priority email identity review is ordered newest first without changi
   ]);
   assert.equal(items[0]?.occurredAt, "2026-08-30T10:00:00Z");
 });
+
+
+test("Nexus Inbox contains only USER-owned OS alerts, not SYSTEM or WATCH status", () => {
+  const items = buildNexusInbox({
+    attention: [
+      { id: "user", severity: "high", title: "Reconnect", detail: "User action", href: "/connections", responsibility: "USER" },
+      { id: "system", severity: "high", title: "Automation failed", detail: "System handles diagnostics", href: "/automation", responsibility: "SYSTEM" },
+      { id: "watch", severity: "high", title: "Auto reply live", detail: "Informational", href: "/runtime", responsibility: "WATCH" },
+    ],
+    approvals: [],
+    marketingRows: [],
+  });
+
+  assert.deepEqual(items.map((item) => item.id), ["system:user"]);
+});
