@@ -50,3 +50,13 @@ test("Vercel invokes Marketing Autopilot hourly, not twelve times per hour", () 
   const cron = vercel.crons.find((entry: any) => entry.path === "/api/cron/marketing-autopilot");
   assert.equal(cron?.schedule, "0 * * * *");
 });
+
+
+test("scheduled autopilot applies brand-level outcome quotas before channel production", () => {
+  assert.match(route, /recommendForGeneration\(supabase as any, \{ scope: brandId \}\)/);
+  assert.match(route, /allocateChannelProduction\(100, channels, brandRecommendation\)/);
+  assert.match(route, /loadWeeklyProductionCounts\(/);
+  assert.match(route, /shouldProduceChannelWithinOutcomeQuota\(/);
+  assert.match(route, /reason: "outcome_weekly_quota_reached"/);
+  assert.match(route, /weeklyProductionCounts\[channel\].*\+ 1/);
+});
