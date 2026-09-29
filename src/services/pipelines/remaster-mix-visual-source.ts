@@ -30,6 +30,8 @@ export async function loadZenEcoHomesVisualUrls(input: {
   areaQuery?: string;
   /** Brand-isolated selection for the manual short-form Reels renderer. */
   brandId?: "zeneco" | "pinosoecolife";
+  /** Optional exact published property source. */
+  propertyId?: string;
 }) {
   const supabase = getSupabase();
   const desiredCount = recommendedVisualCount(input.targetMinutes);
@@ -57,6 +59,7 @@ export async function loadZenEcoHomesVisualUrls(input: {
   const brandId = input.brandId || "zeneco";
   const zenEcoProperties = allProperties.filter((property) => {
     if (!isWebsiteVisible(property) || !propertyMatchesBrand(property, brandId)) return false;
+    if (input.propertyId && String(property.id || "") !== input.propertyId) return false;
     if (!areaNeedle) return true;
     const haystack = [
       property.title, property.description, property.location, property.town,
@@ -65,6 +68,10 @@ export async function loadZenEcoHomesVisualUrls(input: {
       .toLowerCase().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
     return haystack.includes(areaNeedle);
   }) as MixPropertyLike[];
+
+  if (input.propertyId && zenEcoProperties.length !== 1) {
+    throw new Error("Selected property is not available in this published brand catalogue.");
+  }
 
   let urls: string[];
   if (input.strictSelection) {
