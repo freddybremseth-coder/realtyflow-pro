@@ -66,11 +66,11 @@ export function outcomeAwareExplorationMix(rec?: GenomeRecommendation): Explorat
   return { exploit: 0.7, adjacent: 0.2, experiment: 0.1 };
 }
 
-function channelWinnerShare(tier: OutcomeTier): number | null {
-  if (tier === "sale") return 0.5;
-  if (tier === "qualified_pipeline") return 0.4;
-  if (tier === "lead") return 0.35;
-  if (tier === "traffic") return 0.3;
+function channelWinnerMultiplier(tier: OutcomeTier): number | null {
+  if (tier === "sale") return 3;
+  if (tier === "qualified_pipeline") return 2;
+  if (tier === "lead") return 1.62;
+  if (tier === "traffic") return 1.29;
   return null;
 }
 
@@ -120,11 +120,10 @@ export function allocateChannelProduction(
     ? winner
     : undefined;
   const tier = actionableWinner?.outcomeTier ?? "none";
-  const winnerShare = channelWinnerShare(tier);
+  const winnerMultiplier = channelWinnerMultiplier(tier);
   const weights = channels.map((channel) => {
-    if (!actionableWinner || winnerShare == null) return 1;
-    if (channel === actionableWinner.value) return winnerShare;
-    return channels.length > 1 ? (1 - winnerShare) / (channels.length - 1) : 1;
+    if (!actionableWinner || winnerMultiplier == null) return 1;
+    return channel === actionableWinner.value ? winnerMultiplier : 1;
   });
   const counts = weightedCounts(capacity, channels, weights);
   return channels.map((channel) => ({
@@ -138,6 +137,25 @@ export function allocateChannelProduction(
         : "Balansert produksjon mens Nexus samler sterkere outcome-evidens.",
   }));
 }
+
+export function shouldProduceChannelWithinOutcomeQuota(input: {
+  channel: DirectorInput["channels"][number];
+  allocation: Array<{ channel: DirectorInput["channels"][number]; count: number }>;
+  actualCounts: Partial<Record<DirectorInput["channels"][number], number>>;
+}): boolean {
+  const active = input.allocation.filter((item) => item.count > 0);
+  if (!active.length) return true;
+  const winner = active.slice().sort((a, b) => b.count - a.count)[0];
+  if (!winner || input.channel === winner.channel) return true;
+  const target = active.find((item) => item.channel === input.channel);
+  if (!target) return false;
+  const winnerActual = Math.max(0, input.actualCounts[winner.channel] ?? 0);
+  const channelActual = Math.max(0, input.actualCounts[input.channel] ?? 0);
+  const ratio = winner.count > 0 ? target.count / winner.count : 1;
+  const allowed = Math.max(1, Math.floor(winnerActual * ratio));
+  return channelActual < allowed;
+}
+
 
 /**
  * Bygg en MarketingPlan. exploit-buckets bruker learning-anbefalte dimensjoner;
