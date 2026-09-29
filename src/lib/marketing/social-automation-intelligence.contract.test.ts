@@ -12,6 +12,10 @@ test("readiness exposes actionable learning evidence and unified business perfor
   assert.match(readiness, /evidenceWeight/);
   assert.match(readiness, /nextBehavior/);
   assert.match(readiness, /freshness/);
+  assert.match(readiness, /evidence_first_at/);
+  assert.match(readiness, /evidence_last_at/);
+  assert.match(readiness, /const evidenceLastAt/);
+  assert.match(readiness, /Date\.parse\(evidenceLastAt\)/);
   assert.match(readiness, /avg_qualified_lead_rate/);
   assert.match(readiness, /total_leads/);
   assert.match(readiness, /total_sales/);
@@ -41,6 +45,7 @@ test("social automation explains what Nexus learned using persisted rules", () =
   assert.match(page, /Dette endrer Nexus:/);
   assert.match(page, /insight\.nextBehavior/);
   assert.match(page, /insight\.freshness/);
+  assert.match(page, /dager siden siste evidens/);
 });
 
 test("social automation exposes the measured SAM to Social topic journey", () => {

@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
     supabase.from("marketing_publications").select("brand_id, channel, state, content_id, updated_at").in("brand_id", brandIds).eq("state", "published"),
     supabase.from("marketing_events").select("brand_id, channel, content_id, metadata").in("brand_id", brandIds).eq("event_type", "metrics_snapshot"),
     supabase.from("marketing_learning_rules")
-      .select("scope, dimension, value, sample, lift, evidence, verdict, finding, avg_business_value, avg_qualified_lead_rate, total_leads, total_qualified, total_sales, total_commission_eur, updated_at")
+      .select("scope, dimension, value, sample, lift, evidence, verdict, finding, avg_business_value, avg_qualified_lead_rate, total_leads, total_qualified, total_sales, total_commission_eur, evidence_first_at, evidence_last_at, updated_at")
       .in("scope", ruleScopes),
     loadUnifiedGrowthScore(supabase as any, { days: 30 }).catch(() => null),
     loadSEOTopicJourneys(supabase as any, { limit: 30 }).catch(() => []),
@@ -314,9 +314,11 @@ export async function GET(request: NextRequest) {
       const qualifiedRate = Number(rule.avg_qualified_lead_rate ?? 0);
       const evidence = String(rule.evidence ?? "insufficient");
       const updatedAt = rule.updated_at ? String(rule.updated_at) : null;
-      const updatedMs = updatedAt ? Date.parse(updatedAt) : NaN;
-      const ageDays = Number.isFinite(updatedMs)
-        ? Math.max(0, Math.floor((Date.now() - updatedMs) / 86_400_000))
+      const evidenceFirstAt = rule.evidence_first_at ? String(rule.evidence_first_at) : null;
+      const evidenceLastAt = rule.evidence_last_at ? String(rule.evidence_last_at) : null;
+      const evidenceLastMs = evidenceLastAt ? Date.parse(evidenceLastAt) : NaN;
+      const ageDays = Number.isFinite(evidenceLastMs)
+        ? Math.max(0, Math.floor((Date.now() - evidenceLastMs) / 86_400_000))
         : null;
       const freshness = ageDays == null ? "unknown" : ageDays <= 14 ? "fresh" : ageDays <= 30 ? "recent" : "stale";
       const dimension = String(rule.dimension ?? "signal");
@@ -347,6 +349,8 @@ export async function GET(request: NextRequest) {
         qualified: Number(rule.total_qualified ?? 0),
         sales: Number(rule.total_sales ?? 0),
         commissionEur: Number(rule.total_commission_eur ?? 0),
+        evidenceFirstAt,
+        evidenceLastAt,
         updatedAt,
       };
     })

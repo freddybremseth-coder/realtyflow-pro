@@ -22,6 +22,8 @@ export interface LearningObservation {
   metrics: ContentMetrics;
   contentId?: string | null;
   source?: "observational" | "experiment";
+  evidenceFirstAt?: string | null;
+  evidenceLastAt?: string | null;
 }
 
 export const LEARNING_DIMENSIONS = [
@@ -67,6 +69,8 @@ export interface LearningRule {
   evidence: ReturnType<typeof evidenceLevel>;
   verdict: LearningVerdict;
   finding: string;
+  evidenceFirstAt?: string | null;
+  evidenceLastAt?: string | null;
   experimentBacked?: boolean;
   experimentLift?: number;
 }
@@ -111,6 +115,24 @@ export interface DeriveOptions {
   avoidLift?: number;
 }
 
+function validIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function observationEvidenceWindow(group: LearningObservation[]): { firstAt: string | null; lastAt: string | null } {
+  const first = group
+    .map((observation) => validIso(observation.evidenceFirstAt ?? observation.evidenceLastAt))
+    .filter((value): value is string => Boolean(value))
+    .sort()[0] ?? null;
+  const last = group
+    .map((observation) => validIso(observation.evidenceLastAt ?? observation.evidenceFirstAt))
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? null;
+  return { firstAt: first, lastAt: last };
+}
+
 /**
  * Hashtags are noisier than most scalar genome dimensions and may co-occur with
  * several other tags. Require at least 10 observations before a tag can become
@@ -151,6 +173,7 @@ export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOpti
       const totalCommission = group.reduce((a, o) => a + n(o.metrics.commissionEur), 0);
       const lift = baseline > 0 ? Number((avgBv / baseline).toFixed(2)) : 0;
       const evidence = evidenceLevel(sample);
+      const evidenceWindow = observationEvidenceWindow(group);
       const enough = sample >= actionableMinSample(dimension, minSample) && evidence !== "insufficient";
       const verdict: LearningVerdict = !enough ? "neutral" : lift >= favorLift ? "favor" : lift <= avoidLift ? "avoid" : "neutral";
       rules.push({
@@ -169,6 +192,8 @@ export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOpti
         evidence,
         verdict,
         finding: buildFinding(dimension, value, lift, sample, verdict, evidence, totalSales),
+        evidenceFirstAt: evidenceWindow.firstAt,
+        evidenceLastAt: evidenceWindow.lastAt,
       });
     }
   }

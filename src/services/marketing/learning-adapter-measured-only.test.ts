@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasLearningEvidence, learningEligible } from "@/services/marketing/learning-adapter";
+import { hasLearningEvidence, learningEligible, learningEvidenceWindow } from "@/services/marketing/learning-adapter";
 
 test("a learning-eligible zero metrics snapshot is still a real measured observation", () => {
   assert.equal(hasLearningEvidence([
@@ -61,4 +61,58 @@ test("non-canonical analytics events do not enter observed learning metrics", ()
   };
   assert.equal(learningEligible(row), false);
   assert.equal(hasLearningEvidence([row]), false);
+});
+
+
+test("learning evidence window combines canonical snapshots and attributed business outcomes", () => {
+  const window = learningEvidenceWindow([
+    {
+      eventType: "metrics_snapshot",
+      metrics: { impressions: 100 },
+      metadata: { learning_eligible: true },
+      occurredAt: "2026-09-01T10:00:00.000Z",
+    },
+    {
+      eventType: "metrics_snapshot",
+      metrics: { impressions: 150 },
+      metadata: { learning_eligible: true },
+      occurredAt: "2026-09-10T10:00:00.000Z",
+    },
+    {
+      eventType: "content_viewed",
+      metrics: { views: 9999 },
+      metadata: {},
+      occurredAt: "2026-09-20T10:00:00.000Z",
+    },
+  ], {
+    firstAt: "2026-09-05T12:00:00.000Z",
+    lastAt: "2026-09-18T12:00:00.000Z",
+  });
+
+  assert.deepEqual(window, {
+    firstAt: "2026-09-01T10:00:00.000Z",
+    lastAt: "2026-09-18T12:00:00.000Z",
+  });
+});
+
+test("quarantined snapshot time cannot make evidence look fresh", () => {
+  const window = learningEvidenceWindow([
+    {
+      eventType: "metrics_snapshot",
+      metrics: { impressions: 100 },
+      metadata: { learning_eligible: true },
+      occurredAt: "2026-08-01T10:00:00.000Z",
+    },
+    {
+      eventType: "metrics_snapshot",
+      metrics: { impressions: 200 },
+      metadata: { learning_eligible: false },
+      occurredAt: "2026-09-28T10:00:00.000Z",
+    },
+  ]);
+
+  assert.deepEqual(window, {
+    firstAt: "2026-08-01T10:00:00.000Z",
+    lastAt: "2026-08-01T10:00:00.000Z",
+  });
 });

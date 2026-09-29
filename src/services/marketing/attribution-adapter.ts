@@ -7,6 +7,7 @@
 
 import {
   canonicalMetricsForContent,
+  rollupContentOutcomeEvidence,
   rollupContentOutcomes,
   stitchAttributionJourneys,
   touchpointDedupeKey,
@@ -87,4 +88,16 @@ export async function attributeContent(supabase: MarketingSupabaseLike, contentI
 export async function attributeAll(supabase: MarketingSupabaseLike, opts: { brandId: string; model?: AttributionModel }) {
   const journeys = await loadJourneys(supabase, opts);
   return rollupContentOutcomes(journeys, opts.model ?? "last_touch");
+}
+
+export async function attributeAllWithEvidence(
+  supabase: MarketingSupabaseLike,
+  opts: { brandId: string; model?: AttributionModel },
+) {
+  const journeys = await loadJourneys(supabase, opts);
+  const model = opts.model ?? "last_touch";
+  return {
+    metrics: rollupContentOutcomes(journeys, model),
+    evidence: rollupContentOutcomeEvidence(journeys, model),
+  };
 }

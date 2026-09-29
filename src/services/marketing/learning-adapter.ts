@@ -21,7 +21,7 @@ import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { loadExperimentEvidence } from "@/services/marketing/experiment-adapter";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
-import { attributeAll } from "@/services/marketing/attribution-adapter";
+import { attributeAllWithEvidence } from "@/services/marketing/attribution-adapter";
 import type { AttributionModel } from "@/lib/marketing/attribution";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
@@ -31,10 +31,43 @@ export interface ObservedMetricRow {
   metrics?: ContentMetrics | null;
   eventType?: string | null;
   metadata?: Record<string, unknown> | null;
+  occurredAt?: string | null;
 }
 
 export function learningEligible(row: ObservedMetricRow): boolean {
   return row.eventType === "metrics_snapshot" && row.metadata?.learning_eligible !== false;
+}
+
+function validIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function minIso(values: Array<string | null | undefined>): string | null {
+  return values.map(validIso).filter((value): value is string => Boolean(value)).sort()[0] ?? null;
+}
+
+function maxIso(values: Array<string | null | undefined>): string | null {
+  return values.map(validIso).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+}
+
+export function learningEvidenceWindow(
+  rows: ObservedMetricRow[],
+  business?: { firstAt?: string | null; lastAt?: string | null } | null,
+): { firstAt: string | null; lastAt: string | null } {
+  const measured = rows.filter((row) => learningEligible(row));
+  return {
+    firstAt: minIso([
+      ...measured.map((row) => row.occurredAt),
+      business?.firstAt,
+      business?.lastAt,
+    ]),
+    lastAt: maxIso([
+      ...measured.map((row) => row.occurredAt),
+      business?.firstAt,
+      business?.lastAt,
+    ]),
+  };
 }
 
 export function hasLearningEvidence(
@@ -99,7 +132,7 @@ export async function refreshLearningRules(
   // 2) Observed metrics per content — same brand/channel boundary as genomes.
   let eventQuery = supabase
     .from("marketing_events")
-    .select("content_id, channel, metrics, event_type, metadata")
+    .select("content_id, channel, metrics, event_type, metadata, occurred_at")
     .eq("brand_id", opts.brandId);
   if (channel) eventQuery = eventQuery.eq("channel", channel);
   const { data: evRows, error: eventError } = await eventQuery;
@@ -112,13 +145,15 @@ export async function refreshLearningRules(
       metrics: r.metrics ?? null,
       eventType: r.event_type ? String(r.event_type) : null,
       metadata: r.metadata && typeof r.metadata === "object" ? r.metadata as Record<string, unknown> : null,
+      occurredAt: r.occurred_at ? String(r.occurred_at) : null,
     });
   }
 
   // 3) Canonical outcomes per content — brand-isolated attribution. The content
   // set above remains channel-scoped, so outcomes from another channel cannot
   // create observations in this scope.
-  const canonical = await attributeAll(supabase, { model: opts.model ?? "last_touch", brandId: opts.brandId });
+  const attribution = await attributeAllWithEvidence(supabase, { model: opts.model ?? "last_touch", brandId: opts.brandId });
+  const canonical = attribution.metrics;
 
   // 4) Pair only content with real evidence. A draft/unpublished genome with
   // no eligible metrics and no canonical outcome must never become an
@@ -133,7 +168,14 @@ export async function refreshLearningRules(
       : undefined;
     if (!hasLearningEvidence(observedRows, canonicalMetrics)) continue;
     const metrics = combineMetrics({ observed: [observed], canonical: canonicalMetrics });
-    observations.push({ genome, metrics, contentId });
+    const evidenceWindow = learningEvidenceWindow(observedRows, attribution.evidence.get(contentId));
+    observations.push({
+      genome,
+      metrics,
+      contentId,
+      evidenceFirstAt: evidenceWindow.firstAt,
+      evidenceLastAt: evidenceWindow.lastAt,
+    });
   }
 
   // 5) Derive measured-only rules. Read current keys before writing so stale
@@ -163,6 +205,8 @@ export async function refreshLearningRules(
       evidence: r.evidence,
       verdict: r.verdict,
       finding: r.finding,
+      evidence_first_at: r.evidenceFirstAt ?? null,
+      evidence_last_at: r.evidenceLastAt ?? null,
       updated_at: new Date().toISOString(),
     }));
     const { error } = await supabase.from("marketing_learning_rules").upsert(rows, { onConflict: "rule_key" });
@@ -202,6 +246,8 @@ function rowToRule(r: any): LearningRule {
     evidence: r.evidence,
     verdict: r.verdict,
     finding: r.finding,
+    evidenceFirstAt: r.evidence_first_at ? String(r.evidence_first_at) : null,
+    evidenceLastAt: r.evidence_last_at ? String(r.evidence_last_at) : null,
   };
 }
 
