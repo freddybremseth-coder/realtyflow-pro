@@ -79,13 +79,13 @@ export interface LearningRule {
   avgQualifiedLeadRate: number;
   totalLeads: number;
   totalQualified: number;
-  totalViewings: number;
-  totalOffers: number;
+  totalViewings?: number;
+  totalOffers?: number;
   totalSales: number;
   totalCommissionEur: number;
-  totalClicks: number;
-  totalExposure: number;
-  outcomeTier: OutcomeTier;
+  totalClicks?: number;
+  totalExposure?: number;
+  outcomeTier?: OutcomeTier;
   lift: number;
   evidence: ReturnType<typeof evidenceLevel>;
   verdict: LearningVerdict;
