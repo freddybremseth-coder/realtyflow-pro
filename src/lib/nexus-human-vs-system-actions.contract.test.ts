@@ -32,3 +32,16 @@ test("SAM SEO separates explicit owner approvals from system follow-up", async (
   assert.match(page, /SYSTEMARBEID/);
   assert.doesNotMatch(page, /Dette bør Sam følge opp/);
 });
+
+
+test("Nexus Today filters OS attention by USER SYSTEM and WATCH responsibility", async () => {
+  const page = await readFile(todayPath, "utf8");
+
+  assert.match(page, /responsibility\?\? "USER"/);
+  assert.match(page, /item\.responsibility === "SYSTEM"/);
+  assert.match(page, /item\.responsibility === "WATCH"/);
+  assert.match(page, /Ikke oppgaver til deg/);
+  assert.match(page, /Systemarbeid og overvåking/);
+  assert.match(page, /SYSTEM · \{item\.source\}/);
+  assert.match(page, /WATCH · \{item\.source\}/);
+});
