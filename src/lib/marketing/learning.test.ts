@@ -4,6 +4,8 @@ import {
   applyExperimentEvidence,
   baselineBusinessValue,
   deriveLearningRules,
+  learningEvidenceAgeDays,
+  learningFreshnessWeight,
   recommendGenome,
   type ExperimentEvidence,
   type LearningObservation,
@@ -196,4 +198,132 @@ test("recalculation time is not part of the rule evidence window", () => {
 
   assert.ok(rule);
   assert.equal(rule.evidenceLastAt, "2026-06-15T10:00:00Z");
+});
+
+
+test("learning freshness weight decays from fresh to recent to aging to stale", () => {
+  const now = new Date("2026-09-29T12:00:00Z");
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-09-20T12:00:00Z" }, now), 1);
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-09-10T12:00:00Z" }, now), 0.85);
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-08-10T12:00:00Z" }, now), 0.6);
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-07-01T12:00:00Z" }, now), 0);
+  assert.equal(learningEvidenceAgeDays({ evidenceLastAt: "2026-09-20T12:00:00Z" }, now), 9);
+});
+
+test("fresh moderate winner outranks aging high-lift observational rule after decay", () => {
+  const rules = [
+    {
+      ruleKey: "b1|hookType|old_winner",
+      scope: "b1",
+      dimension: "hookType" as const,
+      value: "old_winner",
+      sample: 20,
+      avgBusinessValue: 1000,
+      avgQualifiedLeadRate: 0.5,
+      totalLeads: 10,
+      totalQualified: 5,
+      totalSales: 2,
+      totalCommissionEur: 10000,
+      lift: 2,
+      evidence: "reliable" as const,
+      verdict: "favor" as const,
+      finding: "old",
+      evidenceLastAt: "2026-08-10T12:00:00Z",
+    },
+    {
+      ruleKey: "b1|hookType|fresh_winner",
+      scope: "b1",
+      dimension: "hookType" as const,
+      value: "fresh_winner",
+      sample: 10,
+      avgBusinessValue: 800,
+      avgQualifiedLeadRate: 0.4,
+      totalLeads: 5,
+      totalQualified: 2,
+      totalSales: 1,
+      totalCommissionEur: 5000,
+      lift: 1.3,
+      evidence: "promising" as const,
+      verdict: "favor" as const,
+      finding: "fresh",
+      evidenceLastAt: "2026-09-25T12:00:00Z",
+    },
+  ];
+
+  const rec = recommendGenome(rules, { dimensions: ["hookType"], now: new Date("2026-09-29T12:00:00Z") });
+  assert.equal(rec.favor.hookType?.value, "fresh_winner");
+});
+
+test("observational rules older than sixty days cannot steer favor or avoid", () => {
+  const now = new Date("2026-09-29T12:00:00Z");
+  const rules = [
+    {
+      ruleKey: "b1|area|stale-favor",
+      scope: "b1",
+      dimension: "area" as const,
+      value: "stale-favor",
+      sample: 30,
+      avgBusinessValue: 1000,
+      avgQualifiedLeadRate: 0.5,
+      totalLeads: 10,
+      totalQualified: 5,
+      totalSales: 2,
+      totalCommissionEur: 10000,
+      lift: 3,
+      evidence: "strong" as const,
+      verdict: "favor" as const,
+      finding: "stale favor",
+      evidenceLastAt: "2026-06-01T12:00:00Z",
+    },
+    {
+      ruleKey: "b1|area|stale-avoid",
+      scope: "b1",
+      dimension: "area" as const,
+      value: "stale-avoid",
+      sample: 30,
+      avgBusinessValue: 10,
+      avgQualifiedLeadRate: 0,
+      totalLeads: 0,
+      totalQualified: 0,
+      totalSales: 0,
+      totalCommissionEur: 0,
+      lift: 0.1,
+      evidence: "strong" as const,
+      verdict: "avoid" as const,
+      finding: "stale avoid",
+      evidenceLastAt: "2026-06-01T12:00:00Z",
+    },
+  ];
+
+  const rec = recommendGenome(rules, { dimensions: ["area"], now });
+  assert.equal(rec.favor.area, undefined);
+  assert.equal(rec.avoid.length, 0);
+  assert.match(rec.notes.join(" "), /2 eldre observasjonelle læringsregler/);
+});
+
+test("experiment-backed rule is not decayed by observational evidence age", () => {
+  const now = new Date("2026-09-29T12:00:00Z");
+  const rules = [{
+    ruleKey: "b1|ctaType|experiment",
+    scope: "b1",
+    dimension: "ctaType" as const,
+    value: "experiment",
+    sample: 5,
+    avgBusinessValue: 100,
+    avgQualifiedLeadRate: 0.2,
+    totalLeads: 1,
+    totalQualified: 1,
+    totalSales: 0,
+    totalCommissionEur: 0,
+    lift: 1.2,
+    evidence: "reliable" as const,
+    verdict: "favor" as const,
+    finding: "experiment",
+    evidenceLastAt: "2026-01-01T12:00:00Z",
+    experimentBacked: true,
+  }];
+
+  assert.equal(learningFreshnessWeight(rules[0], now), 1);
+  const rec = recommendGenome(rules, { dimensions: ["ctaType"], now });
+  assert.equal(rec.favor.ctaType?.value, "experiment");
 });
