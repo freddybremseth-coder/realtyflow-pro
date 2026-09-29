@@ -379,20 +379,53 @@ export default function SocialAutomationPage() {
             ].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-slate-400">{label}</div><div className="mt-2 text-3xl font-black text-slate-900">{value}</div></div>)}
           </section>
 
+          <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-amber-700">Du må gjøre</div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">Handlinger som faktisk krever deg · {humanActions.length}</h2>
+                <p className="mt-1 max-w-3xl text-sm text-amber-950">Bare HUMAN REQUIRED vises her. Hvis listen er tom, skal du ikke starte canary, preflight eller annen marketing-jobb manuelt.</p>
+              </div>
+              {humanActions.length > 0 && <Link href="/social-automation?view=attention" className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white">Åpne Needs attention →</Link>}
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              {humanActions.slice(0, 6).map((action) => (
+                <div key={action.id} className={`rounded-xl border p-4 ${executionTone(action.execution)}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-black uppercase">KREVER DEG</span>
+                    <span className="text-[10px] font-black uppercase opacity-60">{action.priority}</span>
+                  </div>
+                  <div className="mt-3 font-black">{action.title}</div>
+                  <p className="mt-2 text-sm leading-5 opacity-80">{action.reason}</p>
+                  {action.business && (
+                    <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] font-bold leading-5 ${action.business.trustedForPriority ? "border-emerald-200 bg-white/80 text-emerald-950" : "border-slate-200 bg-white/60 text-slate-600"}`}>
+                      <span className="font-black">{action.business.trustedForPriority ? "Business-prioritert" : "Business-signal, ikke styrende"}:</span>{" "}
+                      {action.business.qualifiedLeads} qualified · {action.business.sales} sales
+                      {action.business.commissionEur > 0 ? ` · €${Math.round(action.business.commissionEur).toLocaleString("nb-NO")}` : ""}
+                      {" · "}{Math.round(action.business.attributionCoveragePct)}% attribution · {action.business.evidence}
+                    </div>
+                  )}
+                  {action.href && <Link href={action.href} className="mt-3 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm">Åpne oppgaven →</Link>}
+                </div>
+              ))}
+              {!loading && humanActions.length === 0 && <div className="lg:col-span-3 rounded-xl border border-emerald-200 bg-white p-4 text-sm text-emerald-950"><strong>Ingen marketing-oppgave krever deg nå.</strong> Autopiloten fortsetter med modne handlinger selv.</div>}
+            </div>
+          </section>
+
           <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-xs font-black uppercase tracking-wider text-emerald-700">Growth Autopilot queue</div>
-                <h2 className="mt-1 text-xl font-black text-slate-950">Neste handlinger valgt av Nexus</h2>
-                <p className="mt-1 max-w-3xl text-sm text-slate-700">AUTO READY køes automatisk av den timebaserte Marketing Autopilot. Hvis kanalen ikke er live-forhåndsgodkjent, lages bare kontrollert utkast/review; eksisterende claim-, account-, approval- og rollback-guards gjelder alltid.</p>
+                <div className="text-xs font-black uppercase tracking-wider text-emerald-700">Systemet gjør nå</div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">Automatiske og tekniske neste steg · {autoActions.length + systemActions.length}</h2>
+                <p className="mt-1 max-w-3xl text-sm text-slate-700">AUTO READY køes automatisk av Marketing Autopilot. SYSTEM WORK håndteres av system-/teknisk flyt. <strong>Du skal ikke kjøre disse manuelt.</strong> Existing claim-, account-, approval- og rollback-guards gjelder fortsatt.</p>
               </div>
-              <Link href="/nexus-os/growth-scaling" className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white">Scaling Control →</Link>
+              <Link href="/nexus-os/growth-scaling" className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white">Se Scaling Control →</Link>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              {actions.filter((action) => action.execution !== "WAIT").slice(0, 6).map((action) => (
+              {[...autoActions, ...systemActions].slice(0, 6).map((action) => (
                 <div key={action.id} className={`rounded-xl border p-4 ${executionTone(action.execution)}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-black uppercase">{executionLabel(action.execution)}</span>
+                    <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-black uppercase">{action.execution === "AUTO_READY" ? "KJØRES AUTOMATISK" : "SYSTEMARBEID"}</span>
                     <span className="text-[10px] font-black uppercase opacity-60">{action.priority}</span>
                   </div>
                   <div className="mt-3 font-black">{action.title}</div>
@@ -406,12 +439,17 @@ export default function SocialAutomationPage() {
                       {" · "}{Math.round(action.business.attributionCoveragePct)}% attribution · {action.business.evidence}
                     </div>
                   )}
-                  {action.execution === "AUTO_READY" && <div className="mt-3 text-xs font-black text-emerald-800">Kjøres automatisk · ingen knapp nødvendig</div>}
-                  {action.href && action.execution !== "AUTO_READY" && <Link href={action.href} className="mt-3 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm">Åpne kontrollflate →</Link>}
+                  <div className="mt-3 text-xs font-black text-emerald-800">{action.execution === "AUTO_READY" ? "Køes automatisk · ingen knapp nødvendig" : "Teknisk/systemsteg · ikke din oppgave"}</div>
                 </div>
               ))}
-              {!loading && actions.filter((action) => action.execution !== "WAIT").length === 0 && <div className="lg:col-span-3 rounded-xl border border-emerald-200 bg-white/70 p-4 text-sm text-emerald-900">Ingen ny handling må startes nå. Autopilot venter på nye modne signaler.</div>}
+              {!loading && autoActions.length + systemActions.length === 0 && <div className="lg:col-span-3 rounded-xl border border-emerald-200 bg-white/70 p-4 text-sm text-emerald-900">Ingen automatisk handling står klar akkurat nå.</div>}
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-black uppercase tracking-wider text-slate-500">Følger med</div>
+            <div className="mt-1 text-lg font-black text-slate-950">{actions.filter((action) => action.execution === "WAIT").length} handlinger venter på mer evidens eller neste planlagte evaluering</div>
+            <p className="mt-1 text-sm text-slate-600">WAIT er ikke en oppgave. Nexus vurderer dem på nytt automatisk når nye metrics, learning- eller CRM-signaler kommer inn.</p>
           </section>
 
           <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
