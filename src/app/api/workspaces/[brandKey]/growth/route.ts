@@ -5,7 +5,8 @@ import { evaluateCorporateProspectReadiness } from "@/lib/corporate-prospect-rea
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-const noStore = { "Cache-Control": "private, no-store" };\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const noStore = { "Cache-Control": "private, no-store" };
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const KIND_PERMISSION: Record<string, WorkspacePermission> = {
   corporate: "corporate.plan",
