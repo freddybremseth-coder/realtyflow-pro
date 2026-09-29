@@ -13,6 +13,7 @@ import {
   type CreativeResult,
 } from "@/lib/marketing/autonomous";
 import type { ContentGenome, ContentGoal, MarketingChannel } from "@/lib/marketing/genome";
+import { parseContentRecipe } from "@/lib/marketing/learning";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { makeCreativeGenerator, makeDryRunCreativeGenerator, persistAsset } from "@/services/marketing/creative-generator";
 import { ensureMarketingAgentRun, makeMarketingApprovalRequester } from "@/services/marketing/marketing-approval";
@@ -352,14 +353,38 @@ export async function createCampaignDraft(
 
   const campaignId = `camp_${run.marketingRunId}`;
   const fav = plan.favoredDimensions;
-  const routedFormat = routeContentFormat(effectiveMediaUrl) ?? "post";
+  const routedFormat = routeContentFormat(effectiveMediaUrl);
+  const learnedRecipe = parseContentRecipe(fav.recipe);
+  const targetChannel = input.channel ?? channels[0] ?? "instagram";
+  const recipeApplicable = learnedRecipe
+    && (!learnedRecipe.channel || learnedRecipe.channel === targetChannel)
+    && (!routedFormat || !learnedRecipe.format || learnedRecipe.format === routedFormat)
+    ? learnedRecipe
+    : null;
   const baseGenome: ContentGenome = {
-    brandId: input.brandId, channel: input.channel ?? "instagram", format: routedFormat,
-    hookType: (fav.hookType as any) ?? "price_first", ctaType: (fav.ctaType as any) ?? "book_viewing",
-    goal: mapGoal(input.goal.kind), topic: input.topic, area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_"),
+    brandId: input.brandId,
+    channel: targetChannel,
+    format: routedFormat ?? "post",
+    hookType: (recipeApplicable?.hookType as any) ?? (fav.hookType as any) ?? "price_first",
+    ctaType: (recipeApplicable?.ctaType as any) ?? (fav.ctaType as any) ?? "book_viewing",
+    goal: mapGoal(input.goal.kind),
+    contentPillar: (recipeApplicable?.contentPillar as any) ?? (fav.contentPillar as any),
+    topic: input.topic ?? (recipeApplicable?.topic as any) ?? (fav.topic as any),
+    area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_") ?? (recipeApplicable?.area as any) ?? (fav.area as any),
+    propertyType: inventoryProperty?.propertyType ?? (recipeApplicable?.propertyType as any) ?? (fav.propertyType as any),
   };
   const campaign: CampaignPlan = { campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit", goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea };
-  const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [], formatOverride: routedFormat });
+  const briefs = atomizeCampaign(campaign, {
+    baseGenome,
+    makeContentId: (i, c) => `${campaignId}_${i}_${c}`,
+    leadCaptureChannels: [],
+    formatOverride: routedFormat,
+    learningNotes: recipeApplicable
+      ? [`Outcome-oppskrift: ${fav.recipe}`]
+      : fav.recipe
+        ? ["Outcome-oppskrift ble ikke brukt fordi kanal/mediaformat ikke samsvarte."]
+        : [],
+  });
 
   const sources: ResolverSourceMap = { organizationId: brand.contentHubOrgId ?? null, adCampaignIds: brand.adCampaignIds ?? null };
   const generator = makeConfiguredCreativeGenerator();
