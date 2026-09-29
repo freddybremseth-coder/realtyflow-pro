@@ -184,6 +184,8 @@ export function SamSEOActionBoard() {
 
   const disconnected = data?.connections.filter(item => !item.registered) || [];
   const savedButUnreadable = data?.connections.filter(item => item.registered && !item.connected) || [];
+  const humanActions = data?.actions.filter(action => action.requiresApproval) || [];
+  const systemFollowups = data?.actions.filter(action => !action.requiresApproval) || [];
   return (
     <section aria-label="Sam SEO anbefalinger og tiltak" className="rounded-3xl border-2 border-emerald-300 bg-white p-5 text-slate-950 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -210,8 +212,9 @@ export function SamSEOActionBoard() {
         <button type="button" onClick={() => void read(true)} disabled={loading || refreshing}
           className="inline-flex max-w-full items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-60">
           {refreshing || loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          {refreshing ? "Leser Google-data og kontrollerer nettstedene…" : "Oppdater kontroller"}
+          {refreshing ? "Henter fersk status…" : "Hent fersk status"}
         </button>
+        <p className="w-full text-right text-[11px] font-semibold text-slate-500">Valgfritt: oppdaterer visningen nå. Den planlagte SAM-autopiloten kjører uavhengig av denne knappen.</p>
       </div>
       {oauthReturn && (
         <div role="status" className={oauthReturn.errorCode
@@ -249,7 +252,7 @@ export function SamSEOActionBoard() {
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div><h4 className="font-bold">Kontrollerer automatisk</h4><p className="mt-1 text-sm">Daglig Google-innhenting, offentlig HTML, sitemap, metadata, tilgjengelighetssignaler, JSON-LD og kontaktmuligheter. Sideutvalget roterer daglig. Ukentlig analyse oppsummerer muligheter.</p></div>
               <div><h4 className="font-bold">Kan endre automatisk</h4><p className="mt-1 text-sm">Titler og metabeskrivelser på fire Zen Eco Homes-sider og hovedsiden hos de øvrige sju nettstedene. Krever dokumentert søkegrunnlag, verifisert publiseringsadgang, tidligere versjon og kontroll av offentlig resultat.</p></div>
-              <div><h4 className="font-bold">Din oppmerksomhet</h4><p className="mt-1 text-sm">Tilkoblingsfeil og uttrykkelige godkjenningsoppgaver vises separat. Funn uten publiseringskanal trenger teknisk oppfølging. Du skal ikke godkjenne hver måling.</p></div>
+              <div><h4 className="font-bold">Du må bare gjøre det som er merket «Krever deg»</h4><p className="mt-1 text-sm">Tilkoblingsfeil og uttrykkelige godkjenningsoppgaver vises separat. Målinger, undersøkelser og systemets SEO-arbeidsliste er ikke oppgaver til deg. Du skal ikke starte daglige kontroller eller godkjenne hver måling.</p></div>
             </div>
             <p className="mt-3 text-sm font-semibold">Siste automatiske syklus: {data.seoPilot ? new Date(data.seoPilot.at).toLocaleString("nb-NO") : "Ingen lagret kjøring"}. Verifiserte publiseringer i denne syklusen: {data.seoPilot?.websiteChangesPublished ?? "ikke målt"}.</p>
             {data.seoPilot?.supersededByGoogleRead && data.seoPilot.evidenceAt && (
@@ -562,36 +565,67 @@ export function SamSEOActionBoard() {
               ))}
             </section>
           )}
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-lg font-black text-slate-950">Dette bør Sam følge opp</h3>
-            <Link href="/marketing-tasks" className="inline-flex items-center gap-1 text-sm font-bold text-emerald-800 underline">
-              Åpne Oppgave-HUB <ArrowRight size={14} />
-            </Link>
-          </div>
-          <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            {data.actions.map(action => (
-              <article key={action.id} className="rounded-xl border border-slate-300 bg-white p-4 text-slate-950">
-                <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
-                  <span className={action.priority === "HIGH" || action.priority === "CRITICAL"
-                    ? "rounded-full bg-amber-100 px-2 py-1 text-amber-900"
-                    : "rounded-full bg-cyan-100 px-2 py-1 text-cyan-900"}>{action.priority}</span>
-                  <span className="text-slate-700">{LABELS[action.brandId || ""] || "Hele porteføljen"}</span>
-                  <span className="text-slate-600">· {action.source}</span>
-                </div>
-                <h4 className="mt-2 text-base font-black text-slate-950">{action.title}</h4>
-                <p className="mt-2 text-sm leading-6 text-slate-800"><strong>Funn:</strong> {action.description}</p>
-                <p className="mt-2 text-sm leading-6 text-emerald-950"><strong>Tiltak:</strong> {action.nextAction}</p>
-                <p className="mt-2 text-xs leading-5 text-slate-600"><strong>Dokumentasjon:</strong> {action.evidence}</p>
-                <p className="mt-2 text-xs font-bold text-amber-900">Analyse og utkast kan gjøres internt. En eventuell publisering eller endring krever separat godkjent flyt.</p>
-              </article>
-            ))}
-            {data.actions.length === 0 && (
-              <div className="rounded-xl border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800 lg:col-span-2">
-                Ingen publiseringsforslag eller egne oppgaver er klare i denne måleperioden.
-                Se de konkrete måle- og nettstedskontrollene ovenfor. Null godkjenningsoppgaver betyr ikke at nettstedene er ferdig optimalisert.
+          <section className="mt-6 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-amber-700">Du må gjøre</div>
+                <h3 className="mt-1 text-lg font-black">SEO-oppgaver som faktisk krever deg · {humanActions.length}</h3>
+                <p className="mt-1 text-sm">Bare uttrykkelige godkjennings- eller eierbeslutninger vises her. Hvis listen er tom, skal du ikke gjøre noe med SEO akkurat nå.</p>
               </div>
-            )}
-          </div>
+              {humanActions.length > 0 && <Link href="/marketing-tasks" className="inline-flex items-center gap-1 text-sm font-bold text-amber-900 underline">Åpne Oppgave-HUB <ArrowRight size={14} /></Link>}
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              {humanActions.map(action => (
+                <article key={action.id} className="rounded-xl border border-amber-300 bg-white p-4 text-slate-950">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-900">KREVER DEG</span>
+                    <span className="text-slate-700">{LABELS[action.brandId || ""] || "Hele porteføljen"}</span>
+                    <span className="text-slate-600">· {action.source}</span>
+                  </div>
+                  <h4 className="mt-2 text-base font-black text-slate-950">{action.title}</h4>
+                  <p className="mt-2 text-sm leading-6 text-slate-800"><strong>Funn:</strong> {action.description}</p>
+                  <p className="mt-2 text-sm leading-6 text-amber-950"><strong>Det du må ta stilling til:</strong> {action.nextAction}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-600"><strong>Dokumentasjon:</strong> {action.evidence}</p>
+                </article>
+              ))}
+              {humanActions.length === 0 && (
+                <div className="rounded-xl border border-emerald-200 bg-white p-4 text-sm text-emerald-950 lg:col-span-2">
+                  <strong>Ingen SEO-oppgave krever deg nå.</strong> Sam fortsetter måling, analyse og avgrenset autopilot i bakgrunnen.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="mt-5 rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-cyan-950">
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-cyan-700">Systemet gjør</div>
+              <h3 className="mt-1 text-lg font-black">Sams arbeidsliste · {systemFollowups.length}</h3>
+              <p className="mt-1 text-sm">Dette er målte funn og undersøkelser SAM bruker i videre analyse og planlagte kontroller. <strong>Ingen handling fra deg nå.</strong> Hvis noe senere krever eierbeslutning eller godkjenning, flyttes det til «Du må gjøre».</p>
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              {systemFollowups.map(action => (
+                <article key={action.id} className="rounded-xl border border-cyan-200 bg-white p-4 text-slate-950">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                    <span className="rounded-full bg-cyan-100 px-2 py-1 text-cyan-900">SYSTEMARBEID</span>
+                    <span className={action.priority === "HIGH" || action.priority === "CRITICAL"
+                      ? "rounded-full bg-amber-100 px-2 py-1 text-amber-900"
+                      : "rounded-full bg-slate-100 px-2 py-1 text-slate-700"}>{action.priority}</span>
+                    <span className="text-slate-700">{LABELS[action.brandId || ""] || "Hele porteføljen"}</span>
+                    <span className="text-slate-600">· {action.source}</span>
+                  </div>
+                  <h4 className="mt-2 text-base font-black text-slate-950">{action.title}</h4>
+                  <p className="mt-2 text-sm leading-6 text-slate-800"><strong>Funn:</strong> {action.description}</p>
+                  <p className="mt-2 text-sm leading-6 text-cyan-950"><strong>Neste systemsteg:</strong> {action.nextAction}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-600"><strong>Dokumentasjon:</strong> {action.evidence}</p>
+                </article>
+              ))}
+              {systemFollowups.length === 0 && (
+                <div className="rounded-xl border border-cyan-200 bg-white p-4 text-sm text-cyan-950 lg:col-span-2">
+                  Ingen nye SEO-funn ligger i systemets arbeidsliste akkurat nå.
+                </div>
+              )}
+            </div>
+          </section>
           <p className="mt-4 text-xs leading-5 text-slate-600">
             Google Search Console måler søkeytelse for nettsteder, også sider som eventuelt er indeksert på andre domener.
             For faktiske visninger, engasjement og følgere på YouTube og Instagram må Sam bruke kanalens egne tilkoblede analysedata.
