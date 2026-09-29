@@ -40,12 +40,12 @@ export async function loadFreddyReelVisuals(seed: string, count: number): Promis
 
 export async function loadPinosoReelVisuals(input: {
   seed: string; count: number; region: RemasterMixRegion;
-  areaQuery: string; visualTypes: RemasterMixVisualType[];
+  areaQuery: string; visualTypes: RemasterMixVisualType[]; propertyId?: string;
 }): Promise<string[]> {
   const result = await loadZenEcoHomesVisualUrls({
     targetMinutes: 1, region: input.region, visualType: input.visualTypes[0] || "mixed",
     visualTypes: input.visualTypes, randomSeed: input.seed, strictSelection: true,
-    areaQuery: input.areaQuery || undefined, brandId: "pinosoecolife",
+    areaQuery: input.areaQuery || undefined, brandId: "pinosoecolife", propertyId: input.propertyId,
   });
   return [...new Set(result.urls)].slice(0, input.count);
 }
