@@ -28,3 +28,17 @@ test("Direct email save still submits target identity rather than browser-suppli
   assert.match(route, /targetId/);
   assert.doesNotMatch(route, /recipientEmail:\s*body\./);
 });
+
+
+test("Corporate next-step guidance remains planning-only and status-aware", () => {
+  assert.match(growth, /Planlegg oppfølging/);
+  assert.match(growth, /Forbered discovery-møte/);
+  assert.match(growth, /Forbered registrert møte/);
+  assert.match(growth, /Forbered Decision Pack/);
+  assert.match(growth, /Planlegg partneroppfølging/);
+  assert.match(growth, /Forbered partnersamtale/);
+  assert.match(growth, /permissions\.includes\("corporate\.plan"\)/);
+  assert.match(growth, /setArea\("plan"\)/);
+  assert.doesNotMatch(growth, /status:\s*"MEETING"/);
+  assert.doesNotMatch(growth, /status:\s*"OPPORTUNITY"/);
+});
