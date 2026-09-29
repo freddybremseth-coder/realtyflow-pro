@@ -53,6 +53,22 @@ export type LearningDimension = (typeof LEARNING_DIMENSIONS)[number];
 
 export type LearningVerdict = "favor" | "avoid" | "neutral";
 
+export const OUTCOME_TIERS = ["none", "reach", "traffic", "lead", "qualified_pipeline", "sale"] as const;
+export type OutcomeTier = (typeof OUTCOME_TIERS)[number];
+
+export function outcomeTierRank(tier: OutcomeTier | null | undefined): number {
+  return tier ? OUTCOME_TIERS.indexOf(tier) : 0;
+}
+
+export function classifyOutcomeTier(metrics: ContentMetrics): OutcomeTier {
+  if (n(metrics.sales) > 0 || n(metrics.commissionEur) > 0) return "sale";
+  if (n(metrics.qualifiedLeads) > 0 || n(metrics.viewings) > 0 || n(metrics.offers) > 0) return "qualified_pipeline";
+  if (n(metrics.leads) > 0) return "lead";
+  if (n(metrics.clicks) > 0) return "traffic";
+  if (Math.max(n(metrics.views), n(metrics.impressions), n(metrics.engagedViews)) > 0) return "reach";
+  return "none";
+}
+
 export interface LearningRule {
   ruleKey: string;
   scope: string;
@@ -63,8 +79,13 @@ export interface LearningRule {
   avgQualifiedLeadRate: number;
   totalLeads: number;
   totalQualified: number;
+  totalViewings?: number;
+  totalOffers?: number;
   totalSales: number;
   totalCommissionEur: number;
+  totalClicks?: number;
+  totalExposure?: number;
+  outcomeTier?: OutcomeTier;
   lift: number;
   evidence: ReturnType<typeof evidenceLevel>;
   verdict: LearningVerdict;
@@ -169,8 +190,22 @@ export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOpti
       const avgQlr = group.reduce((a, o) => a + qualifiedLeadRate(o.metrics), 0) / sample;
       const totalLeads = group.reduce((a, o) => a + n(o.metrics.leads), 0);
       const totalQualified = group.reduce((a, o) => a + n(o.metrics.qualifiedLeads), 0);
+      const totalViewings = group.reduce((a, o) => a + n(o.metrics.viewings), 0);
+      const totalOffers = group.reduce((a, o) => a + n(o.metrics.offers), 0);
       const totalSales = group.reduce((a, o) => a + n(o.metrics.sales), 0);
       const totalCommission = group.reduce((a, o) => a + n(o.metrics.commissionEur), 0);
+      const totalClicks = group.reduce((a, o) => a + n(o.metrics.clicks), 0);
+      const totalExposure = group.reduce((a, o) => a + Math.max(n(o.metrics.views), n(o.metrics.impressions)), 0);
+      const outcomeTier = classifyOutcomeTier({
+        clicks: totalClicks,
+        leads: totalLeads,
+        qualifiedLeads: totalQualified,
+        viewings: totalViewings,
+        offers: totalOffers,
+        sales: totalSales,
+        commissionEur: totalCommission,
+        impressions: totalExposure,
+      });
       const lift = baseline > 0 ? Number((avgBv / baseline).toFixed(2)) : 0;
       const evidence = evidenceLevel(sample);
       const evidenceWindow = observationEvidenceWindow(group);
@@ -186,8 +221,13 @@ export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOpti
         avgQualifiedLeadRate: Number(avgQlr.toFixed(2)),
         totalLeads,
         totalQualified,
+        totalViewings,
+        totalOffers,
         totalSales,
         totalCommissionEur: Math.round(totalCommission),
+        totalClicks,
+        totalExposure,
+        outcomeTier,
         lift,
         evidence,
         verdict,
@@ -233,7 +273,8 @@ export function applyExperimentEvidence(
       rule = {
         ruleKey, scope: ev.scope, dimension: ev.dimension, value: ev.value,
         sample: 0, avgBusinessValue: 0, avgQualifiedLeadRate: 0,
-        totalLeads: 0, totalQualified: 0, totalSales: 0, totalCommissionEur: 0,
+        totalLeads: 0, totalQualified: 0, totalViewings: 0, totalOffers: 0,
+        totalSales: 0, totalCommissionEur: 0, totalClicks: 0, totalExposure: 0, outcomeTier: "none",
         lift: 0, evidence: ev.evidence, verdict: "neutral", finding: "",
       };
       byKey.set(ruleKey, rule);
@@ -248,7 +289,7 @@ export function applyExperimentEvidence(
 }
 
 export interface GenomeRecommendation {
-  favor: Partial<Record<LearningDimension, { value: string; lift: number; evidence: string; experimentBacked?: boolean }>>;
+  favor: Partial<Record<LearningDimension, { value: string; lift: number; evidence: string; outcomeTier?: OutcomeTier; experimentBacked?: boolean }>>;
   avoid: Array<{ dimension: LearningDimension; value: string; lift: number }>;
   notes: string[];
 }
@@ -266,9 +307,13 @@ export function recommendGenome(
     const inDim = rules.filter((r) => r.dimension === dim);
     const favored = inDim
       .filter((r) => r.verdict === "favor")
-      .sort((a, b) => Number(!!b.experimentBacked) - Number(!!a.experimentBacked) || b.lift - a.lift)[0];
+      .sort((a, b) =>
+        Number(!!b.experimentBacked) - Number(!!a.experimentBacked)
+        || outcomeTierRank(b.outcomeTier) - outcomeTierRank(a.outcomeTier)
+        || b.lift - a.lift,
+      )[0];
     if (favored) {
-      favor[dim] = { value: favored.value, lift: favored.lift, evidence: favored.evidence, experimentBacked: favored.experimentBacked };
+      favor[dim] = { value: favored.value, lift: favored.lift, evidence: favored.evidence, outcomeTier: favored.outcomeTier, experimentBacked: favored.experimentBacked };
       notes.push(favored.finding);
     }
     for (const r of inDim.filter((r) => r.verdict === "avoid")) {

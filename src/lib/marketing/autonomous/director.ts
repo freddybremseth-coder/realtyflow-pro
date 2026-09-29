@@ -61,6 +61,7 @@ export function buildMarketingPlan(rawInput: DirectorInput, opts: BuildPlanOptio
   const rec = opts.recommendation;
   const favoredDimensions: Record<string, string> = {};
   const notes: string[] = [];
+  const channels = [...input.channels];
   if (rec) {
     for (const [dim, v] of Object.entries(rec.favor)) {
       if (!v) continue;
@@ -69,6 +70,15 @@ export function buildMarketingPlan(rawInput: DirectorInput, opts: BuildPlanOptio
         notes.push(`${v.experimentBacked ? "🧪" : "📈"} favor ${dim}=${v.value} (${v.evidence}, ${v.lift}×)`);
       } else {
         notes.push(`👀 observer ${dim}=${v.value} (${v.evidence}, ${v.lift}×) — ikke nok evidens til autopilot`);
+      }
+    }
+    const channelWinner = rec.favor.channel;
+    if (channelWinner && canInfluenceAutopilot(channelWinner)) {
+      const winnerIndex = channels.findIndex((channel) => channel === channelWinner.value);
+      if (winnerIndex > 0) {
+        const [winner] = channels.splice(winnerIndex, 1);
+        channels.unshift(winner);
+        notes.push(`🎯 kanalprioritet ${winner} først (${channelWinner.outcomeTier ?? "ukjent utfall"}, ${channelWinner.evidence})`);
       }
     }
     notes.push(...rec.notes.slice(0, 3));
@@ -88,7 +98,7 @@ export function buildMarketingPlan(rawInput: DirectorInput, opts: BuildPlanOptio
     brandId: input.brandId,
     goals: input.goals,
     focus,
-    channels: input.channels,
+    channels,
     explorationMix: mix,
     production,
     favoredDimensions,

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyExperimentEvidence,
   baselineBusinessValue,
+  classifyOutcomeTier,
   deriveLearningRules,
   recommendGenome,
   type ExperimentEvidence,
@@ -196,4 +197,40 @@ test("recalculation time is not part of the rule evidence window", () => {
 
   assert.ok(rule);
   assert.equal(rule.evidenceLastAt, "2026-06-15T10:00:00Z");
+});
+
+
+test("outcome tiers separate reach, traffic, leads, qualified pipeline and sales", () => {
+  assert.equal(classifyOutcomeTier({ impressions: 10000 }), "reach");
+  assert.equal(classifyOutcomeTier({ impressions: 1000, clicks: 20 }), "traffic");
+  assert.equal(classifyOutcomeTier({ clicks: 5, leads: 1 }), "lead");
+  assert.equal(classifyOutcomeTier({ leads: 2, qualifiedLeads: 1 }), "qualified_pipeline");
+  assert.equal(classifyOutcomeTier({ qualifiedLeads: 1, sales: 1 }), "sale");
+});
+
+test("recommendation prefers qualified business outcome over larger reach-only lift", () => {
+  const rules = deriveLearningRules([
+    ...Array.from({ length: 6 }, () => obs({ hookType: "viral_reach" }, { impressions: 100000, clicks: 200 })),
+    ...Array.from({ length: 6 }, () => obs({ hookType: "buyer_intent" }, { impressions: 2500, clicks: 20, qualifiedLeads: 1 })),
+  ], { scope: "b1", favorLift: 0 });
+
+  const rec = recommendGenome(rules, { dimensions: ["hookType"] });
+  assert.equal(rec.favor.hookType?.value, "buyer_intent");
+  assert.equal(rec.favor.hookType?.outcomeTier, "qualified_pipeline");
+});
+
+test("derived rules retain funnel evidence needed for Nexus channel and content learning", () => {
+  const rules = deriveLearningRules([
+    ...Array.from({ length: 6 }, () => obs(
+      { ctaType: "book_viewing" },
+      { impressions: 3000, clicks: 24, leads: 4, qualifiedLeads: 2, viewings: 1, offers: 1, sales: 1, commissionEur: 9000 },
+    )),
+  ], { scope: "b1", favorLift: 0 });
+
+  const rule = rules.find((item) => item.dimension === "ctaType" && item.value === "book_viewing")!;
+  assert.equal(rule.outcomeTier, "sale");
+  assert.equal(rule.totalClicks, 144);
+  assert.equal(rule.totalViewings, 6);
+  assert.equal(rule.totalOffers, 6);
+  assert.equal(rule.totalSales, 6);
 });

@@ -199,8 +199,13 @@ export async function refreshLearningRules(
       avg_qualified_lead_rate: r.avgQualifiedLeadRate,
       total_leads: r.totalLeads,
       total_qualified: r.totalQualified,
+      total_viewings: r.totalViewings,
+      total_offers: r.totalOffers,
       total_sales: r.totalSales,
       total_commission_eur: r.totalCommissionEur,
+      total_clicks: r.totalClicks,
+      total_exposure: r.totalExposure,
+      outcome_tier: r.outcomeTier,
       lift: r.lift,
       evidence: r.evidence,
       verdict: r.verdict,
@@ -240,8 +245,21 @@ function rowToRule(r: any): LearningRule {
     avgQualifiedLeadRate: num(r.avg_qualified_lead_rate),
     totalLeads: num(r.total_leads),
     totalQualified: num(r.total_qualified),
+    totalViewings: num(r.total_viewings),
+    totalOffers: num(r.total_offers),
     totalSales: num(r.total_sales),
     totalCommissionEur: num(r.total_commission_eur),
+    totalClicks: num(r.total_clicks),
+    totalExposure: num(r.total_exposure),
+    outcomeTier: r.outcome_tier ?? (num(r.total_sales) > 0 || num(r.total_commission_eur) > 0
+      ? "sale"
+      : num(r.total_qualified) > 0 || num(r.total_viewings) > 0 || num(r.total_offers) > 0
+        ? "qualified_pipeline"
+        : num(r.total_leads) > 0
+          ? "lead"
+          : num(r.total_clicks) > 0
+            ? "traffic"
+            : num(r.total_exposure) > 0 ? "reach" : "none"),
     lift: num(r.lift),
     evidence: r.evidence,
     verdict: r.verdict,
