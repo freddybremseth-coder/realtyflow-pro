@@ -413,6 +413,57 @@ export function buildCanonicalLeadAttribution(params: {
  * ikke fikk full/primær kreditt (multi-touch). Idempotent på touch-nivå
  * forutsettes håndtert i lagringslaget (dedupe key + unique constraint).
  */
+export interface ContentOutcomeEvidenceWindow {
+  firstAt: string | null;
+  lastAt: string | null;
+}
+
+function earlierIso(current: string | null, candidate: string): string {
+  if (!current) return candidate;
+  return Date.parse(candidate) < Date.parse(current) ? candidate : current;
+}
+
+function laterIso(current: string | null, candidate: string): string {
+  if (!current) return candidate;
+  return Date.parse(candidate) > Date.parse(current) ? candidate : current;
+}
+
+/**
+ * Actual business-evidence window per credited content. This follows the same
+ * attribution model as rollupContentOutcomes, but stores WHEN canonical
+ * downstream outcomes happened. It is intentionally independent of when a
+ * learning rule happens to be recalculated.
+ */
+export function rollupContentOutcomeEvidence(
+  journeys: Journey[],
+  model: AttributionModel = "last_touch",
+): Map<string, ContentOutcomeEvidenceWindow> {
+  const out = new Map<string, ContentOutcomeEvidenceWindow>();
+
+  for (const journey of journeys) {
+    const outcomes = journey.touches
+      .filter((touch) => outcomeRankOf(touch.touchType) > 0)
+      .slice()
+      .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+    if (!outcomes.length) continue;
+
+    const { credit } = attributeJourneyCredit(journey.touches, model);
+    const firstAt = outcomes[0]?.occurredAt;
+    const lastAt = outcomes.at(-1)?.occurredAt;
+    if (!firstAt || !lastAt) continue;
+
+    for (const [contentId, weight] of credit) {
+      if (!(weight > 0)) continue;
+      const current = out.get(contentId) ?? { firstAt: null, lastAt: null };
+      current.firstAt = earlierIso(current.firstAt, firstAt);
+      current.lastAt = laterIso(current.lastAt, lastAt);
+      out.set(contentId, current);
+    }
+  }
+
+  return out;
+}
+
 export function rollupContentOutcomes(journeys: Journey[], model: AttributionModel = "last_touch"): Map<string, ContentBusinessMetrics> {
   const out = new Map<string, ContentBusinessMetrics>();
   const bump = (id: string) => out.get(id) ?? out.set(id, emptyBiz()).get(id)!;
