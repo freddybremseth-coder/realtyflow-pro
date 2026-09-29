@@ -128,7 +128,7 @@ export function contentRecipeValue(genome: ContentGenome): string | undefined {
     const value = genome[field];
     if (typeof value === "string" && value.trim()) params.set(field, value.trim());
   }
-  return params.size >= 3 ? params.toString() : undefined;
+  return Array.from(params.keys()).length >= 3 ? params.toString() : undefined;
 }
 
 export function parseContentRecipe(value: string | null | undefined): Partial<ContentGenome> | null {
