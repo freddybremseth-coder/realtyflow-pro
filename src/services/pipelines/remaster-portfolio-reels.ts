@@ -22,6 +22,7 @@ export type ReelRenderInput = {
   region?: RemasterMixRegion;
   areaQuery?: string;
   visualTypes?: RemasterMixVisualType[];
+  propertyUrl?: string;
 };
 export type ReelRenderResult = {buffer:Buffer;caption:string;durationSeconds:number;visualCount:number};
 
@@ -108,9 +109,11 @@ export function buildPortfolioReelCaption(input:ReelRenderInput){
   ].join("\n\n");
   const area=safeText(input.areaQuery||"",80);
   const region=input.region&&input.region!=="any" ? input.region.replace(/-/g," ") : "";
+  const propertyUrl = input.propertyUrl && /^https:\/\/www\.(zenecohomes|pinosoecolife)\.com\/eiendommer\/[A-Za-z0-9._~-]+$/.test(input.propertyUrl)
+    ? input.propertyUrl : "";
   return [
     "🏡 Homes and property inspiration from "+(input.brand==="pinosoecolife"?"Pinoso EcoLife":"Zen Eco Homes")+(area?" in "+area:region?" — "+region:"")+".",
-    "Explore current properties: https://"+brandWebsite(input.brand)+"/",
+    propertyUrl ? "Se boligen: "+propertyUrl : "Explore current properties: https://"+brandWebsite(input.brand)+"/",
     "Availability and prices can change; check the website for current listings.",
     music,
     input.brand==="pinosoecolife"?"#PinosoEcoLife #AlicanteInland #PropertyReel #ReMasterFreddy":"#ZenEcoHomes #CostaBlanca #PropertyReel #ReMasterFreddy",
