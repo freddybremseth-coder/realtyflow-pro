@@ -239,7 +239,7 @@ type View = "today" | "calendar" | "attention" | "published" | "performance";
 const TABS: Array<{ id: View; label: string }> = [
   { id: "today", label: "Today" },
   { id: "calendar", label: "Calendar" },
-  { id: "attention", label: "Needs attention" },
+  { id: "attention", label: "Needs you" },
   { id: "published", label: "Published" },
   { id: "performance", label: "Performance" },
 ];
@@ -368,13 +368,14 @@ export default function SocialAutomationPage() {
 
       {view === "today" && (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {[
-              ["Destinations", data?.automationSummary?.connectedDestinations ?? summary.connected],
-              ["Signals", data?.automationSummary?.connectedSignals ?? summary.connectedSignals],
-              ["Auto ready", data?.automationSummary?.autoReady ?? autoActions.length],
-              ["Live learning", summary.liveLearning],
               ["Needs you", data?.automationSummary?.humanRequired ?? humanActions.length],
+              ["Kjøres automatisk", data?.automationSummary?.autoReady ?? autoActions.length],
+              ["System work", data?.automationSummary?.systemWork ?? systemActions.length],
+              ["Watching", data?.automationSummary?.waiting ?? actions.filter((action) => action.execution === "WAIT").length],
+              ["Live learning", summary.liveLearning],
+              ["Destinations", data?.automationSummary?.connectedDestinations ?? summary.connected],
             ].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase tracking-wider text-slate-400">{label}</div><div className="mt-2 text-3xl font-black text-slate-900">{value}</div></div>)}
           </section>
 
@@ -589,7 +590,7 @@ export default function SocialAutomationPage() {
 
       {view === "attention" && (
         <section className="space-y-3">
-          <div><h2 className="text-xl font-black text-slate-900">Needs attention</h2><p className="mt-1 text-sm text-slate-500">Kun beslutninger og sikkerhetsavvik som faktisk trenger et menneske. Publisher-governance og venting på data ligger ikke lenger her.</p></div>
+          <div><h2 className="text-xl font-black text-slate-900">Needs you</h2><p className="mt-1 text-sm text-slate-500">Dette er den eneste marketing-køen du skal behandle manuelt. AUTO READY, systemarbeid og venting på data ligger ikke her.</p></div>
           {humanActions.length === 0 ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-sm text-emerald-900">Ingen marketing-beslutninger krever deg akkurat nå.</div> : null}
           {humanActions.map((action) => (
             <Link key={action.id} href={action.href ?? "/marketing-readiness"} className="block rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -666,7 +667,7 @@ export default function SocialAutomationPage() {
         </div>
       </details>
 
-      {systemActions.length > 0 && <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900"><b>{systemActions.length} systemoppgave(r)</b> ligger i Growth Autopilot-køen, blant annet publisher-governance. Disse teller ikke som «Needs attention» for deg.</div>}
+      {systemActions.length > 0 && <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900"><b>{systemActions.length} systemoppgave(r)</b> ligger i Growth Autopilot-køen, blant annet publisher-governance. Disse teller ikke som «Needs you» for deg.</div>}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><b>Kontrollregel:</b> measurement-signaler kan påvirke beslutningsgrunnlaget, men blir aldri behandlet som publiseringsdestinations. Ingen post eller learning-status regnes som bekreftet uten data fra readiness-/publiseringssystemet.</div>
     </div>
   );

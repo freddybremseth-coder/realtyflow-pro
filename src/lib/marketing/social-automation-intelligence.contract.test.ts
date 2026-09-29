@@ -79,3 +79,15 @@ test("learning/performance surface stays read-only", () => {
   assert.doesNotMatch(readiness, /marketing_learning_rules"[\s\S]*\.update\(/);
   assert.doesNotMatch(readiness, /marketing_learning_rules"[\s\S]*\.insert\(/);
 });
+
+
+test("Social Automation exposes human and system ownership as separate queues", () => {
+  assert.match(page, /\{ id: "attention", label: "Needs you" \}/);
+  assert.match(page, /Kjøres automatisk/);
+  assert.match(page, /System work/);
+  assert.match(page, /Watching/);
+  assert.match(page, /Dette er den eneste marketing-køen du skal behandle manuelt/);
+  assert.match(page, /Disse teller ikke som «Needs you» for deg/);
+  assert.doesNotMatch(page, /label: "Needs attention"/);
+  assert.doesNotMatch(page, />Needs attention</);
+});
