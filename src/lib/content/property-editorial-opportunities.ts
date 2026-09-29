@@ -55,6 +55,25 @@ function townOf(p: EditorialPropertyFact) {
   return p.town || p.location.split(",")[0]?.trim() || "Costa Blanca Nord";
 }
 
+const LOCALITY_ALIAS_GROUPS = [
+  ["albir","alfas del pi","alfaz del pi"],
+  ["javea","xabia"],
+  ["calpe","calp"],
+  ["la nucia","nucia"],
+  ["villajoyosa","la villajoyosa","vila joiosa"],
+];
+
+function localityConsistent(p: EditorialPropertyFact) {
+  const town = clean(p.town);
+  const location = clean(p.location);
+  if (!town || !location) return true;
+  if (location.includes(town)) return true;
+  return LOCALITY_ALIAS_GROUPS.some((group) =>
+    group.some((value) => town.includes(clean(value))) &&
+    group.some((value) => location.includes(clean(value))),
+  );
+}
+
 function isNorth(p: EditorialPropertyFact) {
   const town = clean(townOf(p));
   const location = clean(p.location);
@@ -64,7 +83,7 @@ function isNorth(p: EditorialPropertyFact) {
 function valid(p: EditorialPropertyFact) {
   return Boolean(
     p.id && p.ref && p.price >= 150_000 && p.price <= 1_500_000 &&
-    isNorth(p),
+    isNorth(p) && localityConsistent(p),
   );
 }
 
