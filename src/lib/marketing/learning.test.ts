@@ -153,3 +153,47 @@ test("sortering: sterkeste evidens først", () => {
   const areaRules = rules.filter((r) => r.dimension === "area");
   assert.equal(areaRules[0].evidence, "strong");
 });
+
+
+test("derived rule inherits the true evidence window from its own observations", () => {
+  const data: LearningObservation[] = [
+    {
+      genome: g({ hookType: "price_first" }),
+      metrics: { sales: 1 },
+      evidenceFirstAt: "2026-07-01T10:00:00Z",
+      evidenceLastAt: "2026-07-05T10:00:00Z",
+    },
+    {
+      genome: g({ hookType: "price_first" }),
+      metrics: { sales: 1 },
+      evidenceFirstAt: "2026-07-10T10:00:00Z",
+      evidenceLastAt: "2026-09-20T10:00:00Z",
+    },
+    {
+      genome: g({ hookType: "question" }),
+      metrics: {},
+      evidenceFirstAt: "2026-09-25T10:00:00Z",
+      evidenceLastAt: "2026-09-28T10:00:00Z",
+    },
+  ];
+
+  const rule = deriveLearningRules(data, { scope: "b1", minSample: 1 })
+    .find((item) => item.dimension === "hookType" && item.value === "price_first");
+  assert.ok(rule);
+  assert.equal(rule.evidenceFirstAt, "2026-07-01T10:00:00Z");
+  assert.equal(rule.evidenceLastAt, "2026-09-20T10:00:00Z");
+});
+
+test("recalculation time is not part of the rule evidence window", () => {
+  const rule = deriveLearningRules([
+    {
+      genome: g({ area: "finestrat" }),
+      metrics: { leads: 1 },
+      evidenceFirstAt: "2026-06-01T10:00:00Z",
+      evidenceLastAt: "2026-06-15T10:00:00Z",
+    },
+  ], { scope: "b1", minSample: 1 }).find((item) => item.dimension === "area" && item.value === "finestrat");
+
+  assert.ok(rule);
+  assert.equal(rule.evidenceLastAt, "2026-06-15T10:00:00Z");
+});
