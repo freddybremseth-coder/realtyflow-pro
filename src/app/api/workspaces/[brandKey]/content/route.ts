@@ -119,6 +119,33 @@ export async function GET(
     return fail(503, "CONTENT_STUDIO_UNAVAILABLE");
   }
 
+  let opportunities: Array<Record<string, unknown>> = [];
+  if (params.brandKey === "zeneco") {
+    const { data: opportunityRows, error: opportunityError } = await access.value.supabase
+      .from("property_content_opportunities")
+      .select("id,opportunity_type,score,title,summary,editorial_angle,property_refs,image_url,detected_at,expires_at")
+      .eq("brand_id", params.brandKey)
+      .eq("status", "suggested")
+      .gt("expires_at", new Date().toISOString())
+      .order("score", { ascending: false })
+      .order("detected_at", { ascending: false })
+      .limit(8);
+    if (!opportunityError && Array.isArray(opportunityRows)) {
+      opportunities = opportunityRows.map((row: any) => ({
+        id: String(row.id || ""),
+        opportunityType: String(row.opportunity_type || ""),
+        score: Number(row.score || 0),
+        title: String(row.title || ""),
+        summary: String(row.summary || ""),
+        editorialAngle: String(row.editorial_angle || ""),
+        propertyRefs: Array.isArray(row.property_refs) ? row.property_refs.map(String).slice(0, 6) : [],
+        imageUrl: typeof row.image_url === "string" ? row.image_url : null,
+        detectedAt: row.detected_at ? String(row.detected_at) : null,
+        expiresAt: row.expires_at ? String(row.expires_at) : null,
+      })).filter((row) => row.id && row.title);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     brand: params.brandKey,
@@ -134,6 +161,7 @@ export async function GET(
     defaultDestinationId: cms.config.defaultDestinationId,
     drafts: Array.isArray(snapshot.drafts) ? snapshot.drafts : [],
     published: Array.isArray(snapshot.published) ? snapshot.published : [],
+    opportunities,
   }, { headers: noStore });
 }
 
@@ -145,6 +173,103 @@ export async function POST(
   const body: any = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "INVALID_REQUEST");
   const action = text(body.action, 40);
+
+  if (action === "opportunity_draft" || action === "opportunity_dismiss") {
+    const access = await requireBrandWorkspace(request, params.brandKey, "content.edit");
+    if (!access.value) return access.response;
+    if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
+    if (params.brandKey !== "zeneco") return fail(404, "OPPORTUNITY_NOT_FOUND");
+
+    const opportunityId = text(body.opportunityId, 80);
+    if (!opportunityId) return fail(400, "INVALID_OPPORTUNITY");
+
+    const { data: opportunity, error: opportunityError } = await access.value.supabase
+      .from("property_content_opportunities")
+      .select("id,brand_id,status,opportunity_type,title,summary,draft_markdown,image_url,primary_keyword,supporting_keywords,audience,property_refs,draft_id")
+      .eq("id", opportunityId)
+      .eq("brand_id", params.brandKey)
+      .maybeSingle();
+    if (opportunityError || !opportunity) return fail(404, "OPPORTUNITY_NOT_FOUND");
+
+    if (action === "opportunity_dismiss") {
+      if (String(opportunity.status) !== "suggested") return fail(409, "OPPORTUNITY_NOT_ACTIVE");
+      const { error } = await access.value.supabase
+        .from("property_content_opportunities")
+        .update({
+          status: "dismissed",
+          dismissed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", opportunityId)
+        .eq("brand_id", params.brandKey)
+        .eq("status", "suggested");
+      if (error) return fail(503, "OPPORTUNITY_UPDATE_FAILED");
+      return NextResponse.json({ ok: true, dismissed: true }, { headers: noStore });
+    }
+
+    if (String(opportunity.status) === "drafted" && opportunity.draft_id) {
+      return fail(409, "OPPORTUNITY_ALREADY_USED");
+    }
+    if (String(opportunity.status) !== "suggested") return fail(409, "OPPORTUNITY_NOT_ACTIVE");
+
+    const cms = await loadCmsConfig(access.value.supabase, params.brandKey);
+    if (cms.error || !cms.config) return fail(503, "CONTENT_STUDIO_UNAVAILABLE");
+    const destination =
+      cms.config.destinations.find(item => item.id === "magasin") ||
+      cms.config.destinations.find(item => item.path === "/magasin") ||
+      cms.config.destinations[0];
+    if (!destination) return fail(409, "CONTENT_DESTINATION_MISSING");
+
+    const title = text(opportunity.title, 200);
+    const dateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const slugBase = slugifyCmsTitle(title).slice(0, 150);
+    const slug = `${slugBase}-${dateSuffix}`.slice(0, 160).replace(/-+$/,"");
+    const refs = stringArray(opportunity.property_refs, 8, 40);
+
+    const { data: draft, error: draftError } = await access.value.supabase.rpc("workspace_brand_content_draft_save", {
+      p_brand_key: params.brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_draft_id: null,
+      p_destination_id: destination.id,
+      p_destination_label: destination.label,
+      p_destination_path: destination.path,
+      p_content_type: contentType(destination.contentType),
+      p_title: title,
+      p_slug: slug,
+      p_summary: text(opportunity.summary, 700),
+      p_markdown: typeof opportunity.draft_markdown === "string" ? opportunity.draft_markdown.slice(0, 60000) : "",
+      p_image_url: text(opportunity.image_url, 2000),
+      p_tags: [
+        "marked-akkurat-na",
+        "nexus-editorial-signal",
+        `nexus-opportunity:${opportunityId}`,
+        `nexus-angle:${String(opportunity.opportunity_type || "unknown").slice(0, 60)}`,
+        ...refs.map(ref => `property:${ref}`),
+      ].slice(0, 30),
+      p_primary_keyword: text(opportunity.primary_keyword, 160),
+      p_supporting_keywords: stringArray(opportunity.supporting_keywords, 20, 160),
+      p_audience: text(opportunity.audience, 500),
+      p_source_publication_id: null,
+    });
+    if (draftError || !draft) return fail(409, "CONTENT_DRAFT_CREATE_FAILED");
+    if (draft.error === "SLUG_ALREADY_EXISTS") return fail(409, "SLUG_ALREADY_EXISTS");
+
+    const { error: updateError } = await access.value.supabase
+      .from("property_content_opportunities")
+      .update({
+        status: "drafted",
+        draft_id: draft.id,
+        drafted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", opportunityId)
+      .eq("brand_id", params.brandKey)
+      .eq("status", "suggested");
+    if (updateError) return fail(503, "OPPORTUNITY_UPDATE_FAILED");
+
+    return NextResponse.json({ ok: true, draft, opportunityId }, { status: 201, headers: noStore });
+  }
 
   if (action === "versions") {
     const access = await requireBrandWorkspace(request, params.brandKey, "content.read");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FileText, Globe2, History, Plus, RefreshCw, RotateCcw, Send, Save } from "lucide-react";
+import { CheckCircle2, FileText, Globe2, History, Plus, RefreshCw, RotateCcw, Send, Save, Sparkles, X } from "lucide-react";
 
 type Destination = {
   id: string;
@@ -42,6 +42,18 @@ type Published = {
   publishedAt?: string | null;
   updatedAt?: string | null;
 };
+type Opportunity = {
+  id: string;
+  opportunityType: string;
+  score: number;
+  title: string;
+  summary: string;
+  editorialAngle: string;
+  propertyRefs: string[];
+  imageUrl?: string | null;
+  detectedAt?: string | null;
+  expiresAt?: string | null;
+};
 type Version = {
   id: string;
   version: number;
@@ -55,6 +67,7 @@ type StudioData = {
   defaultDestinationId: string;
   drafts: Draft[];
   published: Published[];
+  opportunities: Opportunity[];
 };
 
 function splitCsv(value: string) {
@@ -106,6 +119,7 @@ export function WorkspaceWebsiteContentStudio({
         defaultDestinationId: body.defaultDestinationId || "",
         drafts: Array.isArray(body.drafts) ? body.drafts : [],
         published: Array.isArray(body.published) ? body.published : [],
+        opportunities: Array.isArray(body.opportunities) ? body.opportunities : [],
       };
       setData(next);
       setDestinationId(current => current || next.defaultDestinationId || next.destinations[0]?.id || "");
@@ -230,6 +244,45 @@ export function WorkspaceWebsiteContentStudio({
     } finally { setBusy(false); }
   }
 
+  async function useOpportunity(opportunityId: string) {
+    if (!canEdit || busy) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/content`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "opportunity_draft", opportunityId }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error?.code === "SLUG_ALREADY_EXISTS"
+        ? "Det finnes allerede et utkast med samme URL. Åpne utkastlisten og vurder det eksisterende utkastet."
+        : "Nexus-forslaget kunne ikke gjøres om til utkast.");
+      await load();
+      openDraft(body.draft);
+      setNotice("Nexus-forslaget er gjort om til et vanlig Content Studio-utkast. Kontroller fakta og rediger før eventuell publisering.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Forslaget kunne ikke åpnes som utkast.");
+    } finally { setBusy(false); }
+  }
+
+  async function dismissOpportunity(opportunityId: string) {
+    if (!canEdit || busy) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/content`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "opportunity_dismiss", opportunityId }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error("Forslaget kunne ikke skjules.");
+      await load();
+      setNotice("Forslaget er skjult. Nexus vil ikke presentere det samme signalet på nytt.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Forslaget kunne ikke skjules.");
+    } finally { setBusy(false); }
+  }
+
   async function loadVersions() {
     if (!selectedDraftId) return;
     setBusy(true); setError("");
@@ -291,6 +344,51 @@ export function WorkspaceWebsiteContentStudio({
         <Plus size={16}/> Ny artikkel eller guide
       </button>}
     </div>
+
+    {data.opportunities.length > 0 && (
+      <div className="rounded-2xl border border-cyan-800/60 bg-cyan-950/15 p-5">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-cyan-500/10 p-2 text-cyan-300"><Sparkles size={20}/></div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Nexus · redaksjonelle signaler</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">Boligdata som kan bli en nyttig kjøperartikkel</h3>
+            <p className="mt-1 max-w-3xl text-sm text-slate-400">
+              Nexus ser etter dokumenterbare forskjeller i pris, areal, boligtype og område. Dette er forslag – ingenting publiseres automatisk.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {data.opportunities.map(item => (
+            <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="inline-flex rounded-full border border-cyan-700/50 bg-cyan-950/40 px-2 py-0.5 text-[11px] font-semibold text-cyan-200">
+                    Signal {Math.round(item.score)}/100
+                  </span>
+                  <h4 className="mt-2 font-semibold text-white">{item.title}</h4>
+                </div>
+                {canEdit && <button type="button" title="Skjul forslag" disabled={busy}
+                  onClick={() => void dismissOpportunity(item.id)}
+                  className="rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-200">
+                  <X size={15}/>
+                </button>}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{item.summary}</p>
+              {item.editorialAngle && <p className="mt-2 text-xs leading-5 text-slate-500"><strong className="text-slate-300">Hvorfor Nexus viser den:</strong> {item.editorialAngle}</p>}
+              {item.propertyRefs.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {item.propertyRefs.map(ref => <span key={ref} className="rounded-md bg-slate-900 px-2 py-1 text-[11px] text-slate-300">{ref}</span>)}
+                </div>
+              )}
+              {canEdit && <button type="button" disabled={busy} onClick={() => void useOpportunity(item.id)}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
+                <FileText size={14}/> Bruk som utkast
+              </button>}
+            </article>
+          ))}
+        </div>
+      </div>
+    )}
 
     <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
       <div className="space-y-5">
