@@ -121,11 +121,11 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   {
     id: "youtube",
     label: "YouTube Studio",
-    description: "Kanalstyring per merkevare. Krever eksplisitt kanalbinding og publiseringssperrer.",
-    status: "planned",
-    brandScope: "all",
-    readPermissions: [],
-    writePermissions: [],
+    description: "Se Zen-kanalen og publiser ferdig forhåndsvist Zen Reel som YouTube Short til eksakt verifisert kanal.",
+    status: "ready",
+    brandScope: "zeneco-only",
+    readPermissions: ["youtube.read"],
+    writePermissions: ["youtube.publish"],
   },
   {
     id: "content",
@@ -173,6 +173,8 @@ export function programPermissions(params: {
   reelsRead: boolean;
   reelsCreate: boolean;
   reelsPublish: boolean;
+  youtubeRead: boolean;
+  youtubePublish: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -207,6 +209,10 @@ export function programPermissions(params: {
     if (params.reelsRead || params.reelsCreate || params.reelsPublish) result.add("reels.read");
     if (params.reelsCreate || params.reelsPublish) result.add("reels.create");
     if (params.reelsPublish) result.add("reels.publish");
+  }
+  if (params.brandKey === "zeneco") {
+    if (params.youtubeRead || params.youtubePublish) result.add("youtube.read");
+    if (params.youtubePublish) result.add("youtube.publish");
   }
   if (params.brandKey === "zeneco" && (params.corporateRead || params.corporatePlan)) result.add("corporate.read");
   if (params.brandKey === "zeneco" && params.corporatePlan) result.add("corporate.plan");
