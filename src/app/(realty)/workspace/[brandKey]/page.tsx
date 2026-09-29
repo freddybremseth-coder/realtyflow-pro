@@ -11,6 +11,7 @@ import { GrowthCorporatePanel } from "@/components/workspaces/growth-corporate-p
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
 import { WorkspaceReelsPanel } from "@/components/workspaces/reels-panel";
+import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = {
@@ -30,6 +31,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
   { id: "growth", label: "Vekst & innhold", icon: TrendingUp, permitted: [
     "marketing.read", "marketing.draft", "marketing.publish",
     "reels.read", "reels.create", "reels.publish",
+    "youtube.read", "youtube.publish",
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
@@ -117,13 +119,14 @@ export default function FocusedWorkspacePage() {
   const showProperties = permissions.includes("properties.catalog.read");
   const showMarketing = permissions.some(p => p.startsWith("marketing."));
   const showReels = ["zeneco", "pinosoecolife"].includes(brandKey) && permissions.includes("reels.read");
+  const showYoutube = brandKey === "zeneco" && permissions.includes("youtube.read");
   const showGrowthTools = permissions.some(p => [
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
     "email.read", "email.draft", "email.send",
   ].includes(p));
-  const showGrowth = showReels || showGrowthTools;
+  const showGrowth = showReels || showYoutube || showGrowthTools;
 
   function resetContactForm() {
     setEditingId(null); setFormName(""); setFormEmail(""); setFormPhone("");
@@ -211,6 +214,11 @@ export default function FocusedWorkspacePage() {
                 <Clapperboard size={25} className="text-cyan-400"/>
                 <h3 className="mt-3 text-lg font-semibold">Lag en Reel</h3>
                 <p className="mt-1 text-sm text-slate-400">Velg musikk og boligtype. Re-Master lager videoen, og du forhåndsviser før publisering.</p>
+              </button>}
+              {showYoutube && <button onClick={() => setTab("growth")} className="rounded-2xl border border-red-900/60 bg-red-950/10 p-5 text-left hover:border-red-500">
+                <Youtube size={25} className="text-red-400"/>
+                <h3 className="mt-3 text-lg font-semibold">Publiser til YouTube</h3>
+                <p className="mt-1 text-sm text-slate-400">Velg en ferdig Zen Reel, forhåndsvis den og publiser som YouTube Short til verifisert Zen-kanal.</p>
               </button>}
               {showProperties && <button onClick={() => setTab("properties")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
                 <Building2 size={25} className="text-cyan-400"/>
@@ -342,6 +350,15 @@ export default function FocusedWorkspacePage() {
               </summary>
               <div className="border-t border-slate-800 p-5">
                 <WorkspaceReelsPanel brandKey={brandKey} canCreate={permissions.includes("reels.create")} canPublish={permissions.includes("reels.publish")} />
+              </div>
+            </details>}
+            {showYoutube && <details open className="rounded-2xl border border-red-900/60 bg-slate-900/70">
+              <summary className="cursor-pointer list-none p-5">
+                <strong className="text-lg text-red-100">YouTube Studio</strong>
+                <p className="mt-1 text-sm text-slate-400">Se Zen-kanalen og publiser ferdig Reel som YouTube Short uten kanaladmin.</p>
+              </summary>
+              <div className="border-t border-slate-800 p-5">
+                <WorkspaceYoutubePanel brandKey={brandKey} canPublish={permissions.includes("youtube.publish")} />
               </div>
             </details>}
             {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
