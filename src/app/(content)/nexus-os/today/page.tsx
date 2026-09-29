@@ -67,6 +67,12 @@ type PortfolioPayload = {
 
 type MarketingPayload = {
   rows?: SocialAutopilotRow[];
+  automationSummary?: {
+    autoReady?: number;
+    humanRequired?: number;
+    systemWork?: number;
+    waiting?: number;
+  };
   controlGate?: {
     status?: "WAIT" | "RUN_NEXT_CANARY";
     controlBrandId?: string;
@@ -162,6 +168,9 @@ export default function NexusTodayPage() {
   const summary = revenue.data?.summary;
   const portfolioSummary = portfolio.data?.summary;
   const totalAttention = actionableAttention.length + marketingSummary.needsAttention;
+  const marketingAutomation = marketing.data?.automationSummary;
+  const systemMarketingWork = Number(marketingAutomation?.autoReady ?? 0) + Number(marketingAutomation?.systemWork ?? 0);
+  const waitingMarketing = Number(marketingAutomation?.waiting ?? 0);
   const topActions = useMemo(
     () => buildNexusTodayTopActions({
       attention: actionableAttention,
@@ -197,20 +206,38 @@ export default function NexusTodayPage() {
 
       {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex items-start gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><strong>Nexus mangler én eller flere datakilder.</strong><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
 
+      <section className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="text-xs font-black uppercase tracking-wider text-amber-700">Du må gjøre</div>
+          <div className="mt-2 text-3xl font-black text-slate-950">{topActions.length}</div>
+          <p className="mt-1 text-sm text-amber-900">Kun handlinger som faktisk krever menneskelig beslutning eller oppfølging vises i topp 3 nedenfor.</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="text-xs font-black uppercase tracking-wider text-emerald-700">Systemet gjør</div>
+          <div className="mt-2 text-3xl font-black text-slate-950">{systemMarketingWork}</div>
+          <p className="mt-1 text-sm text-emerald-900">AUTO READY og systemarbeid kjøres uten at du skal trykke på en testknapp.</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-xs font-black uppercase tracking-wider text-slate-500">Følger med</div>
+          <div className="mt-2 text-3xl font-black text-slate-950">{waitingMarketing}</div>
+          <p className="mt-1 text-sm text-slate-600">Venter på modne data eller neste planlagte evaluering. Ingen handling fra deg.</p>
+        </div>
+      </section>
+
       {marketingCanary && (
-        <section className="rounded-3xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm sm:p-6">
+        <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-3xl">
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-cyan-800"><Sparkles size={16} /> Anbefalt nå</div>
-              <h2 className="mt-2 text-2xl font-black text-slate-950">{brandLabel(marketingCanary.brandId)} · {channelLabel(marketingCanary.channel)}</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-700">Growth OS har nok læring fra kontrollkanalen og anbefaler at neste kontrollerte test kjøres nå. RealtyFlow tar deg direkte til riktig test — du trenger ikke finne Canary, Preflight eller learning-regler selv.</p>
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-800"><Sparkles size={16} /> Systemet gjør automatisk</div>
+              <h2 className="mt-2 text-2xl font-black text-slate-950">{brandLabel(marketingCanary.brandId)} · {channelLabel(marketingCanary.channel)} canary</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-700">Growth OS har valgt neste kontrollerte test. Marketing Autopilot køer og kjører den automatisk innenfor eksisterende safety-, account-, approval- og publisher-gates. <strong>Du skal ikke kjøre denne manuelt.</strong> Hvis testen senere trenger en menneskelig beslutning, flyttes den til «Krever menneskelig oppmerksomhet».</p>
               <details className="mt-3 text-xs text-slate-600">
                 <summary className="cursor-pointer font-bold text-slate-700">Vis tekniske detaljer</summary>
                 <div className="mt-2 leading-5">Kontroll: {brandLabel(marketing.data?.controlGate?.controlBrandId)} · {channelLabel(marketing.data?.controlGate?.controlChannel)} · observasjoner {marketing.data?.controlGate?.eligibleObservations ?? "—"}/{marketing.data?.controlGate?.requiredObservations ?? "—"} · evaluerte regler {marketing.data?.controlGate?.evaluatedRules ?? "—"} · handlingsregler {marketing.data?.controlGate?.actionableRules ?? "—"}</div>
               </details>
             </div>
-            <Link href={marketingCanary.path} className="inline-flex shrink-0 items-center justify-center rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              Kjør {brandLabel(marketingCanary.brandId)} {channelLabel(marketingCanary.channel)}-test <ArrowRight size={16} className="ml-2" />
+            <Link href="/social-automation" className="inline-flex shrink-0 items-center justify-center rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+              Se autopilotstatus <ArrowRight size={16} className="ml-2" />
             </Link>
           </div>
         </section>
