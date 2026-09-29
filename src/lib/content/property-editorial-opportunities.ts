@@ -273,13 +273,26 @@ export function detectPropertyEditorialOpportunities(
   }
 
   const pairKeyCount = new Map<string, number>();
+  const townUse = new Map<string, number>();
   return [...bestBySignature.values()]
     .sort((a,b)=>b.score-a.score || a.title.localeCompare(b.title))
     .filter((candidate) => {
       const pairKey = candidate.propertyRefs.join(":");
       const used = pairKeyCount.get(pairKey) || 0;
       if (used >= 1) return false;
+
+      const evidenceProperties = Array.isArray(candidate.evidence.properties)
+        ? candidate.evidence.properties
+        : [];
+      const towns = Array.from(new Set(
+        evidenceProperties
+          .map((row) => row && typeof row === "object" ? clean(townOf(row as EditorialPropertyFact)) : "")
+          .filter(Boolean),
+      ));
+      if (towns.some((town) => (townUse.get(town) || 0) >= 3)) return false;
+
       pairKeyCount.set(pairKey, used + 1);
+      for (const town of towns) townUse.set(town, (townUse.get(town) || 0) + 1);
       return true;
     })
     .slice(0, Math.max(1, limit));
