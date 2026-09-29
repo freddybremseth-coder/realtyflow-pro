@@ -230,6 +230,7 @@ export async function GET(request: NextRequest) {
       detail: reasons.length ? reasons.slice(0, 3).join(" · ") : "Re-Master health-monitoren rapporterte et operasjonelt avvik.",
       href: "/remaster-freddy",
       source: "Re-Master Health",
+      responsibility: "SYSTEM",
     });
   }
 
@@ -242,6 +243,7 @@ export async function GET(request: NextRequest) {
       detail: `Nexus cannot rely on WhatsApp inbound capture. Missing: ${whatsappReadiness.missingRequired.join(", ") || "required configuration"}.`,
       href: "/nexus-os/communications/whatsapp",
       source: "Nexus WhatsApp Readiness",
+      responsibility: "USER",
     });
   } else if (whatsappReadiness.status === "PARTIAL" && whatsappReadiness.inboundReady) {
     attention.push({
