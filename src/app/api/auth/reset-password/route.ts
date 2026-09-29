@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isAdminEmail } from "@/lib/admin-auth";
 import { findAccessProfile } from "@/lib/access-control-server";
+import { getPlatformSupabase } from "@/lib/platform/supabase";
 
 export async function POST(request: NextRequest) {
   const { email } = await request.json();
@@ -11,6 +12,15 @@ export async function POST(request: NextRequest) {
   if (!allowed && normalizedEmail) {
     const resolved = await findAccessProfile(normalizedEmail);
     allowed = Boolean(!resolved.error && resolved.profile?.active);
+  }
+  if (!allowed && normalizedEmail) {
+    const platform = getPlatformSupabase();
+    if (platform) {
+      const { data, error } = await platform.rpc("workspace_login_directory", { p_login: normalizedEmail });
+      allowed = Boolean(!error && data && typeof data === "object" && !Array.isArray(data) &&
+        String((data as Record<string, unknown>).status || "") === "active" &&
+        String((data as Record<string, unknown>).email || "").trim().toLowerCase() === normalizedEmail);
+    }
   }
   // Do not reveal whether an email exists or has access.
   if (!allowed) return NextResponse.json({ success: true });
