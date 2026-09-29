@@ -108,6 +108,7 @@ function interactionSummary(params: {
   corporateModel?: string;
   partnerType?: string;
   partnershipInterest?: string;
+  referralPartnerId?: string;
   message: string;
 }) {
   return [
@@ -124,7 +125,7 @@ function interactionSummary(params: {
     params.userCount ? `Ansatte/medlemmer: ${params.userCount}` : "",
     params.corporateModel ? `Corporate-modell: ${params.corporateModel}` : "",
     params.partnerType ? `Partnertype: ${params.partnerType}` : "",
-    params.partnershipInterest ? `Partnerinteresse: ${params.partnershipInterest}` : "",
+    params.partnershipInterest ? `Partnerinteresse: ${params.partnershipInterest}` : "",\n    params.referralPartnerId ? `Henvisningspartner-ID: ${params.referralPartnerId}` : "",
     params.message ? `Melding: ${params.message}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -180,7 +181,7 @@ export async function POST(request: NextRequest) {
   const userCount = positiveInteger(body.user_count || body.userCount);
   const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
   const partnerType = normalizePartnerType(body.partner_type || body.partnerType);
-  const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);
+  const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);\n  const referralPartnerId = cleanText(body.referral_partner_id || body.referralPartnerId, 80);
   const eventId = cleanText(body.event_id || body.eventId, 160);
   const eventName = cleanText(body.event_name || body.eventName, 240);
   const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
@@ -211,6 +212,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "event_id and event_name are required for Corporate event registration" }, { status: 400 });
   }
 
+  let referredByPartner: Record<string, any> | null = null;
+  if (brandId === "zeneco" && isCorporateHome && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(referralPartnerId)) {
+    const { data: referralPartner, error: referralPartnerError } = await supabase
+      .from("corporate_partner_prospects")
+      .select("id,company_name,status")
+      .eq("id", referralPartnerId)
+      .eq("brand_id", "zeneco")
+      .neq("status", "DISQUALIFIED")
+      .maybeSingle();
+    if (referralPartnerError) {
+      console.warn("[public-leads] referral partner lookup failed", referralPartnerError.message);
+    } else if (referralPartner) {
+      referredByPartner = referralPartner;
+    }
+  }
+
   const notes = [
     `Brand: ${brandLabel}`,
     requestType ? `Forespørsel: ${requestType}` : "",
@@ -228,7 +245,7 @@ export async function POST(request: NextRequest) {
     userCount ? `Ansatte/medlemmer: ${userCount}` : "",
     corporateModel ? `Corporate-modell: ${corporateModel}` : "",
     isCorporatePartner ? `Partnertype: ${partnerType}` : "",
-    partnershipInterest ? `Partnerinteresse: ${partnershipInterest}` : "",
+    partnershipInterest ? `Partnerinteresse: ${partnershipInterest}` : "",\n    referredByPartner ? `Henvisningspartner: ${referredByPartner.company_name}` : "",
     isCorporateEventRegistration ? `Corporate-event: ${eventName} (${eventId})` : "",
     utmSource || utmCampaign || utmContent
       ? `UTM: ${utmSource} / ${utmCampaign} / ${utmContent}`
@@ -254,6 +271,7 @@ export async function POST(request: NextRequest) {
       organizationName, organizationType, contactRole, userCount, corporateModel,
       partnerType: isCorporatePartner ? partnerType : undefined,
       partnershipInterest: partnershipInterest || undefined,
+      referralPartnerId: referredByPartner?.id || undefined,
       message,
     }),
     date: now,
@@ -279,6 +297,8 @@ export async function POST(request: NextRequest) {
       corporate_model: corporateModel || null,
       partner_type: isCorporatePartner ? partnerType : null,
       partnership_interest: partnershipInterest || null,
+      referral_partner_id: referredByPartner?.id || null,
+      referral_partner_name: referredByPartner?.company_name || null,
     },
   };
   const existingInteractions = Array.isArray(existing?.interactions) ? existing.interactions : [];
@@ -335,6 +355,8 @@ export async function POST(request: NextRequest) {
       preferred_area: preferredArea || null,
       timeline: timeline || null,
       contact_role: contactRole || null,
+      referral_partner_id: referredByPartner?.id || null,
+      referral_partner_name: referredByPartner?.company_name || null,
       inbound_request: true,
       updated_at: now,
     });
@@ -597,6 +619,8 @@ export async function POST(request: NextRequest) {
       corporate_model: corporateModel || null,
       partner_type: isCorporatePartner ? partnerType : null,
       partnership_interest: partnershipInterest || null,
+      referral_partner_id: referredByPartner?.id || null,
+      referral_partner_name: referredByPartner?.company_name || null,
       corporate_prospect_id: corporateProspect?.id || null,
       corporate_partner_id: corporatePartner?.id || null,
     },
@@ -615,6 +639,7 @@ export async function POST(request: NextRequest) {
       organizationName, organizationType, contactRole, userCount, corporateModel,
       partnerType: isCorporatePartner ? partnerType : undefined,
       partnershipInterest: partnershipInterest || undefined,
+      referralPartnerId: referredByPartner?.id || undefined,
       message,
     }),
     contactId: data.id,
@@ -655,6 +680,8 @@ export async function POST(request: NextRequest) {
       corporate_model: corporateModel || null,
       partner_type: isCorporatePartner ? partnerType : null,
       partnership_interest: partnershipInterest || null,
+      referral_partner_id: referredByPartner?.id || null,
+      referral_partner_name: referredByPartner?.company_name || null,
       corporate_prospect_id: corporateProspect?.id || null,
       corporate_partner_id: corporatePartner?.id || null,
     },
@@ -678,6 +705,9 @@ export async function POST(request: NextRequest) {
       : null,
     corporatePartner: corporatePartner
       ? { id: corporatePartner.id, status: corporatePartner.status, fitTier: corporatePartner.fit_tier }
+      : null,
+    referredByPartner: referredByPartner
+      ? { id: referredByPartner.id, companyName: referredByPartner.company_name }
       : null,
   });
 }
