@@ -12,6 +12,7 @@ import { runApprovedPublication as runApproved } from "@/services/marketing/publ
 import { makeMetaPublisher } from "@/services/marketing/publishers/meta-publisher";
 import { approvedAssetHash, type GeneratedAsset } from "@/lib/marketing/autonomous";
 import type { ContentGenome } from "@/lib/marketing/genome";
+import { contentRecipeValue } from "@/lib/marketing/learning";
 
 /** Kapabel in-memory Supabase-fake (select/insert/update/upsert + filtre). */
 function makeDb(opts: { fk?: boolean; failRunPersist?: boolean; failBridge?: boolean } = {}) {
@@ -124,6 +125,60 @@ test("FIXTURE: hele kjeden plan → approval → published (dry-run)", async () 
   assert.equal(db.tables["marketing_publish_attempts"].length, 1);
   assert.equal(db.tables["marketing_publish_attempts"][0].dry_run, true);
   assert.ok(db.tables["revenue_events"].some((e: any) => e.event_type === "automation_executed"));
+});
+
+test("outcome-backed content recipe is applied to a single-channel exploit brief", async () => {
+  const db = makeDb();
+  seedBrand(db);
+  const recipe = contentRecipeValue(g({
+    format: "post",
+    hookType: "testimonial",
+    ctaType: "contact",
+    contentPillar: "buyer_guides",
+    topic: "finestrat_villas",
+    area: "finestrat",
+    propertyType: "villa",
+  }))!;
+  db.tables["marketing_learning_rules"] = [{
+    rule_key: `b1:instagram|recipe|${recipe}`,
+    scope: "b1:instagram",
+    dimension: "recipe",
+    value: recipe,
+    sample: 30,
+    avg_business_value: 1200,
+    avg_qualified_lead_rate: 2,
+    total_leads: 20,
+    total_qualified: 12,
+    total_viewings: 5,
+    total_offers: 2,
+    total_sales: 2,
+    total_commission_eur: 18000,
+    total_clicks: 300,
+    total_exposure: 50000,
+    outcome_tier: "sale",
+    lift: 1.8,
+    evidence: "reliable",
+    verdict: "favor",
+    finding: "proven recipe",
+  }];
+
+  const draft = await createCampaignDraft(db, {
+    brandId: "b1",
+    channel: "instagram",
+    masterIdea: "Test outcome recipe",
+    goal: { kind: "qualified_leads", target: 10, horizonDays: 30 },
+    mediaUrl: "https://x/i.jpg",
+  });
+
+  assert.equal(draft.results.length, 1);
+  const asset = db.tables["marketing_assets"][0];
+  assert.equal(asset.genome.hookType, "testimonial");
+  assert.equal(asset.genome.ctaType, "contact");
+  assert.equal(asset.genome.contentPillar, "buyer_guides");
+  assert.equal(asset.genome.topic, "finestrat_villas");
+  assert.equal(asset.genome.area, "finestrat");
+  assert.equal(asset.genome.propertyType, "villa");
+  assert.equal(asset.genome.format, "post");
 });
 
 test("CANARY: legacy content_publication brukes som kilde (ingen AI), source=legacy", async () => {
