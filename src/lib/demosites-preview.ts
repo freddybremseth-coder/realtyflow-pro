@@ -3,7 +3,7 @@ import {
   type DemoSiteFaqItem,
   type DemoSiteTemplateDefaults,
 } from "@/lib/demosites";
-import { normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
+import { getDemoSiteUiText, normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 export type DemoSitesPreviewMode = "internal" | "public";
 export type DemoSitesPreviewFallbackMode = "defaults" | "placeholders";
@@ -504,7 +504,7 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
     },
     contact,
     contactHref: getPrimaryContactHref(contact),
-    chatPrice: prices[0] || products[0] || services[0] || "Send inn detaljer, så følger vi opp med et mer presist forslag.",
+    chatPrice: prices[0] || products[0] || services[0] || getDemoSiteUiText(language).howCanWeHelp,
     hasCustomProducts: customProducts.length > 0,
     hasCustomPrices: customPrices.length > 0,
     employees,
