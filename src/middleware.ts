@@ -26,6 +26,7 @@ const PUBLIC_PATHS = [
   "/api/public/version",
   "/api/public/leads",
   "/api/public/portal-opt-in",
+  "/api/public/portal-magic-link",
   "/api/public/booking-leads",
   "/api/public/booking-config",
   "/api/public/booking-availability",
