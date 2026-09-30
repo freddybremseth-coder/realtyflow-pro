@@ -215,12 +215,6 @@ function asNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function plusOneMonthIso() {
-  const date = new Date();
-  date.setMonth(date.getMonth() + 1);
-  return date.toISOString();
-}
-
 function daysFromNow(days: number) {
   const date = new Date();
   date.setDate(date.getDate() + days);
@@ -282,31 +276,33 @@ function computeSummary(orders: DemoSiteOrder[]) {
   const activeOrders = orders.filter(
     (order) => order.status && ACTIVE_REVENUE_STATUSES.has(order.status) && order.billing_status !== "cancelled",
   );
-  const activeMrrOrders = orders.filter(
+  const pipelineMrrOrders = orders.filter(
     (order) => order.status && ACTIVE_MRR_STATUSES.has(order.status) && order.billing_status !== "cancelled",
   );
-  const paidOrders = orders.filter((order) => order.billing_status === "paid");
+  const paidOrders = orders.filter((order) => order.billing_status === "paid" && order.status !== "cancelled");
   const bookedSetupRevenue = activeOrders.reduce((sum, order) => sum + asNumber(order.setup_fee_nok), 0);
-  const activeMrr = activeMrrOrders.reduce((sum, order) => sum + asNumber(order.monthly_fee_nok), 0);
-  const paidRevenue = paidOrders.reduce(
-    (sum, order) => sum + asNumber(order.setup_fee_nok) + asNumber(order.monthly_fee_nok),
-    0,
-  );
-  const setupCosts = activeOrders.reduce((sum, order) => sum + asNumber(order.setup_cost_nok), 0);
-  const monthlyCosts = activeMrrOrders.reduce((sum, order) => sum + asNumber(order.monthly_cost_nok), 0);
+  const pipelineMrr = pipelineMrrOrders.reduce((sum, order) => sum + asNumber(order.monthly_fee_nok), 0);
+  const paidSetupRevenue = paidOrders.reduce((sum, order) => sum + asNumber(order.setup_fee_nok), 0);
+  const paidMrr = paidOrders.reduce((sum, order) => sum + asNumber(order.monthly_fee_nok), 0);
+  const setupCosts = paidOrders.reduce((sum, order) => sum + asNumber(order.setup_cost_nok), 0);
+  const monthlyCosts = paidOrders.reduce((sum, order) => sum + asNumber(order.monthly_cost_nok), 0);
 
   return {
     totalOrders: orders.length,
     activeOrders: activeOrders.length,
     paidOrders: paidOrders.length,
     bookedSetupRevenue,
-    paidRevenue,
-    activeMrr,
+    pipelineMrr,
+    paidRevenue: paidSetupRevenue,
+    paidSetupRevenue,
+    paidMrr,
+    activeMrr: paidMrr,
     setupCosts,
     monthlyCosts,
-    netSetup: bookedSetupRevenue - setupCosts,
-    netMrr: activeMrr - monthlyCosts,
-    arr: activeMrr * 12,
+    netSetup: paidSetupRevenue - setupCosts,
+    netMrr: paidMrr - monthlyCosts,
+    arr: paidMrr * 12,
+    pipelineArr: pipelineMrr * 12,
   };
 }
 
@@ -414,10 +410,10 @@ async function syncSaasMetrics(supabase: SupabaseClientLike, orders: DemoSiteOrd
   await supabase
     .from("saas_apps")
     .update({
-      total_users: summary.activeOrders,
-      active_users_30d: summary.activeOrders,
-      total_revenue: summary.bookedSetupRevenue,
-      mrr: summary.activeMrr,
+      total_users: summary.paidOrders,
+      active_users_30d: summary.paidOrders,
+      total_revenue: summary.paidRevenue,
+      mrr: summary.paidMrr,
       arr: summary.arr,
       updated_at: new Date().toISOString(),
     })
@@ -664,8 +660,6 @@ export async function POST(request: NextRequest) {
       setup_cost_nok: asNumber(body.setup_cost_nok),
       monthly_cost_nok: asNumber(body.monthly_cost_nok),
       currency: "NOK",
-      subscription_started_at: new Date().toISOString(),
-      subscription_renews_at: plusOneMonthIso(),
       template_slug: selectedTemplateSlug,
       target_subdomain: targetSubdomain,
       preview_url: previewUrl,
@@ -681,6 +675,8 @@ export async function POST(request: NextRequest) {
       editable_fields: {
         ...defaultEditableFields,
         ...incomingEditableFields,
+        order_origin: String(incomingEditableFields.order_origin || "seller_generated"),
+        source_channel: String(incomingEditableFields.source_channel || "realtyflow_internal"),
       },
       requested_changes: body.requested_changes || {},
       provisioning_log: [
