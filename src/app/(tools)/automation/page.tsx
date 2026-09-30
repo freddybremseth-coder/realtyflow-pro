@@ -174,11 +174,14 @@ export default function AutomationPage() {
   }
 
   const stats = useMemo(() => {
-    const active = rules.filter((rule) => rule.status === "active").length;
-    const successes = [...runs, ...logs].filter((item) => item.status === "success").length;
-    const errors = [...runs, ...logs].filter((item) => item.status === "error").length;
+    const legacyActive = rules.filter((rule) => rule.status === "active").length;
+    const active = registrySummary?.total ?? registry.length ?? legacyActive;
+    const successes = registrySummary?.healthy ?? [...runs, ...logs].filter((item) => item.status === "success").length;
+    const errors = registrySummary
+      ? registrySummary.attention + registrySummary.stale
+      : [...runs, ...logs].filter((item) => item.status === "error").length;
     return { active, successes, errors };
-  }, [rules, runs, logs]);
+  }, [rules, runs, logs, registry, registrySummary]);
 
   if (loading) {
     return (
@@ -222,8 +225,8 @@ export default function AutomationPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: "Aktive regler", value: stats.active, icon: Play, color: "text-emerald-400" },
-          { label: "Vellykkede kjøringer", value: stats.successes, icon: CheckCircle, color: "text-emerald-400" },
+          { label: "Planlagte automasjoner", value: stats.active, icon: Play, color: "text-emerald-400" },
+          { label: "Friske planlagte jobber", value: stats.successes, icon: CheckCircle, color: "text-emerald-400" },
           { label: "Feil som må sjekkes", value: stats.errors, icon: AlertCircle, color: "text-red-400" },
         ].map((stat) => (
           <Card key={stat.label}>
