@@ -27,7 +27,7 @@ type Payload = {
     conversionGoals: string[]; primaryCtas: string[]; updatedAt: string | null;
   };
   ownerFocus: Array<{
-    key: string; title: string; notes: string | null; intensity: number;
+    key: string; title: string; intensity: number;
     successDefinition: string | null; reviewDueAt: string | null;
   }>;
   attention: Attention[];
@@ -133,7 +133,6 @@ export function WorkspaceNexusInsightsPanel({ brandKey }: { brandKey: string }) 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <strong>{item.title}</strong><span className="text-xs text-cyan-300">Intensitet {item.intensity}</span>
           </div>
-          {item.notes && <p className="mt-1 text-xs text-slate-400">{item.notes}</p>}
           {item.successDefinition && <p className="mt-2 text-xs text-cyan-100">Mål: {item.successDefinition}</p>}
         </article>)}
       </div>
