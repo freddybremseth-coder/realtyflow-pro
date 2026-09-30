@@ -20,6 +20,10 @@ const setupRoute = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/saas/demosites/setup/route.ts"),
   "utf8",
 );
+const heroAssets = fs.readFileSync(
+  path.join(process.cwd(), "src/lib/demosites-hero-assets.ts"),
+  "utf8",
+);
 const classicRenderer = fs.readFileSync(
   path.join(process.cwd(), "src/components/demosites/demo-site-preview-renderer.tsx"),
   "utf8",
@@ -54,8 +58,9 @@ test("automatic nurture requires a customer-initiated, unpaid, quality-ready pre
   assert.match(followup, /language: "en"/);
 });
 
-test("manual setup edits recompute the customer-visible quality gate", () => {
+test("manual setup edits and final hero selection recompute the customer-visible quality gate", () => {
   assert.match(setupRoute, /editableFields\.quality_gate = evaluateDemoSiteQuality\(editableFields\)/);
+  assert.match(heroAssets, /fields\.quality_gate = evaluateDemoSiteQuality\(fields\)/);
 });
 
 test("both renderer families enforce responsive typography and usable touch targets", () => {
