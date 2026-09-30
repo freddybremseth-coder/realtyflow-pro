@@ -116,7 +116,29 @@ export async function POST(request: NextRequest) {
   });
 
   if (requested === "session_active") {
-    await supabase.from("portal_users").update({ status: "active", last_login_at: nowIso, updated_at: nowIso }).ilike("email", email);
+    const { data: portalUser } = await supabase
+      .from("portal_users")
+      .select("id,last_login_at,previous_login_at")
+      .ilike("email", email)
+      .eq("brand_id", "zeneco")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const lastLogin = portalUser?.last_login_at ? new Date(portalUser.last_login_at).getTime() : 0;
+    const startsNewSession = !lastLogin || now.getTime() - lastLogin > 30 * 60 * 1000;
+
+    if (portalUser?.id) {
+      await supabase
+        .from("portal_users")
+        .update({
+          status: "active",
+          previous_login_at: startsNewSession ? (portalUser.last_login_at || portalUser.previous_login_at || null) : portalUser.previous_login_at || null,
+          last_login_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq("id", portalUser.id);
+    }
   }
 
   if (decision.createWorkItem && !event.duplicate) {
