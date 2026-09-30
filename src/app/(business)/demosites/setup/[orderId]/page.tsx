@@ -235,6 +235,8 @@ export default function DemoSitesSetupEditorPage() {
     setMessage(null);
     setError(null);
     try {
+      const previousLanguage = normalizeDemoSiteLanguage(order?.editable_fields?.site_language);
+      const languageChanged = previousLanguage !== form.site_language;
       const response = await fetch("/api/saas/demosites/setup", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -242,7 +244,21 @@ export default function DemoSitesSetupEditorPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kunne ikke lagre oppsett.");
-      setMessage("Oppsett og designkonsept lagret.");
+
+      if (languageChanged) {
+        const enrichResponse = await fetch("/api/saas/demosites/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId, generate_images: false, regenerate_copy: true }),
+        });
+        const enrichData = await enrichResponse.json().catch(() => ({}));
+        if (!enrichResponse.ok) {
+          throw new Error(enrichData.error || "Språket ble lagret, men teksten kunne ikke regenereres.");
+        }
+        setMessage("Oppsett lagret. Tekst, tjenester, FAQ og CTA er regenerert i valgt språk.");
+      } else {
+        setMessage("Oppsett og designkonsept lagret.");
+      }
       await loadData();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Kunne ikke lagre oppsett.");
