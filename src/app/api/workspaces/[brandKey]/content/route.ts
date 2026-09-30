@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { resolveWebsiteCmsConfig, slugifyCmsTitle } from "@/lib/website-cms";
+import { aggregatePropertyContentLearning } from "@/lib/content/property-content-learning";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -146,6 +147,19 @@ export async function GET(
     }
   }
 
+  let opportunityLearning = aggregatePropertyContentLearning([]);
+  if (params.brandKey === "zeneco") {
+    const { data: learningRows, error: learningError } = await access.value.supabase
+      .from("property_content_learning_snapshots")
+      .select("opportunity_id,opportunity_type,search_arrivals,touchpoints,lead_touchpoints,publication_views,evidence_level,observed_at")
+      .eq("brand_id", params.brandKey)
+      .order("observed_at", { ascending: false })
+      .limit(400);
+    if (!learningError && Array.isArray(learningRows)) {
+      opportunityLearning = aggregatePropertyContentLearning(learningRows);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     brand: params.brandKey,
@@ -162,6 +176,7 @@ export async function GET(
     drafts: Array.isArray(snapshot.drafts) ? snapshot.drafts : [],
     published: Array.isArray(snapshot.published) ? snapshot.published : [],
     opportunities,
+    opportunityLearning,
   }, { headers: noStore });
 }
 
