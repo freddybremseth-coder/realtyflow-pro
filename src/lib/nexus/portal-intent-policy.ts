@@ -4,6 +4,7 @@ export type PortalIntentSignal =
   | "repeat_property_view"
   | "preferences_updated"
   | "property_interested"
+  | "property_not_for_me"
   | "favorite_saved"
   | "favorite_removed"
   | "alerts_updated"
@@ -66,6 +67,15 @@ const POLICY: Record<PortalIntentSignal, PortalIntentDecision> = {
     operationalTarget: "PROPERTY_MATCHING",
     createWorkItem: true,
     reason: "Customer marked a specific property as interesting",
+  },
+  property_not_for_me: {
+    hotLead: false,
+    priority: "MEDIUM",
+    responseMinutes: null,
+    aiScore: 64,
+    operationalTarget: "PROPERTY_MATCHING",
+    createWorkItem: true,
+    reason: "Customer rejected a suggested property",
   },
   favorite_saved: {
     hotLead: true,
