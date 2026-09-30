@@ -716,7 +716,7 @@ export default function WorkspaceUsersPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+        {plannedPrograms.length > 0 && <section className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
           <h3 className="font-semibold">Flere RealtyFlow-programmer</h3>
           <p className="mt-1 text-xs text-slate-400">Disse ligger i samme tilgangsmodell, men kan ikke gis til medarbeidere før hver modul har egen merkevare- og datasperre.</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -725,7 +725,7 @@ export default function WorkspaceUsersPage() {
               {program.label} · planlagt
             </span>)}
           </div>
-        </section>
+        </section>}
 
         <div className="flex flex-wrap gap-3">
           <button onClick={() => void submitUser()} disabled={busy}
