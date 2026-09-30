@@ -484,6 +484,11 @@ export function DemoSignatureSiteRenderer({
           .signature-site.demo-public-site h2 { font-size: clamp(1.9rem, 8.5vw, 2.65rem) !important; line-height: 1.02 !important; }
           .signature-site.demo-public-site p { max-width: 65ch; }
         }
+        @media (min-width: 768px) and (max-width: 1023px) {
+          .signature-site.demo-public-site h1 { font-size: clamp(3.4rem, 7vw, 4.8rem) !important; line-height: .98 !important; }
+          .signature-site.demo-public-site h2 { font-size: clamp(2.25rem, 5vw, 3.2rem) !important; line-height: 1.03 !important; }
+          .signature-site.demo-public-site section { scroll-margin-top: 6rem; }
+        }
         .signature-orbit { animation: signature-orbit 18s linear infinite; }
         .signature-float { animation: signature-float 7s ease-in-out infinite; }
         .signature-marquee { animation: signature-marquee 22s linear infinite; }
