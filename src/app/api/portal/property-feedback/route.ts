@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
   const eventType = action === "interested" ? "property_interested" : "property_not_for_me";
   const title = action === "interested" ? "Bolig markert interessant på Min side" : "Bolig markert ikke for meg på Min side";
-  const interestDecision = action === "interested" ? decidePortalIntent("property_interested") : null;
+  const decision = decidePortalIntent(action === "interested" ? "property_interested" : "property_not_for_me");
   const revenue = await insertRevenueEvent(supabase, {
     eventType,
     title,
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     sourceType: "property_feedback",
     sourceId: propertyId,
     actorType: "customer",
-    confidenceScore: interestDecision?.aiScore ?? 100,
+    confidenceScore: decision.aiScore,
     occurredAt: now,
     dedupeKey: buildRevenueEventDedupeKey(["portal_property_feedback", contact.id, propertyId, action, now.slice(0, 16)]),
     metadata: {
@@ -102,9 +102,9 @@ export async function POST(request: NextRequest) {
       channel: "portal",
       property_ref: property.ref || null,
       portal_signal: action === "interested" ? "property_interested" : "property_not_for_me",
-      hot_lead: interestDecision?.hotLead ?? false,
-      response_sla_minutes: interestDecision?.responseMinutes ?? null,
-      operational_target: interestDecision?.operationalTarget ?? null,
+      hot_lead: decision.hotLead,
+      response_sla_minutes: decision.responseMinutes,
+      operational_target: decision.operationalTarget,
     },
     createdBy: "api/portal/property-feedback",
   });
@@ -114,35 +114,38 @@ export async function POST(request: NextRequest) {
   if (action === "interested") contactUpdate.next_followup = now;
   await supabase.from("contacts").update(contactUpdate).eq("id", contact.id);
 
-  if (action === "interested") {
-    const decision = interestDecision!;
-    const sourceId = `portal:${contact.id}:${propertyId}`;
+  if (decision.createWorkItem) {
+    const sourceId = `portal:${contact.id}:${propertyId}:${action}`;
     const { data: existingWorkItem } = await supabase
       .from("work_items")
       .select("id")
-      .eq("source_type", "portal_property_interest")
+      .eq("source_type", action === "interested" ? "portal_property_interest" : "portal_property_feedback")
       .eq("source_id", sourceId)
       .in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"])
       .limit(1)
       .maybeSingle();
 
     const workItem = {
-      title: `Kunde interessert i bolig: ${contact.name || email}`,
+      title: action === "interested"
+        ? `Kunde interessert i bolig: ${contact.name || email}`
+        : `Kunde avviste bolig på Min side: ${contact.name || email}`,
       description: `${property.ref || property.title_no || property.title || propertyId} · ${property.location || property.town || ""}`,
       priority: decision.priority,
       due_date: now.slice(0, 10),
       brand_id: brandId,
-      source_type: "portal_property_interest",
+      source_type: action === "interested" ? "portal_property_interest" : "portal_property_feedback",
       source_id: sourceId,
       assigned_agent: "sales",
-      next_action: "Kunden er aktiv på Min side og markerte boligen som interessant. Svar raskt med detaljer, relevante spørsmål og forslag til neste steg.",
+      next_action: action === "interested"
+        ? "Kunden er aktiv på Min side og markerte boligen som interessant. Svar raskt med detaljer, relevante spørsmål og forslag til neste steg."
+        : "Se om avslaget tyder på at kriteriene eller boligforslagene bør justeres. Flere avslag på kort tid er et tydelig signal om å ta kontakt.",
       ai_score: decision.aiScore,
       metadata: {
-        ...portalWorkItemMetadata("property_interested", now),
+        ...portalWorkItemMetadata(action === "interested" ? "property_interested" : "property_not_for_me", now),
         contact_id: contact.id,
         property_id: propertyId,
         property_ref: property.ref || null,
-        portal_signal: "property_interested",
+        portal_signal: action === "interested" ? "property_interested" : "property_not_for_me",
       },
       updated_at: now,
     };
@@ -157,5 +160,6 @@ export async function POST(request: NextRequest) {
     contactId: contact.id,
     feedbackAvailable: !feedbackTableMissing,
     highPriorityFollowup: action === "interested",
+    followupSignal: decision.priority,
   }, { headers: { "cache-control": "private, no-store" } });
 }

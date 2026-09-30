@@ -253,6 +253,10 @@
       "schedule": "30 7 * * *"
     },
     {
+      "path": "/api/cron/portal-criteria-confirmation",
+      "schedule": "0,30 * * * *"
+    },
+    {
       "path": "/api/cron/lead-nurture",
       "schedule": "0 7 * * *"
     },
