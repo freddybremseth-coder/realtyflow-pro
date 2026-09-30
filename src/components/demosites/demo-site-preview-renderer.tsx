@@ -202,10 +202,21 @@ export function DemoSitePreviewRenderer({
   const Root = mode === "public" ? "main" : "div";
 
   return (
-    <Root className={`demo-design-root ${fonts.classNames} ${rootClass}`} style={rootStyle}>
+    <Root className={`demo-design-root ${mode === "public" ? "demo-public-site" : "demo-internal-site"} ${fonts.classNames} ${rootClass}`} style={rootStyle}>
       <style>{`
         .demo-design-root { font-family: var(--demo-font-body); }
         .demo-design-root h1, .demo-design-root h2, .demo-design-root h3 { font-family: var(--demo-font-heading); }
+        .demo-public-site { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+        .demo-public-site h1, .demo-public-site h2, .demo-public-site h3 { text-wrap: balance; overflow-wrap: anywhere; }
+        .demo-public-site p { text-wrap: pretty; }
+        .demo-public-site a, .demo-public-site button, .demo-public-site input, .demo-public-site select { min-height: 44px; }
+        .demo-public-site section { scroll-margin-top: 5.5rem; }
+        .demo-public-site img { display: block; }
+        @media (max-width: 767px) {
+          .demo-public-site h1 { font-size: clamp(2.35rem, 11.5vw, 3.5rem) !important; line-height: .98 !important; letter-spacing: -0.035em; }
+          .demo-public-site h2 { font-size: clamp(1.8rem, 8.5vw, 2.55rem) !important; line-height: 1.04 !important; }
+          .demo-public-site p { max-width: 65ch; }
+        }
       `}</style>
       {mode === "public" && <DemoReveal />}
       {mode === "public" && packageTier >= 2 && inquiryToken && (
