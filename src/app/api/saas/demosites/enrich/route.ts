@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       generateImages: body.generate_images !== false,
       regenerateImages: body.regenerate_images === true,
       imagesOnly: body.images_only === true,
+      regenerateCopy: body.regenerate_copy === true,
     });
     return NextResponse.json({ ok: true, result });
   } catch (err) {
