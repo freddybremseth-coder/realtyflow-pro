@@ -57,8 +57,8 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   },
   {
     id: "marketing",
-    label: "Markedsføring & innholdsutkast",
-    description: "Se kanalstatus og brand-avgrenset innhold, og lagre nye utkast uten å publisere.",
+    label: "Content Hub & sosiale medier",
+    description: "Se brand-avgrenset innhold, lag Facebook/Instagram-utkast og arbeid fra eiendommer inn i Content Hub.",
     status: "ready",
     brandScope: "all",
     readPermissions: ["marketing.read"],
@@ -138,8 +138,8 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   },
   {
     id: "email",
-    label: "E-post / Reach",
-    description: "Følg opp godkjente leads og Zen Corporate-selskapskanaler fra riktig brand-avsender. Reach brukes til kampanjeutkast uten automatisk abonnement.",
+    label: "Nyhetsbrev, e-post & Reach",
+    description: "Følg opp godkjente mottakere fra riktig brand-avsender og lag nyhetsbrev/Reach-kampanjer. Masseutsending krever fortsatt et godkjent abonnentgrunnlag.",
     status: "ready",
     brandScope: "all",
     readPermissions: ["email.read"],
