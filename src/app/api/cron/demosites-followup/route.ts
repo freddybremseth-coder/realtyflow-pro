@@ -31,10 +31,6 @@ function isInternalImportEmail(value: string) {
   return /^demosites-import\+[^@\s]+@chatgenius\.pro$/i.test(value.trim());
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "long" }).format(new Date(value));
-}
-
 type FollowupKind = "ready" | "midway" | "final";
 
 type FollowupOrder = {
@@ -55,11 +51,6 @@ function firstName(order: FollowupOrder) {
   const source = (order.customer_name || "").trim();
   if (!source || source.toLowerCase() === order.company_name.toLowerCase()) return "";
   return source.split(/\s+/)[0] || "";
-}
-
-function greeting(order: FollowupOrder) {
-  const name = firstName(order);
-  return name ? `Hi ${name},` : "Hi,";
 }
 
 function buildEmail(order: FollowupOrder, kind: FollowupKind) {
