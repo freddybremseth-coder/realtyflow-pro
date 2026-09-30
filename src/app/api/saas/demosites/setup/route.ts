@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
+import { evaluateDemoSiteQuality } from "@/lib/demosites-enrichment";
 import {
   DEMO_SITE_TEMPLATE_SEEDS,
   buildDefaultTemplateFields,
@@ -332,12 +333,14 @@ export async function PATCH(request: NextRequest) {
       template_slug: currentTemplateSlug,
     };
     const currentFields = mergeSetupContentDefaults(existingOrderForDefaults);
-    const editableFields = {
+    const editableFields: Record<string, unknown> = {
       ...currentFields,
       ...setupContent,
       template_slug: currentTemplateSlug,
       setup_updated_at: new Date().toISOString(),
     };
+    editableFields.quality_gate = evaluateDemoSiteQuality(editableFields);
+
     const patch: Record<string, unknown> = {
       editable_fields: editableFields,
       status: "in_setup",
