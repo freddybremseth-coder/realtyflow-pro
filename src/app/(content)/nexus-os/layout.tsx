@@ -39,6 +39,7 @@ const ADVANCED_LINKS = [
   { href: "/nexus-os/communications/audit", label: "E-post audit" },
   { href: "/nexus-os/runtime", label: "Automatisering – status" },
   { href: "/nexus-os/autonomy", label: "Autopilot-regler" },
+  { href: "/nexus-os/outbound-engagement", label: "Outbound & Engagement" },
   { href: "/social-automation", label: "Markedsføring" },
   { href: "/book-growth", label: "Bøker" },
 ] as const;
