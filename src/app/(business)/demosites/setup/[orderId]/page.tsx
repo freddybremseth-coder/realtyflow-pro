@@ -15,6 +15,7 @@ import {
   type DemoSiteLayout,
   type DemoSiteStyleId,
 } from "@/lib/demosites-design";
+import { DEMO_SITE_LANGUAGES, normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type SetupOrder = {
   id: string;
@@ -38,6 +39,7 @@ type FeesOrder = {
 type DemoSiteTemplate = { slug: string; name: string; description?: string | null };
 type SetupForm = {
   template_slug: string;
+  site_language: DemoSiteLanguage;
   layout_variant: DemoSiteLayout;
   style_preset: DemoSiteStyleId;
   hero_title: string;
@@ -61,6 +63,7 @@ const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_TEMPLATES = DEMO_SITE_TEMPLATE_SEEDS as DemoSiteTemplate[];
 const EMPTY_FORM: SetupForm = {
   template_slug: DEFAULT_TEMPLATE_SLUG,
+  site_language: "nb",
   layout_variant: "split",
   style_preset: "modern",
   hero_title: "",
@@ -110,6 +113,7 @@ function buildForm(fields: Record<string, unknown>, templateSlug: string): Setup
   const design = resolveDemoSiteDesign({ templateSlug, editableFields: fields });
   return {
     template_slug: templateSlug,
+    site_language: normalizeDemoSiteLanguage(fields.site_language),
     layout_variant: design.layout,
     style_preset: design.style,
     hero_title: text(fields.hero_title),
@@ -277,7 +281,10 @@ export default function DemoSitesSetupEditorPage() {
           <CardHeader><CardTitle className="text-white">Innhold og design på demosiden</CardTitle><CardDescription>Velg bransjemal, visuelt konsept, typografi, logo, tekst, farger og bilder.</CardDescription></CardHeader>
           <CardContent>
             <form onSubmit={saveSetup} className="space-y-4">
-              <Select label="Demo-mal / bransje" value={form.template_slug} onChange={(value) => setForm((current) => resetForTemplate(current, value, order?.company_name || "Bedriften"))} options={templates.map((item) => ({ value: item.slug, label: item.name }))} />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Select label="Demo-mal / bransje" value={form.template_slug} onChange={(value) => setForm((current) => resetForTemplate(current, value, order?.company_name || "Bedriften"))} options={templates.map((item) => ({ value: item.slug, label: item.name }))} />
+                <Select label="Språk på kundens nettside" value={form.site_language} onChange={(value) => setForm((current) => ({ ...current, site_language: value as DemoSiteLanguage }))} options={DEMO_SITE_LANGUAGES.map((language) => ({ value: language.id, label: language.nativeLabel }))} />
+              </div>
               <p className="text-xs leading-5 text-slate-400">Bransjemalen styrer innholdsforslag. Designkonseptet styrer den visuelle komposisjonen og beholdes når du bytter bransje.</p>
               {selectedTemplate?.description && <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">{selectedTemplate.description}</div>}
 
