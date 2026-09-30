@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
   // credential rows. Freddy sub-brands inherit the professional Freddy Meta
   // destination while keeping their own content/pipeline/learning identity.
   const rawChannels = channels ?? [];
-  const effectiveChannels = rawChannels.filter((channel: any) => {
+  const effectiveChannels: any[] = rawChannels.filter((channel: any) => {
     const brandId = String(channel.brand_id);
     const platform = String(channel.platform);
     return socialDestinationOwnerBrandId(brandId, platform) === brandId;
