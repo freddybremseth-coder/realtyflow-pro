@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
+import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
@@ -12,6 +12,7 @@ import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
 import { WorkspaceReelsPanel } from "@/components/workspaces/reels-panel";
 import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
+import { WorkspaceNexusInsightsPanel } from "@/components/workspaces/nexus-insights-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = {
@@ -31,7 +32,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
   { id: "growth", label: "Vekst & innhold", icon: TrendingUp, permitted: [
     "marketing.read", "marketing.draft", "marketing.publish",
     "reels.read", "reels.create", "reels.publish",
-    "youtube.read", "youtube.publish",
+    "youtube.read", "youtube.publish", "nexus.read",
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
@@ -120,13 +121,14 @@ export default function FocusedWorkspacePage() {
   const showMarketing = permissions.some(p => p.startsWith("marketing."));
   const showReels = ["zeneco", "pinosoecolife"].includes(brandKey) && permissions.includes("reels.read");
   const showYoutube = brandKey === "zeneco" && permissions.includes("youtube.read");
+  const showNexus = permissions.includes("nexus.read");
   const showGrowthTools = permissions.some(p => [
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
     "ads.read", "ads.draft", "events.plan",
     "content.read", "content.edit", "content.publish",
     "email.read", "email.draft", "email.send",
   ].includes(p));
-  const showGrowth = showReels || showYoutube || showGrowthTools;
+  const showGrowth = showReels || showYoutube || showNexus || showGrowthTools;
 
   function resetContactForm() {
     setEditingId(null); setFormName(""); setFormEmail(""); setFormPhone("");
@@ -219,6 +221,11 @@ export default function FocusedWorkspacePage() {
                 <Youtube size={25} className="text-red-400"/>
                 <h3 className="mt-3 text-lg font-semibold">Publiser til YouTube</h3>
                 <p className="mt-1 text-sm text-slate-400">Velg en ferdig Zen Reel, forhåndsvis den og publiser som YouTube Short til verifisert Zen-kanal.</p>
+              </button>}
+              {showNexus && <button onClick={() => setTab("growth")} className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5 text-left hover:border-violet-500">
+                <BrainCircuit size={25} className="text-violet-300"/>
+                <h3 className="mt-3 text-lg font-semibold">Se hva Nexus lærer</h3>
+                <p className="mt-1 text-sm text-slate-400">Brand-avgrenset innsikt om kilder, læring, vekstplan og hva som faktisk trenger oppmerksomhet.</p>
               </button>}
               {showProperties && <button onClick={() => setTab("properties")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
                 <Building2 size={25} className="text-cyan-400"/>
@@ -343,6 +350,15 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
             {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
+            {showNexus && <details open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
+              <summary className="cursor-pointer list-none p-5">
+                <strong className="text-lg text-violet-100">Nexus OS · innsikt</strong>
+                <p className="mt-1 text-sm text-slate-400">Se hva Nexus lærer og prioriterer uten tilgang til runtime, autonomy eller utførelse.</p>
+              </summary>
+              <div className="border-t border-slate-800 p-5">
+                <WorkspaceNexusInsightsPanel brandKey={brandKey} />
+              </div>
+            </details>}
             {showReels && <details open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">Reels Studio</strong>

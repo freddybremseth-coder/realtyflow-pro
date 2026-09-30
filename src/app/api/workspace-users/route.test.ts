@@ -157,8 +157,8 @@ test("create user sends a self-service invite and configures safe multi-brand pe
     organization: "Search Partner AS",
     accessExpiresAt: "2027-03-31T21:59:59.000Z",
     brandAccess: [
-      { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read"] },
-      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read","youtube.read","youtube.publish"] },
+      { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read","nexus.read"] },
+      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read","youtube.read","youtube.publish","nexus.read"] },
     ],
   }) as any);
   assert.equal(response.status, 201);

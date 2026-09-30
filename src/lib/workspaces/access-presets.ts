@@ -22,6 +22,7 @@ export type WorkspaceAccessPresetChoice = {
   reelsPublish: boolean;
   youtubeRead: boolean;
   youtubePublish: boolean;
+  nexusRead: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -43,6 +44,7 @@ function blank(): WorkspaceAccessPresetChoice {
     marketingRead: false, marketingDraft: false, marketingPublish: false,
     reelsRead: false, reelsCreate: false, reelsPublish: false,
     youtubeRead: false, youtubePublish: false,
+    nexusRead: false,
     corporateRead: false, corporatePlan: false,
     visibilityRead: false, visibilityPlan: false,
     adsRead: false, adsDraft: false, eventsPlan: false,
@@ -69,6 +71,7 @@ export function workspaceAccessPresetChoice(
       contentRead: true,
       contentEdit: true,
       contentPublish: true,
+      nexusRead: true,
     };
   }
 
@@ -105,6 +108,7 @@ export function workspaceAccessPresetChoice(
       contentRead: true,
       contentEdit: true,
       contentPublish: true,
+      nexusRead: true,
     };
   }
 
@@ -122,6 +126,7 @@ export function workspaceAccessPresetChoice(
       adsRead: true,
       contentRead: true,
       emailRead: true,
+      nexusRead: true,
     };
   }
 
@@ -139,5 +144,6 @@ export function workspaceAccessPresetChoice(
     eventsPlan: true,
     contentRead: true,
     contentEdit: true,
+    nexusRead: true,
   };
 }

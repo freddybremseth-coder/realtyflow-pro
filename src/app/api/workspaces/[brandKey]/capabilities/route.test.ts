@@ -189,6 +189,17 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
     const blockedPinosoYoutube = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
     assert.equal(blockedPinosoYoutube.status, 200);
     assert.deepEqual((await blockedPinosoYoutube.json()).permissions, ["properties.catalog.read"]);
+
+    currentPermissions = ["nexus.read"];
+    const pinosoNexus = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
+    assert.equal(pinosoNexus.status, 200);
+    assert.deepEqual((await pinosoNexus.json()).permissions, ["nexus.read"]);
+
+    currentBrand = "zeneco";
+    currentPermissions = ["nexus.read"];
+    const zenNexus = await GET(request(signed) as any, { params: { brandKey: "zeneco" } });
+    assert.equal(zenNexus.status, 200);
+    assert.deepEqual((await zenNexus.json()).permissions, ["nexus.read"]);
   } finally {
     globalThis.fetch = previous.fetch;
     for (const [key, value] of [

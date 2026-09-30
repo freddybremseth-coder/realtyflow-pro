@@ -147,11 +147,11 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   },
   {
     id: "nexus",
-    label: "Nexus OS",
-    description: "Automasjon og runtime-kontroller er eierstyrt inntil egne begrensede medarbeiderruter finnes.",
-    status: "planned",
+    label: "Nexus OS · innsikt",
+    description: "Brand-avgrenset, read-only oversikt over hva Nexus lærer, kilder som trenger oppmerksomhet, vekstplan og eierfokus. Ingen runtime, autonomy eller utførelse.",
+    status: "ready",
     brandScope: "all",
-    readPermissions: [],
+    readPermissions: ["nexus.read"],
     writePermissions: [],
   },
 ];
@@ -175,6 +175,7 @@ export function programPermissions(params: {
   reelsPublish: boolean;
   youtubeRead: boolean;
   youtubePublish: boolean;
+  nexusRead: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -214,6 +215,7 @@ export function programPermissions(params: {
     if (params.youtubeRead || params.youtubePublish) result.add("youtube.read");
     if (params.youtubePublish) result.add("youtube.publish");
   }
+  if (params.nexusRead) result.add("nexus.read");
   if (params.brandKey === "zeneco" && (params.corporateRead || params.corporatePlan)) result.add("corporate.read");
   if (params.brandKey === "zeneco" && params.corporatePlan) result.add("corporate.plan");
   if (params.visibilityRead || params.visibilityPlan) result.add("visibility.read");

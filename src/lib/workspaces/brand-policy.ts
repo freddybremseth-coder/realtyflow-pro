@@ -14,6 +14,7 @@ export const WORKSPACE_PERMISSIONS = [
   "reels.publish",
   "youtube.read",
   "youtube.publish",
+  "nexus.read",
   "corporate.read",
   "corporate.plan",
   "visibility.read",

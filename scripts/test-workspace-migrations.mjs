@@ -23,6 +23,7 @@ const files = [
   "20260928205000_workspace_external_collaborators.sql",
   "20260928213000_workspace_reels_studio.sql",
   "20260929213000_workspace_youtube_studio.sql",
+  "20260930143000_workspace_nexus_insights.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -1069,6 +1070,12 @@ try {
     "Workspace user configure accepted phase-one YouTube access on Pinoso");
   verify(await configureManaged([{ brandKey: "zeneco", permissions: ["youtube.read","youtube.publish"] }]) === true,
     "Workspace user configure rejected complete Zen YouTube scope");
+  verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["nexus.read"] }]) === true,
+    "Workspace user configure rejected read-only Pinoso Nexus insight scope");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["nexus.read"] }]) === true,
+    "Workspace user configure rejected read-only Zen Nexus insight scope");
+  verify(await configureManaged([{ brandKey: "zeneco", permissions: ["nexus.write"] }]) === false,
+    "Workspace user configure accepted nonexistent Nexus write permission");
   verify(await configureManaged([{ brandKey: "pinosoecolife", permissions: ["marketing.read","marketing.draft","marketing.publish"] }]) === true,
     "Workspace user configure fixture did not restore marketing scope after Reel permission tests");
 

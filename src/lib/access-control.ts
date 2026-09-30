@@ -161,6 +161,8 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
       ["GET", "POST"].includes(method.toUpperCase())) return "AUTHENTICATED";
     if (workspaceRoute === "youtube" && workspaceParts[3] === "zeneco" &&
       ["GET", "POST"].includes(method.toUpperCase())) return "AUTHENTICATED";
+    if (workspaceRoute === "nexus-insights" && method.toUpperCase() === "GET")
+      return "AUTHENTICATED";
   }
   if (path.startsWith("/api/access-control")) return "OWNER_ONLY";
   if (path.startsWith("/api/platform")) return "OWNER_ONLY";
