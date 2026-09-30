@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { detectPropertyEditorialOpportunities, type EditorialPropertyFact } from "./property-editorial-opportunities";
+import { detectPropertyEditorialOpportunities, selectDiversePropertyEditorialOpportunities, type EditorialPropertyFact } from "./property-editorial-opportunities";
 
 const p = (overrides: Partial<EditorialPropertyFact>): EditorialPropertyFact => ({
   id: crypto.randomUUID(),
@@ -74,4 +74,34 @@ test("rejects inconsistent normalized town and source location", () => {
     p({ id:"m2", ref:"M2", town:"Polop", location:"Polop, Urbanizaciones", price:470000, areaM2:200 }),
   ]);
   assert.equal(opportunities.length, 0);
+});
+
+
+test("diversifies the visible queue across properties and areas before relaxing", () => {
+  const row = (
+    id: string,
+    score: number,
+    refs: string[],
+    town: string,
+  ) => ({
+    id,
+    opportunityType: "same_price_area_gap",
+    score,
+    title: id,
+    propertyRefs: refs,
+    evidence: { properties: refs.map(ref => ({ ref, town, location: town })) },
+  });
+
+  const visible = selectDiversePropertyEditorialOpportunities([
+    row("a", 99, ["P1", "P2"], "Finestrat"),
+    row("b", 98, ["P1", "P3"], "Finestrat"),
+    row("c", 97, ["P4", "P5"], "Finestrat"),
+    row("d", 96, ["V1", "V2"], "Villajoyosa"),
+    row("e", 95, ["L1", "L2"], "La Nucía"),
+    row("f", 94, ["C1", "C2"], "Calpe"),
+  ], 4);
+
+  assert.equal(visible.length, 4);
+  assert.deepEqual(visible.map(item => item.id), ["a", "d", "e", "f"]);
+  assert.equal(visible.filter(item => item.propertyRefs.includes("P1")).length, 1);
 });
