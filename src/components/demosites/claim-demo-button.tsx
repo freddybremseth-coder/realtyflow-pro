@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { CheckCircle, CreditCard, Loader2 } from "lucide-react";
+import { getDemoSiteClaimCopy, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type ClaimDemoButtonProps = {
   token: string;
   alreadyClaimed?: boolean;
   expired?: boolean;
   paid?: boolean;
+  language?: DemoSiteLanguage;
 };
 
 /**
@@ -15,7 +17,8 @@ type ClaimDemoButtonProps = {
  * in one payment). The flow fails closed when payment is unavailable, so a
  * temporary provider/configuration problem can never grant unpaid access.
  */
-export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimDemoButtonProps) {
+export function ClaimDemoButton({ token, alreadyClaimed, expired, paid, language = "nb" }: ClaimDemoButtonProps) {
+  const copy = getDemoSiteClaimCopy(language);
   const [loading, setLoading] = useState(false);
   const [seoAddon, setSeoAddon] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,15 +34,15 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
         body: JSON.stringify({ token, seo_addon: seoAddon }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Kunne ikke starte betalingen.");
+      if (!response.ok) throw new Error(data.error || copy.checkoutError);
 
       if (data.url || data.checkout_url) {
         window.location.href = data.url || data.checkout_url;
         return;
       }
-      throw new Error("Betalingsleverandøren returnerte ingen checkout-lenke.");
+      throw new Error(copy.checkoutMissingUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke starte betalingen.");
+      setError(err instanceof Error ? err.message : copy.checkoutError);
     } finally {
       setLoading(false);
     }
@@ -49,13 +52,13 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
     return (
       <div className="rounded-xl bg-emerald-500/20 p-3 text-sm font-medium text-emerald-50">
         <CheckCircle className="mr-2 inline h-4 w-4" />
-        Betaling mottatt! Vi klargjør og publiserer siden din.
+        {copy.checkoutPaid}
       </div>
     );
   }
 
   if (expired) {
-    return <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-100">Denne prøvesiden er utløpt. Kontakt ChatGenius, så åpner vi den igjen.</div>;
+    return <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-100">{copy.checkoutExpired}</div>;
   }
 
   return (
@@ -63,7 +66,7 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
       {alreadyClaimed && (
         <div className="rounded-xl bg-emerald-500/20 p-3 text-sm font-medium text-emerald-50">
           <CheckCircle className="mr-2 inline h-4 w-4" />
-          Siden er reservert. Du kan fullføre betaling når du er klar.
+          {copy.checkoutReserved}
         </div>
       )}
       <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm">
@@ -74,10 +77,10 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
           className="mt-0.5 h-4 w-4 accent-emerald-400"
         />
         <span>
-          <span className="font-semibold text-emerald-50">SEO & Google-optimalisering</span>{" "}
-          <span className="text-emerald-100/80">+490 kr (engangsbeløp)</span>
+          <span className="font-semibold text-emerald-50">{copy.seoTitle}</span>{" "}
+          <span className="text-emerald-100/80">{copy.seoPrice}</span>
           <span className="mt-0.5 block text-xs text-emerald-100/70">
-            Søkeordsoptimalisering, Google Business-profil og synlighet i lokale søk — satt opp én gang, virker videre.
+            {copy.seoDescription}
           </span>
         </span>
       </label>
@@ -88,10 +91,10 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
         className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-4 py-3.5 text-sm font-bold text-slate-950 transition-transform hover:scale-[1.01] hover:bg-emerald-300 disabled:opacity-70"
       >
         {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-        {loading ? "Åpner sikker betaling..." : "Bestill og betal nå"}
+        {loading ? copy.checkoutLoading : copy.checkoutButton}
       </button>
       <p className="text-center text-[11px] text-slate-400">
-        Sikker betaling via Stripe · Oppstart + første måned · Ingen bindingstid utover måneden
+        {copy.checkoutSecurity}
       </p>
       {error && <div className="rounded-lg bg-red-500/10 p-3 text-xs text-red-100">{error}</div>}
     </div>
