@@ -64,7 +64,7 @@ interface Customer360Payload {
   warnings: string[];
 }
 
-type CustomerCardTab = "overview" | "update" | "timeline" | "property";
+type CustomerCardTab = "overview" | "update" | "timeline" | "property" | "portal";
 type CustomerUpdateTab = "details" | "update";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -163,6 +163,8 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   const [updateDefaultTab, setUpdateDefaultTab] = useState<CustomerUpdateTab>("update");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [portalData, setPortalData] = useState<Record<string, any> | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -184,6 +186,25 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
     setUpdateDefaultTab("update");
     void load();
   }, [contactId]);
+
+  useEffect(() => {
+    if (tab !== "portal") return;
+    let cancelled = false;
+    setPortalLoading(true);
+    fetch(`/api/crm/portal-admin?contactId=${encodeURIComponent(contactId)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body?.error || "Kunne ikke hente Min side-data.");
+        if (!cancelled) setPortalData(body);
+      })
+      .catch((portalError) => {
+        if (!cancelled) setPortalData({ error: portalError instanceof Error ? portalError.message : String(portalError) });
+      })
+      .finally(() => {
+        if (!cancelled) setPortalLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [tab, contactId]);
 
   function openCustomerUpdate() {
     setUpdateDefaultTab("update");
@@ -261,6 +282,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
               ["update", "Detaljer & oppdatering"],
               ["timeline", "Historikk"],
               ["property", "Kjøperprofil, boliger & oppgaver"],
+              ["portal", "Min side"],
             ] as Array<[CustomerCardTab, string]>).map(([id, label]) => (
               <button key={id} onClick={() => id === "update" ? openCustomerUpdate() : setTab(id)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm transition ${tab === id ? "bg-cyan-500/15 text-cyan-100" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                 {label}
@@ -348,6 +370,73 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                   </div>
                   <CustomerSalesAssistantNote contactId={contactId} onSaved={() => void load()} />
                   <CustomerUpdatePanel contactId={contactId} defaultExpanded defaultTab={updateDefaultTab} onSaved={() => void load()} />
+                </div>
+              )}
+
+              {tab === "portal" && (
+                <div className="space-y-4">
+                  <section className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Min side</p>
+                        <h3 className="mt-1 text-xl font-semibold text-white">Kundeportal for {data.contact.name || data.contact.email}</h3>
+                        <p className="mt-2 text-sm text-slate-400">Portalstatus, dialog, dokumenter og aktuelle bolig-/tomteforslag samlet på kundekortet.</p>
+                      </div>
+                      <Button asChild variant="outline" size="sm"><Link href="/nexus-os/portal-engagement">Se all Min side-aktivitet</Link></Button>
+                    </div>
+                  </section>
+
+                  {portalLoading ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 p-5 text-slate-400"><Loader2 size={18} className="animate-spin" />Henter Min side …</div>
+                  ) : portalData?.error ? (
+                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{portalData.error}</div>
+                  ) : (
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                        <h3 className="font-semibold text-white">Portalstatus</h3>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {portalData?.portalUser
+                            ? `Status: ${portalData.portalUser.status || "aktiv"} · ${portalData.portalUser.email || data.contact.email}`
+                            : "Min side er ikke aktivert for denne kunden ennå."}
+                        </p>
+                        <div className="mt-4 flex gap-2">
+                          <Button asChild size="sm" variant="outline"><Link href="/nexus-os/portal-engagement">Portalaktivitet</Link></Button>
+                        </div>
+                      </section>
+
+                      <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                        <h3 className="font-semibold text-white">Meldinger</h3>
+                        <p className="mt-2 text-3xl font-bold text-white">{Array.isArray(portalData?.messages) ? portalData.messages.length : 0}</p>
+                        <p className="text-sm text-slate-500">meldinger i Min side-dialogen</p>
+                        {Array.isArray(portalData?.messages) && portalData.messages.slice(0, 3).map((message: any) => (
+                          <div key={message.id} className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-sm text-slate-300">
+                            <strong>{message.sender_type === "customer" ? "Kunden" : message.sender_name || "Zen Eco Homes"}</strong>
+                            <p className="mt-1 line-clamp-3 text-slate-400">{message.body}</p>
+                          </div>
+                        ))}
+                      </section>
+
+                      <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                        <h3 className="font-semibold text-white">Dokumenter</h3>
+                        <p className="mt-2 text-3xl font-bold text-white">{Array.isArray(portalData?.documents) ? portalData.documents.length : 0}</p>
+                        <p className="text-sm text-slate-500">publisert til kunden</p>
+                        {Array.isArray(portalData?.documents) && portalData.documents.slice(0, 4).map((doc: any) => (
+                          <div key={doc.id} className="mt-3 flex items-start gap-2 text-sm text-slate-300"><FileText size={15} className="mt-0.5 text-cyan-300" /><span>{doc.title}</span></div>
+                        ))}
+                      </section>
+
+                      <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                        <h3 className="font-semibold text-white">Aktuelle matcher</h3>
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3"><p className="text-2xl font-bold text-white">{Array.isArray(portalData?.properties) ? portalData.properties.length : 0}</p><p className="text-xs text-slate-500">boliger</p></div>
+                          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3"><p className="text-2xl font-bold text-white">{Array.isArray(portalData?.plots) ? portalData.plots.length : 0}</p><p className="text-xs text-slate-500">tomter</p></div>
+                        </div>
+                        {Array.isArray(portalData?.properties) && portalData.properties.slice(0, 4).map((property: any) => (
+                          <div key={property.id} className="mt-3 flex items-start gap-2 text-sm text-slate-300"><Home size={15} className="mt-0.5 text-cyan-300" /><span>{property.title_no || property.title || property.ref || property.id} {property.price ? `· ${money(property.price)}` : ""}</span></div>
+                        ))}
+                      </section>
+                    </div>
+                  )}
                 </div>
               )}
 
