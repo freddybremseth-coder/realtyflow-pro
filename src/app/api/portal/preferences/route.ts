@@ -41,6 +41,50 @@ function formatPreferences(preferences: Record<string, unknown>) {
     .join("\n");
 }
 
+export async function GET(request: NextRequest) {
+  const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 500 });
+
+  const authHeader = request.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) return NextResponse.json({ error: "Missing portal session" }, { status: 401 });
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const user = userData.user;
+  if (userError || !user?.email) {
+    return NextResponse.json({ error: "Invalid portal session" }, { status: 401 });
+  }
+
+  const email = user.email.toLowerCase();
+  const { data: contact, error } = await supabase
+    .from("contacts")
+    .select("id,email,interactions")
+    .ilike("email", email)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const interactions = Array.isArray(contact?.interactions) ? contact.interactions : [];
+  let preferences: Record<string, unknown> = {};
+
+  for (const interaction of interactions) {
+    const metadata = interaction && typeof interaction === "object"
+      ? (interaction as Record<string, any>).metadata
+      : null;
+    const candidate = metadata && typeof metadata === "object"
+      ? (metadata as Record<string, any>).buyer_preferences
+      : null;
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      preferences = candidate as Record<string, unknown>;
+      break;
+    }
+  }
+
+  return NextResponse.json({ success: true, preferences, contactId: contact?.id || null });
+}
+
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 500 });
