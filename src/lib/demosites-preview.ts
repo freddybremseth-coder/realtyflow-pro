@@ -3,6 +3,7 @@ import {
   type DemoSiteFaqItem,
   type DemoSiteTemplateDefaults,
 } from "@/lib/demosites";
+import { normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 export type DemoSitesPreviewMode = "internal" | "public";
 export type DemoSitesPreviewFallbackMode = "defaults" | "placeholders";
@@ -53,6 +54,7 @@ export type DemoSitesPreviewEmployee = {
 
 export type DemoSitesPreviewModel = {
   companyName: string;
+  language: DemoSiteLanguage;
   templateSlug: string;
   templateLabel: string;
   websiteUrl: string;
@@ -359,6 +361,7 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
   const fallbackMode = input.fallbackMode || "defaults";
   const fields = input.editableFields || {};
   const profile = getProfileRecord(input);
+  const language = normalizeDemoSiteLanguage(fields.site_language || fields.content_language || profile.site_language || profile.language);
   const templateSlug = getTemplateSlug(input, fields, profile);
   const companyName = getCompanyName(input, profile, fallbackMode);
   const defaults = getDemoSiteTemplateDefaults(templateSlug, companyName === PLACEHOLDERS.companyName ? "Bedriften" : companyName);
@@ -483,6 +486,7 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
 
   return {
     companyName,
+    language,
     templateSlug: defaults.template_slug,
     templateLabel: input.templateLabel || defaults.template_name,
     websiteUrl,
