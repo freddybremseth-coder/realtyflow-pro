@@ -217,6 +217,7 @@ function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
   if (resource === "social-publish") return ["GET", "POST"].includes(verb);
   if (resource === "reels") return ["zeneco", "pinosoecolife"].includes(brand) && ["GET", "POST"].includes(verb);
   if (resource === "youtube") return brand === "zeneco" && ["GET", "POST"].includes(verb);
+  if (resource === "nexus-insights") return verb === "GET";
   if (resource === "contacts") return brand !== "zeneco" && ["GET", "POST", "PATCH"].includes(verb);
   if (resource === "joint-contacts") return brand === "zeneco" && ["GET", "PATCH"].includes(verb);
   if (resource === "joint-tasks") return brand === "zeneco" && ["GET", "POST", "PATCH"].includes(verb);
