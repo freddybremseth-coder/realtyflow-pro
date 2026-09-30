@@ -165,7 +165,7 @@ export function DemoSitePreviewRenderer({
   // standard adds offers/FAQ (+ AI receptionist), premium adds the team.
   const packageTier = packageId === "premium" ? 3 : packageId === "basis" ? 1 : 2;
   const showOfferSection = packageTier >= 2 && (mode === "internal" || preview.hasCustomProducts || preview.hasCustomPrices);
-  const showFaqSection = packageTier >= 2;
+  const showFaqSection = packageTier >= 2 && (mode === "internal" || content.faq.length > 0);
   const showTeamSection = packageTier >= 3 && preview.employees.length > 0;
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
