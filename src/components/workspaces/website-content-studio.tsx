@@ -65,13 +65,16 @@ type OpportunityLearningType = {
   publicationViews: number;
   evidenceLevel: "insufficient" | "emerging" | "measured";
   readyForReview: boolean;
+  advisoryScore?: number;
   note: string;
 };
 type OpportunityLearning = {
-  mode: "observe_only";
+  mode: "observe_only" | "advisory_priority";
   updatedAt?: string | null;
   observedArticles: number;
   readyForReview: boolean;
+  recommendedOpportunityType?: string | null;
+  recommendationReason?: string | null;
   totals: {
     searchArrivals: number;
     touchpoints: number;
@@ -104,6 +107,8 @@ function splitCsv(value: string) {
 const EMPTY_OPPORTUNITY_LEARNING: OpportunityLearning = {
   mode: "observe_only",
   updatedAt: null,
+  recommendedOpportunityType: null,
+  recommendationReason: null,
   observedArticles: 0,
   readyForReview: false,
   totals: { searchArrivals: 0, touchpoints: 0, leadTouchpoints: 0, publicationViews: 0 },
@@ -449,14 +454,20 @@ export function WorkspaceWebsiteContentStudio({
               <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Nexus · innholdslæring</p>
               <h3 className="mt-1 text-lg font-semibold text-white">Hva gir signalartiklene faktisk?</h3>
               <p className="mt-1 max-w-3xl text-sm text-slate-400">
-                Nexus måler bare sporbar effekt fra publiserte signalartikler. Foreløpig observerer systemet – det endrer ikke score eller publiserer noe automatisk.
+                Nexus måler bare sporbar effekt fra publiserte signalartikler. Når minst tre artikler gir tilstrekkelig evidens, kan signaltypen løftes i forslaglisten. Lagret score endres ikke, og ingenting publiseres automatisk.
               </p>
             </div>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800 bg-emerald-950/40 px-3 py-1 text-xs font-semibold text-emerald-200">
-            <ShieldCheck size={14}/> Observe-only
+            <ShieldCheck size={14}/> {data.opportunityLearning.mode === "advisory_priority" ? "Lærer · prioriterer forslag" : "Observe-only"}
           </span>
         </div>
+
+        {data.opportunityLearning.recommendationReason && (
+          <p className="mt-4 rounded-xl border border-cyan-800/60 bg-cyan-950/20 p-3 text-sm text-cyan-100">
+            <strong>Nexus prioriterer nå:</strong> {opportunityTypeLabel(data.opportunityLearning.recommendedOpportunityType || "")}. {data.opportunityLearning.recommendationReason}
+          </p>
+        )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
