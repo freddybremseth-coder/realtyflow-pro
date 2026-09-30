@@ -369,8 +369,8 @@ export function GrowthCorporatePanel({
         </button>}
         {availableAreas.includes("email") && <button type="button" onClick={() => setArea("email")}
           className={`rounded-xl border p-4 text-left ${area === "email" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
-          <Mail size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Følg opp med e-post / Reach</strong>
-          <span className="mt-1 block text-xs text-slate-500">Godkjente leads, Corporate og kampanjeutkast</span>
+          <Mail size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Nyhetsbrev, e-post & Reach</strong>
+          <span className="mt-1 block text-xs text-slate-500">Én-til-én, nyhetsbrevutkast og kampanjer</span>
         </button>}
         {availableAreas.includes("visibility") && <button type="button" onClick={() => setArea("visibility")}
           className={`rounded-xl border p-4 text-left ${area === "visibility" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
