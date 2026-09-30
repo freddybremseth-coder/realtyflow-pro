@@ -515,6 +515,17 @@ export function formatDemoSiteDate(value: string | null | undefined, language: u
   return new Intl.DateTimeFormat(getDemoSiteLanguageConfig(language).locale, { dateStyle: "medium" }).format(new Date(value));
 }
 
+type DemoSiteFollowupLocaleCopy = {
+  hello: string;
+  readySubject: string;
+  ready: string[];
+  midwaySubject: string;
+  midway: string[];
+  finalSubject: string;
+  final: string[];
+  signoff: string;
+};
+
 export function buildDemoSiteFollowupEmail(
   languageValue: unknown,
   kind: DemoSiteFollowupKind,
@@ -523,7 +534,7 @@ export function buildDemoSiteFollowupEmail(
   const language = normalizeDemoSiteLanguage(languageValue);
   const helloName = input.greetingName ? ` ${input.greetingName}` : "";
   const expiry = input.expiresAt ? formatDemoSiteDate(input.expiresAt, language) : "";
-  const lines = {
+  const lines: Record<DemoSiteLanguage, DemoSiteFollowupLocaleCopy> = {
     nb: {
       hello: `Hei${helloName},`,
       readySubject: `Nettsidedemoen for ${input.company} er klar`,
@@ -604,7 +615,7 @@ export function buildDemoSiteFollowupEmail(
       final: ["Demoen udløber snart.", input.previewUrl, "", "Hvis du vil beholde siden og gå videre:", input.claimUrl, "", "Svar gerne hvis du vil ændre noget, før du beslutter dig."],
       signoff: "Venlig hilsen\nChatGenius DemoSites",
     },
-  } as const;
+  };
   const t = lines[language];
   const subject = kind === "final" ? t.finalSubject : kind === "midway" ? t.midwaySubject : t.readySubject;
   const body = kind === "final" ? t.final : kind === "midway" ? t.midway : t.ready;
