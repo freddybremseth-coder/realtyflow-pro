@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
 import { useParams } from "next/navigation";
-import { WorkspacePropertyCatalogue } from "@/components/workspaces/property-catalogue";
+import { WorkspacePropertyCatalogue, type WorkspacePropertyCard } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
 import { GrowthCorporatePanel } from "@/components/workspaces/growth-corporate-panel";
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
 import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
-import { WorkspaceReelsPanel } from "@/components/workspaces/reels-panel";
+import { WorkspaceReelsPanel, type WorkspaceReelPropertySeed } from "@/components/workspaces/reels-panel";
 import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
 import { WorkspaceNexusInsightsPanel } from "@/components/workspaces/nexus-insights-panel";
 import { WorkspaceTodayPriorities } from "@/components/workspaces/today-priorities";
@@ -66,6 +66,7 @@ export default function FocusedWorkspacePage() {
   const [contactError, setContactError] = useState("");
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
@@ -365,7 +366,18 @@ export default function FocusedWorkspacePage() {
           </section>
         )}
         {!loading && !error && showProperties && tab === "properties" &&
-          <WorkspacePropertyCatalogue brandKey={brandKey} />}
+          <WorkspacePropertyCatalogue
+            brandKey={brandKey}
+            canCreateMarketing={permissions.includes("marketing.draft")}
+            canCreateReel={permissions.includes("reels.create")}
+            onCreateReel={(property: WorkspacePropertyCard) => {
+              setReelPropertySeed({
+                id: property.id, ref: property.ref, title: property.title,
+                town: property.town, location: property.location,
+              });
+              setTab("growth");
+            }}
+          />}
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
             {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
@@ -384,7 +396,8 @@ export default function FocusedWorkspacePage() {
                 <p className="mt-1 text-sm text-slate-400">Lag og forhåndsvis Reels uten å åpne Re-Master-admin.</p>
               </summary>
               <div className="border-t border-slate-800 p-5">
-                <WorkspaceReelsPanel brandKey={brandKey} canCreate={permissions.includes("reels.create")} canPublish={permissions.includes("reels.publish")} />
+                <WorkspaceReelsPanel brandKey={brandKey} canCreate={permissions.includes("reels.create")} canPublish={permissions.includes("reels.publish")}
+                  initialProperty={reelPropertySeed} onInitialPropertyConsumed={() => setReelPropertySeed(null)} />
               </div>
             </details>}
             {showYoutube && <details open className="rounded-2xl border border-red-900/60 bg-slate-900/70">
@@ -398,8 +411,8 @@ export default function FocusedWorkspacePage() {
             </details>}
             {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
-                <strong className="text-lg">Lag innhold til sosiale medier</strong>
-                <p className="mt-1 text-sm text-slate-400">Åpne bare når du skal skrive, se tidligere innhold eller velge kanal.</p>
+                <strong className="text-lg">Content Hub · innlegg og utkast</strong>
+                <p className="mt-1 text-sm text-slate-400">Lag egne Facebook/Instagram-utkast, se tidligere innhold og velg målkanal innenfor denne merkevaren.</p>
               </summary>
               <div className="border-t border-slate-800 p-5">
                 <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />
