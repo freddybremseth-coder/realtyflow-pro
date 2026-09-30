@@ -905,7 +905,8 @@ export async function enrichDemoSiteOrder(
       fields.services = sanitizeServiceList(copy.services);
     }
     if (copy.trust_points?.length && isDefaultList(fields.trust_points, defaults.trust_points)) fields.trust_points = copy.trust_points;
-    if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (!Array.isArray(fields.faq) || !(fields.faq as unknown[]).length)) {
+    const currentFaqIsDefault = JSON.stringify(fields.faq || []) === JSON.stringify(defaults.faq || []);
+    if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (!Array.isArray(fields.faq) || !(fields.faq as unknown[]).length || currentFaqIsDefault)) {
       fields.faq = copy.faq.filter((item) => item && item.question).slice(0, 6);
     }
     if (isPremium && Array.isArray(copy.employees) && (!Array.isArray(fields.employees) || !(fields.employees as unknown[]).length)) {
