@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { buildRevenueEventDedupeKey, insertRevenueEvent } from "@/lib/revenue/events";
+import { decidePortalIntent, portalResponseDueAt, portalWorkItemMetadata, type PortalIntentSignal } from "@/lib/nexus/portal-intent-policy";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +31,88 @@ async function portalContact(request: NextRequest) {
   }
 
   return { supabase, contact, email };
+}
+
+async function recordFavoriteSignal(
+  supabase: any,
+  contact: any,
+  signal: Extract<PortalIntentSignal, "favorite_saved" | "favorite_removed">,
+  property: { id: string; ref?: string | null; title?: string | null; title_no?: string | null },
+) {
+  const now = new Date().toISOString();
+  const decision = decidePortalIntent(signal);
+  const propertyLabel = String(property.title_no || property.title || property.ref || property.id);
+  const actionLabel = signal === "favorite_saved" ? "lagret som favoritt" : "fjernet fra favoritter";
+  const sourceId = `portal_change:${contact.id}:${property.id}`;
+
+  await insertRevenueEvent(supabase, {
+    eventType: "note",
+    title: `Kunden ${actionLabel}: ${propertyLabel}`,
+    description: `Min side: ${propertyLabel}`,
+    contactId: contact.id,
+    brandId: String(contact.brand_id || contact.brand || "zeneco"),
+    sourceSystem: "portal",
+    sourceType: signal,
+    sourceId: property.id,
+    actorType: "customer",
+    confidenceScore: decision.aiScore,
+    occurredAt: now,
+    dedupeKey: buildRevenueEventDedupeKey(["portal", signal, contact.id, property.id, now.slice(0, 13)]),
+    metadata: {
+      portal_signal: signal,
+      property_id: property.id,
+      property_ref: property.ref || null,
+      property_label: propertyLabel,
+      hot_lead: decision.hotLead,
+      response_sla_minutes: decision.responseMinutes,
+      operational_target: decision.operationalTarget,
+    },
+    createdBy: "api/portal/favorites",
+  });
+
+  if (!decision.createWorkItem) return;
+
+  const dueAt = portalResponseDueAt(now, decision.responseMinutes) || now;
+  const workItem = {
+    title: signal === "favorite_saved"
+      ? `Min side: kunde lagret bolig – ${contact.name || contact.email}`
+      : `Min side: kunde fjernet favoritt – ${contact.name || contact.email}`,
+    description: `${propertyLabel}${property.ref ? ` · ${property.ref}` : ""}`,
+    priority: decision.priority,
+    due_date: dueAt.slice(0, 10),
+    brand_id: String(contact.brand_id || contact.brand || "zeneco"),
+    source_type: "portal_change",
+    source_id: sourceId,
+    assigned_agent: "sales",
+    next_action: signal === "favorite_saved"
+      ? "Vurder om favoritten er et tydelig kjøpssignal. Se kundens kriterier og aktivitet, og ta kontakt hvis boligen eller timingen tilsier det."
+      : "Se om kunden har fjernet flere boliger eller endret kriterier. Vurder om utvalget bør justeres før neste oppfølging.",
+    ai_score: decision.aiScore,
+    metadata: {
+      ...portalWorkItemMetadata(signal, now),
+      contact_id: contact.id,
+      property_id: property.id,
+      property_ref: property.ref || null,
+      property_label: propertyLabel,
+      portal_change: true,
+    },
+    updated_at: now,
+  };
+
+  const { data: existing } = await supabase
+    .from("work_items")
+    .select("id")
+    .eq("source_type", "portal_change")
+    .eq("source_id", sourceId)
+    .in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"])
+    .limit(1)
+    .maybeSingle();
+
+  if (existing?.id) {
+    await supabase.from("work_items").update(workItem).eq("id", existing.id);
+  } else {
+    await supabase.from("work_items").insert({ ...workItem, status: "TO_DO", created_at: now });
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -83,7 +167,7 @@ export async function POST(request: NextRequest) {
   const propertyId = String(body.propertyId || "").trim();
   const ref = String(body.ref || "").trim();
 
-  let query = supabase.from("properties").select("id,ref").limit(1);
+  let query = supabase.from("properties").select("id,ref,title,title_no").limit(1);
   if (propertyId) query = query.eq("id", propertyId);
   else if (ref) query = query.eq("ref", ref);
   else return NextResponse.json({ error: "propertyId or ref is required" }, { status: 400 });
@@ -102,6 +186,8 @@ export async function POST(request: NextRequest) {
   }, { onConflict: "contact_id,property_id" });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await recordFavoriteSignal(supabase, contact, "favorite_saved", property);
   return NextResponse.json({ success: true, propertyId: property.id, ref: property.ref });
 }
 
@@ -114,19 +200,34 @@ export async function DELETE(request: NextRequest) {
   const propertyId = String(body.propertyId || "").trim();
   const ref = String(body.ref || "").trim();
 
-  let resolvedId = propertyId;
-  if (!resolvedId && ref) {
-    const { data: property } = await supabase.from("properties").select("id").eq("ref", ref).limit(1).maybeSingle();
-    resolvedId = String(property?.id || "");
+  let property: { id: string; ref?: string | null; title?: string | null; title_no?: string | null } | null = null;
+  if (propertyId) {
+    const { data } = await supabase
+      .from("properties")
+      .select("id,ref,title,title_no")
+      .eq("id", propertyId)
+      .limit(1)
+      .maybeSingle();
+    property = data;
+  } else if (ref) {
+    const { data } = await supabase
+      .from("properties")
+      .select("id,ref,title,title_no")
+      .eq("ref", ref)
+      .limit(1)
+      .maybeSingle();
+    property = data;
   }
-  if (!resolvedId) return NextResponse.json({ success: true });
+  if (!property?.id) return NextResponse.json({ success: true });
 
   const { error } = await supabase
     .from("portal_favorites")
     .delete()
     .eq("contact_id", contact.id)
-    .eq("property_id", resolvedId);
+    .eq("property_id", property.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await recordFavoriteSignal(supabase, contact, "favorite_removed", property);
   return NextResponse.json({ success: true });
 }
