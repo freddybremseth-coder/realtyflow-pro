@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { resolveWebsiteCmsConfig, slugifyCmsTitle } from "@/lib/website-cms";
 import { aggregatePropertyContentLearning } from "@/lib/content/property-content-learning";
+import { selectDiversePropertyEditorialOpportunities } from "@/lib/content/property-editorial-opportunities";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -124,15 +125,15 @@ export async function GET(
   if (params.brandKey === "zeneco") {
     const { data: opportunityRows, error: opportunityError } = await access.value.supabase
       .from("property_content_opportunities")
-      .select("id,opportunity_type,score,title,summary,editorial_angle,property_refs,image_url,detected_at,expires_at")
+      .select("id,opportunity_type,score,title,summary,editorial_angle,property_refs,image_url,evidence,detected_at,expires_at")
       .eq("brand_id", params.brandKey)
       .eq("status", "suggested")
       .gt("expires_at", new Date().toISOString())
       .order("score", { ascending: false })
       .order("detected_at", { ascending: false })
-      .limit(8);
+      .limit(40);
     if (!opportunityError && Array.isArray(opportunityRows)) {
-      opportunities = opportunityRows.map((row: any) => ({
+      const normalized = opportunityRows.map((row: any) => ({
         id: String(row.id || ""),
         opportunityType: String(row.opportunity_type || ""),
         score: Number(row.score || 0),
@@ -141,9 +142,12 @@ export async function GET(
         editorialAngle: String(row.editorial_angle || ""),
         propertyRefs: Array.isArray(row.property_refs) ? row.property_refs.map(String).slice(0, 6) : [],
         imageUrl: typeof row.image_url === "string" ? row.image_url : null,
+        evidence: row.evidence && typeof row.evidence === "object" ? row.evidence : null,
         detectedAt: row.detected_at ? String(row.detected_at) : null,
         expiresAt: row.expires_at ? String(row.expires_at) : null,
       })).filter((row) => row.id && row.title);
+
+      opportunities = selectDiversePropertyEditorialOpportunities(normalized, 8).map(({ evidence: _evidence, ...row }) => row);
     }
   }
 
