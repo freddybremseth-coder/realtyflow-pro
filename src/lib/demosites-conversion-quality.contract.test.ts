@@ -56,6 +56,7 @@ test("both renderer families enforce responsive typography and usable touch targ
     assert.match(source, /min-height: 44px/);
     assert.match(source, /text-wrap: balance/);
     assert.match(source, /@media \(max-width: 767px\)/);
+    assert.match(source, /@media \(min-width: 768px\) and \(max-width: 1023px\)/);
   }
 });
 
