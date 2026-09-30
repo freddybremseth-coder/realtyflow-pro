@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isLikelyBot } from "@/lib/spam";
@@ -13,6 +14,7 @@ import {
   normalizeCorporateProspect,
   rescoreCorporateProspect,
 } from "@/lib/corporate-prospects";
+import { sendBrandEmail } from "@/services/email/send-brand-email";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -26,6 +28,53 @@ function getSupabase() {
 
 function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function portalOptInSecret() {
+  return process.env.PORTAL_OPT_IN_SECRET
+    || process.env.ZENECO_API_KEY
+    || process.env.REALTYFLOW_PUBLIC_LEAD_KEY
+    || "";
+}
+
+function portalOptInToken(contactId: string, email: string) {
+  const secret = portalOptInSecret();
+  if (!secret) return "";
+  const payload = Buffer.from(JSON.stringify({
+    contactId,
+    email: email.toLowerCase(),
+    exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+  })).toString("base64url");
+  const signature = createHmac("sha256", secret).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function publicBaseUrl() {
+  return (process.env.REALTYFLOW_PUBLIC_URL || "https://realtyflow.chatgenius.pro").replace(/\/$/, "");
+}
+
+function leadReceiptCopy(input: {
+  name: string;
+  preferredArea: string;
+  budget: string;
+  portalLink?: string;
+}) {
+  const firstName = input.name.trim().split(/\s+/)[0] || input.name;
+  const summary = [
+    input.preferredArea ? `Område: ${input.preferredArea}` : "",
+    input.budget ? `Budsjett: ${input.budget}` : "",
+  ].filter(Boolean);
+  const portalText = input.portalLink
+    ? `\n\nVil du samle boligforslag, søkekriterier, guider, dokumenter og dialog på Min side? Aktiver den her:\n${input.portalLink}\n\nDu velger selv om du vil aktivere Min side.`
+    : "";
+  const portalHtml = input.portalLink
+    ? `<p>Vil du samle boligforslag, søkekriterier, guider, dokumenter og dialog på <strong>Min side</strong>?</p><p><a href="${input.portalLink}">Aktiver Min side</a></p><p>Du velger selv om du vil aktivere Min side.</p>`
+    : "";
+  return {
+    subject: "Vi har mottatt henvendelsen din | Zen Eco Homes",
+    bodyText: `Hei ${firstName},\n\nTakk for henvendelsen. Skjemaet er mottatt hos Zen Eco Homes, og vi bruker opplysningene til å gi deg mer relevant oppfølging.${summary.length ? `\n\n${summary.join("\n")}` : ""}${portalText}\n\nMed vennlig hilsen\nZen Eco Homes`,
+    bodyHtml: `<p>Hei ${firstName},</p><p>Takk for henvendelsen. Skjemaet er mottatt hos Zen Eco Homes, og vi bruker opplysningene til å gi deg mer relevant oppfølging.</p>${summary.length ? `<p>${summary.join("<br>")}</p>` : ""}${portalHtml}<p>Med vennlig hilsen<br>Zen Eco Homes</p>`,
+  };
 }
 
 function cleanText(value: unknown, max = 2000) {
@@ -176,6 +225,14 @@ export async function POST(request: NextRequest) {
   const budget = cleanText(body.budget, 80);
   const timeline = cleanText(body.timeline, 120);
   const message = cleanText(body.message, 3000);
+  const dream = cleanText(body.dream, 160);
+  const goal = cleanText(body.goal, 160);
+  const priority = cleanText(body.priority, 160);
+  const lifestyle = cleanText(body.lifestyle, 160);
+  const airport = cleanText(body.airport, 120);
+  const rental = cleanText(body.rental, 120);
+  const propertyType = cleanText(body.property_type || body.propertyType, 120);
+  const bedrooms = cleanText(body.bedrooms, 40);
   const organizationName = cleanText(body.organization_name || body.organizationName, 240);
   const organizationType = cleanText(body.organization_type || body.organizationType, 120);
   const contactRole = cleanText(body.contact_role || body.contactRole, 160);
@@ -238,8 +295,14 @@ export async function POST(request: NextRequest) {
     propertyTitle ? `Bolig: ${propertyTitle}` : "",
     preferredArea ? `Område: ${preferredArea}` : "",
     budget ? `Budsjett: ${budget}` : "",
-    body.property_type ? `Boligtype: ${cleanText(body.property_type, 120)}` : "",
-    body.bedrooms ? `Soverom: ${cleanText(body.bedrooms, 40)}` : "",
+    propertyType ? `Boligtype: ${propertyType}` : "",
+    bedrooms ? `Soverom: ${bedrooms}` : "",
+    dream ? `Spania-drøm: ${dream}` : "",
+    goal ? `Mål: ${goal}` : "",
+    priority ? `Viktigst: ${priority}` : "",
+    lifestyle ? `Livsstil: ${lifestyle}` : "",
+    airport ? `Flyplass: ${airport}` : "",
+    rental ? `Utleie: ${rental}` : "",
     timeline ? `Tidslinje: ${timeline}` : "",
     organizationName ? `Virksomhet: ${organizationName}` : "",
     organizationType ? `Organisasjonstype: ${organizationType}` : "",
@@ -293,6 +356,19 @@ export async function POST(request: NextRequest) {
       visitor_id: visitorId || null,
       session_id: sessionId || null,
       page_url: pageUrl || null,
+      buyer_preferences: brandId === "zeneco" && !isCorporateHome && !isCorporatePartner && !isCorporateEventRegistration ? definedEntries({
+        budgetMax: budget ? Number(budget.replace(/[^0-9]/g, "")) || null : null,
+        region: preferredArea || null,
+        propertyType: propertyType || null,
+        bedrooms: bedrooms || null,
+        lifestyle: lifestyle || null,
+        timeline: timeline || null,
+        dream: dream || null,
+        goal: goal || null,
+        priority: priority || null,
+        airport: airport || null,
+        rental: rental || null,
+      }) : null,
       organization_name: organizationName || null,
       organization_type: organizationType || null,
       contact_role: contactRole || null,
@@ -694,6 +770,53 @@ export async function POST(request: NextRequest) {
     if (!eventResult.ok && !eventResult.tableNotReady) {
       console.warn("[public-leads] revenue event insert failed", eventResult.error);
     }
+  }
+
+  if (brandId === "zeneco") {
+    const internalRecipients = Array.from(new Set([
+      process.env.ZENECO_LEAD_NOTIFICATION_EMAIL || "kontakt@zenecohomes.com",
+      process.env.ZENECO_LEAD_NOTIFICATION_CC || "freddy@zenecohomes.com",
+    ].map((value) => value.trim().toLowerCase()).filter(isEmail)));
+
+    const internalSummary = [
+      `Nytt skjema fra ZenEcoHomes.com`,
+      `Navn: ${name}`,
+      `E-post: ${email}`,
+      cleanText(body.phone, 80) ? `Telefon: ${cleanText(body.phone, 80)}` : "",
+      requestType ? `Skjema: ${requestType}` : "",
+      preferredArea ? `Område: ${preferredArea}` : "",
+      budget ? `Budsjett: ${budget}` : "",
+      bedrooms ? `Soverom: ${bedrooms}` : "",
+      lifestyle ? `Livsstil: ${lifestyle}` : "",
+      pageUrl ? `Side: ${pageUrl}` : "",
+      message ? `Melding:\n${message}` : "",
+      `CRM kontakt-ID: ${data.id}`,
+    ].filter(Boolean).join("\n");
+
+    if (internalRecipients.length) {
+      sendBrandEmail(supabase, {
+        brandId: "zeneco",
+        to: internalRecipients,
+        subject: `Ny henvendelse: ${name}${requestType ? ` · ${requestType}` : ""}`,
+        bodyText: internalSummary,
+        allowSuppressed: true,
+      }).catch((error) => console.warn("[public-leads] internal lead email failed", error));
+    }
+
+    const canOfferPortal = !isCorporateHome && !isCorporatePartner && !isCorporateEventRegistration;
+    const optInToken = canOfferPortal ? portalOptInToken(String(data.id), email) : "";
+    const portalLink = optInToken
+      ? `${publicBaseUrl()}/api/public/portal-opt-in?token=${encodeURIComponent(optInToken)}`
+      : undefined;
+    const receipt = leadReceiptCopy({ name, preferredArea, budget, portalLink });
+    sendBrandEmail(supabase, {
+      brandId: "zeneco",
+      to: [email],
+      subject: receipt.subject,
+      bodyText: receipt.bodyText,
+      bodyHtml: receipt.bodyHtml,
+      allowSuppressed: true,
+    }).catch((error) => console.warn("[public-leads] customer receipt email failed", error));
   }
 
   return NextResponse.json({
