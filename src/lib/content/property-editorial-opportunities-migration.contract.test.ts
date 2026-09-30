@@ -10,6 +10,10 @@ const coverage = readFileSync(
   "supabase/migrations/20260929221132_nexus_property_content_coverage_bootstrap.sql",
   "utf8",
 );
+const learning = readFileSync(
+  "supabase/migrations/20260929222605_nexus_property_content_learning_snapshots.sql",
+  "utf8",
+);
 
 test("editorial opportunity queue remains server-only", () => {
   assert.match(schema, /enable row level security/i);
@@ -28,4 +32,13 @@ test("existing Zen market comparisons are bootstrapped as dismissed coverage", (
   assert.match(coverage, /covered_existing_magazine/);
   assert.match(coverage, /'dismissed'/);
   assert.match(coverage, /on conflict \(brand_id,signature\) do nothing/i);
+});
+
+test("property content learning storage remains service-only and observe-first", () => {
+  assert.match(learning, /enable row level security/i);
+  assert.match(learning, /revoke all on public\.property_content_learning_snapshots from public, anon, authenticated/i);
+  assert.match(learning, /grant all on public\.property_content_learning_snapshots to service_role/i);
+  assert.match(learning, /insufficient','emerging','measured/);
+  assert.match(learning, /does not authorize automatic strategy or scoring changes/i);
+  assert.doesNotMatch(learning, /create policy/i);
 });
