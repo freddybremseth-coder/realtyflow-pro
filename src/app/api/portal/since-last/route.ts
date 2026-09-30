@@ -43,9 +43,13 @@ export async function GET(request: NextRequest) {
     .eq("brand_id", "zeneco")
     .maybeSingle();
 
-  const firstVisit = !portalUser?.previous_login_at;
-  const since = portalUser?.previous_login_at
-    || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const lastLoginMs = portalUser?.last_login_at ? new Date(portalUser.last_login_at).getTime() : 0;
+  const recentSession = lastLoginMs > 0 && Date.now() - lastLoginMs < 30 * 60 * 1000;
+  const firstVisit = !portalUser?.previous_login_at && !portalUser?.last_login_at;
+  const since = recentSession
+    ? (portalUser?.previous_login_at || portalUser?.last_login_at)
+    : (portalUser?.last_login_at || portalUser?.previous_login_at)
+      || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const [
     propertiesResult,
