@@ -37,6 +37,7 @@ const PUBLIC_PATHS = [
   "/api/portal/favorites",
   "/api/portal/saved-search",
   "/api/portal/since-last",
+  "/api/portal/newsletter",
   "/api/chatbot",
   "/api/health",
   "/api/oauth/google",
