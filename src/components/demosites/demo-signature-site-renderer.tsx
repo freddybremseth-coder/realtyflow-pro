@@ -37,6 +37,7 @@ import {
   getDemoSitePreviewIndustryVisual,
   type DemoSitesPreviewIndustryVariant,
 } from "@/lib/demosites-preview-visuals";
+import { getDemoSiteMarketingCopy, getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 export type DemoSignatureSiteRendererProps = DemoSitesPreviewInput & {
   mode: DemoSitesPreviewMode;
@@ -160,7 +161,8 @@ const SIGNATURE_THEMES: Record<SignatureDemoSiteLayout, SignatureTheme> = {
   },
 };
 
-function getSignatureBusinessCopy(variant: DemoSitesPreviewIndustryVariant, companyName: string): SignatureBusinessCopy {
+function getSignatureBusinessCopy(variant: DemoSitesPreviewIndustryVariant, companyName: string, language: DemoSiteLanguage): SignatureBusinessCopy {
+  if (language !== "nb") return getDemoSiteMarketingCopy(language, companyName);
   const common: SignatureBusinessCopy = {
     heroBadge: "Moderne lokal business",
     heroMeta: "Klar side",
@@ -446,7 +448,8 @@ export function DemoSignatureSiteRenderer({
   const layout = design.layout;
   const theme = SIGNATURE_THEMES[layout];
   const visual = getDemoSitePreviewIndustryVisual(preview.templateSlug);
-  const copy = getSignatureBusinessCopy(visual.variant, companyName);
+  const ui = getDemoSiteUiText(preview.language);
+  const copy = getSignatureBusinessCopy(visual.variant, companyName, preview.language);
   const fonts = getDemoFontPair(design.style);
   const fullPreview = mode === "public" || showFull || !compact;
   const packageTier = packageId === "premium" ? 3 : packageId === "basis" ? 1 : 2;
@@ -505,16 +508,16 @@ export function DemoSignatureSiteRenderer({
 
       {mode === "public" && <DemoReveal />}
       {mode === "public" && packageTier >= 2 && inquiryToken && (
-        <DemoChatWidget token={inquiryToken} companyName={companyName} accentColor={colors.primary} accentTextColor={colors.primaryText} />
+        <DemoChatWidget token={inquiryToken} companyName={companyName} accentColor={colors.primary} accentTextColor={colors.primaryText} language={preview.language} />
       )}
 
-      <SignatureHeader preview={preview} theme={theme} ctaHref={ctaHref} callToAction={content.call_to_action} layout={layout} copy={copy} />
+      <SignatureHeader preview={preview} theme={theme} ctaHref={ctaHref} callToAction={content.call_to_action} layout={layout} copy={copy} ui={ui} />
       <SignatureHero layout={layout} preview={preview} services={services} trust={trust} images={images} ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} mode={mode} copy={copy} />
       <ProofRibbon layout={layout} trust={trust} colors={colors} />
 
       <section id="tjenester" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.section} px-4 py-20 md:py-28`}>
         <div className="mx-auto max-w-7xl">
-          <SectionHeading layout={layout} eyebrow="Tjenester" title={copy.serviceTitle} text={content.intro_text || copy.serviceText} theme={theme} />
+          <SectionHeading layout={layout} eyebrow={ui.navServices} title={copy.serviceTitle} text={content.intro_text || copy.serviceText} theme={theme} />
           <ServiceGrid layout={layout} services={services} colors={colors} theme={theme} cardText={copy.serviceCardText} />
         </div>
       </section>
@@ -531,7 +534,7 @@ export function DemoSignatureSiteRenderer({
       {fullPreview && (
       <section id="fordeler" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.section} px-4 py-20 md:py-28`}>
         <div className="mx-auto max-w-7xl">
-          <SectionHeading layout={layout} eyebrow="Hvorfor oss" title={copy.trustTitle} text={copy.trustText} theme={theme} />
+          <SectionHeading layout={layout} eyebrow={ui.navWhy} title={copy.trustTitle} text={copy.trustText} theme={theme} />
           <TrustGrid layout={layout} trust={trust} colors={colors} theme={theme} />
         </div>
       </section>
@@ -540,7 +543,7 @@ export function DemoSignatureSiteRenderer({
       {showOfferSection && (
         <section id="tilbud" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.alternate} px-4 py-20 md:py-28`}>
           <div className="mx-auto max-w-7xl">
-            <SectionHeading layout={layout} eyebrow="Tilbud" title={copy.offerTitle} text={copy.offerText} theme={theme} />
+            <SectionHeading layout={layout} eyebrow={copy.navOffer || copy.productsTitle} title={copy.offerTitle} text={copy.offerText} theme={theme} />
             <OfferGrid layout={layout} products={content.products} prices={content.prices} colors={colors} theme={theme} productsTitle={copy.productsTitle} pricesTitle={copy.pricesTitle} />
           </div>
         </section>
@@ -569,18 +572,18 @@ export function DemoSignatureSiteRenderer({
       {mode === "public" && <footer className={`border-t px-4 py-8 text-center text-xs ${theme.footer}`}>
         {isLiveSite ? (
           <>
-            © {new Date().getFullYear()} {companyName} · Nettside levert av{" "}
+            © {new Date().getFullYear()} {companyName} · {ui.deliveredBy}{" "}
             <a href="https://www.chatgenius.pro/demosites/" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">ChatGenius.pro</a>
           </>
         ) : (
-          <>Demo laget med ChatGenius DemoSites. Pakke: {packageName || "Standard"} · {layoutLabel(layout)}</>
+          <>{ui.demoMadeWith} ChatGenius DemoSites. {ui.packageLabel}: {packageName || "Standard"} · {layoutLabel(layout)}</>
         )}
       </footer>}
     </Root>
   );
 }
 
-function SignatureHeader({ preview, theme, ctaHref, callToAction, layout, copy }: { preview: DemoSitesPreviewModel; theme: SignatureTheme; ctaHref: string; callToAction: string; layout: SignatureDemoSiteLayout; copy: SignatureBusinessCopy }) {
+function SignatureHeader({ preview, theme, ctaHref, callToAction, layout, copy, ui }: { preview: DemoSitesPreviewModel; theme: SignatureTheme; ctaHref: string; callToAction: string; layout: SignatureDemoSiteLayout; copy: SignatureBusinessCopy; ui: ReturnType<typeof getDemoSiteUiText> }) {
   const { companyName, content, colors, contact } = preview;
   return (
     <header className={`sticky top-0 z-40 border-b ${theme.header}`}>
@@ -598,11 +601,11 @@ function SignatureHeader({ preview, theme, ctaHref, callToAction, layout, copy }
           <span className="hidden truncate text-sm font-black uppercase tracking-[0.12em] sm:block md:text-base">{companyName}</span>
         </a>
         <nav className={`hidden items-center gap-6 text-sm ${theme.muted} lg:flex`}>
-          <a href="#tjenester" className="transition hover:opacity-60">Tjenester</a>
-          <a href="#bilder" className="transition hover:opacity-60">Utvalgt</a>
-          <a href="#fordeler" className="transition hover:opacity-60">Hvorfor oss</a>
+          <a href="#tjenester" className="transition hover:opacity-60">{ui.navServices}</a>
+          <a href="#bilder" className="transition hover:opacity-60">{ui.navSelected}</a>
+          <a href="#fordeler" className="transition hover:opacity-60">{ui.navWhy}</a>
           <a href="#tilbud" className="transition hover:opacity-60">{copy.productsTitle}</a>
-          <a href="#kontakt" className="transition hover:opacity-60">Kontakt</a>
+          <a href="#kontakt" className="transition hover:opacity-60">{ui.navContact}</a>
         </nav>
         <div className="flex items-center gap-2">
           {contact.phone && <a href={`tel:${contact.phone}`} className={`hidden text-sm font-semibold ${theme.headerText} md:block`}>{contact.phone}</a>}
@@ -787,7 +790,7 @@ function TeamGrid({ preview, layout, theme }: { preview: DemoSitesPreviewModel; 
 
 function SignatureContact({ preview, theme, layout, inquiryToken, showLeadForm, copy }: { preview: DemoSitesPreviewModel; theme: SignatureTheme; layout: SignatureDemoSiteLayout; inquiryToken?: string; showLeadForm: boolean; copy: SignatureBusinessCopy }) {
   const { companyName, contact, content, colors } = preview;
-  return <section id="kontakt" data-demo-reveal="" className={`${theme.contact} px-4 py-20 md:py-28`}><div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start"><div><div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.26em] text-white/[0.45]"><MessageCircle className="h-4 w-4" style={{ color: colors.accent }} /> Kontakt</div><h2 className={`${layout === "atelier" ? "font-medium" : "font-black"} mt-7 text-4xl leading-[0.98] tracking-[-0.04em] md:text-6xl`}>{copy.contactTitle}</h2><p className="mt-6 max-w-xl text-base leading-8 text-white/65">{content.contact_text || copy.contactText}</p><div className="mt-9 space-y-3"><ContactItem icon={<Phone className="h-5 w-5" />} label="Telefon" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} /><ContactItem icon={<Mail className="h-5 w-5" />} label="E-post" value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} /><ContactItem icon={<MapPin className="h-5 w-5" />} label="Adresse" value={contact.address} /></div></div>{showLeadForm ? <DemoLeadForm token={inquiryToken || ""} companyName={companyName} accentColor={colors.primary} accentTextColor={colors.primaryText} /> : <div className={`border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur-xl ${layout === "atelier" ? "rounded-none" : "rounded-[2rem]"}`}><div className="flex items-center justify-between border-b border-white/10 pb-5"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-white/40">Direkte forespørsel</p><p className="mt-2 text-xl font-black">Hva kan vi hjelpe med?</p></div><span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary, color: colors.primaryText }}><ArrowUpRight className="h-5 w-5" /></span></div><div className="mt-6 space-y-3">{preview.content.services.slice(0, 3).map((service) => <a key={service} href={preview.contactHref} className="flex items-center justify-between border border-white/10 bg-white/[0.04] p-4 text-sm font-semibold text-white/80 transition hover:bg-white/[0.09]">{service} <ChevronRight className="h-4 w-4" /></a>)}</div><a href={preview.contactHref} className="mt-6 inline-flex w-full items-center justify-center px-6 py-4 text-sm font-black" style={{ backgroundColor: colors.primary, color: colors.primaryText, borderRadius: layout === "atelier" ? 0 : "999px" }}>{content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" /></a></div>}</div></section>;
+  return <section id="kontakt" data-demo-reveal="" className={`${theme.contact} px-4 py-20 md:py-28`}><div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start"><div><div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.26em] text-white/[0.45]"><MessageCircle className="h-4 w-4" style={{ color: colors.accent }} /> Kontakt</div><h2 className={`${layout === "atelier" ? "font-medium" : "font-black"} mt-7 text-4xl leading-[0.98] tracking-[-0.04em] md:text-6xl`}>{copy.contactTitle}</h2><p className="mt-6 max-w-xl text-base leading-8 text-white/65">{content.contact_text || copy.contactText}</p><div className="mt-9 space-y-3"><ContactItem icon={<Phone className="h-5 w-5" />} label={ui.phone} value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} /><ContactItem icon={<Mail className="h-5 w-5" />} label={ui.email} value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} /><ContactItem icon={<MapPin className="h-5 w-5" />} label={ui.address} value={contact.address} /></div></div>{showLeadForm ? <DemoLeadForm token={inquiryToken || ""} companyName={companyName} accentColor={colors.primary} accentTextColor={colors.primaryText} language={preview.language} /> : <div className={`border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur-xl ${layout === "atelier" ? "rounded-none" : "rounded-[2rem]"}`}><div className="flex items-center justify-between border-b border-white/10 pb-5"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-white/40">{ui.directRequest}</p><p className="mt-2 text-xl font-black">{ui.howCanWeHelp}</p></div><span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary, color: colors.primaryText }}><ArrowUpRight className="h-5 w-5" /></span></div><div className="mt-6 space-y-3">{preview.content.services.slice(0, 3).map((service) => <a key={service} href={preview.contactHref} className="flex items-center justify-between border border-white/10 bg-white/[0.04] p-4 text-sm font-semibold text-white/80 transition hover:bg-white/[0.09]">{service} <ChevronRight className="h-4 w-4" /></a>)}</div><a href={preview.contactHref} className="mt-6 inline-flex w-full items-center justify-center px-6 py-4 text-sm font-black" style={{ backgroundColor: colors.primary, color: colors.primaryText, borderRadius: layout === "atelier" ? 0 : "999px" }}>{content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" /></a></div>}</div></section>;
 }
 
 function ContactItem({ icon, label, value, href }: { icon: ReactNode; label: string; value: string; href?: string }) {
