@@ -401,7 +401,7 @@ export function WorkspaceWebsiteContentStudio({
             <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Nexus · redaksjonelle signaler</p>
             <h3 className="mt-1 text-lg font-semibold text-white">Boligdata som kan bli en nyttig kjøperartikkel</h3>
             <p className="mt-1 max-w-3xl text-sm text-slate-400">
-              Nexus ser etter dokumenterbare forskjeller i pris, areal, boligtype og område. Dette er forslag – ingenting publiseres automatisk.
+              Nexus ser etter dokumenterbare forskjeller i pris, areal, boligtype og område. Du ser et variert topputvalg – samme bolig får ikke dominere listen. Dette er forslag; ingenting publiseres automatisk.
             </p>
           </div>
         </div>
