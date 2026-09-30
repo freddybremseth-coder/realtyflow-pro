@@ -47,6 +47,7 @@ import { getDemoFontPair } from "@/components/demosites/demo-fonts";
 import { DemoReveal } from "@/components/demosites/demo-reveal";
 import { DemoLeadForm } from "@/components/demosites/demo-lead-form";
 import { DemoChatWidget } from "@/components/demosites/demo-chat-widget";
+import { getDemoSiteMarketingCopy, getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type ThemeStyle = CSSProperties & {
   "--brand": string;
@@ -128,7 +129,8 @@ export function DemoSitePreviewRenderer({
 }: DemoSitePreviewRendererProps) {
   const preview = getDemoSitesPreviewModel(input);
   const { content, colors, contact, companyName } = preview;
-  const copy = resolvePreviewBusinessCopy(getPreviewBusinessCopy(preview.templateSlug, companyName));
+  const ui = getDemoSiteUiText(preview.language);
+  const copy = resolvePreviewBusinessCopy(getPreviewBusinessCopy(preview.templateSlug, companyName, preview.language));
   const visual = getDemoSitePreviewIndustryVisual(preview.templateSlug);
   const fullPreview = mode === "public" || showFull || !compact;
   const imageLimit = fullPreview ? 6 : 3;
@@ -230,9 +232,10 @@ export function DemoSitePreviewRenderer({
           companyName={companyName}
           accentColor={colors.primary}
           accentTextColor={colors.primaryText}
+          language={preview.language}
         />
       )}
-      {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} neonGlass={useNeonGlass} />}
+      {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} neonGlass={useNeonGlass} ui={ui} />}
 
       <header className={headerClass}>
         <div className={`${maxWidthClass} flex items-center justify-between gap-4 px-4 py-4`}>
@@ -250,11 +253,11 @@ export function DemoSitePreviewRenderer({
           </a>
           {mode === "public" && (
             <nav className={useNeonGlass ? "hidden items-center gap-5 text-sm text-slate-300 lg:flex" : "hidden items-center gap-5 text-sm text-slate-600 lg:flex"}>
-              <a href="#tjenester" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Tjenester</a>
-              <a href="#fordeler" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Hvorfor oss</a>
+              <a href="#tjenester" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navServices}</a>
+              <a href="#fordeler" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navWhy}</a>
               <a href="#tilbud" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{copy.navOffer}</a>
-              <a href="#faq" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>FAQ</a>
-              <a href="#kontakt" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Kontakt</a>
+              <a href="#faq" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navFaq}</a>
+              <a href="#kontakt" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navContact}</a>
             </nav>
           )}
           <a href={ctaHref} className={useNeonGlass ? "inline-flex max-w-[10rem] shrink-0 items-center justify-center truncate rounded-lg px-3 py-2 text-sm font-black shadow-lg shadow-cyan-500/20 sm:max-w-none sm:px-4" : "inline-flex max-w-[10rem] shrink-0 items-center justify-center truncate rounded-lg px-3 py-2 text-sm font-semibold sm:max-w-none sm:px-4"} style={headerCtaStyle}>
@@ -490,12 +493,12 @@ export function DemoSitePreviewRenderer({
                   )}
                   {contact.phone && (
                     <a href={`tel:${contact.phone}`} className={showLeadForm ? "inline-flex items-center justify-center rounded-lg px-5 py-3 text-sm font-bold" : "inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10"} style={showLeadForm ? { backgroundColor: colors.primary, color: colors.primaryText } : undefined}>
-                      <Phone className="mr-2 h-4 w-4" /> Ring oss{showLeadForm ? ` ${contact.phone}` : ""}
+                      <Phone className="mr-2 h-4 w-4" /> {ui.phone}{showLeadForm ? ` ${contact.phone}` : ""}
                     </a>
                   )}
                   {showLeadForm && contact.email && (
                     <a href={`mailto:${contact.email}`} className="inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10">
-                      <Mail className="mr-2 h-4 w-4" /> Send e-post
+                      <Mail className="mr-2 h-4 w-4" /> {ui.sendEmail}
                     </a>
                   )}
                 </div>
@@ -507,6 +510,7 @@ export function DemoSitePreviewRenderer({
                   companyName={companyName}
                   accentColor={colors.primary}
                   accentTextColor={colors.primaryText}
+                  language={preview.language}
                 />
               ) : (
               <div className={useNeonGlass ? "rounded-lg border border-cyan-300/20 bg-white/[0.08] p-5 text-white shadow-2xl shadow-cyan-950/30 backdrop-blur" : "rounded-lg border border-white/10 bg-white p-5 text-slate-950"}>
@@ -547,13 +551,13 @@ export function DemoSitePreviewRenderer({
         <footer className={useNeonGlass ? "border-t border-white/10 bg-[#020617] px-4 py-8 text-center text-xs text-slate-500" : "bg-white px-4 py-8 text-center text-xs text-slate-500"}>
           {isLiveSite ? (
             <>
-              © {new Date().getFullYear()} {companyName} · Nettside levert av{" "}
+              © {new Date().getFullYear()} {companyName} · {ui.deliveredBy}{" "}
               <a href="https://www.chatgenius.pro/demosites/" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
                 ChatGenius.pro
               </a>
             </>
           ) : (
-            <>Demo laget med ChatGenius DemoSites. Pakke: {packageName || "Standard"}.</>
+            <>{ui.demoMadeWith} ChatGenius DemoSites. {ui.packageLabel}: {packageName || "Standard"}.</>
           )}
         </footer>
       )}
@@ -687,7 +691,7 @@ function EditorialHero({
   );
 }
 
-function BusinessTopStrip({ contact, copy, colors, neonGlass = false }: { contact: ReturnType<typeof getDemoSitesPreviewModel>["contact"]; copy: ResolvedPreviewBusinessCopy; colors: DemoSitesPreviewColors; neonGlass?: boolean }) {
+function BusinessTopStrip({ contact, copy, colors, ui, neonGlass = false }: { contact: ReturnType<typeof getDemoSitesPreviewModel>["contact"]; copy: ResolvedPreviewBusinessCopy; colors: DemoSitesPreviewColors; ui: ReturnType<typeof getDemoSiteUiText>; neonGlass?: boolean }) {
   return (
     <div className={neonGlass ? "border-b border-white/10 bg-[#020617] text-xs text-slate-300" : "border-b border-slate-200 bg-slate-950 text-xs text-slate-300"}>
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2.5">
@@ -1292,7 +1296,8 @@ function getServiceCardDescription(service: string, templateSlug: string, copy: 
   return copy.serviceCardText;
 }
 
-function getPreviewBusinessCopy(templateSlug: string, companyName: string): PreviewBusinessCopy {
+function getPreviewBusinessCopy(templateSlug: string, companyName: string, language: DemoSiteLanguage): PreviewBusinessCopy {
+  if (language !== "nb") return getDemoSiteMarketingCopy(language, companyName);
   const slug = templateSlug.toLowerCase();
 
   if (isDemoSiteTechnologyTemplate(slug)) {
