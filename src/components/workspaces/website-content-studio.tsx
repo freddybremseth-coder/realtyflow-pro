@@ -119,6 +119,7 @@ function opportunityTypeLabel(value: string) {
   if (value === "same_price_area_gap") return "Samme pris · ulikt areal";
   if (value === "cross_area_same_budget") return "Samme budsjett · ulike områder";
   if (value === "property_type_tradeoff") return "Samme pris · ulik boligtype";
+  if (value === "budget_band_cluster") return "Samme budsjett · tre boliger";
   return value || "Annet signal";
 }
 
