@@ -26,6 +26,14 @@ function researchDue(evidence: unknown, now: number) {
   return !Number.isFinite(checked) || now - checked >= CONTACT_TTL_MS;
 }
 
+function hasDocumentedOutboundBasis(row: Record<string, any>) {
+  if (String(row.fit_tier || "").toUpperCase() === "A") return true;
+  if (row.queue === "partner" && String(row.referral_angle || "").trim()) return true;
+  const signalResearch = objectValue(objectValue(row.evidence).company_signal_research);
+  const signals = objectValue(signalResearch.signals);
+  return Object.keys(signals).length > 0;
+}
+
 async function logRun(
   supabase: SupabaseClient,
   status: "success" | "error",
@@ -58,7 +66,7 @@ export async function runCorporateGenericContactResearch(
     ] = await Promise.all([
       supabase
         .from("corporate_partner_prospects")
-        .select("id,company_name,domain,website_url,evidence,fit_score,fit_tier,status,updated_at")
+        .select("id,company_name,domain,website_url,evidence,fit_score,fit_tier,status,updated_at,referral_angle")
         .eq("brand_id", "zeneco")
         .in("fit_tier", ["A", "B"])
         .neq("status", "DISQUALIFIED")
@@ -84,6 +92,8 @@ export async function runCorporateGenericContactResearch(
       .filter((row: any) => Boolean(websiteFor(row)))
       .filter((row: any) => researchDue(row.evidence, now))
       .sort((a: any, b: any) => {
+        const basisDelta = Number(hasDocumentedOutboundBasis(b)) - Number(hasDocumentedOutboundBasis(a));
+        if (basisDelta) return basisDelta;
         const tierRank = (value: string) => value === "A" ? 2 : value === "B" ? 1 : 0;
         const tierDelta = tierRank(String(b.fit_tier || "").toUpperCase()) - tierRank(String(a.fit_tier || "").toUpperCase());
         if (tierDelta) return tierDelta;
