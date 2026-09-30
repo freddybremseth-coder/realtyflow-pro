@@ -16,6 +16,7 @@ type Payload = {
   songs: Song[];
   channels: { instagram: ChannelState; facebook: ChannelState };
 };
+export type WorkspaceReelPropertySeed = { id: string; ref: string | null; title: string | null; town: string | null; location: string | null };
 
 const visualOptions = [
   ["mixed", "Blandet"],
@@ -30,10 +31,14 @@ export function WorkspaceReelsPanel({
   brandKey,
   canCreate,
   canPublish,
+  initialProperty = null,
+  onInitialPropertyConsumed,
 }: {
   brandKey: string;
   canCreate: boolean;
   canPublish: boolean;
+  initialProperty?: WorkspaceReelPropertySeed | null;
+  onInitialPropertyConsumed?: () => void;
 }) {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,6 +52,8 @@ export function WorkspaceReelsPanel({
   const [areaQuery, setAreaQuery] = useState("");
   const [visualTypes, setVisualTypes] = useState<string[]>(["mixed"]);
   const [channels, setChannels] = useState<Array<"instagram" | "facebook">>(["instagram", "facebook"]);
+  const [propertyId, setPropertyId] = useState("");
+  const [propertyLabel, setPropertyLabel] = useState("");
 
   async function load() {
     setLoading(true); setError("");
@@ -62,6 +69,18 @@ export function WorkspaceReelsPanel({
   }
 
   useEffect(() => { void load(); }, [brandKey]);
+
+  useEffect(() => {
+    if (!initialProperty) return;
+    const place = initialProperty.town || initialProperty.location || "";
+    setPropertyId(initialProperty.id);
+    setPropertyLabel([initialProperty.ref, initialProperty.title, place].filter(Boolean).join(" · "));
+    setTitle(initialProperty.title || initialProperty.ref || "Eiendoms-Reel");
+    setAreaQuery(place);
+    setNotice("Eiendommen er valgt. Re-Master bruker bare bilder fra denne publiserte boligen.");
+    setError("");
+    onInitialPropertyConsumed?.();
+  }, [initialProperty, onInitialPropertyConsumed]);
 
   const connectedChannels = useMemo(() => {
     if (!payload) return [];
@@ -110,12 +129,15 @@ export function WorkspaceReelsPanel({
           region: brandKey === "pinosoecolife" ? "inland" : "any",
           areaQuery: areaQuery.trim(),
           visualTypes,
+          ...(propertyId ? { propertyId } : {}),
         }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "Reelen kunne ikke lages.");
       setNotice("Reelen er ferdig. Se gjennom videoen før du publiserer.");
       setTitle("");
+      setPropertyId("");
+      setPropertyLabel("");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Reelen kunne ikke lages.");
@@ -166,6 +188,10 @@ export function WorkspaceReelsPanel({
         <Sparkles size={17} className="text-cyan-300"/>
         <h4 className="font-semibold">Lag ny Reel</h4>
       </div>
+      {propertyId && <div className="mt-4 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-3 text-xs text-emerald-200">
+        <strong>Valgt eiendom:</strong> {propertyLabel || propertyId}
+        <button type="button" onClick={() => { setPropertyId(""); setPropertyLabel(""); }} className="ml-3 underline">Bruk vanlig bildeutvalg i stedet</button>
+      </div>}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={100}
@@ -194,7 +220,7 @@ export function WorkspaceReelsPanel({
         </label>
       </div>
 
-      <div className="mt-4">
+      {!propertyId && <div className="mt-4">
         <p className="text-xs font-medium text-slate-300">Hva skal vises?</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {visualOptions.map(([value, label]) => <button type="button" key={value} onClick={() => toggleVisual(value)}
@@ -202,7 +228,7 @@ export function WorkspaceReelsPanel({
             {label}
           </button>)}
         </div>
-      </div>
+      </div>}
 
       <div className="mt-4">
         <p className="text-xs font-medium text-slate-300">Klargjør for</p>
