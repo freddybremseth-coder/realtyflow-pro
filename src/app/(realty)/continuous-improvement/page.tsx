@@ -94,9 +94,21 @@ const CORPORATE_EFFECT_LABELS: Record<CorporateObservedEffect["status"], string>
   UNCHANGED: "Uendret",
 };
 
+type CorporateRecurrence = {
+  detected: boolean;
+  stage: string;
+  label: string;
+  closedAt: string;
+  postClosureSnapshots: number;
+  firstRecurrenceAt?: string | null;
+  latestAt?: string | null;
+  note: string;
+};
+
 type ResponseBody = {
   register: ContinuousImprovementRegister | null;
   corporateObservedEffects?: Record<string, CorporateObservedEffect>;
+  corporateRecurrences?: Record<string, CorporateRecurrence>;
   weeklyWarning?: string | null;
   corporateGrowthWarning?: string | null;
   user?: { email: string; role: string };
@@ -210,6 +222,7 @@ export default function ContinuousImprovementPage() {
   const register = body.register;
   const selected = useMemo(() => register?.improvements.find((item) => item.id === selectedId) || null, [register, selectedId]);
   const selectedCorporateEffect = selected ? body.corporateObservedEffects?.[selected.id] || null : null;
+  const selectedCorporateRecurrence = selected ? body.corporateRecurrences?.[selected.id] || null : null;
   const visibleImprovements = useMemo(() => register?.improvements.filter((item) => showClosed || !item.closed) || [], [register, showClosed]);
   const focusedCandidate = useMemo(
     () => focusCandidateId ? register?.candidates.find((item) => item.id === focusCandidateId) || null : null,
@@ -355,6 +368,23 @@ export default function ContinuousImprovementPage() {
                         <Link href={selected.href} className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Åpne kilde <ArrowRight size={14}/></Link>
                       </div>
                     </section>
+
+                    {selectedCorporateRecurrence?.detected && selected.closed && (
+                      <section className="rounded-2xl border border-amber-700/70 bg-amber-950/30 p-4 text-amber-100">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <div className="text-xs font-black uppercase tracking-wide text-amber-300">Tilbakekomst etter lukking</div>
+                            <p className="mt-1 text-sm font-semibold">
+                              {selectedCorporateRecurrence.label} er målt i {selectedCorporateRecurrence.postClosureSnapshots} nye READY-snapshots etter at tiltaket ble lukket.
+                            </p>
+                            <p className="mt-2 text-xs leading-5 text-amber-200/80">{selectedCorporateRecurrence.note}</p>
+                          </div>
+                          <div className="shrink-0 rounded-full border border-amber-700 px-3 py-1.5 text-xs font-black text-amber-200">
+                            Vurder gjenåpning
+                          </div>
+                        </div>
+                      </section>
+                    )}
 
                     {selectedCorporateEffect ? (
                       <>
