@@ -69,6 +69,7 @@ const permissionLabels: Record<WorkspacePermission, { title: string; description
   "reels.publish": { title: "Reels Studio – publisere", description: "Publisere ferdig forhåndsvist Reel til merkevarens verifiserte Facebook- eller Instagram-kanal." },
   "youtube.read": { title: "YouTube Studio – se", description: "Se verifisert Zen-kanal, kanalstatistikk og ferdige Zen Reels som kan brukes som Shorts." },
   "youtube.publish": { title: "YouTube Studio – publisere", description: "Publisere ferdig forhåndsvist Zen Reel som YouTube Short til eksakt verifisert Zen-kanal." },
+  "nexus.read": { title: "Nexus OS · innsikt", description: "Se brand-avgrensede kilder, læringsregler, vekstplan og eierfokus. Ingen runtime, autonomy, kunder eller utførelse." },
   "corporate.read": { title: "Corporate Homes – se", description: "Se Zen Eco Homes bedrifts- og partnerprospekter uten historisk CRM eller personberikelse." },
   "corporate.plan": { title: "Corporate Homes – planlegge", description: "Lage interne research- og neste-steg-oppgaver. Ingen automatisk kontakt eller statusendring." },
   "visibility.read": { title: "SEO · GEO · AEO – se", description: "Se brand-avgrensede søke-/AI-henvisninger og SEO-oppgaver." },
