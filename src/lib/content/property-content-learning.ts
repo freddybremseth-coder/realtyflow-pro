@@ -1,8 +1,7 @@
 export type PropertyContentLearningEvidenceLevel =
   | "insufficient"
-  | "early"
-  | "measured"
-  | "lead_signal";
+  | "emerging"
+  | "measured";
 
 export type PropertyContentLearningSnapshot = {
   opportunity_id?: unknown;
@@ -17,9 +16,8 @@ export type PropertyContentLearningSnapshot = {
 
 const EVIDENCE_RANK: Record<PropertyContentLearningEvidenceLevel, number> = {
   insufficient: 0,
-  early: 1,
+  emerging: 1,
   measured: 2,
-  lead_signal: 3,
 };
 
 function nonNegative(value: unknown) {
@@ -55,20 +53,16 @@ export function propertyContentEvidenceLevel(metrics: {
   const leadTouchpoints = nonNegative(metrics.leadTouchpoints);
   const publicationViews = nonNegative(metrics.publicationViews);
 
-  if (leadTouchpoints > 0) return "lead_signal";
-  if (searchArrivals >= 5 || touchpoints >= 3 || publicationViews >= 50) return "measured";
-  if (searchArrivals > 0 || touchpoints > 0 || publicationViews > 0) return "early";
+  if (leadTouchpoints > 0 || searchArrivals >= 5 || touchpoints >= 3 || publicationViews >= 50) return "measured";
+  if (searchArrivals > 0 || touchpoints > 0 || publicationViews > 0) return "emerging";
   return "insufficient";
 }
 
 export function propertyContentLearningNote(level: PropertyContentLearningEvidenceLevel) {
-  if (level === "lead_signal") {
-    return "Minst ett lead er sporbart til denne artikkelsiden. Behold signaltypen under observasjon; ingen automatisk scoreendring er tillatt.";
-  }
   if (level === "measured") {
     return "Artikkelen har målbar trafikk eller engasjement. Samle flere publiserte eksempler før signaltypen får påvirke prioriteringen.";
   }
-  if (level === "early") {
+  if (level === "emerging") {
     return "Tidlig aktivitet er registrert, men evidensen er for svak til å endre prioriteringen.";
   }
   return "Ingen sikker effekt er målt ennå. Nexus observerer videre uten å endre scoring.";
