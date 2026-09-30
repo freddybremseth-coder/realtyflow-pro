@@ -21,9 +21,18 @@ export async function GET(request: NextRequest) {
   const results = [];
   const origin = new URL(request.url).origin;
   for (const campaign of campaigns || []) {
+    const { data: claimed } = await supabase.schema("core").from("workspace_newsletter_campaigns")
+      .update({ status: "sending", updated_at: new Date().toISOString() })
+      .eq("id", campaign.id).eq("status", "scheduled")
+      .select("id").maybeSingle();
+    if (!claimed) {
+      results.push({ id: campaign.id, ok: false, code: "ALREADY_CLAIMED" });
+      continue;
+    }
     const { data: brand } = await supabase.schema("core").from("brands")
       .select("brand_key").eq("id", campaign.brand_id).maybeSingle();
     if (!brand?.brand_key) {
+      await supabase.schema("core").from("workspace_newsletter_campaigns").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", campaign.id);
       results.push({ id: campaign.id, ok: false, code: "BRAND_NOT_FOUND" });
       continue;
     }
@@ -34,6 +43,7 @@ export async function GET(request: NextRequest) {
       campaignId: campaign.id,
       origin,
     });
+    if (!result.ok) await supabase.schema("core").from("workspace_newsletter_campaigns").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", campaign.id);
     results.push({ id: campaign.id, ...result });
   }
   return NextResponse.json({ ok: true, processed: results.length, results });
