@@ -47,7 +47,7 @@ import { getDemoFontPair } from "@/components/demosites/demo-fonts";
 import { DemoReveal } from "@/components/demosites/demo-reveal";
 import { DemoLeadForm } from "@/components/demosites/demo-lead-form";
 import { DemoChatWidget } from "@/components/demosites/demo-chat-widget";
-import { getDemoSiteMarketingCopy, getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
+import { getDemoSiteLanguageConfig, getDemoSiteMarketingCopy, getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type ThemeStyle = CSSProperties & {
   "--brand": string;
@@ -204,7 +204,7 @@ export function DemoSitePreviewRenderer({
   const Root = mode === "public" ? "main" : "div";
 
   return (
-    <Root className={`demo-design-root ${mode === "public" ? "demo-public-site" : "demo-internal-site"} ${fonts.classNames} ${rootClass}`} style={rootStyle}>
+    <Root lang={getDemoSiteLanguageConfig(preview.language).locale} className={`demo-design-root ${mode === "public" ? "demo-public-site" : "demo-internal-site"} ${fonts.classNames} ${rootClass}`} style={rootStyle}>
       <style>{`
         .demo-design-root { font-family: var(--demo-font-body); }
         .demo-design-root h1, .demo-design-root h2, .demo-design-root h3 { font-family: var(--demo-font-heading); }
