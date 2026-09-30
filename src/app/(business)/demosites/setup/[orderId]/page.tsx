@@ -153,6 +153,28 @@ function resetForTemplate(form: SetupForm, templateSlug: string, companyName: st
   };
 }
 
+type QualityGateView = {
+  status: "ready" | "needs_review";
+  score: number;
+  checks: Record<string, boolean>;
+};
+
+function qualityGate(order: SetupOrder | null): QualityGateView | null {
+  const value = order?.editable_fields?.quality_gate;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const status = record.status === "ready" ? "ready" : record.status === "needs_review" ? "needs_review" : null;
+  if (!status) return null;
+  const rawChecks = record.checks && typeof record.checks === "object" && !Array.isArray(record.checks)
+    ? record.checks as Record<string, unknown>
+    : {};
+  return {
+    status,
+    score: Number.isFinite(Number(record.score)) ? Number(record.score) : 0,
+    checks: Object.fromEntries(Object.entries(rawChecks).map(([key, passed]) => [key, passed === true])),
+  };
+}
+
 function previewUrl(order: SetupOrder | null) {
   if (!order) return "";
   if (order.preview_url?.includes("/demosites/preview/")) return order.preview_url;
@@ -229,6 +251,7 @@ export default function DemoSitesSetupEditorPage() {
   const selectedLayout = DEMO_SITE_LAYOUTS.find((item) => item.id === form.layout_variant);
   const selectedStyle = DEMO_SITE_STYLES.find((item) => item.id === form.style_preset);
   const customerPreview = previewUrl(order);
+  const quality = qualityGate(order);
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-300" /></div>;
 
@@ -297,6 +320,22 @@ export default function DemoSitesSetupEditorPage() {
           <Card className="border-slate-700/50 bg-slate-800/50">
             <CardHeader><CardTitle className="text-white">Status</CardTitle><CardDescription>Valget brukes både i kunde-preview og etter publisering.</CardDescription></CardHeader>
             <CardContent className="space-y-3 text-sm text-slate-300">
+              {quality ? (
+                <div className={`rounded-xl border p-3 ${quality.status === "ready" ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
+                  <div className={`font-semibold ${quality.status === "ready" ? "text-emerald-200" : "text-amber-100"}`}>
+                    {quality.status === "ready" ? "Klar for kunde" : "Må forbedres"} · {quality.score}/100
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    {quality.status === "ready"
+                      ? "Siden har bestått quality gate for innhold, bilder og CTA."
+                      : "Automatisk kundeoppfølging er blokkert til siden består quality gate."}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-xs text-slate-400">
+                  Quality gate er ikke kjørt ennå. Berik eller lagre oppsettet før siden brukes mot kunde.
+                </div>
+              )}
               <div>Status: {order?.status || "-"}</div>
               <div>Bransjemal: {selectedTemplate?.name || form.template_slug}</div>
               <div>Design: {selectedLayout?.label || form.layout_variant} · {selectedStyle?.label || form.style_preset}</div>
