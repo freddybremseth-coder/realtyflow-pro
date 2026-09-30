@@ -469,10 +469,21 @@ export function DemoSignatureSiteRenderer({
   };
 
   return (
-    <Root className={`signature-site ${fonts.classNames} overflow-hidden ${mode === "public" ? "min-h-screen" : ""} ${theme.page} ${className}`} style={style}>
+    <Root className={`signature-site ${mode === "public" ? "demo-public-site" : "demo-internal-site"} ${fonts.classNames} overflow-hidden ${mode === "public" ? "min-h-screen" : ""} ${theme.page} ${className}`} style={style}>
       <style>{`
         .signature-site { font-family: var(--signature-body); }
         .signature-site h1, .signature-site h2, .signature-site h3 { font-family: var(--signature-heading); }
+        .signature-site.demo-public-site { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+        .signature-site.demo-public-site h1, .signature-site.demo-public-site h2, .signature-site.demo-public-site h3 { text-wrap: balance; overflow-wrap: anywhere; }
+        .signature-site.demo-public-site p { text-wrap: pretty; }
+        .signature-site.demo-public-site a, .signature-site.demo-public-site button, .signature-site.demo-public-site input, .signature-site.demo-public-site select { min-height: 44px; }
+        .signature-site.demo-public-site section { scroll-margin-top: 5.5rem; }
+        .signature-site.demo-public-site img { display: block; }
+        @media (max-width: 767px) {
+          .signature-site.demo-public-site h1 { font-size: clamp(2.45rem, 12vw, 3.65rem) !important; line-height: .96 !important; letter-spacing: -0.04em; }
+          .signature-site.demo-public-site h2 { font-size: clamp(1.9rem, 8.5vw, 2.65rem) !important; line-height: 1.02 !important; }
+          .signature-site.demo-public-site p { max-width: 65ch; }
+        }
         .signature-orbit { animation: signature-orbit 18s linear infinite; }
         .signature-float { animation: signature-float 7s ease-in-out infinite; }
         .signature-marquee { animation: signature-marquee 22s linear infinite; }
