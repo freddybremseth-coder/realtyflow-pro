@@ -37,7 +37,7 @@ import {
   getDemoSitePreviewIndustryVisual,
   type DemoSitesPreviewIndustryVariant,
 } from "@/lib/demosites-preview-visuals";
-import { getDemoSiteMarketingCopy, getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
+import { getDemoSiteLanguageConfig, getDemoSiteMarketingCopy, getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 export type DemoSignatureSiteRendererProps = DemoSitesPreviewInput & {
   mode: DemoSitesPreviewMode;
@@ -472,7 +472,7 @@ export function DemoSignatureSiteRenderer({
   };
 
   return (
-    <Root className={`signature-site ${mode === "public" ? "demo-public-site" : "demo-internal-site"} ${fonts.classNames} overflow-hidden ${mode === "public" ? "min-h-screen" : ""} ${theme.page} ${className}`} style={style}>
+    <Root lang={getDemoSiteLanguageConfig(preview.language).locale} className={`signature-site ${mode === "public" ? "demo-public-site" : "demo-internal-site"} ${fonts.classNames} overflow-hidden ${mode === "public" ? "min-h-screen" : ""} ${theme.page} ${className}`} style={style}>
       <style>{`
         .signature-site { font-family: var(--signature-body); }
         .signature-site h1, .signature-site h2, .signature-site h3 { font-family: var(--signature-heading); }
