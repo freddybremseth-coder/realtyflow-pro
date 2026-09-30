@@ -61,7 +61,7 @@ type OpportunityLearningType = {
   touchpoints: number;
   leadTouchpoints: number;
   publicationViews: number;
-  evidenceLevel: "insufficient" | "early" | "measured" | "lead_signal";
+  evidenceLevel: "insufficient" | "emerging" | "measured";
   readyForReview: boolean;
   note: string;
 };
@@ -116,9 +116,8 @@ function opportunityTypeLabel(value: string) {
 }
 
 function evidenceLabel(value: OpportunityLearningType["evidenceLevel"]) {
-  if (value === "lead_signal") return "Sporbart lead";
   if (value === "measured") return "Målbar effekt";
-  if (value === "early") return "Tidlig signal";
+  if (value === "emerging") return "Tidlig signal";
   return "For lite data";
 }
 
