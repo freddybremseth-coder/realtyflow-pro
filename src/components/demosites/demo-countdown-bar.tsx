@@ -8,25 +8,29 @@
  */
 import { useEffect, useState } from "react";
 import { ArrowRight, Clock, Inbox } from "lucide-react";
+import { getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type DemoCountdownBarProps = {
   expiresAt?: string | null;
   claimUrl?: string | null;
   leadCount?: number;
+  language?: DemoSiteLanguage;
 };
 
-function formatRemaining(ms: number) {
-  if (ms <= 0) return "utløpt";
+function formatRemaining(ms: number, language: DemoSiteLanguage) {
+  const ui = getDemoSiteUiText(language);
+  if (ms <= 0) return ui.countdownExpired;
   const totalMinutes = Math.floor(ms / 60_000);
   const days = Math.floor(totalMinutes / (60 * 24));
   const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
   const minutes = totalMinutes % 60;
-  if (days > 0) return `${days} d ${hours} t`;
-  if (hours > 0) return `${hours} t ${minutes} min`;
-  return `${minutes} min`;
+  if (days > 0) return `${days} ${ui.dayShort} ${hours} ${ui.hourShort}`;
+  if (hours > 0) return `${hours} ${ui.hourShort} ${minutes} ${ui.minuteShort}`;
+  return `${minutes} ${ui.minuteShort}`;
 }
 
-export function DemoCountdownBar({ expiresAt, claimUrl, leadCount = 0 }: DemoCountdownBarProps) {
+export function DemoCountdownBar({ expiresAt, claimUrl, leadCount = 0, language = "nb" }: DemoCountdownBarProps) {
+  const ui = getDemoSiteUiText(language);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -48,13 +52,13 @@ export function DemoCountdownBar({ expiresAt, claimUrl, leadCount = 0 }: DemoCou
           <span className="inline-flex items-center gap-2 font-semibold">
             <Clock className={`h-4 w-4 ${urgent ? "text-red-400" : "text-amber-400"}`} />
             {expired
-              ? "Demoperioden er utløpt — bestill for å beholde siden"
-              : `Demosiden din er aktiv i ${formatRemaining(remaining)} til`}
+              ? ui.countdownExpired
+              : ui.countdownActive(formatRemaining(remaining, language))}
           </span>
           {leadCount > 0 && (
             <span className="inline-flex items-center gap-2 text-emerald-300">
               <Inbox className="h-4 w-4" />
-              {leadCount === 1 ? "1 henvendelse mottatt via denne siden" : `${leadCount} henvendelser mottatt via denne siden`}
+              {leadCount === 1 ? ui.countdownLeadOne : ui.countdownLeadMany(leadCount)}
             </span>
           )}
         </div>
@@ -62,7 +66,7 @@ export function DemoCountdownBar({ expiresAt, claimUrl, leadCount = 0 }: DemoCou
           href={claimUrl}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-400 px-4 py-1.5 text-xs font-bold text-slate-950 transition-transform hover:scale-[1.03] sm:text-sm"
         >
-          Bestill siden nå <ArrowRight className="h-3.5 w-3.5" />
+          {ui.countdownBuy} <ArrowRight className="h-3.5 w-3.5" />
         </a>
       </div>
     </div>
