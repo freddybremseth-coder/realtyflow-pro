@@ -5,6 +5,7 @@ import { Rocket, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DEMO_SITE_PACKAGES, type DemoSitePackageId } from "@/lib/demosites";
+import { DEMO_SITE_LANGUAGES, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type DemoRequestFormState = {
   company_name: string;
@@ -14,6 +15,7 @@ type DemoRequestFormState = {
   industry: string;
   services: string;
   package_id: DemoSitePackageId;
+  site_language: DemoSiteLanguage;
   logo_url: string;
   brand_color: string;
   secondary_color: string;
@@ -38,6 +40,7 @@ const INITIAL_FORM: DemoRequestFormState = {
   industry: "",
   services: "",
   package_id: "standard",
+  site_language: "nb",
   logo_url: "",
   brand_color: "#059669",
   secondary_color: "#0f172a",
@@ -137,6 +140,7 @@ export function TempDemoCard({ onCreated }: { onCreated: () => Promise<void> }) 
             <Input label="Eksisterende nettside" value={form.website_url} onChange={(value) => setForm((prev) => ({ ...prev, website_url: value }))} />
             <Input label="Bransje" value={form.industry} onChange={(value) => setForm((prev) => ({ ...prev, industry: value }))} />
             <Select label="Pakke" value={form.package_id} onChange={(value) => setForm((prev) => ({ ...prev, package_id: value as DemoSitePackageId }))} options={DEMO_SITE_PACKAGES.map((pkg) => ({ value: pkg.id, label: pkg.shortName }))} />
+            <Select label="Språk på nettsiden" value={form.site_language} onChange={(value) => setForm((prev) => ({ ...prev, site_language: value as DemoSiteLanguage }))} options={DEMO_SITE_LANGUAGES.map((language) => ({ value: language.id, label: language.nativeLabel }))} />
             <div className="lg:col-span-2"><Input label="Tjenester" value={form.services} onChange={(value) => setForm((prev) => ({ ...prev, services: value }))} /></div>
           </div>
 
