@@ -25,6 +25,7 @@ const PUBLIC_PATHS = [
   "/api/area-profiles",
   "/api/public/version",
   "/api/public/leads",
+  "/api/public/portal-opt-in",
   "/api/public/booking-leads",
   "/api/public/booking-config",
   "/api/public/booking-availability",
