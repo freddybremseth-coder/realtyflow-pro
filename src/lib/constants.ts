@@ -45,6 +45,7 @@ export const SIDEBAR_NAV = {
     { label: "Nexus Communications", href: "/nexus-os/communications", icon: "MessageSquareText" },
     { label: "Nexus Runtime Controls", href: "/nexus-os/runtime", icon: "Gauge" },
     { label: "Nexus 24/7 Autonomy", href: "/nexus-os/autonomy", icon: "ShieldCheck" },
+    { label: "Outbound & Engagement", href: "/nexus-os/outbound-engagement", icon: "Target" },
     { label: "Account Launch Center", href: "/nexus-os/account-launch", icon: "Rocket" },
     { label: "Channel Connections", href: "/connections", icon: "Settings" },
     { label: "RealtyFlow OS status", href: "/os", icon: "PanelsTopLeft" },
