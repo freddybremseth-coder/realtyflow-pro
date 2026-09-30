@@ -15,9 +15,9 @@ test("normalizes full and relative article URLs without query strings", () => {
 });
 
 test("lead evidence outranks traffic-only evidence", () => {
-  assert.equal(propertyContentEvidenceLevel({ searchArrivals: 1, leadTouchpoints: 1 }), "lead_signal");
+  assert.equal(propertyContentEvidenceLevel({ searchArrivals: 1, leadTouchpoints: 1 }), "measured");
   assert.equal(propertyContentEvidenceLevel({ searchArrivals: 5 }), "measured");
-  assert.equal(propertyContentEvidenceLevel({ searchArrivals: 1 }), "early");
+  assert.equal(propertyContentEvidenceLevel({ searchArrivals: 1 }), "emerging");
   assert.equal(propertyContentEvidenceLevel({}), "insufficient");
 });
 
