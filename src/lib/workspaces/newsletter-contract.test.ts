@@ -32,7 +32,6 @@ test("unsubscribe endpoint is public but token scoped", () => {
   assert.match(unsubscribe, /status: "unsubscribed"/);
 });
 
-
 test("newsletter supports brand-scoped segments, scheduling and engagement tracking", () => {
   assert.match(route, /segmentFilter/);
   assert.match(route, /schedule_campaign/);
