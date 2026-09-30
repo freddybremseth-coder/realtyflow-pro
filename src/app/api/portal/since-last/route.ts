@@ -43,9 +43,13 @@ export async function GET(request: NextRequest) {
     .eq("brand_id", "zeneco")
     .maybeSingle();
 
-  const firstVisit = !portalUser?.previous_login_at;
-  const since = portalUser?.previous_login_at
-    || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const lastLoginMs = portalUser?.last_login_at ? new Date(portalUser.last_login_at).getTime() : 0;
+  const recentSession = lastLoginMs > 0 && Date.now() - lastLoginMs < 30 * 60 * 1000;
+  const firstVisit = !portalUser?.previous_login_at && !portalUser?.last_login_at;
+  const since = recentSession
+    ? (portalUser?.previous_login_at || portalUser?.last_login_at)
+    : (portalUser?.last_login_at || portalUser?.previous_login_at)
+      || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const [
     propertiesResult,
@@ -55,7 +59,7 @@ export async function GET(request: NextRequest) {
   ] = await Promise.all([
     supabase
       .from("properties")
-      .select("id,ref,title,title_no,brand_id,brand,show_on_website,website_visible,created_at")
+      .select("id,ref,title,title_no,brand_id,show_on_website,website_visible,created_at")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(250),
