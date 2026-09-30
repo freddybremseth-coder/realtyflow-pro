@@ -58,7 +58,7 @@ export async function GET(
       .eq("brand_id", brandKey)
       .maybeSingle(),
     supabase.from("nexus_owner_focus")
-      .select("focus_key,title,notes,intensity,success_definition,review_due_at,updated_at")
+      .select("focus_key,title,intensity,success_definition,review_due_at,updated_at")
       .eq("brand_id", brandKey)
       .eq("status", "active")
       .order("intensity", { ascending: false })
@@ -110,7 +110,6 @@ export async function GET(
   const focus = ((focusR.data || []) as Array<Record<string, unknown>>).map(row => ({
     key: typeof row.focus_key === "string" ? row.focus_key : "focus",
     title: typeof row.title === "string" ? row.title.slice(0, 220) : "Prioritet",
-    notes: typeof row.notes === "string" ? row.notes.slice(0, 600) : null,
     intensity: Math.max(0, Math.min(100, safeNumber(row.intensity))),
     successDefinition: typeof row.success_definition === "string"
       ? row.success_definition.slice(0, 500) : null,
@@ -150,7 +149,7 @@ export async function GET(
     attention.push({
       level: "action",
       title: `Eierfokus: ${item.title}`,
-      detail: item.successDefinition || item.notes || "Dette er en eksplisitt prioritet for merkevaren.",
+      detail: item.successDefinition || "Dette er en eksplisitt prioritet for merkevaren.",
     });
   }
 
