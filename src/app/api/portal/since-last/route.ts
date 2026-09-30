@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
   ] = await Promise.all([
     supabase
       .from("properties")
-      .select("id,ref,title,title_no,brand_id,brand,show_on_website,website_visible,created_at")
+      .select("id,ref,title,title_no,brand_id,show_on_website,website_visible,created_at")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(250),
