@@ -135,6 +135,12 @@ function getOrigin(fields: Record<string, unknown> | null) {
   return String(fields?.order_origin || "").trim().toLowerCase();
 }
 
+function isQualityReady(fields: Record<string, unknown> | null) {
+  const gate = fields?.quality_gate;
+  if (!gate || typeof gate !== "object" || Array.isArray(gate)) return false;
+  return String((gate as Record<string, unknown>).status || "").trim().toLowerCase() === "ready";
+}
+
 function chooseFollowup(order: FollowupOrder, now: number): FollowupKind | null {
   const fields = { ...(order.editable_fields || {}) };
   const followups = { ...((fields.followups as Record<string, unknown>) || {}) };
@@ -184,6 +190,7 @@ export async function GET(request: NextRequest) {
   for (const row of (data || []) as FollowupOrder[]) {
     if (!row.customer_email || isInternalImportEmail(row.customer_email)) continue;
     if (getOrigin(row.editable_fields) !== "customer_initiated") continue;
+    if (!isQualityReady(row.editable_fields)) continue;
     if (!row.preview_url || !row.claim_url || !row.expires_at) continue;
 
     const kind = chooseFollowup(row, now);
