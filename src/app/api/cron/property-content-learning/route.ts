@@ -110,6 +110,19 @@ function pagePathFromMetadata(metadata: unknown) {
   return normalizeTrackedPath(record.page_url || record.pageUrl || "");
 }
 
+function articleSlugFromPath(path: string) {
+  return normalizeTrackedPath(path).split("/").filter(Boolean).pop() || "";
+}
+
+function attributedArticleSlugFromMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return "";
+  const record = metadata as Record<string, unknown>;
+  const campaign = String(record.utm_campaign ?? "").trim();
+  const source = String(record.utm_source ?? "").trim();
+  if (campaign !== "marked_akkurat_na" || source !== "zen_magasin") return "";
+  return String(record.utm_content ?? "").trim();
+}
+
 async function logRun(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   status: "success" | "error",
@@ -295,6 +308,7 @@ export async function GET(request: NextRequest) {
         normalizeTrackedPath(event.path) === item.path && asTime(event.occurred_at) >= item.windowStartMs,
       ).length;
 
+      const itemSlug = articleSlugFromPath(item.path);
       const directTouches = (touchpointResult.data || []).filter((event: any) => {
         if (asTime(event.occurred_at) < item.windowStartMs) return false;
         const publicationMatch = item.publicationId && (
@@ -302,15 +316,26 @@ export async function GET(request: NextRequest) {
           String(event.content_id || "") === item.publicationId
         );
         const pathMatch = pagePathFromMetadata(event.metadata) === item.path;
-        return Boolean(publicationMatch || pathMatch);
+        const articleAttributionMatch =
+          Boolean(itemSlug) && attributedArticleSlugFromMetadata(event.metadata) === itemSlug;
+        return Boolean(publicationMatch || pathMatch || articleAttributionMatch);
       });
 
-      const pathLeads = (revenueResult.data || []).filter((event: any) =>
-        asTime(event.occurred_at) >= item.windowStartMs &&
+      const attributedLeadEvents = (revenueResult.data || []).filter((event: any) => {
+        if (asTime(event.occurred_at) < item.windowStartMs) return false;
+        const pathMatch = pagePathFromMetadata(event.metadata) === item.path;
+        const articleAttributionMatch =
+          Boolean(itemSlug) && attributedArticleSlugFromMetadata(event.metadata) === itemSlug;
+        return pathMatch || articleAttributionMatch;
+      });
+      const pathLeads = attributedLeadEvents.filter((event: any) =>
         pagePathFromMetadata(event.metadata) === item.path,
       ).length;
+      const utmLeads = attributedLeadEvents.filter((event: any) =>
+        Boolean(itemSlug) && attributedArticleSlugFromMetadata(event.metadata) === itemSlug,
+      ).length;
       const touchpointLeads = directTouches.filter((event: any) => Boolean(event.contact_id)).length;
-      const leadTouchpoints = Math.max(pathLeads, touchpointLeads);
+      const leadTouchpoints = Math.max(attributedLeadEvents.length, touchpointLeads);
       const views = item.publicationId ? (publicationViews.get(item.publicationId) || 0) : 0;
       const evidenceLevel = propertyContentEvidenceLevel({
         searchArrivals,
@@ -341,10 +366,11 @@ export async function GET(request: NextRequest) {
             search_discovery_events: searchArrivals,
             marketing_touchpoints: directTouches.length,
             exact_page_leads: pathLeads,
+            exact_utm_content_leads: utmLeads,
             direct_publication_leads: touchpointLeads,
             content_publication_views: views,
           },
-          attribution_policy: "exact_path_or_publication_only",
+          attribution_policy: "exact_path_publication_or_utm_content",
           scoring_effect: "none_observe_only",
           article_source: item.source,
         },
@@ -367,7 +393,7 @@ export async function GET(request: NextRequest) {
       stage: "complete",
       observed: snapshots.length,
       evidence_levels: evidenceLevels,
-      attribution_policy: "exact_path_or_publication_only",
+      attribution_policy: "exact_path_publication_or_utm_content",
       scoring_effect: "none_observe_only",
       content_studio_items: contentStudioItems.length,
       existing_market_items: legacyItems.length,
