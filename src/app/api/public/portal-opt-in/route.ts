@@ -18,7 +18,7 @@ function secret() {
     || "";
 }
 
-function verifyToken(token: string): { contactId: string; email: string; exp: number } | null {
+function verifyToken(token: string) {
   const [payload, signature] = token.split(".");
   const key = secret();
   if (!payload || !signature || !key) return null;
@@ -35,7 +35,7 @@ function verifyToken(token: string): { contactId: string; email: string; exp: nu
       exp?: number;
     };
     if (!parsed.contactId || !parsed.email || !parsed.exp || parsed.exp < Date.now()) return null;
-    return { contactId: parsed.contactId, email: parsed.email, exp: parsed.exp };
+    return parsed;
   } catch {
     return null;
   }
