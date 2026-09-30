@@ -146,3 +146,33 @@ test("Corporate EFFECTIVE conclusion always requires explicit human evidence", (
   assert.match(page, /påkrevd ved EFFECTIVE/);
   assert.match(page, /Målt Corporate-funnelbevegelse alene er ikke bevis på årsak/);
 });
+
+
+test("Corporate recurrence after closure is read-only and requires manual reopen", () => {
+  const route = fs.readFileSync(
+    "src/app/api/revenue/command/continuous-improvement/route.ts",
+    "utf8",
+  );
+  const corporatePage = fs.readFileSync(
+    "src/app/(business)/corporate-homes/page.tsx",
+    "utf8",
+  );
+  const improvementPage = fs.readFileSync(
+    "src/app/(realty)/continuous-improvement/page.tsx",
+    "utf8",
+  );
+
+  const getStart = route.indexOf("export async function GET");
+  const postStart = route.indexOf("export async function POST");
+  const getSource = route.slice(getStart, postStart);
+
+  assert.match(route, /buildCorporateImprovementRecurrence/);
+  assert.match(route, /corporateRecurrences/);
+  assert.doesNotMatch(getSource, /REOPEN_IMPROVEMENT|makeImprovementEvent|saveSettings|\.upsert\(/);
+
+  assert.match(corporatePage, /Flaskehals tilbake etter lukking/);
+  assert.match(corporatePage, /vurder gjenåpning/i);
+  assert.match(improvementPage, /Tilbakekomst etter lukking/);
+  assert.match(improvementPage, /Vurder gjenåpning/);
+  assert.match(improvementPage, /REOPEN_IMPROVEMENT/);
+});
