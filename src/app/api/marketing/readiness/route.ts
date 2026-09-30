@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { OWNED_GROWTH_BRAND_IDS, OWNED_GROWTH_BRANDS, growthBrandDefinition, isMetaGrowthChannel, isPilotChannel } from "@/lib/marketing/brand-registry";
+import { OWNED_GROWTH_BRAND_IDS, OWNED_GROWTH_BRANDS, growthBrandDefinition, isMetaGrowthChannel, isPilotChannel, socialDestinationOwnerBrandId } from "@/lib/marketing/brand-registry";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import type { MarketingChannel } from "@/lib/marketing/genome";
 import {
@@ -130,7 +130,34 @@ export async function GET(request: NextRequest) {
   ]);
 
   const contextByBrand = new Map((contexts ?? []).map((row: any) => [String(row.brand_id), row]));
-  const rows: ReadinessRow[] = (channels ?? []).map((channel: any): ReadinessRow => {
+
+  // Readiness represents effective publishing destinations, not duplicated
+  // credential rows. Freddy sub-brands inherit the professional Freddy Meta
+  // destination while keeping their own content/pipeline/learning identity.
+  const rawChannels = channels ?? [];
+  const effectiveChannels = rawChannels.filter((channel: any) => {
+    const brandId = String(channel.brand_id);
+    const platform = String(channel.platform);
+    return socialDestinationOwnerBrandId(brandId, platform) === brandId;
+  });
+  for (const brand of OWNED_GROWTH_BRANDS) {
+    for (const platform of ["facebook", "instagram"] as const) {
+      const ownerBrandId = socialDestinationOwnerBrandId(brand.id, platform);
+      if (ownerBrandId === brand.id) continue;
+      const ownerChannels = rawChannels.filter(
+        (channel: any) => String(channel.brand_id) === ownerBrandId && String(channel.platform) === platform,
+      );
+      for (const ownerChannel of ownerChannels) {
+        effectiveChannels.push({
+          ...ownerChannel,
+          brand_id: brand.id,
+          inherited_destination_from: ownerBrandId,
+        });
+      }
+    }
+  }
+
+  const rows: ReadinessRow[] = effectiveChannels.map((channel: any): ReadinessRow => {
     const brandId = String(channel.brand_id);
     const platform = String(channel.platform);
     const surfaceKind = marketingSurfaceKind(platform);
