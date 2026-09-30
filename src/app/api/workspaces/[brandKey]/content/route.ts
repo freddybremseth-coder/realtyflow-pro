@@ -204,7 +204,7 @@ export async function POST(
 
     const { data: opportunity, error: opportunityError } = await access.value.supabase
       .from("property_content_opportunities")
-      .select("id,brand_id,status,opportunity_type,title,summary,draft_markdown,image_url,primary_keyword,supporting_keywords,audience,property_refs,draft_id")
+      .select("id,brand_id,status,opportunity_type,title,summary,draft_markdown,image_url,primary_keyword,supporting_keywords,audience,property_refs,evidence,expires_at,draft_id")
       .eq("id", opportunityId)
       .eq("brand_id", params.brandKey)
       .maybeSingle();
@@ -230,6 +230,83 @@ export async function POST(
       return fail(409, "OPPORTUNITY_ALREADY_USED");
     }
     if (String(opportunity.status) !== "suggested") return fail(409, "OPPORTUNITY_NOT_ACTIVE");
+
+    const expiresAt = opportunity.expires_at ? Date.parse(String(opportunity.expires_at)) : NaN;
+    if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+      await access.value.supabase
+        .from("property_content_opportunities")
+        .update({ status: "expired", updated_at: new Date().toISOString() })
+        .eq("id", opportunityId)
+        .eq("brand_id", params.brandKey)
+        .eq("status", "suggested");
+      return fail(409, "OPPORTUNITY_STALE_REFRESH_REQUIRED", "Forslaget har utløpt. Nexus oppdaterer signalet med ferske boligdata.");
+    }
+
+    const opportunityRefs = stringArray(opportunity.property_refs, 12, 120);
+    if (opportunityRefs.length > 0) {
+      const { data: liveVisibilityRows, error: liveVisibilityError } = await access.value.supabase
+        .from("property_brand_visibility")
+        .select("property_id,visible,properties!inner(ref,price,show_on_website,website_visible)")
+        .eq("brand_id", params.brandKey)
+        .eq("visible", true)
+        .eq("properties.show_on_website", true)
+        .eq("properties.website_visible", true)
+        .in("properties.ref", opportunityRefs);
+
+      if (liveVisibilityError) return fail(503, "OPPORTUNITY_REVALIDATION_FAILED");
+
+      const liveByRef = new Map<string, number>();
+      for (const row of liveVisibilityRows || []) {
+        const property = Array.isArray((row as any).properties)
+          ? (row as any).properties[0]
+          : (row as any).properties;
+        const ref = text(property?.ref, 120);
+        const price = Number(property?.price);
+        if (ref && Number.isFinite(price) && price > 0) liveByRef.set(ref, price);
+      }
+
+      const evidenceProperties =
+        opportunity.evidence && typeof opportunity.evidence === "object" && !Array.isArray(opportunity.evidence) &&
+        Array.isArray((opportunity.evidence as Record<string, unknown>).properties)
+          ? ((opportunity.evidence as Record<string, unknown>).properties as Array<Record<string, unknown>>)
+          : [];
+      const evidencePriceByRef = new Map(
+        evidenceProperties
+          .map((property) => [text(property?.ref, 120), Number(property?.price)] as const)
+          .filter(([ref, price]) => ref && Number.isFinite(price) && price > 0),
+      );
+
+      const missingRefs = opportunityRefs.filter(ref => !liveByRef.has(ref));
+      const changedPrices = opportunityRefs.filter(ref => {
+        const previous = evidencePriceByRef.get(ref);
+        const current = liveByRef.get(ref);
+        return previous != null && current != null && Math.round(previous) !== Math.round(current);
+      });
+
+      if (missingRefs.length > 0 || changedPrices.length > 0) {
+        await access.value.supabase
+          .from("property_content_opportunities")
+          .update({
+            status: "expired",
+            expires_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", opportunityId)
+          .eq("brand_id", params.brandKey)
+          .eq("status", "suggested");
+
+        const reason = [
+          missingRefs.length ? "ikke lenger publiserbar: " + missingRefs.join(", ") : "",
+          changedPrices.length ? "pris endret: " + changedPrices.join(", ") : "",
+        ].filter(Boolean).join(" · ");
+
+        return fail(
+          409,
+          "OPPORTUNITY_STALE_REFRESH_REQUIRED",
+          "Boligdata har endret seg (" + reason + "). Nexus lager et ferskt forslag ved neste signalskann.",
+        );
+      }
+    }
 
     const cms = await loadCmsConfig(access.value.supabase, params.brandKey);
     if (cms.error || !cms.config) return fail(503, "CONTENT_STUDIO_UNAVAILABLE");
