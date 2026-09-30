@@ -524,6 +524,44 @@ export const WORKSPACE_TRAINING_ARTICLES: TrainingArticle[] = [
     ],
   },
   {
+    id: "nexus-insights",
+    title: "Nexus OS – forstå signalene uten å styre motoren",
+    shortTitle: "Nexus Innsikt",
+    summary: "Hvordan du bruker brand-avgrenset Nexus-innsikt til å prioritere arbeid uten å måtte forstå runtime, canary eller interne automasjoner.",
+    readMinutes: 5,
+    brands: "all",
+    anyPermissions: ["nexus.read"],
+    sections: [
+      {
+        heading: "Hva denne siden er til",
+        paragraphs: [
+          "Nexus Innsikt samler merkevarens kilder, læringsregler, vekstplan og eventuelle eksplisitte prioriteringer fra eier. Målet er å fortelle deg hva som er verdt å jobbe med – ikke å gjøre deg til systemadministrator.",
+        ],
+        emphasis: "Hvis siden sier at noe venter, er det ikke automatisk en beskjed om at du skal kjøre canary, cron eller en systemjobb manuelt.",
+      },
+      {
+        heading: "Hva du skal se etter",
+        bullets: [
+          "Kilder som er klare: råmateriale som kan brukes videre i Content Studio eller markedsføringsarbeid.",
+          "Blokkerte kilder: signal om at noe må avklares før mer arbeid legges i kilden.",
+          "Læringsregler: mønstre Nexus har nok måling til å vise som dokumentert signal.",
+          "Vekstplan: hvilke kanaler, kildetyper og konverteringsmål merkevaren arbeider mot.",
+          "Eierfokus: eksplisitte prioriteringer som skal veie tyngre enn vanlig porteføljebalanse.",
+        ],
+      },
+      {
+        heading: "Hva du ikke får tilgang til",
+        bullets: [
+          "Runtime-kontroller, autonomy-policy og canary-styring.",
+          "Globale Nexus-regler eller andre merkevarers data.",
+          "Kundeidentitet, historisk CRM, provisjon eller økonomisk truth.",
+          "Agentiske handlinger, utsending, publisering eller andre sideeffekter.",
+        ],
+        emphasis: "Nexus Innsikt er read-only. Handling skjer fortsatt i den modulen som faktisk eier jobben – for eksempel Content Studio, E-post / Reach eller Reels Studio.",
+      },
+    ],
+  },
+  {
     id: "youtube-studio",
     title: "YouTube Studio – publiser en ferdig Zen Reel som Short",
     shortTitle: "YouTube Studio",
