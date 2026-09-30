@@ -27,6 +27,7 @@
 import { getDemoSiteTemplateDefaults, type DemoSiteFaqItem } from "@/lib/demosites";
 import { validatePublicWebsiteUrl } from "@/lib/demosites-profile-import";
 import { askClaude } from "@/services/ai/claude-client";
+import { getDemoSiteLanguageConfig, normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -489,7 +490,9 @@ export async function generateDemoCopy(input: {
   snapshot?: DemoSiteWebsiteSnapshot | null;
   /** Premium demos also extract the team from the crawled pages. */
   extractEmployees?: boolean;
+  language?: DemoSiteLanguage;
 }): Promise<DemoSiteGeneratedCopy | null> {
+  const language = getDemoSiteLanguageConfig(input.language);
   const snapshotContext = input.snapshot
     ? `
 FRA BEDRIFTENS EKSISTERENDE NETTSIDE — ${input.snapshot.pagesCrawled} sider analysert (bruk dette aktivt: nevn faktiske tjenester, priser og stedsnavn):
@@ -508,7 +511,8 @@ TJENESTER OPPGITT AV KUNDEN: ${input.services.join(", ") || "(ingen oppgitt)"}
 KUNDENS EGEN BESKRIVELSE (viktigst — fokus, produkter og priser kunden vil fronte): ${input.notes || "(ingen)"}
 ${snapshotContext}
 
-Skriv på norsk. Vær konkret og menneskelig. Bruk bedriftsnavn, faktiske tjenester og dokumenterte stedsnavn når det passer.
+SKRIV ALT KUN PÅ ${language.promptName}. Ikke bland inn norsk eller engelsk med mindre det er del av et egennavn.
+Vær konkret og menneskelig. Bruk bedriftsnavn, faktiske tjenester og dokumenterte stedsnavn når det passer.
 Dette skal leses godt på mobil: mindre tekst er bedre enn fyllstoff.
 
 DESIGN- OG KOPIREGLER:
@@ -846,6 +850,7 @@ export async function enrichDemoSiteOrder(
   const errors: string[] = [];
   const fields: Record<string, unknown> = { ...(order.editable_fields || {}) };
   const templateSlug = textOf(fields.template_slug) || textOf(order.template_slug) || "local-service";
+  const siteLanguage = normalizeDemoSiteLanguage(fields.site_language);
   const defaults = getDemoSiteTemplateDefaults(templateSlug, order.company_name);
   const brandColor = textOf(fields.brand_color) || textOf(order.brand_color) || defaults.brand_color;
 
@@ -887,6 +892,7 @@ export async function enrichDemoSiteOrder(
         notes: order.notes,
         snapshot,
         extractEmployees: isPremium,
+        language: siteLanguage,
       });
 
   if (copy) {
@@ -945,6 +951,7 @@ export async function enrichDemoSiteOrder(
     crawled_images: crawledImages.length,
     generated_images: generatedImages.length,
     errors,
+    site_language: siteLanguage,
     quality_gate: fields.quality_gate,
   };
 
