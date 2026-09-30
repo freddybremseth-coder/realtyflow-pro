@@ -491,6 +491,7 @@ export async function generateDemoCopy(input: {
   /** Premium demos also extract the team from the crawled pages. */
   extractEmployees?: boolean;
   language?: DemoSiteLanguage;
+  existingCopy?: Record<string, unknown> | null;
 }): Promise<DemoSiteGeneratedCopy | null> {
   const language = getDemoSiteLanguageConfig(input.language);
   const snapshotContext = input.snapshot
@@ -503,13 +504,21 @@ Tekstutdrag:
 ${input.snapshot.snippets.slice(0, 12).join("\n")}`
     : "";
 
-  const prompt = `Du skriver innhold til en ny, moderne nettside for en norsk lokal bedrift. Innholdet skal føles skreddersydd, konkret og selgende — ikke som en mal.
+  const existingCopyContext = input.existingCopy
+    ? `
+EKSISTERENDE GODKJENT NETTSIDEINNHOLD SOM SKAL BEVARES FAKTAMESSIG OG TILPASSES/OVERSETTES:
+${JSON.stringify(input.existingCopy).slice(0, 7000)}
+`
+    : "";
+
+  const prompt = `Du skriver innhold til en ny, moderne nettside for en lokal bedrift. Innholdet skal føles skreddersydd, konkret og selgende — ikke som en mal.
 
 BEDRIFT: ${input.companyName}
 BRANSJE: ${input.industry || input.templateSlug}
 TJENESTER OPPGITT AV KUNDEN: ${input.services.join(", ") || "(ingen oppgitt)"}
 KUNDENS EGEN BESKRIVELSE (viktigst — fokus, produkter og priser kunden vil fronte): ${input.notes || "(ingen)"}
 ${snapshotContext}
+${existingCopyContext}
 
 SKRIV ALT KUN PÅ ${language.promptName}. Ikke bland inn norsk eller engelsk med mindre det er del av et egennavn.
 Vær konkret og menneskelig. Bruk bedriftsnavn, faktiske tjenester og dokumenterte stedsnavn når det passer.
@@ -836,6 +845,8 @@ export type DemoSiteEnrichmentOptions = {
   regenerateImages?: boolean;
   /** Skip snapshot + AI copy — only touch images. */
   imagesOnly?: boolean;
+  /** Rebuild customer-facing copy even when fields were previously customized. Used for an explicit language change. */
+  regenerateCopy?: boolean;
 };
 
 /**
@@ -893,20 +904,33 @@ export async function enrichDemoSiteOrder(
         snapshot,
         extractEmployees: isPremium,
         language: siteLanguage,
+        existingCopy: options.regenerateCopy
+          ? {
+              hero_title: fields.hero_title,
+              hero_subtitle: fields.hero_subtitle,
+              intro_text: fields.intro_text,
+              services: fields.services,
+              trust_points: fields.trust_points,
+              faq: fields.faq,
+              call_to_action: fields.call_to_action,
+              contact_text: fields.contact_text,
+            }
+          : null,
       });
 
   if (copy) {
-    if (copy.hero_title && isDefaultText(fields.hero_title, defaults.hero_title)) fields.hero_title = copy.hero_title;
-    if (copy.hero_subtitle && isDefaultText(fields.hero_subtitle, defaults.hero_subtitle)) fields.hero_subtitle = copy.hero_subtitle;
-    if (copy.intro_text && isDefaultText(fields.intro_text, defaults.intro_text)) fields.intro_text = copy.intro_text;
-    if (copy.call_to_action && isDefaultText(fields.call_to_action, defaults.call_to_action)) fields.call_to_action = copy.call_to_action;
-    if (copy.contact_text && isDefaultText(fields.contact_text, defaults.contact_text)) fields.contact_text = copy.contact_text;
-    if (copy.services?.length && (servicesLookJunky || isDefaultList(fields.services, defaults.services))) {
+    const replaceCopy = options.regenerateCopy === true;
+    if (copy.hero_title && (replaceCopy || isDefaultText(fields.hero_title, defaults.hero_title))) fields.hero_title = copy.hero_title;
+    if (copy.hero_subtitle && (replaceCopy || isDefaultText(fields.hero_subtitle, defaults.hero_subtitle))) fields.hero_subtitle = copy.hero_subtitle;
+    if (copy.intro_text && (replaceCopy || isDefaultText(fields.intro_text, defaults.intro_text))) fields.intro_text = copy.intro_text;
+    if (copy.call_to_action && (replaceCopy || isDefaultText(fields.call_to_action, defaults.call_to_action))) fields.call_to_action = copy.call_to_action;
+    if (copy.contact_text && (replaceCopy || isDefaultText(fields.contact_text, defaults.contact_text))) fields.contact_text = copy.contact_text;
+    if (copy.services?.length && (replaceCopy || servicesLookJunky || isDefaultList(fields.services, defaults.services))) {
       fields.services = sanitizeServiceList(copy.services);
     }
-    if (copy.trust_points?.length && isDefaultList(fields.trust_points, defaults.trust_points)) fields.trust_points = copy.trust_points;
+    if (copy.trust_points?.length && (replaceCopy || isDefaultList(fields.trust_points, defaults.trust_points))) fields.trust_points = copy.trust_points;
     const currentFaqIsDefault = JSON.stringify(fields.faq || []) === JSON.stringify(defaults.faq || []);
-    if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (!Array.isArray(fields.faq) || !(fields.faq as unknown[]).length || currentFaqIsDefault)) {
+    if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (replaceCopy || !Array.isArray(fields.faq) || !(fields.faq as unknown[]).length || currentFaqIsDefault)) {
       fields.faq = copy.faq.filter((item) => item && item.question).slice(0, 6);
     }
     if (isPremium && Array.isArray(copy.employees) && (!Array.isArray(fields.employees) || !(fields.employees as unknown[]).length)) {
