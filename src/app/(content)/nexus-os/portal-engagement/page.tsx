@@ -24,13 +24,16 @@ type PortalCustomer = {
   interested24h:number;
   notForMe24h:number;
   customerMessages24h:number;
+  portalChanges24h:number;
+  hotSignals24h:number;
+  latestPortalSignal?:{signal?:string|null;title?:string|null;description?:string|null;occurredAt?:string|null;hotLead?:boolean}|null;
   latestFeedback?:{action?:string|null;propertyId?:string|null;createdAt?:string|null}|null;
   latestCustomerMessage?:{body?:string|null;createdAt?:string|null}|null;
 };
 
 type Payload = {
   generatedAt:string;
-  summary:{total:number;invited:number;active:number;active30m:number;active2h:number;interested24h:number;messages24h:number};
+  summary:{total:number;invited:number;active:number;active30m:number;active2h:number;interested24h:number;messages24h:number;changes24h:number;hotSignals24h:number};
   customers:PortalCustomer[];
   note?:string;
 };
@@ -98,7 +101,7 @@ export default function PortalEngagementPage() {
 
     {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><AlertTriangle size={18} className="mr-2 inline"/><b>Kunne ikke lese portalaktivitet:</b> {error}</div>}
 
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-9">
       <Metric icon={<UserPlus size={18}/>} label="Portalbrukere" value={data?.summary.total ?? 0}/>
       <Metric icon={<UserPlus size={18}/>} label="Invitert" value={data?.summary.invited ?? 0}/>
       <Metric icon={<UserCheck size={18}/>} label="Aktive" value={data?.summary.active ?? 0}/>
@@ -106,6 +109,8 @@ export default function PortalEngagementPage() {
       <Metric icon={<Clock3 size={18}/>} label="Aktiv 2 timer" value={data?.summary.active2h ?? 0}/>
       <Metric icon={<ThumbsUp size={18}/>} label="Interessert 24t" value={data?.summary.interested24h ?? 0}/>
       <Metric icon={<Mail size={18}/>} label="Meldinger 24t" value={data?.summary.messages24h ?? 0}/>
+      <Metric icon={<Activity size={18}/>} label="Endringer 24t" value={data?.summary.changes24h ?? 0}/>
+      <Metric icon={<Flame size={18}/>} label="Sterke signaler" value={data?.summary.hotSignals24h ?? 0}/>
     </section>
 
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -117,7 +122,7 @@ export default function PortalEngagementPage() {
     <section className="space-y-3">
       {customers.map(customer => {
         const badge = activityBadge(customer);
-        const urgent = customer.lastLoginMinutes != null && customer.lastLoginMinutes <= 30 || customer.interested24h > 0 || customer.customerMessages24h > 0;
+        const urgent = customer.lastLoginMinutes != null && customer.lastLoginMinutes <= 30 || customer.interested24h > 0 || customer.customerMessages24h > 0 || customer.hotSignals24h > 0;
         return <article key={customer.portalUserId} className={`rounded-2xl border p-5 shadow-sm ${urgent ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-white"}`}>
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
@@ -131,16 +136,18 @@ export default function PortalEngagementPage() {
               <div className="mt-1 text-sm text-slate-600">{customer.email}{customer.phone ? ` · ${customer.phone}` : ""}</div>
               <div className="mt-3 text-sm font-semibold text-slate-700">Siste Min side-aktivitet: {ageLabel(customer.lastLoginMinutes)}</div>
               {customer.latestCustomerMessage?.body && <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3 text-sm text-slate-800"><b>Siste melding:</b> {customer.latestCustomerMessage.body.slice(0,300)}</div>}
+              {customer.latestPortalSignal?.title && <div className={`mt-3 rounded-xl border p-3 text-sm ${customer.latestPortalSignal.hotLead ? "border-orange-200 bg-orange-100 text-orange-950" : "border-slate-200 bg-slate-50 text-slate-800"}`}><b>Siste Min side-signal:</b> {customer.latestPortalSignal.title}{customer.latestPortalSignal.description ? <div className="mt-1 text-xs opacity-80">{customer.latestPortalSignal.description.slice(0,300)}</div> : null}</div>}
             </div>
             <div className="w-full lg:w-[360px]">
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-wider text-slate-500">Engagement score</span><span className="text-2xl font-black text-slate-950">{customer.engagementScore}/100</span></div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div className="mt-3 grid grid-cols-4 gap-2 text-center">
                   <Signal icon={<ThumbsUp size={14}/>} label="Interessert" value={customer.interested24h}/>
                   <Signal icon={<ThumbsDown size={14}/>} label="Ikke for meg" value={customer.notForMe24h}/>
                   <Signal icon={<Inbox size={14}/>} label="Meldinger" value={customer.customerMessages24h}/>
+                  <Signal icon={<Activity size={14}/>} label="Endringer" value={customer.portalChanges24h}/>
                 </div>
-                {urgent && <div className="mt-3 rounded-lg bg-orange-100 p-2 text-xs font-bold text-orange-950">Sterkt aktivitetssignal: vurder rask personlig oppfølging mens kunden er i kjøpsmodus.</div>}
+                {urgent && <div className="mt-3 rounded-lg bg-orange-100 p-2 text-xs font-bold text-orange-950">{customer.hotSignals24h > 0 ? "Nytt Min side-signal med høy intensjon: åpne kundekortet og vurder personlig oppfølging." : "Sterkt aktivitetssignal: vurder rask personlig oppfølging mens kunden er i kjøpsmodus."}</div>}
               </div>
             </div>
           </div>
