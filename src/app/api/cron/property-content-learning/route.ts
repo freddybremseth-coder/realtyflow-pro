@@ -16,6 +16,76 @@ const BRAND_ID = "zeneco";
 const ACTION = "property_content_learning_snapshot";
 const WINDOW_DAYS = 30;
 
+type LearningItem = {
+  opportunityId: string;
+  opportunityType: string;
+  title: string;
+  path: string;
+  publicationId: string | null;
+  ageDays: number;
+  windowDays: number;
+  windowStartMs: number;
+  publishedAt: string;
+  source: "content_studio" | "existing_market_article";
+};
+
+const EXISTING_MARKET_ARTICLES = [
+  {
+    signature: "cross_area_same_budget:N9098:N9203",
+    title: "Rundt €500.000 på Costa Blanca Nord – hva kan du faktisk kjøpe akkurat nå?",
+    path: "/magasin/costa-blanca-nord-500000-euro-hva-kjope-na",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "same_price_area_gap:N9096:N9098",
+    title: "Benidorm: €456.000 mot €516.000 – hva kjøper de ekstra €60.000?",
+    path: "/magasin/benidorm-villa-456000-vs-516000",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "same_price_area_gap:N8313:SP1296",
+    title: "Finestrat: €650.000, €700.000 eller €735.000 – hva er egentlig forskjellen?",
+    path: "/magasin/finestrat-villa-650000-700000-735000",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "same_price_area_gap:N9203:N9860",
+    title: "Villajoyosa: €275.000 mot €375.000 – hva kjøper de ekstra €100.000?",
+    path: "/magasin/villajoyosa-275000-vs-375000",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "cross_area_same_budget:N6149:SP0674",
+    title: "Under €300.000 på Costa Blanca Nord – tre boliger som viser hvor ulikt budsjettet kan brukes",
+    path: "/magasin/costa-blanca-nord-under-300000-tre-kjop",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "cross_area_same_budget:N8511:N9095",
+    title: "Rundt €600.000: Benidorm, Polop eller Finestrat – tre helt forskjellige måter å bruke samme budsjett",
+    path: "/magasin/600000-euro-benidorm-polop-finestrat",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "property_type_tradeoff:N8643:SP1663",
+    title: "Finestrat: leilighet til €430.000 eller bungalow til €432.400 – nesten samme pris, ulik bolig",
+    path: "/magasin/finestrat-430000-leilighet-eller-bungalow",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "same_price_area_gap:N8313:N9835",
+    title: "Tre Finestrat-villaer rundt €700.000 – samme prisnivå, helt forskjellige tall",
+    path: "/magasin/finestrat-rundt-700000-114-155-314-m2",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+  {
+    signature: "same_price_area_gap:N9834:SP1296",
+    title: "€735.000 mot €735.950 i Finestrat – nesten samme pris, 74 m² forskjell i boligflate",
+    path: "/magasin/finestrat-735000-vs-735950",
+    publishedAt: "2026-09-29T12:00:00+02:00",
+  },
+] as const;
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -79,42 +149,25 @@ export async function GET(request: NextRequest) {
     if (opportunityError) throw opportunityError;
 
     const opportunityRows = (opportunities || []).filter((row: any) => row?.id && row?.draft_id);
-    if (!opportunityRows.length) {
-      await logRun(supabase, "success", {
-        stage: "complete",
-        observed: 0,
-        reason: "NO_PUBLISHED_NEXUS_DRAFTS",
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-      });
-      return NextResponse.json({ success: true, observed: 0, reason: "NO_PUBLISHED_NEXUS_DRAFTS" });
-    }
+    let publishedDrafts: any[] = [];
 
-    const draftIds = opportunityRows.map((row: any) => String(row.draft_id));
-    const { data: drafts, error: draftError } = await supabase
-      .schema("core")
-      .from("brand_workspace_content_drafts")
-      .select("id,title,slug,destination_path,published_at,source_publication_id")
-      .in("id", draftIds)
-      .not("published_at", "is", null);
-    if (draftError) throw draftError;
-
-    const publishedDrafts = (drafts || []).filter((row: any) => row?.id && row?.published_at && row?.slug);
-    if (!publishedDrafts.length) {
-      await logRun(supabase, "success", {
-        stage: "complete",
-        observed: 0,
-        reason: "NEXUS_DRAFTS_NOT_PUBLISHED",
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-      });
-      return NextResponse.json({ success: true, observed: 0, reason: "NEXUS_DRAFTS_NOT_PUBLISHED" });
+    if (opportunityRows.length) {
+      const draftIds = opportunityRows.map((row: any) => String(row.draft_id));
+      const { data: drafts, error: draftError } = await supabase
+        .schema("core")
+        .from("brand_workspace_content_drafts")
+        .select("id,title,slug,destination_path,published_at,source_publication_id")
+        .in("id", draftIds)
+        .not("published_at", "is", null);
+      if (draftError) throw draftError;
+      publishedDrafts = (drafts || []).filter((row: any) => row?.id && row?.published_at && row?.slug);
     }
 
     const opportunityByDraft = new Map(
       opportunityRows.map((row: any) => [String(row.draft_id), row] as const),
     );
-    const items = publishedDrafts
+
+    const contentStudioItems = publishedDrafts
       .map((draft: any) => {
         const opportunity = opportunityByDraft.get(String(draft.id));
         if (!opportunity) return null;
@@ -133,22 +186,62 @@ export async function GET(request: NextRequest) {
           windowDays,
           windowStartMs,
           publishedAt: String(draft.published_at),
+          source: "content_studio" as const,
         };
       })
-      .filter(Boolean) as Array<{
-        opportunityId: string;
-        opportunityType: string;
-        title: string;
-        path: string;
-        publicationId: string | null;
-        ageDays: number;
-        windowDays: number;
-        windowStartMs: number;
-        publishedAt: string;
-      }>;
+      .filter(Boolean) as LearningItem[];
+
+    const legacySignatures = EXISTING_MARKET_ARTICLES.map(item => item.signature);
+    const { data: legacyOpportunityRows, error: legacyOpportunityError } = await supabase
+      .from("property_content_opportunities")
+      .select("id,signature,opportunity_type,status")
+      .eq("brand_id", BRAND_ID)
+      .in("signature", legacySignatures);
+    if (legacyOpportunityError) throw legacyOpportunityError;
+
+    const legacyBySignature = new Map(
+      (legacyOpportunityRows || []).map((row: any) => [String(row.signature), row] as const),
+    );
+    const legacyItems = EXISTING_MARKET_ARTICLES
+      .map(article => {
+        const opportunity = legacyBySignature.get(article.signature);
+        if (!opportunity?.id) return null;
+        const publishedAtMs = asTime(article.publishedAt);
+        const ageDays = Math.max(0, Math.floor((Date.now() - publishedAtMs) / 86_400_000));
+        const windowDays = Math.max(1, Math.min(WINDOW_DAYS, ageDays + 1));
+        const windowStartMs = Math.max(publishedAtMs, Date.now() - windowDays * 86_400_000);
+        return {
+          opportunityId: String(opportunity.id),
+          opportunityType: String(opportunity.opportunity_type || "unknown"),
+          title: article.title,
+          path: article.path,
+          publicationId: null,
+          ageDays,
+          windowDays,
+          windowStartMs,
+          publishedAt: article.publishedAt,
+          source: "existing_market_article" as const,
+        };
+      })
+      .filter(Boolean) as LearningItem[];
+
+    const items = [...contentStudioItems, ...legacyItems];
 
     if (!items.length) {
-      return NextResponse.json({ success: true, observed: 0, reason: "NO_VALID_PUBLISHED_ITEMS" });
+      await logRun(supabase, "success", {
+        stage: "complete",
+        observed: 0,
+        reason: "NO_PUBLISHED_NEXUS_OR_EXISTING_MARKET_ARTICLES",
+        content_studio_items: 0,
+        existing_market_items: 0,
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+      });
+      return NextResponse.json({
+        success: true,
+        observed: 0,
+        reason: "NO_PUBLISHED_NEXUS_OR_EXISTING_MARKET_ARTICLES",
+      });
     }
 
     const earliestMs = Math.min(...items.map(item => item.windowStartMs));
@@ -253,6 +346,7 @@ export async function GET(request: NextRequest) {
           },
           attribution_policy: "exact_path_or_publication_only",
           scoring_effect: "none_observe_only",
+          article_source: item.source,
         },
         observed_on: today,
         observed_at: new Date().toISOString(),
@@ -275,6 +369,8 @@ export async function GET(request: NextRequest) {
       evidence_levels: evidenceLevels,
       attribution_policy: "exact_path_or_publication_only",
       scoring_effect: "none_observe_only",
+      content_studio_items: contentStudioItems.length,
+      existing_market_items: legacyItems.length,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
     });
@@ -284,6 +380,8 @@ export async function GET(request: NextRequest) {
       observed: snapshots.length,
       evidenceLevels,
       scoringEffect: "none_observe_only",
+      contentStudioItems: contentStudioItems.length,
+      existingMarketItems: legacyItems.length,
     });
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause);
