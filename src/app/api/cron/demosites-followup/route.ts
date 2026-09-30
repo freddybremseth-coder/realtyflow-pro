@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
+import { buildDemoSiteFollowupEmail, normalizeDemoSiteLanguage } from "@/lib/demosites-language";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -62,73 +63,14 @@ function greeting(order: FollowupOrder) {
 }
 
 function buildEmail(order: FollowupOrder, kind: FollowupKind) {
-  const expires = order.expires_at ? formatDate(order.expires_at) : "soon";
-  const hello = greeting(order);
-  const preview = order.preview_url || "";
-  const claim = order.claim_url || "";
-
-  if (kind === "final") {
-    return {
-      subject: `Your ${order.company_name} website demo expires soon`,
-      bodyText: `${hello}
-
-Your website demo for ${order.company_name} is about to expire.
-
-You can still review it here:
-${preview}
-
-If you want us to turn it into your live website, you can secure it here:
-${claim}
-
-The order takes less than a minute. Once completed, we can prepare the final version and launch process.
-
-If there is one thing you would like changed before deciding, reply to this email and tell us what it is.
-
-Best regards
-ChatGenius DemoSites`,
-    };
-  }
-
-  if (kind === "midway") {
-    return {
-      subject: `Would you like us to launch the new ${order.company_name} website?`,
-      bodyText: `${hello}
-
-Have you had a chance to review the website demo we created for ${order.company_name}?
-
-View the demo:
-${preview}
-
-It is designed to work across mobile, tablet and desktop, with a clear structure that helps visitors understand the business and take the next step.
-
-If you like the direction, you can continue here:
-${claim}
-
-If you want a different look, wording or emphasis, reply to this email. We can adjust the direction before launch.
-
-Best regards
-ChatGenius DemoSites`,
-    };
-  }
-
-  return {
-    subject: `Your ${order.company_name} website demo is ready`,
-    bodyText: `${hello}
-
-Your new website demo for ${order.company_name} is ready to review:
-
-${preview}
-
-Open it on both your phone and desktop. The goal is a simple, fast and modern site that makes the business look professional and gives customers a clear reason to get in touch.
-
-If you want to keep the site and move towards launch, continue here:
-${claim}
-
-The demo remains available until ${expires}.
-
-Best regards
-ChatGenius DemoSites`,
-  };
+  const language = normalizeDemoSiteLanguage(order.editable_fields?.site_language);
+  return buildDemoSiteFollowupEmail(language, kind, {
+    greetingName: firstName(order),
+    company: order.company_name,
+    previewUrl: order.preview_url || "",
+    claimUrl: order.claim_url || "",
+    expiresAt: order.expires_at,
+  });
 }
 
 function getOrigin(fields: Record<string, unknown> | null) {
@@ -218,7 +160,7 @@ export async function GET(request: NextRequest) {
           event_type: "demo_followup_sent",
           title: kind === "final" ? "Final conversion email sent" : kind === "midway" ? "Conversion follow-up sent" : "Demo ready email sent",
           description: `Automatic DemoSites follow-up sent to the customer email.`,
-          metadata: { kind, language: "en", order_origin: "customer_initiated" },
+          metadata: { kind, language: normalizeDemoSiteLanguage(row.editable_fields?.site_language), order_origin: "customer_initiated" },
         });
       } catch {
         // Event logging is best-effort.
