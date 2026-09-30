@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   }
 
   const table = source === "corporate_partner" ? "corporate_partner_prospects" : "corporate_prospects";
-  const { data: candidate, error: candidateError } = await supabase
+  const { data: candidateRaw, error: candidateError } = await supabase
     .from(table)
     .select("id,company_name,organization_number,domain,website_url,industry,status,fit_tier,fit_score,fit_reasons,evidence_gaps,evidence,next_action" + (source === "corporate_partner" ? ",referral_angle,partner_type" : ""))
     .eq("id", candidateId)
@@ -53,7 +53,8 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (candidateError) return NextResponse.json({ error: candidateError.message }, { status: 500 });
-  if (!candidate) return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+  if (!candidateRaw) return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+  const candidate = candidateRaw as Record<string, any>;
 
   const evidence = objectValue(candidate.evidence);
   const contact = objectValue(evidence.generic_company_contact);
