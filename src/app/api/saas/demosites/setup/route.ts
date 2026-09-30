@@ -12,6 +12,7 @@ import {
   type DemoSiteLayout,
   type DemoSiteStyleId,
 } from "@/lib/demosites-design";
+import { normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,6 +20,7 @@ export const revalidate = 0;
 type RequestBody = Record<string, unknown>;
 
 type SetupContent = {
+  site_language?: DemoSiteLanguage;
   hero_title?: string | null;
   hero_subtitle?: string | null;
   intro_text?: string | null;
@@ -204,8 +206,9 @@ function buildSetupContent(body: RequestBody): SetupContent {
   const galleryImages = textList(body.gallery_images ?? body.galleryImages, 6)
     .map((item) => url(item))
     .filter(Boolean) as string[];
+  const requestedLanguage = body.site_language ?? body.siteLanguage ?? body.language;
 
-  return {
+  const content: SetupContent = {
     hero_title: text(body.hero_title ?? body.heroTitle, 160),
     hero_subtitle: text(body.hero_subtitle ?? body.heroSubtitle, 260),
     intro_text: text(body.intro_text ?? body.introText, 1200),
@@ -231,6 +234,10 @@ function buildSetupContent(body: RequestBody): SetupContent {
     layout_variant: layoutVariant(body.layout_variant ?? body.layoutVariant),
     style_preset: stylePreset(body.style_preset ?? body.stylePreset),
   };
+  if (requestedLanguage != null && String(requestedLanguage).trim()) {
+    content.site_language = normalizeDemoSiteLanguage(requestedLanguage);
+  }
+  return content;
 }
 
 function getSetupContentDefaults(
