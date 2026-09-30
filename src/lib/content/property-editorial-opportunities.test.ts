@@ -102,6 +102,7 @@ test("diversifies the visible queue across properties and areas before relaxing"
   ], 4);
 
   assert.equal(visible.length, 4);
-  assert.deepEqual(visible.map(item => item.id), ["a", "d", "e", "f"]);
+  assert.deepEqual(visible.map(item => item.id), ["a", "c", "d", "e"]);
   assert.equal(visible.filter(item => item.propertyRefs.includes("P1")).length, 1);
+  assert.ok(!visible.some(item => item.id === "b"));
 });
