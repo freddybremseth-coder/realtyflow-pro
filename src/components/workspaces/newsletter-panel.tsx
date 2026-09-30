@@ -68,6 +68,17 @@ export function WorkspaceNewsletterPanel({
     () => (data?.subscribers || []).filter(item => item.status === "active"),
     [data],
   );
+  const selectedSegments = useMemo(
+    () => segmentFilter.split(",").map(value => value.trim().toLowerCase()).filter(Boolean),
+    [segmentFilter],
+  );
+  const selectedSubscribers = useMemo(() => {
+    if (!selectedSegments.length) return activeSubscribers;
+    return activeSubscribers.filter(subscriber => {
+      const tags = new Set((subscriber.segments || []).map(value => value.toLowerCase()));
+      return selectedSegments.every(segment => tags.has(segment));
+    });
+  }, [activeSubscribers, selectedSegments]);
 
   async function addSubscriber() {
     if (!canDraft || busy) return;
@@ -162,12 +173,12 @@ export function WorkspaceNewsletterPanel({
   }
 
   async function sendCampaign() {
-    if (!canSend || busy || activeSubscribers.length === 0) return;
+    if (!canSend || busy || selectedSubscribers.length === 0) return;
     let id = campaignId;
     if (!id) id = await saveCampaign() || "";
     if (!id) return;
     if (!window.confirm(
-      `Sende «${subject}» til ${activeSubscribers.length} aktive abonnenter nå?\n\nRealtyFlow kontrollerer suppression og avmelding før hver utsending.`,
+      `Sende «${subject}» til ${selectedSubscribers.length} abonnenter${selectedSegments.length ? ` i segment ${selectedSegments.join(", ")}` : ""} nå?\n\nRealtyFlow kontrollerer suppression og avmelding før hver utsending.`,
     )) return;
     setBusy(true); setError(""); setNotice("");
     try {
@@ -246,7 +257,7 @@ export function WorkspaceNewsletterPanel({
           <label className="text-xs text-slate-300">Arbeidstittel<input disabled={!canDraft} value={title} onChange={e => setTitle(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/></label>
           <label className="text-xs text-slate-300">Emne<input disabled={!canDraft} value={subject} onChange={e => setSubject(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/></label>
           <label className="text-xs text-slate-300">Preheader<input disabled={!canDraft} value={preheader} onChange={e => setPreheader(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/></label>
-          <label className="text-xs text-slate-300">Segmentfilter<input disabled={!canDraft} value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)} placeholder="tomt = alle; ellers f.eks. investor, albir" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/></label>
+          <label className="text-xs text-slate-300">Segmentfilter<input disabled={!canDraft} value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)} placeholder="tomt = alle; ellers f.eks. investor, albir" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/><span className="mt-1 block text-[11px] text-slate-500">{selectedSubscribers.length} mottakere matcher nå.</span></label>
           <label className="text-xs text-slate-300">Planlagt tidspunkt<input disabled={!canSend} type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/></label>
           <label className="text-xs text-slate-300">Innhold<textarea disabled={!canDraft} rows={14} value={bodyText} onChange={e => setBodyText(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 leading-6"/></label>
         </div>
@@ -254,7 +265,7 @@ export function WorkspaceNewsletterPanel({
           {canDraft && <button onClick={() => void saveCampaign()} disabled={busy || !title.trim() || !subject.trim() || !bodyText.trim()} className="rounded-lg border border-slate-700 px-4 py-2 text-sm disabled:opacity-40">Lagre utkast</button>}
           {canSend && <button onClick={() => void testSend()} disabled={busy || !subject.trim() || !bodyText.trim() || !data.sender.configured} className="rounded-lg border border-cyan-800 px-4 py-2 text-sm text-cyan-200 disabled:opacity-40">Send test til meg</button>}
           {canSend && <button onClick={() => void scheduleCampaign()} disabled={busy || !scheduledAt || !subject.trim() || !bodyText.trim() || !data.sender.configured} className="inline-flex items-center gap-2 rounded-lg border border-violet-800 px-4 py-2 text-sm text-violet-200 disabled:opacity-40"><CalendarClock size={15}/> Planlegg</button>}
-          {canSend && <button onClick={() => void sendCampaign()} disabled={busy || activeSubscribers.length === 0 || !subject.trim() || !bodyText.trim() || !data.sender.configured}
+          {canSend && <button onClick={() => void sendCampaign()} disabled={busy || selectedSubscribers.length === 0 || !subject.trim() || !bodyText.trim() || !data.sender.configured}
             className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><ShieldCheck size={15}/><Send size={14}/> Send til aktive abonnenter</button>}
         </div>
         <p className="mt-3 text-[11px] leading-5 text-slate-500">Før sending kontrolleres suppression og avmelding på nytt. Hver mottaker får egen avmeldingslenke. CRM-kunder uten dokumentert samtykke er ikke med.</p>
