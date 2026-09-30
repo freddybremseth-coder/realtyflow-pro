@@ -53,6 +53,8 @@ type Opportunity = {
   imageUrl?: string | null;
   detectedAt?: string | null;
   expiresAt?: string | null;
+  status?: "suggested" | "auto_ready";
+  autoReady?: boolean;
 };
 type OpportunityLearningType = {
   opportunityType: string;
@@ -401,7 +403,7 @@ export function WorkspaceWebsiteContentStudio({
             <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Nexus · redaksjonelle signaler</p>
             <h3 className="mt-1 text-lg font-semibold text-white">Boligdata som kan bli en nyttig kjøperartikkel</h3>
             <p className="mt-1 max-w-3xl text-sm text-slate-400">
-              Nexus ser etter dokumenterbare forskjeller i pris, areal, boligtype og område. Du ser et variert topputvalg – samme bolig får ikke dominere listen. Dette er forslag; ingenting publiseres automatisk.
+              Nexus ser etter dokumenterbare forskjeller i pris, areal, boligtype og område. De sterkeste signalene blir komplette Nexus-utkast automatisk; svakere signaler vises som forslag. Samme bolig får ikke dominere listen, og ingenting publiseres automatisk.
             </p>
           </div>
         </div>
@@ -410,8 +412,8 @@ export function WorkspaceWebsiteContentStudio({
             <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <span className="inline-flex rounded-full border border-cyan-700/50 bg-cyan-950/40 px-2 py-0.5 text-[11px] font-semibold text-cyan-200">
-                    Signal {Math.round(item.score)}/100
+                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${item.autoReady ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-200" : "border-cyan-700/50 bg-cyan-950/40 text-cyan-200"}`}>
+                    {item.autoReady ? "Nexus-utkast klar" : "Signal"} · {Math.round(item.score)}/100
                   </span>
                   <h4 className="mt-2 font-semibold text-white">{item.title}</h4>
                 </div>
@@ -430,7 +432,7 @@ export function WorkspaceWebsiteContentStudio({
               )}
               {canEdit && <button type="button" disabled={busy} onClick={() => void useOpportunity(item.id)}
                 className="mt-4 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
-                <FileText size={14}/> Bruk som utkast
+                <FileText size={14}/> {item.autoReady ? "Åpne i Content Studio" : "Bruk som utkast"}
               </button>}
             </article>
           ))}
