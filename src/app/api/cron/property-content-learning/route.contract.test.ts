@@ -7,7 +7,7 @@ const source = readFileSync("src/app/api/cron/property-content-learning/route.ts
 test("property content learning remains observe-only and uses exact attribution", () => {
   assert.match(source, /requireCronApi/);
   assert.match(source, /evaluateCronSafeMode/);
-  assert.match(source, /exact_path_or_publication_only/);
+  assert.match(source, /exact_path_publication_or_utm_content/);
   assert.match(source, /scoring_effect:\s*"none_observe_only"/);
   assert.match(source, /property_content_learning_snapshots/);
   assert.doesNotMatch(source, /property_content_opportunities"\)\s*\.update\(\{\s*score/);
@@ -25,4 +25,15 @@ test("existing Zen market articles are measured through unique dismissed coverag
   assert.match(source, /source:\s*"existing_market_article"/);
   assert.match(source, /legacyOpportunityRows/);
   assert.doesNotMatch(source, /property_content_opportunities"\)\s*\.update/);
+});
+
+
+test("article attribution requires the Zen magazine source, current-market campaign and exact slug", () => {
+  assert.match(source, /utm_campaign/);
+  assert.match(source, /marked_akkurat_na/);
+  assert.match(source, /utm_source/);
+  assert.match(source, /zen_magasin/);
+  assert.match(source, /utm_content/);
+  assert.match(source, /attributedArticleSlugFromMetadata/);
+  assert.match(source, /articleSlugFromPath/);
 });
