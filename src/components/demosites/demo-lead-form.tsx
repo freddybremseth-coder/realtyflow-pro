@@ -7,15 +7,18 @@
  */
 import { FormEvent, useState } from "react";
 import { CheckCircle, Loader2, Send } from "lucide-react";
+import { getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type DemoLeadFormProps = {
   token: string;
   companyName: string;
   accentColor: string;
   accentTextColor: string;
+  language?: DemoSiteLanguage;
 };
 
-export function DemoLeadForm({ token, companyName, accentColor, accentTextColor }: DemoLeadFormProps) {
+export function DemoLeadForm({ token, companyName, accentColor, accentTextColor, language = "nb" }: DemoLeadFormProps) {
+  const ui = getDemoSiteUiText(language);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -29,7 +32,7 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
     if (sending) return;
     setError("");
     if (!name.trim() || (!email.trim() && !phone.trim())) {
-      setError("Fyll inn navn og e-post eller telefon.");
+      setError(ui.leadValidation);
       return;
     }
     setSending(true);
@@ -40,10 +43,10 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
         body: JSON.stringify({ token, name, email, phone, message }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Kunne ikke sende henvendelsen.");
+      if (!res.ok) throw new Error(data.error || ui.leadError);
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke sende henvendelsen.");
+      setError(err instanceof Error ? err.message : ui.leadError);
     } finally {
       setSending(false);
     }
@@ -53,9 +56,9 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
     return (
       <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-lg border border-emerald-300/40 bg-emerald-50 p-8 text-center text-slate-900">
         <CheckCircle className="h-10 w-10 text-emerald-600" />
-        <h3 className="mt-4 text-xl font-bold">Takk for henvendelsen!</h3>
+        <h3 className="mt-4 text-xl font-bold">{ui.leadSuccessTitle}</h3>
         <p className="mt-2 max-w-sm text-sm text-slate-600">
-          {companyName} har fått meldingen din og tar kontakt så snart som mulig.
+          {ui.leadSuccessText(companyName)}
         </p>
       </div>
     );
@@ -63,13 +66,13 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
 
   return (
     <form onSubmit={submit} className="rounded-lg border border-white/10 bg-white p-5 text-slate-950">
-      <h3 className="text-lg font-bold">Send oss en melding</h3>
-      <p className="mt-1 text-xs text-slate-500">Vi svarer raskt — som regel samme dag.</p>
+      <h3 className="text-lg font-bold">{ui.leadTitle}</h3>
+      <p className="mt-1 text-xs text-slate-500">{ui.leadIntro}</p>
       <div className="mt-4 grid grid-cols-1 gap-3">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Navn *"
+          placeholder={ui.leadName}
           className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-500"
           autoComplete="name"
         />
@@ -77,7 +80,7 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="Telefon"
+            placeholder={ui.leadPhone}
             type="tel"
             className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-500"
             autoComplete="tel"
@@ -85,7 +88,7 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="E-post"
+            placeholder={ui.leadEmail}
             type="email"
             className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-500"
             autoComplete="email"
@@ -94,7 +97,7 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Hva kan vi hjelpe deg med?"
+          placeholder={ui.leadMessage}
           rows={4}
           className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500"
         />
@@ -107,9 +110,9 @@ export function DemoLeadForm({ token, companyName, accentColor, accentTextColor 
         style={{ backgroundColor: accentColor, color: accentTextColor }}
       >
         {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        {sending ? "Sender..." : "Send melding"}
+        {sending ? ui.leadSending : ui.leadSend}
       </button>
-      <p className="mt-2 text-center text-[10px] text-slate-400">Du kan også ringe oss direkte — se kontaktinfo til venstre.</p>
+      <p className="mt-2 text-center text-[10px] text-slate-400">{ui.leadDirect}</p>
     </form>
   );
 }
