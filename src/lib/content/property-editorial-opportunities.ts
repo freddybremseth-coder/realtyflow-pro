@@ -256,6 +256,74 @@ function opportunityFromPair(
   return null;
 }
 
+
+export type PropertyEditorialOpportunityDisplay = {
+  id: string;
+  opportunityType: string;
+  score: number;
+  title: string;
+  propertyRefs: string[];
+  evidence?: Record<string, unknown> | null;
+};
+
+function displayOpportunityTowns(item: PropertyEditorialOpportunityDisplay) {
+  const rows = Array.isArray(item.evidence?.properties) ? item.evidence?.properties : [];
+  return Array.from(new Set(
+    rows
+      .map((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return "";
+        const value = (row as Record<string, unknown>).town || (row as Record<string, unknown>).location;
+        return clean(value);
+      })
+      .filter(Boolean),
+  ));
+}
+
+export function selectDiversePropertyEditorialOpportunities<T extends PropertyEditorialOpportunityDisplay>(
+  input: T[],
+  limit = 8,
+): T[] {
+  const wanted = Math.max(1, limit);
+  const sorted = [...input].sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+  const selected: T[] = [];
+  const selectedIds = new Set<string>();
+  const pairKeys = new Set<string>();
+  const refUse = new Map<string, number>();
+  const townUse = new Map<string, number>();
+
+  const trySelect = (item: T, params: { maxRefUse: number; maxTownUse: number }) => {
+    if (selectedIds.has(item.id)) return false;
+    const refs = Array.from(new Set((item.propertyRefs || []).filter(Boolean))).sort();
+    const pairKey = refs.join(":");
+    if (!pairKey || pairKeys.has(pairKey)) return false;
+    if (refs.some(ref => (refUse.get(ref) || 0) >= params.maxRefUse)) return false;
+
+    const towns = displayOpportunityTowns(item);
+    if (towns.some(town => (townUse.get(town) || 0) >= params.maxTownUse)) return false;
+
+    selected.push(item);
+    selectedIds.add(item.id);
+    pairKeys.add(pairKey);
+    for (const ref of refs) refUse.set(ref, (refUse.get(ref) || 0) + 1);
+    for (const town of towns) townUse.set(town, (townUse.get(town) || 0) + 1);
+    return true;
+  };
+
+  // First pass: maximum editorial breadth. One property should only anchor one visible card.
+  for (const item of sorted) {
+    if (selected.length >= wanted) break;
+    trySelect(item, { maxRefUse: 1, maxTownUse: 2 });
+  }
+
+  // Second pass: fill remaining slots without letting one property or area dominate.
+  for (const item of sorted) {
+    if (selected.length >= wanted) break;
+    trySelect(item, { maxRefUse: 2, maxTownUse: 3 });
+  }
+
+  return selected.slice(0, wanted);
+}
+
 export function detectPropertyEditorialOpportunities(
   input: EditorialPropertyFact[],
   limit = 24,
