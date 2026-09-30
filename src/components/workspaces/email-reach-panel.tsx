@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, Mail, RefreshCw, Save, Search, Send, Sparkles } from "lucide-react";
+import { WorkspaceNewsletterPanel } from "@/components/workspaces/newsletter-panel";
 
 type Target = {
   type: "lead" | "corporate" | "partner";
@@ -62,7 +63,7 @@ export function WorkspaceEmailReachPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"direct" | "reach">("direct");
+  const [mode, setMode] = useState<"direct" | "reach" | "newsletter">("direct");
   const [search, setSearch] = useState("");
   const [selectedTargetKey, setSelectedTargetKey] = useState("");
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -256,6 +257,10 @@ export function WorkspaceEmailReachPanel({
           className={`rounded-lg px-3 py-2 text-sm ${mode === "reach" ? "bg-cyan-600 font-semibold text-white" : "border border-slate-700 text-slate-300"}`}>
           Lag Reach-kampanje
         </button>
+        <button type="button" onClick={() => setMode("newsletter")}
+          className={`rounded-lg px-3 py-2 text-sm ${mode === "newsletter" ? "bg-cyan-600 font-semibold text-white" : "border border-slate-700 text-slate-300"}`}>
+          Nyhetsbrev
+        </button>
       </div>
 
       <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs text-slate-400">
@@ -360,6 +365,8 @@ export function WorkspaceEmailReachPanel({
         </p>
       </div>
     </div>}
+
+    {mode === "newsletter" && <WorkspaceNewsletterPanel brandKey={brandKey} canDraft={canDraft} canSend={canSend} />}
 
     {mode === "reach" && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <div>
