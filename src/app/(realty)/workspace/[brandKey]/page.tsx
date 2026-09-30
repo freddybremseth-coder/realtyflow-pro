@@ -13,6 +13,7 @@ import { WorkspaceTrainingPanel } from "@/components/workspaces/training-panel";
 import { WorkspaceReelsPanel } from "@/components/workspaces/reels-panel";
 import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
 import { WorkspaceNexusInsightsPanel } from "@/components/workspaces/nexus-insights-panel";
+import { WorkspaceTodayPriorities } from "@/components/workspaces/today-priorities";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Contact = {
@@ -191,11 +192,29 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && tab === "today" && !showTraining && (
           <section className="space-y-5">
             <div className="rounded-2xl border border-cyan-900/60 bg-cyan-950/15 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Start her</p>
-              <h2 className="mt-2 text-2xl font-bold">Hva skal du få gjort i dag?</h2>
+              <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Arbeidsflate</p>
+              <h2 className="mt-2 text-2xl font-bold">Dagens arbeid · {title}</h2>
               <p className="mt-2 max-w-2xl text-sm text-slate-400">
-                Velg en oppgave. RealtyFlow finner riktig verktøy og holder deg innenfor {title}.
+                Du trenger ikke velge modul først. RealtyFlow prioriterer arbeid ut fra rollen din, merkevaren og tilgjengelige signaler.
               </p>
+            </div>
+            <WorkspaceTodayPriorities
+              brandKey={brandKey}
+              permissions={permissions}
+              contactCount={contacts.length}
+              onOpen={area => {
+                if (area === "training") {
+                  setShowTraining(true);
+                  setTab("today");
+                  return;
+                }
+                setShowTraining(false);
+                setTab(area);
+              }}
+            />
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Andre oppgaver du har tilgang til</h2>
+              <p className="mt-1 text-xs text-slate-500">Bruk disse når dagens prioriterte arbeid ikke er det du skal jobbe med akkurat nå.</p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {showCrm && <button onClick={() => setTab("leads")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
