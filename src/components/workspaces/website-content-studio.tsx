@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FileText, Globe2, History, Plus, RefreshCw, RotateCcw, Send, Save, Sparkles, X } from "lucide-react";
+import { BarChart3, CheckCircle2, FileText, Globe2, History, Plus, RefreshCw, RotateCcw, Send, Save, ShieldCheck, Sparkles, X } from "lucide-react";
 
 type Destination = {
   id: string;
@@ -54,6 +54,30 @@ type Opportunity = {
   detectedAt?: string | null;
   expiresAt?: string | null;
 };
+type OpportunityLearningType = {
+  opportunityType: string;
+  observedArticles: number;
+  searchArrivals: number;
+  touchpoints: number;
+  leadTouchpoints: number;
+  publicationViews: number;
+  evidenceLevel: "insufficient" | "emerging" | "measured";
+  readyForReview: boolean;
+  note: string;
+};
+type OpportunityLearning = {
+  mode: "observe_only";
+  updatedAt?: string | null;
+  observedArticles: number;
+  readyForReview: boolean;
+  totals: {
+    searchArrivals: number;
+    touchpoints: number;
+    leadTouchpoints: number;
+    publicationViews: number;
+  };
+  types: OpportunityLearningType[];
+};
 type Version = {
   id: string;
   version: number;
@@ -68,10 +92,33 @@ type StudioData = {
   drafts: Draft[];
   published: Published[];
   opportunities: Opportunity[];
+  opportunityLearning: OpportunityLearning;
 };
 
 function splitCsv(value: string) {
   return Array.from(new Set(value.split(",").map(item => item.trim()).filter(Boolean)));
+}
+
+const EMPTY_OPPORTUNITY_LEARNING: OpportunityLearning = {
+  mode: "observe_only",
+  updatedAt: null,
+  observedArticles: 0,
+  readyForReview: false,
+  totals: { searchArrivals: 0, touchpoints: 0, leadTouchpoints: 0, publicationViews: 0 },
+  types: [],
+};
+
+function opportunityTypeLabel(value: string) {
+  if (value === "same_price_area_gap") return "Samme pris · ulikt areal";
+  if (value === "cross_area_same_budget") return "Samme budsjett · ulike områder";
+  if (value === "property_type_tradeoff") return "Samme pris · ulik boligtype";
+  return value || "Annet signal";
+}
+
+function evidenceLabel(value: OpportunityLearningType["evidenceLevel"]) {
+  if (value === "measured") return "Målbar effekt";
+  if (value === "emerging") return "Tidlig signal";
+  return "For lite data";
 }
 
 export function WorkspaceWebsiteContentStudio({
@@ -120,6 +167,7 @@ export function WorkspaceWebsiteContentStudio({
         drafts: Array.isArray(body.drafts) ? body.drafts : [],
         published: Array.isArray(body.published) ? body.published : [],
         opportunities: Array.isArray(body.opportunities) ? body.opportunities : [],
+        opportunityLearning: body.opportunityLearning && typeof body.opportunityLearning === "object" ? body.opportunityLearning : EMPTY_OPPORTUNITY_LEARNING,
       };
       setData(next);
       setDestinationId(current => current || next.defaultDestinationId || next.destinations[0]?.id || "");
@@ -387,6 +435,76 @@ export function WorkspaceWebsiteContentStudio({
             </article>
           ))}
         </div>
+      </div>
+    )}
+
+    {brandKey === "zeneco" && (
+      <div className="rounded-2xl border border-emerald-900/60 bg-emerald-950/10 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300"><BarChart3 size={20}/></div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Nexus · innholdslæring</p>
+              <h3 className="mt-1 text-lg font-semibold text-white">Hva gir signalartiklene faktisk?</h3>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Nexus måler bare sporbar effekt fra publiserte signalartikler. Foreløpig observerer systemet – det endrer ikke score eller publiserer noe automatisk.
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800 bg-emerald-950/40 px-3 py-1 text-xs font-semibold text-emerald-200">
+            <ShieldCheck size={14}/> Observe-only
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <span className="text-xs text-slate-500">Publiserte signalartikler målt</span>
+            <strong className="mt-1 block text-xl text-white">{data.opportunityLearning.observedArticles}</strong>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <span className="text-xs text-slate-500">Søke-/AI-ankomster</span>
+            <strong className="mt-1 block text-xl text-white">{data.opportunityLearning.totals.searchArrivals}</strong>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <span className="text-xs text-slate-500">Sporbare leads</span>
+            <strong className="mt-1 block text-xl text-white">{data.opportunityLearning.totals.leadTouchpoints}</strong>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <span className="text-xs text-slate-500">Publikasjonsvisninger</span>
+            <strong className="mt-1 block text-xl text-white">{data.opportunityLearning.totals.publicationViews}</strong>
+          </div>
+        </div>
+
+        {data.opportunityLearning.types.length > 0 ? (
+          <div className="mt-4 grid gap-3 xl:grid-cols-3">
+            {data.opportunityLearning.types.map(item => (
+              <article key={item.opportunityType} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <strong className="text-sm text-white">{opportunityTypeLabel(item.opportunityType)}</strong>
+                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{evidenceLabel(item.evidenceLevel)}</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {item.observedArticles} artikler · {item.searchArrivals} ankomster · {item.leadTouchpoints} leads
+                </p>
+                <p className="mt-2 text-xs leading-5 text-slate-400">{item.note}</p>
+                {item.readyForReview && (
+                  <p className="mt-3 rounded-lg border border-amber-800/60 bg-amber-950/20 p-2 text-xs text-amber-200">
+                    Nok evidens til manuell vurdering av vekting – fortsatt ingen automatisk scoreendring.
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-400">
+            Ingen publiserte Nexus-signalartikler er målt ennå. Systemet begynner automatisk å observere når et Nexus-utkast publiseres via Content Studio.
+          </p>
+        )}
+
+        <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
+          <ShieldCheck size={14} className="mt-0.5 shrink-0"/>
+          Ingen handling er nødvendig nå. Lead-kreditering krever eksakt side- eller publikasjonssporing; ukoblede website-leads tilskrives ikke en artikkel.
+        </p>
       </div>
     )}
 
