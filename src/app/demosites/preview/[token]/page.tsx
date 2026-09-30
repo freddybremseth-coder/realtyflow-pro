@@ -77,6 +77,8 @@ export async function generateMetadata({ params }: PreviewPageProps): Promise<Me
         ? `${order.company_name} — Ihre neue Website`
         : language.id === "fr"
           ? `${order.company_name} — votre nouveau site`
+          : language.id === "ru"
+            ? `${order.company_name} — ваш новый сайт`
           : language.id === "sv"
             ? `${order.company_name} — din nya webbplats`
             : language.id === "da"
@@ -90,6 +92,8 @@ export async function generateMetadata({ params }: PreviewPageProps): Promise<Me
         ? `Sehen Sie, wie die neue Website von ${order.company_name} aussehen kann. Die Demo ist jetzt live.`
         : language.id === "fr"
           ? `Découvrez à quoi peut ressembler le nouveau site de ${order.company_name}. La démo est en ligne.`
+          : language.id === "ru"
+            ? `Посмотрите, как может выглядеть новый сайт ${order.company_name}. Демо уже доступно.`
           : language.id === "sv"
             ? `Se hur den nya webbplatsen för ${order.company_name} kan se ut. Demon är live nu.`
             : language.id === "da"
