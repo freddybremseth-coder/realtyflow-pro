@@ -4,6 +4,7 @@ import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/de
 import { enrichDemoSiteOrderWithHeroAssets } from "@/lib/demosites-hero-assets";
 import { portalCorsHeaders, portalPreflight } from "@/lib/demosites-portal";
 import { buildSiteProfile, parseServiceList } from "@/lib/site-profile";
+import { normalizeDemoSiteLanguage } from "@/lib/demosites-language";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -112,6 +113,7 @@ async function handleCreateDemoRequest(request: NextRequest) {
     const accentColor = sanitizeHexColor(body.accent_color || body.accentColor, "#f59e0b");
     const industry = text(body, "industry", "industry");
     const notes = text(body, "notes", "notes");
+    const siteLanguage = normalizeDemoSiteLanguage(body.site_language || body.siteLanguage || body.language);
     const profile = buildSiteProfile({ companyName, websiteUrl, logoUrl, brandColor, industry, services, notes });
     const analysis = analyzeDemoSiteProfile({
       companyName,
@@ -147,6 +149,7 @@ async function handleCreateDemoRequest(request: NextRequest) {
       accent_color: accentColor,
       brand_colors: { primary: brandColor, secondary: secondaryColor, accent: accentColor },
       gallery_images: galleryImages,
+      site_language: siteLanguage,
       order_origin: "customer_initiated",
       source_channel: "public_demo_request",
       customer_started_at: new Date().toISOString(),
@@ -183,6 +186,7 @@ async function handleCreateDemoRequest(request: NextRequest) {
         logoUrl: logoAsset,
         colorPalette: [brandColor, secondaryColor, accentColor, "#f8fafc"],
         galleryImages,
+        siteLanguage,
       },
       editable_fields: editableFields,
       requested_changes: {},
@@ -213,6 +217,7 @@ async function handleCreateDemoRequest(request: NextRequest) {
         template_slug: selectedTemplateSlug,
         has_logo: Boolean(logoAsset),
         gallery_images: galleryImages.length,
+        site_language: siteLanguage,
         order_origin: "customer_initiated",
         source_channel: "public_demo_request",
       },
