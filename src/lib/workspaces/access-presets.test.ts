@@ -15,6 +15,7 @@ test("external agency preset can create but not publish Reels and has no CRM/ema
   assert.equal(zen.crmWrite, false);
   assert.equal(zen.emailRead, false);
   assert.equal(zen.emailSend, false);
+  assert.equal(zen.nexusRead, true);
 });
 
 test("marketing preset only enables Reels on supported brands", () => {
@@ -35,6 +36,9 @@ test("marketing preset only enables Reels on supported brands", () => {
   assert.equal(other.reelsRead, false);
   assert.equal(other.reelsCreate, false);
   assert.equal(other.reelsPublish, false);
+  assert.equal(zen.nexusRead, true);
+  assert.equal(pinoso.nexusRead, true);
+  assert.equal(other.nexusRead, true);
 });
 
 test("sales preset follows Zen joint-task boundary", () => {
@@ -58,6 +62,7 @@ test("read-only preset has no write or publish capabilities", () => {
     choice.adsDraft, choice.eventsPlan, choice.contentEdit, choice.contentPublish,
     choice.emailDraft, choice.emailSend,
   ]) assert.equal(value, false);
+  assert.equal(choice.nexusRead, true);
 });
 
 test("SEO and content preset stays out of CRM and communications", () => {
@@ -72,4 +77,5 @@ test("SEO and content preset stays out of CRM and communications", () => {
   assert.equal(choice.reelsRead, false);
   assert.equal(choice.youtubeRead, false);
   assert.equal(choice.youtubePublish, false);
+  assert.equal(choice.nexusRead, true);
 });
