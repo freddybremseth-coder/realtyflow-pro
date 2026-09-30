@@ -198,8 +198,39 @@ const UI: Record<DemoSiteLanguage, DemoSiteUiText> = {
   },
 };
 
-export function getDemoSiteUiText(value: unknown) {
-  return UI[normalizeDemoSiteLanguage(value)];
+type DemoSiteUiExtras = {
+  existingWebsite: string;
+  localBusiness: string;
+  quickResponse: string;
+  people: string;
+  meetTeam: (company: string) => string;
+  specialty: string;
+  nextStep: string;
+  direct: string;
+  company: string;
+  readyForContact: string;
+  focus: string;
+  assistantSuggestion: string;
+  assistantGreeting: (company: string) => string;
+  assistantPrompt: (company: string) => string;
+  fallbackServices: string[];
+  fallbackTrust: string[];
+};
+
+const UI_EXTRAS: Record<DemoSiteLanguage, DemoSiteUiExtras> = {
+  nb: { existingWebsite: "Eksisterende nettside", localBusiness: "Lokal bedrift", quickResponse: "Rask respons", people: "Menneskene", meetTeam: (company) => `Møt oss i ${company}`, specialty: "Spesialitet", nextStep: "Neste steg", direct: "Direkte", company: "Bedrift", readyForContact: "Klar for kontakt", focus: "Fokus", assistantSuggestion: "Svarforslag basert på demoens innhold", assistantGreeting: (company) => `Hei! Jeg kan hjelpe deg med tjenester, priser og kontakt hos ${company}.`, assistantPrompt: (company) => `Skriv et spørsmål om ${company}`, fallbackServices: ["Personlig rådgivning", "Rask avklaring", "Trygg levering"], fallbackTrust: ["Tydelig kommunikasjon", "Kort vei til svar", "Lokal kompetanse"] },
+  en: { existingWebsite: "Existing website", localBusiness: "Local business", quickResponse: "Quick response", people: "People", meetTeam: (company) => `Meet the team at ${company}`, specialty: "Speciality", nextStep: "Next step", direct: "Direct", company: "Company", readyForContact: "Ready to talk", focus: "Focus", assistantSuggestion: "Suggested reply based on the site content", assistantGreeting: (company) => `Hi! I can help with services, pricing and contact details for ${company}.`, assistantPrompt: (company) => `Ask a question about ${company}`, fallbackServices: ["Personal advice", "Quick clarification", "Reliable delivery"], fallbackTrust: ["Clear communication", "Easy contact", "Practical guidance"] },
+  es: { existingWebsite: "Web actual", localBusiness: "Negocio local", quickResponse: "Respuesta rápida", people: "Equipo", meetTeam: (company) => `Conoce al equipo de ${company}`, specialty: "Especialidad", nextStep: "Siguiente paso", direct: "Directo", company: "Empresa", readyForContact: "Listo para hablar", focus: "Enfoque", assistantSuggestion: "Respuesta sugerida según el contenido de la web", assistantGreeting: (company) => `¡Hola! Puedo ayudarte con servicios, precios y contacto de ${company}.`, assistantPrompt: (company) => `Haz una pregunta sobre ${company}`, fallbackServices: ["Asesoramiento personal", "Respuesta rápida", "Servicio fiable"], fallbackTrust: ["Comunicación clara", "Contacto sencillo", "Proceso ordenado"] },
+  de: { existingWebsite: "Bestehende Website", localBusiness: "Lokales Unternehmen", quickResponse: "Schnelle Antwort", people: "Team", meetTeam: (company) => `Lernen Sie das Team von ${company} kennen`, specialty: "Schwerpunkt", nextStep: "Nächster Schritt", direct: "Direkt", company: "Unternehmen", readyForContact: "Bereit für Kontakt", focus: "Fokus", assistantSuggestion: "Antwortvorschlag auf Basis der Website-Inhalte", assistantGreeting: (company) => `Hallo! Ich helfe bei Fragen zu Leistungen, Preisen und Kontakt von ${company}.`, assistantPrompt: (company) => `Frage zu ${company} stellen`, fallbackServices: ["Persönliche Beratung", "Schnelle Klärung", "Zuverlässige Leistung"], fallbackTrust: ["Klare Kommunikation", "Einfacher Kontakt", "Übersichtlicher Ablauf"] },
+  fr: { existingWebsite: "Site actuel", localBusiness: "Entreprise locale", quickResponse: "Réponse rapide", people: "Équipe", meetTeam: (company) => `Découvrez l’équipe de ${company}`, specialty: "Spécialité", nextStep: "Prochaine étape", direct: "Direct", company: "Entreprise", readyForContact: "Prêt à échanger", focus: "Priorité", assistantSuggestion: "Réponse suggérée selon le contenu du site", assistantGreeting: (company) => `Bonjour ! Je peux vous aider avec les services, tarifs et coordonnées de ${company}.`, assistantPrompt: (company) => `Posez une question sur ${company}`, fallbackServices: ["Conseil personnalisé", "Réponse rapide", "Service fiable"], fallbackTrust: ["Communication claire", "Contact simple", "Processus fluide"] },
+  ru: { existingWebsite: "Текущий сайт", localBusiness: "Локальный бизнес", quickResponse: "Быстрый ответ", people: "Команда", meetTeam: (company) => `Команда ${company}`, specialty: "Специализация", nextStep: "Следующий шаг", direct: "Напрямую", company: "Компания", readyForContact: "Готовы к контакту", focus: "Фокус", assistantSuggestion: "Вариант ответа на основе содержимого сайта", assistantGreeting: (company) => `Здравствуйте! Я помогу с вопросами об услугах, ценах и контактах ${company}.`, assistantPrompt: (company) => `Задайте вопрос о ${company}`, fallbackServices: ["Персональная консультация", "Быстрое уточнение", "Надёжный сервис"], fallbackTrust: ["Понятная коммуникация", "Простой контакт", "Прозрачный процесс"] },
+  sv: { existingWebsite: "Befintlig webbplats", localBusiness: "Lokalt företag", quickResponse: "Snabb återkoppling", people: "Team", meetTeam: (company) => `Möt teamet på ${company}`, specialty: "Specialitet", nextStep: "Nästa steg", direct: "Direkt", company: "Företag", readyForContact: "Redo för kontakt", focus: "Fokus", assistantSuggestion: "Svarsförslag baserat på webbplatsens innehåll", assistantGreeting: (company) => `Hej! Jag kan hjälpa med tjänster, priser och kontakt hos ${company}.`, assistantPrompt: (company) => `Ställ en fråga om ${company}`, fallbackServices: ["Personlig rådgivning", "Snabb återkoppling", "Trygg leverans"], fallbackTrust: ["Tydlig kommunikation", "Enkel kontakt", "Smidig process"] },
+  da: { existingWebsite: "Eksisterende hjemmeside", localBusiness: "Lokal virksomhed", quickResponse: "Hurtigt svar", people: "Team", meetTeam: (company) => `Mød teamet hos ${company}`, specialty: "Speciale", nextStep: "Næste skridt", direct: "Direkte", company: "Virksomhed", readyForContact: "Klar til kontakt", focus: "Fokus", assistantSuggestion: "Svarforslag baseret på sidens indhold", assistantGreeting: (company) => `Hej! Jeg kan hjælpe med ydelser, priser og kontakt hos ${company}.`, assistantPrompt: (company) => `Stil et spørgsmål om ${company}`, fallbackServices: ["Personlig rådgivning", "Hurtig afklaring", "Tryg levering"], fallbackTrust: ["Tydelig kommunikation", "Nem kontakt", "Enkel proces"] },
+};
+
+export function getDemoSiteUiText(value: unknown): DemoSiteUiText & DemoSiteUiExtras {
+  const language = normalizeDemoSiteLanguage(value);
+  return { ...UI[language], ...UI_EXTRAS[language] };
 }
 
 const GENERIC_MARKETING: Record<DemoSiteLanguage, (company: string) => DemoSiteMarketingCopy> = {
