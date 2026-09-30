@@ -246,7 +246,7 @@ export function DemoSitePreviewRenderer({
                 {companyName.slice(0, 1).toUpperCase()}
               </span>
             )}
-            <span className="truncate text-base font-bold md:text-lg">{companyName}</span>
+            <span className="hidden truncate text-base font-bold sm:block md:text-lg">{companyName}</span>
           </a>
           {mode === "public" && (
             <nav className={useNeonGlass ? "hidden items-center gap-5 text-sm text-slate-300 lg:flex" : "hidden items-center gap-5 text-sm text-slate-600 lg:flex"}>
@@ -257,7 +257,7 @@ export function DemoSitePreviewRenderer({
               <a href="#kontakt" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Kontakt</a>
             </nav>
           )}
-          <a href={ctaHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-black shadow-lg shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold"} style={headerCtaStyle}>
+          <a href={ctaHref} className={useNeonGlass ? "inline-flex max-w-[10rem] shrink-0 items-center justify-center truncate rounded-lg px-3 py-2 text-sm font-black shadow-lg shadow-cyan-500/20 sm:max-w-none sm:px-4" : "inline-flex max-w-[10rem] shrink-0 items-center justify-center truncate rounded-lg px-3 py-2 text-sm font-semibold sm:max-w-none sm:px-4"} style={headerCtaStyle}>
             {content.call_to_action}
           </a>
         </div>
