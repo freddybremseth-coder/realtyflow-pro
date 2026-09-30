@@ -3,6 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { evaluateDemoSiteQuality, sanitizeDemoGeneratedCopy } from "./demosites-enrichment";
+import {
+  DEMO_SITE_LANGUAGES,
+  buildDemoSiteFollowupEmail,
+  getDemoSiteUiText,
+  normalizeDemoSiteLanguage,
+} from "./demosites-language";
 
 const publicRequest = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/saas/demosites/request/route.ts"),
@@ -22,6 +28,22 @@ const setupRoute = fs.readFileSync(
 );
 const heroAssets = fs.readFileSync(
   path.join(process.cwd(), "src/lib/demosites-hero-assets.ts"),
+  "utf8",
+);
+const demoChatRoute = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/public/demo-chat/route.ts"),
+  "utf8",
+);
+const claimPage = fs.readFileSync(
+  path.join(process.cwd(), "src/app/demosites/claim/[token]/page.tsx"),
+  "utf8",
+);
+const setupPage = fs.readFileSync(
+  path.join(process.cwd(), "src/app/(business)/demosites/setup/[orderId]/page.tsx"),
+  "utf8",
+);
+const enrichRoute = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/saas/demosites/enrich/route.ts"),
   "utf8",
 );
 const classicRenderer = fs.readFileSync(
@@ -49,13 +71,50 @@ test("unpaid internal demos never become started subscriptions or paid SaaS reve
   assert.match(internalOrders, /pipelineMrr/);
 });
 
-test("automatic nurture requires a customer-initiated, unpaid, quality-ready preview", () => {
+test("automatic nurture requires a customer-initiated, unpaid, quality-ready preview and uses its saved language", () => {
   assert.match(followup, /getOrigin\(row\.editable_fields\) !== "customer_initiated"/);
   assert.match(followup, /!isQualityReady\(row\.editable_fields\)/);
   assert.match(followup, /\.neq\("billing_status", "paid"\)/);
-  assert.match(followup, /Your website demo/);
-  assert.match(followup, /Would you like us to launch/);
-  assert.match(followup, /language: "en"/);
+  assert.match(followup, /buildDemoSiteFollowupEmail\(language, kind/);
+  assert.match(followup, /normalizeDemoSiteLanguage\(row\.editable_fields\?\.site_language\)/);
+});
+
+test("DemoSites language contract supports all public languages and defaults legacy orders safely to Norwegian", () => {
+  assert.deepEqual(
+    DEMO_SITE_LANGUAGES.map((item) => item.id),
+    ["nb", "en", "es", "de", "fr", "ru", "sv", "da"],
+  );
+  assert.equal(normalizeDemoSiteLanguage(undefined), "nb");
+  assert.equal(normalizeDemoSiteLanguage("English"), "en");
+  assert.equal(normalizeDemoSiteLanguage("русский"), "ru");
+  assert.equal(getDemoSiteUiText("es").navServices, "Servicios");
+  assert.equal(getDemoSiteUiText("de").navContact, "Kontakt");
+});
+
+test("localized nurture copy follows the customer-selected language", () => {
+  const input = {
+    greetingName: "Ana",
+    company: "Casa Demo",
+    previewUrl: "https://example.test/preview",
+    claimUrl: "https://example.test/claim",
+    expiresAt: "2026-10-04T12:00:00.000Z",
+  };
+  const spanish = buildDemoSiteFollowupEmail("es", "ready", input);
+  const russian = buildDemoSiteFollowupEmail("ru", "final", input);
+  assert.match(spanish.subject, /demo web|lista/i);
+  assert.match(spanish.bodyText, /Hola Ana/);
+  assert.match(russian.subject, /Демо|сайт/i);
+  assert.match(russian.bodyText, /Здравствуйте Ana/);
+});
+
+test("site language propagates through request, AI receptionist, checkout and explicit language regeneration", () => {
+  assert.match(publicRequest, /site_language: siteLanguage/);
+  assert.match(publicRequest, /normalizeDemoSiteLanguage\(body\.site_language \|\| body\.siteLanguage \|\| body\.language\)/);
+  assert.match(demoChatRoute, /getDemoSiteLanguageConfig\(normalizeDemoSiteLanguage\(fields\.site_language\)\)/);
+  assert.match(demoChatRoute, /Svar KUN på \$\{language\.promptName\}/);
+  assert.match(claimPage, /normalizeDemoSiteLanguage\(order\.editable_fields\?\.site_language\)/);
+  assert.match(setupPage, /regenerate_copy: true/);
+  assert.match(enrichRoute, /regenerateCopy: body\.regenerate_copy === true/);
 });
 
 test("manual setup edits and final hero selection recompute the customer-visible quality gate", () => {
