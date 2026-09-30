@@ -279,6 +279,7 @@ export function DemoSitePreviewRenderer({
           introText={heroIntroText}
           mode={mode}
           websiteUrl={oldSiteUrl}
+          ui={ui}
         />
       ) : layout === "editorial" ? (
         <EditorialHero
@@ -294,6 +295,7 @@ export function DemoSitePreviewRenderer({
           mode={mode}
           primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
           websiteUrl={oldSiteUrl}
+          ui={ui}
         />
       ) : (
       <section id="top" className={useNeonGlass ? "relative overflow-hidden border-b border-cyan-300/20" : useDarkHero ? "border-b border-slate-800" : "border-b border-slate-200 bg-white"} style={{ backgroundColor: heroBackground }}>
@@ -312,7 +314,7 @@ export function DemoSitePreviewRenderer({
             </a>
             {oldSiteUrl && (
               <a href={oldSiteUrl} target="_blank" rel="noopener noreferrer" className={useDarkHero ? "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-6 py-4 text-sm font-bold text-white hover:bg-white/15" : "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-6 py-4 text-sm font-bold text-slate-700 hover:border-slate-400"}>
-                Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
+                {ui.existingWebsite} <ExternalLink className="ml-2 h-4 w-4" />
               </a>
             )}
           </div>
@@ -428,7 +430,7 @@ export function DemoSitePreviewRenderer({
           {showFaqSection && (
           <section id="faq" {...revealAttr} className={useNeonGlass ? "border-y border-white/10 bg-[#06111f] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
-            <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={mode === "public" ? "" : copy.faqText} inverted={useNeonGlass} />
+            <SectionIntro eyebrow="FAQ" title={preview.language === "nb" ? "Svar på vanlige spørsmål" : getDemoSiteMarketingCopy(preview.language, companyName).faqTitle} text={mode === "public" ? "" : copy.faqText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
               {(content.faq.length ? content.faq.slice(0, 6) : [{ question: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqQuestion, answer: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqAnswer }]).map((item, index) => (
                 <div key={`${item.question}-${index}`} className={useNeonGlass ? content.faq.length ? "rounded-lg border border-white/10 bg-white/[0.07] p-5 shadow-lg shadow-cyan-950/10 backdrop-blur" : "rounded-lg border border-dashed border-white/20 bg-white/[0.04] p-5" : content.faq.length ? "rounded-lg border border-slate-200 bg-white p-5" : "rounded-lg border border-dashed border-slate-300 bg-slate-100 p-5"}>
@@ -444,7 +446,7 @@ export function DemoSitePreviewRenderer({
           {showTeamSection && (
             <section id="ansatte" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : "bg-white py-16"}>
               <div className={`${maxWidthClass} px-4`}>
-                <SectionIntro eyebrow="Menneskene" title={`Møt oss i ${companyName}`} text="" inverted={useNeonGlass} />
+                <SectionIntro eyebrow={ui.people} title={ui.meetTeam(companyName)} text="" inverted={useNeonGlass} />
                 <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {preview.employees.map((person) => (
                     <div key={`${person.name}-${person.title}`} className={useNeonGlass ? "rounded-lg border border-white/10 bg-white/[0.07] p-5 text-center" : "rounded-lg border border-slate-200 bg-slate-50 p-5 text-center"}>
@@ -472,17 +474,17 @@ export function DemoSitePreviewRenderer({
             <div className={`${maxWidthClass} grid grid-cols-1 gap-8 px-4 lg:grid-cols-[0.95fr_1.05fr]`}>
               <div>
                 <div className="inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold" style={{ backgroundColor: withPreviewAlpha(colors.primary, "28"), color: colors.accent }}>
-                  <MessageCircle className="mr-2 h-3.5 w-3.5" /> Kontakt
+                  <MessageCircle className="mr-2 h-3.5 w-3.5" /> {ui.contact}
                 </div>
                 <h2 className="mt-5 text-3xl font-black leading-tight md:text-5xl">{copy.contactTitle}</h2>
-                <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">{content.contact_text || (mode === "public" ? "Send oss en melding eller ring — vi svarer raskt." : copy.contactText)}</p>
+                <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">{content.contact_text || copy.contactText}</p>
                 <div className="mt-6 grid gap-2 text-sm text-slate-300">
-                  <ContactLine icon={<Phone className="h-4 w-4" />} label="Telefon" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} />
-                  <ContactLine icon={<Mail className="h-4 w-4" />} label="E-post" value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} />
-                  <ContactLine icon={<MapPin className="h-4 w-4" />} label="Adresse" value={contact.address} />
-                  {contact.website && <ContactLine icon={<ExternalLink className="h-4 w-4" />} label="Nettside" value={contact.website} href={contact.website} />}
+                  <ContactLine icon={<Phone className="h-4 w-4" />} label={ui.phone} missingLabel={ui.missingLabel} value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} />
+                  <ContactLine icon={<Mail className="h-4 w-4" />} label={ui.email} missingLabel={ui.missingLabel} value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} />
+                  <ContactLine icon={<MapPin className="h-4 w-4" />} label={ui.address} missingLabel={ui.missingLabel} value={contact.address} />
+                  {contact.website && <ContactLine icon={<ExternalLink className="h-4 w-4" />} label={ui.existingWebsite} missingLabel={ui.missingLabel} value={contact.website} href={contact.website} />}
                 </div>
-                {mode === "public" && !isLiveSite && preview.isImported && preview.sourcePages.length > 0 && (
+                {mode === "internal" && !isLiveSite && preview.isImported && preview.sourcePages.length > 0 && (
                   <p className="mt-4 text-xs text-slate-500">Kilder brukt i analysen: {preview.sourcePages.length} offentlig side{preview.sourcePages.length === 1 ? "" : "r"}.</p>
                 )}
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -521,18 +523,18 @@ export function DemoSitePreviewRenderer({
                     </span>
                     <div>
                       <div className={useNeonGlass ? "font-bold text-white" : "font-bold"}>ChatGenius AI-assistent</div>
-                      <div className={useNeonGlass ? "text-xs text-slate-400" : "text-xs text-slate-500"}>Svarforslag basert på demoens innhold</div>
+                      <div className={useNeonGlass ? "text-xs text-slate-400" : "text-xs text-slate-500"}>{ui.assistantSuggestion}</div>
                     </div>
                   </div>
                   <span className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{mode === "internal" ? "Preview" : "Online"}</span>
                 </div>
                 <div className="space-y-3 py-5">
-                  <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.10)" : "#f1f5f9"} dark={useNeonGlass}>Hei! Jeg kan hjelpe deg med tjenester, priser og kontakt hos {companyName}.</ChatBubble>
+                  <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.10)" : "#f1f5f9"} dark={useNeonGlass}>{ui.assistantGreeting(companyName)}</ChatBubble>
                   <ChatBubble align="right" color={withPreviewAlpha(colors.primary, useNeonGlass ? "2e" : "20")} dark={useNeonGlass}>{mode === "internal" ? "Hva er neste steg?" : copy.chatQuestion}</ChatBubble>
                   <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.08)" : "#f8fafc"} dark={useNeonGlass}>{preview.chatPrice} Du kan også sende inn detaljer, så følger vi opp med et mer presist forslag.</ChatBubble>
                 </div>
                 <div className={useNeonGlass ? "flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-3 text-sm text-slate-300" : "flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500"}>
-                  <ImageIcon className="h-4 w-4" /> Skriv et spørsmål om {companyName}
+                  <ImageIcon className="h-4 w-4" /> {ui.assistantPrompt(companyName)}
                 </div>
               </div>
               )}
@@ -576,6 +578,7 @@ type HeroLayoutProps = {
   introText: string;
   mode: DemoSitesPreviewMode;
   websiteUrl: string;
+  ui: ReturnType<typeof getDemoSiteUiText>;
 };
 
 /** Image-first hero: the customer's own photo full-bleed with overlaid copy. */
@@ -591,6 +594,7 @@ function FullbleedHero({
   introText,
   mode,
   websiteUrl,
+  ui,
 }: HeroLayoutProps & { heroImage: string }) {
   const minHeight = mode === "public" ? "min-h-[78vh]" : "min-h-[420px]";
   return (
@@ -613,7 +617,7 @@ function FullbleedHero({
           </a>
           {websiteUrl && (
             <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-white/10 px-7 py-4 text-sm font-bold text-white backdrop-blur hover:bg-white/20">
-              Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
+              {ui.existingWebsite} <ExternalLink className="ml-2 h-4 w-4" />
             </a>
           )}
         </div>
@@ -636,6 +640,7 @@ function EditorialHero({
   mode,
   primaryService,
   websiteUrl,
+  ui,
 }: HeroLayoutProps & { images: string[]; primaryService: string }) {
   const heroImages = images.slice(0, 3);
   return (
@@ -665,11 +670,11 @@ function EditorialHero({
           </div>
           <div className="flex flex-col justify-end gap-3 border-l pl-8 text-sm text-slate-500" style={{ borderColor: withPreviewAlpha(colors.primary, "26") }}>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>Spesialitet</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>{ui.specialty}</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">{primaryService}</p>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>Neste steg</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>{ui.nextStep}</p>
               <p className="mt-1 text-slate-700">{callToAction}</p>
             </div>
           </div>
@@ -697,10 +702,10 @@ function BusinessTopStrip({ contact, copy, colors, ui, neonGlass = false }: { co
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: colors.accent }} />
-          <span className="truncate">{contact.address || "Lokal bedrift"}</span>
+          <span className="truncate">{contact.address || ui.localBusiness}</span>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-          <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" style={{ color: colors.accent }} />Rask respons</span>
+          <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" style={{ color: colors.accent }} />{ui.quickResponse}</span>
           <span className="inline-flex items-center gap-1.5"><BadgeCheck className="h-3.5 w-3.5" style={{ color: colors.accent }} />{copy.proofLabel}</span>
           {contact.phone && <a href={`tel:${contact.phone}`} className="font-semibold text-white hover:text-slate-200">{contact.phone}</a>}
         </div>
@@ -1002,14 +1007,14 @@ function SectionIntro({ eyebrow, title, text, inverted = false }: { eyebrow: str
   );
 }
 
-function ContactLine({ icon, label, value, href }: { icon: ReactNode; label: string; value: string; href?: string }) {
+function ContactLine({ icon, label, value, href, missingLabel }: { icon: ReactNode; label: string; value: string; href?: string; missingLabel: string }) {
   const hasValue = Boolean(value);
   const content = (
     <>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">{icon}</span>
       <span className="min-w-0">
         <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-        <span className="block break-words text-slate-200">{value || `Mangler ${label.toLowerCase()}`}</span>
+        <span className="block break-words text-slate-200">{value || `${missingLabel} ${label.toLowerCase()}`}</span>
       </span>
     </>
   );
