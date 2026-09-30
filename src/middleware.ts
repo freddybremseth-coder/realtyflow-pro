@@ -56,6 +56,7 @@ const PUBLIC_PATHS = [
   "/api/public/books",
   "/api/public/remaster-art-gallery",
   "/api/dona-anna/integrations",
+  "/api/public/newsletter-unsubscribe",
 ];
 
 const REMASTER_PROXY_PATHS = [
@@ -214,6 +215,7 @@ function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
   if (resource === "growth") return ["GET", "POST"].includes(verb);
   if (resource === "content") return ["GET", "POST"].includes(verb);
   if (resource === "email") return ["GET", "POST"].includes(verb);
+  if (resource === "newsletter") return ["GET", "POST"].includes(verb);
   if (resource === "social-publish") return ["GET", "POST"].includes(verb);
   if (resource === "reels") return ["zeneco", "pinosoecolife"].includes(brand) && ["GET", "POST"].includes(verb);
   if (resource === "youtube") return brand === "zeneco" && ["GET", "POST"].includes(verb);

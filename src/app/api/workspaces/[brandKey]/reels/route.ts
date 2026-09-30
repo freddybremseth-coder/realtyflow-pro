@@ -22,6 +22,7 @@ const createSchema = z.object({
   region: regionSchema.default("any"),
   areaQuery: z.string().trim().max(80).default(""),
   visualTypes: z.array(visualSchema).min(1).max(6).default(["mixed"]),
+  propertyId: z.string().uuid().optional(),
 }).strict();
 
 const noStore = { "Cache-Control": "private, no-store" };
@@ -168,8 +169,42 @@ export async function POST(
   const seed = crypto.randomUUID();
   const count = visualCount(input.durationSeconds);
   let imageUrls: string[] = [];
+  let selectedProperty: { id: string; ref: string | null; title: string | null } | null = null;
   try {
-    if (brandKey === "pinosoecolife") {
+    if (input.propertyId) {
+      const catalogueAccess = await requireBrandWorkspace(request, brandKey, "properties.catalog.read");
+      if (!catalogueAccess.value) return catalogueAccess.response;
+      const { data: visible } = await supabase.from("property_brand_visibility")
+        .select("property_id")
+        .eq("brand_id", brandKey)
+        .eq("visible", true)
+        .eq("property_id", input.propertyId)
+        .maybeSingle();
+      if (!visible) return fail(404, "PROPERTY_NOT_AVAILABLE_FOR_BRAND");
+
+      const { data: property, error: propertyError } = await supabase.from("properties")
+        .select("id,ref,title,primary_image,images,gallery,show_on_website,website_visible")
+        .eq("id", input.propertyId)
+        .eq("show_on_website", true)
+        .eq("website_visible", true)
+        .maybeSingle();
+      if (propertyError || !property) return fail(404, "PROPERTY_NOT_AVAILABLE_FOR_BRAND");
+
+      const candidates = [
+        property.primary_image,
+        ...(Array.isArray(property.images) ? property.images : []),
+        ...(Array.isArray(property.gallery) ? property.gallery : []),
+      ].filter((value): value is string => typeof value === "string" && /^https:\/\//i.test(value));
+      imageUrls = [...new Set(candidates)].slice(0, count);
+      selectedProperty = {
+        id: String(property.id),
+        ref: property.ref ? String(property.ref) : null,
+        title: property.title ? String(property.title) : null,
+      };
+      if (imageUrls.length < 2) {
+        return fail(409, "PROPERTY_NOT_ENOUGH_VISUALS", "Denne boligen har for få publiserte bilder til å lage en Reel.");
+      }
+    } else if (brandKey === "pinosoecolife") {
       imageUrls = await loadPinosoReelVisuals({
         seed,
         count,
@@ -203,6 +238,9 @@ export async function POST(
     region: input.region,
     areaQuery: input.areaQuery,
     visualTypes: input.visualTypes,
+    propertyId: selectedProperty?.id || null,
+    propertyRef: selectedProperty?.ref || null,
+    propertyTitle: selectedProperty?.title || null,
   };
   const { data: created, error: createError } = await supabase.from("remaster_reel_jobs").insert({
     brand: brandKey,
