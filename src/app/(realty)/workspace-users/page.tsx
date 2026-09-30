@@ -42,6 +42,7 @@ type BrandChoice = {
   reelsPublish: boolean;
   youtubeRead: boolean;
   youtubePublish: boolean;
+  nexusRead: boolean;
   corporateRead: boolean;
   corporatePlan: boolean;
   visibilityRead: boolean;
@@ -63,6 +64,7 @@ const emptyChoice = (): BrandChoice => ({
   marketingRead: false, marketingDraft: false, marketingPublish: false,
   reelsRead: false, reelsCreate: false, reelsPublish: false,
   youtubeRead: false, youtubePublish: false,
+  nexusRead: false,
   corporateRead: false, corporatePlan: false,
   visibilityRead: false, visibilityPlan: false,
   adsRead: false, adsDraft: false, eventsPlan: false,
@@ -131,6 +133,7 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       reelsPublish: permissions.includes("reels.publish"),
       youtubeRead: permissions.includes("youtube.read"),
       youtubePublish: permissions.includes("youtube.publish"),
+      nexusRead: permissions.includes("nexus.read"),
       corporateRead: permissions.includes("corporate.read"),
       corporatePlan: permissions.includes("corporate.plan"),
       visibilityRead: permissions.includes("visibility.read"),
@@ -282,6 +285,7 @@ export default function WorkspaceUsersPage() {
         reelsPublish: choice.reelsPublish,
         youtubeRead: choice.youtubeRead,
         youtubePublish: choice.youtubePublish,
+        nexusRead: choice.nexusRead,
         corporateRead: choice.corporateRead,
         corporatePlan: choice.corporatePlan,
         visibilityRead: choice.visibilityRead,
@@ -652,6 +656,12 @@ export default function WorkspaceUsersPage() {
                       onChange={e => updateChoice(brand.brandKey, { youtubePublish: e.target.checked })}/> Publisere ferdig forhåndsvist Reel som YouTube Short</label>
                     <p className="mt-2 text-[11px] text-slate-500">Fase 1 er kun Zen Eco Homes. Publisering krever eksakt verifisert Zen-kanal og en ferdig Reel fra samme workspace.</p>
                   </div>}
+                  <div className="rounded-lg border border-violet-900/60 bg-violet-950/10 p-3">
+                    <strong className="text-sm">Nexus OS · innsikt</strong>
+                    <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.nexusRead}
+                      onChange={e => updateChoice(brand.brandKey, { nexusRead: e.target.checked })}/> Se hva Nexus lærer og hva som trenger oppmerksomhet</label>
+                    <p className="mt-2 text-[11px] text-slate-500">Kun brand-avgrenset read-only innsikt. Ingen runtime, autonomy, canary, globale regler eller agentiske handlinger.</p>
+                  </div>
                   {isZen && <div className="rounded-lg border border-slate-800 p-3">
                     <strong className="text-sm">Corporate Homes</strong>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.corporateRead}
