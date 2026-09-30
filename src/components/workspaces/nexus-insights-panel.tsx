@@ -142,7 +142,7 @@ export function WorkspaceNexusInsightsPanel({ brandKey }: { brandKey: string }) 
       </div>
     </section> : null}
 
-    {data?.newsletterSummary?.campaigns > 0 && <section className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+    {data && data.newsletterSummary.campaigns > 0 && <section className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
       <h4 className="font-semibold">Nyhetsbrev · hva som faktisk virker</h4>
       <p className="mt-1 text-xs text-slate-500">Nexus bruker kun aggregert brand-statistikk her. Åpningsrate er veiledende; klikk er et sterkere signal.</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
