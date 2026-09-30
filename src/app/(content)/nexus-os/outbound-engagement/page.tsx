@@ -189,7 +189,7 @@ export default function OutboundEngagementPage() {
                 <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Neste tillatte steg</div>
                 <div className="mt-1 text-sm font-black text-slate-950">{row.nextAction}</div>
                 <div className="mt-2 text-xs text-slate-500">Policy: <b>{row.automationClass.replaceAll("_"," ")}</b></div>
-                {(row.officialChannel.email || row.officialChannel.contactPage) && row.stage !== "CONTACTED" && <button
+                {row.stage === "READY_FOR_REVIEW" && <button
                   onClick={() => void prepareDraft(row)}
                   disabled={draftingId === row.source + row.id}
                   className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
