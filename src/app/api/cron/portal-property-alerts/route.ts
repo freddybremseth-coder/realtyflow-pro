@@ -21,7 +21,7 @@ function matchesCriteria(property: any, criteria: Record<string, any>) {
   const typeNeedle = String(criteria.propertyType || "").trim().toLowerCase();
   const lifestyle = String(criteria.lifestyle || "").trim().toLowerCase();
 
-  const locationText = [property.location, property.town, property.municipality, property.area, property.title_no, property.title]
+  const locationText = [property.location, property.town, property.title_no, property.title]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -80,7 +80,7 @@ async function handle(request: NextRequest) {
 
     const { data: properties, error: propertyError } = await supabase
       .from("properties")
-      .select("id,ref,title,title_no,location,town,municipality,area,price,bedrooms,bathrooms,property_type,type,pool,primary_image,show_on_website,website_visible,brand_id,brand,created_at,description_no")
+      .select("id,ref,title,title_no,location,town,price,bedrooms,bathrooms,property_type,type,pool,primary_image,show_on_website,website_visible,brand_id,created_at,description_no")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(250);
