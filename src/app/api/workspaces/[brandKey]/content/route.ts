@@ -166,6 +166,18 @@ export async function GET(
     }
   }
 
+  const recommendedOpportunityType =
+    typeof (opportunityLearning as any).recommendedOpportunityType === "string"
+      ? String((opportunityLearning as any).recommendedOpportunityType)
+      : "";
+  if (recommendedOpportunityType && opportunities.length > 1) {
+    opportunities.sort((a: any, b: any) =>
+      Number(String(b.opportunityType) === recommendedOpportunityType)
+      - Number(String(a.opportunityType) === recommendedOpportunityType)
+      || Number(b.score || 0) - Number(a.score || 0),
+    );
+  }
+
   return NextResponse.json({
     ok: true,
     brand: params.brandKey,
