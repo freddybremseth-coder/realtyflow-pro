@@ -162,7 +162,30 @@ const SIGNATURE_THEMES: Record<SignatureDemoSiteLayout, SignatureTheme> = {
 };
 
 function getSignatureBusinessCopy(variant: DemoSitesPreviewIndustryVariant, companyName: string, language: DemoSiteLanguage): SignatureBusinessCopy {
-  if (language !== "nb") return getDemoSiteMarketingCopy(language, companyName);
+  if (language !== "nb") {
+    const localized = getDemoSiteMarketingCopy(language, companyName);
+    return {
+      heroBadge: localized.heroBadge,
+      heroMeta: localized.heroMeta,
+      heroPanelEyebrow: localized.heroPanelEyebrow,
+      heroPanelTitle: localized.heroPanelTitle,
+      serviceTitle: localized.servicesTitle,
+      serviceText: localized.servicesText,
+      serviceCardText: localized.serviceCardText,
+      galleryEyebrow: localized.galleryEyebrow,
+      galleryTitle: localized.galleryTitle,
+      galleryText: localized.galleryText,
+      trustTitle: localized.trustTitle,
+      trustText: localized.trustText,
+      offerTitle: localized.offerTitle,
+      offerText: localized.offerText,
+      productsTitle: localized.productsTitle,
+      pricesTitle: localized.pricesTitle,
+      faqTitle: localized.faqTitle,
+      contactTitle: localized.contactTitle,
+      contactText: localized.contactText,
+    };
+  }
   const common: SignatureBusinessCopy = {
     heroBadge: "Moderne lokal business",
     heroMeta: "Klar side",
