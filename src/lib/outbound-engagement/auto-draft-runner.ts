@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   OutboundDraftError,
   outboundCandidateHasDocumentedBasis,
+  outboundCandidateIsExistingRelationship,
   prepareOutboundDraft,
   type OutboundCandidateSource,
 } from "@/lib/outbound-engagement/draft-preparation";
@@ -10,19 +11,6 @@ export const OUTBOUND_AUTO_DRAFT_ACTION = "outbound_auto_draft_prep";
 export const OUTBOUND_AUTO_DRAFT_PATH = "/api/cron/outbound-draft-prep";
 export const OUTBOUND_AUTO_DRAFT_BATCH = 3;
 
-const CONTACTED_STATUSES = new Set([
-  "CONTACT",
-  "CONTACTED",
-  "QUALIFIED",
-  "MATCHING",
-  "VIEWING",
-  "NEGOTIATION",
-  "RESERVED",
-  "PARTNER",
-  "WON",
-  "LOST",
-  "DISQUALIFIED",
-]);
 
 function objectValue(value: unknown): Record<string, any> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -104,7 +92,7 @@ export async function runOutboundAutoDraftPrep(
     ...(buyers || []).map((row: any) => ({ ...row, source: "corporate_buyer" as OutboundCandidateSource })),
     ...(partners || []).map((row: any) => ({ ...row, source: "corporate_partner" as OutboundCandidateSource })),
   ]
-    .filter((row: any) => !CONTACTED_STATUSES.has(String(row.status || "").toUpperCase()))
+    .filter((row: any) => !outboundCandidateIsExistingRelationship(row))
     .filter((row: any) => officialChannelReady(row))
     .filter((row: any) => outboundCandidateHasDocumentedBasis(row, row.source))
     .sort((a: any, b: any) => rank(b) - rank(a));
