@@ -6,6 +6,7 @@ import {
   growthBrandDefinition,
   isMetaGrowthChannel,
   isPilotChannel,
+  socialDestinationOwnerBrandId,
 } from "./brand-registry";
 
 test("keeps owned brand ids unique and Soleada outside the owned Growth OS brands", () => {
@@ -14,15 +15,27 @@ test("keeps owned brand ids unique and Soleada outside the owned Growth OS brand
     assert.equal(growthBrandDefinition("soleada"), null);
   });
 
-test("art is its own Instagram-first brand, not the personal umbrella or music account", () => {
+test("art keeps its own brand identity while sharing Freddy Meta destinations", () => {
   const art = growthBrandDefinition("freddyart");
   assert.equal(art?.website,"https://art.freddybremseth.com");
-  assert.deepEqual(art?.pilotChannels,["instagram"]);
-  assert.deepEqual(art?.plannedChannels,["instagram","website"]);
+  assert.deepEqual(art?.pilotChannels,["instagram","facebook"]);
+  assert.deepEqual(art?.plannedChannels,["instagram","facebook","website"]);
   assert.equal(isPilotChannel("freddyart","instagram"),true);
-  assert.equal(isPilotChannel("freddyart","facebook"),false);
+  assert.equal(isPilotChannel("freddyart","facebook"),true);
+  assert.equal(socialDestinationOwnerBrandId("freddyart","instagram"),"freddyb");
+  assert.equal(socialDestinationOwnerBrandId("freddyart","facebook"),"freddyb");
   assert.notEqual(art?.id,growthBrandDefinition("freddyb")?.id);
   assert.notEqual(art?.id,growthBrandDefinition("remasterfreddy")?.id);
+});
+
+test("shares professional Freddy Meta destinations without sharing non-Meta destinations", () => {
+  for (const brandId of ["freddyart","freddypublishing","freddyai"]) {
+    assert.equal(socialDestinationOwnerBrandId(brandId,"facebook"),"freddyb");
+    assert.equal(socialDestinationOwnerBrandId(brandId,"instagram"),"freddyb");
+    assert.equal(socialDestinationOwnerBrandId(brandId,"website"),brandId);
+  }
+  assert.equal(socialDestinationOwnerBrandId("freddyb","facebook"),"freddyb");
+  assert.equal(socialDestinationOwnerBrandId("remasterfreddy","facebook"),"remasterfreddy");
 });
 
 test("uses remasterfreddy as the canonical Re-master Freddy brand id", () => {
