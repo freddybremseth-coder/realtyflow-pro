@@ -59,7 +59,20 @@ test("system request still fails closed for unsupported or non-pilot channels", 
   assert.deepEqual(resolveAutopilotRunChannels({
     brandId: "freddyart",
     configuredChannels: ["instagram"],
-    requestedChannels: ["facebook"],
+    requestedChannels: ["youtube"],
     systemNextAction: true,
   }), []);
+});
+
+test("shared Freddy Art Facebook remains review-only when not in a run's live config", () => {
+  assert.deepEqual(resolveAutopilotRunChannels({
+    brandId: "freddyart",
+    configuredChannels: ["instagram"],
+    requestedChannels: ["facebook"],
+    systemNextAction: true,
+  }), ["facebook"]);
+  assert.equal(nextActionPublicationMode({
+    configuredChannels: ["instagram"],
+    targetChannel: "facebook",
+  }), "REVIEW_ONLY");
 });
