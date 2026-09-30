@@ -67,6 +67,8 @@ export default function OutboundEngagementPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [stage, setStage] = useState("ALL");
+  const [draftingId, setDraftingId] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
 
   async function load() {
     setLoading(true);
@@ -84,6 +86,26 @@ export default function OutboundEngagementPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  async function prepareDraft(row: Candidate) {
+    setDraftingId(row.source + row.id);
+    setMessage("");
+    try {
+      const response = await fetch("/api/nexus/outbound-engagement/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ candidateId: row.id, source: row.source }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lage utkast");
+      setMessage(body?.existing ? "Utkast finnes allerede i Oppgave-HUB." : "Nexus laget et evidensbasert utkast og la det til REVIEW i Oppgave-HUB.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDraftingId(null);
+    }
+  }
+
 
   const candidates = useMemo(() => {
     const rows = data?.candidates || [];
@@ -105,6 +127,7 @@ export default function OutboundEngagementPage() {
     </header>
 
     {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><AlertTriangle size={17} className="mr-2 inline" />{error}</div>}
+    {message && <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm font-semibold text-cyan-900">{message}</div>}
 
     {data && <>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -166,6 +189,11 @@ export default function OutboundEngagementPage() {
                 <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Neste tillatte steg</div>
                 <div className="mt-1 text-sm font-black text-slate-950">{row.nextAction}</div>
                 <div className="mt-2 text-xs text-slate-500">Policy: <b>{row.automationClass.replaceAll("_"," ")}</b></div>
+                {(row.officialChannel.email || row.officialChannel.contactPage) && row.stage !== "CONTACTED" && <button
+                  onClick={() => void prepareDraft(row)}
+                  disabled={draftingId === row.source + row.id}
+                  className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+                ><Sparkles size={14} className="mr-2" />{draftingId === row.source + row.id ? "Lager utkast…" : "Lag evidensbasert utkast"}</button>}
               </div>
             </div>
           </article>)}
