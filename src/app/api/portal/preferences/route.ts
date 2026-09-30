@@ -249,6 +249,48 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const savedSearchCriteria = {
+    area: String(preferences.area || "").slice(0, 160),
+    region: String(preferences.region || "").slice(0, 160),
+    budgetMin: String(preferences.budgetMin || "").slice(0, 40),
+    budgetMax: String(preferences.budgetMax || "").slice(0, 40),
+    bedrooms: String(preferences.bedrooms || "").slice(0, 20),
+    bathrooms: String(preferences.bathrooms || "").slice(0, 20),
+    propertyType: String(preferences.propertyType || "").slice(0, 80),
+    lifestyle: String(preferences.lifestyle || "").slice(0, 80),
+    timeline: String(preferences.timeline || "").slice(0, 80),
+    wantsPlots: Boolean(preferences.wantsPlots),
+    minPlotArea: String(preferences.minPlotArea || "").slice(0, 40),
+    maxPlotPrice: String(preferences.maxPlotPrice || "").slice(0, 40),
+  };
+
+  const { data: currentSavedSearch } = await supabase
+    .from("portal_saved_searches")
+    .select("id,alerts_enabled")
+    .eq("contact_id", contact.id)
+    .eq("brand_id", "zeneco")
+    .maybeSingle();
+
+  const confirmationDueAt = new Date(Date.parse(now) + 2 * 60 * 60 * 1000).toISOString();
+  const { error: savedSearchError } = await supabase
+    .from("portal_saved_searches")
+    .upsert({
+      contact_id: contact.id,
+      brand_id: "zeneco",
+      name: "Mitt boligsøk",
+      criteria: savedSearchCriteria,
+      alerts_enabled: currentSavedSearch?.alerts_enabled !== false,
+      criteria_updated_at: now,
+      confirmation_due_at: confirmationDueAt,
+      confirmation_sent_at: null,
+      confirmed_at: null,
+      updated_at: now,
+    }, { onConflict: "contact_id,brand_id" });
+
+  if (savedSearchError) {
+    console.warn("[portal/preferences] saved search sync failed", savedSearchError.message);
+  }
+
   await supabase
     .from("portal_users")
     .update({ status: "active", last_login_at: now, updated_at: now })
