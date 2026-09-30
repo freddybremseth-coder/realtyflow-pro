@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   const { data: existing } = await supabase
     .from("work_items")
     .select("id,status,title,description,metadata,created_at")
-    .eq("source_type", "outbound_engagement")
+    .eq("source_type", "ai_agent")
     .eq("source_id", candidateId)
     .in("status", ["TO_DO", "REVIEW"])
     .order("created_at", { ascending: false })
@@ -165,7 +165,7 @@ Rules:
       status: "REVIEW",
       priority: fitScore >= 80 ? "HIGH" : "MEDIUM",
       brand_id: "zeneco",
-      source_type: "outbound_engagement",
+      source_type: "ai_agent",
       source_id: candidateId,
       assigned_agent: "nexus_outbound_draft",
       next_action: "Menneskelig vurdering: kontroller evidens, kontaktgrunnlag og kanal før eventuell utsendelse.",
