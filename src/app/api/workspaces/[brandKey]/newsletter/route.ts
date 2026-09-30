@@ -165,7 +165,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
       origin: new URL(request.url).origin,
     });
     if (!result.ok) return fail(409, result.code);
-    return NextResponse.json({ ok: true, ...result }, { headers: noStore });
+    return NextResponse.json(result, { headers: noStore });
   }
 
   return fail(400, "INVALID_ACTION");
