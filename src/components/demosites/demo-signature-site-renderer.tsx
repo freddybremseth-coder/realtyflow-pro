@@ -595,7 +595,7 @@ function SignatureHeader({ preview, theme, ctaHref, callToAction, layout, copy }
               {companyName.slice(0, 1).toUpperCase()}
             </span>
           )}
-          <span className="truncate text-sm font-black uppercase tracking-[0.12em] md:text-base">{companyName}</span>
+          <span className="hidden truncate text-sm font-black uppercase tracking-[0.12em] sm:block md:text-base">{companyName}</span>
         </a>
         <nav className={`hidden items-center gap-6 text-sm ${theme.muted} lg:flex`}>
           <a href="#tjenester" className="transition hover:opacity-60">Tjenester</a>
@@ -606,8 +606,8 @@ function SignatureHeader({ preview, theme, ctaHref, callToAction, layout, copy }
         </nav>
         <div className="flex items-center gap-2">
           {contact.phone && <a href={`tel:${contact.phone}`} className={`hidden text-sm font-semibold ${theme.headerText} md:block`}>{contact.phone}</a>}
-          <a href={ctaHref} className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-black shadow-lg transition hover:-translate-y-0.5" style={{ backgroundColor: colors.primary, color: colors.primaryText, borderRadius: layout === "atelier" ? 0 : "999px" }}>
-            {callToAction} <ArrowUpRight className="ml-2 h-4 w-4" />
+          <a href={ctaHref} className="inline-flex max-w-[10rem] shrink-0 items-center justify-center px-3 py-2.5 text-sm font-black shadow-lg transition hover:-translate-y-0.5 sm:max-w-none sm:px-4" style={{ backgroundColor: colors.primary, color: colors.primaryText, borderRadius: layout === "atelier" ? 0 : "999px" }}>
+            <span className="truncate">{callToAction}</span> <ArrowUpRight className="ml-2 h-4 w-4 shrink-0" />
           </a>
         </div>
       </div>
