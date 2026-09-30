@@ -147,6 +147,9 @@ async function handleCreateDemoRequest(request: NextRequest) {
       accent_color: accentColor,
       brand_colors: { primary: brandColor, secondary: secondaryColor, accent: accentColor },
       gallery_images: galleryImages,
+      order_origin: "customer_initiated",
+      source_channel: "public_demo_request",
+      customer_started_at: new Date().toISOString(),
     };
 
     const payload = {
@@ -210,6 +213,8 @@ async function handleCreateDemoRequest(request: NextRequest) {
         template_slug: selectedTemplateSlug,
         has_logo: Boolean(logoAsset),
         gallery_images: galleryImages.length,
+        order_origin: "customer_initiated",
+        source_channel: "public_demo_request",
       },
     });
 
