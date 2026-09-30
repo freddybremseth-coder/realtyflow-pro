@@ -89,17 +89,23 @@ export async function reconcileSuccessfulMarketingRuns(
   const runIds = (runningRuns ?? []).map((row: any) => String(row.id ?? "").trim()).filter(Boolean);
   if (!runIds.length) return { scanned: 0, candidates: 0, reconciled: 0, errors: [] as string[] };
 
-  const { data: publications, error: publicationsError } = await supabase
-    .from("marketing_publications")
-    .select("marketing_run_id,state,updated_at")
-    .in("marketing_run_id", runIds)
-    .limit(10000);
+  const publications: PublicationRow[] = [];
+  const publicationBatchSize = 100;
+  for (let offset = 0; offset < runIds.length; offset += publicationBatchSize) {
+    const batch = runIds.slice(offset, offset + publicationBatchSize);
+    const { data, error } = await supabase
+      .from("marketing_publications")
+      .select("marketing_run_id,state,updated_at")
+      .in("marketing_run_id", batch)
+      .limit(10000);
 
-  if (publicationsError) {
-    return { scanned: runIds.length, candidates: 0, reconciled: 0, errors: [`PUBLICATION_SCAN_FAILED: ${publicationsError.message}`] };
+    if (error) {
+      return { scanned: runIds.length, candidates: 0, reconciled: 0, errors: [`PUBLICATION_SCAN_FAILED: ${error.message}`] };
+    }
+    publications.push(...((data ?? []) as PublicationRow[]));
   }
 
-  const successfulIds = successfulMarketingRunIds((publications ?? []) as PublicationRow[]);
+  const successfulIds = successfulMarketingRunIds(publications);
   if (!successfulIds.length) return { scanned: runIds.length, candidates: 0, reconciled: 0, errors: [] as string[] };
 
   const at = opts.now ?? new Date().toISOString();
