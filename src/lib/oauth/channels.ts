@@ -18,6 +18,7 @@ import {
   type KeyId,
 } from "./crypto";
 import type { OAuthPlatform } from "./state";
+import { socialDestinationOwnerBrandId } from "@/lib/marketing/brand-registry";
 
 export interface SocialChannel {
   id: string;
@@ -122,10 +123,13 @@ export async function getChannelsByBrand(
   platform?: OAuthPlatform,
 ): Promise<SocialChannel[]> {
   const supabase = createServerClient();
+  const destinationBrandId = platform
+    ? socialDestinationOwnerBrandId(brandId, platform)
+    : brandId;
   let query = supabase
     .from("social_channels")
     .select("*")
-    .eq("brand_id", brandId)
+    .eq("brand_id", destinationBrandId)
     .eq("is_active", true);
   if (platform) query = query.eq("platform", platform);
   const { data, error } = await query.order("platform").order("display_name");
@@ -138,6 +142,8 @@ export async function getChannelsByBrand(
 
 /**
  * The publish path's "find me the channel for (brand, platform)" lookup.
+ * For shared Freddy Meta destinations, the content brand remains unchanged while
+ * this lookup resolves the physical destination owner (freddyb) for Facebook/Instagram.
  * Returns null when zero matches. Returns the single match when exactly one.
  * Throws when there are multiple — which is the intentional signal to the
  * UI/caller that they need to pick a `social_channel_id` explicitly. This

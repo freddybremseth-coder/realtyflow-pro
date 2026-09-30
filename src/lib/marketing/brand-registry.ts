@@ -106,12 +106,12 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Freddy Bremseth Art",
     kind: "creator_media",
     website: "https://art.freddybremseth.com",
-    pilotChannels: ["instagram"],
-    plannedChannels: ["instagram", "website"],
+    pilotChannels: ["instagram", "facebook"],
+    plannedChannels: ["instagram", "facebook", "website"],
     contentPillars: ["original_art", "gallery_collections", "art_lounge_reels", "artwork_details", "creative_process"],
     conversionGoals: ["artwork_view", "gallery_visit", "art_inquiry", "art_follow"],
     primaryCtas: ["view_artwork", "visit_gallery", "follow", "contact"],
-    notes: "Dedicated ART-first identity. Daily original artwork Reels use approved low-resolution public gallery previews and authorized Re-Master Freddy soundtracks. Facebook has no dedicated art page; selected rewritten stories may appear on Freddy Bremseth's professional umbrella Page, never as identical automatic cross-posts.",
+    notes: "Dedicated ART-first identity. Art keeps its own content rules, attribution and conversion goals, but Facebook and Instagram publish through the shared professional Freddy Bremseth Meta destinations. Rewrite for channel/audience fit and avoid identical duplicate posts.",
   },
   {
     id: "freddypublishing",
@@ -123,7 +123,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     contentPillars: ["book_launches", "book_series", "sample_chapters", "author_catalog", "reading_and_ideas", "publishing_news"],
     conversionGoals: ["book_sale", "sample_read", "book_page_visit", "newsletter", "catalog_discovery"],
     primaryCtas: ["read_sample", "view_book", "buy_book", "browse_catalog", "subscribe"],
-    notes: "Dedicated publishing brand for the book catalog and series. Keep publishing/product posts distinct from the Freddy Bremseth expertise feed; cross-post only with a rewritten personal/expert angle.",
+    notes: "Dedicated publishing brand for the book catalog and series. Publishing keeps separate content rules, attribution and conversion goals while using the shared professional Freddy Bremseth Facebook and Instagram destinations. Rewrite each post for the shared audience instead of duplicating child-brand copy.",
   },
   {
     id: "freddyai",
@@ -135,7 +135,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     contentPillars: ["ai_products", "product_demos", "nexus_os", "realtyflow", "automation_workflows", "business_ai_education", "build_in_public"],
     conversionGoals: ["product_interest", "demo_request", "website_lead", "consultation", "product_waitlist"],
     primaryCtas: ["see_product", "see_demo", "learn_more", "join_waitlist", "contact"],
-    notes: "Dedicated AI/product brand for RealtyFlow, Nexus OS and future AI products. Product capability, pricing, customer outcome and integration claims must be verified before publication. Replace the temporary website with the dedicated product destination when it is verified.",
+    notes: "Dedicated AI/product brand for RealtyFlow, Nexus OS and future AI products. AI keeps separate content rules, attribution and conversion goals while using the shared professional Freddy Bremseth Facebook and Instagram destinations. Product capability, pricing, customer outcome and integration claims must be verified before publication. Replace the temporary website with the dedicated product destination when it is verified.",
   },
   {
     id: "remasterfreddy",
@@ -152,6 +152,26 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
 ] as const;
 
 export const OWNED_GROWTH_BRAND_IDS = OWNED_GROWTH_BRANDS.map((brand) => brand.id);
+
+/**
+ * Several Freddy sub-brands keep independent content/pipeline identity while
+ * publishing to the same professional Freddy Bremseth Meta destinations.
+ * This is destination sharing only: learning, attribution and business intent
+ * remain scoped to the originating brand.
+ */
+export const SHARED_SOCIAL_DESTINATION_OWNER: Partial<Record<OwnedGrowthBrandId, OwnedGrowthBrandId>> = {
+  freddyart: "freddyb",
+  freddypublishing: "freddyb",
+  freddyai: "freddyb",
+};
+
+export function socialDestinationOwnerBrandId(
+  brandId: string,
+  channel: string,
+): string {
+  if (channel !== "facebook" && channel !== "instagram") return brandId;
+  return SHARED_SOCIAL_DESTINATION_OWNER[brandId as OwnedGrowthBrandId] ?? brandId;
+}
 
 export function growthBrandDefinition(brandId: string): GrowthBrandDefinition | null {
   return OWNED_GROWTH_BRANDS.find((brand) => brand.id === brandId) ?? null;
