@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   }
 
-  const { data: portalUser } = await supabase
+  let { data: portalUser } = await supabase
     .from("portal_users")
     .select("contact_id,email,status,brand_id")
     .ilike("email", email)
@@ -50,7 +50,47 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (!portalUser) {
-    return NextResponse.json({ success: true });
+    const { data: contact } = await supabase
+      .from("contacts")
+      .select("id,name,email,brand_id,brand,pipeline_status,email_suppressed,do_not_contact")
+      .ilike("email", email)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const contactBrand = String(contact?.brand_id || contact?.brand || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const allowedBrand = ["zeneco", "zenecohomes"].includes(contactBrand);
+    const blocked = String(contact?.pipeline_status || "").toUpperCase() === "LOST" || contact?.email_suppressed || contact?.do_not_contact;
+
+    if (!contact || !allowedBrand || blocked) {
+      return NextResponse.json({ success: true });
+    }
+
+    const now = new Date().toISOString();
+    const { error: portalError } = await supabase
+      .from("portal_users")
+      .upsert({
+        contact_id: contact.id,
+        email,
+        name: contact.name || null,
+        brand_id: "zeneco",
+        role: "customer",
+        status: "active",
+        invited_at: now,
+        updated_at: now,
+      }, { onConflict: "contact_id" });
+
+    if (portalError) {
+      console.warn("[portal-magic-link] portal auto-provision failed", portalError.message);
+      return NextResponse.json({ success: true });
+    }
+
+    portalUser = {
+      contact_id: contact.id,
+      email,
+      status: "active",
+      brand_id: "zeneco",
+    };
   }
 
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
