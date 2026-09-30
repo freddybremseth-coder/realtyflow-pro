@@ -76,6 +76,20 @@ test("visibility and campaigns guides appear when those tools are available", ()
 });
 
 
+test("Nexus Insights guide appears only with nexus.read", () => {
+  const withNexus = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["nexus.read"],
+  });
+  assert.equal(withNexus.some(article => article.id === "nexus-insights"), true);
+
+  const withoutNexus = trainingArticlesFor({
+    brandKey: "pinosoecolife",
+    permissions: ["marketing.read"],
+  });
+  assert.equal(withoutNexus.some(article => article.id === "nexus-insights"), false);
+});
+
 test("YouTube guide is Zen-only and appears with YouTube access", () => {
   const zen = trainingArticlesFor({
     brandKey: "zeneco",
