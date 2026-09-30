@@ -3,6 +3,24 @@ import { askNexusAI, isNexusAIConfigured } from "@/services/ai/nexus-ai-client";
 
 export type OutboundCandidateSource = "corporate_buyer" | "corporate_partner";
 
+const EXISTING_RELATIONSHIP_STATUSES = new Set([
+  "CONTACT",
+  "CONTACTED",
+  "QUALIFIED",
+  "MATCHING",
+  "VIEWING",
+  "NEGOTIATION",
+  "RESERVED",
+  "PARTNER",
+  "WON",
+  "LOST",
+  "DISQUALIFIED",
+]);
+
+export function outboundCandidateIsExistingRelationship(candidate: Record<string, any>) {
+  return EXISTING_RELATIONSHIP_STATUSES.has(String(candidate.status || "").toUpperCase());
+}
+
 export class OutboundDraftError extends Error {
   status: number;
   constructor(message: string, status = 500) {
@@ -27,6 +45,10 @@ function extractJson(text: string) {
 }
 
 export function outboundCandidateHasDocumentedBasis(candidate: Record<string, any>, source: OutboundCandidateSource) {
+  if (outboundCandidateIsExistingRelationship(candidate)) {
+    throw new OutboundDraftError("Candidate is already in an existing relationship stage; use existing lead follow-up instead", 409);
+  }
+
   const evidence = objectValue(candidate.evidence);
   const signalResearch = objectValue(evidence.company_signal_research);
   const signals = objectValue(signalResearch.signals);
