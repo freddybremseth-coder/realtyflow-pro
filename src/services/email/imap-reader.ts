@@ -29,6 +29,10 @@ export interface FetchedEmail {
   threadId?: string;
   inReplyTo?: string;
   references?: string[];
+  listId?: string;
+  listUnsubscribe?: string;
+  precedence?: string;
+  autoSubmitted?: string;
 }
 
 export type HistoricalMailboxRole = "inbox" | "sent";
@@ -60,6 +64,10 @@ function imapAuth(config: ImapConfig) {
 async function parsedContent(source: Buffer | undefined) {
   let text = "";
   let html = "";
+  let listId = "";
+  let listUnsubscribe = "";
+  let precedence = "";
+  let autoSubmitted = "";
   if (source) {
     try {
       const parsed = await simpleParser(source);
@@ -67,12 +75,20 @@ async function parsedContent(source: Buffer | undefined) {
       html = typeof parsed.html === "string"
         ? parsed.html
         : (parsed.textAsHtml || "");
+      const header = (name: string) => {
+        const value = parsed.headers.get(name);
+        return value == null ? "" : String(value);
+      };
+      listId = header("list-id");
+      listUnsubscribe = header("list-unsubscribe");
+      precedence = header("precedence");
+      autoSubmitted = header("auto-submitted");
     } catch (parseErr) {
       console.warn(`[IMAP] mailparser failed, falling back to raw text`, parseErr);
       text = source.toString("utf-8");
     }
   }
-  return { text, html };
+  return { text, html, listId, listUnsubscribe, precedence, autoSubmitted };
 }
 
 async function safeLogout(client: ImapFlow) {
@@ -130,7 +146,7 @@ export async function fetchRecentEmails(
         const envelope = message.envelope;
         if (!envelope) continue;
 
-        const { text, html } = await parsedContent(message.source as Buffer | undefined);
+        const { text, html, listId, listUnsubscribe, precedence, autoSubmitted } = await parsedContent(message.source as Buffer | undefined);
 
         const references = envelope.inReplyTo
           ? [envelope.inReplyTo]
@@ -158,6 +174,10 @@ export async function fetchRecentEmails(
           date: envelope.date ? new Date(envelope.date) : new Date(),
           bodyText: text || undefined,
           bodyHtml: html || undefined,
+          listId: listId || undefined,
+          listUnsubscribe: listUnsubscribe || undefined,
+          precedence: precedence || undefined,
+          autoSubmitted: autoSubmitted || undefined,
           threadId,
           inReplyTo: envelope.inReplyTo || undefined,
           references,
@@ -282,7 +302,7 @@ export async function fetchHistoricalMailboxBatch(
           const messageId = stableEnvelopeMessageId(envelope.messageId);
           if (!messageId) continue;
 
-          const { text, html } = await parsedContent(message.source as Buffer | undefined);
+          const { text, html, listId, listUnsubscribe, precedence, autoSubmitted } = await parsedContent(message.source as Buffer | undefined);
           const references = envelope.inReplyTo ? [envelope.inReplyTo] : [];
           const threadId = references.length > 0 ? references[0] : messageId;
 

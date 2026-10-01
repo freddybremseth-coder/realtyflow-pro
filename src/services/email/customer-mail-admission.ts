@@ -162,7 +162,13 @@ export async function decideCustomerMailAdmission(
   if (message.mailboxRole === "inbox") {
     const kind = classifyInboundMailSource({
       fromAddress: message.from.address,
+      fromName: message.from.name,
       subject: message.subject,
+      bodyText: message.bodyText,
+      listId: message.listId,
+      listUnsubscribe: message.listUnsubscribe,
+      precedence: message.precedence,
+      autoSubmitted: message.autoSubmitted,
     });
     if (kind !== "customer") {
       return { status: "filtered", reason: `inbound_${kind}`, contactId: null };

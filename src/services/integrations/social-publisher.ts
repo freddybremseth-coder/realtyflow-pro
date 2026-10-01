@@ -2,6 +2,7 @@ import { uploadVideo, isConfigured as isYouTubeConfigured } from './youtube-clie
 import type { YouTubeVideoMetadata } from '@/lib/types';
 import { Readable } from 'stream';
 import { contentPublishabilityGate } from '@/lib/marketing/autonomous/publishability';
+import { ensureBrandWebsiteLink } from '@/lib/marketing/social-website-link';
 
 // ─── Interfaces ─────────────────────────────────────────────────────
 
@@ -77,9 +78,12 @@ export async function publishToYouTube(input: YouTubePublishInput): Promise<Publ
       };
     }
 
+    const finalDescription = input.brandId
+      ? ensureBrandWebsiteLink({ brandId: input.brandId, channel: 'youtube', content: input.description })
+      : input.description;
     const metadata: YouTubeVideoMetadata = {
       title: input.title,
-      description: input.description,
+      description: finalDescription,
       tags: input.tags,
       categoryId: input.categoryId || '22', // People & Blogs default
       privacyStatus: input.privacyStatus || 'private',
@@ -127,11 +131,12 @@ export async function publishToInstagram(
   }
 
   try {
+    const finalContent = ensureBrandWebsiteLink({ brandId, channel: 'instagram', content });
     // Step 1: Create media container
     const createUrl = `https://graph.facebook.com/v25.0/${accountId}/media`;
     const createParams: Record<string, string> = {
       access_token: accessToken,
-      caption: content,
+      caption: finalContent,
     };
     if (imageUrl) {
       createParams.image_url = imageUrl;
@@ -204,13 +209,14 @@ export async function publishToFacebook(
   }
 
   try {
+    const finalContent = ensureBrandWebsiteLink({ brandId, channel: 'facebook', content });
     const endpoint = imageUrl
       ? `https://graph.facebook.com/v25.0/${pageId}/photos`
       : `https://graph.facebook.com/v25.0/${pageId}/feed`;
 
     const params: Record<string, string> = {
       access_token: accessToken,
-      message: content,
+      message: finalContent,
     };
     if (imageUrl) {
       params.url = imageUrl;
@@ -265,6 +271,7 @@ export async function publishToLinkedIn(
   }
 
   try {
+    const finalContent = ensureBrandWebsiteLink({ brandId, channel: 'linkedin', content });
     const author = organizationId
       ? `urn:li:organization:${organizationId}`
       : 'urn:li:person:me';
@@ -274,7 +281,7 @@ export async function publishToLinkedIn(
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: content },
+          shareCommentary: { text: finalContent },
           shareMediaCategory: imageUrl ? 'IMAGE' : 'NONE',
           ...(imageUrl
             ? {
@@ -346,6 +353,7 @@ export async function publishToTikTok(
   }
 
   try {
+    const finalDescription = ensureBrandWebsiteLink({ brandId, channel: 'tiktok', content: description });
     // TikTok Content Posting API - initialize upload
     const initRes = await fetch(
       'https://open.tiktokapis.com/v2/post/publish/video/init/',
@@ -357,7 +365,7 @@ export async function publishToTikTok(
         },
         body: JSON.stringify({
           post_info: {
-            title: description.substring(0, 150),
+            title: finalDescription.substring(0, 150),
             privacy_level: 'PUBLIC_TO_EVERYONE',
           },
           source_info: {
@@ -422,6 +430,7 @@ export async function publishToPinterest(
   }
 
   try {
+    const finalDescription = ensureBrandWebsiteLink({ brandId, channel: 'pinterest', content: description });
     const res = await fetch('https://api.pinterest.com/v5/pins', {
       method: 'POST',
       headers: {
@@ -431,7 +440,7 @@ export async function publishToPinterest(
       body: JSON.stringify({
         board_id: defaultBoardId,
         title,
-        description,
+        description: finalDescription,
         media_source: {
           source_type: 'image_url',
           url: imageUrl,

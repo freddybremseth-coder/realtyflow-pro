@@ -6,6 +6,7 @@ import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 import { makeGraphApi, makeMetaPublisher } from "@/services/marketing/publishers/meta-publisher";
 import { getChannelInfo, uploadVideo } from "@/services/integrations/youtube-client";
 import { publishFacebookPageReel } from "@/services/pipelines/remaster-facebook-reel-publisher";
+import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -149,6 +150,7 @@ export async function POST(request:NextRequest){
     return fail("Unable to reserve the Reel publication: "+(reserveError?.message||"Unknown error"),503);
   }
   const publicationId="manual-reel:"+jobId+":"+channel;
+  const socialCaption = ensureBrandWebsiteLink({ brandId: target.brandId, channel, content: String(job.caption) });
   try{
     const publicUrl=supabase.storage.from(BUCKET).getPublicUrl(job.video_path).data.publicUrl;
     if(!publicUrl.startsWith("https://")||!publicUrl.includes("/storage/v1/object/public/"+BUCKET+"/"))
@@ -161,10 +163,10 @@ export async function POST(request:NextRequest){
       const publisher=makeMetaPublisher({supabase:supabase as any,graph:makeGraphApi(connection.tokens.accessToken),
         igUserId:target.externalId,live:true});
       const result=await publisher.publish({
-        contentId:publicationId,channel:"instagram",headline:"",body:String(job.caption),cta:"",
+        contentId:publicationId,channel:"instagram",headline:"",body:socialCaption,cta:"",
         media:{videoUrl:publicUrl,mediaType:"reel"},
       } as any,{
-        idempotencyKey:publicationId,publicationId,accountId:target.externalId,channel:"instagram",
+        idempotencyKey:publicationId,publicationId,brandId:target.brandId,accountId:target.externalId,channel:"instagram",
       });
       if(result.dryRun||result.state!=="published"||!result.externalId)throw new Error("INSTAGRAM_PUBLICATION_UNCONFIRMED");
       externalId=result.externalId;
@@ -174,7 +176,7 @@ export async function POST(request:NextRequest){
         throw new Error("FACEBOOK_ACCOUNT_CHANGED");
       const posted=await publishFacebookPageReel({pageId:target.externalId,
         accessToken:connection.tokens.accessToken,videoUrl:publicUrl,
-        title:String(job.title),description:String(job.caption)});
+        title:String(job.title),description:socialCaption});
       externalId=posted.videoId;externalUrl=posted.videoUrl;
     }else{
       const {data:download,error}=await supabase.storage.from(BUCKET).download(job.video_path);
@@ -182,7 +184,7 @@ export async function POST(request:NextRequest){
       const buffer=Buffer.from(await download.arrayBuffer());
       if(buffer.length<20_000||buffer.length>80*1024*1024)throw new Error("REEL_MP4_SIZE_INVALID");
       const result=await uploadVideo(buffer,{
-        title:String(job.title).slice(0,100),description:String(job.caption).slice(0,4900),
+        title:String(job.title).slice(0,100),description:socialCaption.slice(0,4900),
         tags:["ReMasterFreddy","Shorts"],categoryId:"22",privacyStatus:"public",
       },target.brandId,{requireBrandToken:true,expectedChannelId:target.externalId,singleInsertAttempt:true});
       if(result.channelId!==target.externalId||!result.videoId)throw new Error("YOUTUBE_PUBLISHED_CHANNEL_UNCONFIRMED");
