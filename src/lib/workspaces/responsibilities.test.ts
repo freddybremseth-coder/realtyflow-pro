@@ -7,7 +7,8 @@ import {
 } from "./responsibilities";
 
 test("responsibilities never widen workspace permissions", () => {
-  assert.equal(responsibilityAllowed("pinosoecolife", "newsletter", ["email.read"]), true);
+  assert.equal(responsibilityAllowed("pinosoecolife", "newsletter", ["email.read"]), false);
+  assert.equal(responsibilityAllowed("pinosoecolife", "newsletter", ["email.read","email.draft"]), true);
   assert.equal(responsibilityAllowed("pinosoecolife", "newsletter", ["crm.read"]), false);
   assert.equal(normalizeResponsibilities("pinosoecolife", ["newsletter"], ["crm.read"]), null);
 });
