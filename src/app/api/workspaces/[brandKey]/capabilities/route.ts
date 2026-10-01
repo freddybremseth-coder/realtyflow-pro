@@ -5,7 +5,7 @@ import {
   hasVerifiedBrandGrant, isCanonicalBrandKey, WORKSPACE_PERMISSIONS, type WorkspacePermission,
 } from "@/lib/workspaces/brand-policy";
 import { roleAllowsWorkspacePermission } from "@/lib/workspaces/require-brand-workspace";
-import { filterAllowedResponsibilities, type WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
+import { filterAllowedPrimaryResponsibilities, filterAllowedResponsibilities, type WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,6 +33,7 @@ export async function GET(
 
   let permissions: WorkspacePermission[] = [...WORKSPACE_PERMISSIONS];
   let responsibilities: WorkspaceResponsibilityId[] = [];
+  let primaryResponsibilities: WorkspaceResponsibilityId[] = [];
   if (context.role !== "OWNER") {
     const grant = scope.grant;
     if (!grant?.user_id) return fail(403, "ACCESS_DENIED");
@@ -91,7 +92,7 @@ export async function GET(
     );
     const { data: responsibilityRow, error: responsibilityError } = await supabase.schema("core")
       .from("brand_workspace_responsibilities")
-      .select("responsibilities")
+      .select("responsibilities,primary_responsibilities")
       .eq("brand_id", scope.brand.id)
       .eq("user_id", identity.user.id)
       .maybeSingle();
@@ -100,6 +101,12 @@ export async function GET(
       brandKey,
       responsibilityRow?.responsibilities || [],
       permissions,
+    );
+    primaryResponsibilities = filterAllowedPrimaryResponsibilities(
+      brandKey,
+      responsibilityRow?.primary_responsibilities || [],
+      permissions,
+      responsibilities,
     );
 
     if (brandKey === "zeneco") {
@@ -110,5 +117,5 @@ export async function GET(
     }
     if (permissions.length === 0) return fail(403, "ACCESS_DENIED");
   }
-  return NextResponse.json({ ok: true, brand: brandKey, permissions, responsibilities }, { headers: noStore });
+  return NextResponse.json({ ok: true, brand: brandKey, permissions, responsibilities, primaryResponsibilities }, { headers: noStore });
 }
