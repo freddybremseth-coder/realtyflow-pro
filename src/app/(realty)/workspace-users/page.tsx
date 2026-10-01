@@ -8,6 +8,7 @@ import { WORKSPACE_ACCESS_PRESETS, workspaceAccessPresetChoice, type WorkspaceAc
 import {
   WORKSPACE_RESPONSIBILITIES,
   responsibilityAllowed,
+  suggestedPrimaryResponsibilitiesForPreset,
   suggestedResponsibilitiesForPreset,
   type WorkspaceResponsibilityId,
 } from "@/lib/workspaces/responsibilities";
@@ -18,6 +19,7 @@ type Membership = {
   status: "active" | "revoked" | "disabled";
   permissions: WorkspacePermission[];
   responsibilities: WorkspaceResponsibilityId[];
+  primaryResponsibilities: WorkspaceResponsibilityId[];
   updatedAt: string | null;
 };
 type WorkspaceUser = {
@@ -64,6 +66,7 @@ type BrandChoice = {
   emailDraft: boolean;
   emailSend: boolean;
   responsibilities: WorkspaceResponsibilityId[];
+  primaryResponsibilities: WorkspaceResponsibilityId[];
 };
 
 const emptyChoice = (): BrandChoice => ({
@@ -78,7 +81,7 @@ const emptyChoice = (): BrandChoice => ({
   adsRead: false, adsDraft: false, eventsPlan: false,
   contentRead: false, contentEdit: false, contentPublish: false,
   emailRead: false, emailDraft: false, emailSend: false,
-  responsibilities: [],
+  responsibilities: [], primaryResponsibilities: [],
 });
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -157,6 +160,7 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       emailDraft: permissions.includes("email.draft"),
       emailSend: permissions.includes("email.send"),
       responsibilities: membership.responsibilities || [],
+      primaryResponsibilities: membership.primaryResponsibilities || [],
     };
   }
   return next;
@@ -305,9 +309,13 @@ export default function WorkspaceUsersPage() {
           ...workspaceAccessPresetChoice(brand.brandKey, presetId),
         };
         const permissions = permissionsForChoice(brand.brandKey, presetChoice);
+        const responsibilities = suggestedResponsibilitiesForPreset(brand.brandKey, presetId, permissions);
         next[brand.brandKey] = {
           ...presetChoice,
-          responsibilities: suggestedResponsibilitiesForPreset(brand.brandKey, presetId, permissions),
+          responsibilities,
+          primaryResponsibilities: suggestedPrimaryResponsibilitiesForPreset(
+            brand.brandKey, presetId, permissions, responsibilities,
+          ),
         };
       }
       return next;
@@ -325,7 +333,9 @@ export default function WorkspaceUsersPage() {
       const permissions = permissionsForChoice(brand.brandKey, choice);
       const responsibilities = choice.responsibilities.filter(item =>
         responsibilityAllowed(brand.brandKey, item, permissions));
-      return permissions.length ? [{ brandKey: brand.brandKey, permissions, responsibilities }] : [];
+      const primaryResponsibilities = choice.primaryResponsibilities.filter(item =>
+        responsibilities.includes(item));
+      return permissions.length ? [{ brandKey: brand.brandKey, permissions, responsibilities, primaryResponsibilities }] : [];
     });
   }
 
@@ -756,22 +766,37 @@ export default function WorkspaceUsersPage() {
                   </div>
                   <div className="rounded-lg border border-amber-900/60 bg-amber-950/10 p-3 md:col-span-3">
                     <strong className="text-sm">Personlig ansvar i denne merkevaren</strong>
-                    <p className="mt-1 text-[11px] text-slate-500">Ansvar styrer prioritering på «I dag». Det gir aldri flere rettigheter enn modulene over.</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Hovedansvar prioriteres først på «I dag». Støtteansvar kommer etter. Ingen av nivåene gir flere rettigheter enn modulene over.</p>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {WORKSPACE_RESPONSIBILITIES.filter(item =>
                         responsibilityAllowed(brand.brandKey, item.id, permissionsForChoice(brand.brandKey, choice))
-                      ).map(item => <label key={item.id} className="rounded-lg border border-slate-800 bg-slate-950/45 p-3 text-xs">
-                        <span className="flex items-start gap-2">
-                          <input type="checkbox" className="mt-0.5"
-                            checked={choice.responsibilities.includes(item.id)}
-                            onChange={e => updateChoice(brand.brandKey, {
-                              responsibilities: e.target.checked
-                                ? Array.from(new Set([...choice.responsibilities, item.id]))
-                                : choice.responsibilities.filter(value => value !== item.id),
-                            })}/>
-                          <span><strong className="block text-slate-200">{item.label}</strong><span className="mt-1 block leading-5 text-slate-500">{item.description}</span></span>
-                        </span>
-                      </label>)}
+                      ).map(item => {
+                        const assigned = choice.responsibilities.includes(item.id);
+                        const primary = choice.primaryResponsibilities.includes(item.id);
+                        return <div key={item.id} className="rounded-lg border border-slate-800 bg-slate-950/45 p-3 text-xs">
+                          <strong className="block text-slate-200">{item.label}</strong>
+                          <span className="mt-1 block min-h-10 leading-5 text-slate-500">{item.description}</span>
+                          <select
+                            value={primary ? "primary" : assigned ? "support" : "none"}
+                            onChange={e => {
+                              const level = e.target.value;
+                              updateChoice(brand.brandKey, {
+                                responsibilities: level === "none"
+                                  ? choice.responsibilities.filter(value => value !== item.id)
+                                  : Array.from(new Set([...choice.responsibilities, item.id])),
+                                primaryResponsibilities: level === "primary"
+                                  ? Array.from(new Set([...choice.primaryResponsibilities, item.id]))
+                                  : choice.primaryResponsibilities.filter(value => value !== item.id),
+                              });
+                            }}
+                            className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs"
+                          >
+                            <option value="none">Ikke mitt ansvar</option>
+                            <option value="support">Støtteansvar</option>
+                            <option value="primary">Hovedansvar</option>
+                          </select>
+                        </div>;
+                      })}
                     </div>
                   </div>
                 </div>}
