@@ -34,5 +34,5 @@ test("campaign production enforces a verified https CTA after AI generation", ()
   assert.match(campaign, /requiredCtaUrl\?: string/);
   assert.match(campaign, /REQUIRED_CTA_URL_INVALID/);
   assert.match(campaign, /Les mer: \$\{requiredUrl\}/);
-  assert.match(campaign, /creative = dedupeCreativeCta\(creative\)/);
+  assert.match(campaign, /addGrowthAttributionToCreative\(dedupeCreativeCta\(creative\)\)/);
 });
