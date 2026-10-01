@@ -19,6 +19,8 @@ const PUBLIC_PROPERTY_SELECT = [
   "area_m2",
   "built_area",
   "plot_size",
+  "plot_included_in_price",
+  "plot_price_eur",
   "status",
   "images",
   "description",
