@@ -11,6 +11,7 @@ import {
   sendBuyerCriteriaConfirmation,
 } from "@/services/email/buyer-profile-confirmation";
 import { extractLatestReplyText } from "@/services/email/latest-reply-text";
+import { sourcePredatesApprovedBuyerProfile } from "@/services/email/buyer-profile-confirmation-freshness";
 
 export const maxDuration = 300;
 const PATH = "/api/cron/nexus-criteria-confirmation";
@@ -135,6 +136,54 @@ export async function GET(request: NextRequest) {
       const brandId = String(row.brand_id || "");
       if (!contactId || !sourceEmailMessageId || !sourceWorkItemId || !brandId) {
         sendSkipped += 1;
+        continue;
+      }
+
+
+      const [sourceEmail, currentProfile] = await Promise.all([
+        supabase
+          .from("email_messages")
+          .select("received_at")
+          .eq("id", sourceEmailMessageId)
+          .maybeSingle(),
+        supabase
+          .from("buyer_profiles")
+          .select("id,version,approved_at")
+          .eq("brand", brandId)
+          .eq("contact_id", contactId)
+          .eq("status", "approved")
+          .order("version", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      if (sourceEmail.error) throw sourceEmail.error;
+      if (currentProfile.error) throw currentProfile.error;
+
+      if (
+        sourcePredatesApprovedBuyerProfile(
+          sourceEmail.data?.received_at ? String(sourceEmail.data.received_at) : null,
+          currentProfile.data?.approved_at ? String(currentProfile.data.approved_at) : null,
+        )
+      ) {
+        sendSkipped += 1;
+        const now = new Date().toISOString();
+        const staleUpdate = await supabase
+          .from("work_items")
+          .update({
+            status: "DONE",
+            next_action: "Foreldet kriteriereview: en nyere godkjent Buyer Profile er allerede autoritativ.",
+            metadata: {
+              ...metadata,
+              confirmation_pending: false,
+              confirmation_outcome: "source_predates_current_approved_profile",
+              confirmation_skipped_at: now,
+              current_buyer_profile_id: currentProfile.data?.id || null,
+              current_buyer_profile_version: currentProfile.data?.version || null,
+            },
+            updated_at: now,
+          })
+          .eq("id", row.id);
+        if (staleUpdate.error) throw staleUpdate.error;
         continue;
       }
 
