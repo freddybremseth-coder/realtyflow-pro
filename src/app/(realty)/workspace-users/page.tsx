@@ -168,6 +168,7 @@ export default function WorkspaceUsersPage() {
   const [organization, setOrganization] = useState("");
   const [accessExpiry, setAccessExpiry] = useState("");
   const [choices, setChoices] = useState<Record<string, BrandChoice>>({});
+  const [selectedPresetId, setSelectedPresetId] = useState<WorkspaceAccessPresetId | null>(null);
 
   const selectedUser = useMemo(
     () => snapshot?.users.find(user => user.userId === selectedUserId) || null,
@@ -196,7 +197,7 @@ export default function WorkspaceUsersPage() {
   function startNew() {
     setSelectedUserId(null);
     setDisplayName(""); setUsername(""); setEmail(""); setPassword("");
-    setAccountKind("staff"); setOrganization(""); setAccessExpiry("");
+    setAccountKind("staff"); setOrganization(""); setAccessExpiry(""); setSelectedPresetId(null);
     setError(""); setNotice("");
     const next: Record<string, BrandChoice> = {};
     for (const brand of snapshot?.brands || []) next[brand.brandKey] = emptyChoice();
@@ -212,11 +213,13 @@ export default function WorkspaceUsersPage() {
     setAccountKind(user.accountKind || "staff");
     setOrganization(user.organization || "");
     setAccessExpiry(accessExpiryInput(user.accessExpiresAt));
+    setSelectedPresetId(null);
     setChoices(choicesForUser(user, snapshot?.brands || []));
     setError(""); setNotice("");
   }
 
   function updateChoice(brandKey: string, patch: Partial<BrandChoice>) {
+    setSelectedPresetId(null);
     setChoices(current => {
       const prior = current[brandKey] || emptyChoice();
       const next = { ...prior, ...patch };
@@ -262,6 +265,7 @@ export default function WorkspaceUsersPage() {
       return next;
     });
     const preset = WORKSPACE_ACCESS_PRESETS.find(item => item.id === presetId);
+    setSelectedPresetId(presetId);
     setError("");
     setNotice(`Malen «${preset?.label || presetId}» er lagt på valgte merkevarer. Kontroller rettighetene under før du lagrer.`);
   }
@@ -303,6 +307,11 @@ export default function WorkspaceUsersPage() {
       return permissions.length ? [{ brandKey: brand.brandKey, permissions }] : [];
     });
   }
+
+
+
+  const enabledBrandCount = (snapshot?.brands || []).filter(brand => choices[brand.brandKey]?.enabled).length;
+  const selectedPermissionCount = brandAccess().reduce((sum, item) => sum + item.permissions.length, 0);
 
   async function toggleLogin() {
     if (!snapshot || busy) return;
@@ -578,21 +587,35 @@ export default function WorkspaceUsersPage() {
             <p className="text-xs text-slate-400">Velg merkevare først. Hver rettighet kontrolleres på nytt på serveren ved bruk.</p>
           </div>
           <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/10 p-4">
-            <h4 className="text-sm font-semibold text-cyan-100">Hurtigoppsett</h4>
-            <p className="mt-1 text-xs text-slate-400">
-              Velg én eller flere merkevarer under, og bruk en mal for å fylle ut rettighetene. Malen lagrer ingenting automatisk.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-cyan-100">Rolleprofiler · hurtigoppsett</h4>
+                <p className="mt-1 max-w-3xl text-xs text-slate-400">
+                  Velg én eller flere merkevarer under, og bruk en rolleprofil som utgangspunkt. RealtyFlow fyller bare inn tillatte brand-rettigheter; du kan finjustere alt før lagring.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-right text-[11px] text-slate-400">
+                <strong className="block text-sm text-slate-200">{enabledBrandCount} merkevarer · {selectedPermissionCount} rettigheter</strong>
+                Ingenting lagres før du trykker «Lagre bruker og tilgang».
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
               {WORKSPACE_ACCESS_PRESETS.map(preset => <button key={preset.id} type="button"
                 onClick={() => applyAccessPreset(preset.id)}
-                title={preset.description}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-cyan-200 hover:border-cyan-600">
-                {preset.label}
+                aria-pressed={selectedPresetId === preset.id}
+                className={`rounded-xl border p-3 text-left transition ${selectedPresetId === preset.id
+                  ? "border-cyan-500 bg-cyan-950/30"
+                  : "border-slate-700 bg-slate-950/30 hover:border-cyan-700"}`}>
+                <span className="flex items-center justify-between gap-2">
+                  <strong className="text-sm text-cyan-100">{preset.label}</strong>
+                  {preset.id === "partner" && <span className="rounded-full border border-violet-700 px-2 py-0.5 text-[10px] font-semibold text-violet-300">bred operativ</span>}
+                </span>
+                <span className="mt-1 block text-[11px] leading-5 text-slate-400">{preset.description}</span>
               </button>)}
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">
-              «Eksternt byrå» kan lage utkast og Reels, men får ikke CRM, e-post eller publiseringsrettighet. Alle maler kan finjusteres før lagring.
-            </p>
+            <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-[11px] text-slate-400">
+              <strong className="text-slate-200">Sikkerhetsgrense:</strong> Rolleprofiler kan aldri gi owner/admin, runtime, autonomy eller globale Nexus-kontroller. «Samarbeidspartner» er ment for en betrodd operativ partner; «Eksternt byrå» er tryggere når personen bare skal produsere utkast.
+            </div>
           </div>
           <div className="space-y-3">
             {snapshot?.brands.map(brand => {

@@ -2,6 +2,7 @@ export const WORKSPACE_ACCESS_PRESETS = [
   { id: "seo-content", label: "SEO & Content", description: "SEO/GEO/AEO og nettsideinnhold. Ingen CRM, e-post eller publisering til sosiale medier." },
   { id: "sales-crm", label: "Salg / CRM", description: "Kunder, boligkatalog, oppgaver og brand-godkjent én-til-én e-post." },
   { id: "marketing", label: "Marketing", description: "Innhold, Reels, sosiale medier, SEO, annonser og events med publiseringsrettighet." },
+  { id: "partner", label: "Samarbeidspartner", description: "Bred operativ tilgang til kunder, innhold, e-post, markedsføring og Nexus for valgte merkevarer, men ingen owner-, admin-, runtime- eller autonomikontroller." },
   { id: "read-only", label: "Read only", description: "Bred lesetilgang i valgt brand, uten å kunne endre eller publisere." },
   { id: "external-agency", label: "Eksternt byrå", description: "Lage utkast, Reels og SEO-arbeid, men ingen CRM, e-post eller publisering." },
 ] as const;
@@ -109,6 +110,39 @@ export function workspaceAccessPresetChoice(
       contentEdit: true,
       contentPublish: true,
       nexusRead: true,
+    };
+  }
+
+  if (presetId === "partner") {
+    return {
+      ...choice,
+      crmRead: true,
+      crmWrite: true,
+      properties: true,
+      tasksRead: isZen,
+      tasksWrite: isZen,
+      marketingRead: true,
+      marketingDraft: true,
+      marketingPublish: true,
+      reelsRead: supportsReels,
+      reelsCreate: supportsReels,
+      reelsPublish: supportsReels,
+      youtubeRead: isZen,
+      youtubePublish: isZen,
+      nexusRead: true,
+      corporateRead: isZen,
+      corporatePlan: isZen,
+      visibilityRead: true,
+      visibilityPlan: true,
+      adsRead: true,
+      adsDraft: true,
+      eventsPlan: true,
+      contentRead: true,
+      contentEdit: true,
+      contentPublish: true,
+      emailRead: true,
+      emailDraft: true,
+      emailSend: true,
     };
   }
 
