@@ -52,5 +52,8 @@ test("no-match follow-up runs after matching and presentation preparation", () =
   const presentation = vercel.indexOf('"/api/cron/nexus-presentation-prep"');
   const noMatch = vercel.indexOf('"/api/cron/nexus-no-match-followup"');
   assert.ok(propertyMatch >= 0 && presentation > propertyMatch && noMatch > presentation);
-  assert.match(vercel, /nexus-no-match-followup[^\n]+7-59\/5/);
+
+  const config = JSON.parse(vercel) as { crons?: Array<{ path?: string; schedule?: string }> };
+  const noMatchCron = config.crons?.find((cron) => cron.path === "/api/cron/nexus-no-match-followup");
+  assert.equal(noMatchCron?.schedule, "7-59/5 * * * *");
 });
