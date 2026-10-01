@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 };
 
 const AUTH_PATH_PREFIXES = ["/login", "/reset-password", "/account/password"];
-const PUBLIC_SHELL_PATH_PREFIXES = ["/demosites/preview", "/demosites/claim"];
+const PUBLIC_SHELL_PATH_PREFIXES = ["/demo", "/demosites/preview", "/demosites/claim"];
 
 function isAuthRoute(pathname: string) {
   return AUTH_PATH_PREFIXES.some(
