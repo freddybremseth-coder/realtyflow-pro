@@ -753,6 +753,7 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.emailSend}
                       onChange={e => updateChoice(brand.brandKey, { emailSend: e.target.checked })}/> Sende én-til-én fra merkevarens e-postkonto</label>
                     <p className="mt-2 text-[11px] text-slate-500">Bare brand-godkjente leads/Corporate-kanaler. Avmelding og suppression kontrolleres før sending. Reach-abonnement opprettes ikke automatisk.</p>
+                  </div>
                   <div className="rounded-lg border border-amber-900/60 bg-amber-950/10 p-3 md:col-span-3">
                     <strong className="text-sm">Personlig ansvar i denne merkevaren</strong>
                     <p className="mt-1 text-[11px] text-slate-500">Ansvar styrer prioritering på «I dag». Det gir aldri flere rettigheter enn modulene over.</p>
@@ -772,7 +773,6 @@ export default function WorkspaceUsersPage() {
                         </span>
                       </label>)}
                     </div>
-                  </div>
                   </div>
                 </div>}
               </article>;
