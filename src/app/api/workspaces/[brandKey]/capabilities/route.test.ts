@@ -69,6 +69,23 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
         grant: { brand_id: "zeneco-uuid", user_id: "staff-id", email: "staff@example.test", status: "active", permissions: permitted } },
       error: null,
     }),
+    schema: () => ({
+      from: (table: string) => {
+        assert.equal(table, "brand_workspace_responsibilities");
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: { responsibilities: ["new-leads","property-matching","nexus-review","newsletter"] },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      },
+    }),
     auth: { admin: { getUserById: async (id: string) => ({
       data: { user: { id, email: "staff@example.test" } }, error: null,
     }) } },
@@ -87,6 +104,7 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
     assert.deepEqual(body.permissions, ["properties.catalog.read"]);
     assert.equal(JSON.stringify(body).includes("crm.read"), false);
     assert.equal(JSON.stringify(body).includes("crm.write"), false);
+    assert.deepEqual(body.responsibilities, ["property-matching"]);
   } finally {
     globalThis.fetch = originalFetch;
     if (oldUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -115,6 +133,23 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
       data: { brand: { id: "brand-id", brand_key: currentBrand },
         grant: { brand_id: "brand-id", user_id: "staff-id", email: "staff@example.test",
           status: "active", permissions: currentPermissions } }, error: null,
+    }),
+    schema: () => ({
+      from: (table: string) => {
+        assert.equal(table, "brand_workspace_responsibilities");
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: { responsibilities: ["new-leads","property-matching","nexus-review","newsletter"] },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      },
     }),
     auth: { admin: { getUserById: async (id: string) => ({
       data: { user: { id, email: "staff@example.test" } }, error: null,
@@ -193,7 +228,9 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
     currentPermissions = ["nexus.read"];
     const pinosoNexus = await GET(request(signed) as any, { params: { brandKey: "pinosoecolife" } });
     assert.equal(pinosoNexus.status, 200);
-    assert.deepEqual((await pinosoNexus.json()).permissions, ["nexus.read"]);
+    const pinosoNexusBody = await pinosoNexus.json();
+    assert.deepEqual(pinosoNexusBody.permissions, ["nexus.read"]);
+    assert.deepEqual(pinosoNexusBody.responsibilities, ["nexus-review"]);
 
     currentBrand = "zeneco";
     currentPermissions = ["nexus.read"];
