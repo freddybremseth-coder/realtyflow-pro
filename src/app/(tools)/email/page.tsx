@@ -147,6 +147,8 @@ export default function EmailInboxPage() {
   const [filterIntent, setFilterIntent] = useState<string | null>(null);
   const [filterUrgency, setFilterUrgency] = useState<string | null>(null);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
+  const [crmActionLoading, setCrmActionLoading] = useState(false);
+  const [crmFeedback, setCrmFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // ─── Data fetching ─────────────────────────────────────────────────
 
@@ -218,6 +220,118 @@ export default function EmailInboxPage() {
     }
   };
 
+  const apiErrorMessage = (payload: any, fallback: string) => {
+    if (typeof payload?.error === "string" && payload.error.trim()) return payload.error;
+    if (typeof payload?.error?.message === "string" && payload.error.message.trim()) return payload.error.message;
+    return fallback;
+  };
+
+  const openCrmContact = (contactId: string) => {
+    window.location.assign(`/customers?tab=all&contactId=${encodeURIComponent(contactId)}`);
+  };
+
+  const addToCrm = async () => {
+    if (!selectedMessage || crmActionLoading) return;
+
+    setCrmActionLoading(true);
+    setCrmFeedback(null);
+
+    try {
+      const alreadyLinkedId = selectedMessage.matched_customer_id || selectedMessage.matched_lead_id;
+      if (alreadyLinkedId) {
+        openCrmContact(alreadyLinkedId);
+        return;
+      }
+
+      // Reuse the server-side email identity rules before creating anything.
+      // This is important for cross-brand replies, e.g. a Soleada customer replying
+      // through the Zen Eco Homes mailbox: exact e-mail identity wins over mailbox brand.
+      const healthRes = await fetch(
+        `/api/nexus/email-link-health?brand=${encodeURIComponent(selectedMessage.brand_id)}`,
+        { cache: "no-store" }
+      );
+      const healthBody = await healthRes.json().catch(() => null);
+      if (!healthRes.ok) {
+        throw new Error(apiErrorMessage(healthBody, "Kunne ikke kontrollere CRM-koblingen."));
+      }
+
+      const healthItem = Array.isArray(healthBody?.items)
+        ? healthBody.items.find((item: any) => item?.message?.id === selectedMessage.id)
+        : null;
+
+      if (healthItem?.state === "ambiguous") {
+        throw new Error("E-posten matcher flere CRM-kontakter. Åpne Email Link Health og velg riktig kontakt manuelt.");
+      }
+
+      let contactId = "";
+      if (
+        (healthItem?.state === "linked" || healthItem?.state === "exact_candidate") &&
+        Array.isArray(healthItem?.candidates) &&
+        healthItem.candidates.length === 1
+      ) {
+        contactId = String(healthItem.candidates[0]?.id || "");
+      }
+
+      if (!contactId) {
+        const email = String(selectedMessage.from_address || "").trim();
+        if (!email) throw new Error("E-posten mangler avsenderadresse og kan ikke legges til i CRM automatisk.");
+
+        const contactRes = await fetch("/api/contacts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: selectedMessage.from_name || email,
+            email,
+            source: "email_ai",
+            brand: selectedMessage.brand_id,
+            brand_id: selectedMessage.brand_id,
+            pipeline_status: "NEW",
+            notes: `Opprettet fra E-post AI: ${selectedMessage.subject || "(ingen emne)"}`,
+          }),
+        });
+        const contactBody = await contactRes.json().catch(() => null);
+
+        if (!contactRes.ok) {
+          // A cross-brand duplicate is not a new contact. Reuse the exact existing
+          // contact and let the email-link approval endpoint validate the identity.
+          const possibleContactId = String(contactBody?.possibleContact?.id || "");
+          if (contactRes.status === 409 && possibleContactId) {
+            contactId = possibleContactId;
+          } else {
+            throw new Error(apiErrorMessage(contactBody, "Kunne ikke opprette CRM-kontakten."));
+          }
+        } else {
+          contactId = String(contactBody?.contact?.id || "");
+        }
+      }
+
+      if (!contactId) throw new Error("CRM-kontakten mangler ID etter opprettelse/kobling.");
+
+      const linkRes = await fetch("/api/nexus/email-link-health/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: selectedMessage.id, contactId }),
+      });
+      const linkBody = await linkRes.json().catch(() => null);
+      if (!linkRes.ok) {
+        throw new Error(apiErrorMessage(linkBody, "Kontakten ble funnet, men e-posten kunne ikke kobles til CRM."));
+      }
+
+      const linkedMessage = { ...selectedMessage, matched_lead_id: contactId };
+      setSelectedMessage(linkedMessage);
+      setMessages((prev) => prev.map((msg) => (msg.id === selectedMessage.id ? linkedMessage : msg)));
+      setCrmFeedback({ type: "success", message: "E-posten er koblet til CRM. Åpner kunden…" });
+      openCrmContact(contactId);
+    } catch (err) {
+      setCrmFeedback({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke legge e-posten til i CRM.",
+      });
+    } finally {
+      setCrmActionLoading(false);
+    }
+  };
+
   const sendDraft = async () => {
     if (!analysisResult?.draft?.id || !draftText) return;
     setSending(true);
@@ -261,6 +375,7 @@ export default function EmailInboxPage() {
     setSelectedMessage(msg);
     setAnalysisResult(null);
     setDraftText("");
+    setCrmFeedback(null);
     setShowMobileDetail(true);
     // Mark as read optimistically
     if (!msg.is_read) {
@@ -948,9 +1063,17 @@ export default function EmailInboxPage() {
                 {/* Action buttons */}
                 {selectedMessage.ai_intent && (
                   <div className="flex flex-wrap gap-2">
-                    <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/50 text-xs text-slate-300 hover:text-white hover:border-slate-600 transition-colors">
-                      <User size={12} />
-                      Legg til i CRM
+                    <button
+                      onClick={() => void addToCrm()}
+                      disabled={crmActionLoading}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/50 text-xs text-slate-300 hover:text-white hover:border-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {crmActionLoading ? <Loader2 size={12} className="animate-spin" /> : <User size={12} />}
+                      {crmActionLoading
+                        ? "Kobler til CRM…"
+                        : selectedMessage.matched_lead_id || selectedMessage.matched_customer_id
+                          ? "Åpne i CRM"
+                          : "Legg til i CRM"}
                     </button>
                     <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/50 text-xs text-slate-300 hover:text-white hover:border-slate-600 transition-colors">
                       <Eye size={12} />
@@ -960,6 +1083,23 @@ export default function EmailInboxPage() {
                       <Building2 size={12} />
                       Send prospekt
                     </button>
+                  </div>
+                )}
+
+                {crmFeedback && (
+                  <div
+                    className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                      crmFeedback.type === "success"
+                        ? "border-green-500/30 bg-green-500/10 text-green-200"
+                        : "border-red-500/30 bg-red-500/10 text-red-200"
+                    }`}
+                  >
+                    {crmFeedback.type === "success" ? (
+                      <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                    )}
+                    <span>{crmFeedback.message}</span>
                   </div>
                 )}
               </div>
