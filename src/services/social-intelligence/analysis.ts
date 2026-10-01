@@ -540,19 +540,8 @@ export function generatePostDraft(params: {
   const topic = params.ideaTitle || `Et praktisk råd til ${target}`;
   const pillar = params.pillarName || "Ekspertise i praksis";
   const goal = params.goal || "bygge autoritet";
-  if (params.language === "en") {
-    return [
-      `${topic}`,
-      "",
-      `A useful professional profile is built through specific, documented observations. In my work with ${target}, I often see that the first decision is not what to buy or sell, but what to clarify before the process starts.`,
-      "",
-      `For me, this belongs under ${pillar}: explain the process, make the trade-offs visible, and avoid claims that cannot be supported.`,
-      "",
-      "A good next step is to ask: what would make this decision safer, clearer, and easier to compare?",
-      "",
-      "What would you add to that checklist?",
-    ].join("\n");
-  }
+  // Fast RealtyFlow-regel: genererte SoMe-utkast er alltid på norsk bokmål.
+  // language beholdes i kontrakten for bakoverkompatibilitet med lagrede data, men styrer ikke generert tekst.
   return [
     topic,
     "",
