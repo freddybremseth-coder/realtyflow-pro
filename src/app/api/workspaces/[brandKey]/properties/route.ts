@@ -5,12 +5,12 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 const noStore = { "Cache-Control": "private, no-store" };
 
-// Ordinary public catalogue only: explicit projection prevents leaking
-// private source/feed fields, internal commissions and unapproved descriptions.
-// All searchable records must be *explicitly* website-visible.
+// Shared ordinary PUBLIC catalogue for buyer matching. The explicit projection
+// prevents leaking import/feed credentials, commissions, pricing notes or
+// internal descriptions. Source is a short catalogue label only.
 const SAFE_CATALOGUE_COLUMNS = [
   "id", "ref", "title", "town", "location", "price", "bedrooms",
-  "bathrooms", "area_m2", "plot_size", "property_type", "primary_image",
+  "bathrooms", "area_m2", "plot_size", "property_type", "primary_image", "source",
 ].join(",");
 
 const safeCatalogueRow = (row: unknown) => {
@@ -32,6 +32,11 @@ const safeCatalogueRow = (row: unknown) => {
     plot_size: numberOrNull(item.plot_size),
     property_type: textOrNull(item.property_type),
     primary_image: textOrNull(item.primary_image),
+    source: textOrNull(item.source),
+    marketable_by_brands: Array.isArray(item.marketable_by_brands)
+      ? item.marketable_by_brands.filter((value): value is string => typeof value === "string").slice(0, 20)
+      : [],
+    can_market_on_workspace_brand: item.can_market_on_workspace_brand === true,
   };
 };
 
@@ -75,14 +80,15 @@ export async function GET(
     const properties = data.properties.map(safeCatalogueRow).filter(Boolean).slice(0, perPage);
     return NextResponse.json({
       ok: true, brand: brandKey, page, pageSize: perPage,
-      scope: "brand_scoped_published_catalogue", properties, hasMore: data.hasMore,
+      scope: "shared_public_catalogue", properties, hasMore: data.hasMore,
     }, { headers: noStore });
   }
 
   let query = access.value.supabase.from("properties")
     .select(SAFE_CATALOGUE_COLUMNS)
     .eq("show_on_website", true)
-    .eq("website_visible", true);
+    .eq("website_visible", true)
+    .eq("status", "TILGJENGELIG");
   if (safeSearch) {
     // Owner-only fallback path remains public-catalogue-only. Staff never
     // reaches this PostgREST query; their brand scope is enforced in one RPC.
@@ -93,13 +99,17 @@ export async function GET(
   if (error) return NextResponse.json({ ok: false, error: { code: "CATALOGUE_UNAVAILABLE" } }, {
     status: 503, headers: noStore,
   });
-  // Service-role reads are projected again at the response boundary. If a
-  // future query/view/mock accidentally returns source, status, commissions,
-  // owner metadata or another internal field, it is not serialized to staff.
-  const properties = (data || []).map(safeCatalogueRow).filter(Boolean);
+  // Owner fallback uses the same safe public projection. Owners may create
+  // content from this owner context; staff receives exact per-brand marketing
+  // eligibility from the membership-checked RPC above.
+  const properties = (data || []).map((row) => safeCatalogueRow({
+    ...row,
+    marketable_by_brands: [],
+    can_market_on_workspace_brand: true,
+  })).filter(Boolean);
   return NextResponse.json({
     ok: true, brand: brandKey, page, pageSize: perPage,
-    scope: "published_public_catalogue_owner", properties,
+    scope: "shared_public_catalogue_owner", properties,
     hasMore: properties.length === perPage,
   }, { headers: noStore });
 }
