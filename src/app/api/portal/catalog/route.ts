@@ -29,6 +29,16 @@ function isMissingFeedbackTable(error: any) {
   return Boolean(error && /relation .*property_feedback_events.* does not exist|schema cache/i.test(String(error.message || "")));
 }
 
+function propertyDisplayTitle(property: Record<string, unknown>) {
+  const base = String(
+    property.title_no || property.title_en || property.title_es || property.title || "Bolig",
+  ).trim();
+  const modelName = String(property.model_name || "").trim();
+  if (!modelName) return base;
+  if (base.toLocaleLowerCase("nb-NO").includes(modelName.toLocaleLowerCase("nb-NO"))) return base;
+  return `${modelName} – ${base}`;
+}
+
 export async function GET(request: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
@@ -97,7 +107,8 @@ export async function GET(request: NextRequest) {
       id: property.id,
       ref: property.ref,
       external_id: property.external_id,
-      title: property.title_no || property.title_en || property.title_es || property.title,
+      model_name: property.model_name || null,
+      title: propertyDisplayTitle(property),
       title_no: property.title_no,
       location: property.location || property.town || property.municipality,
       town: property.town,
