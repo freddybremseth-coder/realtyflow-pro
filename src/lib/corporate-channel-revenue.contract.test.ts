@@ -39,7 +39,7 @@ test("Corporate webinar event traffic has its own governed attribution channel",
 
 test("Corporate event registration and attendance stay outside sales qualification", () => {
   const publicLead = fs.readFileSync("src/app/api/public/leads/route.ts", "utf8");
-  const attendance = fs.readFileSync("src/app/api/corporate-homes/events/attendance/route.ts", "utf8");
+  const signal = fs.readFileSync("src/app/api/corporate-homes/events/participants/signal/route.ts", "utf8");
   const overview = fs.readFileSync("src/app/api/corporate-homes/overview/route.ts", "utf8");
   const page = fs.readFileSync("src/app/(business)/corporate-homes/page.tsx", "utf8");
 
@@ -47,16 +47,24 @@ test("Corporate event registration and attendance stay outside sales qualificati
   assert.match(publicLead, /requestType === "corporate-event-registration"/);
   assert.match(publicLead, /if \(!isCorporateEventRegistration\)/);
   assert.match(publicLead, /salesQualified: false/);
+  assert.match(publicLead, /contactCreated: false/);
+  assert.match(publicLead, /workItemCreated: false/);
+  assert.match(publicLead, /revenueEventCreated: false/);
+  assert.match(publicLead, /corporate_event_participants/);
+  assert.match(publicLead, /queryParamFromUrl\(pageUrl, "event_id"\)/);
   assert.match(publicLead, /event_id and event_name are required/);
 
-  assert.match(attendance, /ATTENDED/);
-  assert.match(attendance, /NO_SHOW/);
-  assert.match(attendance, /LEFT_EARLY/);
-  assert.match(attendance, /automatic_pipeline_change: false/);
-  assert.match(attendance, /pipelineChanged: false/);
-  assert.match(attendance, /workItemCreated: false/);
-  assert.match(attendance, /messageSent: false/);
+  assert.match(signal, /ATTENDED/);
+  assert.match(signal, /NO_SHOW/);
+  assert.match(signal, /CTA_CLICKED/);
+  assert.match(signal, /applyCorporateEventSignal/);
+  assert.match(signal, /automatic_pipeline_change: false/);
+  assert.match(signal, /pipelineChanged: false/);
+  assert.match(signal, /workItemCreated: false/);
+  assert.match(signal, /messageSent: false/);
 
+  assert.match(overview, /corporate_event_participants/);
+  assert.match(overview, /eventParticipantRows/);
   assert.match(overview, /isCorporateEventRegistrationOnly/);
   assert.match(overview, /const leadRows = rows\.filter/);
   assert.match(overview, /eventFunnel:/);
