@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  filterAllowedResponsibilities,
   normalizeResponsibilities,
   responsibilityAllowed,
   suggestedResponsibilitiesForPreset,
@@ -32,4 +33,14 @@ test("partner role suggests only responsibilities supported by each brand permis
 test("responsibility input rejects duplicates and unknown values", () => {
   assert.equal(normalizeResponsibilities("zeneco", ["new-leads","new-leads"], ["crm.joint.read"]), null);
   assert.equal(normalizeResponsibilities("zeneco", ["owner-admin"], ["crm.joint.read"]), null);
+});
+
+
+test("read filtering preserves valid responsibilities when older assignments become stale", () => {
+  const filtered = filterAllowedResponsibilities(
+    "pinosoecolife",
+    ["new-leads","newsletter","corporate","unknown"],
+    ["crm.read"],
+  );
+  assert.deepEqual(filtered, ["new-leads"]);
 });
