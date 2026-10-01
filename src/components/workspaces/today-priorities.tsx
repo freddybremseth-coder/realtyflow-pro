@@ -104,11 +104,11 @@ export function WorkspaceTodayPriorities({
           className={`rounded-full border px-2.5 py-1 text-[11px] ${assignedResponsibilities.length
             ? "border-amber-800 bg-amber-950/20 text-amber-200"
             : "border-slate-700 bg-slate-900 text-slate-300"}`}>
-          {item.label}{primaryResponsibilities.includes(item.id) ? " · Hovedansvar" : " · Støtte"}
+          {item.label}{assignedResponsibilities.length ? (primaryResponsibilities.includes(item.id) ? " · Hovedansvar" : " · Støtte") : ""}
         </span>)}
       </div>
       {assignedResponsibilities.length > 0 && <p className="mt-2 text-[11px] text-slate-500">
-        Andre moduler du har tilgang til finnes fortsatt under «Andre oppgaver», men disse ansvarsområdene prioriteres på I dag.
+        Hovedansvar prioriteres først. Støtteansvar kommer etter. Andre moduler du har tilgang til finnes fortsatt under «Andre oppgaver».
       </p>}
     </div>
 
