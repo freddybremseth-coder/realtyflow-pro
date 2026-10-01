@@ -31,12 +31,14 @@ export function WorkspaceReelsPanel({
   brandKey,
   canCreate,
   canPublish,
+  canUseProperties,
   initialProperty = null,
   onInitialPropertyConsumed,
 }: {
   brandKey: string;
   canCreate: boolean;
   canPublish: boolean;
+  canUseProperties: boolean;
   initialProperty?: WorkspaceReelPropertySeed | null;
   onInitialPropertyConsumed?: () => void;
 }) {
@@ -54,6 +56,8 @@ export function WorkspaceReelsPanel({
   const [channels, setChannels] = useState<Array<"instagram" | "facebook">>(["instagram", "facebook"]);
   const [propertyId, setPropertyId] = useState("");
   const [propertyLabel, setPropertyLabel] = useState("");
+  const [propertySearch, setPropertySearch] = useState("");
+  const [properties, setProperties] = useState<WorkspaceReelPropertySeed[]>([]);
 
   async function load() {
     setLoading(true); setError("");
@@ -69,6 +73,31 @@ export function WorkspaceReelsPanel({
   }
 
   useEffect(() => { void load(); }, [brandKey]);
+
+  useEffect(() => {
+    if (!canUseProperties) {
+      setProperties([]);
+      setPropertySearch("");
+      return;
+    }
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/properties?page=1&q=${encodeURIComponent(propertySearch.trim())}`, {
+        cache: "no-store",
+        signal: abort.signal,
+      })
+        .then(async response => response.ok ? response.json() : null)
+        .then(body => {
+          if (abort.signal.aborted) return;
+          setProperties(Array.isArray(body?.properties) ? body.properties : []);
+        })
+        .catch(() => undefined);
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      abort.abort();
+    };
+  }, [brandKey, canUseProperties, propertySearch]);
 
   useEffect(() => {
     if (!initialProperty) return;
@@ -127,7 +156,7 @@ export function WorkspaceReelsPanel({
           songId,
           channels,
           region: brandKey === "pinosoecolife" ? "inland" : "any",
-          areaQuery: areaQuery.trim(),
+          areaQuery: propertyId ? "" : areaQuery.trim(),
           visualTypes,
           ...(propertyId ? { propertyId } : {}),
         }),
@@ -138,6 +167,7 @@ export function WorkspaceReelsPanel({
       setTitle("");
       setPropertyId("");
       setPropertyLabel("");
+      setPropertySearch("");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Reelen kunne ikke lages.");
@@ -193,6 +223,31 @@ export function WorkspaceReelsPanel({
         <button type="button" onClick={() => { setPropertyId(""); setPropertyLabel(""); }} className="ml-3 underline">Bruk vanlig bildeutvalg i stedet</button>
       </div>}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {canUseProperties && <label className="text-xs text-slate-300">Kilde
+          <input value={propertySearch} onChange={event => setPropertySearch(event.target.value)} maxLength={80}
+            placeholder="Søk bolig, referanse eller sted…"
+            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <select value={propertyId} onChange={event => {
+            const next = event.target.value;
+            setPropertyId(next);
+            const property = properties.find(item => item.id === next);
+            if (property) {
+              const place = property.town || property.location || "";
+              setPropertyLabel([property.ref, property.title, place].filter(Boolean).join(" · "));
+              setTitle(property.title || property.ref || "Eiendoms-Reel");
+              setAreaQuery("");
+              setVisualTypes(["mixed"]);
+            } else {
+              setPropertyLabel("");
+            }
+          }} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+            <option value="">Generell brand-Reel</option>
+            {properties.map(property => <option key={property.id} value={property.id}>
+              {(property.title || property.ref || "Bolig")} · {property.town || property.location || "område"}
+            </option>)}
+          </select>
+          <span className="mt-1 block text-[11px] text-slate-500">Velg en publisert bolig for å bruke bare bilder og lenke fra akkurat denne boligen.</span>
+        </label>}
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={100}
             placeholder={brandKey === "zeneco" ? "Mediterranean living in Altea" : "Build your home in inland Alicante"}
@@ -214,7 +269,7 @@ export function WorkspaceReelsPanel({
           </select>
         </label>
         <label className="text-xs text-slate-300">Område <span className="text-slate-500">(valgfritt)</span>
-          <input value={areaQuery} onChange={event => setAreaQuery(event.target.value)} maxLength={80}
+          <input value={areaQuery} disabled={Boolean(propertyId)} onChange={event => setAreaQuery(event.target.value)} maxLength={80}
             placeholder={brandKey === "zeneco" ? "Altea, Finestrat, Villajoyosa…" : "Pinoso, Aspe, Biar…"}
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
         </label>

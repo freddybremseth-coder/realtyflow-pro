@@ -33,6 +33,18 @@ describe("workspace Reels security contract", () => {
     expect(publish).not.toContain("uploadVideo(");
   });
 
+
+  it("exact-property Reels require catalogue access and a website-visible brand property", () => {
+    expect(reels).toContain('propertyId: z.string().uuid().optional()');
+    expect(reels).toContain('requireBrandWorkspace(request, brandKey, "properties.catalog.read")');
+    expect(reels).toContain('.from("property_brand_visibility")');
+    expect(reels).toContain('.eq("brand_id", brandKey)');
+    expect(reels).toContain('.eq("show_on_website", true)');
+    expect(reels).toContain('.eq("website_visible", true)');
+    expect(reels).toContain("REEL_PROPERTY_LINK_UNAVAILABLE");
+    expect(reels).toContain("propertyUrl");
+  });
+
   it("reserves a delivery before any external publication", () => {
     const reserve = publish.indexOf('.from("remaster_reel_deliveries").insert');
     const instagram = publish.indexOf("publisher.publish");

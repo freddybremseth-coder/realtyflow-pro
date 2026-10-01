@@ -30,6 +30,24 @@ test("brand captions point to the correct site and explain what the viewer sees"
   const homes=buildPortfolioReelCaption({brand:"zeneco",title:"Homes",durationSeconds:15,song,imageUrls:["x","y"],areaQuery:"Benidorm",region:"north"});
   assert.match(homes,/Benidorm/);assert.match(homes,/zenecohomes\.com/);assert.match(homes,/Availability and prices can change/);
 });
+
+test("exact property Reel caption uses the verified canonical property URL",()=> {
+  const song={id:"s",title:"Sunset",audioUrl:"https://ereapsfcsqtdmzosgnnn.supabase.co/storage/v1/object/public/assets/neural-beat/song.mp3"};
+  const zen=buildPortfolioReelCaption({
+    brand:"zeneco",title:"Villa",durationSeconds:15,song,imageUrls:["x","y"],
+    propertyUrl:"https://www.zenecohomes.com/eiendommer/N9950",
+  });
+  assert.match(zen,/Se boligen: https:\/\/www\.zenecohomes\.com\/eiendommer\/N9950/);
+  assert.doesNotMatch(zen,/Explore current properties/);
+
+  const wrongHost=buildPortfolioReelCaption({
+    brand:"zeneco",title:"Villa",durationSeconds:15,song,imageUrls:["x","y"],
+    propertyUrl:"https://evil.example/eiendommer/N9950",
+  });
+  assert.match(wrongHost,/Explore current properties: https:\/\/zenecohomes\.com\//);
+  assert.doesNotMatch(wrongHost,/evil\.example/);
+});
+
 test("production FFmpeg renders a real 15-second 1080x1920 Reel with two approved art previews",{timeout:120_000},async()=>{
   assert.ok(ffmpegStatic);
   const exec=promisify(execFile),dir=await fs.mkdtemp(path.join(os.tmpdir(),"reel-render-test-"));

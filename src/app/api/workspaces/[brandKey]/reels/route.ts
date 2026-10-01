@@ -230,6 +230,16 @@ export async function POST(
   imageUrls = [...new Set(imageUrls)].slice(0, count);
   if (imageUrls.length < 2) return fail(409, "REEL_NOT_ENOUGH_PROPERTY_VISUALS", "Velg et bredere område eller flere bildetyper.");
 
+  let propertyUrl: string | undefined;
+  if (selectedProperty) {
+    const reference = String(selectedProperty.ref || "").trim();
+    if (!reference || !/^[A-Za-z0-9._~-]{1,100}$/.test(reference)) {
+      return fail(409, "REEL_PROPERTY_LINK_UNAVAILABLE", "Denne boligen mangler en verifiserbar offentlig boliglenke.");
+    }
+    const host = brandKey === "pinosoecolife" ? "www.pinosoecolife.com" : "www.zenecohomes.com";
+    propertyUrl = `https://${host}/eiendommer/${encodeURIComponent(reference)}`;
+  }
+
   const selection = {
     seed,
     workspace: true,
@@ -241,6 +251,7 @@ export async function POST(
     propertyId: selectedProperty?.id || null,
     propertyRef: selectedProperty?.ref || null,
     propertyTitle: selectedProperty?.title || null,
+    propertyUrl: propertyUrl || null,
   };
   const { data: created, error: createError } = await supabase.from("remaster_reel_jobs").insert({
     brand: brandKey,
@@ -266,6 +277,7 @@ export async function POST(
       region: input.region,
       areaQuery: input.areaQuery,
       visualTypes: input.visualTypes,
+      propertyUrl,
     });
     const objectPath = String(created.id) + ".mp4";
     const { error: uploadError } = await supabase.storage.from("remaster-reels").upload(objectPath, rendered.buffer, {
