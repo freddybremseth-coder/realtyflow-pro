@@ -18,6 +18,10 @@ const internalOrders = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/saas/demosites/route.ts"),
   "utf8",
 );
+const stripeRoute = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/saas/stripe/route.ts"),
+  "utf8",
+);
 const followup = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/cron/demosites-followup/route.ts"),
   "utf8",
