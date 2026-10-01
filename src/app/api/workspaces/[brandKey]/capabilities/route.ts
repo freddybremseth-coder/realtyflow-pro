@@ -5,7 +5,7 @@ import {
   hasVerifiedBrandGrant, isCanonicalBrandKey, WORKSPACE_PERMISSIONS, type WorkspacePermission,
 } from "@/lib/workspaces/brand-policy";
 import { roleAllowsWorkspacePermission } from "@/lib/workspaces/require-brand-workspace";
-import { normalizeResponsibilities, type WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
+import { filterAllowedResponsibilities, type WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -96,11 +96,11 @@ export async function GET(
       .eq("user_id", identity.user.id)
       .maybeSingle();
     if (responsibilityError) return fail(503, "WORKSPACE_UNAVAILABLE");
-    responsibilities = normalizeResponsibilities(
+    responsibilities = filterAllowedResponsibilities(
       brandKey,
       responsibilityRow?.responsibilities || [],
       permissions,
-    ) || [];
+    );
 
     if (brandKey === "zeneco") {
       // Matching the brand must not expose pre-agreement Zen Eco customers.
