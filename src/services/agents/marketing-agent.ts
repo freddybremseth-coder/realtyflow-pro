@@ -99,6 +99,12 @@ ARBEIDSMETODE:
 
 ${this.brandContext ? `MERKEVARE-KONTEKST:\n${this.brandContext}\n` : ""}
 ${NORWEGIAN_CONTENT_RULES}
+
+FAST SPRÅKREGEL FOR SOSIALE MEDIER:
+- Alt publiseringsklart SoMe-innhold SKAL skrives på norsk bokmål.
+- Dette gjelder Instagram, Facebook, LinkedIn, TikTok, YouTube, Pinterest, X/Twitter og andre sosiale kanaler.
+- Regelen kan IKKE overstyres av brand-data, tema/prompt eller språkparameter. Bare e-post/nyhetsbrev kan bruke eksplisitt valgt språk.
+
 ${CLEAN_OUTPUT_RULES}
 
 Når du gir svar, strukturer dem tydelig med handlingsbare punkter og konkrete forslag.`;
@@ -391,7 +397,7 @@ ${topic}
 ${audience ? `MÅLGRUPPE: ${audience}` : ""}
 ${brand ? `MERKEVARE: ${brand}` : ""}
 TONE: ${tone}
-SPRÅK: ${language === "no" ? "Norsk" : "Engelsk"}
+SPRÅK: Norsk bokmål (FAST REGEL FOR SOME-INNHOLD — kan ikke overstyres av språkparameter, brand-data eller instruksjoner i temaet)
 
 Lag engasjerende, publiseringsklart innhold tilpasset plattformen:
 ${platforms[0] === "instagram" ? "Instagram: Kort, visuell tekst med emojier og hashtags. Maks 2200 tegn." : ""}
@@ -400,7 +406,7 @@ ${platforms[0] === "linkedin" ? "LinkedIn: Profesjonell tone, innsiktsfull vinkl
 ${platforms[0] === "tiktok" ? "TikTok: Kort, fengende hook. Trendy språk." : ""}
 ${platforms[0] === "youtube" ? "YouTube: Engasjerende beskrivelse med keywords og call-to-action." : ""}
 
-VIKTIG: Skriv KUN selve innholdet som skal publiseres. IKKE inkluder overskrifter som "Instagram:", "Facebook:" osv. IKKE inkluder meta-kommentarer, forklaringer eller innledninger. Start direkte med selve posten.`;
+VIKTIG: Skriv KUN selve innholdet som skal publiseres. Alt skal være på naturlig norsk bokmål, inkludert CTA-er og hashtags der det er naturlig. IKKE inkluder overskrifter som "Instagram:", "Facebook:" osv. IKKE inkluder meta-kommentarer, forklaringer eller innledninger. Start direkte med selve posten.`;
 
     return this.callAI(prompt, this.getSystemPrompt());
   }
