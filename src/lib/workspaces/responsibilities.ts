@@ -20,9 +20,9 @@ export function responsibilityAllowed(
   const hasAny = (wanted: WorkspacePermission[]) => wanted.some(permission => permissions.includes(permission));
   if (responsibility === "new-leads") return hasAny(["crm.read", "crm.write", "crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write"]);
   if (responsibility === "property-matching") return permissions.includes("properties.catalog.read");
-  if (responsibility === "seo-content") return hasAny(["visibility.read", "visibility.plan", "content.read", "content.edit", "content.publish"]);
-  if (responsibility === "social-reels") return hasAny(["marketing.read", "marketing.draft", "marketing.publish", "reels.read", "reels.create", "reels.publish", "youtube.read", "youtube.publish"]);
-  if (responsibility === "newsletter") return hasAny(["email.read", "email.draft", "email.send"]);
+  if (responsibility === "seo-content") return hasAny(["visibility.plan", "content.edit", "content.publish"]);
+  if (responsibility === "social-reels") return hasAny(["marketing.draft", "marketing.publish", "reels.create", "reels.publish", "youtube.publish"]);
+  if (responsibility === "newsletter") return hasAny(["email.draft", "email.send"]);
   if (responsibility === "corporate") return brandKey === "zeneco" && hasAny(["corporate.read", "corporate.plan"]);
   if (responsibility === "nexus-review") return permissions.includes("nexus.read");
   return false;
