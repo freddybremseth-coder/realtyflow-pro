@@ -15,6 +15,7 @@ import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
 import { WorkspaceNexusInsightsPanel } from "@/components/workspaces/nexus-insights-panel";
 import { WorkspaceTodayPriorities } from "@/components/workspaces/today-priorities";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
+import type { WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 
 type Contact = {
   id: string;
@@ -47,6 +48,7 @@ export default function FocusedWorkspacePage() {
   const brandKey = String(params.brandKey || "");
   const [tab, setTab] = useState<Tab>("today");
   const [permissions, setPermissions] = useState<WorkspacePermission[]>([]);
+  const [responsibilities, setResponsibilities] = useState<WorkspaceResponsibilityId[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [crmBusy, setCrmBusy] = useState(false);
@@ -75,7 +77,7 @@ export default function FocusedWorkspacePage() {
 
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setError(""); setTab("today"); setShowTraining(false); setPermissions([]); setContacts([]);
+    setLoading(true); setError(""); setTab("today"); setShowTraining(false); setPermissions([]); setResponsibilities([]); setContacts([]);
     fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/capabilities`, {
       cache: "no-store", signal: abort.signal,
     }).then(async res => {
@@ -85,7 +87,7 @@ export default function FocusedWorkspacePage() {
           : res.status === 401 ? "Du må logge inn for å åpne arbeidsområdet."
           : "Arbeidsområdet er ikke tilgjengelig ennå. Kontroller databaseoppsettet.");
       return body;
-    }).then(body => { if (!abort.signal.aborted) setPermissions(body.permissions || []); })
+    }).then(body => { if (!abort.signal.aborted) { setPermissions(body.permissions || []); setResponsibilities(body.responsibilities || []); } })
       .catch(cause => { if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "Kunne ikke åpne arbeidsområdet."); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
@@ -202,6 +204,7 @@ export default function FocusedWorkspacePage() {
             <WorkspaceTodayPriorities
               brandKey={brandKey}
               permissions={permissions}
+              responsibilities={responsibilities}
               contactCount={contacts.length}
               onOpen={area => {
                 if (area === "training") {
