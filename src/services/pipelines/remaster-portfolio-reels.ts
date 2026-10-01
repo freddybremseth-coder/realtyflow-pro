@@ -22,6 +22,7 @@ export type ReelRenderInput = {
   region?: RemasterMixRegion;
   areaQuery?: string;
   visualTypes?: RemasterMixVisualType[];
+  propertyUrl?: string;
 };
 export type ReelRenderResult = {buffer:Buffer;caption:string;durationSeconds:number;visualCount:number};
 
@@ -37,6 +38,15 @@ function brandLabel(brand:ReelBrand) {
 }
 function brandWebsite(brand:ReelBrand) {
   return ({art:"art.freddybremseth.com",books:"books.freddybremseth.com",zeneco:"zenecohomes.com",freddybremseth:"freddybremseth.com",pinosoecolife:"pinosoecolife.com",donaanna:"donaanna.com"} as const)[brand];
+}
+function verifiedPropertyUrl(value:string|undefined,brand:ReelBrand){
+  if(!value || (brand!=="zeneco" && brand!=="pinosoecolife")) return null;
+  try{
+    const url=new URL(value);
+    const expected=brand==="pinosoecolife"?"www.pinosoecolife.com":"www.zenecohomes.com";
+    if(url.protocol!=="https:" || url.hostname!==expected || !/^\/eiendommer\/[A-Za-z0-9._~%-]+\/?$/.test(url.pathname)) return null;
+    return url.href.replace(/\/$/,"");
+  }catch{return null;}
 }
 function privateHost(host:string){
   return host==="localhost" || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
@@ -108,9 +118,10 @@ export function buildPortfolioReelCaption(input:ReelRenderInput){
   ].join("\n\n");
   const area=safeText(input.areaQuery||"",80);
   const region=input.region&&input.region!=="any" ? input.region.replace(/-/g," ") : "";
+  const propertyUrl=verifiedPropertyUrl(input.propertyUrl,input.brand);
   return [
     "🏡 Homes and property inspiration from "+(input.brand==="pinosoecolife"?"Pinoso EcoLife":"Zen Eco Homes")+(area?" in "+area:region?" — "+region:"")+".",
-    "Explore current properties: https://"+brandWebsite(input.brand)+"/",
+    propertyUrl ? "Se boligen: "+propertyUrl : "Explore current properties: https://"+brandWebsite(input.brand)+"/",
     "Availability and prices can change; check the website for current listings.",
     music,
     input.brand==="pinosoecolife"?"#PinosoEcoLife #AlicanteInland #PropertyReel #ReMasterFreddy":"#ZenEcoHomes #CostaBlanca #PropertyReel #ReMasterFreddy",

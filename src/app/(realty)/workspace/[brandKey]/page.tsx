@@ -397,6 +397,7 @@ export default function FocusedWorkspacePage() {
               </summary>
               <div className="border-t border-slate-800 p-5">
                 <WorkspaceReelsPanel brandKey={brandKey} canCreate={permissions.includes("reels.create")} canPublish={permissions.includes("reels.publish")}
+                  canUseProperties={permissions.includes("properties.catalog.read")}
                   initialProperty={reelPropertySeed} onInitialPropertyConsumed={() => setReelPropertySeed(null)} />
               </div>
             </details>}
