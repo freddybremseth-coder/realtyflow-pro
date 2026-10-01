@@ -56,6 +56,12 @@ function getSupabase() {
   return getSaasSupabase();
 }
 
+function plusOneMonthIso(value: string) {
+  const date = new Date(value);
+  date.setUTCMonth(date.getUTCMonth() + 1);
+  return date.toISOString();
+}
+
 /**
  * POST /api/saas/stripe
  * Stripe webhook endpoint. Receives events and updates SaaS metrics.
@@ -273,6 +279,8 @@ Freddy Bremseth`,
               billing_status: 'paid',
               status: order.status === 'deployed' ? 'deployed' : 'approved',
               claimed_at: paidAt,
+              subscription_started_at: paidAt,
+              subscription_renews_at: plusOneMonthIso(paidAt),
               editable_fields: fields,
             }).eq('id', demositeOrderId).select('*').single(), 'Mark DemoSites order paid');
 
