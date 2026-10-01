@@ -9,7 +9,7 @@ export type AutomationCategory =
   | "maintenance"
   | "reporting";
 
-export type AutomationMode = "live" | "draft-first" | "manual-review" | "dry-run-default";
+export type AutomationMode = "live" | "draft-first" | "manual-review" | "dry-run-default" | "observe-only";
 export type AutomationHealth = "healthy" | "attention" | "stale" | "unknown";
 
 export interface VercelCronDefinition {
