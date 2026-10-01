@@ -17,6 +17,7 @@ const PUBLIC_EXACT_PATHS = new Set([
 
 const PUBLIC_PATHS = [
   "/login",
+  "/demo",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/reset-password",
