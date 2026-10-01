@@ -78,6 +78,15 @@ interface SearchDiscoveryPayload {
   byBrand: Array<{ brandId: string; visits: number; search: number; ai: number; aiShare: number }>;
   topPages: Array<{ brandId: string; path: string; visits: number }>;
   daily: Array<{ date: string; search: number; ai: number }>;
+  conversions: {
+    total: number;
+    attributed: number;
+    attributedShare: number;
+    byType: Array<{ eventType: string; count: number }>;
+    byTarget: Array<{ target: string; count: number }>;
+    bySource: Array<{ source: string; count: number }>;
+    topLandingPages: Array<{ path: string; count: number }>;
+  };
 }
 
 interface SocialGrowthPayload {
@@ -591,12 +600,15 @@ export default function AnalyticsPage() {
               </label>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-7">
               {[
                 { label: "Totale besøk", value: searchDiscovery?.totalVisits || 0 },
                 { label: "Google/Bing m.fl.", value: searchDiscovery?.searchVisits || 0 },
                 { label: "AI-assistenter", value: searchDiscovery?.aiVisits || 0 },
                 { label: "AI-andel", value: `${searchDiscovery?.aiShare || 0}%` },
+                { label: "CTA-hendelser", value: searchDiscovery?.conversions?.total || 0 },
+                { label: "Fra søk/AI", value: searchDiscovery?.conversions?.attributed || 0 },
+                { label: "Attribuert andel", value: `${searchDiscovery?.conversions?.attributedShare || 0}%` },
               ].map((metric) => (
                 <Card key={metric.label}>
                   <CardContent className="p-4">
@@ -663,6 +675,39 @@ export default function AnalyticsPage() {
                   ) : (
                     <p className="py-8 text-center text-sm text-slate-500">Ingen landingssider registrert ennå.</p>
                   )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader><CardTitle>CTA-er som faktisk blir klikket</CardTitle></CardHeader>
+                <CardContent>
+                  {searchDiscovery?.conversions?.byTarget?.length ? (
+                    <div className="space-y-3">
+                      {searchDiscovery.conversions.byTarget.slice(0, 12).map((item) => (
+                        <div key={item.target} className="flex items-center justify-between border-b border-slate-800 pb-3">
+                          <span className="text-sm text-slate-300">{item.target.replaceAll("_", " ")}</span>
+                          <span className="font-semibold text-white">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="py-8 text-center text-sm text-slate-500">Ingen målte CTA-hendelser ennå.</p>}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Landingssider som fører videre</CardTitle></CardHeader>
+                <CardContent>
+                  {searchDiscovery?.conversions?.topLandingPages?.length ? (
+                    <div className="space-y-3">
+                      {searchDiscovery.conversions.topLandingPages.slice(0, 12).map((item) => (
+                        <div key={item.path} className="flex items-center justify-between gap-4 border-b border-slate-800 pb-3">
+                          <span className="truncate text-sm text-primary-300">{item.path}</span>
+                          <span className="shrink-0 font-semibold text-white">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="py-8 text-center text-sm text-slate-500">Konverterende landingssider vises når CTA-er blir brukt.</p>}
                 </CardContent>
               </Card>
             </div>
