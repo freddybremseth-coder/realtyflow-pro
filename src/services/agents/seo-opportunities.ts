@@ -28,7 +28,18 @@ export function planSEOOpportunities(
     });
   }
   const chatgeniusReferrals = signals.byBrand.find(brand => brand.brandId === "chatgenius")?.current ?? 0;
-  const conversionSignals = signals.conversions;
+  const conversionSignals = signals.conversions ?? {
+    current: 0,
+    previous: 0,
+    attributed: 0,
+    attributedShare: null,
+    changePercent: null,
+    truncated: false,
+    byType: [],
+    byTarget: [],
+    bySource: [],
+    topLandingPages: [],
+  };
   if (!signals.dataQuality.truncated && !conversionSignals.truncated && chatgeniusReferrals >= 20 && conversionSignals.current === 0) {
     results.push({
       issueId: "search-to-cta:chatgenius",
