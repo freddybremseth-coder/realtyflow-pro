@@ -9,6 +9,13 @@ export const SEO_SKILLS: readonly SEOSkill[] = [
     "evidence": "RealtyFlow dated search_discovery_events; never represent as keywords, rankings or AI citations"
   },
   {
+    "id": "conversion_funnel_measurement",
+    "domain": "Measurement",
+    "expertise": "Measure privacy-minimal CTA progression from landing pages and preserve coarse search/AI source attribution where available",
+    "availability": "measured",
+    "evidence": "RealtyFlow website_conversion_events joined only as aggregate evidence; not user-level attribution, qualified leads, sales or causal SEO impact"
+  },
+  {
     "id": "homepage_audit",
     "domain": "Technical SEO",
     "expertise": "Inspect real HTTP, homepage HTML title, meta robots, canonical, headings and parseable JSON-LD",
