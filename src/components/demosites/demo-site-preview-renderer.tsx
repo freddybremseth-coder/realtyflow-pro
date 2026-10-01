@@ -47,6 +47,7 @@ import { getDemoFontPair } from "@/components/demosites/demo-fonts";
 import { DemoReveal } from "@/components/demosites/demo-reveal";
 import { DemoLeadForm } from "@/components/demosites/demo-lead-form";
 import { DemoChatWidget } from "@/components/demosites/demo-chat-widget";
+import { getDemoSiteLanguageConfig, getDemoSiteMarketingCopy, getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type ThemeStyle = CSSProperties & {
   "--brand": string;
@@ -128,7 +129,8 @@ export function DemoSitePreviewRenderer({
 }: DemoSitePreviewRendererProps) {
   const preview = getDemoSitesPreviewModel(input);
   const { content, colors, contact, companyName } = preview;
-  const copy = resolvePreviewBusinessCopy(getPreviewBusinessCopy(preview.templateSlug, companyName));
+  const ui = getDemoSiteUiText(preview.language);
+  const copy = resolvePreviewBusinessCopy(getPreviewBusinessCopy(preview.templateSlug, companyName, preview.language));
   const visual = getDemoSitePreviewIndustryVisual(preview.templateSlug);
   const fullPreview = mode === "public" || showFull || !compact;
   const imageLimit = fullPreview ? 6 : 3;
@@ -163,7 +165,7 @@ export function DemoSitePreviewRenderer({
   // standard adds offers/FAQ (+ AI receptionist), premium adds the team.
   const packageTier = packageId === "premium" ? 3 : packageId === "basis" ? 1 : 2;
   const showOfferSection = packageTier >= 2 && (mode === "internal" || preview.hasCustomProducts || preview.hasCustomPrices);
-  const showFaqSection = packageTier >= 2;
+  const showFaqSection = packageTier >= 2 && (mode === "internal" || content.faq.length > 0);
   const showTeamSection = packageTier >= 3 && preview.employees.length > 0;
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
@@ -202,10 +204,26 @@ export function DemoSitePreviewRenderer({
   const Root = mode === "public" ? "main" : "div";
 
   return (
-    <Root className={`demo-design-root ${fonts.classNames} ${rootClass}`} style={rootStyle}>
+    <Root lang={getDemoSiteLanguageConfig(preview.language).locale} className={`demo-design-root ${mode === "public" ? "demo-public-site" : "demo-internal-site"} ${fonts.classNames} ${rootClass}`} style={rootStyle}>
       <style>{`
         .demo-design-root { font-family: var(--demo-font-body); }
         .demo-design-root h1, .demo-design-root h2, .demo-design-root h3 { font-family: var(--demo-font-heading); }
+        .demo-public-site { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+        .demo-public-site h1, .demo-public-site h2, .demo-public-site h3 { text-wrap: balance; overflow-wrap: anywhere; }
+        .demo-public-site p { text-wrap: pretty; }
+        .demo-public-site a, .demo-public-site button, .demo-public-site input, .demo-public-site select { min-height: 44px; }
+        .demo-public-site section { scroll-margin-top: 5.5rem; }
+        .demo-public-site img { display: block; }
+        @media (max-width: 767px) {
+          .demo-public-site h1 { font-size: clamp(2.35rem, 11.5vw, 3.5rem) !important; line-height: .98 !important; letter-spacing: -0.035em; }
+          .demo-public-site h2 { font-size: clamp(1.8rem, 8.5vw, 2.55rem) !important; line-height: 1.04 !important; }
+          .demo-public-site p { max-width: 65ch; }
+        }
+        @media (min-width: 768px) and (max-width: 1023px) {
+          .demo-public-site h1 { font-size: clamp(3.4rem, 7vw, 4.8rem) !important; line-height: .98 !important; }
+          .demo-public-site h2 { font-size: clamp(2.25rem, 5vw, 3.2rem) !important; line-height: 1.03 !important; }
+          .demo-public-site section { scroll-margin-top: 6rem; }
+        }
       `}</style>
       {mode === "public" && <DemoReveal />}
       {mode === "public" && packageTier >= 2 && inquiryToken && (
@@ -214,9 +232,10 @@ export function DemoSitePreviewRenderer({
           companyName={companyName}
           accentColor={colors.primary}
           accentTextColor={colors.primaryText}
+          language={preview.language}
         />
       )}
-      {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} neonGlass={useNeonGlass} />}
+      {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} neonGlass={useNeonGlass} ui={ui} />}
 
       <header className={headerClass}>
         <div className={`${maxWidthClass} flex items-center justify-between gap-4 px-4 py-4`}>
@@ -230,18 +249,18 @@ export function DemoSitePreviewRenderer({
                 {companyName.slice(0, 1).toUpperCase()}
               </span>
             )}
-            <span className="truncate text-base font-bold md:text-lg">{companyName}</span>
+            <span className="hidden truncate text-base font-bold sm:block md:text-lg">{companyName}</span>
           </a>
           {mode === "public" && (
             <nav className={useNeonGlass ? "hidden items-center gap-5 text-sm text-slate-300 lg:flex" : "hidden items-center gap-5 text-sm text-slate-600 lg:flex"}>
-              <a href="#tjenester" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Tjenester</a>
-              <a href="#fordeler" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Hvorfor oss</a>
+              <a href="#tjenester" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navServices}</a>
+              <a href="#fordeler" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navWhy}</a>
               <a href="#tilbud" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{copy.navOffer}</a>
-              <a href="#faq" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>FAQ</a>
-              <a href="#kontakt" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Kontakt</a>
+              <a href="#faq" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navFaq}</a>
+              <a href="#kontakt" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{ui.navContact}</a>
             </nav>
           )}
-          <a href={ctaHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-black shadow-lg shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold"} style={headerCtaStyle}>
+          <a href={ctaHref} className={useNeonGlass ? "inline-flex max-w-[10rem] shrink-0 items-center justify-center truncate rounded-lg px-3 py-2 text-sm font-black shadow-lg shadow-cyan-500/20 sm:max-w-none sm:px-4" : "inline-flex max-w-[10rem] shrink-0 items-center justify-center truncate rounded-lg px-3 py-2 text-sm font-semibold sm:max-w-none sm:px-4"} style={headerCtaStyle}>
             {content.call_to_action}
           </a>
         </div>
@@ -260,6 +279,7 @@ export function DemoSitePreviewRenderer({
           introText={heroIntroText}
           mode={mode}
           websiteUrl={oldSiteUrl}
+          ui={ui}
         />
       ) : layout === "editorial" ? (
         <EditorialHero
@@ -275,6 +295,7 @@ export function DemoSitePreviewRenderer({
           mode={mode}
           primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
           websiteUrl={oldSiteUrl}
+          ui={ui}
         />
       ) : (
       <section id="top" className={useNeonGlass ? "relative overflow-hidden border-b border-cyan-300/20" : useDarkHero ? "border-b border-slate-800" : "border-b border-slate-200 bg-white"} style={{ backgroundColor: heroBackground }}>
@@ -293,7 +314,7 @@ export function DemoSitePreviewRenderer({
             </a>
             {oldSiteUrl && (
               <a href={oldSiteUrl} target="_blank" rel="noopener noreferrer" className={useDarkHero ? "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-6 py-4 text-sm font-bold text-white hover:bg-white/15" : "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-6 py-4 text-sm font-bold text-slate-700 hover:border-slate-400"}>
-                Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
+                {ui.existingWebsite} <ExternalLink className="ml-2 h-4 w-4" />
               </a>
             )}
           </div>
@@ -409,7 +430,7 @@ export function DemoSitePreviewRenderer({
           {showFaqSection && (
           <section id="faq" {...revealAttr} className={useNeonGlass ? "border-y border-white/10 bg-[#06111f] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
-            <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={mode === "public" ? "" : copy.faqText} inverted={useNeonGlass} />
+            <SectionIntro eyebrow="FAQ" title={preview.language === "nb" ? "Svar på vanlige spørsmål" : getDemoSiteMarketingCopy(preview.language, companyName).faqTitle} text={mode === "public" ? "" : copy.faqText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
               {(content.faq.length ? content.faq.slice(0, 6) : [{ question: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqQuestion, answer: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqAnswer }]).map((item, index) => (
                 <div key={`${item.question}-${index}`} className={useNeonGlass ? content.faq.length ? "rounded-lg border border-white/10 bg-white/[0.07] p-5 shadow-lg shadow-cyan-950/10 backdrop-blur" : "rounded-lg border border-dashed border-white/20 bg-white/[0.04] p-5" : content.faq.length ? "rounded-lg border border-slate-200 bg-white p-5" : "rounded-lg border border-dashed border-slate-300 bg-slate-100 p-5"}>
@@ -425,7 +446,7 @@ export function DemoSitePreviewRenderer({
           {showTeamSection && (
             <section id="ansatte" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : "bg-white py-16"}>
               <div className={`${maxWidthClass} px-4`}>
-                <SectionIntro eyebrow="Menneskene" title={`Møt oss i ${companyName}`} text="" inverted={useNeonGlass} />
+                <SectionIntro eyebrow={ui.people} title={ui.meetTeam(companyName)} text="" inverted={useNeonGlass} />
                 <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {preview.employees.map((person) => (
                     <div key={`${person.name}-${person.title}`} className={useNeonGlass ? "rounded-lg border border-white/10 bg-white/[0.07] p-5 text-center" : "rounded-lg border border-slate-200 bg-slate-50 p-5 text-center"}>
@@ -453,17 +474,17 @@ export function DemoSitePreviewRenderer({
             <div className={`${maxWidthClass} grid grid-cols-1 gap-8 px-4 lg:grid-cols-[0.95fr_1.05fr]`}>
               <div>
                 <div className="inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold" style={{ backgroundColor: withPreviewAlpha(colors.primary, "28"), color: colors.accent }}>
-                  <MessageCircle className="mr-2 h-3.5 w-3.5" /> Kontakt
+                  <MessageCircle className="mr-2 h-3.5 w-3.5" /> {ui.contact}
                 </div>
                 <h2 className="mt-5 text-3xl font-black leading-tight md:text-5xl">{copy.contactTitle}</h2>
-                <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">{content.contact_text || (mode === "public" ? "Send oss en melding eller ring — vi svarer raskt." : copy.contactText)}</p>
+                <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">{content.contact_text || copy.contactText}</p>
                 <div className="mt-6 grid gap-2 text-sm text-slate-300">
-                  <ContactLine icon={<Phone className="h-4 w-4" />} label="Telefon" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} />
-                  <ContactLine icon={<Mail className="h-4 w-4" />} label="E-post" value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} />
-                  <ContactLine icon={<MapPin className="h-4 w-4" />} label="Adresse" value={contact.address} />
-                  {contact.website && <ContactLine icon={<ExternalLink className="h-4 w-4" />} label="Nettside" value={contact.website} href={contact.website} />}
+                  <ContactLine icon={<Phone className="h-4 w-4" />} label={ui.phone} missingLabel={ui.missingLabel} value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} />
+                  <ContactLine icon={<Mail className="h-4 w-4" />} label={ui.email} missingLabel={ui.missingLabel} value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} />
+                  <ContactLine icon={<MapPin className="h-4 w-4" />} label={ui.address} missingLabel={ui.missingLabel} value={contact.address} />
+                  {contact.website && <ContactLine icon={<ExternalLink className="h-4 w-4" />} label={ui.existingWebsite} missingLabel={ui.missingLabel} value={contact.website} href={contact.website} />}
                 </div>
-                {mode === "public" && !isLiveSite && preview.isImported && preview.sourcePages.length > 0 && (
+                {mode === "internal" && !isLiveSite && preview.isImported && preview.sourcePages.length > 0 && (
                   <p className="mt-4 text-xs text-slate-500">Kilder brukt i analysen: {preview.sourcePages.length} offentlig side{preview.sourcePages.length === 1 ? "" : "r"}.</p>
                 )}
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -474,12 +495,12 @@ export function DemoSitePreviewRenderer({
                   )}
                   {contact.phone && (
                     <a href={`tel:${contact.phone}`} className={showLeadForm ? "inline-flex items-center justify-center rounded-lg px-5 py-3 text-sm font-bold" : "inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10"} style={showLeadForm ? { backgroundColor: colors.primary, color: colors.primaryText } : undefined}>
-                      <Phone className="mr-2 h-4 w-4" /> Ring oss{showLeadForm ? ` ${contact.phone}` : ""}
+                      <Phone className="mr-2 h-4 w-4" /> {ui.phone}{showLeadForm ? ` ${contact.phone}` : ""}
                     </a>
                   )}
                   {showLeadForm && contact.email && (
                     <a href={`mailto:${contact.email}`} className="inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10">
-                      <Mail className="mr-2 h-4 w-4" /> Send e-post
+                      <Mail className="mr-2 h-4 w-4" /> {ui.sendEmail}
                     </a>
                   )}
                 </div>
@@ -491,6 +512,7 @@ export function DemoSitePreviewRenderer({
                   companyName={companyName}
                   accentColor={colors.primary}
                   accentTextColor={colors.primaryText}
+                  language={preview.language}
                 />
               ) : (
               <div className={useNeonGlass ? "rounded-lg border border-cyan-300/20 bg-white/[0.08] p-5 text-white shadow-2xl shadow-cyan-950/30 backdrop-blur" : "rounded-lg border border-white/10 bg-white p-5 text-slate-950"}>
@@ -501,18 +523,18 @@ export function DemoSitePreviewRenderer({
                     </span>
                     <div>
                       <div className={useNeonGlass ? "font-bold text-white" : "font-bold"}>ChatGenius AI-assistent</div>
-                      <div className={useNeonGlass ? "text-xs text-slate-400" : "text-xs text-slate-500"}>Svarforslag basert på demoens innhold</div>
+                      <div className={useNeonGlass ? "text-xs text-slate-400" : "text-xs text-slate-500"}>{ui.assistantSuggestion}</div>
                     </div>
                   </div>
                   <span className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{mode === "internal" ? "Preview" : "Online"}</span>
                 </div>
                 <div className="space-y-3 py-5">
-                  <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.10)" : "#f1f5f9"} dark={useNeonGlass}>Hei! Jeg kan hjelpe deg med tjenester, priser og kontakt hos {companyName}.</ChatBubble>
+                  <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.10)" : "#f1f5f9"} dark={useNeonGlass}>{ui.assistantGreeting(companyName)}</ChatBubble>
                   <ChatBubble align="right" color={withPreviewAlpha(colors.primary, useNeonGlass ? "2e" : "20")} dark={useNeonGlass}>{mode === "internal" ? "Hva er neste steg?" : copy.chatQuestion}</ChatBubble>
                   <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.08)" : "#f8fafc"} dark={useNeonGlass}>{preview.chatPrice} Du kan også sende inn detaljer, så følger vi opp med et mer presist forslag.</ChatBubble>
                 </div>
                 <div className={useNeonGlass ? "flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-3 text-sm text-slate-300" : "flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500"}>
-                  <ImageIcon className="h-4 w-4" /> Skriv et spørsmål om {companyName}
+                  <ImageIcon className="h-4 w-4" /> {ui.assistantPrompt(companyName)}
                 </div>
               </div>
               )}
@@ -531,13 +553,13 @@ export function DemoSitePreviewRenderer({
         <footer className={useNeonGlass ? "border-t border-white/10 bg-[#020617] px-4 py-8 text-center text-xs text-slate-500" : "bg-white px-4 py-8 text-center text-xs text-slate-500"}>
           {isLiveSite ? (
             <>
-              © {new Date().getFullYear()} {companyName} · Nettside levert av{" "}
+              © {new Date().getFullYear()} {companyName} · {ui.deliveredBy}{" "}
               <a href="https://www.chatgenius.pro/demosites/" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
                 ChatGenius.pro
               </a>
             </>
           ) : (
-            <>Demo laget med ChatGenius DemoSites. Pakke: {packageName || "Standard"}.</>
+            <>{ui.demoMadeWith} ChatGenius DemoSites. {ui.packageLabel}: {packageName || "Standard"}.</>
           )}
         </footer>
       )}
@@ -556,6 +578,7 @@ type HeroLayoutProps = {
   introText: string;
   mode: DemoSitesPreviewMode;
   websiteUrl: string;
+  ui: ReturnType<typeof getDemoSiteUiText>;
 };
 
 /** Image-first hero: the customer's own photo full-bleed with overlaid copy. */
@@ -571,6 +594,7 @@ function FullbleedHero({
   introText,
   mode,
   websiteUrl,
+  ui,
 }: HeroLayoutProps & { heroImage: string }) {
   const minHeight = mode === "public" ? "min-h-[78vh]" : "min-h-[420px]";
   return (
@@ -593,7 +617,7 @@ function FullbleedHero({
           </a>
           {websiteUrl && (
             <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-white/10 px-7 py-4 text-sm font-bold text-white backdrop-blur hover:bg-white/20">
-              Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
+              {ui.existingWebsite} <ExternalLink className="ml-2 h-4 w-4" />
             </a>
           )}
         </div>
@@ -616,6 +640,7 @@ function EditorialHero({
   mode,
   primaryService,
   websiteUrl,
+  ui,
 }: HeroLayoutProps & { images: string[]; primaryService: string }) {
   const heroImages = images.slice(0, 3);
   return (
@@ -645,11 +670,11 @@ function EditorialHero({
           </div>
           <div className="flex flex-col justify-end gap-3 border-l pl-8 text-sm text-slate-500" style={{ borderColor: withPreviewAlpha(colors.primary, "26") }}>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>Spesialitet</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>{ui.specialty}</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">{primaryService}</p>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>Neste steg</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>{ui.nextStep}</p>
               <p className="mt-1 text-slate-700">{callToAction}</p>
             </div>
           </div>
@@ -671,16 +696,16 @@ function EditorialHero({
   );
 }
 
-function BusinessTopStrip({ contact, copy, colors, neonGlass = false }: { contact: ReturnType<typeof getDemoSitesPreviewModel>["contact"]; copy: ResolvedPreviewBusinessCopy; colors: DemoSitesPreviewColors; neonGlass?: boolean }) {
+function BusinessTopStrip({ contact, copy, colors, ui, neonGlass = false }: { contact: ReturnType<typeof getDemoSitesPreviewModel>["contact"]; copy: ResolvedPreviewBusinessCopy; colors: DemoSitesPreviewColors; ui: ReturnType<typeof getDemoSiteUiText>; neonGlass?: boolean }) {
   return (
     <div className={neonGlass ? "border-b border-white/10 bg-[#020617] text-xs text-slate-300" : "border-b border-slate-200 bg-slate-950 text-xs text-slate-300"}>
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: colors.accent }} />
-          <span className="truncate">{contact.address || "Lokal bedrift"}</span>
+          <span className="truncate">{contact.address || ui.localBusiness}</span>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-          <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" style={{ color: colors.accent }} />Rask respons</span>
+          <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" style={{ color: colors.accent }} />{ui.quickResponse}</span>
           <span className="inline-flex items-center gap-1.5"><BadgeCheck className="h-3.5 w-3.5" style={{ color: colors.accent }} />{copy.proofLabel}</span>
           {contact.phone && <a href={`tel:${contact.phone}`} className="font-semibold text-white hover:text-slate-200">{contact.phone}</a>}
         </div>
@@ -982,14 +1007,14 @@ function SectionIntro({ eyebrow, title, text, inverted = false }: { eyebrow: str
   );
 }
 
-function ContactLine({ icon, label, value, href }: { icon: ReactNode; label: string; value: string; href?: string }) {
+function ContactLine({ icon, label, value, href, missingLabel }: { icon: ReactNode; label: string; value: string; href?: string; missingLabel: string }) {
   const hasValue = Boolean(value);
   const content = (
     <>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">{icon}</span>
       <span className="min-w-0">
         <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-        <span className="block break-words text-slate-200">{value || `Mangler ${label.toLowerCase()}`}</span>
+        <span className="block break-words text-slate-200">{value || `${missingLabel} ${label.toLowerCase()}`}</span>
       </span>
     </>
   );
@@ -1276,7 +1301,8 @@ function getServiceCardDescription(service: string, templateSlug: string, copy: 
   return copy.serviceCardText;
 }
 
-function getPreviewBusinessCopy(templateSlug: string, companyName: string): PreviewBusinessCopy {
+function getPreviewBusinessCopy(templateSlug: string, companyName: string, language: DemoSiteLanguage): PreviewBusinessCopy {
+  if (language !== "nb") return getDemoSiteMarketingCopy(language, companyName);
   const slug = templateSlug.toLowerCase();
 
   if (isDemoSiteTechnologyTemplate(slug)) {

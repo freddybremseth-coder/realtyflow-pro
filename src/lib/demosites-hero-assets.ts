@@ -1,5 +1,6 @@
 import {
   enrichDemoSiteOrder,
+  evaluateDemoSiteQuality,
   type DemoOrderForEnrichment,
   type DemoSiteEnrichmentOptions,
   type DemoSiteEnrichmentResult,
@@ -517,6 +518,7 @@ export async function enrichDemoSiteOrderWithHeroAssets(
     hero_candidates_found: websiteAssets.images.length,
     video_candidates_found: websiteAssets.videos.length,
   };
+  fields.quality_gate = evaluateDemoSiteQuality(fields);
 
   const update = await supabase.from("demo_site_orders").update({ editable_fields: fields }).eq("id", order.id);
   if (update.error) baseResult.errors.push(`hero_persist_failed: ${update.error.message}`);

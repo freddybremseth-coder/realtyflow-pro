@@ -15,6 +15,7 @@ import {
   type DemoSiteLayout,
   type DemoSiteStyleId,
 } from "@/lib/demosites-design";
+import { DEMO_SITE_LANGUAGES, normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type SetupOrder = {
   id: string;
@@ -38,6 +39,7 @@ type FeesOrder = {
 type DemoSiteTemplate = { slug: string; name: string; description?: string | null };
 type SetupForm = {
   template_slug: string;
+  site_language: DemoSiteLanguage;
   layout_variant: DemoSiteLayout;
   style_preset: DemoSiteStyleId;
   hero_title: string;
@@ -61,6 +63,7 @@ const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_TEMPLATES = DEMO_SITE_TEMPLATE_SEEDS as DemoSiteTemplate[];
 const EMPTY_FORM: SetupForm = {
   template_slug: DEFAULT_TEMPLATE_SLUG,
+  site_language: "nb",
   layout_variant: "split",
   style_preset: "modern",
   hero_title: "",
@@ -110,6 +113,7 @@ function buildForm(fields: Record<string, unknown>, templateSlug: string): Setup
   const design = resolveDemoSiteDesign({ templateSlug, editableFields: fields });
   return {
     template_slug: templateSlug,
+    site_language: normalizeDemoSiteLanguage(fields.site_language),
     layout_variant: design.layout,
     style_preset: design.style,
     hero_title: text(fields.hero_title),
@@ -150,6 +154,28 @@ function resetForTemplate(form: SetupForm, templateSlug: string, companyName: st
     brand_color: next.brand_color,
     secondary_color: next.secondary_color,
     accent_color: next.accent_color,
+  };
+}
+
+type QualityGateView = {
+  status: "ready" | "needs_review";
+  score: number;
+  checks: Record<string, boolean>;
+};
+
+function qualityGate(order: SetupOrder | null): QualityGateView | null {
+  const value = order?.editable_fields?.quality_gate;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const status = record.status === "ready" ? "ready" : record.status === "needs_review" ? "needs_review" : null;
+  if (!status) return null;
+  const rawChecks = record.checks && typeof record.checks === "object" && !Array.isArray(record.checks)
+    ? record.checks as Record<string, unknown>
+    : {};
+  return {
+    status,
+    score: Number.isFinite(Number(record.score)) ? Number(record.score) : 0,
+    checks: Object.fromEntries(Object.entries(rawChecks).map(([key, passed]) => [key, passed === true])),
   };
 }
 
@@ -209,6 +235,8 @@ export default function DemoSitesSetupEditorPage() {
     setMessage(null);
     setError(null);
     try {
+      const previousLanguage = normalizeDemoSiteLanguage(order?.editable_fields?.site_language);
+      const languageChanged = previousLanguage !== form.site_language;
       const response = await fetch("/api/saas/demosites/setup", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -216,7 +244,21 @@ export default function DemoSitesSetupEditorPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kunne ikke lagre oppsett.");
-      setMessage("Oppsett og designkonsept lagret.");
+
+      if (languageChanged) {
+        const enrichResponse = await fetch("/api/saas/demosites/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId, generate_images: false, regenerate_copy: true }),
+        });
+        const enrichData = await enrichResponse.json().catch(() => ({}));
+        if (!enrichResponse.ok) {
+          throw new Error(enrichData.error || "Språket ble lagret, men teksten kunne ikke regenereres.");
+        }
+        setMessage("Oppsett lagret. Tekst, tjenester, FAQ og CTA er regenerert i valgt språk.");
+      } else {
+        setMessage("Oppsett og designkonsept lagret.");
+      }
       await loadData();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Kunne ikke lagre oppsett.");
@@ -229,6 +271,7 @@ export default function DemoSitesSetupEditorPage() {
   const selectedLayout = DEMO_SITE_LAYOUTS.find((item) => item.id === form.layout_variant);
   const selectedStyle = DEMO_SITE_STYLES.find((item) => item.id === form.style_preset);
   const customerPreview = previewUrl(order);
+  const quality = qualityGate(order);
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-300" /></div>;
 
@@ -254,7 +297,10 @@ export default function DemoSitesSetupEditorPage() {
           <CardHeader><CardTitle className="text-white">Innhold og design på demosiden</CardTitle><CardDescription>Velg bransjemal, visuelt konsept, typografi, logo, tekst, farger og bilder.</CardDescription></CardHeader>
           <CardContent>
             <form onSubmit={saveSetup} className="space-y-4">
-              <Select label="Demo-mal / bransje" value={form.template_slug} onChange={(value) => setForm((current) => resetForTemplate(current, value, order?.company_name || "Bedriften"))} options={templates.map((item) => ({ value: item.slug, label: item.name }))} />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Select label="Demo-mal / bransje" value={form.template_slug} onChange={(value) => setForm((current) => resetForTemplate(current, value, order?.company_name || "Bedriften"))} options={templates.map((item) => ({ value: item.slug, label: item.name }))} />
+                <Select label="Språk på kundens nettside" value={form.site_language} onChange={(value) => setForm((current) => ({ ...current, site_language: value as DemoSiteLanguage }))} options={DEMO_SITE_LANGUAGES.map((language) => ({ value: language.id, label: language.nativeLabel }))} />
+              </div>
               <p className="text-xs leading-5 text-slate-400">Bransjemalen styrer innholdsforslag. Designkonseptet styrer den visuelle komposisjonen og beholdes når du bytter bransje.</p>
               {selectedTemplate?.description && <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">{selectedTemplate.description}</div>}
 
@@ -297,6 +343,22 @@ export default function DemoSitesSetupEditorPage() {
           <Card className="border-slate-700/50 bg-slate-800/50">
             <CardHeader><CardTitle className="text-white">Status</CardTitle><CardDescription>Valget brukes både i kunde-preview og etter publisering.</CardDescription></CardHeader>
             <CardContent className="space-y-3 text-sm text-slate-300">
+              {quality ? (
+                <div className={`rounded-xl border p-3 ${quality.status === "ready" ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
+                  <div className={`font-semibold ${quality.status === "ready" ? "text-emerald-200" : "text-amber-100"}`}>
+                    {quality.status === "ready" ? "Klar for kunde" : "Må forbedres"} · {quality.score}/100
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    {quality.status === "ready"
+                      ? "Siden har bestått quality gate for innhold, bilder og CTA."
+                      : "Automatisk kundeoppfølging er blokkert til siden består quality gate."}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-xs text-slate-400">
+                  Quality gate er ikke kjørt ennå. Berik eller lagre oppsettet før siden brukes mot kunde.
+                </div>
+              )}
               <div>Status: {order?.status || "-"}</div>
               <div>Bransjemal: {selectedTemplate?.name || form.template_slug}</div>
               <div>Design: {selectedLayout?.label || form.layout_variant} · {selectedStyle?.label || form.style_preset}</div>

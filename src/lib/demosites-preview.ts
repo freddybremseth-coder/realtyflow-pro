@@ -3,11 +3,14 @@ import {
   type DemoSiteFaqItem,
   type DemoSiteTemplateDefaults,
 } from "@/lib/demosites";
+import { getDemoSiteUiText, normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 export type DemoSitesPreviewMode = "internal" | "public";
 export type DemoSitesPreviewFallbackMode = "defaults" | "placeholders";
 
 export type DemoSitesPreviewProfile = {
+  site_language?: DemoSiteLanguage;
+  language?: DemoSiteLanguage;
   company_name?: string;
   website_url?: string;
   recommended_template_slug?: string;
@@ -53,6 +56,7 @@ export type DemoSitesPreviewEmployee = {
 
 export type DemoSitesPreviewModel = {
   companyName: string;
+  language: DemoSiteLanguage;
   templateSlug: string;
   templateLabel: string;
   websiteUrl: string;
@@ -359,6 +363,7 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
   const fallbackMode = input.fallbackMode || "defaults";
   const fields = input.editableFields || {};
   const profile = getProfileRecord(input);
+  const language = normalizeDemoSiteLanguage(fields.site_language || fields.content_language || profile.site_language || profile.language);
   const templateSlug = getTemplateSlug(input, fields, profile);
   const companyName = getCompanyName(input, profile, fallbackMode);
   const defaults = getDemoSiteTemplateDefaults(templateSlug, companyName === PLACEHOLDERS.companyName ? "Bedriften" : companyName);
@@ -483,6 +488,7 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
 
   return {
     companyName,
+    language,
     templateSlug: defaults.template_slug,
     templateLabel: input.templateLabel || defaults.template_name,
     websiteUrl,
@@ -500,7 +506,7 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
     },
     contact,
     contactHref: getPrimaryContactHref(contact),
-    chatPrice: prices[0] || products[0] || services[0] || "Send inn detaljer, så følger vi opp med et mer presist forslag.",
+    chatPrice: prices[0] || products[0] || services[0] || getDemoSiteUiText(language).howCanWeHelp,
     hasCustomProducts: customProducts.length > 0,
     hasCustomPrices: customPrices.length > 0,
     employees,

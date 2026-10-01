@@ -65,6 +65,11 @@ test("curated design cycle includes every signature layout", () => {
 
   assert.deepEqual(
     nextDemoSiteDesign({ layout: "editorial", style: "elegant" }),
-    { layout: "cinematic", style: "modern" },
+    { layout: "fullbleed", style: "warm" },
+  );
+
+  assert.deepEqual(
+    DEMO_SITE_DESIGN_CYCLE.slice(0, 5).map((design) => design.layout),
+    ["cinematic", "bento", "atelier", "panorama", "kinetic"],
   );
 });

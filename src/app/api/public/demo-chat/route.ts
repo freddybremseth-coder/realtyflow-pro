@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { askClaude } from "@/services/ai/claude-client";
+import { getDemoSiteLanguageConfig, normalizeDemoSiteLanguage } from "@/lib/demosites-language";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
     if (!order) return NextResponse.json({ error: "Fant ikke siden." }, { status: 404 });
 
     const fields = (order.editable_fields || {}) as Record<string, unknown>;
+    const language = getDemoSiteLanguageConfig(normalizeDemoSiteLanguage(fields.site_language));
     const profile = (order.extracted_profile || {}) as Record<string, unknown>;
     const contact = (fields.contact_info || {}) as Record<string, unknown>;
 
@@ -99,7 +101,7 @@ KUNNSKAP OM BEDRIFTEN (alt du vet — ikke finn på noe utover dette):
 ${knowledge}
 
 Regler:
-- Svar på norsk, kort og hjelpsomt (maks 3-4 setninger), varm og profesjonell tone
+- Svar KUN på ${language.promptName}, kort og hjelpsomt (maks 3-4 setninger), varm og profesjonell tone
 - Vet du ikke svaret: si det ærlig og henvis til kontaktskjemaet på siden eller telefon
 - Avslutt gjerne med å tilby neste steg (kontaktskjema, ringe, be om tilbud)
 - Aldri oppgi priser eller løfter som ikke står i kunnskapen over`;

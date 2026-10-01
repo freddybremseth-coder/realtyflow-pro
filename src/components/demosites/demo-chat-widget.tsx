@@ -9,6 +9,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, MessageCircle, Send, X } from "lucide-react";
+import { getDemoSiteUiText, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -17,9 +18,11 @@ type DemoChatWidgetProps = {
   companyName: string;
   accentColor: string;
   accentTextColor: string;
+  language?: DemoSiteLanguage;
 };
 
-export function DemoChatWidget({ token, companyName, accentColor, accentTextColor }: DemoChatWidgetProps) {
+export function DemoChatWidget({ token, companyName, accentColor, accentTextColor, language = "nb" }: DemoChatWidgetProps) {
+  const ui = getDemoSiteUiText(language);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -47,10 +50,10 @@ export function DemoChatWidget({ token, companyName, accentColor, accentTextColo
         body: JSON.stringify({ token, messages: nextMessages }),
       });
       const data = await res.json();
-      const reply = res.ok && data.reply ? data.reply : data.error || "Beklager, prøv igjen — eller bruk kontaktskjemaet.";
+      const reply = res.ok && data.reply ? data.reply : data.error || ui.chatFallback;
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Beklager, jeg mistet nettet et øyeblikk. Prøv igjen!" }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: ui.chatNetworkError }]);
     } finally {
       setSending(false);
     }
@@ -65,7 +68,7 @@ export function DemoChatWidget({ token, companyName, accentColor, accentTextColo
               <Bot className="h-5 w-5" />
               <div>
                 <p className="text-sm font-bold leading-tight">{companyName}</p>
-                <p className="text-[10px] opacity-80">AI-resepsjonist · svarer døgnet rundt</p>
+                <p className="text-[10px] opacity-80">{ui.chatSubtitle}</p>
               </div>
             </div>
             <button type="button" onClick={() => setOpen(false)} className="rounded p-1 opacity-80 hover:opacity-100">
@@ -75,7 +78,7 @@ export function DemoChatWidget({ token, companyName, accentColor, accentTextColo
 
           <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-50 p-3">
             <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
-              Hei! 👋 Jeg kan svare på spørsmål om tjenester, priser og kontakt hos {companyName}. Hva lurer du på?
+              {ui.chatIntro(companyName)}
             </div>
             {messages.map((message, index) => (
               <div
@@ -92,7 +95,7 @@ export function DemoChatWidget({ token, companyName, accentColor, accentTextColo
             ))}
             {sending && (
               <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm text-slate-500 shadow-sm">
-                <Loader2 className="inline h-3.5 w-3.5 animate-spin" /> skriver…
+                <Loader2 className="inline h-3.5 w-3.5 animate-spin" /> {ui.chatTyping}
               </div>
             )}
           </div>
@@ -101,7 +104,7 @@ export function DemoChatWidget({ token, companyName, accentColor, accentTextColo
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Skriv et spørsmål…"
+              placeholder={ui.chatPlaceholder}
               className="h-10 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-500"
             />
             <button
@@ -122,7 +125,7 @@ export function DemoChatWidget({ token, companyName, accentColor, accentTextColo
           style={{ backgroundColor: accentColor, color: accentTextColor }}
         >
           <MessageCircle className="h-5 w-5" />
-          Spør oss
+          {ui.chatOpen}
         </button>
       )}
     </div>

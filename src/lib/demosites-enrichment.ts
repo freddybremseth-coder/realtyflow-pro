@@ -27,6 +27,7 @@
 import { getDemoSiteTemplateDefaults, type DemoSiteFaqItem } from "@/lib/demosites";
 import { validatePublicWebsiteUrl } from "@/lib/demosites-profile-import";
 import { askClaude } from "@/services/ai/claude-client";
+import { getDemoSiteLanguageConfig, normalizeDemoSiteLanguage, type DemoSiteLanguage } from "@/lib/demosites-language";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -428,6 +429,58 @@ function parseModelJson<T>(raw: string): T | null {
   }
 }
 
+function compactWhitespace(value: unknown) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function clampAtWord(value: unknown, maxChars: number) {
+  const text = compactWhitespace(value);
+  if (text.length <= maxChars) return text;
+  const sliced = text.slice(0, maxChars + 1);
+  const boundary = sliced.lastIndexOf(" ");
+  const output = (boundary >= Math.floor(maxChars * 0.65) ? sliced.slice(0, boundary) : sliced.slice(0, maxChars)).trim();
+  return output.replace(/[,:;–—-]+$/, "").trim();
+}
+
+function uniqueShortList(values: unknown, maxItems: number, maxChars: number) {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const item = clampAtWord(value, maxChars);
+    const key = item.toLocaleLowerCase("nb-NO");
+    if (!item || seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+    if (result.length >= maxItems) break;
+  }
+  return result;
+}
+
+export function sanitizeDemoGeneratedCopy(copy: DemoSiteGeneratedCopy): DemoSiteGeneratedCopy {
+  const faq = Array.isArray(copy.faq)
+    ? copy.faq
+        .map((item) => ({
+          question: clampAtWord(item?.question, 110),
+          answer: clampAtWord(item?.answer, 260),
+        }))
+        .filter((item) => item.question && item.answer)
+        .slice(0, 4)
+    : [];
+
+  return {
+    hero_title: clampAtWord(copy.hero_title, 64),
+    hero_subtitle: clampAtWord(copy.hero_subtitle, 125),
+    intro_text: clampAtWord(copy.intro_text, 280),
+    services: uniqueShortList(copy.services, 6, 46),
+    trust_points: uniqueShortList(copy.trust_points, 4, 90),
+    faq,
+    call_to_action: clampAtWord(copy.call_to_action, 32),
+    contact_text: clampAtWord(copy.contact_text, 220),
+    employees: Array.isArray(copy.employees) ? copy.employees.slice(0, 8) : [],
+  };
+}
+
 export async function generateDemoCopy(input: {
   companyName: string;
   industry?: string | null;
@@ -437,7 +490,10 @@ export async function generateDemoCopy(input: {
   snapshot?: DemoSiteWebsiteSnapshot | null;
   /** Premium demos also extract the team from the crawled pages. */
   extractEmployees?: boolean;
+  language?: DemoSiteLanguage;
+  existingCopy?: Record<string, unknown> | null;
 }): Promise<DemoSiteGeneratedCopy | null> {
+  const language = getDemoSiteLanguageConfig(input.language);
   const snapshotContext = input.snapshot
     ? `
 FRA BEDRIFTENS EKSISTERENDE NETTSIDE — ${input.snapshot.pagesCrawled} sider analysert (bruk dette aktivt: nevn faktiske tjenester, priser og stedsnavn):
@@ -448,27 +504,50 @@ Tekstutdrag:
 ${input.snapshot.snippets.slice(0, 12).join("\n")}`
     : "";
 
-  const prompt = `Du skriver innhold til en ny, moderne nettside for en norsk lokal bedrift. Innholdet skal føles skreddersydd, konkret og selgende — ikke som en mal.
+  const existingCopyContext = input.existingCopy
+    ? `
+EKSISTERENDE GODKJENT NETTSIDEINNHOLD SOM SKAL BEVARES FAKTAMESSIG OG TILPASSES/OVERSETTES:
+${JSON.stringify(input.existingCopy).slice(0, 7000)}
+`
+    : "";
+
+  const prompt = `Du skriver innhold til en ny, moderne nettside for en lokal bedrift. Innholdet skal føles skreddersydd, konkret og selgende — ikke som en mal.
 
 BEDRIFT: ${input.companyName}
 BRANSJE: ${input.industry || input.templateSlug}
 TJENESTER OPPGITT AV KUNDEN: ${input.services.join(", ") || "(ingen oppgitt)"}
 KUNDENS EGEN BESKRIVELSE (viktigst — fokus, produkter og priser kunden vil fronte): ${input.notes || "(ingen)"}
 ${snapshotContext}
+${existingCopyContext}
 
-Skriv på norsk. Vær konkret (bruk bedriftsnavnet og reelle tjenester/steder der du kan), unngå buzzord og superlativ-spam.
-VIKTIG: All tekst skal snakke DIREKTE til kunden og selge — aldri beskrive hva teksten skal oppnå eller hva leseren "må forstå".
-hero_subtitle og intro_text skal si FORSKJELLIGE ting — aldri samme setning to ganger.
+SKRIV ALT KUN PÅ ${language.promptName}. Ikke bland inn norsk eller engelsk med mindre det er del av et egennavn.
+Vær konkret og menneskelig. Bruk bedriftsnavn, faktiske tjenester og dokumenterte stedsnavn når det passer.
+Dette skal leses godt på mobil: mindre tekst er bedre enn fyllstoff.
+
+DESIGN- OG KOPIREGLER:
+- hero_title: 4–9 ord, helst maks 48 tegn. Én tydelig idé, ikke to setninger.
+- hero_subtitle: maks 105 tegn. Forklar konkret hva kunden får eller kan gjøre.
+- intro_text: maks 2 korte setninger og ca. 220 tegn. Ikke gjenta hero.
+- services: 3–6 tjenester. Korte navn, helst 1–3 ord.
+- trust_points: maks 4. Bare forhold som kan støttes av kundens input eller nettsiden. Ikke finn opp erfaring, garanti, responstid, anmeldelser, sertifiseringer eller priser.
+- FAQ: 2–4 praktiske spørsmål. Svar kort og aldri med oppdiktede fakta.
+- call_to_action: 2–5 ord, tydelig handling.
+- contact_text: maks 2 korte setninger.
+- Unngå generisk AI-/byråspråk som «skreddersydd», «helhetlig», «sømløs», «unik», «din partner», «vi brenner for», «kvalitet i fokus» og «moderne løsninger» med mindre uttrykket er direkte dokumentert.
+- Ikke finn opp priser, årstall, garantier, åpningstider, områder, ansatte, priser/utmerkelser eller kundevurderinger.
+- All tekst skal snakke DIREKTE til sluttkunden. Aldri forklar hva nettsiden eller teksten «skal gjøre».
+- hero_subtitle og intro_text skal si FORSKJELLIGE ting.
+
 Returner KUN gyldig JSON:
 {
-  "hero_title": "kraftfull tittel, maks 60 tegn",
-  "hero_subtitle": "undertittel som lover konkret verdi, maks 120 tegn",
-  "intro_text": "2-3 setninger om bedriften, varm og troverdig — annet innhold enn hero_subtitle",
-  "services": ["4-7 korte tjenestenavn på 2-4 ord, f.eks. 'Flyttehjelp', 'Varetransport', 'Bortkjøring'"],
-  "trust_points": ["3-5 korte trygghetspunkter, f.eks. erfaring, garanti, responstid"],
-  "faq": [{"question": "…", "answer": "…"}, {"question": "…", "answer": "…"}, {"question": "…", "answer": "…"}],
-  "call_to_action": "kort handlingsdrivende CTA, maks 40 tegn",
-  "contact_text": "1-2 setninger som senker terskelen for å ta kontakt"${input.extractEmployees ? `,
+  "hero_title": "kort, sterk tittel",
+  "hero_subtitle": "konkret undertittel",
+  "intro_text": "maks to korte setninger",
+  "services": ["3-6 korte tjenestenavn"],
+  "trust_points": ["2-4 dokumenterbare eller nøytrale trygghetspunkter"],
+  "faq": [{"question": "…", "answer": "…"}, {"question": "…", "answer": "…"}],
+  "call_to_action": "2-5 ord",
+  "contact_text": "1-2 korte setninger"${input.extractEmployees ? `,
   "employees": [{"name": "…", "title": "…", "email": "…", "phone": "…"}] — KUN ekte personer funnet i nettside-innholdet over (navn + stilling). Finner du ingen, returner tom liste. ALDRI finn opp personer.` : ""}
 }`;
 
@@ -478,7 +557,7 @@ Returner KUN gyldig JSON:
       // regularly exceeds 1200 tokens — a low cap truncated the JSON and
       // silently dropped ALL AI copy in production.
       maxTokens: 2400,
-      temperature: 0.7,
+      temperature: 0.55,
       responseMimeType: "application/json",
     });
     const parsed = parseModelJson<DemoSiteGeneratedCopy>(text);
@@ -486,7 +565,7 @@ Returner KUN gyldig JSON:
       console.warn("[DemoSites Enrichment] AI copy unparseable, first 200 chars:", text.slice(0, 200));
       return null;
     }
-    return parsed;
+    return sanitizeDemoGeneratedCopy(parsed);
   } catch (err) {
     console.warn("[DemoSites Enrichment] AI copy failed:", err instanceof Error ? err.message : err);
     return null;
@@ -588,7 +667,7 @@ async function generateOneImage(prompt: string, brandColor: string): Promise<{ b
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
-  const fullPrompt = `High-quality professional marketing photograph: ${prompt}. Subtle color accents matching brand color ${brandColor}. Photorealistic, 8k quality, no text, letters, words, logos or watermarks in the image.`;
+  const fullPrompt = `Premium editorial commercial photograph for a modern business website: ${prompt}. Cohesive Scandinavian visual direction, natural light, realistic materials, restrained styling, believable candid moment, high-end agency photography rather than stock-photo aesthetics. Compose with useful negative space for responsive web layouts and a clear focal subject. Subtle color accents may echo brand color ${brandColor}. Photorealistic. No text, letters, signage, logos, watermarks, fake UI, distorted hands, exaggerated smiles or people staring directly at camera.`;
 
   try {
     const res = await fetch(
@@ -652,6 +731,48 @@ export async function generateDemoImages(
   }
 
   return urls;
+}
+
+export type DemoSiteQualityGate = {
+  status: "ready" | "needs_review";
+  score: number;
+  checked_at: string;
+  checks: {
+    hero: boolean;
+    subtitle: boolean;
+    services: boolean;
+    images: boolean;
+    cta: boolean;
+    no_duplicate_intro: boolean;
+  };
+};
+
+export function evaluateDemoSiteQuality(fields: Record<string, unknown>): DemoSiteQualityGate {
+  const hero = compactWhitespace(fields.hero_title);
+  const subtitle = compactWhitespace(fields.hero_subtitle);
+  const intro = compactWhitespace(fields.intro_text);
+  const services = sanitizeServiceList(listOf(fields.services));
+  const images = listOf(fields.gallery_images).filter(Boolean);
+  const cta = compactWhitespace(fields.call_to_action);
+
+  const checks = {
+    hero: hero.length >= 8 && hero.length <= 72,
+    subtitle: subtitle.length >= 18 && subtitle.length <= 150,
+    services: services.length >= 3,
+    images: images.length >= MIN_GALLERY_IMAGES,
+    cta: cta.length >= 3 && cta.length <= 40,
+    no_duplicate_intro: !intro || intro.toLocaleLowerCase("nb-NO") !== subtitle.toLocaleLowerCase("nb-NO"),
+  };
+  const passed = Object.values(checks).filter(Boolean).length;
+  const score = Math.round((passed / Object.keys(checks).length) * 100);
+  const criticalReady = checks.hero && checks.subtitle && checks.services && checks.images && checks.cta;
+
+  return {
+    status: criticalReady && score >= 83 ? "ready" : "needs_review",
+    score,
+    checked_at: new Date().toISOString(),
+    checks,
+  };
 }
 
 // ─── Merge + orchestration ──────────────────────────────────────────────────
@@ -724,6 +845,8 @@ export type DemoSiteEnrichmentOptions = {
   regenerateImages?: boolean;
   /** Skip snapshot + AI copy — only touch images. */
   imagesOnly?: boolean;
+  /** Rebuild customer-facing copy even when fields were previously customized. Used for an explicit language change. */
+  regenerateCopy?: boolean;
 };
 
 /**
@@ -738,6 +861,7 @@ export async function enrichDemoSiteOrder(
   const errors: string[] = [];
   const fields: Record<string, unknown> = { ...(order.editable_fields || {}) };
   const templateSlug = textOf(fields.template_slug) || textOf(order.template_slug) || "local-service";
+  const siteLanguage = normalizeDemoSiteLanguage(fields.site_language);
   const defaults = getDemoSiteTemplateDefaults(templateSlug, order.company_name);
   const brandColor = textOf(fields.brand_color) || textOf(order.brand_color) || defaults.brand_color;
 
@@ -779,19 +903,34 @@ export async function enrichDemoSiteOrder(
         notes: order.notes,
         snapshot,
         extractEmployees: isPremium,
+        language: siteLanguage,
+        existingCopy: options.regenerateCopy
+          ? {
+              hero_title: fields.hero_title,
+              hero_subtitle: fields.hero_subtitle,
+              intro_text: fields.intro_text,
+              services: fields.services,
+              trust_points: fields.trust_points,
+              faq: fields.faq,
+              call_to_action: fields.call_to_action,
+              contact_text: fields.contact_text,
+            }
+          : null,
       });
 
   if (copy) {
-    if (copy.hero_title && isDefaultText(fields.hero_title, defaults.hero_title)) fields.hero_title = copy.hero_title;
-    if (copy.hero_subtitle && isDefaultText(fields.hero_subtitle, defaults.hero_subtitle)) fields.hero_subtitle = copy.hero_subtitle;
-    if (copy.intro_text && isDefaultText(fields.intro_text, defaults.intro_text)) fields.intro_text = copy.intro_text;
-    if (copy.call_to_action && isDefaultText(fields.call_to_action, defaults.call_to_action)) fields.call_to_action = copy.call_to_action;
-    if (copy.contact_text && isDefaultText(fields.contact_text, defaults.contact_text)) fields.contact_text = copy.contact_text;
-    if (copy.services?.length && (servicesLookJunky || isDefaultList(fields.services, defaults.services))) {
+    const replaceCopy = options.regenerateCopy === true;
+    if (copy.hero_title && (replaceCopy || isDefaultText(fields.hero_title, defaults.hero_title))) fields.hero_title = copy.hero_title;
+    if (copy.hero_subtitle && (replaceCopy || isDefaultText(fields.hero_subtitle, defaults.hero_subtitle))) fields.hero_subtitle = copy.hero_subtitle;
+    if (copy.intro_text && (replaceCopy || isDefaultText(fields.intro_text, defaults.intro_text))) fields.intro_text = copy.intro_text;
+    if (copy.call_to_action && (replaceCopy || isDefaultText(fields.call_to_action, defaults.call_to_action))) fields.call_to_action = copy.call_to_action;
+    if (copy.contact_text && (replaceCopy || isDefaultText(fields.contact_text, defaults.contact_text))) fields.contact_text = copy.contact_text;
+    if (copy.services?.length && (replaceCopy || servicesLookJunky || isDefaultList(fields.services, defaults.services))) {
       fields.services = sanitizeServiceList(copy.services);
     }
-    if (copy.trust_points?.length && isDefaultList(fields.trust_points, defaults.trust_points)) fields.trust_points = copy.trust_points;
-    if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (!Array.isArray(fields.faq) || !(fields.faq as unknown[]).length)) {
+    if (copy.trust_points?.length && (replaceCopy || isDefaultList(fields.trust_points, defaults.trust_points))) fields.trust_points = copy.trust_points;
+    const currentFaqIsDefault = JSON.stringify(fields.faq || []) === JSON.stringify(defaults.faq || []);
+    if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (replaceCopy || !Array.isArray(fields.faq) || !(fields.faq as unknown[]).length || currentFaqIsDefault)) {
       fields.faq = copy.faq.filter((item) => item && item.question).slice(0, 6);
     }
     if (isPremium && Array.isArray(copy.employees) && (!Array.isArray(fields.employees) || !(fields.employees as unknown[]).length)) {
@@ -827,6 +966,8 @@ export async function enrichDemoSiteOrder(
 
   if (gallery.length) fields.gallery_images = gallery;
 
+  fields.quality_gate = evaluateDemoSiteQuality(fields);
+
   fields.enrichment = {
     at: new Date().toISOString(),
     copy_applied: copyApplied,
@@ -835,6 +976,8 @@ export async function enrichDemoSiteOrder(
     crawled_images: crawledImages.length,
     generated_images: generatedImages.length,
     errors,
+    site_language: siteLanguage,
+    quality_gate: fields.quality_gate,
   };
 
   // Persist.

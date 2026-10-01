@@ -142,17 +142,16 @@ export function resolveDemoSiteDesign(input: {
  * every Signature 2026 concept appears with the typography that suits it best.
  */
 export const DEMO_SITE_DESIGN_CYCLE: DemoSiteDesign[] = [
-  { layout: "split", style: "modern" },
-  { layout: "fullbleed", style: "warm" },
-  { layout: "editorial", style: "elegant" },
-  { layout: "cinematic", style: "modern" },
+  // Lead with the strongest, most differentiated responsive concepts.
+  { layout: "cinematic", style: "warm" },
   { layout: "bento", style: "modern" },
   { layout: "atelier", style: "elegant" },
+  { layout: "panorama", style: "modern" },
   { layout: "kinetic", style: "tech" },
-  { layout: "panorama", style: "warm" },
-  { layout: "fullbleed", style: "elegant" },
-  { layout: "split", style: "tech" },
-  { layout: "editorial", style: "modern" },
+  // Keep the classic concepts available as restrained alternatives.
+  { layout: "editorial", style: "elegant" },
+  { layout: "fullbleed", style: "warm" },
+  { layout: "split", style: "modern" },
 ];
 
 export function nextDemoSiteDesign(current: DemoSiteDesign): DemoSiteDesign {

@@ -8,6 +8,7 @@ import { DemoCountdownBar } from "@/components/demosites/demo-countdown-bar";
 import { DemoDesignSwitcher } from "@/components/demosites/demo-design-switcher";
 import { getDemoSitePackage } from "@/lib/demosites";
 import { isSignatureDemoSiteLayout, resolveDemoSiteDesign } from "@/lib/demosites-design";
+import { getDemoSiteLanguageConfig, normalizeDemoSiteLanguage } from "@/lib/demosites-language";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,8 +68,37 @@ export async function generateMetadata({ params }: PreviewPageProps): Promise<Me
   if (!order) return { title: "DemoSites preview" };
 
   const fields = order.editable_fields || {};
-  const title = `${order.company_name} — din nye nettside`;
-  const description = `Se hvordan den nye nettsiden til ${order.company_name} kan se ut. Demoen er live nå — bestill for å beholde den.`;
+  const language = getDemoSiteLanguageConfig(fields.site_language);
+  const title = language.id === "nb"
+    ? `${order.company_name} — din nye nettside`
+    : language.id === "es"
+      ? `${order.company_name} — tu nueva web`
+      : language.id === "de"
+        ? `${order.company_name} — Ihre neue Website`
+        : language.id === "fr"
+          ? `${order.company_name} — votre nouveau site`
+          : language.id === "ru"
+            ? `${order.company_name} — ваш новый сайт`
+          : language.id === "sv"
+            ? `${order.company_name} — din nya webbplats`
+            : language.id === "da"
+              ? `${order.company_name} — din nye hjemmeside`
+              : `${order.company_name} — your new website`;
+  const description = language.id === "nb"
+    ? `Se hvordan den nye nettsiden til ${order.company_name} kan se ut. Demoen er live nå — bestill for å beholde den.`
+    : language.id === "es"
+      ? `Descubre cómo puede ser la nueva web de ${order.company_name}. La demo está activa ahora.`
+      : language.id === "de"
+        ? `Sehen Sie, wie die neue Website von ${order.company_name} aussehen kann. Die Demo ist jetzt live.`
+        : language.id === "fr"
+          ? `Découvrez à quoi peut ressembler le nouveau site de ${order.company_name}. La démo est en ligne.`
+          : language.id === "ru"
+            ? `Посмотрите, как может выглядеть новый сайт ${order.company_name}. Демо уже доступно.`
+          : language.id === "sv"
+            ? `Se hur den nya webbplatsen för ${order.company_name} kan se ut. Demon är live nu.`
+            : language.id === "da"
+              ? `Se hvordan den nye hjemmeside for ${order.company_name} kan se ud. Demoen er live nu.`
+              : `See what the new ${order.company_name} website could look like. The demo is live now.`;
   const socialImage = String(fields.hero_image_url || "").trim() || order.logo_url || undefined;
 
   return {
@@ -96,6 +126,7 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
   }
 
   const fields = order.editable_fields || {};
+  const siteLanguage = normalizeDemoSiteLanguage(fields.site_language);
   const extractedProfile = order.extracted_profile || null;
   const pkg = getDemoSitePackage(order.package_id);
   const templateSlug = String(fields.template_slug || order.template_slug || "local-service");
@@ -157,7 +188,7 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
   return (
     <>
       {showConversionBar && !isPresentation && (
-        <DemoCountdownBar expiresAt={order.expires_at} claimUrl={order.claim_url} leadCount={leadCount} />
+        <DemoCountdownBar expiresAt={order.expires_at} claimUrl={order.claim_url} leadCount={leadCount} language={siteLanguage} />
       )}
       {isSignatureDemoSiteLayout(design.layout) ? (
         <DemoSignatureSiteRenderer {...rendererProps} />
