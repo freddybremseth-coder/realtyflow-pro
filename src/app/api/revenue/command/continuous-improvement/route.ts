@@ -28,6 +28,7 @@ import {
 import { buildCorporateGrowthImprovementCandidate } from "@/lib/corporate-growth-improvement";
 import {
   buildCorporateImprovementObservedEffect,
+  buildCorporateImprovementRecurrence,
   corporateStageFromCandidateId,
 } from "@/lib/corporate-improvement-observed-effect";
 
@@ -162,9 +163,23 @@ export async function GET(request: NextRequest) {
         entry[1] !== null,
       ),
   );
+  const corporateRecurrences = Object.fromEntries(
+    register.improvements
+      .map((item) => [
+        item.id,
+        buildCorporateImprovementRecurrence(
+          loaded.corporateGrowthRows,
+          { candidateId: item.candidateId, closedAt: item.closedAt },
+        ),
+      ] as const)
+      .filter((entry): entry is [string, NonNullable<ReturnType<typeof buildCorporateImprovementRecurrence>>] =>
+        entry[1] !== null,
+      ),
+  );
   return NextResponse.json({
     register,
     corporateObservedEffects,
+    corporateRecurrences,
     weeklyWarning: loaded.weeklyError,
     corporateGrowthWarning: loaded.corporateGrowthError,
     user: { email: session.email, role: session.role },

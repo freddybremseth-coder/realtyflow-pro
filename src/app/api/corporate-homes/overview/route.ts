@@ -13,7 +13,10 @@ import {
   WEEKLY_MANAGEMENT_SETTINGS_KEY,
   parseWeeklyManagementSettings,
 } from "@/lib/revenue/weekly-management-review";
-import { buildCorporateImprovementObservedEffect } from "@/lib/corporate-improvement-observed-effect";
+import {
+  buildCorporateImprovementObservedEffect,
+  buildCorporateImprovementRecurrence,
+} from "@/lib/corporate-improvement-observed-effect";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -259,6 +262,10 @@ export async function GET(request: NextRequest) {
         observedEffect: buildCorporateImprovementObservedEffect(
           recentCorporateGrowthReviews || [],
           { candidateId: tracked.candidateId, createdAt: tracked.createdAt },
+        ),
+        recurrence: buildCorporateImprovementRecurrence(
+          recentCorporateGrowthReviews || [],
+          { candidateId: tracked.candidateId, closedAt: tracked.closedAt },
         ),
       };
     }

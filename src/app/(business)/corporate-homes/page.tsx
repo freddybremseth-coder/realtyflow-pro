@@ -106,6 +106,16 @@ type Overview = {
       rootCauseCategory: string;
       actionType: string;
       updatedAt?: string | null;
+      recurrence?: {
+        detected: boolean;
+        stage: string;
+        label: string;
+        closedAt: string;
+        postClosureSnapshots: number;
+        firstRecurrenceAt?: string | null;
+        latestAt?: string | null;
+        note: string;
+      } | null;
       observedEffect?: {
         status: "NOT_ENOUGH_DATA" | "MEASURED_UP" | "MEASURED_DOWN" | "UNCHANGED";
         stage: string;
@@ -696,6 +706,20 @@ export default function CorporateHomesGrowthPage() {
                     </div>
                   )}
 
+                  {data.growthReview.improvement?.recurrence?.detected && data.growthReview.improvement.closed && (
+                    <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                      <div className="text-xs font-black uppercase tracking-wide text-amber-900">
+                        Flaskehals tilbake etter lukking
+                      </div>
+                      <p className="mt-1 text-sm font-bold text-slate-900">
+                        {data.growthReview.improvement.recurrence.label} · {data.growthReview.improvement.recurrence.postClosureSnapshots} nye READY-snapshots etter lukking.
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        {data.growthReview.improvement.recurrence.note}
+                      </p>
+                    </div>
+                  )}
+
                   {data.growthReview.improvement?.observedEffect && (
                     <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
                       <div className="text-xs font-black uppercase tracking-wide text-cyan-900">
@@ -742,7 +766,11 @@ export default function CorporateHomesGrowthPage() {
                         : "bg-amber-900 hover:bg-amber-800"
                     }`}
                   >
-                    {data.growthReview.improvement ? "Åpne forbedringstiltak" : "Vurder i Kontinuerlig forbedring"}
+                    {data.growthReview.improvement?.recurrence?.detected && data.growthReview.improvement.closed
+                      ? "Flaskehals tilbake · vurder gjenåpning"
+                      : data.growthReview.improvement
+                        ? "Åpne forbedringstiltak"
+                        : "Vurder i Kontinuerlig forbedring"}
                     <ArrowRight size={16} />
                   </Link>
                 )}
