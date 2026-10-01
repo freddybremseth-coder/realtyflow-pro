@@ -62,6 +62,8 @@ const PUBLIC_PATHS = [
   "/api/public/remaster-art-gallery",
   "/api/dona-anna/integrations",
   "/api/public/newsletter-unsubscribe",
+  "/api/public/newsletter-open",
+  "/api/public/newsletter-click",
 ];
 
 const REMASTER_PROXY_PATHS = [

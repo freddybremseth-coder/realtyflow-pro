@@ -26,6 +26,10 @@ type Payload = {
     status: string; sourceTypes: string[]; plannedChannels: string[];
     conversionGoals: string[]; primaryCtas: string[]; updatedAt: string | null;
   };
+  newsletterSummary: {
+    campaigns: number; sent: number; opened: number; clicked: number; openRate: number; clickRate: number;
+    topCampaigns: Array<{ title: string; sent: number; opened: number; clicked: number; segments: string[]; sentAt: string | null }>;
+  };
   ownerFocus: Array<{
     key: string; title: string; intensity: number;
     successDefinition: string | null; reviewDueAt: string | null;
@@ -138,6 +142,24 @@ export function WorkspaceNexusInsightsPanel({ brandKey }: { brandKey: string }) 
       </div>
     </section> : null}
 
+    {data && data.newsletterSummary.campaigns > 0 && <section className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+      <h4 className="font-semibold">Nyhetsbrev · hva som faktisk virker</h4>
+      <p className="mt-1 text-xs text-slate-500">Nexus bruker kun aggregert brand-statistikk her. Åpningsrate er veiledende; klikk er et sterkere signal.</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div><p className="text-xs text-slate-500">Sendt</p><strong className="text-xl">{data.newsletterSummary.sent.toLocaleString("nb-NO")}</strong></div>
+        <div><p className="text-xs text-slate-500">Åpningsrate</p><strong className="text-xl">{pct(data.newsletterSummary.openRate)}%</strong></div>
+        <div><p className="text-xs text-slate-500">Klikkrate</p><strong className="text-xl">{pct(data.newsletterSummary.clickRate)}%</strong></div>
+      </div>
+      {data.newsletterSummary.topCampaigns.length > 0 && <div className="mt-4 space-y-2">
+        {data.newsletterSummary.topCampaigns.map((campaign, index) => <article key={index} className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <strong className="text-sm">{campaign.title}</strong>
+            <span className="text-xs text-violet-300">{campaign.sent ? ((campaign.clicked/campaign.sent)*100).toLocaleString("nb-NO",{maximumFractionDigits:1}) : "0"}% klikk</span>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">{campaign.sent} sendt · {campaign.opened} åpnet · {campaign.clicked} klikk{campaign.segments.length ? " · " + campaign.segments.join(" · ") : " · alle abonnenter"}</p>
+        </article>)}
+      </div>}
+    </section>}
     {data?.growthPlan && <section className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
       <h4 className="font-semibold">Vekstplan</h4>
       <p className="mt-1 text-xs text-slate-500">Status: {statusText(data.growthPlan.status)}</p>
