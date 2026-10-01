@@ -14,6 +14,7 @@ let snapshot: unknown;
 let runtimeEnabled = false;
 let runtimeWrites: unknown[] = [];
 let preflightSafe = true;
+let responsibilityWrites: any[] = [];
 
 function req(method: string, cookie?: string, body?: unknown, headers: Record<string,string> = {}) {
   return new NextRequest(endpoint, {
@@ -36,6 +37,7 @@ test.beforeEach(() => {
   runtimeEnabled = false;
   runtimeWrites = [];
   preflightSafe = true;
+  responsibilityWrites = [];
   snapshot = {
     users: [],
     brands: [
@@ -59,6 +61,43 @@ test.beforeEach(() => {
           runtimeWrites.push(row);
           runtimeEnabled = row?.settings?.enabled === true;
           return { error: null };
+        },
+      };
+    },
+    schema: (schemaName: string) => {
+      assert.equal(schemaName, "core");
+      return {
+        from: (table: string) => {
+          if (table === "brands") {
+            return {
+              select: () => ({
+                in: async (_column: string, keys: string[]) => ({
+                  data: (snapshot as any).brands
+                    .filter((brand: any) => keys.includes(brand.brand_key))
+                    .map((brand: any) => ({ id: brand.id, brand_key: brand.brand_key })),
+                  error: null,
+                }),
+              }),
+            };
+          }
+          if (table === "brand_workspace_responsibilities") {
+            return {
+              select: async () => ({ data: [], error: null }),
+              upsert: async (row: any) => {
+                responsibilityWrites.push({ action: "upsert", row });
+                return { error: null };
+              },
+              delete: () => ({
+                eq: () => ({
+                  not: async () => {
+                    responsibilityWrites.push({ action: "cleanup" });
+                    return { error: null };
+                  },
+                }),
+              }),
+            };
+          }
+          throw new Error("Unexpected core table " + table);
         },
       };
     },
@@ -157,8 +196,8 @@ test("create user sends a self-service invite and configures safe multi-brand pe
     organization: "Search Partner AS",
     accessExpiresAt: "2027-03-31T21:59:59.000Z",
     brandAccess: [
-      { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read","nexus.read"] },
-      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read","youtube.read","youtube.publish","nexus.read"] },
+      { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read","nexus.read"], responsibilities: ["new-leads","property-matching"] },
+      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read","youtube.read","youtube.publish","nexus.read"], responsibilities: ["new-leads","property-matching","nexus-review"] },
     ],
   }) as any);
   assert.equal(response.status, 201);
@@ -176,6 +215,7 @@ test("create user sends a self-service invite and configures safe multi-brand pe
   assert.equal(configure?.args?.p_account_kind, "external");
   assert.equal(configure?.args?.p_organization, "Search Partner AS");
   assert.equal(configure?.args?.p_access_expires_at, "2027-03-31T21:59:59.000Z");
+  assert.equal(responsibilityWrites.filter(item => item.action === "upsert").length, 2);
 });
 
 test("invalid workspace-user input returns the exact field before Auth mutation", async () => {
@@ -278,6 +318,14 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
       error: "INVALID_BRAND_ACCESS", field: "brandAccess",
     },
   ];
+  cases.push({
+    body: {
+      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+      displayName: "Andrea",
+      brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"], responsibilities: ["newsletter"] }],
+    },
+    error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+  });
   cases.push(
     {
       body: {
