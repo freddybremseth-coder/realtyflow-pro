@@ -12,7 +12,6 @@ const channelFormat = fs.readFileSync(path.join(process.cwd(), "src/lib/marketin
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/inventory-property-adapter.ts"), "utf8");
 const quality = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/autonomous/quality.ts"), "utf8");
 const campaignProduction = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/campaign-production.ts"), "utf8");
-const orchestrator = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/autonomous-orchestrator.ts"), "utf8");
 const metaPublisher = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/publishers/meta-publisher.ts"), "utf8");
 const publicationRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/marketing/run-publication/route.ts"), "utf8");
 
@@ -82,17 +81,7 @@ test("Canary automatically retries novelty and deterministic copy-quality reject
   assert.match(route, /Når factSources er sparsomme, skriv kortere/);
 });
 
-test("Canary recovers exhausted novelty only into manual review", () => {
-  assert.match(route, /noveltyRetriesExhausted/);
-  assert.match(route, /previousErrors\.includes\("state=regenerate"\)/);
-  assert.match(route, /allowNoveltyManualReviewFallback: noveltyRetriesExhausted/);
-  assert.match(campaignProduction, /allowNoveltyManualReviewFallback: input\.allowNoveltyManualReviewFallback === true/);
-  assert.match(orchestrator, /noveltyManualReviewFallback/);
-  assert.match(orchestrator, /if \(noveltyManualReviewFallback\) mode = "manual-review"/);
-  assert.match(orchestrator, /manual-review-only recovery/);
-});
-
-test("Canary preserves fail-closed semantics for unrecovered regeneration or contract violations", () => {
+test("Canary preserves fail-closed semantics after regeneration retries are exhausted", () => {
   assert.match(route, /NOVELTY_REGENERATION_EXHAUSTED/);
   assert.match(route, /COPY_QUALITY_REGENERATION_EXHAUSTED/);
   assert.match(route, /unexpected\.error/);
@@ -103,7 +92,7 @@ test("Canary preserves fail-closed semantics for unrecovered regeneration or con
 test("Inventory-generated assets put property identity into the novelty and quality genome", () => {
   assert.match(creative, /propertyId: req\.propertyIds\[0\]/);
   assert.match(creative, /propertyType: genomeValue\(propertyType\)/);
-  assert.match(creative, /CREATIVE_PROMPT_VERSION = "cg-1\.9"/);
+  assert.match(creative, /CREATIVE_PROMPT_VERSION = "cg-2\.0"/);
   assert.match(quality, /inventoryBound/);
   assert.match(quality, /unsupportedOutcomeClaims\(caption, asset\.factSources, \{ inventoryBound \}\)/);
 });

@@ -120,6 +120,7 @@ export function classifyContentFeatures(publication: PublicationInput) {
     text.includes('?') ? 'question' : /€|eur|pris|price|precio/.test(text) ? 'price' : 'statement');
   const ctaType = String(genome.ctaType || genome.cta_type || '').trim() || (/(book|visning)/.test(text) ? 'book_viewing' : /(send melding|dm|skriv)/.test(text) ? 'message' : /(kontakt|contact)/.test(text) ? 'contact' : 'unspecified');
   const goal = publication.performance_goal || String(genome.goal || '').trim() || (/(kontakt|skriv|send|book|visning|dm)/.test(text) ? 'lead' : 'reach');
+  const creativeStyle = String(genome.creativeStyle || genome.creative_style || '').trim() || 'unspecified';
   const propertyType = /(tomt|plot|parcel)/.test(text) ? 'plot' : /(leilighet|apartment|apartamento)/.test(text) ? 'apartment' : /(villa|enebolig)/.test(text) ? 'villa' : 'unspecified';
   const source = String(existing.source || '').includes('marketing_publish_executor') ? 'autopilot' : 'legacy_or_manual';
   return {
@@ -129,6 +130,7 @@ export function classifyContentFeatures(publication: PublicationInput) {
     hook_type: hookType,
     cta_type: ctaType,
     goal,
+    creative_style: creativeStyle,
     property_type: propertyType,
     caption_length: captionLengthBucket(publication.description || ''),
     price_bucket: priceBucket(text),
@@ -226,7 +228,7 @@ export function buildFeatureInsights(posts: PostPerformance[]): FeatureInsight[]
   const comparablePosts = posts.filter((post) => post.comparisonWindow === comparisonWindow);
   if (comparablePosts.length < 5) return [];
   const overall = comparablePosts.reduce((sum, post) => sum + post.score, 0) / comparablePosts.length;
-  const dimensions = ['area', 'format', 'language', 'hook_type', 'cta_type', 'goal', 'property_type', 'caption_length', 'price_bucket', 'source', 'publish_day_utc', 'daypart_utc'];
+  const dimensions = ['area', 'format', 'language', 'hook_type', 'cta_type', 'goal', 'creative_style', 'property_type', 'caption_length', 'price_bucket', 'source', 'publish_day_utc', 'daypart_utc'];
   const groups = new Map<string, PostPerformance[]>();
   for (const post of comparablePosts) {
     for (const dimension of dimensions) {

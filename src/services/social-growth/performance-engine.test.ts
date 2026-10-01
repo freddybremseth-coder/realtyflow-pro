@@ -58,7 +58,7 @@ test('autopilot posts expose hook CTA caption price and timing dimensions', () =
     published_at: '2026-08-24T20:20:00Z',
     content_features: {
       source: 'marketing_publish_executor_backfill',
-      genome: { hookType: 'question', ctaType: 'book_viewing', goal: 'lead_generation', format: 'reel' },
+      genome: { hookType: 'question', ctaType: 'book_viewing', goal: 'lead_generation', format: 'reel', creativeStyle: 'fact_card' },
     },
   });
   assert.equal(features.source, 'autopilot');
@@ -66,6 +66,7 @@ test('autopilot posts expose hook CTA caption price and timing dimensions', () =
   assert.equal(features.hook_type, 'question');
   assert.equal(features.cta_type, 'book_viewing');
   assert.equal(features.goal, 'lead_generation');
+  assert.equal(features.creative_style, 'fact_card');
   assert.equal(features.format, 'reel');
   assert.equal(features.caption_length, 'short');
   assert.equal(features.price_bucket, '400k_750k');
