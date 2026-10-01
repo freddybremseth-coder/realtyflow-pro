@@ -19,6 +19,11 @@ function researchDue(evidence: unknown, now: number) {
   return !Number.isFinite(checked) || now - checked >= RESEARCH_TTL_MS;
 }
 
+function hasOfficialCompanyChannel(evidence: unknown) {
+  const contact = objectValue(objectValue(evidence).generic_company_contact);
+  return Boolean(String(contact.generic_email || "").trim() || String(contact.contact_page_url || "").trim());
+}
+
 function websiteFor(row: Record<string, any>) {
   const direct = String(row.website_url || "").trim();
   if (direct) return /^https?:\/\//i.test(direct) ? direct : `https://${direct}`;
@@ -67,6 +72,11 @@ export async function runCorporateCompanySignalResearch(
     const selected = (rows || [])
       .filter((row: any) => Boolean(websiteFor(row)))
       .filter((row: any) => researchDue(row.evidence, now))
+      .sort((a: any, b: any) => {
+        const channelDelta = Number(hasOfficialCompanyChannel(b.evidence)) - Number(hasOfficialCompanyChannel(a.evidence));
+        if (channelDelta) return channelDelta;
+        return Number(b.fit_score || 0) - Number(a.fit_score || 0);
+      })
       .slice(0, batchSize);
 
     let researched = 0;
