@@ -87,7 +87,7 @@ test("Corporate Event Operations uses participant ledger and never writes attend
   assert.match(eventsApi, /corporate_event_participants/);
   assert.doesNotMatch(eventsApi, /\.from\("contacts"\)/);
   assert.match(eventsApi, /registrationIsLead: false/);
-  assert.match(eventsApi, /automaticPipelineChange: false/);
+  assert.match(eventsApi, /CORPORATE_EVENT_SIGNAL_GUARDRAILS/);
 
   assert.match(signalApi, /applyCorporateEventSignal/);
   assert.match(signalApi, /pipelineChanged: false/);
