@@ -125,6 +125,10 @@
       "schedule": "5 7 * * *"
     },
     {
+      "path": "/api/cron/outbound-draft-prep",
+      "schedule": "25 * * * *"
+    },
+    {
       "path": "/api/cron/corporate-homes-content-drafts",
       "schedule": "40 6 * * 1"
     },
@@ -287,6 +291,10 @@
     {
       "path": "/api/cron/freddy-creative-editorial",
       "schedule": "15 8 * * 1"
+    },
+    {
+      "path": "/api/cron/workspace-newsletter-send",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

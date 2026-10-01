@@ -46,6 +46,10 @@ test("Nexus shortlist prep is scheduled after property matching", () => {
   const match = vercel.indexOf('"/api/cron/nexus-property-match-prep"');
   const shortlist = vercel.indexOf('"/api/cron/nexus-shortlist-prep"');
   assert.ok(match >= 0 && shortlist > match);
-  assert.match(vercel, /nexus-property-match-prep[^\n]+4-59\/5/);
-  assert.match(vercel, /nexus-shortlist-prep[^\n]+5-59\/5/);
+
+  const config = JSON.parse(vercel) as { crons?: Array<{ path?: string; schedule?: string }> };
+  const propertyMatchCron = config.crons?.find((cron) => cron.path === "/api/cron/nexus-property-match-prep");
+  const shortlistCron = config.crons?.find((cron) => cron.path === "/api/cron/nexus-shortlist-prep");
+  assert.equal(propertyMatchCron?.schedule, "4-59/5 * * * *");
+  assert.equal(shortlistCron?.schedule, "5-59/5 * * * *");
 });

@@ -52,9 +52,12 @@ function candidateFrom(row: any, source: CandidateSource) {
   if (researchChecked && !hasOfficialChannel) {
     nextAction = "Finn offisiell selskapskanal automatisk.";
     automationClass = "official_channel_discovery";
-  } else if (hasOfficialChannel) {
+  } else if (hasOfficialChannel && (hasWarmEvidence || fitTier === "A")) {
     nextAction = "Lag evidensbasert kontaktutkast automatisk. Første kalde utsendelse forblir blokkert/godkjenningsstyrt.";
     automationClass = "outreach_draft";
+  } else if (hasOfficialChannel) {
+    nextAction = "Offisiell kanal er klar. Fortsett selskapsresearch til et dokumentert kontaktgrunnlag finnes.";
+    automationClass = "company_research";
   }
 
   return {

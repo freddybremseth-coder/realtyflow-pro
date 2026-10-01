@@ -125,9 +125,9 @@ export async function GET(
   if (params.brandKey === "zeneco") {
     const { data: opportunityRows, error: opportunityError } = await access.value.supabase
       .from("property_content_opportunities")
-      .select("id,opportunity_type,score,title,summary,editorial_angle,property_refs,image_url,evidence,detected_at,expires_at")
+      .select("id,opportunity_type,score,title,summary,editorial_angle,property_refs,image_url,evidence,detected_at,expires_at,status")
       .eq("brand_id", params.brandKey)
-      .eq("status", "suggested")
+      .in("status", ["suggested", "auto_ready"])
       .gt("expires_at", new Date().toISOString())
       .order("score", { ascending: false })
       .order("detected_at", { ascending: false })
@@ -145,6 +145,8 @@ export async function GET(
         evidence: row.evidence && typeof row.evidence === "object" ? row.evidence : null,
         detectedAt: row.detected_at ? String(row.detected_at) : null,
         expiresAt: row.expires_at ? String(row.expires_at) : null,
+        status: String(row.status || "suggested"),
+        autoReady: String(row.status || "") === "auto_ready",
       })).filter((row) => row.id && row.title);
 
       opportunities = selectDiversePropertyEditorialOpportunities(normalized, 8).map(({ evidence: _evidence, ...row }) => row);
@@ -162,6 +164,18 @@ export async function GET(
     if (!learningError && Array.isArray(learningRows)) {
       opportunityLearning = aggregatePropertyContentLearning(learningRows);
     }
+  }
+
+  const recommendedOpportunityType =
+    typeof (opportunityLearning as any).recommendedOpportunityType === "string"
+      ? String((opportunityLearning as any).recommendedOpportunityType)
+      : "";
+  if (recommendedOpportunityType && opportunities.length > 1) {
+    opportunities.sort((a: any, b: any) =>
+      Number(String(b.opportunityType) === recommendedOpportunityType)
+      - Number(String(a.opportunityType) === recommendedOpportunityType)
+      || Number(b.score || 0) - Number(a.score || 0),
+    );
   }
 
   return NextResponse.json({
@@ -204,14 +218,14 @@ export async function POST(
 
     const { data: opportunity, error: opportunityError } = await access.value.supabase
       .from("property_content_opportunities")
-      .select("id,brand_id,status,opportunity_type,title,summary,draft_markdown,image_url,primary_keyword,supporting_keywords,audience,property_refs,draft_id")
+      .select("id,brand_id,status,opportunity_type,title,summary,draft_markdown,image_url,primary_keyword,supporting_keywords,audience,property_refs,draft_id,expires_at")
       .eq("id", opportunityId)
       .eq("brand_id", params.brandKey)
       .maybeSingle();
     if (opportunityError || !opportunity) return fail(404, "OPPORTUNITY_NOT_FOUND");
 
     if (action === "opportunity_dismiss") {
-      if (String(opportunity.status) !== "suggested") return fail(409, "OPPORTUNITY_NOT_ACTIVE");
+      if (!["suggested", "auto_ready"].includes(String(opportunity.status))) return fail(409, "OPPORTUNITY_NOT_ACTIVE");
       const { error } = await access.value.supabase
         .from("property_content_opportunities")
         .update({
@@ -221,7 +235,7 @@ export async function POST(
         })
         .eq("id", opportunityId)
         .eq("brand_id", params.brandKey)
-        .eq("status", "suggested");
+        .in("status", ["suggested", "auto_ready"]);
       if (error) return fail(503, "OPPORTUNITY_UPDATE_FAILED");
       return NextResponse.json({ ok: true, dismissed: true }, { headers: noStore });
     }
@@ -229,7 +243,8 @@ export async function POST(
     if (String(opportunity.status) === "drafted" && opportunity.draft_id) {
       return fail(409, "OPPORTUNITY_ALREADY_USED");
     }
-    if (String(opportunity.status) !== "suggested") return fail(409, "OPPORTUNITY_NOT_ACTIVE");
+    if (!["suggested", "auto_ready"].includes(String(opportunity.status))) return fail(409, "OPPORTUNITY_NOT_ACTIVE");
+    if (opportunity.expires_at && Date.parse(String(opportunity.expires_at)) <= Date.now()) return fail(409, "OPPORTUNITY_EXPIRED");
 
     const cms = await loadCmsConfig(access.value.supabase, params.brandKey);
     if (cms.error || !cms.config) return fail(503, "CONTENT_STUDIO_UNAVAILABLE");
@@ -264,6 +279,7 @@ export async function POST(
         "nexus-editorial-signal",
         `nexus-opportunity:${opportunityId}`,
         `nexus-angle:${String(opportunity.opportunity_type || "unknown").slice(0, 60)}`,
+        ...(String(opportunity.status) === "auto_ready" ? ["nexus-auto-ready"] : []),
         ...refs.map(ref => `property:${ref}`),
       ].slice(0, 30),
       p_primary_keyword: text(opportunity.primary_keyword, 160),
@@ -284,7 +300,7 @@ export async function POST(
       })
       .eq("id", opportunityId)
       .eq("brand_id", params.brandKey)
-      .eq("status", "suggested");
+      .in("status", ["suggested", "auto_ready"]);
     if (updateError) return fail(503, "OPPORTUNITY_UPDATE_FAILED");
 
     return NextResponse.json({ ok: true, draft, opportunityId }, { status: 201, headers: noStore });

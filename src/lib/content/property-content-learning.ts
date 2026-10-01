@@ -126,15 +126,28 @@ export function aggregatePropertyContentLearning(rows: PropertyContentLearningSn
   }
 
   const types = [...byType.values()]
-    .map(item => ({
-      ...item,
-      readyForReview:
+    .map(item => {
+      const readyForReview =
         item.observedArticles >= 3 &&
-        (item.leadTouchpoints >= 2 || item.searchArrivals >= 15 || item.publicationViews >= 150),
-      note: propertyContentLearningNote(item.evidenceLevel),
-    }))
+        (item.leadTouchpoints >= 2 || item.searchArrivals >= 15 || item.publicationViews >= 150);
+      const advisoryScore = readyForReview
+        ? Math.round((
+            item.leadTouchpoints * 30
+            + item.searchArrivals * 2
+            + item.touchpoints
+            + item.publicationViews / 25
+          ) / Math.max(1, item.observedArticles) * 10) / 10
+        : 0;
+      return {
+        ...item,
+        readyForReview,
+        advisoryScore,
+        note: propertyContentLearningNote(item.evidenceLevel),
+      };
+    })
     .sort((a, b) =>
       Number(b.readyForReview) - Number(a.readyForReview)
+      || b.advisoryScore - a.advisoryScore
       || EVIDENCE_RANK[b.evidenceLevel] - EVIDENCE_RANK[a.evidenceLevel]
       || b.leadTouchpoints - a.leadTouchpoints
       || b.searchArrivals - a.searchArrivals
@@ -151,11 +164,18 @@ export function aggregatePropertyContentLearning(rows: PropertyContentLearningSn
     { searchArrivals: 0, touchpoints: 0, leadTouchpoints: 0, publicationViews: 0 },
   );
 
+  const recommendedOpportunityType =
+    types.find(item => item.readyForReview && item.evidenceLevel === "measured")?.opportunityType || null;
+
   return {
-    mode: "observe_only" as const,
+    mode: recommendedOpportunityType ? "advisory_priority" as const : "observe_only" as const,
     updatedAt,
     observedArticles: latestByOpportunity.size,
     readyForReview: types.some(item => item.readyForReview),
+    recommendedOpportunityType,
+    recommendationReason: recommendedOpportunityType
+      ? "Måledata er sterke nok til å løfte denne signaltypen i Content Studio-listen. Lagret score og publiseringsregler endres ikke."
+      : null,
     totals,
     types,
   };

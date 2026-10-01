@@ -14,7 +14,7 @@ export type EditorialPropertyFact = {
 
 export type PropertyEditorialOpportunity = {
   signature: string;
-  opportunityType: "same_price_area_gap" | "cross_area_same_budget" | "property_type_tradeoff";
+  opportunityType: "same_price_area_gap" | "cross_area_same_budget" | "property_type_tradeoff" | "budget_band_cluster";
   score: number;
   title: string;
   summary: string;
@@ -324,6 +324,63 @@ export function selectDiversePropertyEditorialOpportunities<T extends PropertyEd
   return selected.slice(0, wanted);
 }
 
+function budgetBandClusterOpportunity(items: EditorialPropertyFact[]): PropertyEditorialOpportunity | null {
+  if (items.length !== 3 || items.some((item) => !valid(item))) return null;
+  const sorted = [...items].sort((a, b) => a.price - b.price);
+  const meanPrice = sorted.reduce((sum, item) => sum + item.price, 0) / sorted.length;
+  const spread = meanPrice ? (sorted[2].price - sorted[0].price) / meanPrice : 1;
+  if (spread > 0.04) return null;
+
+  const towns = Array.from(new Set(sorted.map((item) => townOf(item))));
+  const types = Array.from(new Set(sorted.map((item) => clean(item.propertyType)).filter(Boolean)));
+  const areas = sorted.map((item) => item.areaM2 || 0).filter(Boolean);
+  const areaSpread = areas.length >= 2 ? (Math.max(...areas) - Math.min(...areas)) / Math.max(...areas) : 0;
+  const meaningfulDifference = towns.length >= 2 || types.length >= 2 || areaSpread >= 0.22;
+  if (!meaningfulDifference) return null;
+
+  const refs = sortedRefs(sorted);
+  const roundedBand = Math.max(50_000, Math.round(meanPrice / 25_000) * 25_000);
+  const budgetLabel = money(roundedBand);
+  const score = Math.min(98, Math.round(
+    74 + (0.04 - spread) * 120 + Math.min(areaSpread, 0.7) * 15 + Math.min(3, towns.length) * 2 + Math.min(3, types.length) * 2
+  ));
+
+  const townList = towns.slice(0, 3).join(", ").replace(/, ([^,]*)$/, " eller $1");
+  const title = towns.length >= 3
+    ? `Rundt ${budgetLabel}: ${townList} – hva får du?`
+    : towns.length === 1
+      ? `${towns[0]} rundt ${budgetLabel}: tre boliger – tre forskjellige regnestykker`
+      : `Rundt ${budgetLabel}: ${towns.join(" eller ")} – tre ulike kjøp`;
+
+  const differenceParts = [
+    towns.length >= 2 ? "område" : "",
+    types.length >= 2 ? "boligtype" : "",
+    "areal og øvrige kvaliteter",
+  ].filter(Boolean).join(", ");
+  const summary = `${refs.join(", ")} ligger i et prisbånd på bare ${pct(spread)} %, men skiller seg i ${differenceParts}.`;
+  const angle = `Dette er et sterkt budsjett-case fordi tre konkrete boliger ligger tett i pris, samtidig som kjøperen får reelle alternativer å velge mellom. Prisintervallet er ${money(sorted[0].price)}–${money(sorted[2].price)}.`;
+  const primaryTown = towns[0] || "Costa Blanca Nord";
+
+  return {
+    signature: `budget_band_cluster:${refs.join(":")}`,
+    opportunityType: "budget_band_cluster",
+    score,
+    title,
+    summary,
+    editorialAngle: angle,
+    primaryKeyword: `bolig ${budgetLabel} ${primaryTown}`,
+    supportingKeywords: ["Costa Blanca Nord", "boligbudsjett Spania", "hva får du for pengene", ...towns, ...refs],
+    audience: "Norske boligkjøpere som har et tydelig budsjett og vil forstå hvilke kompromisser det faktisk kjøper.",
+    propertyRefs: refs,
+    propertyIds: sorted.map((item) => item.id).sort(),
+    imageUrl: sorted.find((item) => item.imageUrl)?.imageUrl || null,
+    evidence: { price_band_pct: spread, area_spread_pct: areaSpread, towns, property_types: types, properties: sorted },
+    draftMarkdown: sharedDraft({
+      title, summary, angle, items: sorted,
+      conclusion: "Når tre boliger ligger så tett i pris, bør du bruke dem til å avklare hva budsjettet skal kjøpe: mer plass, bedre beliggenhet, enklere drift eller en annen boligtype. Deretter snevres visningslisten inn.",
+    }),
+  };
+}
 export function detectPropertyEditorialOpportunities(
   input: EditorialPropertyFact[],
   limit = 24,
@@ -353,6 +410,12 @@ export function detectPropertyEditorialOpportunities(
     }
   }
 
+  const byPrice = [...properties].sort((a, b) => a.price - b.price || a.ref.localeCompare(b.ref));
+  for (let i = 0; i + 2 < byPrice.length; i += 1) {
+    const triple = [byPrice[i], byPrice[i + 1], byPrice[i + 2]];
+    const cluster = budgetBandClusterOpportunity(triple);
+    if (cluster) candidates.push(cluster);
+  }
   const bestBySignature = new Map<string, PropertyEditorialOpportunity>();
   for (const candidate of candidates) {
     const current = bestBySignature.get(candidate.signature);
