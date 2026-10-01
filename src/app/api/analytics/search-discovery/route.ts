@@ -37,6 +37,16 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await query;
 
+  let conversionQuery = supabase
+    .from("website_conversion_events")
+    .select("brand_id,event_type,path,target,landing_path,discovery_source,occurred_at")
+    .gte("occurred_at", since)
+    .order("occurred_at", { ascending: false })
+    .limit(10000);
+  if (brandId !== "all") conversionQuery = conversionQuery.eq("brand_id", brandId);
+  const conversionResult = await conversionQuery;
+  const conversionRows = conversionResult.error ? [] : (conversionResult.data || []);
+
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -100,6 +110,36 @@ export async function GET(request: NextRequest) {
     .map(([date, counts]) => ({ date, ...counts }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  const conversionTypeCounts = new Map<string, number>();
+  const conversionTargetCounts = new Map<string, number>();
+  const conversionSourceCounts = new Map<string, number>();
+  const conversionLandingCounts = new Map<string, number>();
+  let attributedConversions = 0;
+
+  for (const row of conversionRows) {
+    const eventType = String(row.event_type || "unknown");
+    const target = String(row.target || "unknown");
+    const source = row.discovery_source ? String(row.discovery_source) : "";
+    const landingPath = row.landing_path ? String(row.landing_path) : "";
+    conversionTypeCounts.set(eventType, (conversionTypeCounts.get(eventType) || 0) + 1);
+    conversionTargetCounts.set(target, (conversionTargetCounts.get(target) || 0) + 1);
+    if (source) {
+      attributedConversions += 1;
+      conversionSourceCounts.set(source, (conversionSourceCounts.get(source) || 0) + 1);
+    }
+    if (landingPath) conversionLandingCounts.set(landingPath, (conversionLandingCounts.get(landingPath) || 0) + 1);
+  }
+
+  const conversions = {
+    total: conversionRows.length,
+    attributed: attributedConversions,
+    attributedShare: conversionRows.length ? Math.round((attributedConversions / conversionRows.length) * 1000) / 10 : 0,
+    byType: Array.from(conversionTypeCounts.entries()).map(([eventType, count]) => ({ eventType, count })).sort((a,b) => b.count - a.count),
+    byTarget: Array.from(conversionTargetCounts.entries()).map(([target, count]) => ({ target, count })).sort((a,b) => b.count - a.count),
+    bySource: Array.from(conversionSourceCounts.entries()).map(([source, count]) => ({ source, count })).sort((a,b) => b.count - a.count),
+    topLandingPages: Array.from(conversionLandingCounts.entries()).map(([path, count]) => ({ path, count })).sort((a,b) => b.count - a.count).slice(0, 20),
+  };
+
   return NextResponse.json({
     brandId,
     days,
@@ -112,5 +152,6 @@ export async function GET(request: NextRequest) {
     topPages,
     daily,
     latest: rows.slice(0, 20),
+    conversions,
   });
 }
