@@ -25,6 +25,7 @@ const files = [
   "20260929213000_workspace_youtube_studio.sql",
   "20260930143000_workspace_nexus_insights.sql",
   "20260930220000_workspace_newsletter_marketing.sql",
+  "20260930223500_workspace_newsletter_segments_tracking.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&

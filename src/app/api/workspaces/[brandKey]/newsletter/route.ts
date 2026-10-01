@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { getWorkspaceEmailRuntime } from "@/lib/workspaces/email-runtime";
+import { sendWorkspaceNewsletterCampaign } from "@/lib/workspaces/newsletter-send";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -34,10 +35,10 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
   const supabase = access.value.supabase;
   const [{ data: subscribers }, { data: campaigns }, sender] = await Promise.all([
     supabase.schema("core").from("workspace_newsletter_subscribers")
-      .select("id,email,name,status,consent_source,consent_note,consent_at,created_at")
+      .select("id,email,name,status,segments,consent_source,consent_note,consent_at,created_at")
       .eq("brand_id", access.value.brandId).order("created_at", { ascending: false }).limit(200),
     supabase.schema("core").from("workspace_newsletter_campaigns")
-      .select("id,title,subject,preheader,body_text,status,scheduled_at,sent_at,recipient_count,sent_count,failed_count,created_at")
+      .select("id,title,subject,preheader,body_text,status,scheduled_at,segment_filter,sent_at,recipient_count,sent_count,failed_count,opened_count,clicked_count,created_at")
       .eq("brand_id", access.value.brandId).order("created_at", { ascending: false }).limit(50),
     senderConfig(supabase, params.brandKey),
   ]);
@@ -64,6 +65,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
     const consentSource = clean(body.consentSource, 120);
     const consentNote = clean(body.consentNote, 1000);
     const consentConfirmed = body.consentConfirmed === true;
+    const segments = Array.isArray(body.segments) ? body.segments.filter((item): item is string => typeof item === "string").map(item => item.trim().toLowerCase()).filter(Boolean).slice(0, 20) : [];
     if (!emailRe.test(email) || !consentSource || !consentConfirmed) {
       return fail(400, "CONSENT_REQUIRED", "Gyldig e-post, samtykkekilde og eksplisitt samtykkebekreftelse kreves.");
     }
@@ -78,11 +80,12 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
       consent_source: consentSource,
       consent_note: consentNote || null,
       consent_at: new Date().toISOString(),
+      segments,
       unsubscribed_at: null,
       created_by_user_id: access.value.verifiedUserId,
       created_by_email: access.value.verifiedEmail,
       updated_at: new Date().toISOString(),
-    }, { onConflict: "brand_id,email" }).select("id,email,name,status,consent_source,consent_at").single();
+    }, { onConflict: "brand_id,email" }).select("id,email,name,status,segments,consent_source,consent_at").single();
     if (error || !data) return fail(503, "SUBSCRIBER_SAVE_FAILED");
     return NextResponse.json({ ok: true, subscriber: data }, { status: 201, headers: noStore });
   }
@@ -95,10 +98,11 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
     const subject = clean(body.subject, 180);
     const preheader = clean(body.preheader, 180);
     const bodyText = clean(body.bodyText, 20000);
+    const segmentFilter = Array.isArray(body.segmentFilter) ? body.segmentFilter.filter((item): item is string => typeof item === "string").map(item => item.trim().toLowerCase()).filter(Boolean).slice(0, 20) : [];
     if (!title || !subject || !bodyText) return fail(400, "INVALID_CAMPAIGN");
     const row = {
       brand_id: access.value.brandId,
-      title, subject, preheader, body_text: bodyText,
+      title, subject, preheader, body_text: bodyText, segment_filter: segmentFilter,
       status: "draft",
       updated_at: new Date().toISOString(),
       created_by_user_id: access.value.verifiedUserId,
@@ -107,7 +111,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
     const query = campaignId
       ? access.value.supabase.schema("core").from("workspace_newsletter_campaigns").update(row).eq("id", campaignId).eq("brand_id", access.value.brandId)
       : access.value.supabase.schema("core").from("workspace_newsletter_campaigns").insert(row);
-    const { data, error } = await query.select("id,title,subject,preheader,body_text,status,created_at,updated_at").single();
+    const { data, error } = await query.select("id,title,subject,preheader,body_text,status,segment_filter,created_at,updated_at").single();
     if (error || !data) return fail(503, "CAMPAIGN_SAVE_FAILED");
     return NextResponse.json({ ok: true, campaign: data }, { headers: noStore });
   }
@@ -131,70 +135,37 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
     return NextResponse.json({ ok: true, sentTo: access.value.verifiedEmail }, { headers: noStore });
   }
 
+  if (action === "schedule_campaign") {
+    const access = await requireBrandWorkspace(request, params.brandKey, "email.send");
+    if (!access.value) return access.response;
+    const campaignId = clean(body.campaignId, 80);
+    const scheduledAt = clean(body.scheduledAt, 80);
+    const when = new Date(scheduledAt);
+    if (!campaignId || !scheduledAt || Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      return fail(400, "INVALID_SCHEDULE", "Velg et tidspunkt i fremtiden.");
+    }
+    const { data, error } = await access.value.supabase.schema("core").from("workspace_newsletter_campaigns")
+      .update({ status: "scheduled", scheduled_at: when.toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", campaignId).eq("brand_id", access.value.brandId)
+      .select("id,status,scheduled_at").single();
+    if (error || !data) return fail(503, "SCHEDULE_SAVE_FAILED");
+    return NextResponse.json({ ok: true, campaign: data }, { headers: noStore });
+  }
+
   if (action === "send_campaign") {
     const access = await requireBrandWorkspace(request, params.brandKey, "email.send");
     if (!access.value) return access.response;
     const campaignId = clean(body.campaignId, 80);
     if (!campaignId) return fail(400, "INVALID_CAMPAIGN");
-
-    const [{ data: campaign }, { data: subscribers }, config] = await Promise.all([
-      access.value.supabase.schema("core").from("workspace_newsletter_campaigns")
-        .select("*").eq("id", campaignId).eq("brand_id", access.value.brandId).maybeSingle(),
-      access.value.supabase.schema("core").from("workspace_newsletter_subscribers")
-        .select("id,email,name,unsubscribe_token").eq("brand_id", access.value.brandId).eq("status", "active")
-        .order("created_at", { ascending: true }).limit(200),
-      senderConfig(access.value.supabase, params.brandKey),
-    ]);
-    if (!campaign || !config) return fail(409, "CAMPAIGN_OR_SENDER_NOT_READY");
-    if (!subscribers?.length) return fail(409, "NO_ACTIVE_SUBSCRIBERS");
-
-    const runtime = getWorkspaceEmailRuntime();
-    const suppression = await runtime.checkSuppression(access.value.supabase, subscribers.map((row: any) => row.email));
-    if (suppression.error) return fail(503, "SUPPRESSION_CHECK_FAILED");
-    const blocked = new Set((suppression.blockedEmails || []).map((email: string) => email.toLowerCase()));
-    const smtp = await runtime.buildSmtp(config, config.display_name || undefined);
-    const origin = new URL(request.url).origin;
-    let sent = 0;
-    let failed = 0;
-
-    await access.value.supabase.schema("core").from("workspace_newsletter_campaigns")
-      .update({ status: "sending", recipient_count: subscribers.length, sent_count: 0, failed_count: 0, updated_at: new Date().toISOString() })
-      .eq("id", campaignId).eq("brand_id", access.value.brandId);
-
-    for (const subscriber of subscribers) {
-      const email = String(subscriber.email || "").toLowerCase();
-      if (!emailRe.test(email) || blocked.has(email)) {
-        failed += 1;
-        await access.value.supabase.schema("core").from("workspace_newsletter_deliveries").upsert({
-          campaign_id: campaignId, subscriber_id: subscriber.id, email,
-          status: "skipped", error: "suppressed_or_invalid",
-        }, { onConflict: "campaign_id,subscriber_id" });
-        continue;
-      }
-      const unsubscribe = `${origin}/api/public/newsletter-unsubscribe?token=${subscriber.unsubscribe_token}`;
-      const result = await runtime.send(smtp, {
-        to: [email],
-        subject: campaign.subject,
-        bodyText: `${campaign.body_text}\n\n---\nAvmeld nyhetsbrev: ${unsubscribe}`,
-      });
-      if (result.success) sent += 1; else failed += 1;
-      await access.value.supabase.schema("core").from("workspace_newsletter_deliveries").upsert({
-        campaign_id: campaignId, subscriber_id: subscriber.id, email,
-        status: result.success ? "sent" : "failed",
-        message_id: result.messageId || null,
-        error: result.success ? null : (result.error || "send_failed"),
-        sent_at: result.success ? new Date().toISOString() : null,
-      }, { onConflict: "campaign_id,subscriber_id" });
-    }
-
-    await access.value.supabase.schema("core").from("workspace_newsletter_campaigns")
-      .update({
-        status: failed > 0 && sent === 0 ? "failed" : "sent",
-        sent_at: new Date().toISOString(), sent_count: sent, failed_count: failed,
-        updated_at: new Date().toISOString(),
-      }).eq("id", campaignId).eq("brand_id", access.value.brandId);
-
-    return NextResponse.json({ ok: true, recipients: subscribers.length, sent, failed }, { headers: noStore });
+    const result = await sendWorkspaceNewsletterCampaign({
+      supabase: access.value.supabase,
+      brandId: access.value.brandId,
+      brandKey: params.brandKey,
+      campaignId,
+      origin: new URL(request.url).origin,
+    });
+    if (!result.ok) return fail(409, result.code);
+    return NextResponse.json(result, { headers: noStore });
   }
 
   return fail(400, "INVALID_ACTION");
