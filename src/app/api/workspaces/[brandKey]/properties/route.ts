@@ -102,8 +102,8 @@ export async function GET(
   // Owner fallback uses the same safe public projection. Owners may create
   // content from this owner context; staff receives exact per-brand marketing
   // eligibility from the membership-checked RPC above.
-  const properties = (data || []).map((row) => safeCatalogueRow({
-    ...row,
+  const properties = (data || []).map((row: unknown) => safeCatalogueRow({
+    ...(row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {}),
     marketable_by_brands: [],
     can_market_on_workspace_brand: true,
   })).filter(Boolean);
