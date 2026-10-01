@@ -32,6 +32,10 @@ test("presentation prep is scheduled after shortlist preparation", () => {
   const shortlist = vercel.indexOf('"/api/cron/nexus-shortlist-prep"');
   const presentation = vercel.indexOf('"/api/cron/nexus-presentation-prep"');
   assert.ok(shortlist >= 0 && presentation > shortlist);
-  assert.match(vercel, /nexus-shortlist-prep[^\n]+5-59\/5/);
-  assert.match(vercel, /nexus-presentation-prep[^\n]+6-59\/5/);
+
+  const config = JSON.parse(vercel) as { crons?: Array<{ path?: string; schedule?: string }> };
+  const shortlistCron = config.crons?.find((cron) => cron.path === "/api/cron/nexus-shortlist-prep");
+  const presentationCron = config.crons?.find((cron) => cron.path === "/api/cron/nexus-presentation-prep");
+  assert.equal(shortlistCron?.schedule, "5-59/5 * * * *");
+  assert.equal(presentationCron?.schedule, "6-59/5 * * * *");
 });
