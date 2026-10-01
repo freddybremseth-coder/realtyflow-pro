@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BrainCircuit, RefreshCw, Sparkles } from "lucide-react";
+import { workspaceResponsibilities } from "@/lib/workspaces/responsibility-summary";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import {
   buildWorkspaceTodayActions,
@@ -48,13 +49,25 @@ export function WorkspaceTodayPriorities({
 
   useEffect(() => { void loadSignals(); }, [brandKey, permissions]);
 
+  const humanAttention = useMemo(
+    () => attention.filter(signal => signal.level === "action"),
+    [attention],
+  );
+  const systemSignals = useMemo(
+    () => attention.filter(signal => signal.level !== "action").slice(0, 3),
+    [attention],
+  );
+  const responsibilities = useMemo(
+    () => workspaceResponsibilities(brandKey, permissions),
+    [brandKey, permissions],
+  );
   const actions = useMemo(() => buildWorkspaceTodayActions({
     brandKey,
     permissions,
     contactCount,
-    attention,
+    attention: humanAttention,
     limit: 4,
-  }), [brandKey, permissions, contactCount, attention]);
+  }), [brandKey, permissions, contactCount, humanAttention]);
 
   return <section className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -70,6 +83,16 @@ export function WorkspaceTodayPriorities({
         <RefreshCw size={14}/>{loadingSignals ? "Oppdaterer…" : "Oppdater signaler"}
       </button>}
     </div>
+
+    {responsibilities.length > 0 && <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Mitt ansvar i denne merkevaren</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {responsibilities.map(item => <span key={item.id}
+          className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300">
+          {item.label}
+        </span>)}
+      </div>
+    </div>}
 
     <div className="mt-5 space-y-3">
       {actions.map((action, index) => <button
@@ -99,5 +122,23 @@ export function WorkspaceTodayPriorities({
         </div>
       </button>)}
     </div>
+
+    {systemSignals.length > 0 && <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/35 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">RealtyFlow følger med</p>
+          <h3 className="mt-1 text-sm font-semibold text-slate-200">Ingen handling fra deg nå</h3>
+        </div>
+        <span className="rounded-full border border-slate-700 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          systemstatus
+        </span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {systemSignals.map((signal, index) => <div key={`${signal.level}-${index}`} className="rounded-lg border border-slate-800 bg-slate-950/45 p-3">
+          <p className="text-sm font-medium text-slate-300">{signal.title}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{signal.detail}</p>
+        </div>)}
+      </div>
+    </div>}
   </section>;
 }
