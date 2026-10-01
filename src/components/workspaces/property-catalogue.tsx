@@ -16,6 +16,9 @@ export type WorkspacePropertyCard = {
   plot_size: number | null;
   property_type: string | null;
   primary_image: string | null;
+  source: string | null;
+  marketable_by_brands: string[];
+  can_market_on_workspace_brand: boolean;
 };
 
 const price = (value: number | null) => value == null
@@ -116,8 +119,8 @@ export function WorkspacePropertyCatalogue({
 
   return (
     <section className="space-y-5">
-      <div><h2 className="text-xl font-semibold">Eiendommer · offentlig katalog</h2>
-        <p className="mt-1 text-sm text-slate-400">Søk i publiserte boliger. Fra en bolig kan du lage Content Hub-utkast eller starte en eiendomsspesifikk Reel når rollen din tillater det.</p></div>
+      <div><h2 className="text-xl font-semibold">Eiendommer · felles katalog</h2>
+        <p className="mt-1 text-sm text-slate-400">Søk i hele den ordinære offentlige boligkatalogen på tvers av områder. Du kan bruke alle treff til kundematching; innhold og Reels kan bare lages når valgt merkevare faktisk kan markedsføre boligen.</p></div>
       {notice && <p role="status" className="rounded-xl border border-emerald-800 bg-emerald-950/25 p-4 text-sm text-emerald-200">{notice}</p>}
       <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); setPage(1); setQuery(term.trim()); }}>
         <label className="relative flex-1"><Search className="absolute left-3 top-3 text-slate-500" size={18} />
@@ -129,7 +132,9 @@ export function WorkspacePropertyCatalogue({
       {busy && <p className="text-sm text-slate-400">Laster boliger…</p>}
       {error && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-950/30 p-4 text-amber-100">{error}</p>}
       {!busy && !error && <div className="grid gap-3 md:grid-cols-2">
-        {items.map(item => <article key={item.id} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
+        {items.map(item => {
+          const canMarketHere = item.can_market_on_workspace_brand;
+          return <article key={item.id} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
           {item.primary_image && <img src={item.primary_image} alt="" className="aspect-video w-full object-cover" />}
           <div className="p-4">
             <div className="flex items-start gap-3"><Building2 size={22} className="mt-1 shrink-0 text-cyan-400" />
@@ -137,7 +142,18 @@ export function WorkspacePropertyCatalogue({
                 <p className="text-xs text-slate-400">{item.town || item.location || "Ukjent område"} · {item.ref || "Uten referanse"}</p></div></div>
             <p className="mt-3 text-lg font-semibold text-cyan-300">{price(item.price)}</p>
             <p className="mt-1 text-sm text-slate-300">{item.bedrooms ?? "–"} soverom · {item.bathrooms ?? "–"} bad · {item.area_m2 ?? "–"} m² bolig{item.plot_size != null ? ` · ${item.plot_size} m² tomt` : ""}</p>
-            {(canCreateMarketing || (canCreateReel && onCreateReel)) && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-400">
+              {item.source && <span className="rounded-full border border-slate-700 px-2 py-1">Kilde: {item.source}</span>}
+              <span className={canMarketHere
+                ? "rounded-full border border-emerald-800 bg-emerald-950/30 px-2 py-1 text-emerald-300"
+                : "rounded-full border border-amber-800 bg-amber-950/30 px-2 py-1 text-amber-300"}>
+                {canMarketHere ? "Kan markedsføres i denne merkevaren" : "Kun matching i denne merkevaren"}
+              </span>
+              {item.marketable_by_brands.length > 0 && <span className="rounded-full border border-slate-700 px-2 py-1">
+                Markedsføres av: {item.marketable_by_brands.join(", ")}
+              </span>}
+            </div>
+            {canMarketHere && (canCreateMarketing || (canCreateReel && onCreateReel)) && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
               {canCreateMarketing && <button type="button" disabled={Boolean(draftBusy)}
                 onClick={() => void createFacebookDraft(item)}
                 className="inline-flex items-center gap-2 rounded-lg border border-blue-900 px-3 py-2 text-xs text-blue-200 disabled:opacity-40">
@@ -149,8 +165,8 @@ export function WorkspacePropertyCatalogue({
               </button>}
             </div>}
           </div>
-        </article>)}
-        {items.length === 0 && <p className="text-sm text-slate-400">Ingen publiserte boliger ble funnet for søket.</p>}
+        </article>})}
+        {items.length === 0 && <p className="text-sm text-slate-400">Ingen tilgjengelige boliger ble funnet for søket.</p>}
       </div>}
       {!error && !busy && <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}

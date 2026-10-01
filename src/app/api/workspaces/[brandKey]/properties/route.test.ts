@@ -20,7 +20,8 @@ function fakeDatabase() {
         location: "Alicante", price: 365000, bedrooms: 3, bathrooms: 2,
         area_m2: 180, plot_size: 10000, property_type: "villa",
         primary_image: "https://example.test/property.jpg",
-        source: "PRIVATE_FEED", status: "internal-review", brand_id: "zeneco",
+        source: "redsp", source_description: "PRIVATE_FEED", status: "TILGJENGELIG",
+        brand_id: "zeneco", import_source_id: "private-import-id",
         commission_amount: 99999, owner_email: "private@example.test",
       }], error: null }).then(resolve);
     },
@@ -59,12 +60,15 @@ test("owner catalogue excludes all private columns and requires explicit public 
   const result = await GET(req(cookie) as any, { params: { brandKey: "pinosoecolife" } });
   assert.equal(result.status, 200);
   const body = await result.json();
-  assert.equal(body.scope, "published_public_catalogue_owner");
+  assert.equal(body.scope, "shared_public_catalogue_owner");
   assert.equal(body.properties[0].id, "published-1");
   assert.deepEqual(Object.keys(body.properties[0]).sort(), [
     "area_m2", "bathrooms", "bedrooms", "id", "location", "plot_size",
     "price", "primary_image", "property_type", "ref", "title", "town",
+    "source", "marketable_by_brands", "can_market_on_workspace_brand",
   ].sort());
+  assert.equal(body.properties[0].source, "redsp");
+  assert.equal(body.properties[0].can_market_on_workspace_brand, true);
   assert.equal(JSON.stringify(body).includes("PRIVATE_FEED"), false);
   assert.equal(JSON.stringify(body).includes("private@example.test"), false);
   assert.equal(JSON.stringify(body).includes("99999"), false);
@@ -72,13 +76,14 @@ test("owner catalogue excludes all private columns and requires explicit public 
   assert.equal(projection.includes("*"), false);
   for (const privateColumn of [
     "commission", "feed_credentials", "owner_email", "notes", "internal_price",
-    "source", "status", "brand_id",
+    "source_description", "import_source_id", "pricing_source_note", "status", "brand_id",
   ]) {
     assert.equal(projection.includes(privateColumn), false);
   }
   assert.deepEqual(calls.filter(row => row.method === "eq"), [
     { method: "eq", args: ["show_on_website", true] },
     { method: "eq", args: ["website_visible", true] },
+    { method: "eq", args: ["status", "TILGJENGELIG"] },
   ]);
 });
 
@@ -119,7 +124,7 @@ test("search preserves Norwegian and Spanish letters while stripping PostgREST s
 });
 
 
-test("workspace member catalogue is exact-brand RPC scoped and never falls back to global properties", async () => {
+test("workspace member can search shared public catalogue while membership and marketing rights stay brand-scoped", async () => {
   const previous = {
     url: process.env.NEXT_PUBLIC_SUPABASE_URL,
     key: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -136,7 +141,9 @@ test("workspace member catalogue is exact-brand RPC scoped and never falls back 
       ref: "PIN-101", title: "Pinoso villa", town: "Pinoso", location: "Alicante",
       price: 365000, bedrooms: 3, bathrooms: 2, area_m2: 180, plot_size: 10000,
       property_type: "villa", primary_image: "https://example.test/pinoso.jpg",
-      source: "SHOULD_NOT_LEAK", commission_amount: 12345, brand_id: "pinosoecolife",
+      source: "redsp", marketable_by_brands: ["zeneco"],
+      can_market_on_workspace_brand: false,
+      source_description: "SHOULD_NOT_LEAK", commission_amount: 12345, brand_id: "pinosoecolife",
     }],
     hasMore: false,
   };
@@ -179,11 +186,14 @@ test("workspace member catalogue is exact-brand RPC scoped and never falls back 
       { params: { brandKey: "pinosoecolife" } });
     assert.equal(response.status, 200);
     const body = await response.json();
-    assert.equal(body.scope, "brand_scoped_published_catalogue");
+    assert.equal(body.scope, "shared_public_catalogue");
     assert.equal(body.brand, "pinosoecolife");
     assert.equal(body.hasMore, false);
     assert.deepEqual(body.properties.map((item: { id: string }) => item.id),
       ["11111111-1111-4111-8111-111111111111"]);
+    assert.equal(body.properties[0].source, "redsp");
+    assert.deepEqual(body.properties[0].marketable_by_brands, ["zeneco"]);
+    assert.equal(body.properties[0].can_market_on_workspace_brand, false);
     assert.equal(JSON.stringify(body).includes("SHOULD_NOT_LEAK"), false);
     assert.equal(JSON.stringify(body).includes("12345"), false);
     const rpcCall = calls.find(row => row.method === "rpc" &&
