@@ -30,6 +30,7 @@ test("automation registry does not contain stale cron metadata", () => {
 test("cron schedule label explains daily and weekly schedules", () => {
   assert.equal(cronScheduleLabel("0 7 * * *"), "Daglig 07:00 UTC");
   assert.equal(cronScheduleLabel("0 10 * * 6"), "Ukentlig lørdag 10:00 UTC");
+  assert.equal(cronScheduleLabel("*/5 * * * *"), "Hvert 5. minutt");
 });
 
 test("automation registry derives health from runs and logs", () => {
