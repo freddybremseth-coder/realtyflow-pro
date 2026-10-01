@@ -79,3 +79,30 @@ test("SEO and content preset stays out of CRM and communications", () => {
   assert.equal(choice.youtubePublish, false);
   assert.equal(choice.nexusRead, true);
 });
+
+
+test("partner preset is broad operational access without brand-incompatible capabilities", () => {
+  const zen = workspaceAccessPresetChoice("zeneco", "partner");
+  const pinoso = workspaceAccessPresetChoice("pinosoecolife", "partner");
+  assert.equal(zen.crmRead, true);
+  assert.equal(zen.crmWrite, true);
+  assert.equal(zen.tasksWrite, true);
+  assert.equal(zen.marketingPublish, true);
+  assert.equal(zen.reelsPublish, true);
+  assert.equal(zen.youtubePublish, true);
+  assert.equal(zen.corporatePlan, true);
+  assert.equal(zen.contentPublish, true);
+  assert.equal(zen.emailSend, true);
+  assert.equal(zen.nexusRead, true);
+
+  assert.equal(pinoso.crmRead, true);
+  assert.equal(pinoso.crmWrite, true);
+  assert.equal(pinoso.tasksRead, false);
+  assert.equal(pinoso.tasksWrite, false);
+  assert.equal(pinoso.reelsPublish, true);
+  assert.equal(pinoso.youtubeRead, false);
+  assert.equal(pinoso.youtubePublish, false);
+  assert.equal(pinoso.corporateRead, false);
+  assert.equal(pinoso.corporatePlan, false);
+  assert.equal(pinoso.emailSend, true);
+});
