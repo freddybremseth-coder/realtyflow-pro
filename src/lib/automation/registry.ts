@@ -111,6 +111,7 @@ const REGISTRY_ROWS: AutomationRegistryRow[] = [
   ["/api/cron/nexus-criteria-confirmation", "Criteria confirmation", "revenue", "Nexus Buyer Intelligence", "live", "Bekreftede kjøpskriterier", "Sender og behandler bekreftelse av tolket Buyer Profile før matching går videre.", "Bekreftede kriterier, korrigeringsløp eller work item for menneskelig tolkning.", "scheduler-safe", ["criteria_confirmation"]],
   ["/api/cron/email-auto-draft", "Email auto draft", "revenue", "Communications", "draft-first", "Svarutkast klare til review", "Lager kontekstbaserte svarutkast for innkommende e-post uten å sende dem automatisk.", "Nye eller oppdaterte e-postutkast.", "scheduler-safe"],
   ["/api/cron/email-crm-sync", "Email CRM sync", "revenue", "Communications", "live", "E-post koblet til riktig CRM-kontekst", "Kobler e-posttråder og meldinger mot kontakter, leads og salgsobjekter.", "Oppdaterte CRM-relasjoner og synkstatus.", "scheduler-safe"],
+  ["/api/cron/workspace-newsletter-send", "Workspace newsletter sender", "growth", "Content Hub", "live", "Planlagte nyhetsbrev sendt til samtykkede segmenter", "Sender planlagte brand-avgrensede nyhetsbrev etter ny suppression-kontroll og mottakersegmentering.", "Sendestatus, leveringsresultat og målbare åpning-/klikksignaler for Nexus-læring.", "cron-api", ["workspace_newsletter_send","newsletter_send"]],
   ["/api/cron/nexus-buyer-profile-sync", "Buyer Profile sync", "revenue", "Nexus Buyer Intelligence", "live", "Buyer Profiles med ferske kriterier", "Synkroniserer kundesvar og CRM-evidens inn i Buyer Profile.", "Oppdaterte buyer profiles og kriteriesignaler.", "scheduler-safe", ["buyer_profile_sync"]],
   ["/api/cron/nexus-property-feedback", "Property feedback", "revenue", "Nexus Sales", "live", "Feedback knyttet til matching", "Fanger og strukturerer kundens reaksjoner på boligforslag og visninger.", "Oppdaterte feedback-signaler, kriterier og salgsoppfølging.", "scheduler-safe", ["property_feedback"]],
   ["/api/cron/nexus-viewing-coach", "Viewing coach", "revenue", "Nexus Sales", "draft-first", "Bedre visningsforberedelse", "Forbereder kunde- og boligspesifikk visningsveiledning før neste steg.", "Viewing-coach brief eller work item.", "scheduler-safe", ["viewing_coach"]],
@@ -219,6 +220,10 @@ export function getConfiguredVercelCrons(): VercelCronDefinition[] {
 
 export function cronScheduleLabel(schedule: string) {
   const [minute, hour, dayOfMonth, month, dayOfWeek] = schedule.split(/\s+/);
+  const interval = /^\*\/(\d+)$/.exec(minute || "");
+  if (interval && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Hvert ${interval[1]}. minutt`;
+  }
   if (dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
     return `Daglig ${hour.padStart(2, "0")}:${minute.padStart(2, "0")} UTC`;
   }
