@@ -75,3 +75,34 @@ test("Corporate event registration and attendance stay outside sales qualificati
   assert.match(page, /Påmelding og oppmøte er ikke salgskvalifisering/);
   assert.match(page, /holder registrering og oppmøte utenfor Corporate lead- og pipeline-tallene/);
 });
+
+
+test("Corporate Event Operations uses participant ledger and never writes attendance back to CRM", () => {
+  const eventsApi = fs.readFileSync("src/app/api/corporate-homes/events/route.ts", "utf8");
+  const signalApi = fs.readFileSync("src/app/api/corporate-homes/events/participants/signal/route.ts", "utf8");
+  const attendanceCompat = fs.readFileSync("src/app/api/corporate-homes/events/attendance/route.ts", "utf8");
+  const eventsPage = fs.readFileSync("src/app/(business)/corporate-homes/events/page.tsx", "utf8");
+  const corporatePage = fs.readFileSync("src/app/(business)/corporate-homes/page.tsx", "utf8");
+
+  assert.match(eventsApi, /corporate_event_participants/);
+  assert.doesNotMatch(eventsApi, /\.from\("contacts"\)/);
+  assert.match(eventsApi, /registrationIsLead: false/);
+  assert.match(eventsApi, /automaticPipelineChange: false/);
+
+  assert.match(signalApi, /applyCorporateEventSignal/);
+  assert.match(signalApi, /pipelineChanged: false/);
+  assert.match(signalApi, /messageSent: false/);
+
+  assert.match(attendanceCompat, /corporate_event_participants/);
+  assert.doesNotMatch(attendanceCompat, /\.from\("contacts"\)/);
+  assert.match(attendanceCompat, /LEFT_EARLY/);
+  assert.match(attendanceCompat, /status === "LEFT_EARLY" \? "ATTENDED"/);
+
+  assert.match(eventsPage, /\/api\/corporate-homes\/events\/participants\/signal/);
+  assert.match(eventsPage, /Påmelding og oppmøte endrer ikke salgsstatus/);
+  assert.match(eventsPage, /Møtt/);
+  assert.match(eventsPage, /No-show/);
+  assert.match(eventsPage, /Avlyst/);
+  assert.match(eventsPage, /Ingen salgsforespørsel/);
+  assert.match(corporatePage, /href="\/corporate-homes\/events"/);
+});

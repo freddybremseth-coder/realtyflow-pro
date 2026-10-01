@@ -1310,9 +1310,15 @@ export default function CorporateHomesGrowthPage() {
               Deltakere går videre via en sporbar bedriftsvurdering, slik at faktisk kvalifisering, møte, visning og tilbud kan måles i samme funnel.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs font-black">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-black">
             <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-emerald-900">{CORPORATE_EVENT_PLAYBOOK.status}</span>
             <span className="rounded-full bg-white px-3 py-1.5 text-slate-700">Ingen automatisk invitasjon</span>
+            <Link
+              href="/corporate-homes/events"
+              className="inline-flex items-center gap-1 rounded-full bg-cyan-900 px-3 py-1.5 text-white"
+            >
+              Event Operations <ArrowRight size={13} />
+            </Link>
           </div>
         </div>
 
