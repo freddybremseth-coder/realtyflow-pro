@@ -171,7 +171,7 @@ ${input.description ? `Beskrivelse: ${input.description}` : ''}
 ${input.brandTone ? `Tone: ${input.brandTone}` : ''}
 ${input.targetAudience ? `Målgruppe: ${input.targetAudience}` : ''}
 Plattformer: ${input.platforms.join(', ')}
-Språk: ${input.language || 'norsk'}
+Språk: norsk bokmål. FAST REGEL: Alt RealtyFlow-generert SoMe-innhold skal være på norsk bokmål, uansett input.language eller brand-innstilling.
 
 Returner KUN gyldig JSON:
 {
@@ -339,7 +339,7 @@ Returner KUN gyldig JSON:
             description: generatedDescription || input.description || '',
             tags: generatedTags || [],
             privacyStatus: input.privacyStatus || 'private',
-            language: input.language || 'no',
+            language: 'no',
             // Route to the brand's YouTube channel — without this, the
             // uploader falls through to _system/env and videos land in the
             // wrong channel (commonly Re-Master Freddy).

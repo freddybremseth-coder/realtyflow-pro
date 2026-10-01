@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { SpanishQuickButton } from "@/components/layout/spanish-quick-button";
 import type { AccessRole } from "@/lib/access-control";
 import {
   activeNavigationSection,
@@ -378,6 +379,7 @@ export function Sidebar() {
 
       {user?.role === "OWNER" && (
         <div className={cn("px-3 pb-3", collapsed && "lg:hidden")}>
+          <div className="mb-2"><SpanishQuickButton /></div>
           <button type="button" onClick={() => setSimpleMode(mode => !mode)}
             className="w-full rounded-lg border border-slate-700 px-3 py-2 text-left text-xs font-medium text-cyan-300 hover:bg-slate-800"
             aria-pressed={!simpleMode}>
