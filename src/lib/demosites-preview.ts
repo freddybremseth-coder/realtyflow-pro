@@ -9,6 +9,8 @@ export type DemoSitesPreviewMode = "internal" | "public";
 export type DemoSitesPreviewFallbackMode = "defaults" | "placeholders";
 
 export type DemoSitesPreviewProfile = {
+  site_language?: DemoSiteLanguage;
+  language?: DemoSiteLanguage;
   company_name?: string;
   website_url?: string;
   recommended_template_slug?: string;
