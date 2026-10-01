@@ -28,7 +28,7 @@ const files = [
   "20260930223500_workspace_newsletter_segments_tracking.sql",
   "20261001170019_workspace_staff_preflight_public_art_metadata_exception.sql",
   "20261001171200_workspace_shared_safe_property_catalogue.sql",
-  "20261001183500_workspace_personal_responsibilities.sql",
+  "20261001185327_workspace_personal_responsibilities.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
