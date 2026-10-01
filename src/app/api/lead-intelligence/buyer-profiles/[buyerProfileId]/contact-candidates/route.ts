@@ -50,6 +50,15 @@ export async function POST(
     const result = await withLeadIntelligenceQuery(parsed.data.brand, async (client) => {
       const repository = createLeadIntelligenceRepository(client, context);
       const profile = await repository.getBuyerProfileContactContext(parsed.data);
+      if (profile.linkedContact) {
+        return {
+          buyerProfileId: profile.buyerProfileId,
+          linkedContact: profile.linkedContact,
+          candidates: [],
+          requiresManualSelection: false,
+          alreadyLinked: true,
+        };
+      }
       if (!profile.contact) {
         throw new LeadIntelligenceError(
           "INVALID_REQUEST",

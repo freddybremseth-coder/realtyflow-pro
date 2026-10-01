@@ -84,7 +84,7 @@ export function LeadIntelligenceSavedProfileContactPanel({
   onSelectContactCandidate,
   onLinkContact,
 }: LeadIntelligenceSavedProfileContactPanelProps) {
-  const hasLinkedContact = Boolean(activeWorklistItem.linkedContact);
+  const hasLinkedContact = activeWorklistItem.contactLinked;
 
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
@@ -126,6 +126,15 @@ export function LeadIntelligenceSavedProfileContactPanel({
             Kontaktdata er hentet read-only og ble ikke overskrevet av Lead Intelligence.
           </p>
         </div>
+      ) : hasLinkedContact ? (
+        <div className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-sky-100">
+          <p className="font-semibold">Kontakt er allerede koblet i CRM.</p>
+          <p className="mt-1 text-xs text-sky-100/80">
+            Buyer profile har en kontakt-ID, men kontaktkortdetaljene er ikke tilgjengelige i dette
+            brandets Lead Intelligence-oppslag. Ikke opprett eller koble en ny kontakt. Avklar
+            brand-tilhørighet før kundekommunikasjon.
+          </p>
+        </div>
       ) : (
         <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
           <p className="font-semibold">Ingen kontakt koblet ennå.</p>
@@ -136,7 +145,7 @@ export function LeadIntelligenceSavedProfileContactPanel({
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      {!hasLinkedContact && <div className="mt-3 flex flex-wrap gap-2">
         <Button
           type="button"
           variant="outline"
@@ -165,9 +174,9 @@ export function LeadIntelligenceSavedProfileContactPanel({
           )}
           {createContactEnabled ? "Opprett ny kontakt" : "Kontaktoppretting låst"}
         </Button>
-      </div>
+      </div>}
 
-      {!createContactEnabled && (
+      {!hasLinkedContact && !createContactEnabled && (
         <p className="mt-2 text-xs text-slate-500">
           Oppretting av ny kontakt krever server-side feature flag og egen produksjonsgate.
         </p>
