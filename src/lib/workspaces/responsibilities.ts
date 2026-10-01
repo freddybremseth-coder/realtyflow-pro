@@ -44,3 +44,20 @@ export function normalizeResponsibilities(
   }
   return result;
 }
+
+
+export function suggestedResponsibilitiesForPreset(
+  brandKey: string,
+  presetId: "seo-content" | "sales-crm" | "marketing" | "partner" | "read-only" | "external-agency",
+  permissions: WorkspacePermission[],
+): WorkspaceResponsibilityId[] {
+  const requested: WorkspaceResponsibilityId[] =
+    presetId === "sales-crm" ? ["new-leads", "property-matching"] :
+    presetId === "seo-content" ? ["seo-content", "nexus-review"] :
+    presetId === "marketing" ? ["seo-content", "social-reels", "nexus-review"] :
+    presetId === "partner" ? ["new-leads", "property-matching", "seo-content", "social-reels", "newsletter", "corporate", "nexus-review"] :
+    presetId === "external-agency" ? ["seo-content", "social-reels", "nexus-review"] :
+    ["nexus-review"];
+
+  return requested.filter(item => responsibilityAllowed(brandKey, item, permissions));
+}
