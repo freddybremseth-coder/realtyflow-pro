@@ -13,6 +13,7 @@ const PUBLIC_EXACT_PATHS = new Set([
   // Exact public telemetry endpoint. Its handler enforces the portfolio origin
   // allowlist; OPTIONS must reach it before any session/login redirect.
   "/api/public/search-discovery",
+  "/api/public/conversion-event",
 ]);
 
 const PUBLIC_PATHS = [
