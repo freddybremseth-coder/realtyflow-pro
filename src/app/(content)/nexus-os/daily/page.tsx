@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Customer360Link } from "@/components/crm/customer-360-link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, Clock3, Flame, Gauge, Home, Inbox, Loader2, MailCheck, MessageSquare, RefreshCw, ThumbsUp, UserRoundCheck } from "lucide-react";
 
@@ -260,7 +261,7 @@ export default function NexusDailyPage() {
       <div className="space-y-3">
         <div className="flex items-end justify-between gap-3"><div><h2 className="text-xl font-black text-slate-950">Min side nå</h2><p className="mt-1 text-sm text-slate-500">Kunder med ferske portalsignaler.</p></div><Link href="/nexus-os/portal-engagement" className="text-sm font-black text-cyan-700">Alle <ArrowRight size={14} className="inline"/></Link></div>
         {activePortal.map((customer) => <article key={customer.contactId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3"><div><div className="font-black text-slate-950">{customer.name}</div><div className="mt-1 text-xs text-slate-500">{customer.email}</div></div><span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-black text-cyan-800">{customer.engagementScore}/100</span></div>
+          <div className="flex items-start justify-between gap-3"><div><div className="font-black text-slate-950"><Customer360Link contactId={customer.contactId} name={customer.name} className="text-slate-950 underline decoration-cyan-400 underline-offset-4 hover:text-cyan-700" /></div><div className="mt-1 text-xs text-slate-500">{customer.email}</div></div><span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-black text-cyan-800">{customer.engagementScore}/100</span></div>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
             {customer.lastLoginMinutes != null && <span className="rounded-full bg-slate-100 px-2 py-1">Min side {age(customer.lastLoginMinutes)}</span>}
             {customer.interested24h > 0 && <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-800">{customer.interested24h} interessert</span>}

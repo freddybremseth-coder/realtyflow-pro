@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Customer360Link } from "@/components/crm/customer-360-link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, CircleHelp, FilePenLine, Loader2, RefreshCw, ShieldCheck, ThumbsDown, ThumbsUp } from "lucide-react";
 
@@ -153,7 +154,7 @@ export default function FreddyReviewConsolePage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[10px] font-black uppercase text-cyan-800">{KIND_LABEL[item.kind]}</span><span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${badge(item.priority)}`}>{item.priority}</span><span className="text-xs text-slate-500">{item.brandId || "ukjent brand"}</span></div>
-              <h2 className="mt-3 text-xl font-black text-slate-950">{item.customer.name || item.customer.email || item.title}</h2>
+              <h2 className="mt-3 text-xl font-black text-slate-950">{item.customer.id ? <Customer360Link contactId={item.customer.id} name={item.customer.name || item.customer.email || item.title} className="text-slate-950 underline decoration-cyan-400 underline-offset-4 hover:text-cyan-700" /> : item.customer.name || item.customer.email || item.title}</h2>
               <p className="mt-1 text-sm text-slate-600">{item.nextAction}</p>
             </div>
             <div className={`rounded-2xl border px-4 py-3 text-xs font-bold ${item.policy.blockers.length ? "border-rose-200 bg-rose-50 text-rose-900" : item.kind === "final_send" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
@@ -166,7 +167,7 @@ export default function FreddyReviewConsolePage() {
         <div className="grid gap-4 p-5 lg:grid-cols-3 sm:p-6">
           <section className="rounded-2xl border border-slate-200 p-4">
             <div className="text-xs font-black uppercase tracking-wide text-slate-500">Kunde og Buyer Profile</div>
-            <div className="mt-3 text-sm font-black text-slate-950">{item.customer.name || "Ukjent kunde"}</div>
+            <div className="mt-3 text-sm font-black text-slate-950">{item.customer.id ? <Customer360Link contactId={item.customer.id} name={item.customer.name || item.customer.email || "Ukjent kunde"} className="text-slate-950 underline decoration-cyan-400 underline-offset-4 hover:text-cyan-700" /> : item.customer.name || "Ukjent kunde"}</div>
             <div className="mt-1 text-xs text-slate-500">{item.customer.email || "Ingen e-post"} · {item.customer.pipelineStatus || "ukjent stage"}</div>
             {item.buyerProfile ? <div className="mt-4 space-y-1 text-xs text-slate-700"><div><b>Profil:</b> v{item.buyerProfile.version} · {item.buyerProfile.status}</div><div><b>Kjøpsklarhet:</b> {item.buyerProfile.purchaseReadiness || "ukjent"}</div><div><b>Budsjett:</b> {money(item.buyerProfile.budgetAmount, item.buyerProfile.budgetCurrency)}</div><div className="pt-1 leading-5">{item.buyerProfile.summary || "Ingen profilsammendrag."}</div></div> : <div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">Ingen godkjent Buyer Profile er knyttet til saken.</div>}
           </section>
