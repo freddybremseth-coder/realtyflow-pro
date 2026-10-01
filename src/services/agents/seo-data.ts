@@ -14,6 +14,16 @@ type DiscoveryRow = {
   occurred_at: string;
 };
 
+type ConversionRow = {
+  brand_id: string;
+  event_type: string;
+  path: string;
+  target: string;
+  landing_path: string | null;
+  discovery_source: string | null;
+  occurred_at: string;
+};
+
 type BrandCounts = { brandId: string; current: number; previous: number; search: number; ai: number };
 type PageCounts = { brandId: string; path: string; current: number; previous: number };
 
@@ -41,7 +51,16 @@ export async function getSEOObservedSignals() {
 
   if (error) throw new Error("SEO metrics query failed: " + error.message.slice(0, 300));
 
+  const conversionResult = await supabase.from("website_conversion_events")
+    .select("brand_id,event_type,path,target,landing_path,discovery_source,occurred_at", { count: "exact" })
+    .gte("occurred_at", previousStart)
+    .lt("occurred_at", new Date(now).toISOString())
+    .order("occurred_at", { ascending: false })
+    .limit(10000);
+  if (conversionResult.error) throw new Error("SEO conversion metrics query failed: " + conversionResult.error.message.slice(0, 300));
+
   const rows = (data || []) as DiscoveryRow[];
+  const conversionRows = (conversionResult.data || []) as ConversionRow[];
   const truncated = typeof count === "number" && count > rows.length;
   const brandCounts = new Map<string, BrandCounts>();
   const pageCounts = new Map<string, PageCounts>();
@@ -79,6 +98,34 @@ export async function getSEOObservedSignals() {
     pageCounts.set(pageKey, page);
   }
 
+  const conversionTypeCounts = new Map<string, number>();
+  const conversionTargetCounts = new Map<string, number>();
+  const conversionLandingCounts = new Map<string, number>();
+  const conversionSourceCounts = new Map<string, number>();
+  let conversionCurrent = 0;
+  let conversionPrevious = 0;
+  let conversionAttributed = 0;
+
+  for (const event of conversionRows) {
+    if (!SEO_BRANDS.includes(event.brand_id as (typeof SEO_BRANDS)[number])) continue;
+    const isCurrent = event.occurred_at >= currentStart;
+    if (isCurrent) {
+      conversionCurrent++;
+      conversionTypeCounts.set(event.event_type, (conversionTypeCounts.get(event.event_type) || 0) + 1);
+      conversionTargetCounts.set(event.target, (conversionTargetCounts.get(event.target) || 0) + 1);
+      if (event.landing_path) conversionLandingCounts.set(event.landing_path, (conversionLandingCounts.get(event.landing_path) || 0) + 1);
+      if (event.discovery_source) {
+        conversionAttributed++;
+        conversionSourceCounts.set(event.discovery_source, (conversionSourceCounts.get(event.discovery_source) || 0) + 1);
+      }
+    } else {
+      conversionPrevious++;
+    }
+  }
+
+  const conversionTruncated = typeof conversionResult.count === "number" &&
+    conversionResult.count > conversionRows.length;
+
   return {
     collectedAt: new Date(now).toISOString(),
     window: { currentStart, previousStart, daysPerPeriod: 30 },
@@ -91,6 +138,7 @@ export async function getSEOObservedSignals() {
       keywordsAvailable: false,
       searchConsoleConnected: false,
       aiCitationsAvailable: false,
+      conversionEventsAvailable: true,
       note: current === 0
         ? "No measured search/AI arrival events in this window. Do not interpret this as zero actual traffic."
         : truncated ? "10,000-event cap reached. Window and page totals may be incomplete." : null,
@@ -98,6 +146,19 @@ export async function getSEOObservedSignals() {
     totals: {
       current, previous, search, ai,
       changePercent: truncated ? null : roundPercent(current - previous, previous),
+    },
+    conversions: {
+      measurement: "Privacy-minimal CTA events only; not completed sales, qualified leads or causal SEO attribution.",
+      current: conversionCurrent,
+      previous: conversionPrevious,
+      attributed: conversionAttributed,
+      attributedShare: conversionCurrent ? roundPercent(conversionAttributed, conversionCurrent) : null,
+      changePercent: conversionTruncated ? null : roundPercent(conversionCurrent - conversionPrevious, conversionPrevious),
+      truncated: conversionTruncated,
+      byType: [...conversionTypeCounts].map(([eventType, count]) => ({ eventType, count })).sort((a, b) => b.count - a.count),
+      byTarget: [...conversionTargetCounts].map(([target, count]) => ({ target, count })).sort((a, b) => b.count - a.count),
+      bySource: [...conversionSourceCounts].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count),
+      topLandingPages: [...conversionLandingCounts].map(([path, count]) => ({ path, count })).sort((a, b) => b.count - a.count).slice(0, 20),
     },
     byBrand: [...brandCounts.values()],
     bySource: [...sourceCounts].map(([source, visits]) => ({ source, visits }))
