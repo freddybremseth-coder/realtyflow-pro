@@ -5,12 +5,19 @@ import { Eye, EyeOff, KeyRound, LockKeyhole, RefreshCw, ShieldCheck, UserPlus, U
 import { WORKSPACE_PROGRAM_CATALOG, programPermissions } from "@/lib/workspaces/module-catalog";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import { WORKSPACE_ACCESS_PRESETS, workspaceAccessPresetChoice, type WorkspaceAccessPresetId } from "@/lib/workspaces/access-presets";
+import {
+  WORKSPACE_RESPONSIBILITIES,
+  responsibilityAllowed,
+  suggestedResponsibilitiesForPreset,
+  type WorkspaceResponsibilityId,
+} from "@/lib/workspaces/responsibilities";
 
 type Brand = { id: string; brandKey: string; name: string };
 type Membership = {
   brandId: string; brandKey: string; brandName: string;
   status: "active" | "revoked" | "disabled";
   permissions: WorkspacePermission[];
+  responsibilities: WorkspaceResponsibilityId[];
   updatedAt: string | null;
 };
 type WorkspaceUser = {
@@ -56,6 +63,7 @@ type BrandChoice = {
   emailRead: boolean;
   emailDraft: boolean;
   emailSend: boolean;
+  responsibilities: WorkspaceResponsibilityId[];
 };
 
 const emptyChoice = (): BrandChoice => ({
@@ -70,6 +78,7 @@ const emptyChoice = (): BrandChoice => ({
   adsRead: false, adsDraft: false, eventsPlan: false,
   contentRead: false, contentEdit: false, contentPublish: false,
   emailRead: false, emailDraft: false, emailSend: false,
+  responsibilities: [],
 });
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -147,9 +156,43 @@ function choicesForUser(user: WorkspaceUser, brands: Brand[]) {
       emailRead: permissions.includes("email.read"),
       emailDraft: permissions.includes("email.draft"),
       emailSend: permissions.includes("email.send"),
+      responsibilities: membership.responsibilities || [],
     };
   }
   return next;
+}
+
+function permissionsForChoice(brandKey: string, choice: BrandChoice) {
+  return programPermissions({
+    brandKey,
+    crmRead: choice.crmRead,
+    crmWrite: choice.crmWrite,
+    properties: choice.properties,
+    jointTasksRead: choice.tasksRead,
+    jointTasksWrite: choice.tasksWrite,
+    marketingRead: choice.marketingRead,
+    marketingDraft: choice.marketingDraft,
+    marketingPublish: choice.marketingPublish,
+    reelsRead: choice.reelsRead,
+    reelsCreate: choice.reelsCreate,
+    reelsPublish: choice.reelsPublish,
+    youtubeRead: choice.youtubeRead,
+    youtubePublish: choice.youtubePublish,
+    nexusRead: choice.nexusRead,
+    corporateRead: choice.corporateRead,
+    corporatePlan: choice.corporatePlan,
+    visibilityRead: choice.visibilityRead,
+    visibilityPlan: choice.visibilityPlan,
+    adsRead: choice.adsRead,
+    adsDraft: choice.adsDraft,
+    eventsPlan: choice.eventsPlan,
+    contentRead: choice.contentRead,
+    contentEdit: choice.contentEdit,
+    contentPublish: choice.contentPublish,
+    emailRead: choice.emailRead,
+    emailDraft: choice.emailDraft,
+    emailSend: choice.emailSend,
+  });
 }
 
 export default function WorkspaceUsersPage() {
@@ -256,10 +299,15 @@ export default function WorkspaceUsersPage() {
     setChoices(current => {
       const next = { ...current };
       for (const brand of enabledBrands) {
-        next[brand.brandKey] = {
+        const presetChoice = {
           ...emptyChoice(),
           enabled: true,
           ...workspaceAccessPresetChoice(brand.brandKey, presetId),
+        };
+        const permissions = permissionsForChoice(brand.brandKey, presetChoice);
+        next[brand.brandKey] = {
+          ...presetChoice,
+          responsibilities: suggestedResponsibilitiesForPreset(brand.brandKey, presetId, permissions),
         };
       }
       return next;
@@ -274,37 +322,10 @@ export default function WorkspaceUsersPage() {
     return (snapshot?.brands || []).flatMap(brand => {
       const choice = choices[brand.brandKey];
       if (!choice?.enabled) return [];
-      const permissions = programPermissions({
-        brandKey: brand.brandKey,
-        crmRead: choice.crmRead,
-        crmWrite: choice.crmWrite,
-        properties: choice.properties,
-        jointTasksRead: choice.tasksRead,
-        jointTasksWrite: choice.tasksWrite,
-        marketingRead: choice.marketingRead,
-        marketingDraft: choice.marketingDraft,
-        marketingPublish: choice.marketingPublish,
-        reelsRead: choice.reelsRead,
-        reelsCreate: choice.reelsCreate,
-        reelsPublish: choice.reelsPublish,
-        youtubeRead: choice.youtubeRead,
-        youtubePublish: choice.youtubePublish,
-        nexusRead: choice.nexusRead,
-        corporateRead: choice.corporateRead,
-        corporatePlan: choice.corporatePlan,
-        visibilityRead: choice.visibilityRead,
-        visibilityPlan: choice.visibilityPlan,
-        adsRead: choice.adsRead,
-        adsDraft: choice.adsDraft,
-        eventsPlan: choice.eventsPlan,
-        contentRead: choice.contentRead,
-        contentEdit: choice.contentEdit,
-        contentPublish: choice.contentPublish,
-        emailRead: choice.emailRead,
-        emailDraft: choice.emailDraft,
-        emailSend: choice.emailSend,
-      });
-      return permissions.length ? [{ brandKey: brand.brandKey, permissions }] : [];
+      const permissions = permissionsForChoice(brand.brandKey, choice);
+      const responsibilities = choice.responsibilities.filter(item =>
+        responsibilityAllowed(brand.brandKey, item, permissions));
+      return permissions.length ? [{ brandKey: brand.brandKey, permissions, responsibilities }] : [];
     });
   }
 
@@ -732,6 +753,26 @@ export default function WorkspaceUsersPage() {
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.emailSend}
                       onChange={e => updateChoice(brand.brandKey, { emailSend: e.target.checked })}/> Sende én-til-én fra merkevarens e-postkonto</label>
                     <p className="mt-2 text-[11px] text-slate-500">Bare brand-godkjente leads/Corporate-kanaler. Avmelding og suppression kontrolleres før sending. Reach-abonnement opprettes ikke automatisk.</p>
+                  </div>
+                  <div className="rounded-lg border border-amber-900/60 bg-amber-950/10 p-3 md:col-span-3">
+                    <strong className="text-sm">Personlig ansvar i denne merkevaren</strong>
+                    <p className="mt-1 text-[11px] text-slate-500">Ansvar styrer prioritering på «I dag». Det gir aldri flere rettigheter enn modulene over.</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {WORKSPACE_RESPONSIBILITIES.filter(item =>
+                        responsibilityAllowed(brand.brandKey, item.id, permissionsForChoice(brand.brandKey, choice))
+                      ).map(item => <label key={item.id} className="rounded-lg border border-slate-800 bg-slate-950/45 p-3 text-xs">
+                        <span className="flex items-start gap-2">
+                          <input type="checkbox" className="mt-0.5"
+                            checked={choice.responsibilities.includes(item.id)}
+                            onChange={e => updateChoice(brand.brandKey, {
+                              responsibilities: e.target.checked
+                                ? Array.from(new Set([...choice.responsibilities, item.id]))
+                                : choice.responsibilities.filter(value => value !== item.id),
+                            })}/>
+                          <span><strong className="block text-slate-200">{item.label}</strong><span className="mt-1 block leading-5 text-slate-500">{item.description}</span></span>
+                        </span>
+                      </label>)}
+                    </div>
                   </div>
                 </div>}
               </article>;

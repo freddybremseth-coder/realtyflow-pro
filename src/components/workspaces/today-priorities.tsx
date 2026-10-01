@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BrainCircuit, RefreshCw, Sparkles } from "lucide-react";
 import { workspaceResponsibilities } from "@/lib/workspaces/responsibility-summary";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
+import { WORKSPACE_RESPONSIBILITIES, type WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 import {
   buildWorkspaceTodayActions,
   type WorkspaceAttentionSignal,
@@ -17,11 +18,13 @@ type InsightsResponse = {
 export function WorkspaceTodayPriorities({
   brandKey,
   permissions,
+  responsibilities,
   contactCount,
   onOpen,
 }: {
   brandKey: string;
   permissions: WorkspacePermission[];
+  responsibilities: WorkspaceResponsibilityId[];
   contactCount: number;
   onOpen: (area: WorkspaceTodayArea) => void;
 }) {
@@ -57,17 +60,22 @@ export function WorkspaceTodayPriorities({
     () => attention.filter(signal => signal.level !== "action").slice(0, 3),
     [attention],
   );
-  const responsibilities = useMemo(
+  const capabilityAreas = useMemo(
     () => workspaceResponsibilities(brandKey, permissions),
     [brandKey, permissions],
+  );
+  const assignedResponsibilities = useMemo(
+    () => WORKSPACE_RESPONSIBILITIES.filter(item => responsibilities.includes(item.id)),
+    [responsibilities],
   );
   const actions = useMemo(() => buildWorkspaceTodayActions({
     brandKey,
     permissions,
     contactCount,
     attention: humanAttention,
+    responsibilities,
     limit: 4,
-  }), [brandKey, permissions, contactCount, humanAttention]);
+  }), [brandKey, permissions, contactCount, humanAttention, responsibilities]);
 
   return <section className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -75,7 +83,7 @@ export function WorkspaceTodayPriorities({
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Nexus-prioritering</p>
         <h2 className="mt-2 text-xl font-bold">Dette bør du gjøre i dag</h2>
         <p className="mt-2 max-w-2xl text-sm text-slate-400">
-          Prioriteringen bruker bare det du har tilgang til i denne merkevaren. Systemjobber, andre brands og admin-funksjoner holdes skjult.
+          Prioriteringen bruker bare det du har tilgang til i denne merkevaren, og personlige ansvarsområder styrer hva som kommer først når de er satt. Systemjobber, andre brands og admin-funksjoner holdes skjult.
         </p>
       </div>
       {permissions.includes("nexus.read") && <button type="button" onClick={() => void loadSignals()} disabled={loadingSignals}
@@ -84,15 +92,22 @@ export function WorkspaceTodayPriorities({
       </button>}
     </div>
 
-    {responsibilities.length > 0 && <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Mitt ansvar i denne merkevaren</p>
+    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        {assignedResponsibilities.length ? "Mitt personlige ansvar" : "Mine tilgjengelige arbeidsområder"}
+      </p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {responsibilities.map(item => <span key={item.id}
-          className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300">
+        {(assignedResponsibilities.length ? assignedResponsibilities : capabilityAreas).map(item => <span key={item.id}
+          className={`rounded-full border px-2.5 py-1 text-[11px] ${assignedResponsibilities.length
+            ? "border-amber-800 bg-amber-950/20 text-amber-200"
+            : "border-slate-700 bg-slate-900 text-slate-300"}`}>
           {item.label}
         </span>)}
       </div>
-    </div>}
+      {assignedResponsibilities.length > 0 && <p className="mt-2 text-[11px] text-slate-500">
+        Andre moduler du har tilgang til finnes fortsatt under «Andre oppgaver», men disse ansvarsområdene prioriteres på I dag.
+      </p>}
+    </div>
 
     <div className="mt-5 space-y-3">
       {actions.map((action, index) => <button

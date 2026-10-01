@@ -1,4 +1,5 @@
 import type { WorkspacePermission } from "./brand-policy";
+import type { WorkspaceResponsibilityId } from "./responsibilities";
 
 export type WorkspaceAttentionSignal = {
   level: "info" | "watch" | "action";
@@ -27,13 +28,16 @@ export function buildWorkspaceTodayActions(input: {
   permissions: WorkspacePermission[];
   contactCount: number;
   attention?: WorkspaceAttentionSignal[];
+  responsibilities?: WorkspaceResponsibilityId[];
   limit?: number;
 }): WorkspaceTodayAction[] {
-  const { brandKey, permissions, contactCount, attention = [], limit = 4 } = input;
+  const { brandKey, permissions, contactCount, attention = [], responsibilities = [], limit = 4 } = input;
   const actions: WorkspaceTodayAction[] = [];
+  const scoped = responsibilities.length > 0;
+  const owns = (responsibility: WorkspaceResponsibilityId) => !scoped || responsibilities.includes(responsibility);
 
   const canReadCrm = hasAny(permissions, ["crm.read", "crm.joint.read"]);
-  if (canReadCrm && contactCount > 0) {
+  if (canReadCrm && contactCount > 0 && owns("new-leads")) {
     actions.push({
       id: "crm-follow-up",
       title: "Følg opp kunder og leads",
@@ -45,7 +49,7 @@ export function buildWorkspaceTodayActions(input: {
     });
   }
 
-  if (permissions.includes("nexus.read")) {
+  if (permissions.includes("nexus.read") && owns("nexus-review")) {
     attention.slice(0, 3).forEach((signal, index) => {
       const score = signal.level === "action" ? 96 : signal.level === "watch" ? 82 : 64;
       actions.push({
@@ -64,7 +68,7 @@ export function buildWorkspaceTodayActions(input: {
     });
   }
 
-  if (brandKey === "zeneco" && permissions.includes("corporate.read")) {
+  if (brandKey === "zeneco" && permissions.includes("corporate.read") && owns("corporate")) {
     actions.push({
       id: "corporate",
       title: "Jobb med Corporate-prospekter",
@@ -76,7 +80,7 @@ export function buildWorkspaceTodayActions(input: {
     });
   }
 
-  if (hasAny(permissions, [
+  if (owns("seo-content") && hasAny(permissions, [
     "visibility.read", "visibility.plan", "content.read", "content.edit", "content.publish",
     "marketing.read", "marketing.draft", "marketing.publish",
   ])) {
@@ -91,7 +95,7 @@ export function buildWorkspaceTodayActions(input: {
     });
   }
 
-  if (hasAny(permissions, ["reels.create", "reels.publish"])) {
+  if (owns("social-reels") && hasAny(permissions, ["reels.create", "reels.publish"])) {
     actions.push({
       id: "reels",
       title: "Lag eller ferdigstill en Reel",
@@ -103,7 +107,7 @@ export function buildWorkspaceTodayActions(input: {
     });
   }
 
-  if (brandKey === "zeneco" && permissions.includes("youtube.read")) {
+  if (owns("social-reels") && brandKey === "zeneco" && permissions.includes("youtube.read")) {
     actions.push({
       id: "youtube",
       title: "Gjenbruk ferdig innhold på YouTube",
@@ -115,7 +119,7 @@ export function buildWorkspaceTodayActions(input: {
     });
   }
 
-  if (permissions.includes("properties.catalog.read")) {
+  if (owns("property-matching") && permissions.includes("properties.catalog.read")) {
     actions.push({
       id: "properties",
       title: "Forbered boligforslag",
@@ -123,6 +127,18 @@ export function buildWorkspaceTodayActions(input: {
       reason: "Eiendomssøk er mest verdifullt når det er koblet til et konkret kundebehov.",
       area: "properties",
       priority: contactCount > 0 ? 74 : 52,
+      source: "role",
+    });
+  }
+
+  if (owns("newsletter") && hasAny(permissions, ["email.draft", "email.send"])) {
+    actions.push({
+      id: "newsletter",
+      title: "Jobb med nyhetsbrev og Reach",
+      description: "Forbered neste relevante utsending, velg riktig segment og bruk tidligere klikkdata før du sender eller planlegger.",
+      reason: "Nyhetsbrev er satt som ditt ansvar i denne merkevaren og bør drives av segment, samtykke og målbar respons.",
+      area: "growth",
+      priority: 72,
       source: "role",
     });
   }

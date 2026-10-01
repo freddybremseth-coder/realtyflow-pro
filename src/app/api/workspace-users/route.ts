@@ -8,6 +8,10 @@ import {
   getWorkspaceRuntimeState,
   setWorkspaceRuntimeEnabled,
 } from "@/lib/workspaces/runtime-control";
+import {
+  normalizeResponsibilities,
+  type WorkspaceResponsibilityId,
+} from "@/lib/workspaces/responsibilities";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,7 +20,7 @@ const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type BrandAccess = { brandKey: string; permissions: WorkspacePermission[] };
+type BrandAccess = { brandKey: string; permissions: WorkspacePermission[]; responsibilities: WorkspaceResponsibilityId[] };
 type AccountKind = "staff" | "external";
 type DirectoryMetadata = { accountKind: AccountKind; organization: string | null; accessExpiresAt: string | null };
 
@@ -74,6 +78,8 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
           typeof permission === "string" &&
           WORKSPACE_PERMISSIONS.includes(permission as WorkspacePermission))) return null;
     const typed = permissions as WorkspacePermission[];
+    const responsibilities = normalizeResponsibilities(brandKey, row.responsibilities ?? [], typed);
+    if (!responsibilities) return null;
     if (typed.includes("marketing.publish") &&
         (!typed.includes("marketing.read") || !typed.includes("marketing.draft"))) return null;
     if (typed.includes("marketing.draft") && !typed.includes("marketing.read")) return null;
@@ -105,7 +111,7 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
       return null;
     }
     seen.add(brandKey);
-    result.push({ brandKey, permissions: typed });
+    result.push({ brandKey, permissions: typed, responsibilities });
   }
   return result;
 }
@@ -165,6 +171,41 @@ function safeSnapshot(value: unknown) {
   return { users, brands };
 }
 
+
+async function syncResponsibilities(params: {
+  supabase: NonNullable<ReturnType<typeof getPlatformSupabase>>;
+  userId: string;
+  brandAccess: BrandAccess[];
+  actor: string;
+}) {
+  const { supabase, userId, brandAccess, actor } = params;
+  const brandKeys = brandAccess.map(item => item.brandKey);
+  const { data: brands, error: brandError } = await supabase.schema("core").from("brands")
+    .select("id,brand_key").in("brand_key", brandKeys);
+  if (brandError || !Array.isArray(brands) || brands.length !== brandAccess.length) {
+    return { ok: false as const, error: "RESPONSIBILITY_BRAND_RESOLUTION_FAILED" };
+  }
+  const idByKey = new Map(brands.map((brand: any) => [brand.brand_key, brand.id]));
+  for (const access of brandAccess) {
+    const brandId = idByKey.get(access.brandKey);
+    if (!brandId) return { ok: false as const, error: "RESPONSIBILITY_BRAND_RESOLUTION_FAILED" };
+    const { error } = await supabase.schema("core").from("brand_workspace_responsibilities").upsert({
+      brand_id: brandId,
+      user_id: userId,
+      responsibilities: access.responsibilities,
+      updated_by_email: actor,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "brand_id,user_id" });
+    if (error) return { ok: false as const, error: "RESPONSIBILITY_SAVE_FAILED" };
+  }
+  const selectedBrandIds = brands.map((brand: any) => brand.id);
+  let revokeQuery = supabase.schema("core").from("brand_workspace_responsibilities").delete().eq("user_id", userId);
+  if (selectedBrandIds.length) revokeQuery = revokeQuery.not("brand_id", "in", `(${selectedBrandIds.join(",")})`);
+  const { error: cleanupError } = await revokeQuery;
+  if (cleanupError) return { ok: false as const, error: "RESPONSIBILITY_CLEANUP_FAILED" };
+  return { ok: true as const };
+}
+
 async function ownerContext(request: NextRequest) {
   const context = await getRequestAccessContext(request);
   if (!context) return { context: null, response: reply({ error: "AUTH_REQUIRED" }, 401) };
@@ -189,8 +230,23 @@ export async function GET(request: NextRequest) {
   const { snapshot, error } = await loadSnapshot(supabase);
   if (error || !snapshot) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
   const runtime = await getWorkspaceRuntimeState(supabase);
+  const { data: responsibilityRows, error: responsibilityError } = await supabase.schema("core")
+    .from("brand_workspace_responsibilities")
+    .select("brand_id,user_id,responsibilities");
+  if (responsibilityError) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
+  const responsibilityMap = new Map((responsibilityRows || []).map((row: any) => [
+    `${row.user_id}:${row.brand_id}`,
+    Array.isArray(row.responsibilities) ? row.responsibilities : [],
+  ]));
+  const users = snapshot.users.map((user: any) => ({
+    ...user,
+    memberships: user.memberships.map((membership: any) => ({
+      ...membership,
+      responsibilities: responsibilityMap.get(`${user.userId}:${membership.brandId}`) || [],
+    })),
+  }));
   return reply({
-    ok: true, ...snapshot,
+    ok: true, ...snapshot, users,
     featureEnabled: runtime.enabled,
     featureStatus: runtime.error ? "unavailable" : "ready",
     passwordStorage: "supabase-auth-only",
@@ -301,6 +357,15 @@ export async function POST(request: NextRequest) {
       }
       return reply({ error: "WORKSPACE_USER_CONFIGURE_FAILED" }, configureError ? 503 : 409);
     }
+    const responsibilitySync = await syncResponsibilities({
+      supabase, userId: created.user.id, brandAccess, actor: owner.context.email,
+    });
+    if (!responsibilitySync.ok) {
+      return reply({
+        error: responsibilitySync.error,
+        message: "Brukeren og tilgangen er opprettet, men personlige ansvarsområder kunne ikke lagres. Kontroller brukeren før du fortsetter.",
+      }, 503);
+    }
     const runtime = await getWorkspaceRuntimeState(supabase);
     return reply({
       ok: true,
@@ -376,6 +441,15 @@ export async function POST(request: NextRequest) {
       p_access_expires_at: metadata.value.accessExpiresAt,
     });
     if (error || data !== true) return reply({ error: "WORKSPACE_USER_CONFIGURE_FAILED" }, error ? 503 : 409);
+    const responsibilitySync = await syncResponsibilities({
+      supabase, userId, brandAccess, actor: owner.context.email,
+    });
+    if (!responsibilitySync.ok) {
+      return reply({
+        error: responsibilitySync.error,
+        message: "Tilgangen er lagret, men personlige ansvarsområder kunne ikke oppdateres. Kontroller brukeren før du fortsetter.",
+      }, 503);
+    }
     return reply({
       ok: true, userId, username, displayName,
       accountKind: metadata.value.accountKind, organization: metadata.value.organization,
