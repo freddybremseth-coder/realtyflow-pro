@@ -97,8 +97,6 @@ export async function GET(request: NextRequest) {
     guardrails: {
       registrationIsLead: false,
       attendanceQualifiesAutomatically: false,
-      automaticOutreach: false,
-      automaticPipelineChange: false,
       ...CORPORATE_EVENT_SIGNAL_GUARDRAILS,
     },
   });
