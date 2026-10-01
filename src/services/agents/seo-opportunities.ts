@@ -27,6 +27,41 @@ export function planSEOOpportunities(
       evidence: "RealtyFlow search_discovery_events last 30 days; first-party referral arrivals only.",
     });
   }
+  const chatgeniusReferrals = signals.byBrand.find(brand => brand.brandId === "chatgenius")?.current ?? 0;
+  const conversionSignals = signals.conversions ?? {
+    current: 0,
+    previous: 0,
+    attributed: 0,
+    attributedShare: null,
+    changePercent: null,
+    truncated: false,
+    byType: [],
+    byTarget: [],
+    bySource: [],
+    topLandingPages: [],
+  };
+  if (!signals.dataQuality.truncated && !conversionSignals.truncated && chatgeniusReferrals >= 20 && conversionSignals.current === 0) {
+    results.push({
+      issueId: "search-to-cta:chatgenius",
+      brandId: "chatgenius",
+      title: "Sam SEO: Undersøk hvorfor ChatGenius-trafikk ikke går videre",
+      description: chatgeniusReferrals + " målte søke-/AI-ankomster siste 30 dager, men ingen registrerte CTA-hendelser i samme vindu. Dette er ikke bevis for null leads eller null salg.",
+      priority: "MEDIUM",
+      nextAction: "Kontroller de viktigste landingssidene, mobil-CTA, demo-/bookinglenker og at conversion-event-sporingen er live. Test deretter én konkret forbedring med godkjenning og sammenlign neste 30-dagers periode.",
+      evidence: "Independent first-party search_discovery_events and website_conversion_events aggregates, no user-level attribution.",
+    });
+  }
+  if (!conversionSignals.truncated && conversionSignals.current >= 5 && conversionSignals.attributed === 0) {
+    results.push({
+      issueId: "cta-source-attribution:chatgenius",
+      brandId: "chatgenius",
+      title: "Sam SEO: Kontroller søk/AI-attribusjon på ChatGenius-CTA-er",
+      description: conversionSignals.current + " CTA-hendelser er registrert siste 30 dager, men ingen bærer kjent søke-/AI-kilde fra samme browser-session.",
+      priority: "MEDIUM",
+      nextAction: "Bekreft at search-discovery tracker får 204-lagringskvittering før CTA-klikk, at sessionStorage bevarer grov kilde/landingsside, og at conversion collector er deployet. Ikke tolke manglende attribusjon som direkte trafikk.",
+      evidence: "Privacy-minimal website_conversion_events source coverage, last 30 days.",
+    });
+  }
   for (const brand of leads.byBrand) {
     if (brand.withoutPage > 0) {
       results.push({
