@@ -14,6 +14,7 @@ import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import type { ChannelPublisher } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { requireNexusExecutionBoundary } from "@/lib/nexus/execution-boundary";
+import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 function rowToAsset(row: any): GeneratedAsset {
   return {
@@ -53,7 +54,11 @@ async function syncCanonicalContentPublication(
   if (!args.pub?.brand_id) return;
   if (args.asset.channel !== "instagram" && args.asset.channel !== "facebook") return;
 
-  const caption = [args.asset.headline, args.asset.body, args.asset.cta].filter(Boolean).join("\n\n");
+  const caption = ensureBrandWebsiteLink({
+    brandId: String(args.pub.brand_id || ""),
+    channel: args.asset.channel,
+    content: [args.asset.headline, args.asset.body, args.asset.cta].filter(Boolean).join("\n\n"),
+  });
   const media = (args.asset.media ?? {}) as Record<string, unknown>;
   const mediaUrls = [media.imageUrl, media.videoUrl].filter((value): value is string => typeof value === "string" && value.length > 0);
   const genome = (args.asset.genome ?? {}) as Record<string, unknown>;
@@ -131,7 +136,12 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
 
     // Defense in depth: intern/meta-tekst publiseres ALDRI, selv om den kom seg
     // gjennom approval. Kjøres FØR ev. Meta-call → null Meta-kall ved feil.
-    const caption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
+    if (!pub.brand_id) throw new Error("BRAND_UNRESOLVED: publikasjon mangler brand_id");
+    const caption = ensureBrandWebsiteLink({
+      brandId: String(pub.brand_id),
+      channel: asset.channel,
+      content: [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n"),
+    });
     const pub2 = contentPublishabilityGate(caption);
     if (!pub2.publishable) throw new Error(`PUBLISHABILITY_FAILED: ${pub2.result} — ${pub2.reason}`);
 
@@ -183,7 +193,7 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
     if (pub.asset_hash) {
       const recomputed = approvedAssetHash({
         sourceContentId: pub.source_id ?? asset.contentId,
-        finalCopy: [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n"),
+        finalCopy: caption,
         finalMedia: JSON.stringify(asset.media ?? {}),
         brandId: pub.brand_id ?? "",
         accountId: accountId ?? "",
@@ -213,6 +223,7 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
       campaignId: pub.campaign_id,
       marketingRunId: pub.marketing_run_id,
       correlationId: item.correlationId ?? undefined,
+      brandId: String(pub.brand_id),
       channel: asset.channel,
       accountId,
     });

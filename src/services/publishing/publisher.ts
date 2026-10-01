@@ -14,6 +14,7 @@ import {
   TokenError,
 } from "./facebook-token-helper";
 import { contentPublishabilityGate } from "@/lib/marketing/autonomous/publishability";
+import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 export interface PublishResult {
   platform: string;
@@ -474,11 +475,27 @@ export async function executePublishForDraft(
   const { draftId, platforms, content, brandId, imageUrl, socialChannelIds } = params;
   const supabase = getSupabase();
 
+  let finalContent: string;
+  try {
+    finalContent = ensureBrandWebsiteLink({
+      brandId,
+      channel: platforms.find((platform) => ["facebook", "instagram", "linkedin"].includes(platform)) || "",
+      content,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "SOCIAL_WEBSITE_URL_NOT_CONFIGURED";
+    await supabase
+      .from("content_publications")
+      .update({ status: "failed", updated_at: new Date().toISOString(), publish_attempts: 1, last_publish_error: reason })
+      .eq("id", draftId);
+    return { results: platforms.map((platform) => ({ platform, success: false, error: reason })), anySuccess: false };
+  }
+
   // PUBLISHABILITY GATE (P0, defense in depth). Intern agent-/meta-tekst,
   // placeholders eller tomt innhold sendes ALDRI til en kanal. Denne stien
   // publiserte tidligere en intern tekst («Jeg setter opp Marketing Agent …»)
   // til Instagram. Fail closed FØR ethvert Graph-kall — alle plattformer.
-  const pubCheck = contentPublishabilityGate(content);
+  const pubCheck = contentPublishabilityGate(finalContent);
   if (!pubCheck.publishable) {
     const reason = `PUBLISHABILITY_FAILED: ${pubCheck.result} — ${pubCheck.reason}`;
     await supabase
@@ -522,7 +539,7 @@ export async function executePublishForDraft(
       platform,
       brandId,
       pinnedId,
-      async (resolved) => publishOne(platform, resolved, content, publicImageUrl),
+      async (resolved) => publishOne(platform, resolved, finalContent, publicImageUrl),
     );
 
     if ("ambiguity" in outcome) {

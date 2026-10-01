@@ -15,6 +15,7 @@
 import type { ChannelPublisher, PublishContext } from "@/services/marketing/autonomous-orchestrator";
 import type { GeneratedAsset } from "@/lib/marketing/autonomous";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
+import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 export interface MetaGraph {
   createIgContainer(igUserId: string, p: { imageUrl?: string; videoUrl?: string; caption?: string; mediaType?: string; altText?: string }): Promise<{ id: string }>;
@@ -39,8 +40,12 @@ export function metaCredentialsPresent(cfg: Pick<MetaPublisherConfig, "graph" | 
   return !!cfg.graph && (!!cfg.igUserId || !!cfg.pageId);
 }
 
-function caption(asset: GeneratedAsset): string {
-  return [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n\n");
+function caption(asset: GeneratedAsset, brandId: string): string {
+  return ensureBrandWebsiteLink({
+    brandId,
+    channel: asset.channel,
+    content: [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n\n"),
+  });
 }
 
 function isConfirmedMetaRejection(error: unknown): boolean {
@@ -72,7 +77,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     return "PROCESSING";
   }
 
-  async function publishInstagram(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
+  async function publishInstagram(asset: GeneratedAsset, brandId: string, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
     const media = asset.media ?? {};
     if (!media.imageUrl && !media.videoUrl) throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig image/video URL — publiserer ikke bare caption");
 
@@ -91,7 +96,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     let containerId: string | undefined = attempt?.container_id;
     if (!containerId) {
       await writeAttempt(key, base, { status: "reserved" });
-      const c = await graph.createIgContainer(target, { imageUrl: media.imageUrl, videoUrl: media.videoUrl, caption: caption(asset), mediaType: media.mediaType, altText: media.altText });
+      const c = await graph.createIgContainer(target, { imageUrl: media.imageUrl, videoUrl: media.videoUrl, caption: caption(asset, brandId), mediaType: media.mediaType, altText: media.altText });
       containerId = c.id;
       await writeAttempt(key, base, { status: "container_created", container_id: containerId, error: null });
     }
@@ -122,7 +127,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     }
   }
 
-  async function publishFacebook(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
+  async function publishFacebook(asset: GeneratedAsset, brandId: string, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
     // A network timeout after POST is ambiguous and must be reconciled before
     // retry. A parsed non-2xx Graph response is different: Meta confirmed that
     // no post was created, so it is safe to retry after credentials/payload are
@@ -141,11 +146,11 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     try {
       const id = media.videoUrl
         ? graph.createFbReel
-          ? (await graph.createFbReel(target, { videoUrl: media.videoUrl, description: caption(asset), title: asset.headline })).id
+          ? (await graph.createFbReel(target, { videoUrl: media.videoUrl, description: caption(asset, brandId), title: asset.headline })).id
           : (() => { throw new Error("FACEBOOK_REEL_PUBLISHER_NOT_CONFIGURED"); })()
         : media.imageUrl
-          ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset) })).id
-          : (await graph.createFbPost(target, { message: caption(asset), link: media.linkUrl })).id;
+          ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset, brandId) })).id
+          : (await graph.createFbPost(target, { message: caption(asset, brandId), link: media.linkUrl })).id;
       await writeAttempt(key, base, { status: "posted", external_id: id, external_media_id: id });
       return { state: "published", externalId: id };
     } catch (err) {
@@ -182,11 +187,13 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       }
 
       const graph = cfg.graph!;
+      const brandId = String(opts.brandId || asset.genome?.brandId || "").trim();
+      if (!brandId) throw new Error("SOCIAL_WEBSITE_BRAND_CONTEXT_MISSING");
       const target = opts.accountId ?? (asset.channel === "facebook" ? cfg.pageId : cfg.igUserId);
       if (!target) throw new Error(`ACCOUNT_NOT_FOUND: mangler eksplisitt ${asset.channel === "facebook" ? "Facebook-side" : "Instagram-konto"}`);
       return asset.channel === "facebook"
-        ? publishFacebook(asset, key, base, attempt, graph, target)
-        : publishInstagram(asset, key, base, attempt, graph, target);
+        ? publishFacebook(asset, brandId, key, base, attempt, graph, target)
+        : publishInstagram(asset, brandId, key, base, attempt, graph, target);
     },
   };
 }
