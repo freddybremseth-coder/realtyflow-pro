@@ -26,6 +26,8 @@ const files = [
   "20260930143000_workspace_nexus_insights.sql",
   "20260930220000_workspace_newsletter_marketing.sql",
   "20260930223500_workspace_newsletter_segments_tracking.sql",
+  "20261001170019_workspace_staff_preflight_public_art_metadata_exception.sql",
+  "20261001171200_workspace_shared_safe_property_catalogue.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -128,7 +130,7 @@ try {
   await sql("create table public.content_publications (id uuid primary key default gen_random_uuid(), brand_id text not null, content_type text not null, title text, description text, tags text[], media_urls text[], thumbnail_url text, scheduled_platforms text[], status text default 'draft' check (status in ('draft','processing','published','scheduled','failed')), scheduled_at timestamptz, published_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), total_views integer default 0, total_likes integer default 0, total_comments integer default 0, total_shares integer default 0, ai_generated boolean default false, ai_title text, ai_description text, ai_tags text[], ai_image_url text, publish_attempts integer not null default 0, last_publish_error text, content_features jsonb not null default '{}'::jsonb)");
   await sql("create table public.social_channels (id uuid primary key default gen_random_uuid(), brand_id text not null, platform text not null, external_id text not null, display_name text not null, metadata jsonb not null default '{}'::jsonb, is_active boolean not null default true, created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("grant select,insert,update on public.content_publications to service_role; grant select on public.social_channels to service_role");
-  await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, images text[], gallery text[], created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
+  await sql("create table public.properties (id uuid primary key default gen_random_uuid(), ref text, title text, town text, location text, price numeric, bedrooms integer, bathrooms integer, area_m2 numeric, plot_size numeric, property_type text, primary_image text, images text[], gallery text[], source text default 'redsp', status text not null default 'TILGJENGELIG', created_at timestamptz default now(), show_on_website boolean not null default true, website_visible boolean not null default true)");
   await sql("create table public.media_assets (id uuid primary key default gen_random_uuid(), brand_id text, public_url text, thumbnail_url text, signed_url_required boolean not null default false, deleted_at timestamptz)");
   await sql("create table public.property_brand_visibility (property_id uuid not null references public.properties(id) on delete cascade, brand_id text not null, visible boolean not null default true, created_at timestamptz default now(), primary key(property_id,brand_id))");
   await sql("create table public.work_items (id uuid primary key default gen_random_uuid(), title text not null, description text, status text not null default 'TO_DO' check (status in ('TO_DO','IN_PROGRESS','REVIEW','DONE','CANCELLED')), priority text not null default 'MEDIUM' check (priority in ('CRITICAL','HIGH','MEDIUM','LOW')), due_date date, brand_id text, source_type text not null default 'manual' check (source_type in ('manual','ai_agent','content','automation','market_intelligence')), source_id text, assigned_agent text, next_action text, metadata jsonb default '{}'::jsonb, created_at timestamptz default now(), updated_at timestamptz default now())");
@@ -619,15 +621,29 @@ try {
     [pinosoProperty, zenProperty, hiddenProperty, overrideHiddenProperty],
   );
   const scopedProperties = await readBrandProperties();
-  verify(scopedProperties?.properties?.length === 1 &&
-    scopedProperties.properties[0].id === pinosoProperty &&
-    scopedProperties.properties[0].title === "Pinoso Villa" &&
+  verify(scopedProperties?.properties?.length === 3 &&
+    scopedProperties.properties.some(row =>
+      row.id === pinosoProperty &&
+      row.title === "Pinoso Villa" &&
+      row.can_market_on_workspace_brand === true &&
+      row.marketable_by_brands.includes("pinosoecolife")) &&
+    scopedProperties.properties.some(row =>
+      row.id === zenProperty &&
+      row.title === "Coastal Villa" &&
+      row.can_market_on_workspace_brand === false &&
+      row.marketable_by_brands.includes("zeneco")) &&
+    scopedProperties.properties.some(row =>
+      row.id === overrideHiddenProperty &&
+      row.can_market_on_workspace_brand === false) &&
+    !scopedProperties.properties.some(row => row.id === hiddenProperty) &&
     scopedProperties.hasMore === false,
-    "Pinoso property catalogue leaked cross-brand, hidden or non-website inventory");
+    "Shared property catalogue failed safe all-inventory matching or brand marketing flags");
   const searchedProperties = await readBrandProperties("pinoso");
-  verify(searchedProperties?.properties?.length === 1 &&
-    searchedProperties.properties[0].id === pinosoProperty,
-    "Brand property catalogue search escaped exact visibility scope");
+  verify(searchedProperties?.properties?.length === 2 &&
+    searchedProperties.properties.some(row => row.id === pinosoProperty) &&
+    searchedProperties.properties.some(row => row.id === overrideHiddenProperty) &&
+    searchedProperties.properties.every(row => row.source === "redsp"),
+    "Shared property catalogue search did not preserve public-only safe inventory");
   verify(await createBrandContact("zeneco", "FORBIDDEN ZEN LEGACY") === null,
     "Generic brand contact RPC accepted Zen Eco Homes");
   const pinosoCreated = await createBrandContact();
