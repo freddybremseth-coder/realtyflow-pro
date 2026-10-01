@@ -77,7 +77,7 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
             eq: () => ({
               eq: () => ({
                 maybeSingle: async () => ({
-                  data: { responsibilities: ["new-leads","property-matching","nexus-review","newsletter"] },
+                  data: { responsibilities: ["property-matching"] },
                   error: null,
                 }),
               }),
@@ -142,7 +142,7 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
             eq: () => ({
               eq: () => ({
                 maybeSingle: async () => ({
-                  data: { responsibilities: ["new-leads","property-matching","nexus-review","newsletter"] },
+                  data: { responsibilities: currentPermissions.includes("nexus.read") ? ["nexus-review"] : [] },
                   error: null,
                 }),
               }),
