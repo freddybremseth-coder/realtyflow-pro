@@ -11,6 +11,7 @@ on:
       - 'src/app/api/cron/seo-growth-review/**'
       - 'src/app/api/cron/seo-autopilot/**'
       - 'src/app/api/public/search-discovery/**'
+      - 'src/app/api/public/conversion-event/**'
       - '.github/workflows/seo-agent-validation.yml'
   push:
     branches: [main]
@@ -23,6 +24,7 @@ on:
       - 'src/app/api/cron/seo-growth-review/**'
       - 'src/app/api/cron/seo-autopilot/**'
       - 'src/app/api/public/search-discovery/**'
+      - 'src/app/api/public/conversion-event/**'
       - '.github/workflows/seo-agent-validation.yml'
 
 jobs:
@@ -39,4 +41,4 @@ jobs:
       - name: Check Sam SEO evidence and public audit contracts
         run: node --import tsx --test src/services/agents/seo-*.test.ts
       - name: Verify public discovery admission and private route boundaries
-        run: NODE_OPTIONS=--conditions=react-server node --import tsx --test src/middleware.test.ts src/app/api/public/search-discovery/route.test.ts src/app/api/agents/seo-brand-publishing/route.test.ts
+        run: NODE_OPTIONS=--conditions=react-server node --import tsx --test src/middleware.test.ts src/app/api/public/search-discovery/route.test.ts src/app/api/public/conversion-event/route.test.ts src/app/api/agents/seo-brand-publishing/route.test.ts
