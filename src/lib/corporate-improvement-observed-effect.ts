@@ -5,6 +5,17 @@ type GrowthReviewLogRow = {
   details?: unknown;
 };
 
+export type CorporateImprovementRecurrence = {
+  detected: boolean;
+  stage: CorporateGrowthReviewStage;
+  label: string;
+  closedAt: string;
+  postClosureSnapshots: number;
+  firstRecurrenceAt: string | null;
+  latestAt: string | null;
+  note: string;
+};
+
 export type CorporateImprovementObservedEffect = {
   status: "NOT_ENOUGH_DATA" | "MEASURED_UP" | "MEASURED_DOWN" | "UNCHANGED";
   stage: CorporateGrowthReviewStage;
@@ -129,5 +140,66 @@ export function buildCorporateImprovementObservedEffect(
     deltaPctPoints,
     note:
       "Dette er en målt endring i Corporate-funnelen etter at tiltaket ble opprettet. Den dokumenterer ikke at tiltaket forårsaket endringen.",
+  };
+}
+
+
+export function buildCorporateImprovementRecurrence(
+  rows: GrowthReviewLogRow[],
+  improvement: { candidateId: string; closedAt: string | null },
+): CorporateImprovementRecurrence | null {
+  const stage = corporateStageFromCandidateId(improvement.candidateId);
+  if (!stage || !improvement.closedAt) return null;
+
+  const closedAtMs = Date.parse(improvement.closedAt);
+  if (!Number.isFinite(closedAtMs)) return null;
+
+  const reviews = rows
+    .map(parseReview)
+    .filter((item): item is NonNullable<ReturnType<typeof parseReview>> => item !== null)
+    .filter((item) => Date.parse(item.createdAt) > closedAtMs)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const matching: typeof reviews = [];
+  for (const item of reviews) {
+    const itemStage =
+      item.review.status === "READY"
+        ? item.review.bottleneck?.stage || null
+        : null;
+    if (itemStage !== stage) {
+      if (matching.length === 0) {
+        return {
+          detected: false,
+          stage,
+          label: item.review.bottleneck?.label || stage,
+          closedAt: improvement.closedAt,
+          postClosureSnapshots: 0,
+          firstRecurrenceAt: null,
+          latestAt: item.createdAt,
+          note:
+            "Tiltaket er lukket, og siste kvalifiserte Growth Review viser ikke samme flaskehals. Ingen gjenåpning foreslås.",
+        };
+      }
+      break;
+    }
+    matching.push(item);
+  }
+
+  const latest = matching[0] || null;
+  const first = matching.at(-1) || null;
+  const label = latest?.review.bottleneck?.label || stage;
+  const detected = matching.length >= 2;
+
+  return {
+    detected,
+    stage,
+    label,
+    closedAt: improvement.closedAt,
+    postClosureSnapshots: matching.length,
+    firstRecurrenceAt: detected ? first?.createdAt || null : null,
+    latestAt: latest?.createdAt || null,
+    note: detected
+      ? "Samme Corporate-flaskehals er målt i minst to nye READY-snapshots etter at tiltaket ble lukket. Dette er en tilbakekomst-indikasjon og krever menneskelig vurdering før eventuell gjenåpning."
+      : "Tiltaket er lukket. Det finnes ennå ikke minst to nye READY-snapshots med samme flaskehals etter lukking.",
   };
 }
