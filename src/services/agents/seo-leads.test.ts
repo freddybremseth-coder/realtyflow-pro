@@ -50,3 +50,56 @@ test("SEO opportunities are evidence-based, review-only and avoid false organic 
   assert.equal(opportunities[1].issueId, "source-page-attribution:zeneco");
   assert.ok(opportunities.every(item => !/verified organic leads|Google generated/i.test(item.description)));
 });
+
+
+test("search-to-CTA opportunity stays review-only and does not claim leads or sales", () => {
+  const signals = {
+    totals: { current: 25, previous: 0, search: 20, ai: 5, changePercent: null },
+    dataQuality: { truncated: false },
+    byBrand: [
+      { brandId: "chatgenius", current: 25, previous: 0, search: 20, ai: 5 },
+    ],
+    conversions: {
+      current: 0,
+      previous: 0,
+      attributed: 0,
+      attributedShare: null,
+      changePercent: null,
+      truncated: false,
+      byType: [],
+      byTarget: [],
+      bySource: [],
+      topLandingPages: [],
+    },
+  } as unknown as Awaited<ReturnType<typeof getSEOObservedSignals>>;
+  const leads = summarizeSEOLeads([], NOW);
+  const opportunities = planSEOOpportunities(signals, leads, [] as SiteAudit[]);
+  const item = opportunities.find(opportunity => opportunity.issueId === "search-to-cta:chatgenius");
+  assert.ok(item);
+  assert.match(item!.description, /ikke bevis for null leads eller null salg/i);
+  assert.doesNotMatch(item!.description, /SEO generated|organic conversions|Google leads/i);
+});
+
+test("CTA source coverage can trigger attribution review without classifying unattributed clicks as direct", () => {
+  const signals = {
+    totals: { current: 0, previous: 0, search: 0, ai: 0, changePercent: null },
+    dataQuality: { truncated: false },
+    byBrand: [{ brandId: "chatgenius", current: 0, previous: 0, search: 0, ai: 0 }],
+    conversions: {
+      current: 7,
+      previous: 0,
+      attributed: 0,
+      attributedShare: 0,
+      changePercent: null,
+      truncated: false,
+      byType: [{ eventType: "demo", count: 7 }],
+      byTarget: [{ target: "demo_hub", count: 7 }],
+      bySource: [],
+      topLandingPages: [],
+    },
+  } as unknown as Awaited<ReturnType<typeof getSEOObservedSignals>>;
+  const opportunities = planSEOOpportunities(signals, summarizeSEOLeads([], NOW), [] as SiteAudit[]);
+  const item = opportunities.find(opportunity => opportunity.issueId === "cta-source-attribution:chatgenius");
+  assert.ok(item);
+  assert.match(item!.nextAction, /ikke tolke manglende attribusjon som direkte trafikk/i);
+});
