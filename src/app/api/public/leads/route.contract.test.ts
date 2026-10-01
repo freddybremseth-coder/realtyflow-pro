@@ -65,3 +65,12 @@ test("Direct partner inquiries become engaged without automated outreach", () =>
   assert.match(source, /Corporate Homes partner: svar personlig/);
   assert.doesNotMatch(source, /sendEmail|sendMessage|personal_contact_enrichment/);
 });
+
+test("public lead recovers UTM attribution from page_url when fields are not posted separately", () => {
+  assert.match(source, /trackingFromPageUrl\(pageUrl\)/);
+  assert.match(source, /pageTracking\.utm_source/);
+  assert.match(source, /pageTracking\.utm_campaign/);
+  assert.match(source, /pageTracking\.utm_content/);
+  assert.match(source, /pageTracking\.visitor_id/);
+  assert.match(source, /pageTracking\.session_id/);
+});

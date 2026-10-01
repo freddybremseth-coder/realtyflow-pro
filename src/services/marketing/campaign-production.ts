@@ -26,6 +26,7 @@ import { resolveInventoryMarketingProperty, type InventoryMarketingProperty } fr
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
+import { buildContentUtm, withUtm } from "@/lib/marketing/attribution";
 import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 import { selectPropertyCreativeStyle } from "@/lib/marketing/creative-style";
 import { renderPropertySocialCard, type PropertyCardSupabase } from "@/services/marketing/property-social-card";
@@ -117,6 +118,40 @@ function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
   const tail = body.slice(-420);
   if (hasSemanticBookingCta(cta) && hasSemanticBookingCta(tail)) return { ...creative, asset: { ...creative.asset, cta: undefined } };
   return creative;
+}
+
+const OWNED_GROWTH_HOSTS = new Set([
+  "zenecohomes.com", "www.zenecohomes.com",
+  "pinosoecolife.com", "www.pinosoecolife.com",
+  "donaanna.com", "www.donaanna.com",
+  "chatgenius.pro", "www.chatgenius.pro",
+  "freddybremseth.com", "www.freddybremseth.com",
+  "art.freddybremseth.com",
+  "books.freddybremseth.com",
+  "remaster.freddybremseth.com",
+]);
+
+export function addGrowthAttributionToCreative(creative: CreativeResult): CreativeResult {
+  const cta = String(creative.asset.cta ?? "");
+  if (!cta || !creative.asset.contentId || !creative.asset.channel) return creative;
+  const utm = buildContentUtm({
+    channel: creative.asset.channel,
+    contentId: creative.asset.contentId,
+    campaign: creative.asset.campaignId || undefined,
+  });
+  const tracked = cta.replace(/https:\/\/[^\s]+/g, (raw) => {
+    const trailing = raw.match(/[),.;!?]+$/)?.[0] ?? "";
+    const candidate = trailing ? raw.slice(0, -trailing.length) : raw;
+    try {
+      const parsed = new URL(candidate);
+      if (!OWNED_GROWTH_HOSTS.has(parsed.hostname.toLowerCase())) return raw;
+      return withUtm(candidate, utm) + trailing;
+    } catch {
+      return raw;
+    }
+  });
+  if (tracked === cta) return creative;
+  return { ...creative, asset: { ...creative.asset, cta: tracked } };
 }
 
 export function makeDeterministicInventoryCreative(brief: any, property: InventoryMarketingProperty): CreativeResult {
@@ -532,7 +567,7 @@ export async function createCampaignDraft(
         .join("\n");
       creative = { ...creative, asset: { ...creative.asset, cta: combined } };
     }
-    creative = dedupeCreativeCta(creative);
+    creative = addGrowthAttributionToCreative(dedupeCreativeCta(creative));
     await persistAsset(supabase, creative).catch(() => undefined);
 
     const account = await resolvePublishingAccount(supabase, {
