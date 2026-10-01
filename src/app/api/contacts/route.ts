@@ -239,13 +239,27 @@ export async function PATCH(request: NextRequest) {
   if (unauthorized) return unauthorized;
   const supabase = getContactsSupabase();
   if (!supabase) return missingDatabaseResponse();
-  const { id, ...rawUpdates } = await request.json();
+  const { id, mark_as_spam: markAsSpam, ...rawUpdates } = await request.json();
   const { data: previous } = await supabase
     .from('contacts')
-    .select('id,pipeline_status,brand_id,brand')
+    .select('id,pipeline_status,brand_id,brand,source')
     .eq('id', id)
     .maybeSingle();
-  const updates = normalizeIncomingContact(rawUpdates);
+  if (!previous?.id) {
+    return NextResponse.json({ ok: false, error: { code: 'CONTACT_NOT_FOUND', message: 'Contact not found' } }, { status: 404 });
+  }
+  const spamSource = String(previous.source || 'unknown').startsWith('__SPAM__:')
+    ? String(previous.source)
+    : `__SPAM__:${String(previous.source || 'unknown')}`;
+  const updates = normalizeIncomingContact(markAsSpam
+    ? {
+        ...rawUpdates,
+        pipeline_status: 'LOST',
+        do_not_contact: true,
+        next_followup: null,
+        source: spamSource,
+      }
+    : rawUpdates);
   updates.updated_at = new Date().toISOString();
   const { data, error } = await updateContactWithFallbacks(supabase, id, updates);
   if (error) return NextResponse.json({ error: error.message, updates }, { status: 500 });
@@ -255,6 +269,16 @@ export async function PATCH(request: NextRequest) {
   const contactId = String(data?.id || id);
   const brandId = String(data?.brand_id || data?.brand || previous?.brand_id || previous?.brand || '').trim();
   const occurredAt = new Date().toISOString();
+
+  if (markAsSpam) {
+    await supabase
+      .from('work_items')
+      .update({ status: 'CANCELLED', updated_at: occurredAt })
+      .eq('source_id', contactId)
+      .neq('status', 'DONE')
+      .neq('status', 'CANCELLED')
+      .then(() => null);
+  }
 
   if (previousStatus !== nextStatus) {
     const salePrice = numericOrNull(data?.sale_price ?? updates.sale_price ?? data?.pipeline_value ?? updates.pipeline_value);
@@ -272,7 +296,7 @@ export async function PATCH(request: NextRequest) {
     }).catch(() => undefined);
   }
 
-  return NextResponse.json({ contact: normalizeContactForClient(data) });
+  return NextResponse.json({ contact: normalizeContactForClient(data), spam: Boolean(markAsSpam) });
 }
 
 export async function DELETE(request: NextRequest) {
