@@ -310,14 +310,8 @@ export default function WorkspaceUsersPage() {
 
 
 
-  const enabledBrandCount = useMemo(
-    () => (snapshot?.brands || []).filter(brand => choices[brand.brandKey]?.enabled).length,
-    [snapshot, choices],
-  );
-  const selectedPermissionCount = useMemo(
-    () => brandAccess().reduce((sum, item) => sum + item.permissions.length, 0),
-    [snapshot, choices],
-  );
+  const enabledBrandCount = (snapshot?.brands || []).filter(brand => choices[brand.brandKey]?.enabled).length;
+  const selectedPermissionCount = brandAccess().reduce((sum, item) => sum + item.permissions.length, 0);
 
   async function toggleLogin() {
     if (!snapshot || busy) return;
