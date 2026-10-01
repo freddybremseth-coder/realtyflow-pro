@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  filterAllowedPrimaryResponsibilities,
   filterAllowedResponsibilities,
+  normalizePrimaryResponsibilities,
   normalizeResponsibilities,
   responsibilityAllowed,
+  suggestedPrimaryResponsibilitiesForPreset,
   suggestedResponsibilitiesForPreset,
 } from "./responsibilities";
 
@@ -43,4 +46,47 @@ test("read filtering preserves valid responsibilities when older assignments bec
     ["crm.read"],
   );
   assert.deepEqual(filtered, ["new-leads"]);
+});
+
+
+test("primary responsibilities must be a subset of valid assigned responsibilities", () => {
+  const permissions = ["crm.read","properties.catalog.read"] as const;
+  const assigned = ["new-leads","property-matching"] as const;
+  assert.deepEqual(
+    normalizePrimaryResponsibilities("pinosoecolife", ["new-leads"], [...permissions], [...assigned]),
+    ["new-leads"],
+  );
+  assert.equal(
+    normalizePrimaryResponsibilities("pinosoecolife", ["newsletter"], [...permissions], [...assigned]),
+    null,
+  );
+});
+
+test("read filtering drops stale primary ownership without dropping valid support responsibility", () => {
+  const filtered = filterAllowedPrimaryResponsibilities(
+    "pinosoecolife",
+    ["new-leads","newsletter"],
+    ["crm.read"],
+    ["new-leads"],
+  );
+  assert.deepEqual(filtered, ["new-leads"]);
+});
+
+test("role profiles suggest primary ownership conservatively", () => {
+  const marketingResponsibilities = ["seo-content","social-reels","nexus-review"] as const;
+  const marketingPrimary = suggestedPrimaryResponsibilitiesForPreset(
+    "pinosoecolife",
+    "marketing",
+    ["visibility.plan","content.edit","marketing.draft","reels.create","nexus.read"],
+    [...marketingResponsibilities],
+  );
+  assert.deepEqual(marketingPrimary, ["seo-content","social-reels"]);
+
+  const partnerPrimary = suggestedPrimaryResponsibilitiesForPreset(
+    "pinosoecolife",
+    "partner",
+    ["crm.read","properties.catalog.read","visibility.plan","marketing.draft","email.draft","nexus.read"],
+    ["new-leads","property-matching","seo-content","social-reels","newsletter","nexus-review"],
+  );
+  assert.deepEqual(partnerPrimary, []);
 });
