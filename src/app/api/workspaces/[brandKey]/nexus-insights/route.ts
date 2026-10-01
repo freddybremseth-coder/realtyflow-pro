@@ -42,7 +42,7 @@ export async function GET(
   const supabase = access.value.supabase;
   const brandKey = params.brandKey;
 
-  const [sourcesR, learningR, planR, focusR] = await Promise.all([
+  const [sourcesR, learningR, planR, focusR, newsletterR] = await Promise.all([
     supabase.from("marketing_source_queue")
       .select("source_type,title,priority,recommended_channels,status,blocked_reason,updated_at")
       .eq("brand_id", brandKey)
@@ -63,10 +63,16 @@ export async function GET(
       .eq("status", "active")
       .order("intensity", { ascending: false })
       .limit(12),
+    supabase.schema("core").from("workspace_newsletter_campaigns")
+      .select("title,status,sent_count,opened_count,clicked_count,sent_at,segment_filter")
+      .eq("brand_id", access.value.brandId)
+      .eq("status", "sent")
+      .order("sent_at", { ascending: false })
+      .limit(20),
   ]);
 
-  const failures = [sourcesR.error, learningR.error, planR.error, focusR.error].filter(Boolean);
-  if (failures.length === 4) return fail(503, "NEXUS_INSIGHTS_UNAVAILABLE");
+  const failures = [sourcesR.error, learningR.error, planR.error, focusR.error, newsletterR.error].filter(Boolean);
+  if (failures.length === 5) return fail(503, "NEXUS_INSIGHTS_UNAVAILABLE");
 
   const sources = (sourcesR.data || []) as Array<Record<string, unknown>>;
   const learning = (learningR.data || []) as Array<Record<string, unknown>>;
@@ -116,6 +122,31 @@ export async function GET(
     reviewDueAt: typeof row.review_due_at === "string" ? row.review_due_at : null,
   }));
 
+  const newsletterRows = (newsletterR.data || []) as Array<Record<string, unknown>>;
+  const newsletterSent = newsletterRows.reduce((sum, row) => sum + safeNumber(row.sent_count), 0);
+  const newsletterOpened = newsletterRows.reduce((sum, row) => sum + safeNumber(row.opened_count), 0);
+  const newsletterClicked = newsletterRows.reduce((sum, row) => sum + safeNumber(row.clicked_count), 0);
+  const newsletterSummary = {
+    campaigns: newsletterRows.length,
+    sent: newsletterSent,
+    opened: newsletterOpened,
+    clicked: newsletterClicked,
+    openRate: newsletterSent > 0 ? newsletterOpened / newsletterSent : 0,
+    clickRate: newsletterSent > 0 ? newsletterClicked / newsletterSent : 0,
+    topCampaigns: newsletterRows.slice().sort((a,b) => {
+      const ar = safeNumber(a.sent_count) ? safeNumber(a.clicked_count) / safeNumber(a.sent_count) : 0;
+      const br = safeNumber(b.sent_count) ? safeNumber(b.clicked_count) / safeNumber(b.sent_count) : 0;
+      return br - ar;
+    }).slice(0,5).map(row => ({
+      title: typeof row.title === "string" ? row.title.slice(0,180) : "Nyhetsbrev",
+      sent: safeNumber(row.sent_count),
+      opened: safeNumber(row.opened_count),
+      clicked: safeNumber(row.clicked_count),
+      segments: safeStringArray(row.segment_filter, 8),
+      sentAt: typeof row.sent_at === "string" ? row.sent_at : null,
+    })),
+  };
+
   const attention: Array<{ level: "info" | "watch" | "action"; title: string; detail: string }> = [];
   const ready = sourceByStatus.ready || 0;
   const blocked = sourceByStatus.blocked || 0;
@@ -140,6 +171,10 @@ export async function GET(
     title: "Ingen brand-spesifikke læringsregler ennå",
     detail: "Nexus har foreløpig ikke nok målt signal til å vise sikre læringsregler for denne merkevaren.",
   });
+  if (newsletterSent >= 20) {
+    if (newsletterSummary.clickRate >= 0.05) attention.push({ level: "info", title: "Nyhetsbrev gir målbar respons", detail: `${(newsletterSummary.clickRate*100).toLocaleString("nb-NO",{maximumFractionDigits:1})}% av leverte nyhetsbrev har gitt minst ett sporet klikk per mottaker i det målte datasettet.` });
+    if (newsletterSummary.openRate < 0.2) attention.push({ level: "watch", title: "Lav åpning på nyhetsbrev", detail: "Se på emnefelt, segment og tidspunkt før neste utsending. Åpningssporing er veiledende fordi enkelte e-postklienter blokkerer eller forhåndslaster bilder." });
+  }
   if (!plan) attention.push({
     level: "watch",
     title: "Ingen aktiv vekstplan funnet",
@@ -173,6 +208,7 @@ export async function GET(
       rules: learningRules,
     },
     growthPlan: plan,
+    newsletterSummary,
     ownerFocus: focus,
     attention: attention.slice(0, 10),
     warnings: [
@@ -180,6 +216,7 @@ export async function GET(
       learningR.error ? "Læringsreglene kunne ikke leses komplett." : null,
       planR.error ? "Vekstplanen kunne ikke leses." : null,
       focusR.error ? "Eierfokus kunne ikke leses." : null,
+      newsletterR.error ? "Nyhetsbrevresultater kunne ikke leses." : null,
     ].filter(Boolean),
     excluded: [
       "runtime_controls",
