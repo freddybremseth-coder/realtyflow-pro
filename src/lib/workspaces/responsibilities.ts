@@ -77,3 +77,42 @@ export function suggestedResponsibilitiesForPreset(
 
   return requested.filter(item => responsibilityAllowed(brandKey, item, permissions));
 }
+
+
+export function normalizePrimaryResponsibilities(
+  brandKey: string,
+  value: unknown,
+  permissions: WorkspacePermission[],
+  responsibilities: WorkspaceResponsibilityId[],
+): WorkspaceResponsibilityId[] | null {
+  const normalized = normalizeResponsibilities(brandKey, value, permissions);
+  if (!normalized) return null;
+  return normalized.every(item => responsibilities.includes(item)) ? normalized : null;
+}
+
+export function filterAllowedPrimaryResponsibilities(
+  brandKey: string,
+  value: unknown,
+  permissions: WorkspacePermission[],
+  responsibilities: WorkspaceResponsibilityId[],
+): WorkspaceResponsibilityId[] {
+  return filterAllowedResponsibilities(brandKey, value, permissions)
+    .filter(item => responsibilities.includes(item));
+}
+
+export function suggestedPrimaryResponsibilitiesForPreset(
+  brandKey: string,
+  presetId: "seo-content" | "sales-crm" | "marketing" | "partner" | "read-only" | "external-agency",
+  permissions: WorkspacePermission[],
+  responsibilities: WorkspaceResponsibilityId[],
+): WorkspaceResponsibilityId[] {
+  const requested: WorkspaceResponsibilityId[] =
+    presetId === "sales-crm" ? ["new-leads"] :
+    presetId === "seo-content" ? ["seo-content"] :
+    presetId === "marketing" ? ["seo-content","social-reels"] :
+    presetId === "external-agency" ? ["seo-content","social-reels"] :
+    [];
+
+  return requested.filter(item =>
+    responsibilities.includes(item) && responsibilityAllowed(brandKey, item, permissions));
+}
