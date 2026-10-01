@@ -26,6 +26,8 @@ import { resolveInventoryMarketingProperty, type InventoryMarketingProperty } fr
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
+import { selectPropertyCreativeStyle } from "@/lib/marketing/creative-style";
+import { renderPropertySocialCard, type PropertyCardSupabase } from "@/services/marketing/property-social-card";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 const PREAPPROVED_REUSABLE_SOURCES = new Set(["ad_creative", "content_hub_approved"]);
@@ -362,6 +364,14 @@ export async function createCampaignDraft(
     && (!routedFormat || !learnedRecipe.format || learnedRecipe.format === routedFormat)
     ? learnedRecipe
     : null;
+  const creativeStyle = inventoryProperty
+    ? selectPropertyCreativeStyle({
+        brandId: input.brandId,
+        channel: targetChannel,
+        seed: `${inventoryProperty.id}|${run.marketingRunId}`,
+        favoredStyle: (recipeApplicable?.creativeStyle as any) ?? (fav.creativeStyle as any) ?? null,
+      })
+    : undefined;
   const baseGenome: ContentGenome = {
     brandId: input.brandId,
     channel: targetChannel,
@@ -373,6 +383,7 @@ export async function createCampaignDraft(
     topic: input.topic ?? (recipeApplicable?.topic as any) ?? (fav.topic as any),
     area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_") ?? (recipeApplicable?.area as any) ?? (fav.area as any),
     propertyType: inventoryProperty?.propertyType ?? (recipeApplicable?.propertyType as any) ?? (fav.propertyType as any),
+    creativeStyle: (recipeApplicable?.creativeStyle as any) ?? creativeStyle ?? (fav.creativeStyle as any),
   };
   const campaign: CampaignPlan = { campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit", goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea };
   const briefs = atomizeCampaign(campaign, {
@@ -426,6 +437,46 @@ export async function createCampaignDraft(
           ? makeDeterministicInventoryCreative(brief, inventoryProperty)
           : await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
         creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
+
+        const resolvedCreativeStyle = creative.asset.genome.creativeStyle;
+        const storageReady = Boolean((supabase as any)?.storage?.from);
+        if (
+          storageReady
+          && resolvedCreativeStyle
+          && (brief.channel === "facebook" || brief.channel === "instagram")
+          && /^https:\/\//i.test(inventoryProperty.primaryImage)
+        ) {
+          try {
+            const card = await renderPropertySocialCard(supabase as unknown as PropertyCardSupabase, {
+              brandId: input.brandId,
+              brandName: brand.brandName,
+              propertyId: inventoryProperty.id,
+              propertyRef: inventoryProperty.ref,
+              sourceImageUrl: inventoryProperty.primaryImage,
+              creativeStyle: resolvedCreativeStyle as any,
+              factSources: inventoryProperty.factSources,
+              channel: brief.channel,
+            });
+            creative = {
+              ...creative,
+              asset: {
+                ...creative.asset,
+                media: {
+                  ...creative.asset.media,
+                  imageUrl: card.imageUrl,
+                  mediaType: "image",
+                  altText: [inventoryProperty.title, inventoryProperty.location].filter(Boolean).join(" · "),
+                },
+              },
+            };
+          } catch (error) {
+            console.warn(
+              "[Creative Variant Engine] Property card render failed; using original Inventory image:",
+              error instanceof Error ? error.message : error,
+            );
+          }
+        }
+
         sourceType = "generated";
         sourceId = `property:${inventoryProperty.id}`;
         reuseMode = input.deterministicInventoryCopy ? "inventory_deterministic_fallback" : "inventory_grounded";
