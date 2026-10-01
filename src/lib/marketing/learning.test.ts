@@ -6,10 +6,13 @@ import {
   classifyOutcomeTier,
   contentRecipeValue,
   deriveLearningRules,
+  learningEvidenceAgeDays,
+  learningFreshnessWeight,
   parseContentRecipe,
   recommendGenome,
   type ExperimentEvidence,
   type LearningObservation,
+  type LearningRule,
 } from "@/lib/marketing/learning";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
@@ -293,4 +296,73 @@ test("learning favors an exact sale-backed content recipe instead of inventing a
   assert.equal(parsed?.hookType, "price_first");
   assert.equal(parsed?.ctaType, "book_viewing");
   assert.equal(parsed?.propertyType, "villa");
+});
+
+
+const freshnessRule = (
+  over: Partial<LearningRule> & Pick<LearningRule, "dimension" | "value" | "verdict" | "lift">,
+): LearningRule => ({
+  ruleKey: `b1|${over.dimension}|${over.value}`,
+  scope: "b1",
+  dimension: over.dimension,
+  value: over.value,
+  sample: 10,
+  avgBusinessValue: 100,
+  avgQualifiedLeadRate: 0.1,
+  totalLeads: 1,
+  totalQualified: 1,
+  totalSales: 0,
+  totalCommissionEur: 0,
+  outcomeTier: "lead",
+  lift: over.lift,
+  evidence: "reliable",
+  verdict: over.verdict,
+  finding: over.value,
+  ...over,
+});
+
+test("learning freshness weight decays from fresh to recent to aging to stale", () => {
+  const now = new Date("2026-09-29T12:00:00Z");
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-09-20T12:00:00Z" }, now), 1);
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-09-10T12:00:00Z" }, now), 0.85);
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-08-10T12:00:00Z" }, now), 0.6);
+  assert.equal(learningFreshnessWeight({ evidenceLastAt: "2026-07-01T12:00:00Z" }, now), 0);
+  assert.equal(learningEvidenceAgeDays({ evidenceLastAt: "2026-09-20T12:00:00Z" }, now), 9);
+});
+
+test("fresh rule can outrank aging observational winner within the same outcome tier", () => {
+  const now = new Date("2026-09-29T12:00:00Z");
+  const rules: LearningRule[] = [
+    freshnessRule({ dimension: "hookType", value: "old_winner", verdict: "favor", lift: 2, evidenceLastAt: "2026-08-10T12:00:00Z" }),
+    freshnessRule({ dimension: "hookType", value: "fresh_winner", verdict: "favor", lift: 1.3, evidenceLastAt: "2026-09-25T12:00:00Z" }),
+  ];
+  const rec = recommendGenome(rules, { dimensions: ["hookType"], now });
+  assert.equal(rec.favor.hookType?.value, "fresh_winner");
+});
+
+test("observational rules older than sixty days cannot steer favor or avoid", () => {
+  const now = new Date("2026-09-29T12:00:00Z");
+  const rules: LearningRule[] = [
+    freshnessRule({ dimension: "area", value: "stale-favor", verdict: "favor", lift: 3, evidenceLastAt: "2026-06-01T12:00:00Z" }),
+    freshnessRule({ dimension: "area", value: "stale-avoid", verdict: "avoid", lift: 0.1, evidenceLastAt: "2026-06-01T12:00:00Z" }),
+  ];
+  const rec = recommendGenome(rules, { dimensions: ["area"], now });
+  assert.equal(rec.favor.area, undefined);
+  assert.equal(rec.avoid.length, 0);
+  assert.match(rec.notes.join(" "), /2 eldre observasjonelle læringsregler/);
+});
+
+test("experiment-backed rule is not decayed by observational evidence age", () => {
+  const now = new Date("2026-09-29T12:00:00Z");
+  const rule = freshnessRule({
+    dimension: "ctaType",
+    value: "experiment",
+    verdict: "favor",
+    lift: 1.2,
+    evidenceLastAt: "2026-01-01T12:00:00Z",
+    experimentBacked: true,
+  });
+  assert.equal(learningFreshnessWeight(rule, now), 1);
+  const rec = recommendGenome([rule], { dimensions: ["ctaType"], now });
+  assert.equal(rec.favor.ctaType?.value, "experiment");
 });

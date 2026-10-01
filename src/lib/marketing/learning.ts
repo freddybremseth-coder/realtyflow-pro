@@ -337,32 +337,100 @@ export interface GenomeRecommendation {
   notes: string[];
 }
 
+export const LEARNING_FRESHNESS_DECAY = {
+  fullWeightDays: 14,
+  recentWeightDays: 30,
+  maxActionableDays: 60,
+  recentWeight: 0.85,
+  agingWeight: 0.6,
+} as const;
+
+export function learningEvidenceAgeDays(
+  rule: Pick<LearningRule, "evidenceLastAt">,
+  now = new Date(),
+): number | null {
+  if (!rule.evidenceLastAt) return null;
+  const evidenceMs = Date.parse(rule.evidenceLastAt);
+  if (!Number.isFinite(evidenceMs)) return null;
+  return Math.max(0, Math.floor((now.getTime() - evidenceMs) / 86_400_000));
+}
+
+export function learningFreshnessWeight(
+  rule: Pick<LearningRule, "evidenceLastAt" | "experimentBacked">,
+  now = new Date(),
+): number {
+  if (rule.experimentBacked) return 1;
+  const ageDays = learningEvidenceAgeDays(rule, now);
+  // Migration grace: legacy rows without evidence timestamps retain their
+  // current weight until the normal learning refresh populates evidenceLastAt.
+  if (ageDays == null) return 1;
+  if (ageDays <= LEARNING_FRESHNESS_DECAY.fullWeightDays) return 1;
+  if (ageDays <= LEARNING_FRESHNESS_DECAY.recentWeightDays) return LEARNING_FRESHNESS_DECAY.recentWeight;
+  if (ageDays <= LEARNING_FRESHNESS_DECAY.maxActionableDays) return LEARNING_FRESHNESS_DECAY.agingWeight;
+  return 0;
+}
+
 export function recommendGenome(
   rules: LearningRule[],
-  filter?: { dimensions?: LearningDimension[] },
+  filter?: { dimensions?: LearningDimension[]; now?: Date },
 ): GenomeRecommendation {
   const dims = filter?.dimensions ?? LEARNING_DIMENSIONS;
+  const now = filter?.now ?? new Date();
   const favor: GenomeRecommendation["favor"] = {};
   const avoid: GenomeRecommendation["avoid"] = [];
   const notes: string[] = [];
+  let staleIgnored = 0;
 
   for (const dim of dims) {
-    const inDim = rules.filter((r) => r.dimension === dim);
-    const favored = inDim
-      .filter((r) => r.verdict === "favor")
+    const weighted = rules
+      .filter((rule) => rule.dimension === dim)
+      .map((rule) => ({ rule, freshnessWeight: learningFreshnessWeight(rule, now) }));
+
+    staleIgnored += weighted.filter(({ rule, freshnessWeight }) =>
+      freshnessWeight === 0
+      && !rule.experimentBacked
+      && (rule.verdict === "favor" || rule.verdict === "avoid"),
+    ).length;
+
+    const favored = weighted
+      .filter(({ rule, freshnessWeight }) => rule.verdict === "favor" && freshnessWeight > 0)
       .sort((a, b) =>
-        Number(!!b.experimentBacked) - Number(!!a.experimentBacked)
-        || outcomeTierRank(b.outcomeTier) - outcomeTierRank(a.outcomeTier)
-        || b.lift - a.lift,
+        Number(!!b.rule.experimentBacked) - Number(!!a.rule.experimentBacked)
+        || outcomeTierRank(b.rule.outcomeTier) - outcomeTierRank(a.rule.outcomeTier)
+        || (b.rule.lift * b.freshnessWeight) - (a.rule.lift * a.freshnessWeight)
+        || b.rule.lift - a.rule.lift,
       )[0];
+
     if (favored) {
-      favor[dim] = { value: favored.value, lift: favored.lift, evidence: favored.evidence, outcomeTier: favored.outcomeTier, experimentBacked: favored.experimentBacked };
-      notes.push(favored.finding);
+      favor[dim] = {
+        value: favored.rule.value,
+        lift: favored.rule.lift,
+        evidence: favored.rule.evidence,
+        outcomeTier: favored.rule.outcomeTier,
+        experimentBacked: favored.rule.experimentBacked,
+      };
+      notes.push(
+        favored.freshnessWeight < 1
+          ? `${favored.rule.finding} · ferskhetsvekt ${favored.freshnessWeight.toFixed(2)}`
+          : favored.rule.finding,
+      );
     }
-    for (const r of inDim.filter((r) => r.verdict === "avoid")) {
-      avoid.push({ dimension: dim, value: r.value, lift: r.lift });
+
+    const avoided = weighted
+      .filter(({ rule, freshnessWeight }) => rule.verdict === "avoid" && freshnessWeight > 0)
+      .sort((a, b) =>
+        ((1 - b.rule.lift) * b.freshnessWeight) - ((1 - a.rule.lift) * a.freshnessWeight),
+      );
+    for (const { rule } of avoided) {
+      avoid.push({ dimension: dim, value: rule.value, lift: rule.lift });
     }
   }
-  if (Object.keys(favor).length === 0) notes.push("Ikke nok evidens ennå — generér variert og la systemet lære.");
+
+  if (staleIgnored > 0) {
+    notes.push(`${staleIgnored} eldre observasjonelle læringsregler (> ${LEARNING_FRESHNESS_DECAY.maxActionableDays} dager) holdes ute til ny evidens kommer.`);
+  }
+  if (Object.keys(favor).length === 0) {
+    notes.push("Ikke nok evidens som er fersk nok — generér variert og la systemet lære.");
+  }
   return { favor, avoid, notes };
 }
