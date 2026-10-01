@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSmtpConfigFromAccount } from "@/services/email/account-auth";
+import { appendHostingerSentCopy } from "@/services/email/append-sent-copy";
 import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
 import { sendEmail, type OutgoingAttachment } from "@/services/email/smtp-sender";
 
@@ -58,7 +59,26 @@ export async function sendBrandEmail(
   });
   if (!result.success) return { success: false, error: result.error || "Send failed" };
 
-  await supabase.from("email_messages").insert({
+  // A sent SMTP message must also appear in the correct CRM Customer 360.
+  // Do not silently link an ambiguous address to the wrong person or brand.
+  // Sending is already complete at this point, so a CRM lookup failure must
+  // never cause a retry or a second customer email.
+  let customerId: string | null = null;
+  const recipient = params.to.length === 1 ? String(params.to[0] || "").trim().toLowerCase() : "";
+  if (/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)) {
+    const { data: candidates, error: lookupError } = await supabase
+      .from("contacts")
+      .select("id,email")
+      .ilike("email", recipient)
+      .limit(3);
+    if (lookupError) console.warn("[Brand Email] CRM recipient lookup failed after SMTP acceptance", lookupError.message);
+    const exact = (candidates || []).filter((contact) => String(contact.email || "").trim().toLowerCase() === recipient);
+    if (exact.length === 1) customerId = String(exact[0].id);
+  }
+
+  const { error: logError } = await supabase.from("email_messages").insert({
+    crm_contact_id: customerId,
+    matched_customer_id: customerId,
     brand_id: params.brandId,
     message_id: result.messageId || null,
     thread_id: result.messageId || null,
@@ -72,6 +92,21 @@ export async function sendBrandEmail(
     is_read: true,
     received_at: new Date().toISOString(),
   });
+  if (logError) console.error("[Brand Email] SMTP accepted but CRM audit insert failed", logError.message);
+
+  // IMAP Sent is a separate best-effort filing operation. Its failure does
+  // NOT mean customer delivery failed and must NEVER resend the SMTP email.
+  const sentCopy = await appendHostingerSentCopy(config, {
+    to: params.to,
+    subject: params.subject,
+    bodyText: params.bodyText,
+    bodyHtml: params.bodyHtml,
+    attachments: params.attachments,
+    fromName: params.fromName || config.display_name || undefined,
+  }, result.messageId);
+  if (sentCopy !== "appended" && sentCopy !== "already_exists" && sentCopy !== "unsupported") {
+    console.warn("[Brand Email] Customer SMTP send accepted; IMAP Sent copy status:", sentCopy);
+  }
 
   return { success: true, messageId: result.messageId };
 }
