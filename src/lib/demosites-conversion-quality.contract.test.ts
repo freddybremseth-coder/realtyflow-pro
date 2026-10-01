@@ -62,6 +62,14 @@ test("public requests are customer initiated while internal demos default to sel
   assert.match(internalOrders, /source_channel: String\(incomingEditableFields\.source_channel \|\| "realtyflow_internal"\)/);
 });
 
+
+test("verified DemoSites Stripe checkout starts subscription timing only in the paid webhook path", () => {
+  assert.match(stripeRoute, /billing_status:\s*['"]paid['"]/);
+  assert.match(stripeRoute, /subscription_started_at:\s*paidAt/);
+  assert.match(stripeRoute, /subscription_renews_at:\s*plusOneMonthIso\(paidAt\)/);
+  assert.match(stripeRoute, /checkout\.session\.completed/);
+});
+
 test("unpaid internal demos never become started subscriptions or paid SaaS revenue", () => {
   assert.doesNotMatch(internalOrders, /subscription_started_at: new Date\(\)\.toISOString\(\)/);
   assert.doesNotMatch(internalOrders, /subscription_renews_at: plusOneMonthIso\(\)/);
