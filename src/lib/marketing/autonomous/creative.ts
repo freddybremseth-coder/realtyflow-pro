@@ -63,7 +63,7 @@ const PROPERTY_BASE_BY_BRAND: Record<string, string> = {
 };
 
 function propertyRef(req: CreativeRequest): string | null {
-  if (!PROPERTY_BASE_BY_BRAND[req.brief.genome.brandId] || !req.propertyIds?.length) return null;
+  if (!req.propertyIds?.length) return null;
   for (const fact of req.facts ?? []) {
     const match = String(fact.claim ?? "").match(/^Referanse:\s*([A-Za-z0-9._-]+)\s*$/i);
     if (match?.[1]) return match[1];
@@ -71,11 +71,22 @@ function propertyRef(req: CreativeRequest): string | null {
   return null;
 }
 
-function resolvedCta(req: CreativeRequest, generatedCta?: string): string | undefined {
+function verifiedPropertyUrl(req: CreativeRequest): string | null {
+  for (const fact of req.facts ?? []) {
+    const match = String(fact.claim ?? "").match(/^Bolig-URL:\s*(https:\/\/\S+)\s*$/i);
+    if (match?.[1]) return match[1];
+  }
   const ref = propertyRef(req);
   const base = PROPERTY_BASE_BY_BRAND[req.brief.genome.brandId];
-  if (!ref || !base) return generatedCta ?? req.brand.preferredCta;
-  const propertyUrl = `${base}/${encodeURIComponent(ref)}`;
+  return ref && base ? `${base}/${encodeURIComponent(ref)}` : null;
+}
+
+function resolvedCta(req: CreativeRequest, generatedCta?: string): string | undefined {
+  const propertyUrl = verifiedPropertyUrl(req);
+  if (req.propertyIds?.length && !propertyUrl) {
+    throw new Error(`PROPERTY_WEB_URL_REQUIRED: konkret bolig mangler verifisert nettside-URL for ${req.brief.genome.brandId}`);
+  }
+  if (!propertyUrl) return generatedCta ?? req.brand.preferredCta;
   return `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`;
 }
 
@@ -131,6 +142,9 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
 
   const user = [
     `Kanal: ${brief.channel} — ${spec?.adaptationNote ?? ""}`,
+    (brief.channel === "instagram" || brief.channel === "facebook")
+      ? `SEO SAM / SOCIAL SEARCH: følg gjeldende SEO/AEO-regler for brandet. Bruk verifiserte steds-, boligtype- og kjøpsintensjonsord naturlig i headline/body når de finnes i factSources. Prioriter menneskelig lesbar tekst og relevante, spesifikke søkeord; ikke keyword-stuffing, ikke oppdiktede hashtags eller geografi. Den direkte bolig-URL-en skal med i CTA for konkret bolig.`
+      : null,
     FORMAT_INSTRUCTIONS[brief.genome.format] && `Format: ${FORMAT_INSTRUCTIONS[brief.genome.format]}`,
     styleInstruction && `Creative concept (${brief.genome.creativeStyle}): ${styleInstruction}`,
     `Vinkel: ${brief.angle}`,
