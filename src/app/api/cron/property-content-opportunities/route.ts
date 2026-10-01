@@ -13,6 +13,7 @@ export const maxDuration = 120;
 const BRAND_ID = "zeneco";
 const ACTION = "property_content_opportunity_scan";
 const PAGE_SIZE = 700;
+const AUTO_READY_SCORE = 86;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest) {
         image_url: item.imageUrl,
         evidence: item.evidence,
         draft_markdown: item.draftMarkdown,
-        status: "suggested",
+        status: item.score >= AUTO_READY_SCORE ? "auto_ready" : "suggested",
         detected_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 21 * 86_400_000).toISOString(),
         updated_at: new Date().toISOString(),
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
       .from("property_content_opportunities")
       .update({ status: "expired", updated_at: new Date().toISOString() })
       .eq("brand_id", BRAND_ID)
-      .eq("status", "suggested")
+      .in("status", ["suggested", "auto_ready"])
       .lt("expires_at", new Date().toISOString());
 
     await logRun(supabase, "success", {
@@ -150,7 +151,9 @@ export async function GET(request: NextRequest) {
       detected: opportunities.length,
       created,
       refreshed,
-      top: opportunities.slice(0,5).map((item)=>({score:item.score,title:item.title,refs:item.propertyRefs})),
+      auto_ready: opportunities.filter((item) => item.score >= AUTO_READY_SCORE).length,
+      auto_ready_threshold: AUTO_READY_SCORE,
+      top: opportunities.slice(0,5).map((item)=>({score:item.score,autoReady:item.score >= AUTO_READY_SCORE,title:item.title,refs:item.propertyRefs})),
     });
 
     return NextResponse.json({
@@ -159,7 +162,9 @@ export async function GET(request: NextRequest) {
       detected: opportunities.length,
       created,
       refreshed,
-      top: opportunities.slice(0,8).map((item)=>({score:item.score,title:item.title,refs:item.propertyRefs})),
+      autoReady: opportunities.filter((item) => item.score >= AUTO_READY_SCORE).length,
+      autoReadyThreshold: AUTO_READY_SCORE,
+      top: opportunities.slice(0,8).map((item)=>({score:item.score,autoReady:item.score >= AUTO_READY_SCORE,title:item.title,refs:item.propertyRefs})),
     });
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause);
