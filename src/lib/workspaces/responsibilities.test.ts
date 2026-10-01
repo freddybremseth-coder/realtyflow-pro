@@ -20,8 +20,8 @@ test("Corporate responsibility remains Zen-only", () => {
 
 test("partner role suggests only responsibilities supported by each brand permissions", () => {
   const pinoso = suggestedResponsibilitiesForPreset("pinosoecolife", "partner", [
-    "crm.read","properties.catalog.read","visibility.read","marketing.read",
-    "reels.read","email.read","nexus.read",
+    "crm.read","properties.catalog.read","visibility.read","visibility.plan","marketing.read","marketing.draft",
+    "reels.read","reels.create","email.read","email.draft","nexus.read",
   ]);
   assert.deepEqual(pinoso, [
     "new-leads","property-matching","seo-content","social-reels","newsletter","nexus-review",
