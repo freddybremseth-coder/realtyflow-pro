@@ -45,6 +45,10 @@ test("buyer profile sync runs between CRM sync and property matching", () => {
   const profile = vercelSource.indexOf('"/api/cron/nexus-buyer-profile-sync"');
   const matching = vercelSource.indexOf('"/api/cron/nexus-property-match-prep"');
   assert.ok(crm >= 0 && profile > crm && matching > profile);
-  assert.match(vercelSource, /nexus-buyer-profile-sync[^\n]+3-59\/5/);
-  assert.match(vercelSource, /nexus-property-match-prep[^\n]+4-59\/5/);
+
+  const config = JSON.parse(vercelSource) as { crons?: Array<{ path?: string; schedule?: string }> };
+  const buyerProfileCron = config.crons?.find((cron) => cron.path === "/api/cron/nexus-buyer-profile-sync");
+  const propertyMatchCron = config.crons?.find((cron) => cron.path === "/api/cron/nexus-property-match-prep");
+  assert.equal(buyerProfileCron?.schedule, "3-59/5 * * * *");
+  assert.equal(propertyMatchCron?.schedule, "4-59/5 * * * *");
 });
