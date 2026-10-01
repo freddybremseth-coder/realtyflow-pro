@@ -218,3 +218,18 @@ test("assisted-only content does not inherit primary business evidence freshness
   assert.equal(evidence.has("ig-assisted"), false);
   assert.equal(evidence.get("yt-primary")?.lastAt, "2026-09-20T10:00:00Z");
 });
+
+test("UTM preserves existing query and contact hash fragment", () => {
+  const url = withUtm("https://www.zenecohomes.com/eiendommer/N5667?lang=no#kontakt", buildContentUtm({
+    channel: "facebook",
+    contentId: "content-123",
+    campaign: "camp-123",
+  }));
+  const parsed = new URL(url);
+  assert.equal(parsed.searchParams.get("lang"), "no");
+  assert.equal(parsed.searchParams.get("utm_source"), "facebook");
+  assert.equal(parsed.searchParams.get("utm_medium"), "organic");
+  assert.equal(parsed.searchParams.get("utm_campaign"), "camp-123");
+  assert.equal(parsed.searchParams.get("utm_content"), "content-123");
+  assert.equal(parsed.hash, "#kontakt");
+});

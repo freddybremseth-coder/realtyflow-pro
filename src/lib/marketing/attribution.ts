@@ -34,8 +34,16 @@ export function buildContentUtm(args: { channel: MarketingChannel | string; cont
 }
 
 export function withUtm(url: string, utm: ContentUtm): string {
-  const q = new URLSearchParams(Object.entries(utm).filter(([, v]) => v != null) as [string, string][]).toString();
-  return url.includes("?") ? `${url}&${q}` : `${url}?${q}`;
+  try {
+    const parsed = new URL(url);
+    for (const [key, value] of Object.entries(utm)) {
+      if (value != null && String(value).trim()) parsed.searchParams.set(key, String(value));
+    }
+    return parsed.toString();
+  } catch {
+    const q = new URLSearchParams(Object.entries(utm).filter(([, v]) => v != null) as [string, string][]).toString();
+    return url.includes("?") ? `${url}&${q}` : `${url}?${q}`;
+  }
 }
 
 /* ---- Touchpoints ---- */
