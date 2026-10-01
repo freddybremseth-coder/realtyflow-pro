@@ -28,6 +28,22 @@ export function responsibilityAllowed(
   return false;
 }
 
+export function filterAllowedResponsibilities(
+  brandKey: string,
+  value: unknown,
+  permissions: WorkspacePermission[],
+): WorkspaceResponsibilityId[] {
+  if (!Array.isArray(value)) return [];
+  const known = new Set(WORKSPACE_RESPONSIBILITIES.map(item => item.id));
+  const result: WorkspaceResponsibilityId[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !known.has(item as WorkspaceResponsibilityId)) continue;
+    const typed = item as WorkspaceResponsibilityId;
+    if (!result.includes(typed) && responsibilityAllowed(brandKey, typed, permissions)) result.push(typed);
+  }
+  return result;
+}
+
 export function normalizeResponsibilities(
   brandKey: string,
   value: unknown,
