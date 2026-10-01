@@ -196,8 +196,8 @@ test("create user sends a self-service invite and configures safe multi-brand pe
     organization: "Search Partner AS",
     accessExpiresAt: "2027-03-31T21:59:59.000Z",
     brandAccess: [
-      { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read","nexus.read"], responsibilities: ["new-leads","property-matching"] },
-      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read","youtube.read","youtube.publish","nexus.read"], responsibilities: ["new-leads","property-matching","nexus-review"] },
+      { brandKey: "pinosoecolife", permissions: ["crm.read","crm.write","properties.catalog.read","nexus.read"], responsibilities: ["new-leads","property-matching"], primaryResponsibilities: ["new-leads"] },
+      { brandKey: "zeneco", permissions: ["crm.joint.read","tasks.joint.read","properties.catalog.read","youtube.read","youtube.publish","nexus.read"], responsibilities: ["new-leads","property-matching","nexus-review"], primaryResponsibilities: ["property-matching"] },
     ],
   }) as any);
   assert.equal(response.status, 201);
@@ -215,7 +215,10 @@ test("create user sends a self-service invite and configures safe multi-brand pe
   assert.equal(configure?.args?.p_account_kind, "external");
   assert.equal(configure?.args?.p_organization, "Search Partner AS");
   assert.equal(configure?.args?.p_access_expires_at, "2027-03-31T21:59:59.000Z");
-  assert.equal(responsibilityWrites.filter(item => item.action === "upsert").length, 2);
+  const upserts = responsibilityWrites.filter(item => item.action === "upsert");
+  assert.equal(upserts.length, 2);
+  assert.deepEqual(upserts.find(item => item.row.brand_id === "brand-pinoso")?.row.primary_responsibilities, ["new-leads"]);
+  assert.deepEqual(upserts.find(item => item.row.brand_id === "brand-zen")?.row.primary_responsibilities, ["property-matching"]);
 });
 
 test("invalid workspace-user input returns the exact field before Auth mutation", async () => {
@@ -323,6 +326,19 @@ test("invalid workspace-user input returns the exact field before Auth mutation"
       action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
       displayName: "Andrea",
       brandAccess: [{ brandKey: "pinosoecolife", permissions: ["crm.read"], responsibilities: ["newsletter"] }],
+    },
+    error: "INVALID_BRAND_ACCESS", field: "brandAccess",
+  });
+  cases.push({
+    body: {
+      action: "CREATE_USER", username: "andrea", email: "andrea@example.test",
+      displayName: "Andrea",
+      brandAccess: [{
+        brandKey: "pinosoecolife",
+        permissions: ["crm.read","properties.catalog.read"],
+        responsibilities: ["new-leads"],
+        primaryResponsibilities: ["property-matching"],
+      }],
     },
     error: "INVALID_BRAND_ACCESS", field: "brandAccess",
   });
