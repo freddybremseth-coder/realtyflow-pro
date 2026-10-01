@@ -58,7 +58,7 @@ export function DailySpanishNudge() {
 
   if (loading || dismissed) return null;
   if (!status && failed) return (
-    <div className="fixed right-4 top-4 z-[70] w-[min(92vw,360px)] rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
+    <div className="fixed bottom-4 right-4 z-[200] w-[min(92vw,360px)] rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400/15 text-amber-300"><Languages size={19}/></div>
         <div className="min-w-0 flex-1"><div className="font-black text-white">5 minutter spansk</div><div className="text-xs text-slate-500">Åpne Spanish ChatGenius direkte</div></div>
@@ -69,7 +69,7 @@ export function DailySpanishNudge() {
   if (!status) return null;
 
   return (
-    <div className="fixed right-4 top-4 z-[70] w-[min(92vw,360px)] rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
+    <div className="fixed bottom-4 right-4 z-[200] w-[min(92vw,360px)] rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
       <div className="flex items-start gap-3">
         <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/15 text-amber-300">
           <Languages size={19} />

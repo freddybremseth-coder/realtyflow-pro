@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Search,
   ShieldOff,
+  ShieldX,
   Sparkles,
   Target,
   Users,
@@ -160,6 +161,7 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [spamBusyId, setSpamBusyId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -168,7 +170,7 @@ export default function CustomersPage() {
       const response = await fetch("/api/contacts", { cache: "no-store" });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke hente CRM-kontakter.");
-      setContacts(body?.contacts || []);
+      setContacts((body?.contacts || []).filter((contact: Contact) => !String(contact.source || "").startsWith("__SPAM__:")));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Kunne ikke hente CRM-kontakter.");
     } finally {
@@ -212,6 +214,27 @@ export default function CustomersPage() {
   function selectStage(nextStage: string) { setStageFilter(nextStage); setTab("all"); syncUrl({ tab: "all", stage: nextStage }); }
   function selectMail(nextMail: MailStatus) { setMailFilter(nextMail); syncUrl({ mail: nextMail }); }
   function toggleActionOnly() { const next = !actionOnly; setActionOnly(next); syncUrl({ actionOnly: next }); }
+
+  async function markSpam(contact: Contact) {
+    if (!window.confirm(`Marker ${contact.name || contact.email || "denne kontakten"} som spam? Kontakten skjules fra CRM og videre oppfølging stoppes.`)) return;
+    setSpamBusyId(contact.id);
+    setError("");
+    try {
+      const response = await fetch("/api/contacts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: contact.id, mark_as_spam: true }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke markere kontakten som spam.");
+      setContacts((current) => current.filter((item) => item.id !== contact.id));
+      if (selectedContactId === contact.id) setSelectedContactId(null);
+    } catch (spamError) {
+      setError(spamError instanceof Error ? spamError.message : "Kunne ikke markere kontakten som spam.");
+    } finally {
+      setSpamBusyId(null);
+    }
+  }
 
   function applyCommandView(next: { tab?: CrmTab; mail?: MailStatus; actionOnly?: boolean }) {
     const nextTab = next.tab || "all";
@@ -366,7 +389,8 @@ export default function CustomersPage() {
             const communication = contact.communication;
             const mailStatus = communication?.status || "NO_EMAIL";
             return (
-              <button key={contact.id} type="button" onClick={() => openCustomer(contact)} className="group rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left transition hover:border-cyan-500/50 hover:bg-slate-900 hover:shadow-lg hover:shadow-cyan-950/20 sm:p-5">
+              <div key={contact.id} className="overflow-hidden rounded-xl border border-slate-700/70 bg-slate-900/60 transition hover:border-cyan-500/50 hover:bg-slate-900 hover:shadow-lg hover:shadow-cyan-950/20">
+              <button type="button" onClick={() => openCustomer(contact)} className="group w-full p-4 text-left sm:p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -401,6 +425,18 @@ export default function CustomersPage() {
                 </div>
                 <div className="mt-4 border-t border-slate-800 pt-3 text-xs font-medium text-cyan-300">Åpne Customer 360 og gjør neste steg →</div>
               </button>
+              <div className="flex justify-end border-t border-slate-800 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => void markSpam(contact)}
+                  disabled={spamBusyId === contact.id}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-red-500/10 hover:text-red-300 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {spamBusyId === contact.id ? <Loader2 size={13} className="animate-spin" /> : <ShieldX size={13} />}
+                  Spam
+                </button>
+              </div>
+              </div>
             );
           })}
         </section>

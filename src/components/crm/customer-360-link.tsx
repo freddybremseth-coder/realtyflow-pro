@@ -34,7 +34,8 @@ export function CustomerTaskTitle({ title, contactId, customerName }: {
 }) {
   const name = typeof customerName === "string" ? customerName.trim() : "";
   const hasContact = typeof contactId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(contactId);
-  if (!hasContact || !name) return <>{title}</>;
+  if (!hasContact) return <>{title}</>;
+  if (!name) return <Customer360Link contactId={contactId} name={title} />;
   const index = title.toLocaleLowerCase("nb-NO").indexOf(name.toLocaleLowerCase("nb-NO"));
   if (index < 0) return <>{title}{contactId && name ? <> · <Customer360Link contactId={contactId} name={name} /></> : null}</>;
   return <>
