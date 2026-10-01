@@ -19,12 +19,14 @@ export function WorkspaceTodayPriorities({
   brandKey,
   permissions,
   responsibilities,
+  primaryResponsibilities,
   contactCount,
   onOpen,
 }: {
   brandKey: string;
   permissions: WorkspacePermission[];
   responsibilities: WorkspaceResponsibilityId[];
+  primaryResponsibilities: WorkspaceResponsibilityId[];
   contactCount: number;
   onOpen: (area: WorkspaceTodayArea) => void;
 }) {
@@ -74,8 +76,9 @@ export function WorkspaceTodayPriorities({
     contactCount,
     attention: humanAttention,
     responsibilities,
+    primaryResponsibilities,
     limit: 4,
-  }), [brandKey, permissions, contactCount, humanAttention, responsibilities]);
+  }), [brandKey, permissions, contactCount, humanAttention, responsibilities, primaryResponsibilities]);
 
   return <section className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -101,7 +104,7 @@ export function WorkspaceTodayPriorities({
           className={`rounded-full border px-2.5 py-1 text-[11px] ${assignedResponsibilities.length
             ? "border-amber-800 bg-amber-950/20 text-amber-200"
             : "border-slate-700 bg-slate-900 text-slate-300"}`}>
-          {item.label}
+          {item.label}{primaryResponsibilities.includes(item.id) ? " · Hovedansvar" : " · Støtte"}
         </span>)}
       </div>
       {assignedResponsibilities.length > 0 && <p className="mt-2 text-[11px] text-slate-500">
