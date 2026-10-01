@@ -106,3 +106,16 @@ test("diversifies the visible queue across properties and areas before relaxing"
   assert.equal(visible.filter(item => item.propertyRefs.includes("P1")).length, 1);
   assert.ok(!visible.some(item => item.id === "b"));
 });
+
+
+test("detects three-property budget-band clusters with meaningful differences", () => {
+  const opportunities = detectPropertyEditorialOpportunities([
+    p({ id:"x1", ref:"X1", town:"Benidorm", location:"Benidorm", price:594000, areaM2:178, propertyType:"Villa" }),
+    p({ id:"x2", ref:"X2", town:"Polop", location:"Polop", price:602000, areaM2:145, propertyType:"Villa" }),
+    p({ id:"x3", ref:"X3", town:"Finestrat", location:"Finestrat", price:604000, areaM2:130, propertyType:"Penthouse" }),
+  ], 20);
+  const cluster = opportunities.find((item) => item.opportunityType === "budget_band_cluster");
+  assert.ok(cluster);
+  assert.equal(cluster.propertyRefs.length, 3);
+  assert.match(cluster.draftMarkdown, /Boligene side ved side/);
+});
