@@ -9,6 +9,7 @@ import {
   setWorkspaceRuntimeEnabled,
 } from "@/lib/workspaces/runtime-control";
 import {
+  normalizePrimaryResponsibilities,
   normalizeResponsibilities,
   type WorkspaceResponsibilityId,
 } from "@/lib/workspaces/responsibilities";
@@ -20,7 +21,7 @@ const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type BrandAccess = { brandKey: string; permissions: WorkspacePermission[]; responsibilities: WorkspaceResponsibilityId[] };
+type BrandAccess = { brandKey: string; permissions: WorkspacePermission[]; responsibilities: WorkspaceResponsibilityId[]; primaryResponsibilities: WorkspaceResponsibilityId[] };
 type AccountKind = "staff" | "external";
 type DirectoryMetadata = { accountKind: AccountKind; organization: string | null; accessExpiresAt: string | null };
 
@@ -80,6 +81,10 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
     const typed = permissions as WorkspacePermission[];
     const responsibilities = normalizeResponsibilities(brandKey, row.responsibilities ?? [], typed);
     if (!responsibilities) return null;
+    const primaryResponsibilities = normalizePrimaryResponsibilities(
+      brandKey, row.primaryResponsibilities ?? [], typed, responsibilities,
+    );
+    if (!primaryResponsibilities) return null;
     if (typed.includes("marketing.publish") &&
         (!typed.includes("marketing.read") || !typed.includes("marketing.draft"))) return null;
     if (typed.includes("marketing.draft") && !typed.includes("marketing.read")) return null;
@@ -111,7 +116,7 @@ function validBrandAccess(value: unknown): BrandAccess[] | null {
       return null;
     }
     seen.add(brandKey);
-    result.push({ brandKey, permissions: typed, responsibilities });
+    result.push({ brandKey, permissions: typed, responsibilities, primaryResponsibilities });
   }
   return result;
 }
@@ -193,6 +198,7 @@ async function syncResponsibilities(params: {
       brand_id: brandId,
       user_id: userId,
       responsibilities: access.responsibilities,
+      primary_responsibilities: access.primaryResponsibilities,
       updated_by_email: actor,
       updated_at: new Date().toISOString(),
     }, { onConflict: "brand_id,user_id" });
@@ -232,17 +238,21 @@ export async function GET(request: NextRequest) {
   const runtime = await getWorkspaceRuntimeState(supabase);
   const { data: responsibilityRows, error: responsibilityError } = await supabase.schema("core")
     .from("brand_workspace_responsibilities")
-    .select("brand_id,user_id,responsibilities");
+    .select("brand_id,user_id,responsibilities,primary_responsibilities");
   if (responsibilityError) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
   const responsibilityMap = new Map((responsibilityRows || []).map((row: any) => [
     `${row.user_id}:${row.brand_id}`,
-    Array.isArray(row.responsibilities) ? row.responsibilities : [],
+    {
+      responsibilities: Array.isArray(row.responsibilities) ? row.responsibilities : [],
+      primaryResponsibilities: Array.isArray(row.primary_responsibilities) ? row.primary_responsibilities : [],
+    },
   ]));
   const users = snapshot.users.map((user: any) => ({
     ...user,
     memberships: user.memberships.map((membership: any) => ({
       ...membership,
-      responsibilities: responsibilityMap.get(`${user.userId}:${membership.brandId}`) || [],
+      responsibilities: responsibilityMap.get(`${user.userId}:${membership.brandId}`)?.responsibilities || [],
+      primaryResponsibilities: responsibilityMap.get(`${user.userId}:${membership.brandId}`)?.primaryResponsibilities || [],
     })),
   }));
   return reply({
