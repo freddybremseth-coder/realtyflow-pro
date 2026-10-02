@@ -465,6 +465,7 @@ export async function POST(request: NextRequest) {
     direction: "in",
     brand_id: brandId,
     metadata: {
+      source: source || null,
       request_type: requestType || null,
       event_id: isCorporateEventRegistration ? eventId : null,
       event_name: isCorporateEventRegistration ? eventName : null,
@@ -834,6 +835,7 @@ export async function POST(request: NextRequest) {
           : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
     ai_score: isCorporatePartner ? 90 : isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
     metadata: {
+      source: source || null,
       page_url: pageUrl,
       property_ref: propertyRef,
       timeline,
