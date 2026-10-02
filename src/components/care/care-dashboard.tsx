@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
   CalendarCheck2,
@@ -118,6 +118,166 @@ function careLeadOpen(lead: CareLead) {
   return !["DONE", "CANCELLED", "CANCELED", "CLOSED", "COMPLETED"].includes(lead.status.toUpperCase());
 }
 
+function carePropertyType(value: string | null) {
+  const normalized = String(value || "").toLowerCase();
+  if (["apartment", "leilighet"].includes(normalized)) return "apartment";
+  if (["townhouse", "rekkehus"].includes(normalized)) return "townhouse";
+  if (normalized === "villa") return "villa";
+  if (normalized === "finca") return "finca";
+  return "";
+}
+
+function todayInputValue() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function CareOnboardingDialog({
+  lead,
+  plans,
+  onClose,
+  onSaved,
+}: {
+  lead: CareLead;
+  plans: CarePlan[];
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const activatingAgreement = Boolean(lead.carePropertyId && !lead.careContractId);
+  const existingProperty = Boolean(lead.carePropertyId);
+  const [propertyType, setPropertyType] = useState(() => carePropertyType(lead.carePropertyType || lead.propertyType));
+  const [propertyName, setPropertyName] = useState(lead.carePropertyName || "");
+  const [addressLine, setAddressLine] = useState(lead.carePropertyAddress || "");
+  const [municipality, setMunicipality] = useState(lead.careMunicipality || lead.preferredArea || "");
+  const [postcode, setPostcode] = useState(lead.carePostcode || "");
+  const [hasPool, setHasPool] = useState(lead.careHasPool);
+  const [hasGarden, setHasGarden] = useState(lead.careHasGarden);
+  const [planId, setPlanId] = useState("");
+  const [startsOn, setStartsOn] = useState(todayInputValue());
+  const [billingDay, setBillingDay] = useState("1");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/care/onboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workItemId: lead.id,
+          contactId: lead.contactId,
+          propertyType,
+          propertyName,
+          addressLine,
+          municipality,
+          postcode,
+          hasPool,
+          hasGarden,
+          planId: planId || null,
+          startsOn,
+          billingDay: Number(billingDay || 1),
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke opprette Care-kunden.");
+      await onSaved();
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Kunne ikke opprette Care-kunden.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-6 max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-5 sm:p-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">Care onboarding</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">{activatingAgreement ? "Aktiver Care-avtale" : "Opprett Care-kunde"} · {lead.contactName}</h2>
+            <p className="mt-1 text-sm text-slate-400">{activatingAgreement ? "Care-eiendommen finnes allerede. Velg planen som skal aktiveres; eiendomsdataene beholdes." : "CRM-kontakten beholdes som eier. Her oppretter du Care-eiendommen og velger eventuelt en aktiv avtale."}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Lukk</button>
+        </div>
+
+        <form onSubmit={submit} className="space-y-5 p-5 sm:p-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-1.5 text-sm text-slate-300">
+              <span>Boligtype</span>
+              <select required disabled={existingProperty} value={propertyType} onChange={(event) => setPropertyType(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white disabled:cursor-not-allowed disabled:opacity-65">
+                <option value="">Velg boligtype</option>
+                <option value="apartment">Leilighet</option>
+                <option value="townhouse">Rekkehus</option>
+                <option value="villa">Villa</option>
+                <option value="finca">Finca</option>
+              </select>
+            </label>
+            <label className="space-y-1.5 text-sm text-slate-300">
+              <span>Navn på bolig <span className="text-slate-500">(valgfritt)</span></span>
+              <input readOnly={existingProperty} value={propertyName} onChange={(event) => setPropertyName(event.target.value)} maxLength={160} placeholder="f.eks. Casa Altea" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 read-only:cursor-not-allowed read-only:opacity-65" />
+            </label>
+            <label className="space-y-1.5 text-sm text-slate-300 sm:col-span-2">
+              <span>Adresse</span>
+              <input required readOnly={existingProperty} value={addressLine} onChange={(event) => setAddressLine(event.target.value)} maxLength={240} placeholder="Gateadresse / urbanisasjon" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 read-only:cursor-not-allowed read-only:opacity-65" />
+            </label>
+            <label className="space-y-1.5 text-sm text-slate-300">
+              <span>Kommune / område</span>
+              <input required readOnly={existingProperty} value={municipality} onChange={(event) => setMunicipality(event.target.value)} maxLength={120} placeholder="Altea" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 read-only:cursor-not-allowed read-only:opacity-65" />
+            </label>
+            <label className="space-y-1.5 text-sm text-slate-300">
+              <span>Postnummer <span className="text-slate-500">(valgfritt)</span></span>
+              <input readOnly={existingProperty} value={postcode} onChange={(event) => setPostcode(event.target.value)} maxLength={24} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white read-only:cursor-not-allowed read-only:opacity-65" />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-5 rounded-lg border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-300">
+            <label className="flex items-center gap-2"><input type="checkbox" disabled={existingProperty} checked={hasPool} onChange={(event) => setHasPool(event.target.checked)} />Basseng</label>
+            <label className="flex items-center gap-2"><input type="checkbox" disabled={existingProperty} checked={hasGarden} onChange={(event) => setHasGarden(event.target.checked)} />Hage</label>
+          </div>
+
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <h3 className="font-semibold text-amber-100">Avtale og MRR</h3>
+            <p className="mt-1 text-xs text-amber-100/70">{activatingAgreement ? "Velg Care-planen som skal aktiveres. Ingen avtale opprettes før du bekrefter her." : "Plan er valgfri. Lar du feltet stå tomt, opprettes kunden og eiendommen uten aktiv avtale eller fakturering."}</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <label className="space-y-1.5 text-sm text-slate-300 sm:col-span-3">
+                <span>Care-plan</span>
+                <select value={planId} onChange={(event) => setPlanId(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+                  <option value="">Ingen plan ennå</option>
+                  {plans.filter((plan) => plan.active).map((plan) => (
+                    <option key={plan.id} value={plan.id}>{plan.name} · {plan.visitsPerMonth} besøk/mnd · {moneyFromCents(plan.priceCents, plan.currency)}/mnd</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm text-slate-300 sm:col-span-2">
+                <span>Startdato</span>
+                <input type="date" value={startsOn} onChange={(event) => setStartsOn(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+              </label>
+              <label className="space-y-1.5 text-sm text-slate-300">
+                <span>Faktureringsdag</span>
+                <input type="number" min={1} max={28} value={billingDay} onChange={(event) => setBillingDay(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+              </label>
+            </div>
+          </div>
+
+          {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
+
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-500">Ingen e-post eller faktura sendes av denne handlingen. Den oppretter kun Care-data du har valgt.</p>
+            <Button type="submit" disabled={saving || !propertyType || !addressLine.trim() || !municipality.trim() || (activatingAgreement && !planId)}>
+              {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Oppretter …</> : activatingAgreement ? "Aktiver Care-avtale" : planId ? "Opprett kunde + avtale" : "Opprett Care-kunde"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({ title, detail, icon: Icon }: { title: string; detail: string; icon: LucideIcon }) {
   return (
     <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/45 p-8 text-center">
@@ -143,8 +303,9 @@ function StatusBadge({ value }: { value: string }) {
   return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase ${statusClass(value)}`}>{value}</span>;
 }
 
-function Overview({ dashboard }: { dashboard: CareDashboardData }) {
+function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onReload: () => Promise<void> | void }) {
   const openLeadCount = dashboard.leads.filter(careLeadOpen).length;
+  const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
 
   return (
     <div className="space-y-5">
@@ -167,10 +328,9 @@ function Overview({ dashboard }: { dashboard: CareDashboardData }) {
         ) : (
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
             {dashboard.leads.slice(0, 8).map((lead) => (
-              <Link
+              <article
                 key={lead.id}
-                href={lead.customerHref}
-                className="group rounded-lg border border-slate-800 bg-slate-950/45 p-4 transition hover:border-amber-500/35 hover:bg-slate-950/70"
+                className="rounded-lg border border-slate-800 bg-slate-950/45 p-4 transition hover:border-amber-500/35 hover:bg-slate-950/70"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -179,6 +339,7 @@ function Overview({ dashboard }: { dashboard: CareDashboardData }) {
                       <StatusBadge value={lead.status} />
                       {lead.pipelineStatus && <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">CRM {lead.pipelineStatus}</span>}
                       {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
+                      {lead.carePropertyId && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">Care-kunde{lead.careContractId ? " + avtale" : ""}</span>}
                     </div>
                     <h3 className="mt-3 truncate text-base font-semibold text-white">{lead.contactName}</h3>
                     <p className="mt-1 truncate text-xs text-slate-400">
@@ -202,11 +363,23 @@ function Overview({ dashboard }: { dashboard: CareDashboardData }) {
                   </div>
                 )}
 
-                <div className="mt-3 flex items-center justify-between border-t border-slate-800 pt-3 text-xs">
-                  <span className="text-slate-500">{lead.priority} prioritet</span>
-                  <span className="font-semibold text-amber-300 transition group-hover:translate-x-0.5">Åpne kundekort →</span>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3 text-xs">
+                  <span className="text-slate-500">{lead.priority} prioritet{lead.careReference ? ` · ${lead.careReference}` : ""}</span>
+                  <div className="flex flex-wrap gap-2">
+                    <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
+                    {lead.carePropertyId ? (
+                      <>
+                        <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
+                        {!lead.careContractId && (
+                          <button type="button" onClick={() => setOnboardingLead(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver avtale</button>
+                        )}
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => setOnboardingLead(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Opprett Care-kunde</button>
+                    )}
+                  </div>
                 </div>
-              </Link>
+              </article>
             ))}
           </div>
         )}
@@ -265,6 +438,15 @@ function Overview({ dashboard }: { dashboard: CareDashboardData }) {
           )}
         </div>
       </section>
+
+      {onboardingLead && (
+        <CareOnboardingDialog
+          lead={onboardingLead}
+          plans={dashboard.plans}
+          onClose={() => setOnboardingLead(null)}
+          onSaved={onReload}
+        />
+      )}
     </div>
   );
 }
@@ -566,7 +748,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
             {summaryCards.map((card) => <MetricCard key={card.label} {...card} />)}
           </section>
 
-          {initialView === "overview" && <Overview dashboard={dashboard} />}
+          {initialView === "overview" && <Overview dashboard={dashboard} onReload={load} />}
           {initialView === "customers" && <CustomersView properties={dashboard.properties} />}
           {initialView === "reports" && <ReportsView inspections={dashboard.inspections} reports={dashboard.reports} photos={dashboard.photos} />}
           {initialView === "invoices" && <InvoicesView invoices={dashboard.invoices} charges={dashboard.charges} plans={dashboard.plans} />}

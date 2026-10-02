@@ -198,6 +198,18 @@ export interface CareLead {
   requestType: string | null;
   source: string | null;
   pageUrl: string | null;
+  preferredArea: string | null;
+  propertyType: string | null;
+  carePropertyId: string | null;
+  careContractId: string | null;
+  careReference: string | null;
+  carePropertyName: string | null;
+  carePropertyType: string | null;
+  carePropertyAddress: string | null;
+  careMunicipality: string | null;
+  carePostcode: string | null;
+  careHasPool: boolean;
+  careHasGarden: boolean;
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -631,6 +643,8 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     const serviceIntent = optionalText(metadata, "service_intent")
       || (requestType?.replace(/^care-/, "") || "")
       || "keyholding";
+    const carePropertyId = optionalText(metadata, "care_property_id");
+    const careProperty = carePropertyId ? propertiesById.get(carePropertyId) : undefined;
     return {
       id: text(row, "id"),
       contactId,
@@ -641,6 +655,18 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       requestType,
       source: optionalText(metadata, "source") || optionalText(contact, "source"),
       pageUrl: optionalText(metadata, "page_url"),
+      preferredArea: optionalText(metadata, "preferred_area"),
+      propertyType: optionalText(metadata, "property_type"),
+      carePropertyId,
+      careContractId: optionalText(metadata, "care_contract_id"),
+      careReference: optionalText(metadata, "care_reference"),
+      carePropertyName: optionalText(careProperty, "name"),
+      carePropertyType: optionalText(careProperty, "property_type"),
+      carePropertyAddress: optionalText(careProperty, "address_line"),
+      careMunicipality: optionalText(careProperty, "municipality"),
+      carePostcode: optionalText(careProperty, "postcode"),
+      careHasPool: careProperty?.has_pool === true,
+      careHasGarden: careProperty?.has_garden === true,
       utmSource: optionalText(metadata, "utm_source"),
       utmMedium: optionalText(metadata, "utm_medium"),
       utmCampaign: optionalText(metadata, "utm_campaign"),
