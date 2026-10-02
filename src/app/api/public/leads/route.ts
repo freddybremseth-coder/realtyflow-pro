@@ -838,6 +838,8 @@ export async function POST(request: NextRequest) {
       source: source || null,
       page_url: pageUrl,
       property_ref: propertyRef,
+      preferred_area: preferredArea || null,
+      property_type: propertyType || null,
       timeline,
       email,
       brand_id: brandId,
