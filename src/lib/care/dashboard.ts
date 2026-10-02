@@ -188,6 +188,28 @@ export interface CareActivity {
   href: string;
 }
 
+export interface CareLead {
+  id: string;
+  contactId: string;
+  contactName: string;
+  email: string | null;
+  phone: string | null;
+  serviceIntent: string;
+  requestType: string | null;
+  source: string | null;
+  pageUrl: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  status: string;
+  priority: string;
+  pipelineStatus: string | null;
+  nextAction: string | null;
+  isExistingContact: boolean;
+  createdAt: string | null;
+  customerHref: string;
+}
+
 export interface CareWorkflow {
   id: CareView;
   label: string;
@@ -214,6 +236,7 @@ export interface CareDashboard {
   calendarEvents: CareCalendarEvent[];
   workOrders: CareWorkOrder[];
   issues: CareIssue[];
+  leads: CareLead[];
   recentActivity: CareActivity[];
   warnings: string[];
 }
@@ -240,6 +263,8 @@ export interface CareDashboardInput {
   calendarEvents?: Array<Record<string, unknown>>;
   issues?: Array<Record<string, unknown>>;
   workOrders?: Array<Record<string, unknown>>;
+  careLeadWorkItems?: Array<Record<string, unknown>>;
+  careLeadContacts?: Array<Record<string, unknown>>;
   warnings?: string[];
 }
 
@@ -396,6 +421,8 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
   const rawEvents = input.calendarEvents || [];
   const rawIssues = input.issues || [];
   const rawWorkOrders = input.workOrders || [];
+  const rawCareLeadWorkItems = input.careLeadWorkItems || [];
+  const rawCareLeadContacts = input.careLeadContacts || [];
   const ownerContacts = input.ownerContacts || [];
 
   const propertiesById = byId(rawProperties);
@@ -593,6 +620,42 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     tradeCode: optionalText(row, "trade_code"),
   })).filter((item) => item.id);
 
+  const careLeadContactsById = byId(rawCareLeadContacts);
+  const leads: CareLead[] = rawCareLeadWorkItems.map((row) => {
+    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+      ? row.metadata as Record<string, unknown>
+      : {};
+    const contactId = text(row, "source_id");
+    const contact = careLeadContactsById.get(contactId);
+    const requestType = optionalText(metadata, "request_type");
+    const serviceIntent = optionalText(metadata, "service_intent")
+      || (requestType?.replace(/^care-/, "") || "")
+      || "keyholding";
+    return {
+      id: text(row, "id"),
+      contactId,
+      contactName: text(contact, "name", optionalText(metadata, "email") || "Ukjent kontakt"),
+      email: optionalText(contact, "email") || optionalText(metadata, "email"),
+      phone: optionalText(contact, "phone"),
+      serviceIntent,
+      requestType,
+      source: optionalText(metadata, "source") || optionalText(contact, "source"),
+      pageUrl: optionalText(metadata, "page_url"),
+      utmSource: optionalText(metadata, "utm_source"),
+      utmMedium: optionalText(metadata, "utm_medium"),
+      utmCampaign: optionalText(metadata, "utm_campaign"),
+      status: text(row, "status", "TO_DO"),
+      priority: text(row, "priority", "MEDIUM"),
+      pipelineStatus: optionalText(contact, "pipeline_status"),
+      nextAction: optionalText(row, "next_action"),
+      isExistingContact: metadata.is_existing_contact === true,
+      createdAt: dateText(row, "created_at") || dateText(row, "updated_at"),
+      customerHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
+    };
+  }).filter((lead) => lead.id && lead.contactId)
+    .sort((a, b) => timestamp(b.createdAt) - timestamp(a.createdAt))
+    .slice(0, 20);
+
   const upcomingEvents = calendarEvents.filter((event) => timestamp(event.startsAt) >= now.getTime() && isOpen(event.status)).length;
   const openIssues = issues.filter((issue) => isOpen(issue.status)).length;
   const openWorkOrders = workOrders.filter((order) => isOpen(order.status)).length;
@@ -738,6 +801,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     calendarEvents: compactRows(calendarEvents),
     workOrders: compactRows(workOrders),
     issues: compactRows(issues),
+    leads,
     recentActivity,
     warnings: input.warnings || [],
   };
