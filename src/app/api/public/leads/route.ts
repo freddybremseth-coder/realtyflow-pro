@@ -283,13 +283,26 @@ export async function POST(request: NextRequest) {
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
   const pipelineValue = incomingPipelineValue || (budget ? Number(budget.replace(/[^0-9]/g, "")) || 0 : 0);
+  const careRequestTypes = new Set([
+    "care-keyholding",
+    "care-boligtilsyn",
+    "care-nokkeloppbevaring",
+    "care-klargjoring",
+    "care-uvaer",
+  ]);
+  const isCare = brandId === "zeneco" && (
+    careRequestTypes.has(requestType) || source.toLowerCase().startsWith("zeneco-care-")
+  );
+  const careServiceIntent = isCare
+    ? (requestType.replace(/^care-/, "") || source.toLowerCase().replace(/^zeneco-care-/, ""))
+    : "";
   const isCorporateEventRegistration = brandId === "zeneco" && requestType === "corporate-event-registration";
-  const isCorporatePartner = brandId === "zeneco" && !isCorporateEventRegistration && (
+  const isCorporatePartner = brandId === "zeneco" && !isCare && !isCorporateEventRegistration && (
     requestType === "corporate-partner" ||
     source.toLowerCase().includes("corporate-partner") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania/partnere")
   );
-  const isCorporateHome = brandId === "zeneco" && !isCorporatePartner && !isCorporateEventRegistration && (
+  const isCorporateHome = brandId === "zeneco" && !isCare && !isCorporatePartner && !isCorporateEventRegistration && (
     requestType === "corporate-home" ||
     source.toLowerCase().includes("corporate-homes") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania")
@@ -814,9 +827,11 @@ export async function POST(request: NextRequest) {
       ? "Corporate Homes partner: svar personlig og avklar kundetyper, rollefordeling, introduksjonsprosess og behov for samarbeidsavtale."
       : isCorporateHome
         ? "Corporate Homes B2B: svar personlig, identifiser beslutningstaker(e) og avklar antall brukere, formål, budsjett, tidslinje og styre-/ledelsesprosess."
-        : existing?.id
-        ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
-        : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
+        : isCare
+          ? `Zen Eco Homes Care: svar personlig og avklar boligområde, boligtype, ønsket tjeneste (${careServiceIntent || "keyholding"}), frekvens og oppstart.`
+          : existing?.id
+          ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
+          : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
     ai_score: isCorporatePartner ? 90 : isCorporateHome ? 92 : pipelineValue >= 500000 || propertyRef ? 86 : 68,
     metadata: {
       page_url: pageUrl,
@@ -826,7 +841,8 @@ export async function POST(request: NextRequest) {
       brand_id: brandId,
       brand_label: brandLabel,
       request_type: requestType || null,
-      segment: isCorporatePartner ? "corporate_partner" : isCorporateHome ? "corporate_homes" : null,
+      segment: isCare ? "care" : isCorporatePartner ? "corporate_partner" : isCorporateHome ? "corporate_homes" : null,
+      service_intent: isCare ? careServiceIntent || "keyholding" : null,
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
       created_from_public_endpoint: true,
@@ -888,7 +904,8 @@ export async function POST(request: NextRequest) {
       budget,
       timeline,
       request_type: requestType,
-      segment: isCorporatePartner ? "corporate_partner" : isCorporateHome ? "corporate_homes" : null,
+      segment: isCare ? "care" : isCorporatePartner ? "corporate_partner" : isCorporateHome ? "corporate_homes" : null,
+      service_intent: isCare ? careServiceIntent || "keyholding" : null,
       canonical_contact_brand_id: canonicalBrandId,
       is_existing_contact: Boolean(existing?.id),
       submission_id: submissionId || null,
@@ -926,7 +943,7 @@ export async function POST(request: NextRequest) {
     ].map((value) => value.trim().toLowerCase()).filter(isEmail)));
 
     const internalSummary = [
-      `Nytt skjema fra ZenEcoHomes.com`,
+      isCare ? `Ny Care-henvendelse · ${careServiceIntent || "keyholding"}` : `Nytt skjema fra ZenEcoHomes.com`,
       `Navn: ${name}`,
       `E-post: ${email}`,
       cleanText(body.phone, 80) ? `Telefon: ${cleanText(body.phone, 80)}` : "",
@@ -950,7 +967,7 @@ export async function POST(request: NextRequest) {
       }).catch((error) => console.warn("[public-leads] internal lead email failed", error));
     }
 
-    const canOfferPortal = !isCorporateHome && !isCorporatePartner && !isCorporateEventRegistration;
+    const canOfferPortal = !isCare && !isCorporateHome && !isCorporatePartner && !isCorporateEventRegistration;
     const optInToken = canOfferPortal ? portalOptInToken(String(data.id), email) : "";
     const portalLink = optInToken
       ? `${publicBaseUrl()}/api/public/portal-opt-in?token=${encodeURIComponent(optInToken)}`
