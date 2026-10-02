@@ -229,3 +229,35 @@ test("Care lead reuses an already onboarded Care property for later agreement ac
   assert.equal(lead?.careHasPool, true);
   assert.equal(lead?.careHasGarden, false);
 });
+
+
+test("Care lead queue keeps open enquiries ahead of newer completed items", () => {
+  const dashboard = buildCareDashboard({
+    generatedAt: new Date("2026-10-03T00:00:00.000Z"),
+    careLeadWorkItems: [
+      {
+        id: "lead-done",
+        source_id: "contact-done",
+        status: "DONE",
+        priority: "MEDIUM",
+        created_at: "2026-10-02T23:30:00.000Z",
+        metadata: { segment: "care", service_intent: "keyholding" },
+      },
+      {
+        id: "lead-open",
+        source_id: "contact-open",
+        status: "TO_DO",
+        priority: "MEDIUM",
+        created_at: "2026-10-02T22:00:00.000Z",
+        metadata: { segment: "care", service_intent: "boligtilsyn" },
+      },
+    ],
+    careLeadContacts: [
+      { id: "contact-done", name: "Ferdig Care Lead" },
+      { id: "contact-open", name: "Åpen Care Lead" },
+    ],
+  });
+
+  assert.equal(dashboard.leads[0]?.id, "lead-open");
+  assert.equal(dashboard.leads[1]?.id, "lead-done");
+});

@@ -14,6 +14,7 @@ import {
   Gauge,
   Home,
   Image,
+  Inbox,
   KeyRound,
   Loader2,
   MapPin,
@@ -680,6 +681,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
   }, []);
 
   const summaryCards = useMemo(() => dashboard ? [
+    { label: "Nye henvendelser", value: dashboard.leads.filter(careLeadOpen).length, icon: Inbox, detail: `${dashboard.leads.length} Care-leads totalt` },
     { label: "Care-kunder", value: dashboard.summary.customers, icon: Users, detail: `${dashboard.summary.properties} eiendommer` },
     { label: "Aktive avtaler", value: dashboard.summary.activeContracts, icon: ShieldCheck, detail: moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents) },
     { label: "Rapporter", value: dashboard.summary.draftReports, icon: ClipboardCheck, detail: `${dashboard.summary.photos} bilder` },
@@ -744,7 +746,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
         </div>
       ) : dashboard ? (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
             {summaryCards.map((card) => <MetricCard key={card.label} {...card} />)}
           </section>
 

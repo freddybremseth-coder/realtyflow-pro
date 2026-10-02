@@ -280,7 +280,7 @@ export interface CareDashboardInput {
   warnings?: string[];
 }
 
-const CLOSED_STATUSES = new Set(["closed", "completed", "cancelled", "canceled", "paid", "void", "archived"]);
+const CLOSED_STATUSES = new Set(["closed", "completed", "done", "cancelled", "canceled", "paid", "void", "archived"]);
 const ACTIVE_CONTRACT_STATUSES = new Set(["active", "renewal_due"]);
 const DRAFT_REPORT_STATUSES = new Set(["draft", "pending", "approved"]);
 const DRAFT_INVOICE_STATUSES = new Set(["draft", "approved", "issued", "sent", "overdue"]);
@@ -679,7 +679,12 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       customerHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
     };
   }).filter((lead) => lead.id && lead.contactId)
-    .sort((a, b) => timestamp(b.createdAt) - timestamp(a.createdAt))
+    .sort((a, b) => {
+      const aOpen = isOpen(a.status) ? 1 : 0;
+      const bOpen = isOpen(b.status) ? 1 : 0;
+      if (aOpen !== bOpen) return bOpen - aOpen;
+      return timestamp(b.createdAt) - timestamp(a.createdAt);
+    })
     .slice(0, 20);
 
   const upcomingEvents = calendarEvents.filter((event) => timestamp(event.startsAt) >= now.getTime() && isOpen(event.status)).length;
