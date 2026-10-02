@@ -22,11 +22,29 @@ test("all public portfolio origins pass middleware and receive the real CORS pre
 });
 
 test("missing and untrusted origins remain denied by collector handlers", async () => {
-  for (const origin of ["", "https://evil.test", "https://www.zenecohomes.com.evil.test", "https://care.zenecohomes.com"]) {
+  for (const origin of ["", "https://evil.test", "https://www.zenecohomes.com.evil.test"]) {
     const preflight = await OPTIONS(new NextRequest(endpoint, { method: "OPTIONS", headers: { origin } }));
     assert.equal(preflight.status, 403);
     assert.equal(preflight.headers.get("access-control-allow-origin"), null);
     const response = await POST(new NextRequest(endpoint, { method: "POST", headers: { origin } }));
     assert.equal(response.status, 403);
   }
+});
+
+
+test("Care subdomain is measured as an approved Zen Eco Homes discovery origin", async () => {
+  const origin = "https://care.zenecohomes.com";
+  const request = new NextRequest(endpoint, {
+    method: "OPTIONS",
+    headers: {
+      origin,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type",
+    },
+  });
+  const admission = await middleware(request);
+  assert.equal(admission.headers.get("x-middleware-next"), "1");
+  const response = await OPTIONS(request);
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), origin);
 });
