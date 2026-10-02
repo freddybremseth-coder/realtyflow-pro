@@ -280,7 +280,7 @@ export interface CareDashboardInput {
   warnings?: string[];
 }
 
-const CLOSED_STATUSES = new Set(["closed", "completed", "cancelled", "canceled", "paid", "void", "archived"]);
+const CLOSED_STATUSES = new Set(["closed", "completed", "done", "cancelled", "canceled", "paid", "void", "archived"]);
 const ACTIVE_CONTRACT_STATUSES = new Set(["active", "renewal_due"]);
 const DRAFT_REPORT_STATUSES = new Set(["draft", "pending", "approved"]);
 const DRAFT_INVOICE_STATUSES = new Set(["draft", "approved", "issued", "sent", "overdue"]);
