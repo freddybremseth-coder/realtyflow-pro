@@ -243,7 +243,7 @@ function CareOnboardingDialog({
 
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
             <h3 className="font-semibold text-amber-100">Avtale og MRR</h3>
-            <p className="mt-1 text-xs text-amber-100/70">{activatingAgreement ? "Velg Care-planen som skal aktiveres. Ingen avtale opprettes før du bekrefter her." : "Plan er valgfri. Lar du feltet stå tomt, opprettes kunden og eiendommen uten aktiv avtale eller fakturering."}</p>
+            <p className="mt-1 text-xs text-amber-100/70">{activatingAgreement ? "Velg Care-planen som skal aktiveres. Når du bekrefter, legges første Care-besøk automatisk i kalenderen på startdatoen (eller neste tilgjengelige dag kl. 10)." : "Plan er valgfri. Lar du feltet stå tomt, opprettes kunden og eiendommen uten aktiv avtale eller fakturering. Velger du plan, legges første Care-besøk automatisk i kalenderen."}</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
               <label className="space-y-1.5 text-sm text-slate-300 sm:col-span-3">
                 <span>Care-plan</span>
