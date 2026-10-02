@@ -74,3 +74,32 @@ test("Doña Anna accepts only coarse approved targets before database access", a
   }));
   assert.ok([204,503].includes(noDatabase.status));
 });
+
+
+test("Doña Anna product-specific targets remain coarse allowlisted categories", async () => {
+  for (const target of [
+    "product_portfolio",
+    "product_hub",
+    "verde_vivo",
+    "verde_alto",
+    "raiz_antigua",
+    "cocina_viva",
+    "mesa_gordal_noble",
+    "tasting_request_verde_vivo",
+    "tasting_request_verde_alto",
+    "tasting_request_raiz_antigua",
+    "tasting_request_cocina_viva",
+    "tasting_request_mesa_gordal_noble",
+  ]) {
+    const response = await POST(new NextRequest(endpoint, {
+      method: "POST",
+      headers: { origin: "https://www.donaanna.com", "content-type": "application/json" },
+      body: JSON.stringify({
+        eventType: target.startsWith("tasting_request_") ? "contact" : "next_step",
+        target,
+        path: "/",
+      }),
+    }));
+    assert.ok([204,503].includes(response.status), target);
+  }
+});

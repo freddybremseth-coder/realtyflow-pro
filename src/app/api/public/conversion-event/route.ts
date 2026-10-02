@@ -16,7 +16,11 @@ const ALLOWED_SOURCES = new Set([
 const ALLOWED_TARGETS = new Set([
   "getting_started", "demo_hub", "demosites_trial", "demosites_demo",
   "realtyflow_demo", "family_demo", "remaster_demo", "booking", "email_contact", "contact_section",
-  "tasting_interest", "verde_vivo", "restaurant_guide", "guide_hub", "b2b_portal",
+  "tasting_interest", "product_portfolio", "product_hub",
+  "verde_vivo", "verde_alto", "raiz_antigua", "cocina_viva", "mesa_gordal_noble",
+  "tasting_request_submitted", "tasting_request_verde_vivo", "tasting_request_verde_alto",
+  "tasting_request_raiz_antigua", "tasting_request_cocina_viva", "tasting_request_mesa_gordal_noble",
+  "restaurant_guide", "guide_hub", "b2b_portal",
 ]);
 
 function corsHeaders(origin: string) {
