@@ -30,9 +30,12 @@ test("Care onboarding database mutation is service-role only and tied to a real 
   assert.match(migration, /grant execute on function public\.care_onboard_lead[\s\S]*to service_role/i);
 });
 
-test("Care onboarding reuses matching property and does not create duplicate active contracts", () => {
+test("Care onboarding reuses the property linked to the lead and does not create duplicate active contracts", () => {
+  assert.match(migration, /metadata->>'care_property_id'/);
+  assert.match(migration, /id = \(v_work_item\.metadata->>'care_property_id'\)::uuid/);
   assert.match(migration, /where org_id = v_org_id[\s\S]*owner_id = p_contact_id[\s\S]*lower\(btrim\(address_line\)\)/i);
   assert.match(migration, /status in \('active', 'renewal_due'\)/);
+  assert.match(migration, /active Care contract already exists with a different plan/i);
   assert.match(migration, /care_property_id/);
   assert.match(migration, /care_contract_id/);
 });
@@ -43,4 +46,7 @@ test("Care onboarding UI makes plan activation optional and explicit", () => {
   assert.match(dashboard, /ingen aktiv avtale eller fakturering/i);
   assert.match(dashboard, /fetch\("\/api\/care\/onboard"/);
   assert.match(dashboard, /Ingen e-post eller faktura sendes/);
+  assert.match(dashboard, /Aktiver avtale/);
+  assert.match(dashboard, /activatingAgreement && !planId/);
+  assert.match(dashboard, /lead\.carePropertyAddress/);
 });
