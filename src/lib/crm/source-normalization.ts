@@ -59,6 +59,10 @@ export function normalizeCrmSource(raw: unknown): NormalizedCrmSource {
   if (["zenecohomes-home", "zeneco-home", "zeneco-home-form"].includes(value)) {
     return { rawSource, sourceType: "web_form", sourceDetail: "ZenEcoHomes home form", confidence: "HIGH", acquisitionChannelKnown: true };
   }
+  if (/^zeneco-care-(?:keyholding|boligtilsyn|nokkeloppbevaring|klargjoring|uvaer)$/.test(value)) {
+    const intent = value.replace(/^zeneco-care-/, "");
+    return { rawSource, sourceType: "web_form", sourceDetail: `Zen Eco Homes Care · ${intent}`, confidence: "HIGH", acquisitionChannelKnown: true };
+  }
 
   if (/instagram|facebook|meta|youtube|tiktok/.test(value)) return { rawSource, sourceType: "social", sourceDetail: rawSource, confidence: "MEDIUM", acquisitionChannelKnown: true };
   if (/idealista|fotocasa|kyero|thinkspain|rightmove|finn|portal/.test(value)) return { rawSource, sourceType: "property_portal", sourceDetail: rawSource, confidence: "MEDIUM", acquisitionChannelKnown: true };
