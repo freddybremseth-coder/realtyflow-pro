@@ -43,7 +43,7 @@ test("Care onboarding reuses the property linked to the lead and does not create
 test("Care onboarding UI makes plan activation optional and explicit", () => {
   assert.match(dashboard, /Opprett Care-kunde/);
   assert.match(dashboard, /Ingen plan ennå/);
-  assert.match(dashboard, /ingen aktiv avtale eller fakturering/i);
+  assert.match(dashboard, /uten aktiv avtale eller fakturering/i);
   assert.match(dashboard, /fetch\("\/api\/care\/onboard"/);
   assert.match(dashboard, /Ingen e-post eller faktura sendes/);
   assert.match(dashboard, /Aktiver avtale/);
