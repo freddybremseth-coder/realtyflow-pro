@@ -6,6 +6,7 @@ const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://chatgenius.pro": "chatgenius",
   "https://www.donaanna.com": "donaanna",
   "https://donaanna.com": "donaanna",
+  "https://care.zenecohomes.com": "zeneco",
 };
 
 const ALLOWED_EVENTS = new Set(["next_step", "demo", "trial", "booking", "email", "contact"]);
@@ -17,6 +18,10 @@ const ALLOWED_TARGETS = new Set([
   "getting_started", "demo_hub", "demosites_trial", "demosites_demo",
   "realtyflow_demo", "family_demo", "remaster_demo", "booking", "email_contact", "contact_section",
   "tasting_interest", "verde_vivo", "restaurant_guide", "guide_hub", "b2b_portal",
+  "care_quote", "care_pricing", "care_service_boligtilsyn", "care_service_nokkeloppbevaring",
+  "care_service_klargjoring", "care_service_uvaer", "care_lead_submit_keyholding",
+  "care_lead_submit_boligtilsyn", "care_lead_submit_nokkeloppbevaring",
+  "care_lead_submit_klargjoring", "care_lead_submit_uvaer",
 ]);
 
 function corsHeaders(origin: string) {
