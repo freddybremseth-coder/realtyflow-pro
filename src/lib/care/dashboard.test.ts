@@ -109,6 +109,32 @@ test("Care dashboard summarizes contracts, reports, photos and invoices", () => 
       status: "planned",
       is_billable: true,
     }],
+    careLeadWorkItems: [{
+      id: "lead-work-1",
+      source_id: "lead-contact-1",
+      status: "TO_DO",
+      priority: "MEDIUM",
+      next_action: "Zen Eco Homes Care: svar personlig.",
+      created_at: "2026-07-29T09:30:00.000Z",
+      metadata: {
+        segment: "care",
+        service_intent: "boligtilsyn",
+        request_type: "care-boligtilsyn",
+        source: "zeneco-care-boligtilsyn",
+        page_url: "https://care.zenecohomes.com/boligtilsyn-costa-blanca/",
+        utm_source: "google_search",
+        is_existing_contact: false,
+        email: "lead@example.com",
+      },
+    }],
+    careLeadContacts: [{
+      id: "lead-contact-1",
+      name: "Ny Care Lead",
+      email: "lead@example.com",
+      phone: "+47 900 00 000",
+      pipeline_status: "NEW",
+      source: "zeneco-care-boligtilsyn",
+    }],
   });
 
   assert.equal(dashboard.summary.properties, 1);
@@ -123,6 +149,13 @@ test("Care dashboard summarizes contracts, reports, photos and invoices", () => 
   assert.equal(dashboard.reports[0]?.deliveryCount, 1);
   assert.equal(dashboard.photos[0]?.caption, "Fasade");
   assert.equal(dashboard.keys[0]?.lastHolder, "Freddy");
+  assert.equal(dashboard.leads.length, 1);
+  assert.equal(dashboard.leads[0]?.contactName, "Ny Care Lead");
+  assert.equal(dashboard.leads[0]?.serviceIntent, "boligtilsyn");
+  assert.equal(dashboard.leads[0]?.source, "zeneco-care-boligtilsyn");
+  assert.equal(dashboard.leads[0]?.pageUrl, "https://care.zenecohomes.com/boligtilsyn-costa-blanca/");
+  assert.equal(dashboard.leads[0]?.pipelineStatus, "NEW");
+  assert.equal(dashboard.leads[0]?.customerHref, "/customers/lead-contact-1");
 });
 
 test("Care dashboard marks empty customer setup without failing the ready schema", () => {

@@ -62,6 +62,63 @@ async function loadOwnerContacts(supabase: any, properties: Array<Record<string,
   return Array.isArray(data) ? data as Array<Record<string, unknown>> : [];
 }
 
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+async function loadCareLeadContext(supabase: any, warnings: string[]) {
+  const { data: rawWorkItems, error: workItemsError } = await supabase
+    .from("work_items")
+    .select("id,title,status,priority,source_id,next_action,metadata,created_at,updated_at")
+    .eq("brand_id", "zeneco")
+    .eq("source_type", "website_lead")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (workItemsError) {
+    warnings.push(`Care leads: ${workItemsError.message}`);
+    return { workItems: [], contacts: [] };
+  }
+
+  const workItems = (Array.isArray(rawWorkItems) ? rawWorkItems : [])
+    .filter((row: Record<string, unknown>) => {
+      const metadata = record(row.metadata);
+      const segment = String(metadata.segment || "").toLowerCase();
+      const requestType = String(metadata.request_type || "").toLowerCase();
+      const nextAction = String(row.next_action || "").toLowerCase();
+      return segment === "care"
+        || requestType.startsWith("care-")
+        || nextAction.includes("zen eco homes care");
+    })
+    .slice(0, 50);
+
+  const contactIds = Array.from(new Set(
+    workItems
+      .map((row: Record<string, unknown>) => String(row.source_id || "").trim())
+      .filter(Boolean),
+  ));
+
+  if (!contactIds.length) return { workItems, contacts: [] };
+
+  const { data: contacts, error: contactsError } = await supabase
+    .from("contacts")
+    .select("id,name,email,phone,pipeline_status,source,brand_id,created_at,updated_at")
+    .in("id", contactIds)
+    .limit(100);
+
+  if (contactsError) {
+    warnings.push(`Care lead contacts: ${contactsError.message}`);
+    return { workItems, contacts: [] };
+  }
+
+  return {
+    workItems,
+    contacts: Array.isArray(contacts) ? contacts as Array<Record<string, unknown>> : [],
+  };
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request, { dashboard: null });
   if (denied) return denied;
@@ -95,7 +152,10 @@ export async function GET(request: NextRequest) {
     : {};
   const warnings: string[] = [];
   const properties = rows(snapshot, "kh_properties");
-  const ownerContacts = await loadOwnerContacts(supabase, properties, warnings);
+  const [ownerContacts, careLeadContext] = await Promise.all([
+    loadOwnerContacts(supabase, properties, warnings),
+    loadCareLeadContext(supabase, warnings),
+  ]);
 
   const dashboardInput: CareDashboardInput = {
     orgs: rows(snapshot, "orgs"),
@@ -118,6 +178,8 @@ export async function GET(request: NextRequest) {
     calendarEvents: rows(snapshot, "kh_calendar_events"),
     issues: rows(snapshot, "kh_issues"),
     workOrders: rows(snapshot, "kh_work_orders"),
+    careLeadWorkItems: careLeadContext.workItems,
+    careLeadContacts: careLeadContext.contacts,
     warnings,
   };
 

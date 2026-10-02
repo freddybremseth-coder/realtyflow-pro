@@ -31,6 +31,7 @@ import type {
   CareDashboard as CareDashboardData,
   CareInspection,
   CareInvoice,
+  CareLead,
   CareKey,
   CarePhoto,
   CarePlan,
@@ -68,10 +69,10 @@ function dateLabel(value: string | null) {
 
 function statusClass(status: string) {
   const normalized = status.toLowerCase();
-  if (["active", "ok", "sent", "paid", "approved", "completed", "complete"].includes(normalized)) {
+  if (["active", "ok", "sent", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
   }
-  if (["draft", "planned", "open", "issued", "pending"].includes(normalized)) {
+  if (["draft", "planned", "open", "issued", "pending", "to_do", "in_progress"].includes(normalized)) {
     return "border-amber-500/30 bg-amber-500/10 text-amber-200";
   }
   if (["overdue", "critical", "blocked"].includes(normalized)) {
@@ -88,6 +89,33 @@ function readinessClass(status: string) {
 
 function shortId(value: string) {
   return value ? value.slice(0, 8) : "-";
+}
+
+const CARE_SERVICE_LABELS: Record<string, string> = {
+  keyholding: "Keyholding",
+  boligtilsyn: "Boligtilsyn",
+  nokkeloppbevaring: "Nøkkeloppbevaring",
+  klargjoring: "Klargjøring",
+  uvaer: "Tilsyn etter uvær",
+};
+
+function careServiceLabel(value: string) {
+  return CARE_SERVICE_LABELS[value] || value || "Keyholding";
+}
+
+function sourcePageLabel(value: string | null) {
+  if (!value) return "Kildeside ikke registrert";
+  try {
+    const url = new URL(value);
+    const path = url.pathname === "/" ? "forsiden" : url.pathname;
+    return `${url.hostname} · ${path}`;
+  } catch {
+    return value;
+  }
+}
+
+function careLeadOpen(lead: CareLead) {
+  return !["DONE", "CANCELLED", "CANCELED", "CLOSED", "COMPLETED"].includes(lead.status.toUpperCase());
 }
 
 function EmptyState({ title, detail, icon: Icon }: { title: string; detail: string; icon: LucideIcon }) {
@@ -116,8 +144,74 @@ function StatusBadge({ value }: { value: string }) {
 }
 
 function Overview({ dashboard }: { dashboard: CareDashboardData }) {
+  const openLeadCount = dashboard.leads.filter(careLeadOpen).length;
+
   return (
     <div className="space-y-5">
+      <section className="rounded-xl border border-amber-500/20 bg-slate-900/65 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-white">Nye Care-henvendelser</h2>
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">{openLeadCount} åpne</span>
+            </div>
+            <p className="mt-1 text-sm text-slate-400">Direkte fra Care-sidene. Tjeneste, kilde og kundekort følger henvendelsen inn i CRM.</p>
+          </div>
+          <Button asChild variant="outline"><Link href="/customers?tab=leads">Åpne CRM</Link></Button>
+        </div>
+
+        {dashboard.leads.length === 0 ? (
+          <div className="mt-4 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-5 text-sm text-slate-400">
+            Ingen Care-henvendelser er registrert ennå. Nye skjema fra care.zenecohomes.com vil vises her automatisk.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            {dashboard.leads.slice(0, 8).map((lead) => (
+              <Link
+                key={lead.id}
+                href={lead.customerHref}
+                className="group rounded-lg border border-slate-800 bg-slate-950/45 p-4 transition hover:border-amber-500/35 hover:bg-slate-950/70"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">{careServiceLabel(lead.serviceIntent)}</span>
+                      <StatusBadge value={lead.status} />
+                      {lead.pipelineStatus && <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">CRM {lead.pipelineStatus}</span>}
+                      {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
+                    </div>
+                    <h3 className="mt-3 truncate text-base font-semibold text-white">{lead.contactName}</h3>
+                    <p className="mt-1 truncate text-xs text-slate-400">
+                      {[lead.email, lead.phone].filter(Boolean).join(" · ") || "Kontaktdata ligger i kundekortet"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-slate-500">{dateLabel(lead.createdAt)}</span>
+                </div>
+
+                <div className="mt-3 space-y-1.5 text-xs text-slate-500">
+                  <p className="truncate"><span className="text-slate-400">Kildeside:</span> {sourcePageLabel(lead.pageUrl)}</p>
+                  <p className="truncate"><span className="text-slate-400">Kilde:</span> {lead.source || "Care webskjema"}</p>
+                  {(lead.utmSource || lead.utmCampaign) && (
+                    <p className="truncate"><span className="text-slate-400">Kampanje:</span> {[lead.utmSource, lead.utmMedium, lead.utmCampaign].filter(Boolean).join(" / ")}</p>
+                  )}
+                </div>
+
+                {lead.nextAction && (
+                  <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
+                    <span className="font-semibold text-amber-200">Neste steg:</span> {lead.nextAction}
+                  </div>
+                )}
+
+                <div className="mt-3 flex items-center justify-between border-t border-slate-800 pt-3 text-xs">
+                  <span className="text-slate-500">{lead.priority} prioritet</span>
+                  <span className="font-semibold text-amber-300 transition group-hover:translate-x-0.5">Åpne kundekort →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="grid gap-4 lg:grid-cols-4">
         {dashboard.workflows.map((workflow) => (
           <Link key={workflow.id} href={workflow.href} className="group rounded-xl border border-slate-800 bg-slate-900/65 p-5 transition hover:border-amber-500/40">
