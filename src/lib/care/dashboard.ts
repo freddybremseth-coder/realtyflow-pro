@@ -198,6 +198,11 @@ export interface CareLead {
   requestType: string | null;
   source: string | null;
   pageUrl: string | null;
+  preferredArea: string | null;
+  propertyType: string | null;
+  carePropertyId: string | null;
+  careContractId: string | null;
+  careReference: string | null;
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -641,6 +646,11 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       requestType,
       source: optionalText(metadata, "source") || optionalText(contact, "source"),
       pageUrl: optionalText(metadata, "page_url"),
+      preferredArea: optionalText(metadata, "preferred_area"),
+      propertyType: optionalText(metadata, "property_type"),
+      carePropertyId: optionalText(metadata, "care_property_id"),
+      careContractId: optionalText(metadata, "care_contract_id"),
+      careReference: optionalText(metadata, "care_reference"),
       utmSource: optionalText(metadata, "utm_source"),
       utmMedium: optionalText(metadata, "utm_medium"),
       utmCampaign: optionalText(metadata, "utm_campaign"),
