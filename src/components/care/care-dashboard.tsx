@@ -144,13 +144,15 @@ function CareOnboardingDialog({
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }) {
-  const [propertyType, setPropertyType] = useState(() => carePropertyType(lead.propertyType));
-  const [propertyName, setPropertyName] = useState("");
-  const [addressLine, setAddressLine] = useState("");
-  const [municipality, setMunicipality] = useState(lead.preferredArea || "");
-  const [postcode, setPostcode] = useState("");
-  const [hasPool, setHasPool] = useState(false);
-  const [hasGarden, setHasGarden] = useState(false);
+  const activatingAgreement = Boolean(lead.carePropertyId && !lead.careContractId);
+  const existingProperty = Boolean(lead.carePropertyId);
+  const [propertyType, setPropertyType] = useState(() => carePropertyType(lead.carePropertyType || lead.propertyType));
+  const [propertyName, setPropertyName] = useState(lead.carePropertyName || "");
+  const [addressLine, setAddressLine] = useState(lead.carePropertyAddress || "");
+  const [municipality, setMunicipality] = useState(lead.careMunicipality || lead.preferredArea || "");
+  const [postcode, setPostcode] = useState(lead.carePostcode || "");
+  const [hasPool, setHasPool] = useState(lead.careHasPool);
+  const [hasGarden, setHasGarden] = useState(lead.careHasGarden);
   const [planId, setPlanId] = useState("");
   const [startsOn, setStartsOn] = useState(todayInputValue());
   const [billingDay, setBillingDay] = useState("1");
@@ -197,8 +199,8 @@ function CareOnboardingDialog({
         <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-5 sm:p-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">Care onboarding</p>
-            <h2 className="mt-2 text-xl font-semibold text-white">Opprett Care-kunde · {lead.contactName}</h2>
-            <p className="mt-1 text-sm text-slate-400">CRM-kontakten beholdes som eier. Her oppretter du Care-eiendommen og velger eventuelt en aktiv avtale.</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">{activatingAgreement ? "Aktiver Care-avtale" : "Opprett Care-kunde"} · {lead.contactName}</h2>
+            <p className="mt-1 text-sm text-slate-400">{activatingAgreement ? "Care-eiendommen finnes allerede. Velg planen som skal aktiveres; eiendomsdataene beholdes." : "CRM-kontakten beholdes som eier. Her oppretter du Care-eiendommen og velger eventuelt en aktiv avtale."}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Lukk</button>
         </div>
@@ -207,7 +209,7 @@ function CareOnboardingDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-1.5 text-sm text-slate-300">
               <span>Boligtype</span>
-              <select required value={propertyType} onChange={(event) => setPropertyType(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+              <select required disabled={existingProperty} value={propertyType} onChange={(event) => setPropertyType(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white disabled:cursor-not-allowed disabled:opacity-65">
                 <option value="">Velg boligtype</option>
                 <option value="apartment">Leilighet</option>
                 <option value="townhouse">Rekkehus</option>
@@ -217,30 +219,30 @@ function CareOnboardingDialog({
             </label>
             <label className="space-y-1.5 text-sm text-slate-300">
               <span>Navn på bolig <span className="text-slate-500">(valgfritt)</span></span>
-              <input value={propertyName} onChange={(event) => setPropertyName(event.target.value)} maxLength={160} placeholder="f.eks. Casa Altea" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
+              <input readOnly={existingProperty} value={propertyName} onChange={(event) => setPropertyName(event.target.value)} maxLength={160} placeholder="f.eks. Casa Altea" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 read-only:cursor-not-allowed read-only:opacity-65" />
             </label>
             <label className="space-y-1.5 text-sm text-slate-300 sm:col-span-2">
               <span>Adresse</span>
-              <input required value={addressLine} onChange={(event) => setAddressLine(event.target.value)} maxLength={240} placeholder="Gateadresse / urbanisasjon" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
+              <input required readOnly={existingProperty} value={addressLine} onChange={(event) => setAddressLine(event.target.value)} maxLength={240} placeholder="Gateadresse / urbanisasjon" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 read-only:cursor-not-allowed read-only:opacity-65" />
             </label>
             <label className="space-y-1.5 text-sm text-slate-300">
               <span>Kommune / område</span>
-              <input required value={municipality} onChange={(event) => setMunicipality(event.target.value)} maxLength={120} placeholder="Altea" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
+              <input required readOnly={existingProperty} value={municipality} onChange={(event) => setMunicipality(event.target.value)} maxLength={120} placeholder="Altea" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 read-only:cursor-not-allowed read-only:opacity-65" />
             </label>
             <label className="space-y-1.5 text-sm text-slate-300">
               <span>Postnummer <span className="text-slate-500">(valgfritt)</span></span>
-              <input value={postcode} onChange={(event) => setPostcode(event.target.value)} maxLength={24} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+              <input readOnly={existingProperty} value={postcode} onChange={(event) => setPostcode(event.target.value)} maxLength={24} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white read-only:cursor-not-allowed read-only:opacity-65" />
             </label>
           </div>
 
           <div className="flex flex-wrap gap-5 rounded-lg border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-300">
-            <label className="flex items-center gap-2"><input type="checkbox" checked={hasPool} onChange={(event) => setHasPool(event.target.checked)} />Basseng</label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={hasGarden} onChange={(event) => setHasGarden(event.target.checked)} />Hage</label>
+            <label className="flex items-center gap-2"><input type="checkbox" disabled={existingProperty} checked={hasPool} onChange={(event) => setHasPool(event.target.checked)} />Basseng</label>
+            <label className="flex items-center gap-2"><input type="checkbox" disabled={existingProperty} checked={hasGarden} onChange={(event) => setHasGarden(event.target.checked)} />Hage</label>
           </div>
 
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
             <h3 className="font-semibold text-amber-100">Avtale og MRR</h3>
-            <p className="mt-1 text-xs text-amber-100/70">Plan er valgfri. Lar du feltet stå tomt, opprettes kunden og eiendommen uten aktiv avtale eller fakturering.</p>
+            <p className="mt-1 text-xs text-amber-100/70">{activatingAgreement ? "Velg Care-planen som skal aktiveres. Ingen avtale opprettes før du bekrefter her." : "Plan er valgfri. Lar du feltet stå tomt, opprettes kunden og eiendommen uten aktiv avtale eller fakturering."}</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
               <label className="space-y-1.5 text-sm text-slate-300 sm:col-span-3">
                 <span>Care-plan</span>
@@ -266,8 +268,8 @@ function CareOnboardingDialog({
 
           <div className="flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-slate-500">Ingen e-post eller faktura sendes av denne handlingen. Den oppretter kun Care-data du har valgt.</p>
-            <Button type="submit" disabled={saving || !propertyType || !addressLine.trim() || !municipality.trim()}>
-              {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Oppretter …</> : planId ? "Opprett kunde + avtale" : "Opprett Care-kunde"}
+            <Button type="submit" disabled={saving || !propertyType || !addressLine.trim() || !municipality.trim() || (activatingAgreement && !planId)}>
+              {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Oppretter …</> : activatingAgreement ? "Aktiver Care-avtale" : planId ? "Opprett kunde + avtale" : "Opprett Care-kunde"}
             </Button>
           </div>
         </form>
@@ -366,7 +368,12 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
                   <div className="flex flex-wrap gap-2">
                     <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
                     {lead.carePropertyId ? (
-                      <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
+                      <>
+                        <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
+                        {!lead.careContractId && (
+                          <button type="button" onClick={() => setOnboardingLead(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver avtale</button>
+                        )}
+                      </>
                     ) : (
                       <button type="button" onClick={() => setOnboardingLead(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Opprett Care-kunde</button>
                     )}
