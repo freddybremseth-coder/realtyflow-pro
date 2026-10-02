@@ -85,6 +85,7 @@ test("Care leads remain a distinct Zen Eco Homes service segment", () => {
   assert.match(source, /const isCare = brandId === "zeneco"/);
   assert.match(source, /segment: isCare \? "care"/);
   assert.match(source, /service_intent: isCare \? careServiceIntent/);
+  assert.match(source, /source: source \|\| null/);
   assert.match(source, /Zen Eco Homes Care: svar personlig/);
   assert.match(source, /const canOfferPortal = !isCare/);
 });
