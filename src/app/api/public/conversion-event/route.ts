@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://www.chatgenius.pro": "chatgenius",
   "https://chatgenius.pro": "chatgenius",
+  "https://www.donaanna.com": "donaanna",
+  "https://donaanna.com": "donaanna",
 };
 
 const ALLOWED_EVENTS = new Set(["next_step", "demo", "trial", "booking", "email", "contact"]);
@@ -14,6 +16,7 @@ const ALLOWED_SOURCES = new Set([
 const ALLOWED_TARGETS = new Set([
   "getting_started", "demo_hub", "demosites_trial", "demosites_demo",
   "realtyflow_demo", "family_demo", "remaster_demo", "booking", "email_contact", "contact_section",
+  "tasting_interest", "verde_vivo", "restaurant_guide", "guide_hub", "b2b_portal",
 ]);
 
 function corsHeaders(origin: string) {
