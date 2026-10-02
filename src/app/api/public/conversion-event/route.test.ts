@@ -12,6 +12,7 @@ test("approved public origins pass middleware and receive conversion CORS prefli
     "https://chatgenius.pro",
     "https://www.donaanna.com",
     "https://donaanna.com",
+    "https://care.zenecohomes.com",
   ]) {
     const request = new NextRequest(endpoint, {
       method: "OPTIONS",
@@ -71,6 +72,23 @@ test("Doña Anna accepts only coarse approved targets before database access", a
     method: "POST",
     headers: { origin: "https://www.donaanna.com", "content-type": "application/json" },
     body: JSON.stringify({ eventType: "contact", target: "tasting_interest", path: "/" }),
+  }));
+  assert.ok([204,503].includes(noDatabase.status));
+});
+
+
+test("Care accepts only coarse approved conversion targets", async () => {
+  const invalid = await POST(new NextRequest(endpoint, {
+    method: "POST",
+    headers: { origin: "https://care.zenecohomes.com", "content-type": "application/json" },
+    body: JSON.stringify({ eventType: "contact", target: "raw_customer_email", path: "/boligtilsyn-costa-blanca/" }),
+  }));
+  assert.equal(invalid.status, 400);
+
+  const noDatabase = await POST(new NextRequest(endpoint, {
+    method: "POST",
+    headers: { origin: "https://care.zenecohomes.com", "content-type": "application/json" },
+    body: JSON.stringify({ eventType: "next_step", target: "care_quote", path: "/boligtilsyn-costa-blanca/" }),
   }));
   assert.ok([204,503].includes(noDatabase.status));
 });

@@ -51,7 +51,7 @@ test("Corporate inbound integration does not enrich people or send outreach", ()
 
 test("Corporate partner inbound is separated from Corporate Home buyer prospects", () => {
   assert.match(source, /const isCorporatePartner/);
-  assert.match(source, /const isCorporateHome = brandId === "zeneco" && !isCorporatePartner/);
+  assert.match(source, /const isCorporateHome = brandId === "zeneco" && !isCare && !isCorporatePartner/);
   assert.match(source, /requestType === "corporate-partner"/);
   assert.match(source, /\.from\("corporate_partner_prospects"\)/);
   assert.match(source, /corporate_partner_id: corporatePartner\?\.id/);
@@ -73,4 +73,18 @@ test("public lead recovers UTM attribution from page_url when fields are not pos
   assert.match(source, /pageTracking\.utm_content/);
   assert.match(source, /pageTracking\.visitor_id/);
   assert.match(source, /pageTracking\.session_id/);
+});
+
+
+test("Care leads remain a distinct Zen Eco Homes service segment", () => {
+  assert.match(source, /const careRequestTypes = new Set/);
+  assert.match(source, /"care-boligtilsyn"/);
+  assert.match(source, /"care-nokkeloppbevaring"/);
+  assert.match(source, /"care-klargjoring"/);
+  assert.match(source, /"care-uvaer"/);
+  assert.match(source, /const isCare = brandId === "zeneco"/);
+  assert.match(source, /segment: isCare \? "care"/);
+  assert.match(source, /service_intent: isCare \? careServiceIntent/);
+  assert.match(source, /Zen Eco Homes Care: svar personlig/);
+  assert.match(source, /const canOfferPortal = !isCare/);
 });

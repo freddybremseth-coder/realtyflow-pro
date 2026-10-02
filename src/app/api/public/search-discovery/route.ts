@@ -6,6 +6,7 @@ import { discoveryStorageHttpStatus } from "@/services/agents/seo-discovery-stor
 const BRAND_BY_ORIGIN: Record<string, string> = {
   "https://www.zenecohomes.com": "zeneco",
   "https://zenecohomes.com": "zeneco",
+  "https://care.zenecohomes.com": "zeneco",
   "https://www.pinosoecolife.com": "pinosoecolife",
   "https://pinosoecolife.com": "pinosoecolife",
   "https://www.freddybremseth.com": "freddyb",

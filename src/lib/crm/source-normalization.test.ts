@@ -36,3 +36,20 @@ test("real seminar remains event while unknown free text stays other", () => {
   assert.equal(normalizeCrmSource("Costa Blanca seminar").sourceType, "event");
   assert.equal(normalizeCrmSource("Old spreadsheet batch").sourceType, "other");
 });
+
+
+test("Zen Eco Homes Care service sources are high-confidence web forms", () => {
+  for (const raw of [
+    "zeneco-care-keyholding",
+    "zeneco-care-boligtilsyn",
+    "zeneco-care-nokkeloppbevaring",
+    "zeneco-care-klargjoring",
+    "zeneco-care-uvaer",
+  ]) {
+    const result = normalizeCrmSource(raw);
+    assert.equal(result.sourceType, "web_form");
+    assert.equal(result.confidence, "HIGH");
+    assert.equal(result.acquisitionChannelKnown, true);
+    assert.match(result.sourceDetail, /^Zen Eco Homes Care · /);
+  }
+});
