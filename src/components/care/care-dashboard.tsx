@@ -14,6 +14,7 @@ import {
   Gauge,
   Home,
   Image,
+  Inbox,
   KeyRound,
   Loader2,
   MapPin,
