@@ -13,9 +13,10 @@ export const SAAS_PORTFOLIO_APPS: SaasPortfolioApp[] = [
   { slug: "realtyflow", name: "RealtyFlow", domain: "realtyflow.chatgenius.pro", liveUrl: "https://realtyflow.chatgenius.pro", status: "internal" },
   { slug: "spanish", name: "Spanish", domain: "spanish.chatgenius.pro", liveUrl: "https://spanish.chatgenius.pro", status: "demo" },
   { slug: "demosites", name: "DemoSites", domain: "chatgenius.pro", liveUrl: "https://chatgenius.pro/demosites/", status: "live" },
+  { slug: "olivia", name: "Olivia", domain: "donaanna.com", liveUrl: "https://www.chatgenius.pro/demo/olivia/", status: "demo" },
 ];
 
-export const ARCHIVED_SAAS_APP_SLUGS = ["olivia", "donaanna", "socialmusichub", "appointment"];
+export const ARCHIVED_SAAS_APP_SLUGS = ["donaanna", "socialmusichub", "appointment"];
 
 export function sortSaasPortfolio<T extends { slug?: string | null }>(apps: T[]) {
   const order = new Map<string, number>(SAAS_PORTFOLIO_APPS.map((app, index) => [app.slug, index]));
