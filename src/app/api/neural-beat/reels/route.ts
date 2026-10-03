@@ -197,7 +197,7 @@ export async function POST(request:NextRequest){
       reel:ready,
       publicUrl,
       mediaAssetId,
-      warnings:mediaBridgeWarning?[\`Shared Media bridge: \${mediaBridgeWarning}\`]:[],
+      warnings:mediaBridgeWarning?[`Shared Media bridge: ${mediaBridgeWarning}`]:[],
     },{status:201});
   }catch(error){
     const message=error instanceof Error?error.message:"Reel-rendering feilet.";
