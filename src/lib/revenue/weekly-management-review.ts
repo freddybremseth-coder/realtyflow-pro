@@ -5,6 +5,7 @@ import {
   operatingReviewFingerprint,
   type OperatingDecisionStatus,
   type OperatingReviewSettings,
+  type CapacityDecisionEffect,
 } from "@/lib/revenue/operating-review";
 import type { ExecutiveDecisionSeverity, ExecutiveDecisionSource } from "@/lib/revenue/executive-briefing";
 
@@ -35,7 +36,8 @@ export type WeeklyIssueType =
   | "STALLED_DECISION"
   | "UNDECIDED_REPEAT"
   | "SOURCE_BOTTLENECK"
-  | "REVIEW_DISCIPLINE";
+  | "REVIEW_DISCIPLINE"
+  | "CAPACITY_ACTION_WORSENED";
 
 export interface WeeklyOutcomeMetrics {
   reviews: number;
@@ -85,6 +87,25 @@ export interface WeeklyManagementIssue {
   amountEur: number | null;
 }
 
+export interface WeeklyCapacityLearning {
+  measured: number;
+  improved: number;
+  unchanged: number;
+  worsened: number;
+  notMeasurable: number;
+  effects: Array<{
+    key: string;
+    subject: string;
+    horizon: "7D" | "30D";
+    intervention: string;
+    effect: CapacityDecisionEffect["effect"];
+    explanation: string;
+    currentIntervention: string | null;
+    responsibleEmail: string | null;
+    followupAt: string | null;
+  }>;
+}
+
 export interface WeeklyManagementSnapshot {
   id: string;
   weekStart: string;
@@ -102,6 +123,7 @@ export interface WeeklyManagementSnapshot {
   };
   bySource: WeeklyOutcomeBreakdown[];
   byRole: WeeklyOutcomeBreakdown[];
+  capacityLearning: WeeklyCapacityLearning;
   issues: WeeklyManagementIssue[];
   warnings: string[];
   fingerprint: string;
@@ -504,17 +526,71 @@ function analyzeWeek(settings: OperatingReviewSettings, role: AccessRole, weekSt
   };
 }
 
+function capacityLearning(effects: CapacityDecisionEffect[] = []): WeeklyCapacityLearning {
+  return {
+    measured: effects.length,
+    improved: effects.filter(item => item.effect === "IMPROVED").length,
+    unchanged: effects.filter(item => item.effect === "UNCHANGED").length,
+    worsened: effects.filter(item => item.effect === "WORSENED").length,
+    notMeasurable: effects.filter(item => item.effect === "NOT_MEASURABLE").length,
+    effects: effects.slice(0, 12).map(item => ({
+      key: item.key,
+      subject: item.subject,
+      horizon: item.horizon,
+      intervention: item.intervention,
+      effect: item.effect,
+      explanation: item.explanation,
+      currentIntervention: item.currentIntervention,
+      responsibleEmail: item.responsibleEmail,
+      followupAt: item.followupAt,
+    })),
+  };
+}
+
+function capacityLearningIssues(effects: CapacityDecisionEffect[]): WeeklyManagementIssue[] {
+  return effects
+    .filter(item => item.effect === "WORSENED")
+    .map(item => {
+      const base = {
+        type: "CAPACITY_ACTION_WORSENED" as const,
+        severity: item.horizon === "30D" || item.currentIntervention === "STAFFING_REVIEW" || item.currentIntervention === "ROLE_REBALANCE"
+          ? "HIGH" as const
+          : "MEDIUM" as const,
+        source: "TEAM" as const,
+        title: "Kapasitetsgrep har ikke redusert presset",
+        subject: item.subject,
+        detail: item.explanation,
+        recommendedAction: "Gjennomgå den registrerte kapasitetsbeslutningen. Juster tiltak, ansvar eller eskalering før neste ukereview.",
+        href: "/operating-review",
+        decisionKey: `capacity-effect:${item.key}`,
+        appearances: 1,
+        deferrals: 0,
+        daysOpen: null,
+        amountEur: null,
+      };
+      return {
+        id: `weekly:CAPACITY_ACTION_WORSENED:${operatingReviewFingerprint(item.key)}`,
+        fingerprint: operatingReviewFingerprint({ ...base, currentIntervention: item.currentIntervention }),
+        ...base,
+      };
+    });
+}
+
 export function createWeeklyManagementSnapshot(
   operatingSettings: OperatingReviewSettings,
   role: AccessRole,
   actorEmail: string,
   now = new Date(),
-  options: { reviewId?: string; revision?: number } = {},
+  options: { reviewId?: string; revision?: number; capacityDecisionEffects?: CapacityDecisionEffect[] } = {},
 ): WeeklyManagementSnapshot {
   const weekStart = madridWeekStart(now);
   const current = analyzeWeek(operatingSettings, role, weekStart, now);
   const previous = analyzeWeek(operatingSettings, role, addDays(weekStart, -7), now);
   const previousMetrics = previous.metrics.reviews || previous.metrics.uniqueDecisions ? previous.metrics : null;
+  const learning = capacityLearning(options.capacityDecisionEffects || []);
+  const combinedIssues = [...current.issues, ...capacityLearningIssues(options.capacityDecisionEffects || [])]
+    .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || b.deferrals - a.deferrals || (b.daysOpen || 0) - (a.daysOpen || 0))
+    .slice(0, 12);
   const base = {
     id: options.reviewId || crypto.randomUUID(),
     weekStart,
@@ -533,10 +609,41 @@ export function createWeeklyManagementSnapshot(
     },
     bySource: current.bySource,
     byRole: current.byRole,
-    issues: current.issues,
+    capacityLearning: learning,
+    issues: combinedIssues,
     warnings: current.warnings,
   };
   return { ...base, fingerprint: operatingReviewFingerprint(base) };
+}
+
+function parseCapacityLearning(value: unknown): WeeklyCapacityLearning {
+  const row = record(value);
+  const effects = (Array.isArray(row.effects) ? row.effects : []).flatMap((value) => {
+    const effect = record(value);
+    const key = clean(effect.key, 500);
+    const horizon = clean(effect.horizon, 10).toUpperCase();
+    const effectState = clean(effect.effect, 30).toUpperCase();
+    if (!key || !["7D", "30D"].includes(horizon) || !["IMPROVED", "UNCHANGED", "WORSENED", "NOT_MEASURABLE"].includes(effectState)) return [];
+    return [{
+      key,
+      subject: clean(effect.subject, 500),
+      horizon: horizon as "7D" | "30D",
+      intervention: clean(effect.intervention, 100),
+      effect: effectState as CapacityDecisionEffect["effect"],
+      explanation: clean(effect.explanation, 2000),
+      currentIntervention: clean(effect.currentIntervention || effect.current_intervention, 100) || null,
+      responsibleEmail: emailValue(effect.responsibleEmail || effect.responsible_email) || null,
+      followupAt: dateOnly(effect.followupAt || effect.followup_at),
+    }];
+  }).slice(0, 12);
+  return {
+    measured: numberValue(row.measured, effects.length),
+    improved: numberValue(row.improved, effects.filter(item => item.effect === "IMPROVED").length),
+    unchanged: numberValue(row.unchanged, effects.filter(item => item.effect === "UNCHANGED").length),
+    worsened: numberValue(row.worsened, effects.filter(item => item.effect === "WORSENED").length),
+    notMeasurable: numberValue(row.notMeasurable ?? row.not_measurable, effects.filter(item => item.effect === "NOT_MEASURABLE").length),
+    effects,
+  };
 }
 
 function parseMetrics(value: unknown): WeeklyOutcomeMetrics {
@@ -583,7 +690,7 @@ function parseIssue(value: unknown): WeeklyManagementIssue | null {
   const type = clean(row.type, 50).toUpperCase() as WeeklyIssueType;
   const severity = clean(row.severity, 20).toUpperCase() as ExecutiveDecisionSeverity;
   const source = clean(row.source, 30).toUpperCase() as WeeklyManagementIssue["source"];
-  if (!REVIEW_ID_PATTERN.test(id) || !["OVERDUE_FOLLOWUP", "REPEATED_DEFERRAL", "STALLED_DECISION", "UNDECIDED_REPEAT", "SOURCE_BOTTLENECK", "REVIEW_DISCIPLINE"].includes(type)) return null;
+  if (!REVIEW_ID_PATTERN.test(id) || !["OVERDUE_FOLLOWUP", "REPEATED_DEFERRAL", "STALLED_DECISION", "UNDECIDED_REPEAT", "SOURCE_BOTTLENECK", "REVIEW_DISCIPLINE", "CAPACITY_ACTION_WORSENED"].includes(type)) return null;
   if (!["CRITICAL", "HIGH", "MEDIUM"].includes(severity)) return null;
   const base = {
     type,
@@ -633,6 +740,7 @@ function parseSnapshot(value: unknown): WeeklyManagementSnapshot | null {
     },
     bySource,
     byRole,
+    capacityLearning: parseCapacityLearning(row.capacityLearning || row.capacity_learning),
     issues,
     warnings: (Array.isArray(row.warnings) ? row.warnings : []).map((item) => clean(item, 1000)).filter(Boolean).slice(0, 50),
   };
