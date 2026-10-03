@@ -181,7 +181,7 @@ export async function GET(request: NextRequest) {
       .filter((membership: any) => String(membership.user_id) === String(row.user_id))
       .map((membership: any) => ({
         brandKey: String((workspaceBrandsR.data ?? []).find((brand: any) => String(brand.id) === String(membership.brand_id))?.brand_key || ""),
-        status: membership.status === "active" ? "active" : membership.status === "revoked" ? "revoked" : "disabled",
+        status: (membership.status === "active" ? "active" : membership.status === "revoked" ? "revoked" : "disabled") as "active" | "revoked" | "disabled",
         permissions: Array.isArray(membership.permissions) ? membership.permissions as WorkspacePermission[] : [],
         responsibilities: workspaceResponsibilityMap.get(`${row.user_id}:${membership.brand_id}`) || [],
       }))
