@@ -1192,6 +1192,13 @@ function KeysView({
   const [reasonByKey, setReasonByKey] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [keyError, setKeyError] = useState("");
+  const [calendarPropertyId, setCalendarPropertyId] = useState("");
+  const [calendarType, setCalendarType] = useState("prep_task");
+  const [calendarStartsAt, setCalendarStartsAt] = useState("");
+  const [calendarEndsAt, setCalendarEndsAt] = useState("");
+  const [calendarGuestName, setCalendarGuestName] = useState("");
+  const [calendarNotes, setCalendarNotes] = useState("");
+  const [calendarError, setCalendarError] = useState("");
 
   async function registerKey(event: FormEvent) {
     event.preventDefault();
@@ -1243,6 +1250,56 @@ function KeysView({
     }
   }
 
+  async function addCalendarEvent(event: FormEvent) {
+    event.preventDefault();
+    setBusy("calendar:new");
+    setCalendarError("");
+    try {
+      const response = await fetch("/api/care/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          propertyId: calendarPropertyId,
+          eventType: calendarType,
+          startsAt: calendarStartsAt ? new Date(calendarStartsAt).toISOString() : "",
+          endsAt: calendarEndsAt ? new Date(calendarEndsAt).toISOString() : "",
+          guestName: calendarGuestName,
+          notes: calendarNotes,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke planlegge Care-hendelsen.");
+      setCalendarGuestName("");
+      setCalendarNotes("");
+      setCalendarStartsAt("");
+      setCalendarEndsAt("");
+      await onReload();
+    } catch (error) {
+      setCalendarError(error instanceof Error ? error.message : "Kunne ikke planlegge Care-hendelsen.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function updateCalendarEvent(eventId: string, status: "done" | "cancelled") {
+    setBusy(`calendar:${eventId}:${status}`);
+    setCalendarError("");
+    try {
+      const response = await fetch("/api/care/calendar", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, status }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-hendelsen.");
+      await onReload();
+    } catch (error) {
+      setCalendarError(error instanceof Error ? error.message : "Kunne ikke oppdatere Care-hendelsen.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
@@ -1264,6 +1321,38 @@ function KeysView({
           <Button type="submit" disabled={busy === "new" || !propertyId}>{busy === "new" ? <Loader2 size={15} className="mr-2 animate-spin" /> : <KeyRound size={15} className="mr-2" />}Registrer</Button>
         </form>
         {keyError && <p className="mt-3 text-sm text-red-300">{keyError}</p>}
+      </section>
+
+      <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Care-kalender</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Planlegg opphold og service</h2>
+            <p className="mt-1 text-sm text-slate-400">Registrer eier-/gjesteopphold, klargjøring, servicebesøk eller kontroll etter uvær. Ordinære tilsyn planlegges under Besøk & tilsyn.</p>
+          </div>
+          <Link href="/care/visits" className="text-xs font-semibold text-cyan-300 hover:text-cyan-200">Besøk & tilsyn →</Link>
+        </div>
+        <form onSubmit={addCalendarEvent} className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+          <select required value={calendarPropertyId} onChange={(event) => setCalendarPropertyId(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white">
+            <option value="">Velg Care-eiendom</option>
+            {properties.map((property) => <option key={property.id} value={property.id}>{property.name} · {property.municipality || "område mangler"}</option>)}
+          </select>
+          <select value={calendarType} onChange={(event) => setCalendarType(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white">
+            <option value="prep_task">Klargjøring før ankomst</option>
+            <option value="owner_stay">Eieropphold</option>
+            <option value="guest_stay">Gjesteopphold</option>
+            <option value="service_visit">Servicebesøk</option>
+            <option value="storm_callout">Kontroll etter uvær</option>
+          </select>
+          <input required type="datetime-local" value={calendarStartsAt} onChange={(event) => setCalendarStartsAt(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+          <input type="datetime-local" value={calendarEndsAt} onChange={(event) => setCalendarEndsAt(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+          <input value={calendarGuestName} onChange={(event) => setCalendarGuestName(event.target.value)} maxLength={160} placeholder={calendarType === "guest_stay" ? "Gjestenavn" : "Navn / valgfritt"} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600" />
+          <input value={calendarNotes} onChange={(event) => setCalendarNotes(event.target.value)} maxLength={500} placeholder="Notat, instruks eller formål" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600" />
+          <div className="xl:col-span-3">
+            <Button type="submit" disabled={busy === "calendar:new" || !calendarPropertyId || !calendarStartsAt}>{busy === "calendar:new" ? <Loader2 size={15} className="mr-2 animate-spin" /> : <CalendarCheck2 size={15} className="mr-2" />}Planlegg hendelse</Button>
+          </div>
+        </form>
+        {calendarError && <p className="mt-3 text-sm text-red-300">{calendarError}</p>}
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
@@ -1316,6 +1405,13 @@ function KeysView({
             </div>
             <h3 className="mt-3 font-semibold text-white">{event.title}</h3>
             <p className="mt-1 text-sm text-slate-400">{event.propertyLabel} · {dateLabel(event.startsAt)}</p>
+            {event.guestName && <p className="mt-1 text-xs text-slate-500">Gjeste-/kontaktnavn: {event.guestName}</p>}
+            {event.status === "planned" && event.type !== "inspection" && (
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-800 pt-3">
+                <button type="button" disabled={busy.startsWith(`calendar:${event.id}`)} onClick={() => void updateCalendarEvent(event.id, "done")} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/15">Marker utført</button>
+                <button type="button" disabled={busy.startsWith(`calendar:${event.id}`)} onClick={() => void updateCalendarEvent(event.id, "cancelled")} className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:bg-slate-800">Avlys</button>
+              </div>
+            )}
           </article>
         ))}
         {issues.map((issue) => (
