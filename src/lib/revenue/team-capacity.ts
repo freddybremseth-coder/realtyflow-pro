@@ -68,7 +68,8 @@ function roleEligible(item: TeamWorkloadItem, member: TeamMemberWorkload) {
 
 function targetRank(member: TeamMemberWorkload) {
   const loadPenalty = member.load === "EMPTY" ? 0 : member.load === "LIGHT" ? 20 : member.load === "BALANCED" ? 80 : 300;
-  return member.capacityScore + loadPenalty + member.overdue * 30 + member.critical * 60;
+  const ownerFallbackPenalty = member.isOwner ? 120 : 0;
+  return member.capacityScore + loadPenalty + member.overdue * 30 + member.critical * 60 + ownerFallbackPenalty;
 }
 
 export function buildTeamCapacitySuggestions(
