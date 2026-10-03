@@ -661,12 +661,13 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {[
             ["Krever handling", attentionCount, "prioritert kø nå"],
             ["Åpne leads", dashboard.lifecycle.openLeads, "ikke ferdigbehandlet"],
             ["Over 24 t", dashboard.summary.staleOpenLeads, "åpne siden i går"],
             ["Tilbud i løp", dashboard.summary.offersInProgress, "tilbud sendt / venter svar"],
+            ["Tilbuds-MRR", moneyFromCents(dashboard.summary.quotedMonthlyRevenueCents), "månedlig verdi i åpne tilbud"],
             ["Oppfølging nå", dashboard.summary.followUpsDue, "dato i dag eller passert"],
             ["Aktivert", dashboard.lifecycle.contractedLeads, `${dashboard.lifecycle.leadToContractPercent}% av målte leads`],
           ].map(([label, value, detail]) => (
@@ -838,10 +839,11 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
           </div>
           <p className="text-xs text-slate-500">{dashboard.lifecycle.trackedLeads} Care-leads målt · {dashboard.lifecycle.leadToContractPercent}% har aktivert avtale</p>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {[
             ["Nye leads", dashboard.lifecycle.awaitingProperty, "må kvalifiseres"],
             ["Care-eiendom", dashboard.lifecycle.awaitingContract, "venter på avtale"],
+            ["Tilbuds-MRR", moneyFromCents(dashboard.summary.quotedMonthlyRevenueCents), "åpne tilbud per måned"],
             ["Avtale aktivert", dashboard.lifecycle.contractedLeads, "fra Care-leads"],
             ["Kommende besøk", dashboard.summary.upcomingEvents, "kalenderhendelser"],
             ["MRR", moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), String(dashboard.summary.activeContracts) + " aktive avtaler"],
