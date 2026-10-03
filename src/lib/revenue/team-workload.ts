@@ -39,6 +39,8 @@ export interface TeamMemberWorkload extends TeamMember {
   overdue: number;
   critical: number;
   totalScore: number;
+  responsibilityAreas: number;
+  capacityScore: number;
   load: "HIGH" | "BALANCED" | "LIGHT" | "EMPTY";
 }
 
@@ -57,6 +59,25 @@ export interface TeamWorkloadWorkspace {
     critical: number;
   };
   warnings: string[];
+}
+
+export const TEAM_CAPACITY_HIGH_THRESHOLD = 400;
+export const TEAM_CAPACITY_BALANCED_THRESHOLD = 150;
+
+export function teamCapacityScore(totalScore: number, responsibilityAreas: number) {
+  return totalScore + responsibilityAreas * 30;
+}
+
+export function teamCapacityLoad(params: {
+  ownedCount: number;
+  totalScore: number;
+  responsibilityAreas: number;
+}): TeamMemberWorkload["load"] {
+  const score = teamCapacityScore(params.totalScore, params.responsibilityAreas);
+  if (params.ownedCount === 0 && params.responsibilityAreas === 0) return "EMPTY";
+  if (score >= TEAM_CAPACITY_HIGH_THRESHOLD || params.ownedCount >= 8 || params.responsibilityAreas >= 6) return "HIGH";
+  if (score >= TEAM_CAPACITY_BALANCED_THRESHOLD || params.ownedCount >= 3 || params.responsibilityAreas >= 3) return "BALANCED";
+  return "LIGHT";
 }
 
 const OPEN_TASK_STATUSES = new Set(["TO_DO", "TODO", "OPEN", "IN_PROGRESS", "REVIEW", "PENDING"]);
@@ -179,6 +200,7 @@ export function buildTeamWorkload(params: {
   profiles?: AccessProfile[];
   now?: Date;
   warnings?: string[];
+  responsibilityCountsByEmail?: Record<string, number>;
 }): TeamWorkloadWorkspace {
   const now = params.now || new Date();
   const members = roster(params.ownerEmails || [], params.profiles || []);
@@ -257,7 +279,13 @@ export function buildTeamWorkload(params: {
   const workloads: TeamMemberWorkload[] = members.map((member) => {
     const owned = items.filter((item) => item.ownerEmail === member.email);
     const totalScore = owned.reduce((sum, item) => sum + item.score, 0);
-    const load: TeamMemberWorkload["load"] = owned.length === 0 ? "EMPTY" : totalScore >= 350 || owned.length >= 8 ? "HIGH" : totalScore >= 120 || owned.length >= 3 ? "BALANCED" : "LIGHT";
+    const responsibilityAreas = Math.max(0, Number(params.responsibilityCountsByEmail?.[member.email] || 0));
+    const capacityScore = teamCapacityScore(totalScore, responsibilityAreas);
+    const load = teamCapacityLoad({
+      ownedCount: owned.length,
+      totalScore,
+      responsibilityAreas,
+    });
     return {
       ...member,
       contacts: owned.filter((item) => item.resourceType === "CONTACT").length,
@@ -265,9 +293,11 @@ export function buildTeamWorkload(params: {
       overdue: owned.filter((item) => item.overdue).length,
       critical: owned.filter((item) => item.priority === "CRITICAL").length,
       totalScore,
+      responsibilityAreas,
+      capacityScore,
       load,
     };
-  }).sort((a, b) => b.totalScore - a.totalScore || a.displayName.localeCompare(b.displayName));
+  }).sort((a, b) => b.capacityScore - a.capacityScore || a.displayName.localeCompare(b.displayName));
   const unassigned = items.filter((item) => !item.ownerEmail);
   const warnings = [...(params.warnings || [])];
   const legacy = items.filter((item) => item.assignmentSource === "LEGACY").length;
