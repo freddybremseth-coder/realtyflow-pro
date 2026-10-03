@@ -5,6 +5,7 @@ import { verifyAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { loadAccessSettings } from "@/lib/access-control-server";
 import { buildTeamWorkload, type TeamResourceType } from "@/lib/revenue/team-workload";
 import { buildTeamCapacitySuggestions, responsibilityLoadByEmail } from "@/lib/revenue/team-capacity";
+import { buildTeamCapacityForecast } from "@/lib/revenue/team-capacity-forecast";
 import type { AccessRole } from "@/lib/access-control";
 
 export const dynamic = "force-dynamic";
@@ -195,10 +196,12 @@ export async function GET(request: NextRequest) {
     responsibilityCountsByEmail,
   });
   const capacitySuggestions = buildTeamCapacitySuggestions(workspace);
+  const capacityForecast = buildTeamCapacityForecast(workspace, { horizonDays: 7 });
   const session = await actorSession(request);
   return NextResponse.json({
     workspace,
     capacitySuggestions,
+    capacityForecast,
     canManageAssignments: session?.role === "OWNER",
     assignmentHistoryCount: assignmentsResult.settings.events.length,
   });
