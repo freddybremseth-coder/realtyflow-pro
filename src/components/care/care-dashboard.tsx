@@ -167,7 +167,7 @@ function CareOnboardingDialog({
   const [postcode, setPostcode] = useState(lead.carePostcode || "");
   const [hasPool, setHasPool] = useState(lead.careHasPool);
   const [hasGarden, setHasGarden] = useState(lead.careHasGarden);
-  const [planId, setPlanId] = useState("");
+  const [planId, setPlanId] = useState(lead.careQuotePlanId || "");
   const [startsOn, setStartsOn] = useState(todayInputValue());
   const [billingDay, setBillingDay] = useState("1");
   const [saving, setSaving] = useState(false);
