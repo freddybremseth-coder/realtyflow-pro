@@ -180,3 +180,31 @@ test("capacity forecast warns before a balanced team member becomes high next we
   assert.match(forecast?.recommendedAction || "", /Owner-godkjenning/);
   assert.equal(alerts.active.some((alert) => alert.ruleId === "TEAM_OVERLOAD" && alert.ownerEmail === "sales@example.com"), false);
 });
+
+
+test("persistent 30-day capacity pressure creates a structural team alert", () => {
+  const workItems: any[] = [];
+  for (let week = 0; week < 4; week += 1) {
+    const day = 13 + week * 7;
+    for (let index = 0; index < 6; index += 1) {
+      workItems.push({
+        id: `trend-${week}-${index}`,
+        title: `Sales workload ${week}-${index}`,
+        description: "Upcoming sales work",
+        status: "TO_DO",
+        priority: "HIGH",
+        due_date: `2026-07-${String(day).padStart(2, "0")}`,
+        assigned_agent: "sales@example.com",
+        brand_id: "soleada",
+      });
+    }
+  }
+  const alerts = center([], workItems);
+  const trend = alerts.active.find((alert) =>
+    alert.ruleId === "TEAM_CAPACITY_TREND" &&
+    alert.ownerEmail === "sales@example.com");
+  assert.ok(trend);
+  assert.match(trend?.title || "", /vedvarende kapasitetspress/);
+  assert.match(trend?.detail || "", /Høy belastning/);
+  assert.match(trend?.recommendedAction || "", /Vurder|Fordel/);
+});
