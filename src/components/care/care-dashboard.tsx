@@ -70,17 +70,6 @@ function dateLabel(value: string | null) {
   }).format(date);
 }
 
-function leadAgeLabel(value: string | null) {
-  if (!value) return "ukjent alder";
-  const created = new Date(value).getTime();
-  if (!Number.isFinite(created)) return "ukjent alder";
-  const hours = Math.max(0, Math.floor((Date.now() - created) / 3_600_000));
-  if (hours < 1) return "nylig";
-  if (hours < 24) return `${hours} t siden`;
-  const days = Math.floor(hours / 24);
-  return `${days} d siden`;
-}
-
 function statusClass(status: string) {
   const normalized = status.toLowerCase();
   if (["active", "ok", "sent", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
@@ -353,7 +342,7 @@ function CareLeadCard({
         </div>
         <div className="shrink-0 text-right">
           <span className="block text-xs text-slate-500">{dateLabel(lead.createdAt)}</span>
-          <span className={`mt-1 block text-[11px] ${open && lead.createdAt && Date.now() - new Date(lead.createdAt).getTime() > 86_400_000 ? "font-semibold text-amber-300" : "text-slate-600"}`}>{leadAgeLabel(lead.createdAt)}</span>
+          {open && <span className="mt-1 block text-[11px] text-slate-600">åpen henvendelse</span>}
         </div>
       </div>
 
