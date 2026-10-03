@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { WORK_ITEM_ACTIVE_STATUSES } from "@/lib/shared-core/tasks";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { verifyAdminSession, getAdminEmails } from "@/lib/admin-auth";
@@ -10,7 +11,6 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const ASSIGNMENT_SETTINGS_KEY = "team-workload:assignments";
-const OPEN_TASK_STATUSES = ["TO_DO", "TODO", "OPEN", "IN_PROGRESS", "REVIEW", "PENDING"];
 const RESOURCE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,160}$/;
 
 interface AssignmentEvent {
@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
 
   const [contactsResult, workResult, accessResult, assignmentsResult] = await Promise.all([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(2500),
-    supabase.from("work_items").select("*").in("status", OPEN_TASK_STATUSES).order("due_date", { ascending: true, nullsFirst: false }).limit(1500),
+    supabase.from("work_items").select("*").in("status", [...WORK_ITEM_ACTIVE_STATUSES]).order("due_date", { ascending: true, nullsFirst: false }).limit(1500),
     loadAccessSettings(),
     loadAssignmentSettings(supabase),
   ]);
