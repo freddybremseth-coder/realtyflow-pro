@@ -37,6 +37,7 @@ import type {
   CareKey,
   CarePhoto,
   CarePlan,
+  CareQuote,
   CareProperty,
   CareReport,
   CareView,
@@ -72,13 +73,13 @@ function dateLabel(value: string | null) {
 
 function statusClass(status: string) {
   const normalized = status.toLowerCase();
-  if (["active", "ok", "sent", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
+  if (["active", "ok", "sent", "accepted", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
   }
   if (["draft", "planned", "open", "issued", "pending", "to_do", "in_progress"].includes(normalized)) {
     return "border-amber-500/30 bg-amber-500/10 text-amber-200";
   }
-  if (["overdue", "critical", "blocked"].includes(normalized)) {
+  if (["overdue", "critical", "blocked", "declined"].includes(normalized)) {
     return "border-red-500/35 bg-red-500/10 text-red-200";
   }
   return "border-slate-700 bg-slate-800 text-slate-300";
