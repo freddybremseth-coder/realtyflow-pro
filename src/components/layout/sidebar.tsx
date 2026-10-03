@@ -242,9 +242,13 @@ export function Sidebar() {
   // Presentation only. Advanced routes, APIs and permissions are unchanged;
   // the staff shell uses its own brand-scoped navigation and data guards.
   const simpleOwnerHrefs = new Set([
-    "/workspaces", "/nexus-os/today", "/customers", "/inventory",
-    "/growth-hub", "/remaster-freddy", "/billing", "/nexus-os",
-    "/workspace-users",
+    "/workspaces",
+    "/nexus-os/today",
+    "/sales",
+    "/marketing",
+    "/content",
+    "/finance",
+    "/operations",
   ]);
   const visibleSections = useMemo(() => (
     user?.role === "OWNER" && simpleMode
