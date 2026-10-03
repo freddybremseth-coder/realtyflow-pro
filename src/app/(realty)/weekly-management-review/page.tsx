@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Target,
   TrendingUp,
+  UsersRound,
+  Wrench,
 } from "lucide-react";
 import type {
   WeeklyIssueStatus,
@@ -23,6 +25,7 @@ import type {
   WeeklyManagementReviewView,
   WeeklyManagementSnapshot,
 } from "@/lib/revenue/weekly-management-review";
+import type { ExecutiveBriefing } from "@/lib/revenue/executive-briefing";
 
 const STATUS_LABELS: Record<WeeklyIssueStatus, string> = {
   OPEN: "Ikke avklart",
@@ -157,6 +160,8 @@ export default function WeeklyManagementReviewPage() {
   const [journal, setJournal] = useState<WeeklyManagementJournal | null>(null);
   const [currentSnapshot, setCurrentSnapshot] = useState<WeeklyManagementSnapshot | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [capacity, setCapacity] = useState<ExecutiveBriefing["capacity"] | null>(null);
+  const [capacityWarning, setCapacityWarning] = useState<string | null>(null);
   const [canWrite, setCanWrite] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -179,6 +184,8 @@ export default function WeeklyManagementReviewPage() {
     setJournal(nextJournal);
     setCurrentSnapshot(body.currentSnapshot || null);
     setWarning(body.operatingReviewWarning || null);
+    setCapacity(body.capacity || null);
+    setCapacityWarning(body.capacityWarning || null);
     setCanWrite(Boolean(body.canWrite));
     const candidate = preferredId || selectedId || nextJournal.currentReviewId || nextJournal.reviews[0]?.id || null;
     setSelectedId(nextJournal.reviews.some((review) => review.id === candidate) ? candidate : nextJournal.reviews[0]?.id || null);
@@ -236,6 +243,31 @@ export default function WeeklyManagementReviewPage() {
 
         {journal && (
           <>
+            {capacity && <section className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-400"><UsersRound size={14}/> Teamkapasitet · live ledelsesbilde</div>
+                  <h2 className="mt-1 text-xl font-semibold">Hva må ledelsen følge de neste ukene?</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-400">Dette er dagens live kapasitetssignal. Selve ukereviewen forblir append-only og lagrer ikke disse prognosene automatisk.</p>
+                </div>
+                <Link href="/team-workload" className="inline-flex items-center gap-2 rounded-lg border border-violet-800 px-3 py-2 text-sm text-violet-200 hover:bg-violet-950/30">Åpne teamkapasitet <ArrowRight size={14}/></Link>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/15 p-4"><div className="text-xs uppercase text-cyan-500">Risiko neste 7d</div><div className="mt-2 text-2xl font-bold text-cyan-200">{capacity.next7Days.risingHigh}</div><div className="mt-1 text-xs text-slate-600">på vei mot høy belastning</div></div>
+                <div className="rounded-xl border border-rose-900/60 bg-rose-950/15 p-4"><div className="text-xs uppercase text-rose-500">Vedvarende høy · 30d</div><div className="mt-2 text-2xl font-bold text-rose-200">{capacity.next30Days.persistentHigh}</div><div className="mt-1 text-xs text-slate-600">{capacity.next30Days.rising} med stigende trend</div></div>
+                <div className="rounded-xl border border-violet-900/60 bg-violet-950/15 p-4"><div className="text-xs uppercase text-violet-500">Automatisering</div><div className="mt-2 text-2xl font-bold text-violet-200">{capacity.next30Days.automationCandidates}</div><div className="mt-1 text-xs text-slate-600">kandidater for vurdering</div></div>
+                <div className="rounded-xl border border-amber-900/60 bg-amber-950/15 p-4"><div className="text-xs uppercase text-amber-500">Rolle / bemanning</div><div className="mt-2 text-2xl font-bold text-amber-200">{capacity.next30Days.roleRebalanceCandidates + capacity.next30Days.staffingReviewCandidates}</div><div className="mt-1 text-xs text-slate-600">strukturelle vurderinger</div></div>
+              </div>
+              {capacity.highlights.length > 0 && <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {capacity.highlights.slice(0,4).map(item => <Link key={`${item.horizon}:${item.email}:${item.intervention}`} href={item.href} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4 hover:border-violet-700">
+                  <div className="flex items-start justify-between gap-3"><div><div className="font-semibold">{item.displayName}</div><div className="mt-1 text-xs text-violet-300">{item.label}</div></div><span className="rounded-full border border-slate-700 px-2 py-1 text-[10px] text-slate-500">{item.horizon}</span></div>
+                  <p className="mt-2 text-xs leading-5 text-slate-400">{item.detail}</p>
+                  <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-violet-300"><Wrench size={12}/>{item.intervention}</div>
+                </Link>)}
+              </div>}
+            </section>}
+            {capacityWarning && <div className="rounded-xl border border-amber-800/50 bg-amber-950/20 p-4 text-sm text-amber-200">Kapasitetsbildet har en advarsel: {capacityWarning}</div>}
+
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {summaryCards.map(({ label, value, icon: Icon }) => (
                 <div key={label} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
