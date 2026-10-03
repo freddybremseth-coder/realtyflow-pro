@@ -1340,7 +1340,8 @@ function KeysView({
           </article>
         ))}
       </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
