@@ -47,6 +47,7 @@ const VIEW_TABS: Array<{ id: CareView; label: string; href: string; icon: Lucide
   { id: "overview", label: "Oversikt", href: "/care", icon: Gauge },
   { id: "leads", label: "Leads & tilbud", href: "/care/leads", icon: Inbox },
   { id: "customers", label: "Kunder & eiendommer", href: "/care/customers", icon: Users },
+  { id: "visits", label: "Besøk & tilsyn", href: "/care/visits", icon: ClipboardCheck },
   { id: "reports", label: "Rapporter & bilder", href: "/care/reports", icon: Image },
   { id: "invoices", label: "Faktura & tillegg", href: "/care/invoices", icon: FileSpreadsheet },
   { id: "keys", label: "Nøkler & kalender", href: "/care/keys", icon: CalendarCheck2 },
@@ -622,7 +623,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       label: "Planlegg neste besøk",
       detail: "Aktive avtaler uten kommende kalenderhendelse bør få et konkret neste tilsyn.",
       count: dashboard.lifecycle.propertiesWithoutNextVisit,
-      href: "/care/keys",
+      href: "/care/visits",
       icon: CalendarCheck2,
     } : null,
     dashboard.lifecycle.propertiesWithoutKey > 0 ? {
