@@ -1,4 +1,5 @@
 import type { TeamWorkloadWorkspace } from "@/lib/revenue/team-workload";
+import { buildTeamCapacitySuggestions } from "@/lib/revenue/team-capacity";
 import { buildClosingOpportunity } from "@/lib/revenue/closing";
 import { buildCommissionCase } from "@/lib/revenue/commissions";
 import { buildServiceRevenueAccount } from "@/lib/revenue/service-revenue";
@@ -152,21 +153,25 @@ function alertDrafts(params: {
 }) {
   const drafts: AlertDraft[] = [];
   const { contacts, team, now } = params;
+  const capacitySuggestions = buildTeamCapacitySuggestions(team);
 
   for (const member of team.members) {
     if (member.load !== "HIGH") continue;
-    const severity: InternalAlertSeverity = member.critical >= 2 || member.overdue >= 4 || member.totalScore >= 600 ? "CRITICAL" : "HIGH";
+    const severity: InternalAlertSeverity = member.critical >= 2 || member.overdue >= 4 || member.capacityScore >= 700 ? "CRITICAL" : "HIGH";
+    const firstSuggestion = capacitySuggestions.find(item => item.fromEmail === member.email);
     drafts.push({
       id: `team-overload:${member.email}`,
       ruleId: "TEAM_OVERLOAD",
       category: "TEAM",
       severity,
       escalation: escalationFor(severity, member.overdue > 0),
-      score: Math.min(100, 65 + member.critical * 10 + member.overdue * 4),
+      score: Math.min(100, 65 + member.critical * 10 + member.overdue * 4 + Math.min(12, member.responsibilityAreas * 2)),
       title: `${member.displayName} har høy arbeidsbelastning`,
-      detail: `${member.contacts} kunder, ${member.tasks} oppgaver, ${member.overdue} forfalte og ${member.critical} kritiske saker.`,
-      reason: "Samlet belastningsscore har passert den interne terskelen.",
-      recommendedAction: "Gjennomgå køen og flytt ansvar manuelt dersom kapasiteten er reelt overskredet.",
+      detail: `${member.contacts} kunder, ${member.tasks} oppgaver, ${member.responsibilityAreas} ansvarsområder, ${member.overdue} forfalte og ${member.critical} kritiske saker.`,
+      reason: "Kapasitetsscoren kombinerer aktive kunder/oppgaver og personlige workspace-ansvarsområder.",
+      recommendedAction: firstSuggestion
+        ? `Vurder å flytte ${firstSuggestion.itemTitle} til ${firstSuggestion.toName}. Forslaget unngår kritiske, forfalte og closing-saker og krever Owner-godkjenning.`
+        : "Gjennomgå køen manuelt. RealtyFlow fant ingen trygg omfordeling til en person med lavere belastning.",
       brandId: null,
       resourceType: "team-member",
       resourceId: member.email,
@@ -176,7 +181,7 @@ function alertDrafts(params: {
       dueAt: now.toISOString(),
       amountEur: null,
       href: `/team-workload?member=${encodeURIComponent(member.email)}`,
-      fingerprintParts: [member.load, member.contacts, member.tasks, member.overdue, member.critical, member.totalScore],
+      fingerprintParts: [member.load, member.contacts, member.tasks, member.responsibilityAreas, member.overdue, member.critical, member.capacityScore, firstSuggestion?.id || null],
     });
   }
 
