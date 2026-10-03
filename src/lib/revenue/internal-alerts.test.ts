@@ -184,8 +184,8 @@ test("capacity forecast warns before a balanced team member becomes high next we
 
 test("persistent 30-day capacity pressure creates a structural team alert", () => {
   const workItems: any[] = [];
-  for (let week = 0; week < 4; week += 1) {
-    const day = 13 + week * 7;
+  const dates = ["2026-07-13", "2026-07-20", "2026-07-27", "2026-08-03"];
+  dates.forEach((dueDate, week) => {
     for (let index = 0; index < 6; index += 1) {
       workItems.push({
         id: `trend-${week}-${index}`,
@@ -193,12 +193,12 @@ test("persistent 30-day capacity pressure creates a structural team alert", () =
         description: "Upcoming sales work",
         status: "TO_DO",
         priority: "HIGH",
-        due_date: `2026-07-${String(day).padStart(2, "0")}`,
+        due_date: dueDate,
         assigned_agent: "sales@example.com",
         brand_id: "soleada",
       });
     }
-  }
+  });
   const alerts = center([], workItems);
   const trend = alerts.active.find((alert) =>
     alert.ruleId === "TEAM_CAPACITY_TREND" &&
