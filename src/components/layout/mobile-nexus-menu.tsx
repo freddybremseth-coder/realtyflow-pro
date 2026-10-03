@@ -3,17 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, Mail, Megaphone, Menu, Search, Sparkles, Target, Users, X } from "lucide-react";
+import { Banknote, Clapperboard, Megaphone, Menu, Search, Settings, Target, Users, X } from "lucide-react";
 import { buildVisibleNavigation } from "@/lib/navigation";
 import type { AccessRole } from "@/lib/access-control";
 
 const CORE = [
   { href: "/nexus-os/today", label: "I dag", Icon: Target },
-  { href: "/customers", label: "Kunder", Icon: Users },
-  { href: "/nexus-os/communications", label: "E-post", Icon: Mail },
-  { href: "/inventory", label: "Eiendommer", Icon: Building2 },
-  { href: "/social-automation", label: "Markedsføring", Icon: Megaphone },
-  { href: "/nexus-os", label: "AI & autopilot", Icon: Sparkles },
+  { href: "/sales", label: "Sales", Icon: Users },
+  { href: "/marketing", label: "Marketing", Icon: Megaphone },
+  { href: "/content", label: "Content", Icon: Clapperboard },
+  { href: "/finance", label: "Finance", Icon: Banknote },
+  { href: "/operations", label: "Platform", Icon: Settings },
 ] as const;
 
 type CurrentUser = { email: string; role: AccessRole; permissions: string[] };
@@ -85,8 +85,12 @@ export function MobileNexusMenu() {
         <div className="border-b border-slate-700 p-4">
           <div className="grid grid-cols-2 gap-2">
             {CORE.map(({ href, label, Icon }) => {
-              const active = pathname === href || (href !== "/nexus-os" && pathname.startsWith(`${href}/`));
-              return href === "/nexus-os/communications" ? <a key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16} />{label}</a> : <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16} />{label}</Link>;
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}>
+                  <Icon size={16} />{label}
+                </Link>
+              );
             })}
           </div>
         </div>

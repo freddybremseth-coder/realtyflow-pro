@@ -2,7 +2,7 @@ import { SIDEBAR_NAV } from "@/lib/constants";
 import { canSeeNavHref, type AccessRole } from "@/lib/access-control";
 
 export type NavigationItem = { label: string; href: string; icon: string };
-export type NavigationSectionId = "workspace" | "customers" | "properties" | "marketing" | "publishing" | "care" | "revenue" | "business" | "admin";
+export type NavigationSectionId = "workspace" | "sales" | "marketing" | "content" | "finance" | "platform";
 export interface NavigationSection { id: NavigationSectionId; label: string; icon: string; items: NavigationItem[]; }
 export const NAVIGATION_FAVORITES_LIMIT = 6;
 
@@ -28,24 +28,21 @@ const BRAND_BRAIN_NAV_ITEM: NavigationItem = { label: "Merkevarer & kanaler", hr
 const NEXUS_INBOX_NAV_ITEM: NavigationItem = { label: "Innboks", href: "/nexus-os/inbox", icon: "Inbox" };
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
-  { id:"workspace", label:"Hjem", icon:"PanelsTopLeft", hrefs:["/workspaces","/sales","/marketing","/content","/finance","/operations","/nexus-os/today","/nexus-os/focus","/personal-intelligence","/nexus-os/inbox","/nexus-os/communications","/approvals","/","/today"] },
-  { id:"customers", label:"Kunder & salg", icon:"Users", hrefs:["/customers","/lead-intelligence","/execution","/automation/nurture","/recovery","/calendar","/booking-admin","/closing","/closing-pack","/after-sales","/communications"] },
-  { id:"properties", label:"Eiendom", icon:"Building2", hrefs:["/inventory","/inventory/property-360","/scanner","/tomtebase","/areas","/valuation","/document-hub"] },
-  { id:"marketing", label:"Markedsføring & innhold", icon:"Megaphone", hrefs:["/growth-hub","/corporate-homes","/social-automation","/nexus-os/brand-brain","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
-  { id:"publishing", label:"Bøker & media", icon:"BookOpen", hrefs:["/publishing","/publishing/forfatterstudio","/book-growth","/youtube-studio","/remaster-freddy"] },
-  { id:"care", label:"Care", icon:"KeyRound", hrefs:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/service-revenue"] },
-  { id:"revenue", label:"Drift, økonomi & ledelse", icon:"Handshake", hrefs:["/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/team-workload","/revenue-data-health"] },
-  { id:"business", label:"Virksomheter", icon:"Briefcase", hrefs:["/business-hub","/mondeo","/dona-anna","/platform","/demosites","/saas","/revenue-engine","/nexus-os/account-launch"] },
-  { id:"admin", label:"System & autopilot", icon:"Settings", hrefs:["/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/nexus-os/outbound-engagement","/automation","/agents","/data-health","/workspace-users","/access-control","/audit-log"] },
+  { id:"workspace", label:"Hjem", icon:"PanelsTopLeft", hrefs:["/workspaces","/nexus-os/today","/nexus-os/focus","/personal-intelligence","/nexus-os/inbox","/nexus-os/communications","/approvals","/","/today"] },
+  { id:"sales", label:"Sales", icon:"Users", hrefs:["/sales","/customers","/lead-intelligence","/execution","/automation/nurture","/recovery","/calendar","/booking-admin","/closing","/closing-pack","/after-sales","/communications","/inventory","/inventory/property-360","/scanner","/tomtebase","/areas","/valuation","/document-hub","/care","/care/customers","/care/reports","/care/keys","/service-revenue"] },
+  { id:"marketing", label:"Marketing", icon:"Megaphone", hrefs:["/marketing","/growth-hub","/corporate-homes","/social-automation","/nexus-os/brand-brain","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
+  { id:"content", label:"Content", icon:"Clapperboard", hrefs:["/content","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/publishing","/publishing/forfatterstudio","/book-growth","/youtube-studio","/remaster-freddy"] },
+  { id:"finance", label:"Finance", icon:"Banknote", hrefs:["/finance","/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/revenue-data-health","/care/invoices","/dona-anna","/mondeo"] },
+  { id:"platform", label:"Platform / Operations", icon:"Settings", hrefs:["/operations","/business-hub","/platform","/demosites","/saas","/revenue-engine","/team-workload","/nexus-os/account-launch","/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/nexus-os/outbound-engagement","/automation","/agents","/data-health","/workspace-users","/access-control","/audit-log"] },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
   OWNER:["/workspaces","/sales","/marketing","/content","/finance","/operations"],
-  SALES:["/today","/customers","/communications","/execution","/lead-intelligence","/recovery"],
-  CLOSING:["/today","/closing","/closing-pack","/execution","/customers","/approvals"],
-  FINANCE:["/billing","/dona-anna","/revenue-command","/monthly-close","/commissions","/forecast","/goals","/internal-alerts"],
-  MARKETING:["/social-automation","/growth-hub","/corporate-homes","/marketing-readiness","/analytics","/ad-campaigns","/content-studio"],
-  KEYHOLDING:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/communications"],
+  SALES:["/sales","/today","/customers","/communications","/execution","/lead-intelligence"],
+  CLOSING:["/sales","/today","/closing","/closing-pack","/execution","/customers"],
+  FINANCE:["/finance","/billing","/revenue-command","/monthly-close","/commissions","/forecast"],
+  MARKETING:["/marketing","/content","/social-automation","/growth-hub","/analytics","/ad-campaigns"],
+  KEYHOLDING:["/sales","/care","/care/customers","/care/reports","/care/invoices","/care/keys"],
   VIEWER:["/revenue-command","/today","/customers","/executive-briefing","/monthly-close","/forecast"],
   WORKSPACE_MEMBER:[],
 };
