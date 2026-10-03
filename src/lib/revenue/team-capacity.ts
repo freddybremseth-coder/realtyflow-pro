@@ -1,7 +1,4 @@
-import type { TeamMemberWorkload, TeamWorkloadItem, TeamWorkloadWorkspace } from "./team-workload";
-
-export const TEAM_CAPACITY_HIGH_THRESHOLD = 430;
-export const TEAM_CAPACITY_BALANCED_THRESHOLD = 150;
+import { TEAM_CAPACITY_HIGH_THRESHOLD, type TeamMemberWorkload, type TeamWorkloadItem, type TeamWorkloadWorkspace } from "./team-workload";
 
 export type TeamCapacitySuggestion = {
   id: string;
@@ -57,22 +54,6 @@ export function responsibilityLoadByEmail(params: {
     counts[email] = (counts[email] || 0) + list.length;
   }
   return counts;
-}
-
-export function capacityScore(totalScore: number, responsibilityAreas: number) {
-  return totalScore + responsibilityAreas * 30;
-}
-
-export function capacityLoad(params: {
-  ownedCount: number;
-  totalScore: number;
-  responsibilityAreas: number;
-}): TeamMemberWorkload["load"] {
-  const score = capacityScore(params.totalScore, params.responsibilityAreas);
-  if (params.ownedCount === 0 && params.responsibilityAreas === 0) return "EMPTY";
-  if (score >= TEAM_CAPACITY_HIGH_THRESHOLD || params.ownedCount >= 8 || params.responsibilityAreas >= 6) return "HIGH";
-  if (score >= TEAM_CAPACITY_BALANCED_THRESHOLD || params.ownedCount >= 3 || params.responsibilityAreas >= 3) return "BALANCED";
-  return "LIGHT";
 }
 
 function safeToMove(item: TeamWorkloadItem) {
