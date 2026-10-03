@@ -2,65 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { BRANDS } from "@/lib/constants";
 import { requireAdminApi } from "@/lib/api-admin";
+import {
+  WORK_ITEM_ACTIVE_STATUSES,
+  normalizeWorkItemPriority,
+  normalizeWorkItemSourceType,
+  normalizeWorkItemStatus,
+} from "@/lib/shared-core/tasks";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type WorkItemStatus = "TO_DO" | "IN_PROGRESS" | "REVIEW" | "DONE" | "CANCELLED";
-type WorkItemPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-type WorkItemSource =
-  | "manual"
-  | "crm"
-  | "content"
-  | "automation"
-  | "ai_agent"
-  | "website_lead"
-  | "chatbot"
-  | "saas"
-  | "publishing"
-  | "kdp"
-  | "brand"
-  | "property"
-  | "market_intelligence";
-
-const SOURCE_TYPES: WorkItemSource[] = [
-  "manual",
-  "crm",
-  "content",
-  "automation",
-  "ai_agent",
-  "website_lead",
-  "chatbot",
-  "saas",
-  "publishing",
-  "kdp",
-  "brand",
-  "property",
-  "market_intelligence",
-];
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
-}
-
-function normalizeStatus(status?: string): WorkItemStatus {
-  const value = String(status || "TO_DO").toUpperCase();
-  if (["TO_DO", "IN_PROGRESS", "REVIEW", "DONE", "CANCELLED"].includes(value)) return value as WorkItemStatus;
-  return "TO_DO";
-}
-
-function normalizePriority(priority?: string): WorkItemPriority {
-  const value = String(priority || "MEDIUM").toUpperCase();
-  if (["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(value)) return value as WorkItemPriority;
-  return "MEDIUM";
-}
-
-function normalizeSourceType(sourceType?: string): WorkItemSource {
-  const value = String(sourceType || "manual").toLowerCase();
-  return SOURCE_TYPES.includes(value as WorkItemSource) ? (value as WorkItemSource) : "manual";
 }
 
 function todayDate() {
@@ -260,7 +216,7 @@ export async function GET(request: NextRequest) {
     .limit(limit);
 
   if (status) query = query.eq("status", status);
-  else if (view === "active") query = query.in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"]);
+  else if (view === "active") query = query.in("status", [...WORK_ITEM_ACTIVE_STATUSES]);
   else if (view === "done") query = query.eq("status", "DONE");
 
   const { data, error } = await query;
@@ -272,7 +228,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message, work_items: [] }, { status: 500 });
   }
 
-  const synthetic = view === "done" || (status && !["TO_DO", "IN_PROGRESS", "REVIEW"].includes(status))
+  const synthetic = view === "done" || (status && !WORK_ITEM_ACTIVE_STATUSES.includes(status as (typeof WORK_ITEM_ACTIVE_STATUSES)[number]))
     ? [] : await synthesizedItems(supabase);
   const existingKeys = new Set((data || []).map((item) => `${item.source_type}:${item.source_id}`));
   const merged = [
@@ -328,11 +284,11 @@ export async function POST(request: NextRequest) {
   const payload = {
     title,
     description: body.description ? String(body.description) : null,
-    status: normalizeStatus(body.status),
-    priority: normalizePriority(body.priority),
+    status: normalizeWorkItemStatus(body.status),
+    priority: normalizeWorkItemPriority(body.priority),
     due_date: body.due_date || body.dueDate || null,
     brand_id: body.brand_id || body.brand || null,
-    source_type: normalizeSourceType(body.source_type),
+    source_type: normalizeWorkItemSourceType(body.source_type),
     source_id: body.source_id || null,
     assigned_agent: body.assigned_agent || body.platform || null,
     next_action: body.next_action || null,
@@ -377,8 +333,8 @@ export async function PATCH(request: NextRequest) {
   }
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (body.status) updates.status = normalizeStatus(body.status);
-  if (body.priority) updates.priority = normalizePriority(body.priority);
+  if (body.status) updates.status = normalizeWorkItemStatus(body.status);
+  if (body.priority) updates.priority = normalizeWorkItemPriority(body.priority);
   if (body.title) updates.title = String(body.title);
   if ("description" in body) updates.description = body.description;
   if ("due_date" in body || "dueDate" in body) updates.due_date = body.due_date || body.dueDate || null;
