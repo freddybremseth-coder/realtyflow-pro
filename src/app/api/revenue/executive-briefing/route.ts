@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { WORK_ITEM_ACTIVE_STATUSES } from "@/lib/shared-core/tasks";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import { requireAdminApi } from "@/lib/api-admin";
@@ -24,7 +25,6 @@ export const revalidate = 0;
 
 const ASSIGNMENT_SETTINGS_KEY = "team-workload:assignments";
 const ALERT_SETTINGS_KEY = "internal-alerts:acknowledgements";
-const OPEN_TASK_STATUSES = ["TO_DO", "TODO", "OPEN", "IN_PROGRESS", "REVIEW", "PENDING"];
 
 interface AssignmentEvent {
   id: string;
@@ -280,7 +280,7 @@ export async function GET(request: NextRequest) {
 
   const results = await Promise.allSettled([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(3000),
-    supabase.from("work_items").select("*").in("status", OPEN_TASK_STATUSES).order("due_date", { ascending: true, nullsFirst: false }).limit(2000),
+    supabase.from("work_items").select("*").in("status", [...WORK_ITEM_ACTIVE_STATUSES]).order("due_date", { ascending: true, nullsFirst: false }).limit(2000),
     supabase.from("buyer_profiles").select("id,brand,contact_id,status,purchase_readiness,budget_amount,budget_currency,summary,created_at,updated_at").limit(500),
     supabase.from("lead_property_shortlists").select("id,brand,buyer_profile_id,status,title,created_at,updated_at").limit(500),
     supabase.from("lead_customer_presentations").select("id,brand,buyer_profile_id,shortlist_id,status,title,created_at,updated_at").limit(500),
