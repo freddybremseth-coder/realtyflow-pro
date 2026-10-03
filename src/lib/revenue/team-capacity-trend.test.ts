@@ -53,7 +53,7 @@ test("persistent pressure with no spare same-role capacity becomes staffing revi
   const workItems: any[] = [];
   for (let week = 0; week < 4; week += 1) {
     const day = 5 + week * 7;
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       workItems.push(task(`high-${week}-${i}`, `2026-10-${String(day).padStart(2,"0")}`, "sales@example.com", "Viewing prep", "HIGH"));
     }
   }
