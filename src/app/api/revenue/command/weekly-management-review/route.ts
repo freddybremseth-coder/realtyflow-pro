@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext } from "@/lib/api-admin";
+import { GET as getExecutiveBriefing } from "../../executive-briefing/route";
+import type { ExecutiveBriefing } from "@/lib/revenue/executive-briefing";
 import { parseOperatingReviewSettings, OPERATING_REVIEW_SETTINGS_KEY } from "@/lib/revenue/operating-review";
 import {
   WEEKLY_ISSUE_STATUSES,
@@ -49,6 +51,19 @@ async function sessionFor(request: NextRequest) {
   const context = await getRequestAccessContext(request);
   if (!context || !context.permissions.includes("revenue.read")) return null;
   return { email: context.email.toLowerCase(), role: context.role };
+}
+
+async function loadCurrentCapacity(request: NextRequest): Promise<{ capacity: ExecutiveBriefing["capacity"] | null; error: string | null }> {
+  try {
+    const response = await getExecutiveBriefing(request);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body?.briefing?.capacity) {
+      return { capacity: null, error: body?.error || "Kapasitetsbildet kunne ikke bygges." };
+    }
+    return { capacity: (body.briefing as ExecutiveBriefing).capacity, error: null };
+  } catch (error) {
+    return { capacity: null, error: error instanceof Error ? error.message : "Kapasitetsbildet kunne ikke bygges." };
+  }
 }
 
 async function loadOperatingSettings(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
@@ -111,7 +126,7 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured", journal: null }, { status: 500 });
 
-  const [operating, weekly] = await Promise.all([loadOperatingSettings(supabase), loadWeeklySettings(supabase)]);
+  const [operating, weekly, capacity] = await Promise.all([loadOperatingSettings(supabase), loadWeeklySettings(supabase), loadCurrentCapacity(request)]);
   if (weekly.error) return NextResponse.json({ error: weekly.error, journal: null }, { status: 500 });
   const currentSnapshot = createWeeklyManagementSnapshot(operating.settings, session.role, session.email);
   const journal = buildWeeklyManagementJournal(weekly.settings, session.role);
@@ -119,6 +134,8 @@ export async function GET(request: NextRequest) {
     journal,
     currentSnapshot,
     operatingReviewWarning: operating.error,
+    capacity: capacity.capacity,
+    capacityWarning: capacity.error,
     user: { email: session.email, role: session.role },
     canWrite: canWriteWeeklyManagement(session.role),
     storage: { table: "brand_settings", key: WEEKLY_MANAGEMENT_SETTINGS_KEY },

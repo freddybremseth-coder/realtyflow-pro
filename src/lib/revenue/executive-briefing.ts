@@ -4,6 +4,8 @@ import type { RevenueGoalScorecard, GoalMetric } from "@/lib/revenue/goals";
 import type { InternalAlert, InternalAlertCenter } from "@/lib/revenue/internal-alerts";
 import type { ExecutionItem, ExecutionWorkspace } from "@/lib/revenue/execution";
 import type { TeamWorkloadWorkspace } from "@/lib/revenue/team-workload";
+import type { TeamCapacityForecast } from "@/lib/revenue/team-capacity-forecast";
+import type { TeamCapacityTrend, TeamCapacityIntervention } from "@/lib/revenue/team-capacity-trend";
 
 export type ExecutiveBriefingState = "CRITICAL" | "ATTENTION" | "ON_TRACK";
 export type ExecutiveDecisionSeverity = "CRITICAL" | "HIGH" | "MEDIUM";
@@ -70,6 +72,31 @@ export interface ExecutiveBriefing {
     unassigned: number;
     overdue: number;
   };
+  capacity?: {
+    next7Days: {
+      forecastHigh: number;
+      risingHigh: number;
+      staysHigh: number;
+      suggestions: number;
+    };
+    next30Days: {
+      persistentHigh: number;
+      rising: number;
+      spike: number;
+      automationCandidates: number;
+      roleRebalanceCandidates: number;
+      staffingReviewCandidates: number;
+    };
+    highlights: Array<{
+      email: string;
+      displayName: string;
+      horizon: "7D" | "30D";
+      label: string;
+      detail: string;
+      intervention: TeamCapacityIntervention | "REDISTRIBUTE_NOW";
+      href: string;
+    }>;
+  };
   dataSources: Array<{
     id: string;
     label: string;
@@ -95,6 +122,8 @@ export interface ExecutiveBriefingInput {
   alerts: InternalAlertCenter;
   execution: ExecutionWorkspace;
   team: TeamWorkloadWorkspace;
+  capacityForecast?: TeamCapacityForecast;
+  capacityTrend?: TeamCapacityTrend;
   calendarEvents?: BriefingCalendarEvent[];
   calendarConfigured?: boolean;
   calendarWarning?: string | null;
@@ -327,6 +356,35 @@ export function buildExecutiveBriefing(input: ExecutiveBriefingInput): Executive
   const keyholdingVisible = permission(input.role, "keyholding.read");
   const goalsBehind = visibleGoals.filter((metric) => metric.status === "BEHIND" || metric.status === "AT_RISK").length;
   const overloaded = input.team.members.filter((member) => member.load === "HIGH").length;
+  const forecast = input.capacityForecast;
+  const trend = input.capacityTrend;
+  const capacityHighlights: NonNullable<ExecutiveBriefing["capacity"]>["highlights"] = [];
+
+  for (const member of (forecast?.riskMembers || []).slice(0, 3)) {
+    capacityHighlights.push({
+      email: member.email,
+      displayName: member.displayName,
+      horizon: "7D",
+      label: member.risk === "RISING_HIGH" ? "På vei mot høy belastning" : "Forblir høyt belastet",
+      detail: `Kapasitet ${member.currentCapacityScore} → ${member.forecastScore} neste ${forecast?.horizonDays || 7} dager.`,
+      intervention: "REDISTRIBUTE_NOW",
+      href: `/team-workload?forecast=1&member=${encodeURIComponent(member.email)}`,
+    });
+  }
+  for (const member of (trend?.attentionMembers || [])
+    .filter(item => item.pattern === "PERSISTENT_HIGH" || item.pattern === "RISING")
+    .slice(0, 3)) {
+    capacityHighlights.push({
+      email: member.email,
+      displayName: member.displayName,
+      horizon: "30D",
+      label: member.interventionLabel,
+      detail: member.rationale,
+      intervention: member.intervention,
+      href: `/team-workload?trend=1&member=${encodeURIComponent(member.email)}`,
+    });
+  }
+
   const warnings = [...new Set([
     ...(input.warnings || []),
     ...input.command.warnings,
@@ -363,6 +421,23 @@ export function buildExecutiveBriefing(input: ExecutiveBriefingInput): Executive
       overloaded,
       unassigned: input.team.summary.unassignedContacts + input.team.summary.unassignedTasks,
       overdue: input.team.summary.overdue,
+    },
+    capacity: {
+      next7Days: {
+        forecastHigh: forecast?.summary.forecastHigh || 0,
+        risingHigh: forecast?.summary.risingHigh || 0,
+        staysHigh: forecast?.summary.staysHigh || 0,
+        suggestions: forecast?.summary.suggestions || 0,
+      },
+      next30Days: {
+        persistentHigh: trend?.summary.persistentHigh || 0,
+        rising: trend?.summary.rising || 0,
+        spike: trend?.summary.spike || 0,
+        automationCandidates: trend?.summary.automationCandidates || 0,
+        roleRebalanceCandidates: trend?.summary.roleRebalanceCandidates || 0,
+        staffingReviewCandidates: trend?.summary.staffingReviewCandidates || 0,
+      },
+      highlights: capacityHighlights.slice(0, 5),
     },
     dataSources: [
       { id: "crm", label: "CRM og Revenue Command", available: true, generatedAt: input.command.generatedAt, warning: null },
