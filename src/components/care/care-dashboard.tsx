@@ -37,6 +37,7 @@ import type {
   CareKey,
   CarePhoto,
   CarePlan,
+  CareQuote,
   CareProperty,
   CareReport,
   CareSalesStage,
@@ -73,13 +74,13 @@ function dateLabel(value: string | null) {
 
 function statusClass(status: string) {
   const normalized = status.toLowerCase();
-  if (["active", "ok", "sent", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
+  if (["active", "ok", "sent", "accepted", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
   }
   if (["draft", "planned", "open", "issued", "pending", "to_do", "in_progress"].includes(normalized)) {
     return "border-amber-500/30 bg-amber-500/10 text-amber-200";
   }
-  if (["overdue", "critical", "blocked"].includes(normalized)) {
+  if (["overdue", "critical", "blocked", "declined"].includes(normalized)) {
     return "border-red-500/35 bg-red-500/10 text-red-200";
   }
   return "border-slate-700 bg-slate-800 text-slate-300";
@@ -112,6 +113,7 @@ const CARE_SALES_STAGE_LABELS: Record<CareSalesStage, string> = {
   contacted: "Kontaktet",
   quote_sent: "Tilbud sendt",
   waiting_customer: "Venter svar",
+  accepted: "Tilbud akseptert",
   activated: "Aktivert",
   not_relevant: "Ikke aktuell",
 };
@@ -121,7 +123,7 @@ function careSalesStageLabel(value: CareSalesStage) {
 }
 
 function careSalesStageClass(value: CareSalesStage) {
-  if (value === "activated") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
+  if (value === "accepted" || value === "activated") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
   if (value === "quote_sent" || value === "waiting_customer") return "border-cyan-500/30 bg-cyan-500/10 text-cyan-200";
   if (value === "not_relevant") return "border-slate-700 bg-slate-800 text-slate-400";
   return "border-amber-500/30 bg-amber-500/10 text-amber-200";
@@ -187,7 +189,7 @@ function CareOnboardingDialog({
   const [postcode, setPostcode] = useState(lead.carePostcode || "");
   const [hasPool, setHasPool] = useState(lead.careHasPool);
   const [hasGarden, setHasGarden] = useState(lead.careHasGarden);
-  const [planId, setPlanId] = useState("");
+  const [planId, setPlanId] = useState(lead.careQuotePlanId || "");
   const [startsOn, setStartsOn] = useState(todayInputValue());
   const [billingDay, setBillingDay] = useState("1");
   const [saving, setSaving] = useState(false);
@@ -322,8 +324,8 @@ function CareLeadFollowupDialog({
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }) {
-  const initialStage = lead.salesStage === "activated" ? "contacted" : lead.salesStage;
-  const [stage, setStage] = useState<Exclude<CareSalesStage, "activated">>(initialStage as Exclude<CareSalesStage, "activated">);
+  const initialStage = lead.salesStage === "activated" || lead.salesStage === "accepted" ? "contacted" : lead.salesStage;
+  const [stage, setStage] = useState<Exclude<CareSalesStage, "activated" | "accepted">>(initialStage as Exclude<CareSalesStage, "activated" | "accepted">);
   const [followUpOn, setFollowUpOn] = useState(lead.followUpOn || "");
   const [note, setNote] = useState(lead.salesNote || "");
   const [saving, setSaving] = useState(false);
@@ -367,7 +369,7 @@ function CareLeadFollowupDialog({
         <form onSubmit={submit} className="space-y-5 p-5 sm:p-6">
           <label className="block space-y-1.5 text-sm text-slate-300">
             <span>Status</span>
-            <select value={stage} onChange={(event) => setStage(event.target.value as Exclude<CareSalesStage, "activated">)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+            <select value={stage} onChange={(event) => setStage(event.target.value as Exclude<CareSalesStage, "activated" | "accepted">)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
               <option value="new">Ny</option>
               <option value="contacted">Kontaktet</option>
               <option value="quote_sent">Tilbud sendt</option>
@@ -392,6 +394,134 @@ function CareLeadFollowupDialog({
             <p className="text-xs text-slate-500">Denne handlingen sender ingen e-post. Den oppdaterer kun intern Care-oppfølging.</p>
             <Button type="submit" disabled={saving || (needsFollowUp && !followUpOn) || (needsReason && !note.trim())}>
               {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Lagrer …</> : "Lagre oppfølging"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function quoteDefaultDate(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function CareQuoteDialog({
+  lead,
+  plans,
+  quote,
+  onClose,
+  onSaved,
+}: {
+  lead: CareLead;
+  plans: CarePlan[];
+  quote: CareQuote | null;
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [planId, setPlanId] = useState(quote?.planId || lead.careQuotePlanId || "");
+  const [validUntil, setValidUntil] = useState(() => quote?.validUntil?.slice(0, 10) || quoteDefaultDate(14));
+  const [followUpOn, setFollowUpOn] = useState(() => quote?.followUpOn?.slice(0, 10) || lead.followUpOn?.slice(0, 10) || quoteDefaultDate(3));
+  const [notes, setNotes] = useState(quote?.notes || lead.salesNote || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const selectedPlan = plans.find((plan) => plan.id === planId) || null;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/care/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert",
+          workItemId: lead.id,
+          contactId: lead.contactId,
+          planId,
+          validUntil,
+          followUpOn,
+          notes,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lagre Care-tilbudet.");
+      await onSaved();
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Kunne ikke lagre Care-tilbudet.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-10 max-w-xl rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Care tilbud</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">{quote ? "Rediger tilbud" : "Opprett tilbud"} · {lead.contactName}</h2>
+            <p className="mt-1 text-sm text-slate-400">{careServiceLabel(lead.serviceIntent)}{lead.preferredArea ? ` · ${lead.preferredArea}` : ""}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Lukk</button>
+        </div>
+
+        <form onSubmit={submit} className="space-y-5 p-5">
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Care-plan</span>
+            <select required value={planId} onChange={(event) => setPlanId(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+              <option value="">Velg plan</option>
+              {plans.filter((plan) => plan.active).map((plan) => (
+                <option key={plan.id} value={plan.id}>{plan.name} · {moneyFromCents(plan.priceCents, plan.currency)} / mnd</option>
+              ))}
+            </select>
+          </label>
+
+          {selectedPlan && (
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-100">{selectedPlan.name}</p>
+                  <p className="mt-1 text-xs text-cyan-100/70">{selectedPlan.visitsPerMonth} besøk per måned</p>
+                </div>
+                <strong className="text-lg text-white">{moneyFromCents(selectedPlan.priceCents, selectedPlan.currency)} / mnd</strong>
+              </div>
+              {selectedPlan.includedServices.length > 0 && <p className="mt-3 text-xs text-cyan-100/70">{selectedPlan.includedServices.join(" · ")}</p>}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block space-y-1.5 text-sm text-slate-300">
+              <span>Gyldig til</span>
+              <input type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+            </label>
+            <label className="block space-y-1.5 text-sm text-slate-300">
+              <span>Følg opp <span className="text-amber-300">*</span></span>
+              <input required type="date" value={followUpOn} onChange={(event) => setFollowUpOn(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+            </label>
+          </div>
+
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Internt notat <span className="text-slate-500">(valgfritt)</span></span>
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={4} placeholder="Forutsetninger, behov eller hva som skal stå i tilbudet." className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
+          </label>
+
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100/80">
+            Dette oppretter tilbudet internt. Ingen e-post sendes automatisk. Når du faktisk har sendt tilbudet til kunden, markerer du det som sendt på leadkortet.
+          </div>
+
+          {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
+
+          <div className="flex justify-end gap-2 border-t border-slate-800 pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Avbryt</Button>
+            <Button type="submit" disabled={saving || !planId || !followUpOn}>
+              {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}
+              {quote ? "Lagre tilbud" : "Opprett tilbud"}
             </Button>
           </div>
         </form>
