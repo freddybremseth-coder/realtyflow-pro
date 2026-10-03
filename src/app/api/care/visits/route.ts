@@ -44,11 +44,17 @@ async function careData(supabase: any) {
     if (result.error) throw new Error(result.error.message);
   }
 
-  const properties = propertiesResult.data || [];
-  const contracts = contractsResult.data || [];
-  const contractsByProperty = new Map(contracts.map((row: any) => [String(row.property_id), row]));
-  const propertyById = new Map(properties.map((row: any) => [String(row.id), row]));
-  const inspectionsById = new Map((inspectionsResult.data || []).map((row: any) => [String(row.id), row]));
+  const properties = (propertiesResult.data || []) as Array<Record<string, any>>;
+  const contracts = (contractsResult.data || []) as Array<Record<string, any>>;
+  const contractsByProperty = new Map<string, Record<string, any>>(
+    contracts.map((row) => [String(row.property_id), row]),
+  );
+  const propertyById = new Map<string, Record<string, any>>(
+    properties.map((row) => [String(row.id), row]),
+  );
+  const inspectionsById = new Map<string, Record<string, any>>(
+    ((inspectionsResult.data || []) as Array<Record<string, any>>).map((row) => [String(row.id), row]),
+  );
 
   return {
     properties: properties.map((property: any) => {
