@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { WORK_ITEM_ACTIVE_STATUSES } from "@/lib/shared-core/tasks";
 import { createClient } from "@supabase/supabase-js";
 import { getAdminEmails, verifyAdminSession } from "@/lib/admin-auth";
 import { hasPermission, type AccessRole } from "@/lib/access-control";
@@ -15,7 +16,6 @@ export const revalidate = 0;
 
 const ALERT_SETTINGS_KEY = "internal-alerts:acknowledgements";
 const ASSIGNMENT_SETTINGS_KEY = "team-workload:assignments";
-const OPEN_TASK_STATUSES = ["TO_DO", "TODO", "OPEN", "IN_PROGRESS", "REVIEW", "PENDING"];
 const ALERT_ID_PATTERN = /^[a-zA-Z0-9:_@.%-]{1,300}$/;
 const FINGERPRINT_PATTERN = /^[a-z0-9]{1,24}$/;
 
@@ -215,7 +215,7 @@ async function buildFreshCenter(request: NextRequest, supabase: any) {
     return { error: "Scoped workspace required", status: 403, center: null, session: null, settings: null };
   const [contactsResult, workResult, accessResult, assignmentRow, alertRow] = await Promise.all([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(3000),
-    supabase.from("work_items").select("*").in("status", OPEN_TASK_STATUSES).order("due_date", { ascending: true, nullsFirst: false }).limit(2000),
+    supabase.from("work_items").select("*").in("status", [...WORK_ITEM_ACTIVE_STATUSES]).order("due_date", { ascending: true, nullsFirst: false }).limit(2000),
     loadAccessSettings(),
     loadSettingsRow(supabase, ASSIGNMENT_SETTINGS_KEY),
     loadSettingsRow(supabase, ALERT_SETTINGS_KEY),
