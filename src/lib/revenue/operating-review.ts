@@ -144,6 +144,27 @@ export interface OperatingReviewTimelineEvent {
   responsibleEmail: string | null;
 }
 
+export interface CapacityDecisionEffect {
+  key: string;
+  reviewId: string;
+  reviewDate: string;
+  decisionId: string;
+  subject: string;
+  ownerEmail: string;
+  horizon: "7D" | "30D";
+  intervention: string;
+  status: OperatingDecisionStatus;
+  decidedAt: string | null;
+  followupAt: string | null;
+  responsibleEmail: string | null;
+  baselineDetail: string;
+  currentLabel: string | null;
+  currentDetail: string | null;
+  currentIntervention: string | null;
+  effect: "IMPROVED" | "UNCHANGED" | "WORSENED" | "NOT_MEASURABLE";
+  explanation: string;
+}
+
 export interface OperatingReviewJournal {
   generatedAt: string;
   role: AccessRole;
@@ -649,6 +670,112 @@ export function buildOperatingReviewJournal(
       journalResponsibilityIsNotAssignment: true,
     },
   };
+}
+
+function capacityDecisionIdentity(decision: Pick<OperatingDecisionView, "id" | "ownerEmail">) {
+  const match = decision.id.match(/^capacity:(7d|30d):([^:]+):(.+)$/i);
+  if (!match) return null;
+  const ownerEmail = (decision.ownerEmail || match[3] || "").trim().toLowerCase();
+  if (!ownerEmail.includes("@")) return null;
+  return {
+    horizon: match[1].toUpperCase() as "7D" | "30D",
+    intervention: match[2].toUpperCase(),
+    ownerEmail,
+  };
+}
+
+function interventionRank(value: string | null) {
+  if (!value) return -1;
+  const rank: Record<string, number> = {
+    MONITOR: 0,
+    REDISTRIBUTE: 1,
+    REDISTRIBUTE_NOW: 1,
+    AUTOMATE: 2,
+    ROLE_REBALANCE: 3,
+    STAFFING_REVIEW: 4,
+  };
+  return rank[value.toUpperCase()] ?? 1;
+}
+
+export function buildCapacityDecisionEffects(
+  journal: OperatingReviewJournal,
+  currentBriefing: ExecutiveBriefing | null,
+): CapacityDecisionEffect[] {
+  const currentHighlights = currentBriefing?.capacity?.highlights || [];
+  const selected = new Map<string, { review: OperatingReviewView; decision: OperatingDecisionView; identity: NonNullable<ReturnType<typeof capacityDecisionIdentity>> }>();
+
+  for (const review of journal.reviews) {
+    for (const decision of review.decisions) {
+      if (decision.source !== "TEAM" || decision.status === "OPEN") continue;
+      const identity = capacityDecisionIdentity(decision);
+      if (!identity) continue;
+      const key = `${identity.horizon}:${identity.ownerEmail}`;
+      const existing = selected.get(key);
+      if (!existing || review.capturedAt > existing.review.capturedAt || (review.capturedAt === existing.review.capturedAt && (decision.updatedAt || "") > (existing.decision.updatedAt || ""))) {
+        selected.set(key, { review, decision, identity });
+      }
+    }
+  }
+
+  return [...selected.entries()].map(([key, item]) => {
+    const { review, decision, identity } = item;
+    const same = currentHighlights.find(highlight =>
+      highlight.email.toLowerCase() === identity.ownerEmail &&
+      highlight.horizon === identity.horizon);
+    const structural = currentHighlights.find(highlight =>
+      highlight.email.toLowerCase() === identity.ownerEmail &&
+      highlight.horizon === "30D");
+
+    let effect: CapacityDecisionEffect["effect"] = "NOT_MEASURABLE";
+    let explanation = "Dagens kapasitetsbilde er ikke tilgjengelig.";
+    if (currentBriefing?.capacity) {
+      if (identity.horizon === "7D" && structural) {
+        effect = "WORSENED";
+        explanation = "Risikoen har utviklet seg fra kortsiktig 7-dagerspress til et 30-dagers strukturelt kapasitetssignal.";
+      } else if (!same) {
+        effect = "IMPROVED";
+        explanation = identity.horizon === "7D"
+          ? "Det tidligere 7-dagers kapasitetsvarselet er ikke lenger aktivt."
+          : "Det tidligere strukturelle 30-dagerssignalet er ikke lenger aktivt.";
+      } else {
+        const baselineRank = interventionRank(identity.intervention);
+        const currentRank = interventionRank(same.intervention);
+        if (currentRank > baselineRank) {
+          effect = "WORSENED";
+          explanation = "Dagens anbefalte inngrep er mer omfattende enn da beslutningen ble registrert.";
+        } else if (currentRank < baselineRank) {
+          effect = "IMPROVED";
+          explanation = "Dagens kapasitetsbehov er mindre omfattende enn ved beslutningstidspunktet.";
+        } else {
+          effect = "UNCHANGED";
+          explanation = "Kapasitetssignalet er fortsatt aktivt på omtrent samme ledelsesnivå.";
+        }
+      }
+    }
+
+    return {
+      key,
+      reviewId: review.id,
+      reviewDate: review.reviewDate,
+      decisionId: decision.id,
+      subject: decision.subject,
+      ownerEmail: identity.ownerEmail,
+      horizon: identity.horizon,
+      intervention: identity.intervention,
+      status: decision.status,
+      decidedAt: decision.updatedAt,
+      followupAt: decision.followupAt,
+      responsibleEmail: decision.responsibleEmail,
+      baselineDetail: decision.detail,
+      currentLabel: same?.label || structural?.label || null,
+      currentDetail: same?.detail || structural?.detail || null,
+      currentIntervention: same?.intervention || structural?.intervention || null,
+      effect,
+      explanation,
+    };
+  }).sort((a, b) =>
+    Number(b.effect === "WORSENED") - Number(a.effect === "WORSENED") ||
+    (b.decidedAt || b.reviewDate).localeCompare(a.decidedAt || a.reviewDate));
 }
 
 export function reviewById(journal: OperatingReviewJournal, reviewId: string) {

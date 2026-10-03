@@ -4,6 +4,7 @@ import type { AccessRole } from "@/lib/access-control";
 import type { ExecutiveBriefing } from "@/lib/revenue/executive-briefing";
 import {
   buildOperatingReviewJournal,
+  buildCapacityDecisionEffects,
   compactOperatingReviewEvents,
   createOperatingReviewSnapshot,
   makeOperatingReviewEvent,
@@ -153,4 +154,112 @@ test("compacts history by retaining events for the newest 180 reviews", () => {
   const compacted = compactOperatingReviewEvents(events);
   assert.equal(new Set(compacted.map((event) => event.reviewId)).size, 180);
   assert.equal(compacted.some((event) => event.reviewId === "review-180"), false);
+});
+
+
+function ownerCapacityBriefing(params: {
+  horizon?: "7D" | "30D";
+  intervention?: "REDISTRIBUTE_NOW" | "REDISTRIBUTE" | "AUTOMATE" | "ROLE_REBALANCE" | "STAFFING_REVIEW" | "MONITOR";
+  includeHighlight?: boolean;
+} = {}): ExecutiveBriefing {
+  const horizon = params.horizon || "7D";
+  const intervention = params.intervention || (horizon === "7D" ? "REDISTRIBUTE_NOW" : "ROLE_REBALANCE");
+  const result = briefing("OWNER");
+  result.decisions = [{
+    id: `capacity:${horizon.toLowerCase()}:${intervention}:andrea@example.com`,
+    source: "TEAM",
+    severity: "HIGH",
+    score: 78,
+    title: "Kapasitetsbeslutning",
+    subject: "Andrea",
+    detail: "Baseline capacity signal",
+    recommendedAction: "Vurder kapasitet",
+    href: "/team-workload",
+    contactId: null,
+    ownerEmail: "andrea@example.com",
+    dueAt: null,
+    amountEur: null,
+  }];
+  result.capacity = {
+    next7Days: { forecastHigh: horizon === "7D" ? 1 : 0, risingHigh: horizon === "7D" ? 1 : 0, staysHigh: 0, suggestions: 0 },
+    next30Days: { persistentHigh: horizon === "30D" ? 1 : 0, rising: 0, spike: 0, automationCandidates: 0, roleRebalanceCandidates: intervention === "ROLE_REBALANCE" ? 1 : 0, staffingReviewCandidates: intervention === "STAFFING_REVIEW" ? 1 : 0 },
+    highlights: params.includeHighlight === false ? [] : [{
+      email: "andrea@example.com",
+      displayName: "Andrea",
+      horizon,
+      label: horizon === "7D" ? "På vei mot høy belastning" : "Vurder rolle-/ansvarsfordeling",
+      detail: "Current capacity signal",
+      intervention,
+      href: "/team-workload",
+    }],
+  };
+  return result;
+}
+
+function capacityDecisionJournal(horizon: "7D" | "30D", intervention: "REDISTRIBUTE_NOW" | "REDISTRIBUTE" | "AUTOMATE" | "ROLE_REBALANCE" | "STAFFING_REVIEW" | "MONITOR" = horizon === "7D" ? "REDISTRIBUTE_NOW" : "ROLE_REBALANCE") {
+  const source = ownerCapacityBriefing({ horizon, intervention });
+  const snapshot = createOperatingReviewSnapshot(source, "owner@example.com", new Date("2026-07-12T08:00:00.000Z"), { reviewId: `capacity-${horizon.toLowerCase()}` });
+  const decision = snapshot.decisions[0];
+  const events = [
+    makeOperatingReviewEvent({
+      id: "capacity-decision",
+      at: "2026-07-12T09:00:00.000Z",
+      type: "DECISION_UPDATED",
+      actorEmail: "owner@example.com",
+      actorRole: "OWNER",
+      reviewId: snapshot.id,
+      reviewDate: snapshot.reviewDate,
+      snapshot: null,
+      decisionId: decision.id,
+      decisionFingerprint: decision.fingerprint,
+      previousStatus: "OPEN",
+      status: "ACTION_PLANNED",
+      note: "Fordel kapasitet og mål effekten.",
+      followupAt: "2026-07-19",
+      responsibleEmail: "owner@example.com",
+    }),
+    makeOperatingReviewEvent({
+      id: "capacity-capture",
+      at: snapshot.capturedAt,
+      type: "REVIEW_CAPTURED",
+      actorEmail: snapshot.capturedBy,
+      actorRole: "OWNER",
+      reviewId: snapshot.id,
+      reviewDate: snapshot.reviewDate,
+      snapshot,
+      decisionId: null,
+      decisionFingerprint: null,
+      previousStatus: null,
+      status: null,
+      note: null,
+      followupAt: null,
+      responsibleEmail: null,
+    }),
+  ];
+  return buildOperatingReviewJournal(settings(events), "OWNER", new Date("2026-07-13T10:00:00.000Z"));
+}
+
+test("capacity decision effect is improved when the original signal disappears", () => {
+  const journal = capacityDecisionJournal("7D");
+  const current = ownerCapacityBriefing({ horizon: "7D", includeHighlight: false });
+  const effects = buildCapacityDecisionEffects(journal, current);
+  assert.equal(effects.length, 1);
+  assert.equal(effects[0].effect, "IMPROVED");
+  assert.match(effects[0].explanation, /ikke lenger aktivt/);
+});
+
+test("7-day capacity decision is worsened when pressure becomes structural 30-day risk", () => {
+  const journal = capacityDecisionJournal("7D");
+  const current = ownerCapacityBriefing({ horizon: "30D", intervention: "ROLE_REBALANCE" });
+  const effects = buildCapacityDecisionEffects(journal, current);
+  assert.equal(effects[0].effect, "WORSENED");
+  assert.match(effects[0].explanation, /30-dagers strukturelt/);
+});
+
+test("capacity effect remains unchanged while the same management intervention is still active", () => {
+  const journal = capacityDecisionJournal("30D", "ROLE_REBALANCE");
+  const current = ownerCapacityBriefing({ horizon: "30D", intervention: "ROLE_REBALANCE" });
+  const effects = buildCapacityDecisionEffects(journal, current);
+  assert.equal(effects[0].effect, "UNCHANGED");
+  assert.equal(effects[0].currentIntervention, "ROLE_REBALANCE");
 });

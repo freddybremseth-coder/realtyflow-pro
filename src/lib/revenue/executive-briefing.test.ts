@@ -220,3 +220,66 @@ test("capacity outlook summarizes 7-day and 30-day team risk for management", ()
   assert.ok(result.capacity?.highlights.some((item) => item.horizon === "7D" && item.email === "andrea@example.com"));
   assert.ok(result.capacity?.highlights.some((item) => item.horizon === "30D" && item.intervention === "ROLE_REBALANCE"));
 });
+
+
+test("owner capacity signals become TEAM management decisions while non-owner roles do not receive them", () => {
+  const capacityInput = {
+    capacityForecast: {
+      generatedAt: "2026-07-12T07:00:00.000Z",
+      horizonEnd: "2026-07-19T07:00:00.000Z",
+      horizonDays: 7,
+      members: [],
+      riskMembers: [{
+        email: "andrea@example.com",
+        displayName: "Andrea",
+        role: "SALES",
+        currentCapacityScore: 260,
+        currentLoad: "BALANCED",
+        responsibilityAreas: 3,
+        forecastScore: 430,
+        forecastLoad: "HIGH",
+        delta: 170,
+        risk: "RISING_HIGH",
+        drivers: [],
+      }],
+      suggestions: [],
+      summary: { risingHigh: 1, staysHigh: 0, forecastHigh: 1, suggestions: 0 },
+    },
+    capacityTrend: {
+      generatedAt: "2026-07-12T07:00:00.000Z",
+      horizonDays: 30,
+      members: [],
+      attentionMembers: [{
+        email: "andrea@example.com",
+        displayName: "Andrea",
+        role: "SALES",
+        responsibilityAreas: 6,
+        currentCapacityScore: 430,
+        pattern: "PERSISTENT_HIGH",
+        highWeeks: 4,
+        risingWeeks: 0,
+        dominantKind: "FOLLOW_UP",
+        intervention: "ROLE_REBALANCE",
+        interventionLabel: "Vurder rolle-/ansvarsfordeling",
+        rationale: "Vedvarende press fra faste ansvarsområder.",
+        confidence: "high",
+        weeks: [],
+      }],
+      summary: {
+        persistentHigh: 1,
+        rising: 0,
+        spike: 0,
+        automationCandidates: 0,
+        staffingReviewCandidates: 0,
+        roleRebalanceCandidates: 1,
+      },
+    },
+  } as const;
+
+  const owner = buildExecutiveBriefing(baseInput({ role: "OWNER", ...capacityInput }));
+  assert.ok(owner.decisions.some((item) => item.id === "capacity:7d:REDISTRIBUTE_NOW:andrea@example.com" && item.source === "TEAM"));
+  assert.ok(owner.decisions.some((item) => item.id === "capacity:30d:ROLE_REBALANCE:andrea@example.com" && item.source === "TEAM"));
+
+  const sales = buildExecutiveBriefing(baseInput({ role: "SALES", ...capacityInput }));
+  assert.ok(!sales.decisions.some((item) => item.id.startsWith("capacity:")));
+});

@@ -15,6 +15,10 @@ import {
   Save,
   ShieldCheck,
   UserRound,
+  TrendingDown,
+  TrendingUp,
+  Minus,
+  Activity,
 } from "lucide-react";
 import type { ExecutiveBriefing } from "@/lib/revenue/executive-briefing";
 import type {
@@ -23,6 +27,7 @@ import type {
   OperatingReviewJournal,
   OperatingReviewTimelineEvent,
   OperatingReviewView,
+  CapacityDecisionEffect,
 } from "@/lib/revenue/operating-review";
 
 const STATUS_LABELS: Record<OperatingDecisionStatus, string> = {
@@ -174,6 +179,7 @@ function DecisionEditor({
 export default function OperatingReviewPage() {
   const [journal, setJournal] = useState<OperatingReviewJournal | null>(null);
   const [currentBriefing, setCurrentBriefing] = useState<ExecutiveBriefing | null>(null);
+  const [capacityDecisionEffects, setCapacityDecisionEffects] = useState<CapacityDecisionEffect[]>([]);
   const [briefingWarning, setBriefingWarning] = useState<string | null>(null);
   const [canWrite, setCanWrite] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -196,6 +202,7 @@ export default function OperatingReviewPage() {
     const nextJournal = body.journal as OperatingReviewJournal;
     setJournal(nextJournal);
     setCurrentBriefing(body.currentBriefing || null);
+    setCapacityDecisionEffects(body.capacityDecisionEffects || []);
     setBriefingWarning(body.currentBriefingWarning || null);
     setCanWrite(Boolean(body.canWrite));
     const candidate = preferredId || selectedId || nextJournal.todayReviewId || nextJournal.reviews[0]?.id || null;
@@ -278,6 +285,46 @@ export default function OperatingReviewPage() {
                 )}
               </div>
             </section>
+
+            {capacityDecisionEffects.length > 0 && <section className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-400"><Activity size={14}/> Effekt av kapasitetsbeslutninger</div>
+                  <h2 className="mt-1 text-xl font-semibold">Ble ledelsesgrepet faktisk bedre?</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-400">Sammenligner siste registrerte TEAM-beslutning med dagens 7-/30-dagers kapasitetssignal. Dette måler signalutvikling, ikke årsakssammenheng.</p>
+                </div>
+                <Link href="/team-workload" className="inline-flex items-center gap-2 rounded-lg border border-violet-800 px-3 py-2 text-sm text-violet-200 hover:bg-violet-950/30">Åpne teamkapasitet <ArrowRight size={14}/></Link>
+              </div>
+              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {capacityDecisionEffects.slice(0,6).map(effect => {
+                  const Icon = effect.effect === "IMPROVED" ? TrendingDown : effect.effect === "WORSENED" ? TrendingUp : Minus;
+                  const tone = effect.effect === "IMPROVED"
+                    ? "border-emerald-900/60 bg-emerald-950/15 text-emerald-300"
+                    : effect.effect === "WORSENED"
+                      ? "border-rose-900/60 bg-rose-950/15 text-rose-300"
+                      : effect.effect === "UNCHANGED"
+                        ? "border-amber-900/60 bg-amber-950/15 text-amber-300"
+                        : "border-slate-800 bg-slate-950/40 text-slate-400";
+                  const label = effect.effect === "IMPROVED" ? "Forbedret" : effect.effect === "WORSENED" ? "Forverret" : effect.effect === "UNCHANGED" ? "Uendret" : "Ikke målbart";
+                  return <article key={effect.key} className={`rounded-xl border p-4 ${tone}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-100">{effect.subject}</div>
+                        <div className="mt-1 text-xs text-slate-500">{effect.horizon} · {effect.intervention} · beslutning {effect.reviewDate}</div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-current/30 px-2 py-1 text-[10px] font-semibold"><Icon size={11}/>{label}</span>
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-300">{effect.explanation}</p>
+                    {effect.currentLabel && <div className="mt-2 rounded-lg border border-slate-800/80 bg-slate-950/40 p-2 text-[11px] text-slate-400"><strong>Nå:</strong> {effect.currentLabel}{effect.currentDetail ? ` · ${effect.currentDetail}` : ""}</div>}
+                    <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-500">
+                      <span>Status: {STATUS_LABELS[effect.status]}</span>
+                      {effect.followupAt && <span>Oppfølging {effect.followupAt}</span>}
+                      {effect.responsibleEmail && <span>{effect.responsibleEmail}</span>}
+                    </div>
+                  </article>;
+                })}
+              </div>
+            </section>}
 
             <div className="grid gap-6 xl:grid-cols-[280px,minmax(0,1fr)]">
               <aside className="space-y-3">

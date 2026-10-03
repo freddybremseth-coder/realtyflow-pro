@@ -282,6 +282,35 @@ export function buildExecutiveBriefing(input: ExecutiveBriefingInput): Executive
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
     .slice(0, 12);
 
+  const forecast = input.capacityForecast;
+  const trend = input.capacityTrend;
+  const capacityHighlights: NonNullable<ExecutiveBriefing["capacity"]>["highlights"] = [];
+
+  for (const member of (forecast?.riskMembers || []).slice(0, 3)) {
+    capacityHighlights.push({
+      email: member.email,
+      displayName: member.displayName,
+      horizon: "7D",
+      label: member.risk === "RISING_HIGH" ? "På vei mot høy belastning" : "Forblir høyt belastet",
+      detail: `Kapasitet ${member.currentCapacityScore} → ${member.forecastScore} neste ${forecast?.horizonDays || 7} dager.`,
+      intervention: "REDISTRIBUTE_NOW",
+      href: `/team-workload?forecast=1&member=${encodeURIComponent(member.email)}`,
+    });
+  }
+  for (const member of (trend?.attentionMembers || [])
+    .filter(item => item.pattern === "PERSISTENT_HIGH" || item.pattern === "RISING")
+    .slice(0, 3)) {
+    capacityHighlights.push({
+      email: member.email,
+      displayName: member.displayName,
+      horizon: "30D",
+      label: member.interventionLabel,
+      detail: member.rationale,
+      intervention: member.intervention,
+      href: `/team-workload?trend=1&member=${encodeURIComponent(member.email)}`,
+    });
+  }
+
   const decisions: ExecutiveDecision[] = [];
   for (const alert of visibleAlerts.slice(0, 12)) {
     decisions.push({
@@ -344,6 +373,48 @@ export function buildExecutiveBriefing(input: ExecutiveBriefingInput): Executive
     if (item) decisions.push(item);
   }
 
+  if (input.role === "OWNER") {
+    for (const member of (forecast?.riskMembers || []).slice(0, 3)) {
+      decisions.push({
+        id: `capacity:7d:REDISTRIBUTE_NOW:${member.email}`,
+        source: "TEAM",
+        severity: member.risk === "RISING_HIGH" ? "HIGH" : "MEDIUM",
+        score: member.risk === "RISING_HIGH" ? 76 : 62,
+        title: member.risk === "RISING_HIGH" ? "Forebygg kapasitetsproblem neste uke" : "Høy kapasitet forventes å fortsette",
+        subject: member.displayName,
+        detail: `Kapasitet ${member.currentCapacityScore} → ${member.forecastScore} neste ${forecast?.horizonDays || 7} dager. ${member.drivers.length} kommende belastningsdrivere og ${member.responsibilityAreas} faste ansvarsområder.`,
+        recommendedAction: "Ta stilling til om kommende arbeid skal omfordeles nå, og registrer beslutning og oppfølgingsdato i Operating Review.",
+        href: `/team-workload?forecast=1&member=${encodeURIComponent(member.email)}`,
+        contactId: null,
+        ownerEmail: member.email,
+        dueAt: forecast?.horizonEnd || null,
+        amountEur: null,
+      });
+    }
+
+    for (const member of (trend?.attentionMembers || [])
+      .filter(item => item.pattern === "PERSISTENT_HIGH" || item.pattern === "RISING")
+      .slice(0, 3)) {
+      const severity: ExecutiveDecisionSeverity =
+        member.intervention === "STAFFING_REVIEW" || member.intervention === "ROLE_REBALANCE" ? "HIGH" : "MEDIUM";
+      decisions.push({
+        id: `capacity:30d:${member.intervention}:${member.email}`,
+        source: "TEAM",
+        severity,
+        score: severity === "HIGH" ? 78 : 64,
+        title: member.pattern === "PERSISTENT_HIGH" ? "Vedvarende kapasitetspress krever ledelsesvalg" : "Stigende kapasitetsbelastning",
+        subject: member.displayName,
+        detail: `${member.highWeeks} uker med høy belastning i 30-dagersbildet. Dominerende driver: ${member.dominantKind || "blandet arbeid"}. ${member.rationale}`,
+        recommendedAction: member.interventionLabel,
+        href: `/team-workload?trend=1&member=${encodeURIComponent(member.email)}`,
+        contactId: null,
+        ownerEmail: member.email,
+        dueAt: new Date(now.getTime() + 30 * 86_400_000).toISOString(),
+        amountEur: null,
+      });
+    }
+  }
+
   const topDecisions = dedupeAndSort(decisions);
   const state: ExecutiveBriefingState = topDecisions.some((item) => item.severity === "CRITICAL")
     ? "CRITICAL"
@@ -356,35 +427,6 @@ export function buildExecutiveBriefing(input: ExecutiveBriefingInput): Executive
   const keyholdingVisible = permission(input.role, "keyholding.read");
   const goalsBehind = visibleGoals.filter((metric) => metric.status === "BEHIND" || metric.status === "AT_RISK").length;
   const overloaded = input.team.members.filter((member) => member.load === "HIGH").length;
-  const forecast = input.capacityForecast;
-  const trend = input.capacityTrend;
-  const capacityHighlights: NonNullable<ExecutiveBriefing["capacity"]>["highlights"] = [];
-
-  for (const member of (forecast?.riskMembers || []).slice(0, 3)) {
-    capacityHighlights.push({
-      email: member.email,
-      displayName: member.displayName,
-      horizon: "7D",
-      label: member.risk === "RISING_HIGH" ? "På vei mot høy belastning" : "Forblir høyt belastet",
-      detail: `Kapasitet ${member.currentCapacityScore} → ${member.forecastScore} neste ${forecast?.horizonDays || 7} dager.`,
-      intervention: "REDISTRIBUTE_NOW",
-      href: `/team-workload?forecast=1&member=${encodeURIComponent(member.email)}`,
-    });
-  }
-  for (const member of (trend?.attentionMembers || [])
-    .filter(item => item.pattern === "PERSISTENT_HIGH" || item.pattern === "RISING")
-    .slice(0, 3)) {
-    capacityHighlights.push({
-      email: member.email,
-      displayName: member.displayName,
-      horizon: "30D",
-      label: member.interventionLabel,
-      detail: member.rationale,
-      intervention: member.intervention,
-      href: `/team-workload?trend=1&member=${encodeURIComponent(member.email)}`,
-    });
-  }
-
   const warnings = [...new Set([
     ...(input.warnings || []),
     ...input.command.warnings,

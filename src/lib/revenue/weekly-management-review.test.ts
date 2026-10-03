@@ -230,3 +230,17 @@ test("weekly history keeps the newest 104 reviews", () => {
   }
   assert.equal(new Set(compactWeeklyManagementEvents(events).map((event) => event.reviewId)).size, 104);
 });
+
+
+test("weekly management review keeps capacity decisions in TEAM source history", () => {
+  const capacity = capture("OWNER", "capacity-review", "2026-07-09T08:00:00.000Z", [decision("capacity-andrea", "TEAM")]);
+  const settings: OperatingReviewSettings = {
+    version: 1,
+    events: [capacity.event],
+    updatedAt: capacity.event.at,
+  };
+  const snapshot = createWeeklyManagementSnapshot(settings, "OWNER", "owner@example.com", new Date("2026-07-12T10:00:00.000Z"));
+  const team = snapshot.bySource.find((row) => row.id === "TEAM");
+  assert.ok(team);
+  assert.equal(team?.decisions, 1);
+});
