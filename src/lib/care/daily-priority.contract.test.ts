@@ -63,3 +63,11 @@ test("Care lead cards expose privacy-minimal discovery source", () => {
   assert.match(source, /ChatGPT/);
   assert.match(source, /Perplexity/);
 });
+
+
+test("Care overview connects SEO AEO GEO attribution to contracts", () => {
+  assert.match(source, /Hvor Care-leads finner oss/);
+  assert.match(source, /dashboard\.discoveryDemand/);
+  assert.match(source, /lead → avtale/);
+  assert.match(source, /Ingen søkeord eller full referrer lagres her/);
+});
