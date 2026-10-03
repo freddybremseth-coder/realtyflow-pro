@@ -125,6 +125,7 @@ test("Care dashboard summarizes contracts, reports, photos and invoices", () => 
         preferred_area: "Altea",
         property_type: "villa",
         utm_source: "google_search",
+        discovery_source: "chatgpt",
         is_existing_contact: false,
         email: "lead@example.com",
       },
@@ -166,6 +167,7 @@ test("Care dashboard summarizes contracts, reports, photos and invoices", () => 
   assert.equal(dashboard.leads[0]?.pipelineStatus, "NEW");
   assert.equal(dashboard.leads[0]?.preferredArea, "Altea");
   assert.equal(dashboard.leads[0]?.propertyType, "villa");
+  assert.equal(dashboard.leads[0]?.discoverySource, "chatgpt");
   assert.equal(dashboard.leads[0]?.carePropertyId, null);
   assert.equal(dashboard.leads[0]?.careContractId, null);
   assert.equal(dashboard.leads[0]?.customerHref, "/customers/lead-contact-1");
