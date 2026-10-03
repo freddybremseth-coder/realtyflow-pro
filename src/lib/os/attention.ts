@@ -35,6 +35,12 @@ export type OsAttentionInput = {
   bookMeasuring: number;
   bookRunningExperiments: number;
   bookReviewCandidatesPending: number;
+  workspaceResponsibilityAttention: Array<{
+    brandKey: string;
+    brandName: string;
+    unassignedLabels: string[];
+    sharedLabels: string[];
+  }>;
 };
 
 function ageMinutes(value: string | null, now: Date) {
@@ -191,6 +197,34 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       source: "Social",
       responsibility: "USER",
     });
+  }
+
+  for (const brand of input.workspaceResponsibilityAttention) {
+    const missing = brand.unassignedLabels.length;
+    const shared = brand.sharedLabels.length;
+    if (missing > 0) {
+      items.push({
+        id: `workspace-responsibility:${brand.brandKey}:unassigned`,
+        severity: "medium",
+        score: 79,
+        title: `${brand.brandName}: ${missing} ansvarsområde${missing === 1 ? "" : "r"} mangler eier`,
+        detail: `Mangler tydelig ansvarlig: ${brand.unassignedLabels.join(", ")}${shared > 0 ? `. I tillegg har ${shared} område${shared === 1 ? "" : "r"} delt ansvar.` : "."} Tilgang finnes allerede; avklar hvem som faktisk eier oppfølgingen.`,
+        href: "/workspace-users",
+        source: "Team ansvar",
+        responsibility: "USER",
+      });
+    } else if (shared > 0) {
+      items.push({
+        id: `workspace-responsibility:${brand.brandKey}:shared`,
+        severity: "medium",
+        score: 61,
+        title: `${brand.brandName}: ${shared} ansvarsområde${shared === 1 ? "" : "r"} har flere eiere`,
+        detail: `Delt ansvar: ${brand.sharedLabels.join(", ")}. Dette kan være tilsiktet, men bør være eksplisitt slik at oppfølging ikke faller mellom personer.`,
+        href: "/workspace-users",
+        source: "Team ansvar",
+        responsibility: "USER",
+      });
+    }
   }
 
   if (input.bookPending > 0 || input.bookReviewCandidatesPending > 0) {

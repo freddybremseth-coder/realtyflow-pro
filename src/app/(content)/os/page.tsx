@@ -38,6 +38,11 @@ type OsStatus = {
     instagramCommentReadReady: number;
     socialSyncEnabled: boolean;
     socialAutoReplyLive: boolean;
+    workspaceResponsibilityActiveBrands: number;
+    workspaceResponsibilityOwned: number;
+    workspaceResponsibilityShared: number;
+    workspaceResponsibilityUnassigned: number;
+    workspaceResponsibilityNoCapability: number;
   };
   attention: Attention[];
   approvals: Array<{ id: string; title: string; risk: string; estimated_opportunity_eur: number | null; created_at: string }>;
@@ -158,7 +163,7 @@ export default function RealtyFlowOsPage() {
 
     <section>
       <div className="mb-3"><h2 className="text-xl font-black">Live OS-status</h2><p className="text-sm text-slate-600">Kjerneindikatorene som Nexus bruker i prioriteringen.</p></div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <Link href="/approvals" className="rounded-2xl border border-slate-300 bg-white p-5 shadow-sm"><div className="flex justify-between gap-2"><div className="text-xs font-black uppercase text-slate-500">Approvals</div><StatusPill state={Number(summary?.approvalsPending || 0) ? "warn" : "ok"} /></div><div className="mt-3 text-3xl font-black">{summary?.approvalsPending ?? "—"}</div><div className="text-sm text-slate-600">pending · {summary?.approvalsHighRisk ?? 0} high-risk</div>{Number(summary?.approvalOpportunityEur || 0) > 0 && <div className="mt-2 text-xs font-bold text-slate-500">€{Math.round(summary?.approvalOpportunityEur || 0).toLocaleString("nb-NO")} estimert opportunity</div>}</Link>
 
         <Link href="/nexus-os/communications/social" className="rounded-2xl border border-slate-300 bg-white p-5 shadow-sm"><div className="flex justify-between gap-2"><div className="text-xs font-black uppercase text-slate-500">Social Inbox</div><StatusPill state={!summary?.socialSyncEnabled ? "idle" : lastSync?.status === "success" ? "ok" : "warn"} /></div><div className="mt-3 text-3xl font-black">{summary?.instagramCommentReadReady ?? "—"}/{summary?.instagramConnected ?? "—"}</div><div className="text-sm text-slate-600">Instagram comment-read klare</div><div className="mt-2 text-xs text-slate-500">Siste sync: {formatDate(lastSync?.createdAt)} · {lastSync?.readOnly ? "read-only" : "ukjent modus"}</div></Link>
@@ -168,6 +173,8 @@ export default function RealtyFlowOsPage() {
         <Link href="/automation" className="rounded-2xl border border-slate-300 bg-white p-5 shadow-sm"><div className="flex justify-between gap-2"><div className="text-xs font-black uppercase text-slate-500">Automation 24h</div><StatusPill state={Number(summary?.automationFailures24h || 0) ? "error" : Number(summary?.automationPartial24h || 0) ? "warn" : "ok"} /></div><div className="mt-3 text-3xl font-black">{summary?.automationFailures24h ?? "—"}</div><div className="text-sm text-slate-600">feil · {summary?.automationPartial24h ?? 0} partial</div><div className="mt-2 text-xs text-slate-500">{summary?.automationRuns24h ?? 0} loggede kjøringer siste 24 timer</div></Link>
 
         <Link href="/nexus-os/runtime" className="rounded-2xl border border-slate-300 bg-white p-5 shadow-sm"><div className="flex justify-between gap-2"><div className="text-xs font-black uppercase text-slate-500">Runtime</div><StatusPill state={summary?.socialAutoReplyLive ? "error" : "ok"} /></div><div className="mt-3 text-3xl font-black">{summary?.runtimeHighRiskEnabled ?? "—"}</div><div className="text-sm text-slate-600">high/critical controls aktive</div><div className="mt-2 text-xs text-slate-500">{summary?.runtimeEnabled ?? 0} controls totalt PÅ · Social Auto-Reply LIVE: {summary?.socialAutoReplyLive ? "PÅ" : "AV"}</div></Link>
+
+        <Link href="/workspace-users" className="rounded-2xl border border-slate-300 bg-white p-5 shadow-sm"><div className="flex justify-between gap-2"><div className="text-xs font-black uppercase text-slate-500">Teamansvar</div><StatusPill state={Number(summary?.workspaceResponsibilityUnassigned || 0) ? "warn" : Number(summary?.workspaceResponsibilityShared || 0) ? "warn" : "ok"} /></div><div className="mt-3 text-3xl font-black">{summary?.workspaceResponsibilityUnassigned ?? "—"}</div><div className="text-sm text-slate-600">områder uten tydelig eier</div><div className="mt-2 text-xs text-slate-500">{summary?.workspaceResponsibilityShared ?? 0} delt ansvar · {summary?.workspaceResponsibilityOwned ?? 0} tydelig eid · {summary?.workspaceResponsibilityActiveBrands ?? 0} aktive team-brands</div></Link>
       </div>
     </section>
 

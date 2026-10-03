@@ -26,6 +26,7 @@ function base(overrides: Partial<OsAttentionInput> = {}): OsAttentionInput {
     bookMeasuring: 0,
     bookRunningExperiments: 0,
     bookReviewCandidatesPending: 0,
+    workspaceResponsibilityAttention: [],
     ...overrides,
   };
 }
@@ -127,4 +128,38 @@ test("automation failures stay visible but are owned by the system", () => {
   const failures = items.find((item) => item.id === "automation:failures");
   assert.ok(failures);
   assert.equal(failures.responsibility, "SYSTEM");
+});
+
+
+test("workspace brand with unassigned work becomes medium user attention", () => {
+  const items = buildOsAttention(base({
+    workspaceResponsibilityAttention: [{
+      brandKey: "zeneco",
+      brandName: "Zen Eco Homes",
+      unassignedLabels: ["Nyhetsbrev & Reach", "SEO · GEO · AEO & innhold"],
+      sharedLabels: [],
+    }],
+  }), now);
+  const item = items.find((row) => row.id === "workspace-responsibility:zeneco:unassigned");
+  assert.ok(item);
+  assert.equal(item.severity, "medium");
+  assert.equal(item.responsibility, "USER");
+  assert.equal(item.href, "/workspace-users");
+  assert.match(item.detail, /Tilgang finnes allerede/);
+});
+
+test("shared responsibility is visible but lower priority than missing ownership", () => {
+  const items = buildOsAttention(base({
+    workspaceResponsibilityAttention: [{
+      brandKey: "pinosoecolife",
+      brandName: "Pinoso EcoLife",
+      unassignedLabels: [],
+      sharedLabels: ["Boligforslag"],
+    }],
+  }), now);
+  const item = items.find((row) => row.id === "workspace-responsibility:pinosoecolife:shared");
+  assert.ok(item);
+  assert.equal(item?.score, 61);
+  assert.equal(item?.responsibility, "USER");
+  assert.match(item?.detail || "", /kan være tilsiktet/);
 });

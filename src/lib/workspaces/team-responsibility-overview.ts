@@ -143,3 +143,29 @@ export function summarizeWorkspaceTeamResponsibilityOverview(
     noCapability: 0,
   });
 }
+
+
+export type WorkspaceBrandResponsibilityAttention = {
+  brandKey: string;
+  brandName: string;
+  unassignedLabels: string[];
+  sharedLabels: string[];
+};
+
+export function buildWorkspaceResponsibilityAttention(
+  overview: WorkspaceBrandResponsibilityOverview[],
+): WorkspaceBrandResponsibilityAttention[] {
+  return overview
+    .filter(brand => brand.activeMemberCount > 0)
+    .map(brand => ({
+      brandKey: brand.brandKey,
+      brandName: brand.brandName,
+      unassignedLabels: brand.coverage
+        .filter(item => item.status === "unassigned")
+        .map(item => item.label),
+      sharedLabels: brand.coverage
+        .filter(item => item.status === "shared")
+        .map(item => item.label),
+    }))
+    .filter(brand => brand.unassignedLabels.length > 0 || brand.sharedLabels.length > 0);
+}
