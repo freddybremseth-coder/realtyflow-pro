@@ -16,6 +16,7 @@ create table if not exists care.kh_quotes (
   monthly_price_cents bigint not null default 0 check (monthly_price_cents >= 0),
   currency char(3) not null default 'EUR',
   valid_until date null,
+  follow_up_on date null,
   notes text null,
   sent_at timestamptz null,
   accepted_at timestamptz null,
