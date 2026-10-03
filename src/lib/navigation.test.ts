@@ -11,7 +11,7 @@ import {
 } from "@/lib/navigation";
 import { permissionsForRole } from "@/lib/access-control";
 
-test("navigation groups every sidebar link exactly once", () => {
+test("navigation groups every sidebar link and app entry exactly once", () => {
   const coverage = navigationCoverage();
   assert.deepEqual(coverage.missing, []);
   assert.deepEqual(coverage.unknown, []);
@@ -19,12 +19,13 @@ test("navigation groups every sidebar link exactly once", () => {
   assert.equal(new Set(coverage.sourceHrefs).size, coverage.sourceHrefs.length);
 });
 
-test("owner navigation is organized around nine understandable work areas", () => {
+test("owner navigation is organized around four apps plus shared home and platform", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
-    ["workspace", "customers", "properties", "marketing", "publishing", "care", "revenue", "business", "admin"],
+    ["workspace", "sales", "marketing", "content", "finance", "platform"],
   );
+
   const home = sections.find((section) => section.id === "workspace");
   assert.ok(home);
   assert.deepEqual(home.items.slice(0, 6).map((item) => item.href), [
@@ -37,38 +38,59 @@ test("owner navigation is organized around nine understandable work areas", () =
   ]);
   assert.equal(home.items.some((item) => item.href === "/today"), false);
   assert.equal(sections.flatMap((section) => section.items).some((item) => item.href === "/communications"), false);
+
+  assert.equal(sections.find((section) => section.id === "sales")?.items[0]?.href, "/sales");
+  assert.equal(sections.find((section) => section.id === "marketing")?.items[0]?.href, "/marketing");
+  assert.equal(sections.find((section) => section.id === "content")?.items[0]?.href, "/content");
+  assert.equal(sections.find((section) => section.id === "finance")?.items[0]?.href, "/finance");
+  assert.equal(sections.find((section) => section.id === "platform")?.items[0]?.href, "/operations");
+
   assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/nexus-os/brand-brain"), true);
-  assert.equal(sections.find((section) => section.id === "admin")?.items.some((item) => item.href === "/nexus-os/runtime"), true);
-  assert.equal(sections.find((section) => section.id === "admin")?.items.some((item) => item.href === "/nexus-os/autonomy"), true);
-  assert.equal(sections.find((section) => section.id === "publishing")?.items.some((item) => item.href === "/book-growth"), true);
-  assert.equal(sections.find((section) => section.id === "properties")?.items.some((item) => item.href === "/inventory/property-360"), true);
+  assert.equal(sections.find((section) => section.id === "platform")?.items.some((item) => item.href === "/nexus-os/runtime"), true);
+  assert.equal(sections.find((section) => section.id === "platform")?.items.some((item) => item.href === "/nexus-os/autonomy"), true);
+  assert.equal(sections.find((section) => section.id === "content")?.items.some((item) => item.href === "/book-growth"), true);
+  assert.equal(sections.find((section) => section.id === "sales")?.items.some((item) => item.href === "/inventory/property-360"), true);
 });
 
-test("role navigation keeps permission boundaries", () => {
+test("role navigation keeps permission boundaries while exposing the right app entry", () => {
   const sales = buildVisibleNavigation("SALES", permissionsForRole("SALES"));
-  const hrefs = sales.flatMap((section) => section.items.map((item) => item.href));
-  assert.equal(hrefs.includes("/access-control"), false);
-  assert.equal(hrefs.includes("/workspace-access"), false);
-  assert.equal(hrefs.includes("/workspaces"), false);
-  assert.equal(hrefs.includes("/monthly-close"), false);
-  assert.equal(hrefs.includes("/personal-intelligence"), false);
-  assert.equal(hrefs.includes("/communications"), true);
-  assert.equal(hrefs.includes("/customers"), true);
+  const salesHrefs = sales.flatMap((section) => section.items.map((item) => item.href));
+  assert.equal(salesHrefs.includes("/sales"), true);
+  assert.equal(salesHrefs.includes("/finance"), false);
+  assert.equal(salesHrefs.includes("/operations"), false);
+  assert.equal(salesHrefs.includes("/access-control"), false);
+  assert.equal(salesHrefs.includes("/workspace-access"), false);
+  assert.equal(salesHrefs.includes("/monthly-close"), false);
+  assert.equal(salesHrefs.includes("/personal-intelligence"), false);
+  assert.equal(salesHrefs.includes("/communications"), true);
+  assert.equal(salesHrefs.includes("/customers"), true);
+
+  const marketing = buildVisibleNavigation("MARKETING", permissionsForRole("MARKETING"))
+    .flatMap((section) => section.items.map((item) => item.href));
+  assert.equal(marketing.includes("/marketing"), true);
+  assert.equal(marketing.includes("/content"), true);
+  assert.equal(marketing.includes("/operations"), false);
+
+  const finance = buildVisibleNavigation("FINANCE", permissionsForRole("FINANCE"))
+    .flatMap((section) => section.items.map((item) => item.href));
+  assert.equal(finance.includes("/finance"), true);
+  assert.equal(finance.includes("/operations"), false);
 });
 
-test("active section follows the simplified information architecture", () => {
+test("active section follows the four-app information architecture", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
-  assert.equal(activeNavigationSection("/customers/abc", sections), "customers");
-  assert.equal(activeNavigationSection("/closing/deal-1", sections), "customers");
-  assert.equal(activeNavigationSection("/care/reports", sections), "care");
-  assert.equal(activeNavigationSection("/book-growth/economics", sections), "publishing");
+  assert.equal(activeNavigationSection("/customers/abc", sections), "sales");
+  assert.equal(activeNavigationSection("/closing/deal-1", sections), "sales");
+  assert.equal(activeNavigationSection("/care/reports", sections), "sales");
+  assert.equal(activeNavigationSection("/book-growth/economics", sections), "content");
   assert.equal(activeNavigationSection("/nexus-os/today", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/communications/social", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/brand-brain", sections), "marketing");
-  assert.equal(activeNavigationSection("/nexus-os/runtime", sections), "admin");
-  assert.equal(activeNavigationSection("/connections", sections), "admin");
-  assert.equal(activeNavigationSection("/continuous-improvement", sections), "revenue");
-  assert.equal(activeNavigationSection("/inventory/property-360", sections), "properties");
+  assert.equal(activeNavigationSection("/nexus-os/runtime", sections), "platform");
+  assert.equal(activeNavigationSection("/connections", sections), "platform");
+  assert.equal(activeNavigationSection("/continuous-improvement", sections), "finance");
+  assert.equal(activeNavigationSection("/inventory/property-360", sections), "sales");
+  assert.equal(activeNavigationSection("/care/invoices", sections), "finance");
 });
 
 test("menu search finds renamed daily surfaces", () => {
@@ -85,28 +107,36 @@ test("menu search finds renamed daily surfaces", () => {
 });
 
 test("favorites remain limited and deduplicated", () => {
-  const available = ["/today", "/customers", "/execution", "/closing", "/forecast", "/communications", "/recovery"];
-  const normalized = normalizeNavigationFavorites(["/today", "/today", "/no", "/customers", "/execution", "/closing", "/forecast", "/communications", "/recovery"], available);
-  assert.deepEqual(normalized, ["/today", "/customers", "/execution", "/closing", "/forecast", "/communications"]);
-  assert.equal(toggleNavigationFavorite(normalized, "/today", available).includes("/today"), false);
+  const available = ["/sales", "/customers", "/execution", "/closing", "/forecast", "/communications", "/recovery"];
+  const normalized = normalizeNavigationFavorites(["/sales", "/sales", "/no", "/customers", "/execution", "/closing", "/forecast", "/communications", "/recovery"], available);
+  assert.deepEqual(normalized, ["/sales", "/customers", "/execution", "/closing", "/forecast", "/communications"]);
+  assert.equal(toggleNavigationFavorite(normalized, "/sales", available).includes("/sales"), false);
 });
 
-test("owner quick links expose the six daily work surfaces", () => {
+test("owner quick links expose the app model directly", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   const quick = quickNavigationItems("OWNER", sections, []);
   assert.deepEqual(quick.map((item) => item.href), [
     "/workspaces",
     "/nexus-os/today",
-    "/customers",
-    "/nexus-os/communications",
-    "/inventory",
-    "/social-automation",
+    "/sales",
+    "/marketing",
+    "/content",
+    "/finance",
   ]);
 });
 
-test("keyholding keeps its focused Care workspace", () => {
+test("keyholding work is split between Sales operations and Finance invoicing", () => {
   const sections = buildVisibleNavigation("KEYHOLDING", permissionsForRole("KEYHOLDING"));
-  const care = sections.find((section) => section.id === "care");
-  assert.ok(care);
-  assert.deepEqual(care.items.map((item) => item.href), ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"]);
+  const sales = sections.find((section) => section.id === "sales");
+  assert.ok(sales);
+  assert.equal(sales.items.some((item) => item.href === "/care"), true);
+  assert.equal(sales.items.some((item) => item.href === "/care/customers"), true);
+  assert.equal(sales.items.some((item) => item.href === "/care/reports"), true);
+  assert.equal(sales.items.some((item) => item.href === "/care/keys"), true);
+  assert.equal(sales.items.some((item) => item.href === "/service-revenue"), true);
+
+  const finance = sections.find((section) => section.id === "finance");
+  assert.ok(finance);
+  assert.equal(finance.items.some((item) => item.href === "/care/invoices"), true);
 });
