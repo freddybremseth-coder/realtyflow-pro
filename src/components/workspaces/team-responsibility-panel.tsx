@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ShieldAlert, UsersRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, ShieldAlert, Sparkles, UsersRound } from "lucide-react";
 import {
   buildWorkspaceTeamResponsibilityOverview,
   summarizeWorkspaceTeamResponsibilityOverview,
@@ -9,6 +9,11 @@ import {
   type WorkspaceTeamUser,
   type WorkspaceResponsibilityCoverageStatus,
 } from "@/lib/workspaces/team-responsibility-overview";
+import {
+  recommendWorkspaceResponsibilityOwners,
+  type ResponsibilityWorkload,
+} from "@/lib/workspaces/responsibility-recommendations";
+import type { WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 
 const statusMeta: Record<WorkspaceResponsibilityCoverageStatus, {
   label: string;
@@ -36,10 +41,12 @@ export function WorkspaceTeamResponsibilityPanel({
   brands,
   users,
   onSelectUser,
+  onPrepareAssignment,
 }: {
   brands: WorkspaceTeamBrand[];
   users: WorkspaceTeamUser[];
   onSelectUser: (userId: string) => void;
+  onPrepareAssignment: (userId: string, brandKey: string, responsibility: WorkspaceResponsibilityId) => void;
 }) {
   const overview = useMemo(
     () => buildWorkspaceTeamResponsibilityOverview({ brands, users }),
@@ -50,6 +57,28 @@ export function WorkspaceTeamResponsibilityPanel({
     [overview],
   );
   const [selectedBrandKey, setSelectedBrandKey] = useState<string>("all");
+  const [workloads, setWorkloads] = useState<ResponsibilityWorkload[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/team-workload", { cache: "no-store", credentials: "same-origin" })
+      .then(async response => response.ok ? response.json() : null)
+      .then(body => {
+        if (cancelled) return;
+        const members = Array.isArray(body?.workspace?.members) ? body.workspace.members : [];
+        setWorkloads(members.map((member: any) => ({
+          email: String(member.email || "").toLowerCase(),
+          totalScore: Number(member.totalScore || 0),
+          load: member.load === "HIGH" || member.load === "BALANCED" || member.load === "LIGHT" || member.load === "EMPTY" ? member.load : "EMPTY",
+          contacts: Number(member.contacts || 0),
+          tasks: Number(member.tasks || 0),
+          overdue: Number(member.overdue || 0),
+          critical: Number(member.critical || 0),
+        })).filter((member: ResponsibilityWorkload) => Boolean(member.email)));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const visible = selectedBrandKey === "all"
     ? overview
@@ -153,19 +182,55 @@ export function WorkspaceTeamResponsibilityPanel({
                     </button>)}
                   </div>}
 
-                  {item.status === "unassigned" && <div className="mt-3">
-                    <p className="text-[11px] text-rose-300">Disse kan gjøre jobben, men ingen er satt som ansvarlig:</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {item.eligibleUsers.map(user => <button
-                        key={user.userId}
-                        type="button"
-                        onClick={() => onSelectUser(user.userId)}
-                        className="rounded-full border border-rose-900/70 px-2.5 py-1 text-[11px] text-rose-200 hover:border-rose-600"
-                      >
-                        {user.displayName}
-                      </button>)}
-                    </div>
-                  </div>}
+                  {item.status === "unassigned" && (() => {
+                    const recommendations = recommendWorkspaceResponsibilityOwners({
+                      brandKey: brand.brandKey,
+                      responsibility: item.id,
+                      users,
+                      workloads,
+                      limit: 3,
+                    });
+                    const top = recommendations[0];
+                    return <div className="mt-3 space-y-3">
+                      <p className="text-[11px] text-rose-300">Tilgang finnes, men ingen er satt som ansvarlig.</p>
+                      {top && <div className="rounded-lg border border-cyan-900/70 bg-cyan-950/20 p-3">
+                        <div className="flex items-start gap-2">
+                          <Sparkles size={14} className="mt-0.5 shrink-0 text-cyan-300"/>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400">RealtyFlow foreslår</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <strong className="text-sm text-cyan-100">{top.displayName}</strong>
+                              <span className="rounded-full border border-cyan-800 px-2 py-0.5 text-[10px] text-cyan-300">{top.score}/100</span>
+                              {top.bestPresetLabel && <span className="text-[10px] text-slate-500">{top.bestPresetLabel}</span>}
+                            </div>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-400">{top.reasons.join(" · ")}</p>
+                            <button
+                              type="button"
+                              onClick={() => onPrepareAssignment(top.userId, brand.brandKey, item.id)}
+                              className="mt-2 rounded-lg border border-cyan-700 px-2.5 py-1.5 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-950/50"
+                            >
+                              Forbered tildeling
+                            </button>
+                            <p className="mt-1 text-[10px] text-slate-600">Ingen endring skjer før du lagrer brukeren.</p>
+                          </div>
+                        </div>
+                      </div>}
+                      {recommendations.length > 1 && <div>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-600">Andre aktuelle</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {recommendations.slice(1).map(user => <button
+                            key={user.userId}
+                            type="button"
+                            onClick={() => onPrepareAssignment(user.userId, brand.brandKey, item.id)}
+                            className="rounded-full border border-slate-800 px-2.5 py-1 text-[11px] text-slate-400 hover:border-cyan-700 hover:text-cyan-200"
+                            title={user.reasons.join(" · ")}
+                          >
+                            {user.displayName} · {user.score}
+                          </button>)}
+                        </div>
+                      </div>}
+                    </div>;
+                  })()}
 
                   {item.status === "no-capability" && <p className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-slate-500">
                     <ShieldAlert size={14} className="mt-0.5 shrink-0"/>
