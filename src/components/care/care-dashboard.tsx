@@ -575,6 +575,7 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
   const [serviceFilter, setServiceFilter] = useState("all");
   const [openOnly, setOpenOnly] = useState(true);
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
+  const [quoteLead, setQuoteLead] = useState<CareLead | null>(null);
 
   const services = useMemo(() => {
     const values = Array.from(new Set(dashboard.leads.map((lead) => lead.serviceIntent).filter(Boolean)));
@@ -601,12 +602,13 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           {[
             ["Åpne leads", dashboard.lifecycle.openLeads, "venter på oppfølging"],
             ["Over 24 t", dashboard.summary.staleOpenLeads, "åpne uten ferdigstilling"],
-            ["Må kvalifiseres", dashboard.lifecycle.awaitingProperty, "mangler Care-eiendom"],
-            ["Tilbud / avtale", dashboard.lifecycle.awaitingContract, "eiendom finnes, avtale mangler"],
+            ["Tilbudsutkast", dashboard.lifecycle.draftQuotes, "må kvalitetssikres"],
+            ["Tilbud sendt", dashboard.lifecycle.sentQuotes, "venter på kundesvar"],
+            ["Akseptert", dashboard.lifecycle.acceptedQuotesAwaitingContract, "må aktiveres som avtale"],
             ["Aktivert", dashboard.lifecycle.contractedLeads, `${dashboard.lifecycle.leadToContractPercent}% av målte leads`],
           ].map(([label, value, detail]) => (
             <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
@@ -630,7 +632,15 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
         <EmptyState icon={Inbox} title="Ingen leads i dette filteret" detail="Endre tjenestefilteret eller vis ferdige henvendelser." />
       ) : (
         <section className="grid gap-3 xl:grid-cols-2">
-          {filtered.map((lead) => <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} />)}
+          {filtered.map((lead) => (
+            <CareLeadCard
+              key={lead.id}
+              lead={lead}
+              onOnboard={setOnboardingLead}
+              onQuote={setQuoteLead}
+              onChanged={onReload}
+            />
+          ))}
         </section>
       )}
 
@@ -642,6 +652,15 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
           onSaved={onReload}
         />
       )}
+      {quoteLead && (
+        <CareQuoteDialog
+          lead={quoteLead}
+          plans={dashboard.plans}
+          quote={dashboard.quotes.find((quote) => quote.workItemId === quoteLead.id) || null}
+          onClose={() => setQuoteLead(null)}
+          onSaved={onReload}
+        />
+      )}
     </div>
   );
 }
@@ -649,6 +668,7 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
 function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onReload: () => Promise<void> | void }) {
   const openLeadCount = dashboard.leads.filter(careLeadOpen).length;
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
+  const [quoteLead, setQuoteLead] = useState<CareLead | null>(null);
   const attentionItems = [
     dashboard.lifecycle.awaitingProperty > 0 ? {
       id: "new-leads",
@@ -657,6 +677,22 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       count: dashboard.lifecycle.awaitingProperty,
       href: "#care-leads",
       icon: Inbox,
+    } : null,
+    dashboard.lifecycle.sentQuotes > 0 ? {
+      id: "quotes",
+      label: "Følg opp sendte Care-tilbud",
+      detail: "Tilbud er sendt og venter på kundens svar.",
+      count: dashboard.lifecycle.sentQuotes,
+      href: "/care/leads",
+      icon: ShieldCheck,
+    } : null,
+    dashboard.lifecycle.acceptedQuotesAwaitingContract > 0 ? {
+      id: "accepted-quotes",
+      label: "Aktiver aksepterte Care-tilbud",
+      detail: "Kunden har akseptert tilbudet, men aktiv Care-avtale mangler.",
+      count: dashboard.lifecycle.acceptedQuotesAwaitingContract,
+      href: "/care/leads",
+      icon: CheckCircle2,
     } : null,
     dashboard.lifecycle.awaitingContract > 0 ? {
       id: "agreements",
@@ -698,17 +734,17 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Care-flyt</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">Henvendelse → Care-kunde → avtale → besøk → MRR</h2>
+            <h2 className="mt-1 text-lg font-semibold text-white">Henvendelse → tilbud → Care-kunde → avtale → besøk → MRR</h2>
             <p className="mt-1 text-sm text-slate-400">Operativ flyt for de siste registrerte Care-henvendelsene og aktive avtalene.</p>
           </div>
           <p className="text-xs text-slate-500">{dashboard.lifecycle.trackedLeads} Care-leads målt · {dashboard.lifecycle.leadToContractPercent}% har aktivert avtale</p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
-            ["Nye leads", dashboard.lifecycle.awaitingProperty, "må kvalifiseres"],
-            ["Care-eiendom", dashboard.lifecycle.awaitingContract, "venter på avtale"],
+            ["Nye leads", dashboard.lifecycle.openLeads, "må kvalifiseres"],
+            ["Tilbud sendt", dashboard.lifecycle.sentQuotes, "venter på svar"],
+            ["Akseptert", dashboard.lifecycle.acceptedQuotesAwaitingContract, "må aktiveres"],
             ["Avtale aktivert", dashboard.lifecycle.contractedLeads, "fra Care-leads"],
-            ["Kommende besøk", dashboard.summary.upcomingEvents, "kalenderhendelser"],
             ["MRR", moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), String(dashboard.summary.activeContracts) + " aktive avtaler"],
           ].map(([label, value, detail]) => (
             <article key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
@@ -797,7 +833,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         ) : (
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
             {dashboard.leads.slice(0, 8).map((lead) => (
-              <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} />
+              <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} onQuote={setQuoteLead} onChanged={onReload} />
             ))}
           </div>
         )}
@@ -862,6 +898,15 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
           lead={onboardingLead}
           plans={dashboard.plans}
           onClose={() => setOnboardingLead(null)}
+          onSaved={onReload}
+        />
+      )}
+      {quoteLead && (
+        <CareQuoteDialog
+          lead={quoteLead}
+          plans={dashboard.plans}
+          quote={dashboard.quotes.find((quote) => quote.workItemId === quoteLead.id) || null}
+          onClose={() => setQuoteLead(null)}
           onSaved={onReload}
         />
       )}
@@ -1127,7 +1172,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
 
   const summaryCards = useMemo(() => dashboard ? [
     { label: "Nye henvendelser", value: dashboard.lifecycle.openLeads, icon: Inbox, detail: dashboard.summary.staleOpenLeads ? `${dashboard.summary.staleOpenLeads} over 24 t` : "Ingen gamle åpne leads" },
-    { label: "Tilbud må følges", value: dashboard.lifecycle.awaitingContract, icon: ShieldCheck, detail: "Care-eiendom uten aktiv avtale" },
+    { label: "Tilbud må følges", value: dashboard.lifecycle.sentQuotes + dashboard.lifecycle.acceptedQuotesAwaitingContract, icon: ShieldCheck, detail: `${dashboard.lifecycle.sentQuotes} sendt · ${dashboard.lifecycle.acceptedQuotesAwaitingContract} akseptert` },
     { label: "Tilsyn neste 7 dager", value: dashboard.summary.upcomingEvents7d, icon: CalendarCheck2, detail: `${dashboard.summary.upcomingEvents} kommende totalt` },
     { label: "Åpne avvik", value: dashboard.summary.openIssues + dashboard.summary.openWorkOrders, icon: Wrench, detail: "Avvik + arbeidsordre" },
     { label: "MRR Care", value: moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), icon: CircleDollarSign, detail: `${dashboard.summary.activeContracts} aktive avtaler` },
