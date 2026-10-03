@@ -48,3 +48,18 @@ test("Care overview exposes a concrete operations queue with customer context", 
   assert.match(source, /Kundekort/);
   assert.match(source, /operationalQueue\.slice\(0, 8\)/);
 });
+
+
+test("Care demand cards deep-link into filtered lead queues", () => {
+  assert.match(source, /\/care\/leads\?service=/);
+  assert.match(source, /new URLSearchParams\(window\.location\.search\)/);
+  assert.match(source, /setServiceFilter\(service\)/);
+  assert.match(source, /setAttentionOnly\(true\)/);
+});
+
+test("Care lead cards expose privacy-minimal discovery source", () => {
+  assert.match(source, /Fant oss via:/);
+  assert.match(source, /careDiscoveryLabel\(lead\.discoverySource\)/);
+  assert.match(source, /ChatGPT/);
+  assert.match(source, /Perplexity/);
+});
