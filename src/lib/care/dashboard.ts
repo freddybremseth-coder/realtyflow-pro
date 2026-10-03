@@ -1,4 +1,4 @@
-export type CareView = "overview" | "leads" | "customers" | "reports" | "invoices" | "keys";
+export type CareView = "overview" | "leads" | "customers" | "visits" | "reports" | "invoices" | "keys";
 export type CareSalesStage = "new" | "contacted" | "quote_sent" | "waiting_customer" | "activated" | "not_relevant";
 
 export type CareReadinessStatus = "ok" | "warning" | "empty";
