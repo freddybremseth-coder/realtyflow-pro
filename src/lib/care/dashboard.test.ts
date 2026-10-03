@@ -154,6 +154,11 @@ test("Care dashboard summarizes contracts, reports, photos and invoices", () => 
   assert.equal(dashboard.serviceDemand[0]?.trackedLeads, 1);
   assert.equal(dashboard.serviceDemand[0]?.openLeads, 1);
   assert.equal(dashboard.serviceDemand[0]?.contractedLeads, 0);
+  assert.equal(dashboard.discoveryDemand.length, 1);
+  assert.equal(dashboard.discoveryDemand[0]?.discoverySource, "chatgpt");
+  assert.equal(dashboard.discoveryDemand[0]?.trackedLeads, 1);
+  assert.equal(dashboard.discoveryDemand[0]?.openLeads, 1);
+  assert.equal(dashboard.discoveryDemand[0]?.contractedLeads, 0);
   assert.equal(dashboard.properties[0]?.ownerName, "Test Owner");
   assert.equal(dashboard.properties[0]?.planName, "Standard");
   assert.equal(dashboard.reports[0]?.deliveryCount, 1);
