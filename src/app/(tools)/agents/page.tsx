@@ -379,7 +379,7 @@ const CHATBOT_BRANDS = [
   { id: "pinosoecolife", label: "Pinoso Ecolife", color: "#84cc16", domain: "pinosoecolife.com" },
   { id: "zeneco", label: "Zen Eco Homes", color: "#10b981", domain: "zenecohomes.com" },
   { id: "chatgenius", label: "ChatGenius", color: "#8b5cf6", domain: "chatgenius.com" },
-  { id: "donaanna", label: "Dona Anna", color: "#f59e0b", domain: "donaanna.com" },
+  { id: "donaanna", label: "Doña Anna", color: "#d4af37", domain: "donaanna.com" },
   { id: "freddyb", label: "Freddy Bremseth", color: "#3b82f6", domain: "freddybremseth.com" },
 ];
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
+import { getBrandImagePromptSuffix, resolveBrandId } from "@/lib/brand-guidelines";
 
 export async function GET(req: NextRequest) {
   try {
@@ -36,14 +37,17 @@ export async function POST(req: NextRequest) {
       // Use Gemini for image generation
       const { GeminiService } = await import("@/services/ai/gemini-service");
       const gemini = new GeminiService();
-      const result = await gemini.generateMarketingImage(prompt);
+      const imageSuffix = getBrandImagePromptSuffix(brand_id);
+      const result = await gemini.generateMarketingImage(imageSuffix ? `${prompt}. ${imageSuffix}` : prompt);
       return NextResponse.json({ result });
     }
 
     // Use Claude agents for content generation via orchestrator
     const { AgentOrchestrator } = await import("@/services/agents/orchestrator");
     const orchestrator = new AgentOrchestrator();
-    const result = await orchestrator.executeCommand("marketing", prompt);
+    const guidedBrand = resolveBrandId(brand_id);
+    const command = guidedBrand ? `[Brand: ${guidedBrand}]\n${prompt}` : prompt;
+    const result = await orchestrator.executeCommand("marketing", command);
 
     // Save to database
     const supabase = createServerClient();

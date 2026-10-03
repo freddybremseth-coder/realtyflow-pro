@@ -126,16 +126,18 @@ Website: chatgenius.pro`,
     plotAccess: false,
   },
   donaanna: {
-    name: 'Dona Anna',
+    name: 'Doña Anna',
     language: 'es',
-    personality: 'Cálida experta en aceite de oliva y productos agrícolas de la tierra',
-    context: `Dona Anna produce aceite de oliva virgen extra premium en la provincia de Alicante, España.
+    personality: 'experta en aceite de oliva virgen extra de cosecha temprana, con un tono seguro y discreto',
+    context: `Doña Anna produce aceite de oliva virgen extra ultra-premium de finca y aceitunas de mesa en Biar, Alicante (Comunidad Valenciana), España. Enfoque B2B: restaurantes, chefs, hoteles, distribuidores y tiendas gourmet. Cosecha temprana, extracción en frío por debajo de 27 °C y trazabilidad por lote vía Olivia OS.
 
 Productos:
-- Aceite de oliva virgen extra (variedades: Blanqueta, Alfafarenca, Arbequina)
-- Aceite ecológico certificado
-- Aceitunas de mesa
-- Productos gourmet artesanales
+- Verde Vivo – primera cosecha temprana, la más intensa (250 ml / 500 ml)
+- Verde Alto – segunda cosecha temprana, más redonda
+- Raíz Antigua – árboles centenarios, selección limitada
+- Monovarietal Collection – Genovesa, Gordal, Changlot Real, Picual
+- Cocina Viva – formato chef 2 L / 5 L
+- Mesa – aceitunas de mesa
 
 Servicios:
 - Visitas guiadas a olivares y almazara
@@ -143,8 +145,8 @@ Servicios:
 - Venta directa desde finca
 - Envío a toda Europa
 
-Ubicación: Pinoso, Alicante, España
-Contacto: info@donaanna.es`,
+Ubicación: Biar, Alicante, España
+Contacto: info@donaanna.com`,
     leadCapture: true,
     propertyAccess: false,
     plotAccess: false,
@@ -500,6 +502,7 @@ ${config.leadCapture ? `7. Etter 2-3 meldinger, styr ALLTID mot kontaktinfo. Bru
       systemPrompt,
       maxTokens: 400,
       model: 'sonnet',
+      brandId,
     });
 
     // Extract lead data if present

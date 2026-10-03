@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBrandImagePromptSuffix } from "@/lib/brand-guidelines";
 import { createClient } from "@supabase/supabase-js";
 import { uploadThumbnail } from "@/services/storage/media";
 import {
@@ -132,7 +133,8 @@ export async function POST(req: NextRequest) {
       : allowText
         ? "Render any specified title, subtitle and author text crisply and CORRECTLY spelled, with professional book-cover typography, clear hierarchy, and strong contrast against the artwork for readability."
         : "No text, letters, words, or watermarks in the image.";
-    const enhancedPrompt = `${variantInstruction}. ${styleHint}. ${ratioHint}. ${brandHint} ${noTextInstruction}`.trim();
+    const brandImageHint = getBrandImagePromptSuffix(brand, { allowText: true });
+    const enhancedPrompt = `${variantInstruction}. ${styleHint}. ${ratioHint}. ${brandHint} ${brandImageHint} ${noTextInstruction}`.replace(/\s+/g, " ").trim();
 
     // ─── OpenArt path (opt-in — uses credits from the connected account) ──
     if (provider === "openart") {

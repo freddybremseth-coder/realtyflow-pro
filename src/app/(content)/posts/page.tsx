@@ -21,7 +21,7 @@ interface Post {
 const initialPosts: Post[] = [
   { id: "1", content: "Ny luksus villa i Altea med fantastisk havutsikt! 3 sov, pool, moderne design. #eiendom #spania", platforms: ["instagram", "facebook"], status: "published", brand: "Soleada.no", engagement: { likes: 42, comments: 8, reach: 1200 } },
   { id: "2", content: "ChatGenius lanserer ny AI-drevet kundeservice-modul. Automatiser 80% av henvendelsene.", platforms: ["linkedin"], status: "scheduled", brand: "ChatGenius.pro", scheduledAt: "2026-03-22 10:00" },
-  { id: "3", content: "Fersk olivenolje fra vår gård i Andalusia. Bestill nå for vårsesongen!", platforms: ["instagram", "facebook"], status: "draft", brand: "Dona Anna" },
+  { id: "3", content: "Tidlig høstet Verde Vivo fra lundene i Biar, Alicante. Tasting kit for restauranter er tilgjengelig nå.", platforms: ["instagram", "facebook"], status: "draft", brand: "Dona Anna" },
   { id: "4", content: "5 tips for å kjøpe bolig i Spania som nordmann. Les vår nye guide! Link i bio.", platforms: ["instagram"], status: "draft", brand: "Freddy Bremseth" },
   { id: "5", content: "Ny musikkvideo ute nå! 'Midnight Pulse' - en AI-generert EDM-reise. Lytt på YouTube!", platforms: ["instagram", "twitter", "facebook"], status: "published", brand: "Neural Beat", engagement: { likes: 156, comments: 23, reach: 4500 } },
 ];

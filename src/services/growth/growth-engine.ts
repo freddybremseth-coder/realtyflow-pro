@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BRANDS } from '@/lib/constants';
+import { getBrandGuidelines } from '@/lib/brand-guidelines';
 import type { Brand } from '@/types';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -464,7 +465,7 @@ Svar som JSON-array: { "actions": [...] }`,
       const msg = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 2048,
-        system: this.SYSTEM_PROMPT,
+        system: this.SYSTEM_PROMPT + getBrandGuidelines(action.brand),
         messages: [
           {
             role: 'user',
@@ -514,7 +515,7 @@ Gi meg JSON:
       const msg = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 3000,
-        system: this.SYSTEM_PROMPT,
+        system: this.SYSTEM_PROMPT + getBrandGuidelines(action.brand),
         messages: [
           {
             role: 'user',
@@ -573,7 +574,7 @@ Gi meg JSON:
       const msg = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 2048,
-        system: this.SYSTEM_PROMPT,
+        system: this.SYSTEM_PROMPT + getBrandGuidelines(action.brand),
         messages: [
           {
             role: 'user',
@@ -633,7 +634,7 @@ Gi meg JSON:
       const msg = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 3000,
-        system: this.SYSTEM_PROMPT,
+        system: this.SYSTEM_PROMPT + getBrandGuidelines(brand),
         messages: [
           {
             role: 'user',
@@ -719,7 +720,7 @@ Gi meg JSON:
       const msg = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 2048,
-        system: this.SYSTEM_PROMPT,
+        system: this.SYSTEM_PROMPT + getBrandGuidelines(brandInfo.id),
         messages: [
           {
             role: 'user',
