@@ -18,6 +18,10 @@ const internalOrders = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/saas/demosites/route.ts"),
   "utf8",
 );
+const stripeRoute = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/saas/stripe/route.ts"),
+  "utf8",
+);
 const followup = fs.readFileSync(
   path.join(process.cwd(), "src/app/api/cron/demosites-followup/route.ts"),
   "utf8",
@@ -60,6 +64,14 @@ test("public requests are customer initiated while internal demos default to sel
   assert.match(publicRequest, /source_channel: "public_demo_request"/);
   assert.match(internalOrders, /order_origin: String\(incomingEditableFields\.order_origin \|\| "seller_generated"\)/);
   assert.match(internalOrders, /source_channel: String\(incomingEditableFields\.source_channel \|\| "realtyflow_internal"\)/);
+});
+
+
+test("verified DemoSites Stripe checkout starts subscription timing only in the paid webhook path", () => {
+  assert.match(stripeRoute, /billing_status:\s*['"]paid['"]/);
+  assert.match(stripeRoute, /subscription_started_at:\s*paidAt/);
+  assert.match(stripeRoute, /subscription_renews_at:\s*plusOneMonthIso\(paidAt\)/);
+  assert.match(stripeRoute, /checkout\.session\.completed/);
 });
 
 test("unpaid internal demos never become started subscriptions or paid SaaS revenue", () => {
