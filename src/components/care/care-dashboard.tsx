@@ -551,7 +551,7 @@ function CareLeadCard({
           )}
           {lead.carePropertyId ? (
             <>
-              <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
+              <Link href={`/care/customers#care-property-${lead.carePropertyId}`} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
               {!lead.careContractId && onOnboard && (
                 <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver avtale</button>
               )}
@@ -895,7 +895,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
                     {property?.ownerId && (
                       <Link href={`/customers/${encodeURIComponent(property.ownerId)}`} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Kundekort</Link>
                     )}
-                    <Link href={item.href} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/15">Åpne Care</Link>
+                    <Link href={item.propertyId ? `/care/customers#care-property-${item.propertyId}` : item.href} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/15">Åpne Care</Link>
                   </div>
                 </div>
               );
@@ -1014,7 +1014,7 @@ function CustomersView({ properties }: { properties: CareProperty[] }) {
   return (
     <section className="grid gap-4 xl:grid-cols-2">
       {properties.map((property) => (
-        <article key={property.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <article id={`care-property-${property.id}`} key={property.id} className="scroll-mt-24 rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition target:border-cyan-400/60 target:bg-cyan-500/5 target:ring-2 target:ring-cyan-400/15">
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge value={property.status} />
             {property.contractStatus && <StatusBadge value={property.contractStatus} />}
