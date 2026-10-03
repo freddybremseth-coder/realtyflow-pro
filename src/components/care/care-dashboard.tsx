@@ -482,7 +482,7 @@ function CareLeadCard({
             {lead.pipelineStatus && <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">CRM {lead.pipelineStatus}</span>}
             {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
             {lead.carePropertyId && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">Care-kunde{lead.careContractId ? " + avtale" : ""}</span>}
-            {lead.careQuoteStatus && <StatusBadge value={`tilbud ${lead.careQuoteStatus}`} />}
+            {lead.careQuoteStatus && <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase ${statusClass(lead.careQuoteStatus)}`}>Tilbud {lead.careQuoteStatus}</span>}
           </div>
           <h3 className="mt-3 truncate text-base font-semibold text-white">{lead.contactName}</h3>
           <p className="mt-1 truncate text-xs text-slate-400">
