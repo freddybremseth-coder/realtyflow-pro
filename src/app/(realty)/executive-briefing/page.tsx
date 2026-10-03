@@ -14,6 +14,9 @@ import {
   RefreshCw,
   ShieldCheck,
   Target,
+  TrendingUp,
+  BarChart3,
+  Wrench,
   UsersRound,
 } from "lucide-react";
 import type {
@@ -167,6 +170,33 @@ export default function ExecutiveBriefingPage() {
                   <KeyRound size={18} className="mb-3 text-blue-400"/><div className="text-2xl font-bold">{briefing.summary.keyholdingRenewals}</div><div className="text-sm text-slate-400">Keyholding-fornyelser</div>
                 </Link>
               )}
+            </section>
+
+            <section className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-400"><BarChart3 size={14}/> Teamkapasitet · ledelsesutsyn</div>
+                  <h2 className="mt-1 text-xl font-semibold">Nå, neste uke og neste 30 dager</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-400">Samme kapasitetsmotor som Team & arbeidsfordeling, oppsummert for ledelsesbeslutninger.</p>
+                </div>
+                <Link href="/team-workload" className="inline-flex items-center gap-2 rounded-lg border border-violet-800 px-3 py-2 text-sm text-violet-200 hover:bg-violet-950/30">Åpne teamkapasitet <ArrowRight size={14}/></Link>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4"><div className="text-xs uppercase text-slate-500">Høy nå</div><div className="mt-2 text-2xl font-bold">{briefing.team.overloaded}</div><div className="mt-1 text-xs text-slate-600">faktisk nåværende belastning</div></div>
+                <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/15 p-4"><div className="text-xs uppercase text-cyan-500">På vei mot høy · 7d</div><div className="mt-2 text-2xl font-bold text-cyan-200">{briefing.capacity.next7Days.risingHigh}</div><div className="mt-1 text-xs text-slate-600">{briefing.capacity.next7Days.forecastHigh} prognostisert høy totalt</div></div>
+                <div className="rounded-xl border border-rose-900/60 bg-rose-950/15 p-4"><div className="text-xs uppercase text-rose-500">Vedvarende høy · 30d</div><div className="mt-2 text-2xl font-bold text-rose-200">{briefing.capacity.next30Days.persistentHigh}</div><div className="mt-1 text-xs text-slate-600">{briefing.capacity.next30Days.rising} stigende trend</div></div>
+                <div className="rounded-xl border border-amber-900/60 bg-amber-950/15 p-4"><div className="text-xs uppercase text-amber-500">Strukturelle kandidater</div><div className="mt-2 text-2xl font-bold text-amber-200">{briefing.capacity.next30Days.automationCandidates + briefing.capacity.next30Days.roleRebalanceCandidates + briefing.capacity.next30Days.staffingReviewCandidates}</div><div className="mt-1 text-xs text-slate-600">automatisering · rolle · bemanning</div></div>
+              </div>
+              {briefing.capacity.highlights.length > 0 && <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {briefing.capacity.highlights.map((item) => <Link key={`${item.horizon}:${item.email}:${item.intervention}`} href={item.href} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4 hover:border-violet-700">
+                  <div className="flex items-start justify-between gap-3">
+                    <div><div className="font-semibold text-slate-200">{item.displayName}</div><div className="mt-1 text-xs text-violet-300">{item.label}</div></div>
+                    <span className="rounded-full border border-slate-700 px-2 py-1 text-[10px] text-slate-500">{item.horizon}</span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-400">{item.detail}</p>
+                  <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-violet-300"><Wrench size={12}/>{item.intervention}</div>
+                </Link>)}
+              </div>}
             </section>
 
             <NextBestActionPanel />
