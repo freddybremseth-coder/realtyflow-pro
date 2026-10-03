@@ -1,5 +1,6 @@
 import type { TeamWorkloadWorkspace } from "@/lib/revenue/team-workload";
 import { buildTeamCapacitySuggestions } from "@/lib/revenue/team-capacity";
+import { buildTeamCapacityForecast } from "@/lib/revenue/team-capacity-forecast";
 import { buildClosingOpportunity } from "@/lib/revenue/closing";
 import { buildCommissionCase } from "@/lib/revenue/commissions";
 import { buildServiceRevenueAccount } from "@/lib/revenue/service-revenue";
@@ -154,6 +155,37 @@ function alertDrafts(params: {
   const drafts: AlertDraft[] = [];
   const { contacts, team, now } = params;
   const capacitySuggestions = buildTeamCapacitySuggestions(team);
+  const capacityForecast = buildTeamCapacityForecast(team, { now, horizonDays: 7 });
+
+  for (const member of capacityForecast.members.filter(item => item.risk === "RISING_HIGH")) {
+    const suggestion = capacityForecast.suggestions.find(item => item.fromEmail === member.email);
+    const hasClosingDriver = member.drivers.some(driver => driver.kind === "CLOSING");
+    const severity: InternalAlertSeverity = member.forecastScore >= 500 || hasClosingDriver ? "HIGH" : "MEDIUM";
+    drafts.push({
+      id: `team-capacity-forecast:${member.email}`,
+      ruleId: "TEAM_CAPACITY_FORECAST",
+      category: "TEAM",
+      severity,
+      escalation: escalationFor(severity),
+      score: Math.min(100, 58 + Math.round(member.forecastScore / 20) + (hasClosingDriver ? 8 : 0)),
+      title: `${member.displayName} ligger an til høy belastning neste uke`,
+      detail: `Kapasitet ${member.currentCapacityScore} nå → ${member.forecastScore} neste ${capacityForecast.horizonDays} dager. ${member.drivers.length} kommende belastningsdrivere og ${member.responsibilityAreas} faste ansvarsområder.`,
+      reason: member.drivers.slice(0, 3).map(driver => `${driver.title} (+${driver.contribution})`).join(" · ") || "Personlige ansvarsområder driver prognosen.",
+      recommendedAction: suggestion
+        ? `Vurder å flytte ${suggestion.itemTitle} til ${suggestion.toName} nå. Det reduserer prognosen fra ${suggestion.forecastBefore} til ${suggestion.forecastAfter} og krever Owner-godkjenning.`
+        : "Planlegg kapasiteten nå. RealtyFlow fant ingen trygg sak som kan omfordeles uten å berøre kritiske, forfalte eller closing-saker.",
+      brandId: null,
+      resourceType: "team-member",
+      resourceId: member.email,
+      contactId: null,
+      ownerEmail: member.email,
+      ownerName: member.displayName,
+      dueAt: capacityForecast.horizonEnd,
+      amountEur: null,
+      href: `/team-workload?forecast=1&member=${encodeURIComponent(member.email)}`,
+      fingerprintParts: [member.forecastScore, member.currentCapacityScore, member.drivers.map(driver => [driver.itemId, driver.contribution]), member.responsibilityAreas, suggestion?.id || null],
+    });
+  }
 
   for (const member of team.members) {
     if (member.load !== "HIGH") continue;
