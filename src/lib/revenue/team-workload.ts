@@ -1,4 +1,5 @@
 import type { AccessProfile, AccessRole } from "@/lib/access-control";
+import { isActiveWorkItemStatus } from "@/lib/shared-core/tasks";
 
 export const TEAM_REVENUE_BRANDS = ["zeneco", "soleada", "pinosoecolife", "keyholding"] as const;
 export type TeamRevenueBrand = (typeof TEAM_REVENUE_BRANDS)[number];
@@ -58,8 +59,6 @@ export interface TeamWorkloadWorkspace {
   };
   warnings: string[];
 }
-
-const OPEN_TASK_STATUSES = new Set(["TO_DO", "TODO", "OPEN", "IN_PROGRESS", "REVIEW", "PENDING"]);
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -221,7 +220,7 @@ export function buildTeamWorkload(params: {
 
   for (const row of params.workItems || []) {
     const resourceId = text(row.id);
-    if (!resourceId || !OPEN_TASK_STATUSES.has(text(row.status).toUpperCase())) continue;
+    if (!resourceId || !isActiveWorkItemStatus(row.status)) continue;
     const brandId = normalizeBrand(row);
     const dueDate = text(row.due_date) || null;
     const due = date(dueDate);
