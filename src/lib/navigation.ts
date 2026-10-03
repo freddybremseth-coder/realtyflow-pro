@@ -1,8 +1,14 @@
 import { SIDEBAR_NAV } from "@/lib/constants";
 import { canSeeNavHref, type AccessRole } from "@/lib/access-control";
+import {
+  REALTYFLOW_APPS,
+  REALTYFLOW_NAVIGATION_GROUPS,
+  REALTYFLOW_PLATFORM,
+  type RealtyFlowNavigationSectionId,
+} from "@/lib/realtyflow-apps";
 
 export type NavigationItem = { label: string; href: string; icon: string };
-export type NavigationSectionId = "workspace" | "customers" | "properties" | "marketing" | "publishing" | "care" | "revenue" | "business" | "admin";
+export type NavigationSectionId = RealtyFlowNavigationSectionId;
 export interface NavigationSection { id: NavigationSectionId; label: string; icon: string; items: NavigationItem[]; }
 export const NAVIGATION_FAVORITES_LIMIT = 6;
 
@@ -22,30 +28,25 @@ const PROPERTY_360_NAV_ITEM: NavigationItem = { label: "Property 360", href: "/i
 const BRAND_BRAIN_NAV_ITEM: NavigationItem = { label: "Merkevarer & kanaler", href: "/nexus-os/brand-brain", icon: "BrainCircuit" };
 const NEXUS_INBOX_NAV_ITEM: NavigationItem = { label: "Innboks", href: "/nexus-os/inbox", icon: "Inbox" };
 
-const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
-  { id:"workspace", label:"Hjem", icon:"PanelsTopLeft", hrefs:["/workspaces","/nexus-os/today","/nexus-os/focus","/personal-intelligence","/nexus-os/inbox","/nexus-os/communications","/approvals","/","/today"] },
-  { id:"customers", label:"Kunder & salg", icon:"Users", hrefs:["/customers","/lead-intelligence","/execution","/automation/nurture","/recovery","/calendar","/booking-admin","/closing","/closing-pack","/after-sales","/communications"] },
-  { id:"properties", label:"Eiendom", icon:"Building2", hrefs:["/inventory","/inventory/property-360","/scanner","/tomtebase","/areas","/valuation","/document-hub"] },
-  { id:"marketing", label:"Markedsføring & innhold", icon:"Megaphone", hrefs:["/growth-hub","/corporate-homes","/social-automation","/nexus-os/brand-brain","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
-  { id:"publishing", label:"Bøker & media", icon:"BookOpen", hrefs:["/publishing","/publishing/forfatterstudio","/book-growth","/youtube-studio","/remaster-freddy"] },
-  { id:"care", label:"Care", icon:"KeyRound", hrefs:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/service-revenue"] },
-  { id:"revenue", label:"Drift, økonomi & ledelse", icon:"Handshake", hrefs:["/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/team-workload","/revenue-data-health"] },
-  { id:"business", label:"Virksomheter", icon:"Briefcase", hrefs:["/business-hub","/mondeo","/dona-anna","/platform","/demosites","/saas","/revenue-engine","/nexus-os/account-launch"] },
-  { id:"admin", label:"System & autopilot", icon:"Settings", hrefs:["/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/nexus-os/outbound-engagement","/automation","/agents","/data-health","/workspace-users","/access-control","/audit-log"] },
+const APP_NAV_ITEMS: NavigationItem[] = [
+  ...REALTYFLOW_APPS.map((app) => ({ label: app.label, href: app.href, icon: app.icon })),
+  { label: REALTYFLOW_PLATFORM.label, href: REALTYFLOW_PLATFORM.href, icon: REALTYFLOW_PLATFORM.icon },
 ];
 
+const GROUPS = REALTYFLOW_NAVIGATION_GROUPS;
+
 const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
-  OWNER:["/workspaces","/nexus-os/today","/customers","/nexus-os/communications","/inventory","/social-automation","/personal-intelligence"],
-  SALES:["/today","/customers","/communications","/execution","/lead-intelligence","/recovery"],
-  CLOSING:["/today","/closing","/closing-pack","/execution","/customers","/approvals"],
-  FINANCE:["/billing","/dona-anna","/revenue-command","/monthly-close","/commissions","/forecast","/goals","/internal-alerts"],
-  MARKETING:["/social-automation","/growth-hub","/corporate-homes","/marketing-readiness","/analytics","/ad-campaigns","/content-studio"],
-  KEYHOLDING:["/care","/care/customers","/care/reports","/care/invoices","/care/keys","/communications"],
+  OWNER:["/workspaces","/nexus-os/today","/sales","/marketing","/content","/finance"],
+  SALES:["/sales","/today","/customers","/communications","/execution","/lead-intelligence"],
+  CLOSING:["/sales","/today","/closing","/closing-pack","/execution","/customers"],
+  FINANCE:["/finance","/billing","/revenue-command","/monthly-close","/commissions","/forecast"],
+  MARKETING:["/marketing","/content","/social-automation","/growth-hub","/analytics","/ad-campaigns"],
+  KEYHOLDING:["/sales","/care","/care/customers","/care/reports","/care/invoices","/care/keys"],
   VIEWER:["/revenue-command","/today","/customers","/executive-briefing","/monthly-close","/forecast"],
   WORKSPACE_MEMBER:[],
 };
 
-function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM]; }
+function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM,...APP_NAV_ITEMS]; }
 function canSeeItem(role:AccessRole,permissions:string[],href:string){ if(role==="OWNER"&&OWNER_HIDDEN_HREFS.has(href)) return false; if(REVENUE_READ_PAGES.has(href)) return permissions.includes("revenue.read"); return canSeeNavHref(role,href); }
 export function buildVisibleNavigation(role:AccessRole,permissions:string[]):NavigationSection[]{ const itemByHref=new Map(sourceItems().map(item=>[item.href,{...item,label:LABEL_OVERRIDES[item.href]||item.label}])); return GROUPS.map(group=>({id:group.id,label:group.label,icon:group.icon,items:group.hrefs.map(href=>itemByHref.get(href)).filter((item):item is NavigationItem=>Boolean(item)).filter(item=>canSeeItem(role,permissions,item.href))})).filter(section=>section.items.length>0); }
 export function isNavigationPathActive(pathname:string,href:string){ if(href==="/") return pathname==="/"; return pathname===href||pathname.startsWith(`${href}/`); }
