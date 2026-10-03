@@ -172,7 +172,7 @@ export default function ExecutiveBriefingPage() {
               )}
             </section>
 
-            <section className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5">
+            {briefing.capacity && (<section className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-400"><BarChart3 size={14}/> Teamkapasitet · ledelsesutsyn</div>
@@ -197,7 +197,7 @@ export default function ExecutiveBriefingPage() {
                   <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-violet-300"><Wrench size={12}/>{item.intervention}</div>
                 </Link>)}
               </div>}
-            </section>
+            </section>)}
 
             <NextBestActionPanel />
             <PipelineHealthPanel />
