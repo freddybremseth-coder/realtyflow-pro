@@ -173,6 +173,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
     return write ? "customers.write" : "customers.read";
   }
   if (path.startsWith("/api/calendar")) return write ? "execution.write" : "execution.read";
+  if (path.startsWith("/api/finance")) return write ? "finance.write" : "finance.read";
   if (path.startsWith("/api/billing")) return write ? "finance.write" : "finance.read";
   if (path.startsWith("/api/dona-anna")) return write ? "finance.write" : "finance.read";
   if (path.startsWith("/api/care")) return write ? "keyholding.write" : "keyholding.read";
