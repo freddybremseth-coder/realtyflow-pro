@@ -718,7 +718,11 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     return startsAt >= now.getTime() && startsAt <= sevenDaysFromNow && isOpen(event.status);
   }).length;
   const staleLeadCutoff = now.getTime() - 24 * 60 * 60 * 1000;
-  const staleOpenLeads = leads.filter((lead) => isOpen(lead.status) && timestamp(lead.createdAt) > 0 && timestamp(lead.createdAt) < staleLeadCutoff).length;
+  const staleOpenLeads = rawCareLeadWorkItems.filter((row) => {
+    const createdAt = dateText(row, "created_at") || dateText(row, "updated_at");
+    const createdAtMs = timestamp(createdAt);
+    return isOpen(row.status) && createdAtMs > 0 && createdAtMs < staleLeadCutoff;
+  }).length;
   const openIssues = issues.filter((issue) => isOpen(issue.status)).length;
   const openWorkOrders = workOrders.filter((order) => isOpen(order.status)).length;
   const openCharges = charges.filter((charge) => isOpen(charge.status)).length;
