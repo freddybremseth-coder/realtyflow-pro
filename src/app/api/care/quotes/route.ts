@@ -52,7 +52,6 @@ export async function POST(request: NextRequest) {
   const planId = clean(body.planId, 80);
   const validUntil = clean(body.validUntil, 10);
   const notes = clean(body.notes, 2000);
-  const requestedPrice = Number(body.monthlyPriceCents);
 
   if (!ACTIONS.has(action)) return NextResponse.json({ error: "Ugyldig tilbudshandling." }, { status: 400 });
   if (!UUID.test(workItemId) || !UUID.test(contactId)) {
@@ -123,10 +122,7 @@ export async function POST(request: NextRequest) {
     if (planError) return NextResponse.json({ error: planError.message }, { status: 400 });
     if (!plan) return NextResponse.json({ error: "Valgt Care-plan er ikke aktiv." }, { status: 400 });
 
-    const planPrice = Number(plan.price_cents || 0);
-    const monthlyPriceCents = Number.isFinite(requestedPrice) && requestedPrice >= 0
-      ? Math.round(requestedPrice)
-      : planPrice;
+    const monthlyPriceCents = Number(plan.price_cents || 0);
     const serviceIntent = careIntentFrom(metadata);
     const reference = existing?.reference || `CARE-Q-${new Date().getUTCFullYear()}-${workItemId.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
     const propertyId = UUID.test(clean(metadata.care_property_id, 80)) ? clean(metadata.care_property_id, 80) : null;
