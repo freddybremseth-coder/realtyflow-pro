@@ -81,3 +81,10 @@ test("Care quote status captures plan and reuses it during onboarding", () => {
   assert.match(source, /<strong>Tilbud:<\/strong>/);
   assert.match(source, /quotePriceCents/);
 });
+
+
+test("Care pipeline exposes monthly value of open offers", () => {
+  assert.match(source, /Tilbuds-MRR/);
+  assert.match(source, /dashboard\.summary\.quotedMonthlyRevenueCents/);
+  assert.match(source, /månedlig verdi i åpne tilbud/);
+});
