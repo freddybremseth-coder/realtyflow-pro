@@ -863,6 +863,31 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         </section>
       )}
 
+      {dashboard.discoveryDemand.length > 0 && (
+        <section className="rounded-xl border border-slate-800 bg-slate-900/65 p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">SEO · AEO · GEO</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Hvor Care-leads finner oss</h2>
+              <p className="mt-1 text-sm text-slate-400">Kun godkjente, grove discovery-kilder følger leadet. Ingen søkeord eller full referrer lagres her.</p>
+            </div>
+            <span className="text-xs text-slate-500">{dashboard.discoveryDemand.reduce((sum, item) => sum + item.trackedLeads, 0)} attribuerte leads</span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {dashboard.discoveryDemand.map((item) => (
+              <article key={item.discoverySource} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
+                <p className="text-sm font-semibold text-white">{careDiscoveryLabel(item.discoverySource) || item.discoverySource}</p>
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <div><strong className="text-2xl text-white">{item.trackedLeads}</strong><p className="text-[11px] text-slate-500">leads</p></div>
+                  <div className="text-right"><strong className="text-lg text-emerald-200">{item.contractedLeads}</strong><p className="text-[11px] text-slate-500">avtaler</p></div>
+                </div>
+                <div className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-500">{item.openLeads} åpne · {item.leadToContractPercent}% lead → avtale</div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="rounded-xl border border-slate-800 bg-slate-900/65 p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
