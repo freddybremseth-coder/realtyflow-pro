@@ -292,6 +292,128 @@ function CareOnboardingDialog({
   );
 }
 
+function quoteDefaultDate(days = 14) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function CareQuoteDialog({
+  lead,
+  plans,
+  quote,
+  onClose,
+  onSaved,
+}: {
+  lead: CareLead;
+  plans: CarePlan[];
+  quote: CareQuote | null;
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [planId, setPlanId] = useState(quote?.planId || lead.careQuotePlanId || "");
+  const [validUntil, setValidUntil] = useState(() => quote?.validUntil?.slice(0, 10) || quoteDefaultDate(14));
+  const [notes, setNotes] = useState(quote?.notes || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const selectedPlan = plans.find((plan) => plan.id === planId) || null;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/care/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert",
+          workItemId: lead.id,
+          contactId: lead.contactId,
+          planId,
+          validUntil,
+          notes,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lagre Care-tilbudet.");
+      await onSaved();
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Kunne ikke lagre Care-tilbudet.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-10 max-w-xl rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Care tilbud</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">{quote ? "Rediger tilbud" : "Opprett tilbud"} · {lead.contactName}</h2>
+            <p className="mt-1 text-sm text-slate-400">{careServiceLabel(lead.serviceIntent)}{lead.preferredArea ? ` · ${lead.preferredArea}` : ""}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Lukk</button>
+        </div>
+        <form onSubmit={submit} className="space-y-5 p-5">
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Care-plan</span>
+            <select required value={planId} onChange={(event) => setPlanId(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+              <option value="">Velg plan</option>
+              {plans.filter((plan) => plan.active).map((plan) => (
+                <option key={plan.id} value={plan.id}>{plan.name} · {moneyFromCents(plan.priceCents, plan.currency)} / mnd</option>
+              ))}
+            </select>
+          </label>
+
+          {selectedPlan && (
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-100">{selectedPlan.name}</p>
+                  <p className="mt-1 text-xs text-cyan-100/70">{selectedPlan.visitsPerMonth} besøk per måned</p>
+                </div>
+                <strong className="text-lg text-white">{moneyFromCents(selectedPlan.priceCents, selectedPlan.currency)}</strong>
+              </div>
+              {selectedPlan.includedServices.length > 0 && (
+                <p className="mt-3 text-xs text-cyan-100/70">{selectedPlan.includedServices.join(" · ")}</p>
+              )}
+            </div>
+          )}
+
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Gyldig til</span>
+            <input type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+          </label>
+
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Internt notat <span className="text-slate-500">(valgfritt)</span></span>
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={4} placeholder="Forutsetninger, hva som er avtalt, oppfølging..." className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
+          </label>
+
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100/80">
+            Dette oppretter et internt tilbud i Care. Ingen e-post sendes automatisk. Marker tilbudet som sendt først når du faktisk har sendt det til kunden.
+          </div>
+
+          {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
+
+          <div className="flex justify-end gap-2 border-t border-slate-800 pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Avbryt</Button>
+            <Button type="submit" disabled={saving || !planId}>
+              {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}
+              {quote ? "Lagre tilbud" : "Opprett tilbud"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({ title, detail, icon: Icon }: { title: string; detail: string; icon: LucideIcon }) {
   return (
     <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/45 p-8 text-center">
