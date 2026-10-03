@@ -11,6 +11,7 @@ import {
   CircleDollarSign,
   ClipboardCheck,
   FileSpreadsheet,
+  ExternalLink,
   Gauge,
   Home,
   Image,
@@ -112,6 +113,16 @@ function sourcePageLabel(value: string | null) {
     return `${url.hostname} · ${path}`;
   } catch {
     return value;
+  }
+}
+
+function sourcePageHref(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "care.zenecohomes.com" ? url.toString() : null;
+  } catch {
+    return null;
   }
 }
 
@@ -307,10 +318,111 @@ function StatusBadge({ value }: { value: string }) {
 function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onReload: () => Promise<void> | void }) {
   const openLeadCount = dashboard.leads.filter(careLeadOpen).length;
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
+  const attentionItems = [
+    dashboard.lifecycle.awaitingProperty > 0 ? {
+      id: "new-leads",
+      label: "Kvalifiser nye Care-henvendelser",
+      detail: "Åpne kundekortet, bekreft behov og opprett Care-eiendom når kunden er klar.",
+      count: dashboard.lifecycle.awaitingProperty,
+      href: "#care-leads",
+      icon: Inbox,
+    } : null,
+    dashboard.lifecycle.awaitingContract > 0 ? {
+      id: "agreements",
+      label: "Aktiver Care-avtale",
+      detail: "Care-eiendom er opprettet, men aktiv plan og MRR mangler.",
+      count: dashboard.lifecycle.awaitingContract,
+      href: "#care-leads",
+      icon: ShieldCheck,
+    } : null,
+    dashboard.lifecycle.propertiesWithoutNextVisit > 0 ? {
+      id: "visits",
+      label: "Planlegg neste besøk",
+      detail: "Aktive avtaler uten kommende kalenderhendelse bør få et konkret neste tilsyn.",
+      count: dashboard.lifecycle.propertiesWithoutNextVisit,
+      href: "/care/keys",
+      icon: CalendarCheck2,
+    } : null,
+    dashboard.lifecycle.propertiesWithoutKey > 0 ? {
+      id: "keys",
+      label: "Registrer nøkkelrutine",
+      detail: "Aktive Care-avtaler uten registrert nøkkel bør avklares operativt.",
+      count: dashboard.lifecycle.propertiesWithoutKey,
+      href: "/care/keys",
+      icon: KeyRound,
+    } : null,
+    dashboard.lifecycle.openOperationalIssues > 0 ? {
+      id: "issues",
+      label: "Følg opp åpne Care-saker",
+      detail: "Avvik eller arbeidsordre krever oppfølging før de blir liggende.",
+      count: dashboard.lifecycle.openOperationalIssues,
+      href: "/care/customers",
+      icon: Wrench,
+    } : null,
+  ].filter(Boolean) as Array<{ id: string; label: string; detail: string; count: number; href: string; icon: LucideIcon }>;
 
   return (
     <div className="space-y-5">
-      <section className="rounded-xl border border-amber-500/20 bg-slate-900/65 p-5">
+      <section className="rounded-xl border border-cyan-500/20 bg-slate-900/65 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Care-flyt</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Henvendelse → Care-kunde → avtale → besøk → MRR</h2>
+            <p className="mt-1 text-sm text-slate-400">Operativ flyt for de siste registrerte Care-henvendelsene og aktive avtalene.</p>
+          </div>
+          <p className="text-xs text-slate-500">{dashboard.lifecycle.trackedLeads} Care-leads målt · {dashboard.lifecycle.leadToContractPercent}% har aktivert avtale</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            ["Nye leads", dashboard.lifecycle.awaitingProperty, "må kvalifiseres"],
+            ["Care-eiendom", dashboard.lifecycle.awaitingContract, "venter på avtale"],
+            ["Avtale aktivert", dashboard.lifecycle.contractedLeads, "fra Care-leads"],
+            ["Kommende besøk", dashboard.summary.upcomingEvents, "kalenderhendelser"],
+            ["MRR", moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), String(dashboard.summary.activeContracts) + " aktive avtaler"],
+          ].map(([label, value, detail]) => (
+            <article key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+              <strong className="mt-1 block text-2xl text-white">{value}</strong>
+              <p className="mt-1 text-xs text-slate-500">{detail}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-slate-800 bg-slate-900/65 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Dette bør du gjøre i dag</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Care-oppmerksomhet</h2>
+          </div>
+          <span className="text-xs text-slate-500">{attentionItems.length} operative områder trenger oppfølging</span>
+        </div>
+        {attentionItems.length === 0 ? (
+          <div className="mt-4 flex items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm text-emerald-200">
+            <CheckCircle2 size={18} /> Ingen åpen Care-oppmerksomhet i dagens data.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {attentionItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.id} href={item.href} className="group flex items-start gap-4 rounded-lg border border-slate-800 bg-slate-950/45 p-4 transition hover:border-amber-500/35 hover:bg-slate-950/70">
+                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-2 text-amber-200"><Icon size={18} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <strong className="text-sm text-white">{item.label}</strong>
+                      <span className="rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-950">{item.count}</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">{item.detail}</p>
+                  </div>
+                  <ChevronRight size={16} className="mt-1 text-slate-600 transition group-hover:text-amber-300" />
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      <section id="care-leads" className="scroll-mt-24 rounded-xl border border-amber-500/20 bg-slate-900/65 p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -351,7 +463,14 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
                 </div>
 
                 <div className="mt-3 space-y-1.5 text-xs text-slate-500">
-                  <p className="truncate"><span className="text-slate-400">Kildeside:</span> {sourcePageLabel(lead.pageUrl)}</p>
+                  <p className="truncate">
+                    <span className="text-slate-400">Kildeside:</span>{" "}
+                    {sourcePageHref(lead.pageUrl) ? (
+                      <a href={sourcePageHref(lead.pageUrl) || undefined} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200">
+                        {sourcePageLabel(lead.pageUrl)} <ExternalLink size={11} />
+                      </a>
+                    ) : sourcePageLabel(lead.pageUrl)}
+                  </p>
                   <p className="truncate"><span className="text-slate-400">Kilde:</span> {lead.source || "Care webskjema"}</p>
                   {(lead.utmSource || lead.utmCampaign) && (
                     <p className="truncate"><span className="text-slate-400">Kampanje:</span> {[lead.utmSource, lead.utmMedium, lead.utmCampaign].filter(Boolean).join(" / ")}</p>
@@ -478,11 +597,39 @@ function CustomersView({ properties }: { properties: CareProperty[] }) {
             <span className="rounded-full bg-slate-800 px-2.5 py-1">Siste tilsyn {dateLabel(property.lastInspectionAt)}</span>
             <span className="rounded-full bg-slate-800 px-2.5 py-1">Neste besøk {dateLabel(property.nextEventAt)}</span>
           </div>
-          {(property.openIssues > 0 || property.openWorkOrders > 0) && (
-            <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
-              {property.openIssues} åpne avvik · {property.openWorkOrders} åpne arbeidsordre
-            </div>
-          )}
+          <div className="mt-4 space-y-2">
+            {!property.contractStatus && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                Ingen aktiv Care-avtale. Velg riktig plan før løpende MRR og tilsyn starter.
+              </div>
+            )}
+            {property.contractStatus && !property.nextEventAt && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                Aktiv avtale uten planlagt neste besøk.
+              </div>
+            )}
+            {property.contractStatus && property.keyCount === 0 && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                Ingen registrert nøkkel. Avklar nøkkelrutine dersom tjenesten krever tilgang.
+              </div>
+            )}
+            {(property.openIssues > 0 || property.openWorkOrders > 0) && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                {property.openIssues} åpne avvik · {property.openWorkOrders} åpne arbeidsordre
+              </div>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/customers/${encodeURIComponent(property.ownerId)}`}>Åpne kundekort</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/care/keys">Nøkler & kalender</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/care/invoices">Faktura & MRR</Link>
+            </Button>
+          </div>
         </article>
       ))}
     </section>

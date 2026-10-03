@@ -29,3 +29,32 @@ test("Care overview surfaces source page, service intent and direct customer car
   assert.match(dashboard, /href=\{lead\.customerHref\}/);
   assert.match(dashboard, /Åpne kundekort/);
 });
+
+
+test("Care overview exposes an operational funnel and daily attention board", () => {
+  assert.match(dashboard, /Dette bør du gjøre i dag/);
+  assert.match(dashboard, /Henvendelse → Care-kunde → avtale → besøk → MRR/);
+  assert.match(dashboard, /dashboard\.lifecycle\.awaitingProperty/);
+  assert.match(dashboard, /dashboard\.lifecycle\.awaitingContract/);
+  assert.match(dashboard, /dashboard\.lifecycle\.propertiesWithoutNextVisit/);
+  assert.match(dashboard, /dashboard\.lifecycle\.propertiesWithoutKey/);
+  assert.match(dashboard, /dashboard\.summary\.monthlyRecurringRevenueCents/);
+  assert.match(dashboard, /id="care-leads"/);
+});
+
+test("Care source page is only linked when it belongs to the Care subdomain", () => {
+  assert.match(dashboard, /url\.hostname === "care\.zenecohomes\.com"/);
+  assert.match(dashboard, /target="_blank"/);
+  assert.match(dashboard, /ExternalLink/);
+});
+
+
+test("Care customer cards expose CRM and operational follow-up links", () => {
+  assert.match(dashboard, /Åpne kundekort/);
+  assert.match(dashboard, /property\.ownerId/);
+  assert.match(dashboard, /Ingen aktiv Care-avtale/);
+  assert.match(dashboard, /Aktiv avtale uten planlagt neste besøk/);
+  assert.match(dashboard, /Ingen registrert nøkkel/);
+  assert.match(dashboard, /Nøkler & kalender/);
+  assert.match(dashboard, /Faktura & MRR/);
+});
