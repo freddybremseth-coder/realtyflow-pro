@@ -39,6 +39,7 @@ import type {
   CarePlan,
   CareProperty,
   CareReport,
+  CareSalesStage,
   CareView,
 } from "@/lib/care/dashboard";
 
@@ -104,6 +105,26 @@ const CARE_SERVICE_LABELS: Record<string, string> = {
 
 function careServiceLabel(value: string) {
   return CARE_SERVICE_LABELS[value] || value || "Keyholding";
+}
+
+const CARE_SALES_STAGE_LABELS: Record<CareSalesStage, string> = {
+  new: "Ny",
+  contacted: "Kontaktet",
+  quote_sent: "Tilbud sendt",
+  waiting_customer: "Venter svar",
+  activated: "Aktivert",
+  not_relevant: "Ikke aktuell",
+};
+
+function careSalesStageLabel(value: CareSalesStage) {
+  return CARE_SALES_STAGE_LABELS[value] || value;
+}
+
+function careSalesStageClass(value: CareSalesStage) {
+  if (value === "activated") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
+  if (value === "quote_sent" || value === "waiting_customer") return "border-cyan-500/30 bg-cyan-500/10 text-cyan-200";
+  if (value === "not_relevant") return "border-slate-700 bg-slate-800 text-slate-400";
+  return "border-amber-500/30 bg-amber-500/10 text-amber-200";
 }
 
 function sourcePageLabel(value: string | null) {
@@ -291,6 +312,94 @@ function CareOnboardingDialog({
   );
 }
 
+
+function CareLeadFollowupDialog({
+  lead,
+  onClose,
+  onSaved,
+}: {
+  lead: CareLead;
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const initialStage = lead.salesStage === "activated" ? "contacted" : lead.salesStage;
+  const [stage, setStage] = useState<Exclude<CareSalesStage, "activated">>(initialStage as Exclude<CareSalesStage, "activated">);
+  const [followUpOn, setFollowUpOn] = useState(lead.followUpOn || "");
+  const [note, setNote] = useState(lead.salesNote || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const needsFollowUp = stage === "quote_sent" || stage === "waiting_customer";
+  const needsReason = stage === "not_relevant";
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/care/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage, followUpOn: followUpOn || null, note }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-oppfølgingen.");
+      await onSaved();
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Kunne ikke oppdatere Care-oppfølgingen.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-10 max-w-xl rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-5 sm:p-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Care salgsoppfølging</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">{lead.contactName}</h2>
+            <p className="mt-1 text-sm text-slate-400">Registrer hvor henvendelsen står og når den skal følges opp. Dette styrer Care-listen og varseltallene.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Lukk</button>
+        </div>
+
+        <form onSubmit={submit} className="space-y-5 p-5 sm:p-6">
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Status</span>
+            <select value={stage} onChange={(event) => setStage(event.target.value as Exclude<CareSalesStage, "activated">)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+              <option value="new">Ny</option>
+              <option value="contacted">Kontaktet</option>
+              <option value="quote_sent">Tilbud sendt</option>
+              <option value="waiting_customer">Venter på kunden</option>
+              <option value="not_relevant">Ikke aktuell</option>
+            </select>
+          </label>
+
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Neste oppfølging {needsFollowUp ? <span className="text-amber-300">*</span> : <span className="text-slate-500">(valgfritt)</span>}</span>
+            <input type="date" required={needsFollowUp} value={followUpOn} onChange={(event) => setFollowUpOn(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+          </label>
+
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Notat {needsReason ? <span className="text-amber-300">*</span> : <span className="text-slate-500">(valgfritt)</span>}</span>
+            <textarea required={needsReason} value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={4} placeholder={needsReason ? "Hvorfor er henvendelsen ikke aktuell?" : "Kort notat om samtalen eller tilbudet"} className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
+          </label>
+
+          {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
+
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-500">Denne handlingen sender ingen e-post. Den oppdaterer kun intern Care-oppfølging.</p>
+            <Button type="submit" disabled={saving || (needsFollowUp && !followUpOn) || (needsReason && !note.trim())}>
+              {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Lagrer …</> : "Lagre oppfølging"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({ title, detail, icon: Icon }: { title: string; detail: string; icon: LucideIcon }) {
   return (
     <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/45 p-8 text-center">
@@ -319,9 +428,11 @@ function StatusBadge({ value }: { value: string }) {
 function CareLeadCard({
   lead,
   onOnboard,
+  onFollowUp,
 }: {
   lead: CareLead;
   onOnboard?: (lead: CareLead) => void;
+  onFollowUp?: (lead: CareLead) => void;
 }) {
   const open = careLeadOpen(lead);
   return (
@@ -331,6 +442,7 @@ function CareLeadCard({
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">{careServiceLabel(lead.serviceIntent)}</span>
             <StatusBadge value={lead.status} />
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${careSalesStageClass(lead.salesStage)}`}>{careSalesStageLabel(lead.salesStage)}</span>
             {lead.pipelineStatus && <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">CRM {lead.pipelineStatus}</span>}
             {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
             {lead.carePropertyId && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">Care-kunde{lead.careContractId ? " + avtale" : ""}</span>}
@@ -358,6 +470,7 @@ function CareLeadCard({
           ) : sourcePageLabel(lead.pageUrl)}
         </p>
         <p className="truncate"><span className="text-slate-400">Kilde:</span> {lead.source || "Care webskjema"}</p>
+        <p className="truncate"><span className="text-slate-400">Oppfølging:</span> {lead.followUpOn ? dateLabel(lead.followUpOn) : "Ikke satt"}</p>
         {(lead.utmSource || lead.utmCampaign) && (
           <p className="truncate"><span className="text-slate-400">Kampanje:</span> {[lead.utmSource, lead.utmMedium, lead.utmCampaign].filter(Boolean).join(" / ")}</p>
         )}
@@ -373,6 +486,9 @@ function CareLeadCard({
         <span className="text-slate-500">{lead.priority} prioritet{lead.careReference ? ` · ${lead.careReference}` : ""}</span>
         <div className="flex flex-wrap gap-2">
           <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
+          {open && !lead.careContractId && onFollowUp && (
+            <button type="button" onClick={() => onFollowUp(lead)} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 font-semibold text-cyan-200 hover:bg-cyan-500/15">Oppfølging</button>
+          )}
           {lead.carePropertyId ? (
             <>
               <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
@@ -393,6 +509,7 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
   const [serviceFilter, setServiceFilter] = useState("all");
   const [openOnly, setOpenOnly] = useState(true);
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
+  const [followupLead, setFollowupLead] = useState<CareLead | null>(null);
 
   const services = useMemo(() => {
     const values = Array.from(new Set(dashboard.leads.map((lead) => lead.serviceIntent).filter(Boolean)));
@@ -419,12 +536,13 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {[
             ["Åpne leads", dashboard.lifecycle.openLeads, "venter på oppfølging"],
             ["Over 24 t", dashboard.summary.staleOpenLeads, "åpne uten ferdigstilling"],
             ["Må kvalifiseres", dashboard.lifecycle.awaitingProperty, "mangler Care-eiendom"],
-            ["Tilbud / avtale", dashboard.lifecycle.awaitingContract, "eiendom finnes, avtale mangler"],
+            ["Tilbud i løp", dashboard.summary.offersInProgress, "tilbud sendt / venter svar"],
+            ["Oppfølging nå", dashboard.summary.followUpsDue, "dato i dag eller passert"],
             ["Aktivert", dashboard.lifecycle.contractedLeads, `${dashboard.lifecycle.leadToContractPercent}% av målte leads`],
           ].map(([label, value, detail]) => (
             <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
@@ -448,7 +566,7 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
         <EmptyState icon={Inbox} title="Ingen leads i dette filteret" detail="Endre tjenestefilteret eller vis ferdige henvendelser." />
       ) : (
         <section className="grid gap-3 xl:grid-cols-2">
-          {filtered.map((lead) => <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} />)}
+          {filtered.map((lead) => <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} onFollowUp={setFollowupLead} />)}
         </section>
       )}
 
@@ -460,6 +578,13 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
           onSaved={onReload}
         />
       )}
+      {followupLead && (
+        <CareLeadFollowupDialog
+          lead={followupLead}
+          onClose={() => setFollowupLead(null)}
+          onSaved={onReload}
+        />
+      )}
     </div>
   );
 }
@@ -468,6 +593,14 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
   const openLeadCount = dashboard.leads.filter(careLeadOpen).length;
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
   const attentionItems = [
+    dashboard.summary.followUpsDue > 0 ? {
+      id: "followups",
+      label: "Følg opp Care-tilbud",
+      detail: "Tilbud eller kundesvar har oppfølgingsdato i dag eller tidligere.",
+      count: dashboard.summary.followUpsDue,
+      href: "/care/leads",
+      icon: MessageSquareText,
+    } : null,
     dashboard.lifecycle.awaitingProperty > 0 ? {
       id: "new-leads",
       label: "Kvalifiser nye Care-henvendelser",
@@ -945,7 +1078,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
 
   const summaryCards = useMemo(() => dashboard ? [
     { label: "Nye henvendelser", value: dashboard.lifecycle.openLeads, icon: Inbox, detail: dashboard.summary.staleOpenLeads ? `${dashboard.summary.staleOpenLeads} over 24 t` : "Ingen gamle åpne leads" },
-    { label: "Tilbud må følges", value: dashboard.lifecycle.awaitingContract, icon: ShieldCheck, detail: "Care-eiendom uten aktiv avtale" },
+    { label: "Tilbud må følges", value: dashboard.summary.followUpsDue, icon: ShieldCheck, detail: `${dashboard.summary.offersInProgress} tilbud / venter svar` },
     { label: "Tilsyn neste 7 dager", value: dashboard.summary.upcomingEvents7d, icon: CalendarCheck2, detail: `${dashboard.summary.upcomingEvents} kommende totalt` },
     { label: "Åpne avvik", value: dashboard.summary.openIssues + dashboard.summary.openWorkOrders, icon: Wrench, detail: "Avvik + arbeidsordre" },
     { label: "MRR Care", value: moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), icon: CircleDollarSign, detail: `${dashboard.summary.activeContracts} aktive avtaler` },
