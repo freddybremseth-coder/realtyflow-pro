@@ -122,7 +122,8 @@ export async function POST(request: NextRequest) {
     if (planError) return NextResponse.json({ error: planError.message }, { status: 400 });
     if (!plan) return NextResponse.json({ error: "Valgt Care-plan er ikke aktiv." }, { status: 400 });
 
-    const monthlyPriceCents = Number(plan.price_cents || 0);
+    const planPrice = Number(plan.price_cents || 0);
+    const monthlyPriceCents = planPrice;
     const serviceIntent = careIntentFrom(metadata);
     const reference = existing?.reference || `CARE-Q-${new Date().getUTCFullYear()}-${workItemId.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
     const propertyId = UUID.test(clean(metadata.care_property_id, 80)) ? clean(metadata.care_property_id, 80) : null;
