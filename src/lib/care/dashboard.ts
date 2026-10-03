@@ -257,6 +257,7 @@ export interface CareLead {
   careQuoteId: string | null;
   careQuoteReference: string | null;
   careQuoteStatus: string | null;
+  careQuotePlanId: string | null;
   careQuotePlanName: string | null;
   careQuoteMonthlyPriceCents: number;
   careQuoteCurrency: string;
@@ -768,6 +769,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       careQuoteId: quote?.id || optionalText(metadata, "care_quote_id"),
       careQuoteReference: quote?.reference || optionalText(metadata, "care_quote_reference"),
       careQuoteStatus: quote?.status || optionalText(metadata, "care_quote_status"),
+      careQuotePlanId: quote?.planId || null,
       careQuotePlanName: quote?.planName || null,
       careQuoteMonthlyPriceCents: quote?.monthlyPriceCents || 0,
       careQuoteCurrency: quote?.currency || "EUR",
