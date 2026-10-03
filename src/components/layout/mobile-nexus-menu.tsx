@@ -85,8 +85,12 @@ export function MobileNexusMenu() {
         <div className="border-b border-slate-700 p-4">
           <div className="grid grid-cols-2 gap-2">
             {CORE.map(({ href, label, Icon }) => {
-              const active = pathname === href || (href !== "/nexus-os" && pathname.startsWith(`${href}/`));
-              return href === "/nexus-os/communications" ? <a key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16} />{label}</a> : <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16} />{label}</Link>;
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}>
+                  <Icon size={16} />{label}
+                </Link>
+              );
             })}
           </div>
         </div>
