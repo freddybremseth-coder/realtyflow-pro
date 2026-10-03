@@ -188,6 +188,18 @@ export interface CareActivity {
   href: string;
 }
 
+export interface CareLifecycle {
+  trackedLeads: number;
+  openLeads: number;
+  awaitingProperty: number;
+  awaitingContract: number;
+  contractedLeads: number;
+  leadToContractPercent: number;
+  propertiesWithoutNextVisit: number;
+  propertiesWithoutKey: number;
+  openOperationalIssues: number;
+}
+
 export interface CareLead {
   id: string;
   contactId: string;
@@ -249,6 +261,7 @@ export interface CareDashboard {
   workOrders: CareWorkOrder[];
   issues: CareIssue[];
   leads: CareLead[];
+  lifecycle: CareLifecycle;
   recentActivity: CareActivity[];
   warnings: string[];
 }
@@ -716,6 +729,28 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     monthlyRecurringRevenueCents: activeContracts.reduce((sum, contract) => sum + contractPriceCents(contract, plansById), 0),
   };
 
+  const trackedLeadCount = rawCareLeadWorkItems.length;
+  const openLeadRows = rawCareLeadWorkItems.filter((row) => isOpen(row.status));
+  const metadataFor = (row: Record<string, unknown>) =>
+    row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+      ? row.metadata as Record<string, unknown>
+      : {};
+  const contractedLeadCount = rawCareLeadWorkItems.filter((row) => Boolean(optionalText(metadataFor(row), "care_contract_id"))).length;
+  const activeCareProperties = properties.filter((property) =>
+    property.contractStatus ? ACTIVE_CONTRACT_STATUSES.has(normalizeStatus(property.contractStatus)) : false
+  );
+  const lifecycle: CareLifecycle = {
+    trackedLeads: trackedLeadCount,
+    openLeads: openLeadRows.length,
+    awaitingProperty: openLeadRows.filter((row) => !optionalText(metadataFor(row), "care_property_id")).length,
+    awaitingContract: openLeadRows.filter((row) => Boolean(optionalText(metadataFor(row), "care_property_id")) && !optionalText(metadataFor(row), "care_contract_id")).length,
+    contractedLeads: contractedLeadCount,
+    leadToContractPercent: trackedLeadCount > 0 ? Math.round((contractedLeadCount / trackedLeadCount) * 100) : 0,
+    propertiesWithoutNextVisit: activeCareProperties.filter((property) => !property.nextEventAt).length,
+    propertiesWithoutKey: activeCareProperties.filter((property) => property.keyCount === 0).length,
+    openOperationalIssues: openIssues + openWorkOrders,
+  };
+
   const readiness: CareReadinessItem[] = [
     {
       id: "schema",
@@ -833,6 +868,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     workOrders: compactRows(workOrders),
     issues: compactRows(issues),
     leads,
+    lifecycle,
     recentActivity,
     warnings: input.warnings || [],
   };
