@@ -61,7 +61,7 @@ export interface TeamWorkloadWorkspace {
   warnings: string[];
 }
 
-export const TEAM_CAPACITY_HIGH_THRESHOLD = 430;
+export const TEAM_CAPACITY_HIGH_THRESHOLD = 400;
 export const TEAM_CAPACITY_BALANCED_THRESHOLD = 150;
 
 export function teamCapacityScore(totalScore: number, responsibilityAreas: number) {
