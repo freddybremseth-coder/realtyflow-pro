@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, KeyRound, LockKeyhole, RefreshCw, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { WORKSPACE_PROGRAM_CATALOG, programPermissions } from "@/lib/workspaces/module-catalog";
+import { WorkspaceTeamResponsibilityPanel } from "@/components/workspaces/team-responsibility-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import { WORKSPACE_ACCESS_PRESETS, workspaceAccessPresetChoice, type WorkspaceAccessPresetId } from "@/lib/workspaces/access-presets";
 import {
@@ -334,6 +335,15 @@ export default function WorkspaceUsersPage() {
   const enabledBrandCount = (snapshot?.brands || []).filter(brand => choices[brand.brandKey]?.enabled).length;
   const selectedPermissionCount = brandAccess().reduce((sum, item) => sum + item.permissions.length, 0);
 
+  function selectUserFromResponsibilityOverview(userId: string) {
+    const user = snapshot?.users.find(item => item.userId === userId);
+    if (!user) return;
+    editUser(user);
+    window.requestAnimationFrame(() => {
+      document.getElementById("workspace-user-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   async function toggleLogin() {
     if (!snapshot || busy) return;
     const enabled = !snapshot.featureEnabled;
@@ -495,6 +505,12 @@ export default function WorkspaceUsersPage() {
     {error && <p role="alert" className="rounded-xl border border-rose-800 bg-rose-950/30 p-4 text-sm text-rose-200">{error}</p>}
     {notice && <p role="status" className="rounded-xl border border-emerald-800 bg-emerald-950/25 p-4 text-sm text-emerald-200">{notice}</p>}
 
+    {snapshot && <WorkspaceTeamResponsibilityPanel
+      brands={snapshot.brands}
+      users={snapshot.users}
+      onSelectUser={selectUserFromResponsibilityOverview}
+    />}
+
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
       <aside className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
         <div className="flex items-center justify-between gap-2">
@@ -524,7 +540,7 @@ export default function WorkspaceUsersPage() {
         </div>
       </aside>
 
-      <main className="space-y-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+      <main id="workspace-user-editor" className="scroll-mt-6 space-y-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold">{selectedUser ? `Rediger ${selectedUser.displayName}` : "Opprett bruker"}</h2>
