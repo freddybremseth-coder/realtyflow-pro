@@ -442,11 +442,36 @@ function StatusBadge({ value }: { value: string }) {
 function CareLeadCard({
   lead,
   onOnboard,
+  onQuote,
+  onChanged,
 }: {
   lead: CareLead;
   onOnboard?: (lead: CareLead) => void;
+  onQuote?: (lead: CareLead) => void;
+  onChanged?: () => Promise<void> | void;
 }) {
   const open = careLeadOpen(lead);
+  const [quoteBusy, setQuoteBusy] = useState("");
+  const [quoteError, setQuoteError] = useState("");
+
+  async function quoteAction(action: "mark_sent" | "accept" | "decline" | "cancel") {
+    setQuoteBusy(action);
+    setQuoteError("");
+    try {
+      const response = await fetch("/api/care/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, workItemId: lead.id, contactId: lead.contactId }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-tilbudet.");
+      await onChanged?.();
+    } catch (actionError) {
+      setQuoteError(actionError instanceof Error ? actionError.message : "Kunne ikke oppdatere Care-tilbudet.");
+    } finally {
+      setQuoteBusy("");
+    }
+  }
   return (
     <article className={`rounded-lg border p-4 transition ${open ? "border-amber-500/20 bg-slate-950/55 hover:border-amber-500/40" : "border-slate-800 bg-slate-950/35 opacity-80"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -457,6 +482,7 @@ function CareLeadCard({
             {lead.pipelineStatus && <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">CRM {lead.pipelineStatus}</span>}
             {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
             {lead.carePropertyId && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">Care-kunde{lead.careContractId ? " + avtale" : ""}</span>}
+            {lead.careQuoteStatus && <StatusBadge value={`tilbud ${lead.careQuoteStatus}`} />}
           </div>
           <h3 className="mt-3 truncate text-base font-semibold text-white">{lead.contactName}</h3>
           <p className="mt-1 truncate text-xs text-slate-400">
@@ -486,6 +512,20 @@ function CareLeadCard({
         )}
       </div>
 
+      {lead.careQuoteStatus && (
+        <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-100/85">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span><strong className="text-cyan-100">{lead.careQuoteReference || "Care-tilbud"}</strong>{lead.careQuotePlanName ? ` · ${lead.careQuotePlanName}` : ""}</span>
+            <strong className="text-white">{moneyFromCents(lead.careQuoteMonthlyPriceCents, lead.careQuoteCurrency)} / mnd</strong>
+          </div>
+          <div className="mt-1 text-cyan-100/60">
+            Status {lead.careQuoteStatus}{lead.careQuoteValidUntil ? ` · gyldig til ${dateLabel(lead.careQuoteValidUntil)}` : ""}{lead.careQuoteSentAt ? ` · sendt ${dateLabel(lead.careQuoteSentAt)}` : ""}
+          </div>
+        </div>
+      )}
+
+      {quoteError && <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">{quoteError}</div>}
+
       {lead.nextAction && (
         <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
           <span className="font-semibold text-amber-200">Neste steg:</span> {lead.nextAction}
@@ -496,16 +536,35 @@ function CareLeadCard({
         <span className="text-slate-500">{lead.priority} prioritet{lead.careReference ? ` · ${lead.careReference}` : ""}</span>
         <div className="flex flex-wrap gap-2">
           <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
-          {lead.carePropertyId ? (
+
+          {!lead.careContractId && onQuote && (!lead.careQuoteStatus || lead.careQuoteStatus === "draft") && (
+            <button type="button" onClick={() => onQuote(lead)} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 font-semibold text-cyan-200 hover:bg-cyan-500/15">
+              {lead.careQuoteStatus === "draft" ? "Rediger tilbud" : "Lag tilbud"}
+            </button>
+          )}
+          {lead.careQuoteStatus === "draft" && (
+            <button type="button" disabled={Boolean(quoteBusy)} onClick={() => quoteAction("mark_sent")} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 font-semibold text-amber-200 disabled:opacity-50">
+              {quoteBusy === "mark_sent" ? "Oppdaterer…" : "Marker sendt"}
+            </button>
+          )}
+          {lead.careQuoteStatus === "sent" && (
             <>
-              <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
-              {!lead.careContractId && onOnboard && (
-                <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver avtale</button>
-              )}
+              <button type="button" disabled={Boolean(quoteBusy)} onClick={() => quoteAction("accept")} className="rounded-lg bg-emerald-400 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50">
+                {quoteBusy === "accept" ? "Oppdaterer…" : "Marker akseptert"}
+              </button>
+              <button type="button" disabled={Boolean(quoteBusy)} onClick={() => quoteAction("decline")} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 disabled:opacity-50">Avslått</button>
             </>
-          ) : onOnboard ? (
-            <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Opprett Care-kunde</button>
-          ) : null}
+          )}
+
+          {lead.carePropertyId && (
+            <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
+          )}
+
+          {!lead.careContractId && lead.careQuoteStatus === "accepted" && onOnboard && (
+            <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">
+              {lead.carePropertyId ? "Aktiver avtale" : "Opprett Care-kunde"}
+            </button>
+          )}
         </div>
       </div>
     </article>
