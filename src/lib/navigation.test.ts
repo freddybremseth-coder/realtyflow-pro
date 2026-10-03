@@ -19,7 +19,7 @@ test("navigation groups every sidebar link exactly once", () => {
   assert.equal(new Set(coverage.sourceHrefs).size, coverage.sourceHrefs.length);
 });
 
-test("owner navigation is organized around nine understandable work areas", () => {
+test("owner navigation exposes the platform apps before advanced work areas", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
@@ -29,11 +29,11 @@ test("owner navigation is organized around nine understandable work areas", () =
   assert.ok(home);
   assert.deepEqual(home.items.slice(0, 6).map((item) => item.href), [
     "/workspaces",
-    "/nexus-os/today",
-    "/nexus-os/focus",
-    "/personal-intelligence",
-    "/nexus-os/inbox",
-    "/nexus-os/communications",
+    "/sales",
+    "/marketing",
+    "/content",
+    "/finance",
+    "/operations",
   ]);
   assert.equal(home.items.some((item) => item.href === "/today"), false);
   assert.equal(sections.flatMap((section) => section.items).some((item) => item.href === "/communications"), false);
@@ -54,6 +54,9 @@ test("role navigation keeps permission boundaries", () => {
   assert.equal(hrefs.includes("/personal-intelligence"), false);
   assert.equal(hrefs.includes("/communications"), true);
   assert.equal(hrefs.includes("/customers"), true);
+  assert.equal(hrefs.includes("/sales"), true);
+  assert.equal(hrefs.includes("/finance"), false);
+  assert.equal(hrefs.includes("/operations"), false);
 });
 
 test("active section follows the simplified information architecture", () => {
@@ -96,11 +99,11 @@ test("owner quick links expose the six daily work surfaces", () => {
   const quick = quickNavigationItems("OWNER", sections, []);
   assert.deepEqual(quick.map((item) => item.href), [
     "/workspaces",
-    "/nexus-os/today",
-    "/customers",
-    "/nexus-os/communications",
-    "/inventory",
-    "/social-automation",
+    "/sales",
+    "/marketing",
+    "/content",
+    "/finance",
+    "/operations",
   ]);
 });
 

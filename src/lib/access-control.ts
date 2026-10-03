@@ -209,6 +209,10 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
 }
 
 export function permissionForNavHref(href: string): AccessPermission | "OWNER_ONLY" | null {
+  if (href === "/sales") return "revenue.read";
+  if (href === "/marketing" || href === "/content") return "marketing.read";
+  if (href === "/finance") return "finance.read";
+  if (href === "/operations") return "OWNER_ONLY";
   if (href === "/workspace-users" || href === "/access-control" || href === "/platform") return "OWNER_ONLY";
   if (href === "/audit-log") return "audit.read";
   if (href === "/team-workload") return "revenue.read";
