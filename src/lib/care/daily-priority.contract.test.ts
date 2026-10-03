@@ -71,3 +71,13 @@ test("Care overview connects SEO AEO GEO attribution to contracts", () => {
   assert.match(source, /lead → avtale/);
   assert.match(source, /Ingen søkeord eller full referrer lagres her/);
 });
+
+
+test("Care quote status captures plan and reuses it during onboarding", () => {
+  assert.match(source, /Tilbudt Care-plan/);
+  assert.match(source, /quotePlanId/);
+  assert.match(source, /plans\.filter\(\(plan\) => plan\.active\)/);
+  assert.match(source, /useState\(lead\.quotePlanId \|\| ""\)/);
+  assert.match(source, /<strong>Tilbud:<\/strong>/);
+  assert.match(source, /quotePriceCents/);
+});
