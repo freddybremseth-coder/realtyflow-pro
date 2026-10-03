@@ -22,6 +22,7 @@ export interface CareSummary {
   upcomingEvents7d: number;
   staleOpenLeads: number;
   offersInProgress: number;
+  quotedMonthlyRevenueCents: number;
   followUpsDue: number;
   openCharges: number;
   draftInvoices: number;
@@ -772,6 +773,9 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
   const offersInProgress = leads.filter((lead) =>
     isOpen(lead.status) && (lead.salesStage === "quote_sent" || lead.salesStage === "waiting_customer")
   ).length;
+  const quotedMonthlyRevenueCents = leads
+    .filter((lead) => isOpen(lead.status) && (lead.salesStage === "quote_sent" || lead.salesStage === "waiting_customer"))
+    .reduce((sum, lead) => sum + Math.max(0, lead.quotePriceCents || 0), 0);
   const followUpsDue = leads.filter((lead) =>
     isOpen(lead.status)
     && Boolean(lead.followUpOn)
@@ -802,6 +806,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     upcomingEvents7d,
     staleOpenLeads,
     offersInProgress,
+    quotedMonthlyRevenueCents,
     followUpsDue,
     openCharges,
     draftInvoices,
