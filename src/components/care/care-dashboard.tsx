@@ -72,6 +72,22 @@ function dateLabel(value: string | null) {
   }).format(date);
 }
 
+function careStatusOpen(status: string) {
+  return !["closed", "completed", "done", "cancelled", "canceled", "paid", "void", "archived"].includes(String(status || "").toLowerCase());
+}
+
+function careOperationalDateScore(value: string | null) {
+  if (!value) return 25;
+  const at = new Date(value).getTime();
+  if (!Number.isFinite(at)) return 25;
+  const hours = (at - Date.now()) / 3_600_000;
+  if (hours <= 0) return 120;
+  if (hours <= 24) return 110;
+  if (hours <= 72) return 90;
+  if (hours <= 168) return 65;
+  return 25;
+}
+
 function statusClass(status: string) {
   const normalized = status.toLowerCase();
   if (["active", "ok", "sent", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
@@ -653,6 +669,58 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       || new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
   const [followupLead, setFollowupLead] = useState<CareLead | null>(null);
+
+  const propertyById = new Map(dashboard.properties.map((property) => [property.id, property]));
+  const sevenDaysFromNow = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const operationalQueue = [
+    ...dashboard.calendarEvents
+      .filter((event) => {
+        const at = event.startsAt ? new Date(event.startsAt).getTime() : 0;
+        return careStatusOpen(event.status) && at >= Date.now() && at <= sevenDaysFromNow;
+      })
+      .map((event) => ({
+        id: `event:${event.id}`,
+        kind: "Tilsyn / kalender",
+        label: event.title,
+        propertyId: event.propertyId,
+        propertyLabel: event.propertyLabel,
+        detail: `Planlagt ${dateLabel(event.startsAt)} · ${event.status}`,
+        href: "/care/keys",
+        score: careOperationalDateScore(event.startsAt) + 20,
+        icon: CalendarCheck2 as LucideIcon,
+      })),
+    ...dashboard.issues
+      .filter((issue) => careStatusOpen(issue.status))
+      .map((issue) => {
+        const severity = issue.severity.toLowerCase();
+        const severityScore = severity === "critical" ? 140 : severity === "high" ? 115 : severity === "medium" ? 80 : 50;
+        return {
+          id: `issue:${issue.id}`,
+          kind: "Avvik",
+          label: issue.title,
+          propertyId: issue.propertyId,
+          propertyLabel: issue.propertyLabel,
+          detail: `${issue.severity} · åpnet ${dateLabel(issue.openedAt)}`,
+          href: "/care/customers",
+          score: severityScore,
+          icon: AlertTriangle as LucideIcon,
+        };
+      }),
+    ...dashboard.workOrders
+      .filter((order) => careStatusOpen(order.status))
+      .map((order) => ({
+        id: `work:${order.id}`,
+        kind: "Arbeidsordre",
+        label: order.description || order.reference || "Arbeidsordre",
+        propertyId: order.propertyId,
+        propertyLabel: order.propertyLabel,
+        detail: `${order.status} · ${order.scheduledFor ? `planlagt ${dateLabel(order.scheduledFor)}` : "dato ikke satt"}`,
+        href: "/care/customers",
+        score: careOperationalDateScore(order.scheduledFor) + 10,
+        icon: Wrench as LucideIcon,
+      })),
+  ].sort((a, b) => b.score - a.score || a.propertyLabel.localeCompare(b.propertyLabel, "nb"));
+
   const attentionItems = [
     dashboard.summary.followUpsDue > 0 ? {
       id: "followups",
@@ -790,6 +858,52 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
           </div>
         )}
       </section>
+      <section className="rounded-xl border border-slate-800 bg-slate-900/65 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Operativ Care-kø</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Besøk, avvik og arbeidsordre som kommer først</h2>
+            <p className="mt-1 text-sm text-slate-400">Kritiske avvik og forfalte/nære oppgaver prioriteres automatisk. Klikk kundekortet for kontekst før du handler.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/care/keys" className="text-xs font-semibold text-cyan-300 hover:text-cyan-200">Kalender →</Link>
+            <Link href="/care/customers" className="text-xs font-semibold text-cyan-300 hover:text-cyan-200">Eiendommer →</Link>
+          </div>
+        </div>
+
+        {operationalQueue.length === 0 ? (
+          <div className="mt-4 flex items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm text-emerald-200">
+            <CheckCircle2 size={18} /> Ingen kommende tilsyn, åpne avvik eller arbeidsordre krever plass i køen nå.
+          </div>
+        ) : (
+          <div className="mt-4 divide-y divide-slate-800 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/45">
+            {operationalQueue.slice(0, 8).map((item) => {
+              const Icon = item.icon;
+              const property = propertyById.get(item.propertyId);
+              return (
+                <div key={item.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-2 text-cyan-200"><Icon size={17} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{item.kind}</span>
+                      <strong className="truncate text-sm text-white">{item.propertyLabel}</strong>
+                    </div>
+                    <p className="mt-1 truncate text-sm text-slate-300">{item.label}</p>
+                    <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {property?.ownerId && (
+                      <Link href={`/customers/${encodeURIComponent(property.ownerId)}`} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Kundekort</Link>
+                    )}
+                    <Link href={item.href} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/15">Åpne Care</Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <section id="care-leads" className="scroll-mt-24 rounded-xl border border-amber-500/20 bg-slate-900/65 p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
