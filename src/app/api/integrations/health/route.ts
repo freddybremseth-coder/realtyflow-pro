@@ -1,3 +1,4 @@
+import { isExpectedChannelSharing } from "@/lib/oauth/channel-sharing";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { getDecryptedTokens } from "@/lib/oauth/channels";
@@ -129,6 +130,7 @@ function routingIssuesFor(channels: ChannelRow[]): RoutingIssue[] {
   for (const list of byExternal.values()) {
     const brands = [...new Set(list.map((channel) => channel.brand_id))];
     if (brands.length <= 1) continue;
+    if (isExpectedChannelSharing(list)) continue;
     const youtube = list[0].platform === "youtube";
     issues.push({
       code: "shared_external_account",

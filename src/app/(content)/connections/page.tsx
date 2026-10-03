@@ -173,7 +173,7 @@ export default function ChannelConnectionsPage() {
       {routingIssues.length > 0 && (
         <section className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-5 text-rose-950">
           <div className="text-xs font-black uppercase tracking-[0.2em]">Routing needs attention</div>
-          <h2 className="mt-1 text-xl font-black">Autopilot will fail closed on ambiguous/wrong channel bindings</h2>
+          <h2 className="mt-1 text-xl font-black">{routingIssues.some((issue) => issue.severity === "error") ? "Autopilot er blokkert for kanalene med rutingfeil" : "Kontroller deling av kontoer mellom brands"}</h2>
           <div className="mt-3 space-y-2">
             {routingIssues.map((issue, index) => (
               <div key={`${issue.code}-${issue.platform}-${issue.externalId}-${index}`} className="rounded-xl border border-rose-200 bg-white/70 p-3 text-sm">
@@ -225,7 +225,7 @@ export default function ChannelConnectionsPage() {
                       <a href={brand.website} target="_blank" rel="noreferrer" className="mt-1 block text-xs font-bold text-cyan-800">{brand.website.replace(/^https?:\/\//, "")}</a>
                       {brand.id === "freddyart" && (
                         <p className="mt-2 max-w-xs rounded-lg border border-pink-200 bg-pink-50 p-2 text-xs font-semibold leading-5 text-pink-950">
-                          Koble til din egen kunst-Instagram. Velg Facebook-siden som faktisk er lenket til kunstkontoen i Meta. RealtyFlow registrerer <strong>bare Instagram</strong> under Art, ikke din profesjonelle Facebook-samleside. Art Lounge Reels forblir av til en ekte publiseringstest er godkjent.
+                          Art bruker de delte profesjonelle Freddy Bremseth-kanalene for Facebook og Instagram, slik brand-registeret er konfigurert. Innhold og attribusjon holdes adskilt per brand. Art Lounge Reels krever fortsatt godkjent publiseringstest.
                         </p>
                       )}
                       {state?.error && <div className="mt-2 text-xs font-semibold text-rose-800">{state.error}</div>}
