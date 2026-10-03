@@ -339,14 +339,27 @@ test("Care service demand separates intents and flags stale open leads", () => {
         source_id: "contact-1",
         status: "TO_DO",
         created_at: "2026-10-01T08:00:00.000Z",
-        metadata: { segment: "care", service_intent: "boligtilsyn", request_type: "care-boligtilsyn" },
+        metadata: {
+          segment: "care",
+          service_intent: "boligtilsyn",
+          request_type: "care-boligtilsyn",
+          care_sales_stage: "quote_sent",
+          care_follow_up_on: "2026-10-03",
+          care_sales_note: "Tilbud sendt på e-post.",
+        },
       },
       {
         id: "lead-new-open",
         source_id: "contact-2",
         status: "TO_DO",
         created_at: "2026-10-03T11:00:00.000Z",
-        metadata: { segment: "care", service_intent: "klargjoring", request_type: "care-klargjoring" },
+        metadata: {
+          segment: "care",
+          service_intent: "klargjoring",
+          request_type: "care-klargjoring",
+          care_sales_stage: "waiting_customer",
+          care_follow_up_on: "2026-10-05",
+        },
       },
       {
         id: "lead-contracted",
@@ -370,8 +383,13 @@ test("Care service demand separates intents and flags stale open leads", () => {
   });
 
   assert.equal(dashboard.summary.staleOpenLeads, 1);
+  assert.equal(dashboard.summary.offersInProgress, 2);
+  assert.equal(dashboard.summary.followUpsDue, 1);
   assert.equal(dashboard.lifecycle.openLeads, 2);
   assert.equal(dashboard.serviceDemand.length, 2);
+  assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.salesStage, "quote_sent");
+  assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.followUpOn, "2026-10-03");
+  assert.equal(dashboard.leads.find((lead) => lead.id === "lead-contracted")?.salesStage, "activated");
   const boligtilsyn = dashboard.serviceDemand.find((item) => item.serviceIntent === "boligtilsyn");
   const klargjoring = dashboard.serviceDemand.find((item) => item.serviceIntent === "klargjoring");
   assert.equal(boligtilsyn?.trackedLeads, 2);
