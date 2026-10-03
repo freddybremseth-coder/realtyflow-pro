@@ -87,9 +87,11 @@ function load(score: number, responsibilityAreas: number): TeamMemberWorkload["l
   return "LIGHT";
 }
 
-function weekBounds(now: Date, index: number) {
-  const start = new Date(now.getTime() + index * 7 * 24 * 60 * 60 * 1000);
-  const end = new Date(now.getTime() + Math.min(30, (index + 1) * 7) * 24 * 60 * 60 * 1000);
+function weekBounds(now: Date, index: number, horizonDays: number) {
+  const startDay = index * 7;
+  const endDay = index === 3 ? horizonDays : Math.min(horizonDays, (index + 1) * 7);
+  const start = new Date(now.getTime() + startDay * 24 * 60 * 60 * 1000);
+  const end = new Date(now.getTime() + endDay * 24 * 60 * 60 * 1000);
   return { start, end };
 }
 
@@ -200,14 +202,14 @@ export function buildTeamCapacityTrend(
 ): TeamCapacityTrend {
   const now = options.now || new Date();
   const horizonDays = Math.max(21, Math.min(30, options.horizonDays ?? 30));
-  const weekCount = Math.ceil(horizonDays / 7);
+  const weekCount = 4;
 
   const members = team.members.map(member => {
     const baseline = member.responsibilityAreas * 30;
     const weeks: TeamCapacityTrendWeek[] = [];
 
     for (let index = 0; index < weekCount; index += 1) {
-      const { start, end } = weekBounds(now, index);
+      const { start, end } = weekBounds(now, index, horizonDays);
       const kinds = emptyKinds();
       let score = baseline;
       let driverCount = 0;
