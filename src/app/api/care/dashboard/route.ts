@@ -75,7 +75,7 @@ async function loadCareLeadContext(supabase: any, warnings: string[]) {
     .eq("brand_id", "zeneco")
     .eq("source_type", "website_lead")
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(500);
 
   if (workItemsError) {
     warnings.push(`Care leads: ${workItemsError.message}`);
@@ -92,7 +92,7 @@ async function loadCareLeadContext(supabase: any, warnings: string[]) {
         || requestType.startsWith("care-")
         || nextAction.includes("zen eco homes care");
     })
-    .slice(0, 50);
+    .slice(0, 100);
 
   const contactIds = Array.from(new Set(
     workItems
@@ -106,7 +106,7 @@ async function loadCareLeadContext(supabase: any, warnings: string[]) {
     .from("contacts")
     .select("id,name,email,phone,pipeline_status,source,brand_id,created_at,updated_at")
     .in("id", contactIds)
-    .limit(100);
+    .limit(200);
 
   if (contactsError) {
     warnings.push(`Care lead contacts: ${contactsError.message}`);
