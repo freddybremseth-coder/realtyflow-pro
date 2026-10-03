@@ -20,6 +20,7 @@ export type WorkspaceTeamMembership = {
 export type WorkspaceTeamUser = {
   userId: string;
   displayName: string;
+  email?: string;
   status: "active" | "disabled";
   expired: boolean;
   accountKind: "staff" | "external";
