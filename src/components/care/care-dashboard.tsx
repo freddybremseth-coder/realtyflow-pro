@@ -44,6 +44,7 @@ import type {
 
 const VIEW_TABS: Array<{ id: CareView; label: string; href: string; icon: LucideIcon }> = [
   { id: "overview", label: "Oversikt", href: "/care", icon: Gauge },
+  { id: "leads", label: "Leads & tilbud", href: "/care/leads", icon: Inbox },
   { id: "customers", label: "Kunder & eiendommer", href: "/care/customers", icon: Users },
   { id: "reports", label: "Rapporter & bilder", href: "/care/reports", icon: Image },
   { id: "invoices", label: "Faktura & tillegg", href: "/care/invoices", icon: FileSpreadsheet },
@@ -67,6 +68,17 @@ function dateLabel(value: string | null) {
     month: "short",
     year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
   }).format(date);
+}
+
+function leadAgeLabel(value: string | null) {
+  if (!value) return "ukjent alder";
+  const created = new Date(value).getTime();
+  if (!Number.isFinite(created)) return "ukjent alder";
+  const hours = Math.max(0, Math.floor((Date.now() - created) / 3_600_000));
+  if (hours < 1) return "nylig";
+  if (hours < 24) return `${hours} t siden`;
+  const days = Math.floor(hours / 24);
+  return `${days} d siden`;
 }
 
 function statusClass(status: string) {
@@ -315,6 +327,154 @@ function StatusBadge({ value }: { value: string }) {
   return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase ${statusClass(value)}`}>{value}</span>;
 }
 
+function CareLeadCard({
+  lead,
+  onOnboard,
+}: {
+  lead: CareLead;
+  onOnboard?: (lead: CareLead) => void;
+}) {
+  const open = careLeadOpen(lead);
+  return (
+    <article className={`rounded-lg border p-4 transition ${open ? "border-amber-500/20 bg-slate-950/55 hover:border-amber-500/40" : "border-slate-800 bg-slate-950/35 opacity-80"}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">{careServiceLabel(lead.serviceIntent)}</span>
+            <StatusBadge value={lead.status} />
+            {lead.pipelineStatus && <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">CRM {lead.pipelineStatus}</span>}
+            {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
+            {lead.carePropertyId && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">Care-kunde{lead.careContractId ? " + avtale" : ""}</span>}
+          </div>
+          <h3 className="mt-3 truncate text-base font-semibold text-white">{lead.contactName}</h3>
+          <p className="mt-1 truncate text-xs text-slate-400">
+            {[lead.email, lead.phone].filter(Boolean).join(" · ") || "Kontaktdata ligger i kundekortet"}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <span className="block text-xs text-slate-500">{dateLabel(lead.createdAt)}</span>
+          <span className={`mt-1 block text-[11px] ${open && lead.createdAt && Date.now() - new Date(lead.createdAt).getTime() > 86_400_000 ? "font-semibold text-amber-300" : "text-slate-600"}`}>{leadAgeLabel(lead.createdAt)}</span>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-1.5 text-xs text-slate-500 sm:grid-cols-2">
+        <p className="truncate"><span className="text-slate-400">Område:</span> {lead.preferredArea || "Ikke oppgitt"}</p>
+        <p className="truncate"><span className="text-slate-400">Boligtype:</span> {lead.propertyType || "Ikke oppgitt"}</p>
+        <p className="truncate sm:col-span-2">
+          <span className="text-slate-400">Kildeside:</span>{" "}
+          {sourcePageHref(lead.pageUrl) ? (
+            <a href={sourcePageHref(lead.pageUrl) || undefined} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200">
+              {sourcePageLabel(lead.pageUrl)} <ExternalLink size={11} />
+            </a>
+          ) : sourcePageLabel(lead.pageUrl)}
+        </p>
+        <p className="truncate"><span className="text-slate-400">Kilde:</span> {lead.source || "Care webskjema"}</p>
+        {(lead.utmSource || lead.utmCampaign) && (
+          <p className="truncate"><span className="text-slate-400">Kampanje:</span> {[lead.utmSource, lead.utmMedium, lead.utmCampaign].filter(Boolean).join(" / ")}</p>
+        )}
+      </div>
+
+      {lead.nextAction && (
+        <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
+          <span className="font-semibold text-amber-200">Neste steg:</span> {lead.nextAction}
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3 text-xs">
+        <span className="text-slate-500">{lead.priority} prioritet{lead.careReference ? ` · ${lead.careReference}` : ""}</span>
+        <div className="flex flex-wrap gap-2">
+          <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
+          {lead.carePropertyId ? (
+            <>
+              <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
+              {!lead.careContractId && onOnboard && (
+                <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver avtale</button>
+              )}
+            </>
+          ) : onOnboard ? (
+            <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Opprett Care-kunde</button>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onReload: () => Promise<void> | void }) {
+  const [serviceFilter, setServiceFilter] = useState("all");
+  const [openOnly, setOpenOnly] = useState(true);
+  const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
+
+  const services = useMemo(() => {
+    const values = Array.from(new Set(dashboard.leads.map((lead) => lead.serviceIntent).filter(Boolean)));
+    return values.sort((a, b) => careServiceLabel(a).localeCompare(careServiceLabel(b), "nb"));
+  }, [dashboard.leads]);
+
+  const filtered = useMemo(() => dashboard.leads.filter((lead) => {
+    if (openOnly && !careLeadOpen(lead)) return false;
+    return serviceFilter === "all" || lead.serviceIntent === serviceFilter;
+  }), [dashboard.leads, openOnly, serviceFilter]);
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-xl border border-slate-800 bg-slate-900/65 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Care pipeline</p>
+            <h2 className="mt-1 text-xl font-semibold text-white">Leads & tilbud</h2>
+            <p className="mt-1 text-sm text-slate-400">Fra første Care-henvendelse til eiendom og aktiv avtale. Åpne kundekortet før du endrer Care-status.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline"><Link href="/customers?tab=leads">Åpne alle CRM-leads</Link></Button>
+            <Button onClick={() => onReload()} variant="outline"><RefreshCw size={15} className="mr-2" />Oppdater</Button>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            ["Åpne leads", dashboard.lifecycle.openLeads, "venter på oppfølging"],
+            ["Over 24 t", dashboard.summary.staleOpenLeads, "åpne uten ferdigstilling"],
+            ["Må kvalifiseres", dashboard.lifecycle.awaitingProperty, "mangler Care-eiendom"],
+            ["Tilbud / avtale", dashboard.lifecycle.awaitingContract, "eiendom finnes, avtale mangler"],
+            ["Aktivert", dashboard.lifecycle.contractedLeads, `${dashboard.lifecycle.leadToContractPercent}% av målte leads`],
+          ].map(([label, value, detail]) => (
+            <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+              <strong className="mt-1 block text-2xl text-white">{value}</strong>
+              <p className="mt-1 text-xs text-slate-500">{detail}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-4">
+          <button type="button" onClick={() => setServiceFilter("all")} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${serviceFilter === "all" ? "border-amber-400 bg-amber-400 text-slate-950" : "border-slate-700 text-slate-300 hover:bg-slate-800"}`}>Alle tjenester</button>
+          {services.map((service) => (
+            <button key={service} type="button" onClick={() => setServiceFilter(service)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${serviceFilter === service ? "border-amber-400 bg-amber-400 text-slate-950" : "border-slate-700 text-slate-300 hover:bg-slate-800"}`}>{careServiceLabel(service)}</button>
+          ))}
+          <label className="ml-auto flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} />Kun åpne</label>
+        </div>
+      </section>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={Inbox} title="Ingen leads i dette filteret" detail="Endre tjenestefilteret eller vis ferdige henvendelser." />
+      ) : (
+        <section className="grid gap-3 xl:grid-cols-2">
+          {filtered.map((lead) => <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} />)}
+        </section>
+      )}
+
+      {onboardingLead && (
+        <CareOnboardingDialog
+          lead={onboardingLead}
+          plans={dashboard.plans}
+          onClose={() => setOnboardingLead(null)}
+          onSaved={onReload}
+        />
+      )}
+    </div>
+  );
+}
+
 function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onReload: () => Promise<void> | void }) {
   const openLeadCount = dashboard.leads.filter(careLeadOpen).length;
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
@@ -389,6 +549,31 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         </div>
       </section>
 
+      {dashboard.serviceDemand.length > 0 && (
+        <section className="rounded-xl border border-slate-800 bg-slate-900/65 p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Etterspørsel</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Hva kundene spør om</h2>
+              <p className="mt-1 text-sm text-slate-400">Care-intent fra skjema og CRM. Bruk dette til å se hvilke tjenester som faktisk skaper henvendelser og avtaler.</p>
+            </div>
+            <Link href="/care/leads" className="text-xs font-semibold text-cyan-300 hover:text-cyan-200">Se alle leads →</Link>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {dashboard.serviceDemand.map((item) => (
+              <article key={item.serviceIntent} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
+                <p className="text-sm font-semibold text-white">{careServiceLabel(item.serviceIntent)}</p>
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <div><strong className="text-2xl text-white">{item.trackedLeads}</strong><p className="text-[11px] text-slate-500">henvendelser</p></div>
+                  <div className="text-right"><strong className="text-lg text-amber-200">{item.openLeads}</strong><p className="text-[11px] text-slate-500">åpne</p></div>
+                </div>
+                <div className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-500">{item.contractedLeads} avtaler · {item.leadToContractPercent}% konvertering</div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="rounded-xl border border-slate-800 bg-slate-900/65 p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -441,65 +626,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         ) : (
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
             {dashboard.leads.slice(0, 8).map((lead) => (
-              <article
-                key={lead.id}
-                className="rounded-lg border border-slate-800 bg-slate-950/45 p-4 transition hover:border-amber-500/35 hover:bg-slate-950/70"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">{careServiceLabel(lead.serviceIntent)}</span>
-                      <StatusBadge value={lead.status} />
-                      {lead.pipelineStatus && <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">CRM {lead.pipelineStatus}</span>}
-                      {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
-                      {lead.carePropertyId && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">Care-kunde{lead.careContractId ? " + avtale" : ""}</span>}
-                    </div>
-                    <h3 className="mt-3 truncate text-base font-semibold text-white">{lead.contactName}</h3>
-                    <p className="mt-1 truncate text-xs text-slate-400">
-                      {[lead.email, lead.phone].filter(Boolean).join(" · ") || "Kontaktdata ligger i kundekortet"}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs text-slate-500">{dateLabel(lead.createdAt)}</span>
-                </div>
-
-                <div className="mt-3 space-y-1.5 text-xs text-slate-500">
-                  <p className="truncate">
-                    <span className="text-slate-400">Kildeside:</span>{" "}
-                    {sourcePageHref(lead.pageUrl) ? (
-                      <a href={sourcePageHref(lead.pageUrl) || undefined} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200">
-                        {sourcePageLabel(lead.pageUrl)} <ExternalLink size={11} />
-                      </a>
-                    ) : sourcePageLabel(lead.pageUrl)}
-                  </p>
-                  <p className="truncate"><span className="text-slate-400">Kilde:</span> {lead.source || "Care webskjema"}</p>
-                  {(lead.utmSource || lead.utmCampaign) && (
-                    <p className="truncate"><span className="text-slate-400">Kampanje:</span> {[lead.utmSource, lead.utmMedium, lead.utmCampaign].filter(Boolean).join(" / ")}</p>
-                  )}
-                </div>
-
-                {lead.nextAction && (
-                  <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
-                    <span className="font-semibold text-amber-200">Neste steg:</span> {lead.nextAction}
-                  </div>
-                )}
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3 text-xs">
-                  <span className="text-slate-500">{lead.priority} prioritet{lead.careReference ? ` · ${lead.careReference}` : ""}</span>
-                  <div className="flex flex-wrap gap-2">
-                    <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
-                    {lead.carePropertyId ? (
-                      <>
-                        <Link href="/care/customers" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
-                        {!lead.careContractId && (
-                          <button type="button" onClick={() => setOnboardingLead(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver avtale</button>
-                        )}
-                      </>
-                    ) : (
-                      <button type="button" onClick={() => setOnboardingLead(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Opprett Care-kunde</button>
-                    )}
-                  </div>
-                </div>
-              </article>
+              <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} />
             ))}
           </div>
         )}
@@ -828,13 +955,11 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
   }, []);
 
   const summaryCards = useMemo(() => dashboard ? [
-    { label: "Nye henvendelser", value: dashboard.leads.filter(careLeadOpen).length, icon: Inbox, detail: `${dashboard.leads.length} Care-leads totalt` },
-    { label: "Care-kunder", value: dashboard.summary.customers, icon: Users, detail: `${dashboard.summary.properties} eiendommer` },
-    { label: "Aktive avtaler", value: dashboard.summary.activeContracts, icon: ShieldCheck, detail: moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents) },
-    { label: "Rapporter", value: dashboard.summary.draftReports, icon: ClipboardCheck, detail: `${dashboard.summary.photos} bilder` },
-    { label: "Faktura", value: dashboard.summary.draftInvoices, icon: FileSpreadsheet, detail: moneyFromCents(dashboard.summary.invoiceTotalCents) },
-    { label: "Nøkler", value: dashboard.summary.keys, icon: KeyRound, detail: `${dashboard.summary.upcomingEvents} kommende` },
-    { label: "Avvik", value: dashboard.summary.openIssues + dashboard.summary.openWorkOrders, icon: Wrench, detail: "Åpne saker" },
+    { label: "Nye henvendelser", value: dashboard.lifecycle.openLeads, icon: Inbox, detail: dashboard.summary.staleOpenLeads ? `${dashboard.summary.staleOpenLeads} over 24 t` : "Ingen gamle åpne leads" },
+    { label: "Tilbud må følges", value: dashboard.lifecycle.awaitingContract, icon: ShieldCheck, detail: "Care-eiendom uten aktiv avtale" },
+    { label: "Tilsyn neste 7 dager", value: dashboard.summary.upcomingEvents7d, icon: CalendarCheck2, detail: `${dashboard.summary.upcomingEvents} kommende totalt` },
+    { label: "Åpne avvik", value: dashboard.summary.openIssues + dashboard.summary.openWorkOrders, icon: Wrench, detail: "Avvik + arbeidsordre" },
+    { label: "MRR Care", value: moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), icon: CircleDollarSign, detail: `${dashboard.summary.activeContracts} aktive avtaler` },
   ] : [], [dashboard]);
 
   const warnings = dashboard?.warnings || [];
@@ -893,11 +1018,12 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
         </div>
       ) : dashboard ? (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {summaryCards.map((card) => <MetricCard key={card.label} {...card} />)}
           </section>
 
           {initialView === "overview" && <Overview dashboard={dashboard} onReload={load} />}
+          {initialView === "leads" && <LeadsView dashboard={dashboard} onReload={load} />}
           {initialView === "customers" && <CustomersView properties={dashboard.properties} />}
           {initialView === "reports" && <ReportsView inspections={dashboard.inspections} reports={dashboard.reports} photos={dashboard.photos} />}
           {initialView === "invoices" && <InvoicesView invoices={dashboard.invoices} charges={dashboard.charges} plans={dashboard.plans} />}
