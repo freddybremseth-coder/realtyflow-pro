@@ -358,7 +358,7 @@ export function buildExecutiveBriefing(input: ExecutiveBriefingInput): Executive
   const overloaded = input.team.members.filter((member) => member.load === "HIGH").length;
   const forecast = input.capacityForecast;
   const trend = input.capacityTrend;
-  const capacityHighlights: ExecutiveBriefing["capacity"]["highlights"] = [];
+  const capacityHighlights: NonNullable<ExecutiveBriefing["capacity"]>["highlights"] = [];
 
   for (const member of (forecast?.riskMembers || []).slice(0, 3)) {
     capacityHighlights.push({
