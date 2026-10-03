@@ -6,6 +6,7 @@ import {
   OPERATING_DECISION_STATUSES,
   OPERATING_REVIEW_SETTINGS_KEY,
   buildOperatingReviewJournal,
+  buildCapacityDecisionEffects,
   canWriteOperatingReview,
   compactOperatingReviewEvents,
   createOperatingReviewSnapshot,
@@ -133,9 +134,11 @@ export async function GET(request: NextRequest) {
   ]);
   if (stored.error) return NextResponse.json({ error: stored.error, journal: null }, { status: 500 });
   const journal = buildOperatingReviewJournal(stored.settings, session.role);
+  const capacityDecisionEffects = buildCapacityDecisionEffects(journal, current.briefing);
   return NextResponse.json({
     journal,
     currentBriefing: current.briefing,
+    capacityDecisionEffects,
     currentBriefingWarning: current.error,
     user: { email: session.email, role: session.role },
     canWrite: canWriteOperatingReview(session.role),
