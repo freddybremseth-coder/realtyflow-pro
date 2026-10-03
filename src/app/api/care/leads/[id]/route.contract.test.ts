@@ -27,3 +27,15 @@ test("Care lead follow-up cannot override an activated contract", () => {
   assert.match(route, /allerede aktivert/);
   assert.match(route, /status = stage === "not_relevant" \? "CANCELLED"/);
 });
+
+
+test("Care quote follow-up stores a validated plan snapshot", () => {
+  assert.match(route, /quotePlanId/);
+  assert.match(route, /supabase\.schema\("care"\)/);
+  assert.match(route, /\.from\("kh_plans"\)/);
+  assert.match(route, /care_quote_plan_id/);
+  assert.match(route, /care_quote_plan_name/);
+  assert.match(route, /care_quote_price_cents/);
+  assert.match(route, /care_quote_currency/);
+  assert.match(route, /Velg Care-planen tilbudet gjelder/);
+});
