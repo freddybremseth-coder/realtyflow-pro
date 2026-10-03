@@ -1,16 +1,11 @@
-export type FinanceEvent = {
-  id?: string | null;
-  brand_id?: string | null;
-  source_type?: string | null;
-  source_id?: string | null;
-  stream?: string | null;
-  direction?: string | null;
-  status?: string | null;
-  amount?: number | string | null;
-  currency?: string | null;
-  event_date?: string | null;
-  description?: string | null;
-};
+import {
+  financeCurrency,
+  financeDateOnly,
+  financeMoney,
+  type BusinessFinancialEventRow,
+} from "@/lib/shared-core/finance";
+
+export type FinanceEvent = BusinessFinancialEventRow;
 
 export type BillingDocumentRow = {
   id?: string | null;
@@ -57,20 +52,6 @@ export type FinanceOverview = {
   latestEventDate: string | null;
 };
 
-function numberValue(value: unknown) {
-  const parsed = Number(value || 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function currency(value: unknown) {
-  return String(value || "EUR").trim().toUpperCase() || "EUR";
-}
-
-function dateOnly(value: unknown) {
-  const raw = String(value || "").trim();
-  return raw ? raw.slice(0, 10) : null;
-}
-
 function ensureCurrency(target: FinanceOverview["currencies"], code: string) {
   target[code] ||= {
     income: 0,
@@ -101,12 +82,12 @@ export function buildFinanceOverview(params: {
   let latestEventDate: string | null = null;
 
   for (const event of events) {
-    const amount = numberValue(event.amount);
-    const code = currency(event.currency);
+    const amount = financeMoney(event.amount);
+    const code = financeCurrency(event.currency);
     const bucket = ensureCurrency(currencies, code);
     const direction = String(event.direction || "").toLowerCase();
     const status = String(event.status || "").toLowerCase();
-    const eventDate = dateOnly(event.event_date);
+    const eventDate = financeDateOnly(event.event_date);
     const brandId = String(event.brand_id || "unassigned").trim() || "unassigned";
     const source = String(event.source_type || "unknown").trim() || "unknown";
 
@@ -142,22 +123,22 @@ export function buildFinanceOverview(params: {
   for (const document of documents) {
     const type = String(document.document_type || "").toLowerCase();
     if (type && !["invoice", "credit_note", "credit-note"].includes(type)) continue;
-    const code = currency(document.currency);
+    const code = financeCurrency(document.currency);
     const bucket = ensureCurrency(currencies, code);
-    const total = numberValue(document.total);
-    const balance = numberValue(document.balance);
+    const total = financeMoney(document.total);
+    const balance = financeMoney(document.balance);
     bucket.invoiced += total;
     bucket.outstanding += Math.max(0, balance);
     if (balance > 0) {
       outstandingInvoiceCount += 1;
-      const dueDate = dateOnly(document.due_date);
+      const dueDate = financeDateOnly(document.due_date);
       if (dueDate && dueDate < today) overdueInvoiceCount += 1;
     }
   }
 
   for (const payment of payments) {
-    const code = currency(payment.currency);
-    ensureCurrency(currencies, code).payments += numberValue(payment.amount);
+    const code = financeCurrency(payment.currency);
+    ensureCurrency(currencies, code).payments += financeMoney(payment.amount);
   }
 
   for (const bucket of Object.values(currencies)) {

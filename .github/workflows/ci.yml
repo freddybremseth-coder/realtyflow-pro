@@ -86,6 +86,8 @@ jobs:
         run: npm run test:continuous-improvement
       - name: Navigation Information Architecture tests
         run: npm run test:navigation
+      - name: Shared Core architecture tests
+        run: npm run test:shared-core
       - name: Nexus AI in-app advisor contract tests
         run: npx tsx --test src/lib/nexus-ai-governed-actions.test.ts src/lib/nexus-ai-in-app-advisor.contract.test.ts src/lib/nexus-ai-marketing-actions.test.ts src/lib/nexus-ai-marketing-in-app.contract.test.ts src/app/api/nexus/marketing-actions/route.contract.test.ts
       - name: Nexus Social scheduler and canonical contract tests
