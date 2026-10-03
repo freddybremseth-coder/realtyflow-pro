@@ -279,6 +279,18 @@ export async function POST(request: NextRequest) {
   const utmMedium = cleanText(body.utm_medium || body.utmMedium || pageTracking.utm_medium, 80);
   const utmCampaign = cleanText(body.utm_campaign || body.utmCampaign || pageTracking.utm_campaign, 120);
   const utmContent = cleanText(body.utm_content || body.utmContent || pageTracking.utm_content, 160);
+  const allowedDiscoverySources = new Set([
+    "google_search",
+    "bing_search",
+    "chatgpt",
+    "google_gemini",
+    "microsoft_copilot",
+    "perplexity",
+    "brave_search",
+    "duckduckgo",
+  ]);
+  const rawDiscoverySource = cleanText(body.discovery_source || body.discoverySource, 80);
+  const discoverySource = allowedDiscoverySources.has(rawDiscoverySource) ? rawDiscoverySource : "";
   const rawNotes = cleanText(body.notes, 5000);
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
@@ -858,6 +870,7 @@ export async function POST(request: NextRequest) {
       utm_medium: utmMedium || null,
       utm_campaign: utmCampaign || null,
       utm_content: utmContent || null,
+      discovery_source: isCare ? discoverySource || null : null,
       organization_name: organizationName || null,
       organization_type: organizationType || null,
       contact_role: contactRole || null,
@@ -920,6 +933,7 @@ export async function POST(request: NextRequest) {
       utm_medium: utmMedium || null,
       utm_campaign: utmCampaign || null,
       utm_content: utmContent || null,
+      discovery_source: isCare ? discoverySource || null : null,
       organization_name: organizationName || null,
       organization_type: organizationType || null,
       contact_role: contactRole || null,
