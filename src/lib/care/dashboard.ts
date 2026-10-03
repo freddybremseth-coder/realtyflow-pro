@@ -213,6 +213,14 @@ export interface CareServiceDemand {
   leadToContractPercent: number;
 }
 
+export interface CareDiscoveryDemand {
+  discoverySource: string;
+  trackedLeads: number;
+  openLeads: number;
+  contractedLeads: number;
+  leadToContractPercent: number;
+}
+
 export interface CareLead {
   id: string;
   contactId: string;
@@ -281,6 +289,7 @@ export interface CareDashboard {
   leads: CareLead[];
   lifecycle: CareLifecycle;
   serviceDemand: CareServiceDemand[];
+  discoveryDemand: CareDiscoveryDemand[];
   recentActivity: CareActivity[];
   warnings: string[];
 }
@@ -835,6 +844,27 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     }))
     .sort((a, b) => b.openLeads - a.openLeads || b.trackedLeads - a.trackedLeads || a.serviceIntent.localeCompare(b.serviceIntent));
 
+  const discoveryDemandMap = new Map<string, { tracked: number; open: number; contracted: number }>();
+  for (const row of rawCareLeadWorkItems) {
+    const metadata = metadataFor(row);
+    const discoverySource = optionalText(metadata, "discovery_source");
+    if (!discoverySource) continue;
+    const current = discoveryDemandMap.get(discoverySource) || { tracked: 0, open: 0, contracted: 0 };
+    current.tracked += 1;
+    if (isOpen(row.status)) current.open += 1;
+    if (optionalText(metadata, "care_contract_id")) current.contracted += 1;
+    discoveryDemandMap.set(discoverySource, current);
+  }
+  const discoveryDemand: CareDiscoveryDemand[] = [...discoveryDemandMap.entries()]
+    .map(([discoverySource, counts]) => ({
+      discoverySource,
+      trackedLeads: counts.tracked,
+      openLeads: counts.open,
+      contractedLeads: counts.contracted,
+      leadToContractPercent: counts.tracked > 0 ? Math.round((counts.contracted / counts.tracked) * 100) : 0,
+    }))
+    .sort((a, b) => b.contractedLeads - a.contractedLeads || b.trackedLeads - a.trackedLeads || a.discoverySource.localeCompare(b.discoverySource));
+
 
   const readiness: CareReadinessItem[] = [
     {
@@ -955,6 +985,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     leads,
     lifecycle,
     serviceDemand,
+    discoveryDemand,
     recentActivity,
     warnings: input.warnings || [],
   };
