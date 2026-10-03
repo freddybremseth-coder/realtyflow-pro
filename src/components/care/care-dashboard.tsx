@@ -597,11 +597,39 @@ function CustomersView({ properties }: { properties: CareProperty[] }) {
             <span className="rounded-full bg-slate-800 px-2.5 py-1">Siste tilsyn {dateLabel(property.lastInspectionAt)}</span>
             <span className="rounded-full bg-slate-800 px-2.5 py-1">Neste besøk {dateLabel(property.nextEventAt)}</span>
           </div>
-          {(property.openIssues > 0 || property.openWorkOrders > 0) && (
-            <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
-              {property.openIssues} åpne avvik · {property.openWorkOrders} åpne arbeidsordre
-            </div>
-          )}
+          <div className="mt-4 space-y-2">
+            {!property.contractStatus && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                Ingen aktiv Care-avtale. Velg riktig plan før løpende MRR og tilsyn starter.
+              </div>
+            )}
+            {property.contractStatus && !property.nextEventAt && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                Aktiv avtale uten planlagt neste besøk.
+              </div>
+            )}
+            {property.contractStatus && property.keyCount === 0 && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                Ingen registrert nøkkel. Avklar nøkkelrutine dersom tjenesten krever tilgang.
+              </div>
+            )}
+            {(property.openIssues > 0 || property.openWorkOrders > 0) && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                {property.openIssues} åpne avvik · {property.openWorkOrders} åpne arbeidsordre
+              </div>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/customers/${encodeURIComponent(property.ownerId)}`}>Åpne kundekort</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/care/keys">Nøkler & kalender</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/care/invoices">Faktura & MRR</Link>
+            </Button>
+          </div>
         </article>
       ))}
     </section>
