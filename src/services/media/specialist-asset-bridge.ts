@@ -108,7 +108,7 @@ export function buildSpecialistMediaBridgeRows(
       currency: null,
       progress: 100,
       input_assets_json: [],
-      result_assets_json: [resultAsset],
+      result_assets_json: [],
       error_code: null,
       error_message: null,
       retry_count: 0,
