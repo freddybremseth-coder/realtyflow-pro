@@ -4,6 +4,14 @@ import { classifyEmailConfigReadiness } from "@/lib/email/config-readiness";
 import { assessWhatsAppReadiness } from "@/lib/nexus/whatsapp-readiness";
 import { evaluateMetaCapabilities } from "@/lib/oauth/meta-capabilities";
 import { buildOsAttention } from "@/lib/os/attention";
+import {
+  buildWorkspaceResponsibilityAttention,
+  buildWorkspaceTeamResponsibilityOverview,
+  summarizeWorkspaceTeamResponsibilityOverview,
+  type WorkspaceTeamUser,
+} from "@/lib/workspaces/team-responsibility-overview";
+import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
+import type { WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +43,7 @@ export async function GET(request: NextRequest) {
 
   const nowMs = Date.now();
   const since24h = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
-  const [approvalsR, recsR, experimentsR, automationR, runtimeR, channelsR, emailConfigsR] = await Promise.all([
+  const [approvalsR, recsR, experimentsR, automationR, runtimeR, channelsR, emailConfigsR, workspaceBrandsR, workspaceUsersR, workspaceMembershipsR, workspaceResponsibilitiesR] = await Promise.all([
     supabase.from("agentic_approvals").select("id,title,risk,estimated_opportunity_eur,status,created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(100),
     supabase.from("book_growth_recommendations").select("status"),
     supabase.from("book_growth_experiments").select("status"),
@@ -43,6 +51,10 @@ export async function GET(request: NextRequest) {
     supabase.from("nexus_runtime_controls").select("control_key,label,category,enabled,risk_level,updated_at").order("control_key"),
     supabase.from("social_channels").select("id,brand_id,platform,display_name,is_active").eq("is_active", true).in("platform", ["facebook", "instagram"]),
     supabase.from("brand_email_configs").select("id,brand_id,email_address,is_active,imap_host,encrypted_password,encryption_iv,health_status,health_message,auto_fetch_paused_by_system,last_success_at,consecutive_failures").eq("is_active", true),
+    supabase.schema("core").from("brands").select("id,brand_key,display_name"),
+    supabase.schema("core").from("workspace_user_directory").select("user_id,display_name,status,account_kind,access_expires_at"),
+    supabase.schema("core").from("brand_workspace_memberships").select("brand_id,user_id,status,permissions"),
+    supabase.schema("core").from("brand_workspace_responsibilities").select("brand_id,user_id,responsibilities"),
   ]);
 
   const candidateTables = [
@@ -68,6 +80,7 @@ export async function GET(request: NextRequest) {
   sourceError(sourceErrors, "Runtime", runtimeR.error, "/nexus-os/runtime");
   sourceError(sourceErrors, "Social", channelsR.error || tokenR.error, "/nexus-os/communications/social");
   sourceError(sourceErrors, "Email", emailConfigsR.error, "/nexus-os/communications/readiness");
+  sourceError(sourceErrors, "Team ansvar", workspaceBrandsR.error || workspaceUsersR.error || workspaceMembershipsR.error || workspaceResponsibilitiesR.error, "/workspace-users");
   for (const result of candidateResults) sourceError(sourceErrors, `Book Growth/${result.table}`, result.error, "/book-growth");
 
   const approvals = approvalsR.error ? [] : (approvalsR.data ?? []);
@@ -151,6 +164,40 @@ export async function GET(request: NextRequest) {
   const instagram = socialReadiness.filter((row: any) => row.platform === "instagram");
   const whatsappReadiness = assessWhatsAppReadiness(process.env);
 
+  const workspaceResponsibilityMap = new Map(
+    (workspaceResponsibilitiesR.error ? [] : (workspaceResponsibilitiesR.data ?? [])).map((row: any) => [
+      `${row.user_id}:${row.brand_id}`,
+      Array.isArray(row.responsibilities) ? row.responsibilities as WorkspaceResponsibilityId[] : [],
+    ]),
+  );
+  const workspaceMemberships = workspaceMembershipsR.error ? [] : (workspaceMembershipsR.data ?? []);
+  const workspaceUsers: WorkspaceTeamUser[] = (workspaceUsersR.error ? [] : (workspaceUsersR.data ?? [])).map((row: any) => ({
+    userId: String(row.user_id),
+    displayName: String(row.display_name || "Ukjent bruker"),
+    status: row.status === "active" ? "active" : "disabled",
+    expired: Boolean(row.access_expires_at && new Date(row.access_expires_at).getTime() <= nowMs),
+    accountKind: row.account_kind === "external" ? "external" : "staff",
+    memberships: workspaceMemberships
+      .filter((membership: any) => String(membership.user_id) === String(row.user_id))
+      .map((membership: any) => ({
+        brandKey: String((workspaceBrandsR.data ?? []).find((brand: any) => String(brand.id) === String(membership.brand_id))?.brand_key || ""),
+        status: membership.status === "active" ? "active" : membership.status === "revoked" ? "revoked" : "disabled",
+        permissions: Array.isArray(membership.permissions) ? membership.permissions as WorkspacePermission[] : [],
+        responsibilities: workspaceResponsibilityMap.get(`${row.user_id}:${membership.brand_id}`) || [],
+      }))
+      .filter((membership: any) => Boolean(membership.brandKey)),
+  }));
+  const workspaceBrands = (workspaceBrandsR.error ? [] : (workspaceBrandsR.data ?? [])).map((row: any) => ({
+    brandKey: String(row.brand_key),
+    name: String(row.display_name || row.brand_key),
+  }));
+  const workspaceResponsibilityOverview = buildWorkspaceTeamResponsibilityOverview({
+    brands: workspaceBrands,
+    users: workspaceUsers,
+  });
+  const workspaceResponsibilityAttention = buildWorkspaceResponsibilityAttention(workspaceResponsibilityOverview);
+  const workspaceResponsibilitySummary = summarizeWorkspaceTeamResponsibilityOverview(workspaceResponsibilityOverview);
+
   const summary = {
     approvalsPending: approvals.length,
     approvalsHighRisk,
@@ -183,6 +230,11 @@ export async function GET(request: NextRequest) {
     whatsappAutoReplyEnabled: whatsappReadiness.autoReplyEnabled,
     remasterHealthStatus: lastRemasterHealth?.status ?? null,
     remasterHealthAt: lastRemasterHealth?.created_at ?? null,
+    workspaceResponsibilityActiveBrands: workspaceResponsibilitySummary.activeBrands,
+    workspaceResponsibilityOwned: workspaceResponsibilitySummary.owned,
+    workspaceResponsibilityShared: workspaceResponsibilitySummary.shared,
+    workspaceResponsibilityUnassigned: workspaceResponsibilitySummary.unassigned,
+    workspaceResponsibilityNoCapability: workspaceResponsibilitySummary.noCapability,
   };
 
   const attention = buildOsAttention({
@@ -214,6 +266,7 @@ export async function GET(request: NextRequest) {
     bookMeasuring: summary.bookMeasuring,
     bookRunningExperiments: summary.bookRunningExperiments,
     bookReviewCandidatesPending,
+    workspaceResponsibilityAttention,
   });
 
   if (lastRemasterHealth && ["partial", "error"].includes(lastRemasterHealthStatus)) {
@@ -308,6 +361,10 @@ export async function GET(request: NextRequest) {
     },
     bookGrowth: {
       candidateQueues: candidateResults.map((row) => ({ table: row.table, pending: row.error ? null : row.count, error: row.error?.message ?? null })),
+    },
+    workspaceResponsibilities: {
+      summary: workspaceResponsibilitySummary,
+      attention: workspaceResponsibilityAttention,
     },
   });
 }
