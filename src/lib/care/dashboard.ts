@@ -238,6 +238,7 @@ export interface CareLead {
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
+  discoverySource: string | null;
   status: string;
   priority: string;
   pipelineStatus: string | null;
@@ -714,6 +715,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       utmSource: optionalText(metadata, "utm_source"),
       utmMedium: optionalText(metadata, "utm_medium"),
       utmCampaign: optionalText(metadata, "utm_campaign"),
+      discoverySource: optionalText(metadata, "discovery_source"),
       status: text(row, "status", "TO_DO"),
       priority: text(row, "priority", "MEDIUM"),
       pipelineStatus: optionalText(contact, "pipeline_status"),
