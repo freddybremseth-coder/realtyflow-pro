@@ -47,3 +47,14 @@ test("Care source page is only linked when it belongs to the Care subdomain", ()
   assert.match(dashboard, /target="_blank"/);
   assert.match(dashboard, /ExternalLink/);
 });
+
+
+test("Care customer cards expose CRM and operational follow-up links", () => {
+  assert.match(dashboard, /Åpne kundekort/);
+  assert.match(dashboard, /property\.ownerId/);
+  assert.match(dashboard, /Ingen aktiv Care-avtale/);
+  assert.match(dashboard, /Aktiv avtale uten planlagt neste besøk/);
+  assert.match(dashboard, /Ingen registrert nøkkel/);
+  assert.match(dashboard, /Nøkler & kalender/);
+  assert.match(dashboard, /Faktura & MRR/);
+});
