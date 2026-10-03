@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
   const contactId = clean(body.contactId, 80);
   const planId = clean(body.planId, 80);
   const validUntil = clean(body.validUntil, 10);
+  const followUpOn = clean(body.followUpOn, 10);
   const notes = clean(body.notes, 2000);
 
   if (!ACTIONS.has(action)) return NextResponse.json({ error: "Ugyldig tilbudshandling." }, { status: 400 });
@@ -109,6 +110,7 @@ export async function POST(request: NextRequest) {
     }
     if (!UUID.test(planId)) return NextResponse.json({ error: "Velg en gyldig Care-plan." }, { status: 400 });
     if (validUntil && !validDate(validUntil)) return NextResponse.json({ error: "Ugyldig gyldighetsdato." }, { status: 400 });
+    if (!followUpOn || !validDate(followUpOn)) return NextResponse.json({ error: "Sett en gyldig oppfølgingsdato for tilbudet." }, { status: 400 });
 
     const { data: plan, error: planError } = await supabase
       .schema("care")
@@ -149,6 +151,7 @@ export async function POST(request: NextRequest) {
       monthly_price_cents: monthlyPriceCents,
       currency: clean(plan.currency || org.currency || "EUR", 3).toUpperCase(),
       valid_until: validUntil || null,
+      follow_up_on: followUpOn,
       notes: notes || null,
       updated_at: now,
     };
@@ -169,6 +172,7 @@ export async function POST(request: NextRequest) {
         care_quote_id: quote.id,
         care_quote_reference: quote.reference,
         care_quote_status: quote.status,
+        care_follow_up_on: quote.follow_up_on || followUpOn || null,
       },
       updated_at: now,
     }).eq("id", workItemId);
@@ -183,26 +187,53 @@ export async function POST(request: NextRequest) {
   let nextAction = "";
   let workStatus = clean(workItem.status, 40) || "IN_PROGRESS";
 
+  let salesPatch: Record<string, unknown> = {};
+
   if (action === "mark_sent") {
     if (currentStatus !== "draft") return NextResponse.json({ error: "Bare utkast kan markeres som sendt." }, { status: 409 });
+    const quoteFollowUpOn = clean(existing.follow_up_on, 10);
+    if (!quoteFollowUpOn || !validDate(quoteFollowUpOn)) {
+      return NextResponse.json({ error: "Sett oppfølgingsdato i tilbudet før du markerer det som sendt." }, { status: 409 });
+    }
     quotePatch = { ...quotePatch, status: "sent", sent_at: now };
-    nextAction = "Care-tilbud er sendt. Følg opp kunden og registrer aksept eller avslag.";
+    salesPatch = {
+      care_sales_stage: "quote_sent",
+      care_follow_up_on: quoteFollowUpOn,
+      care_quote_sent_at: metadata.care_quote_sent_at || now,
+      care_last_followup_at: now,
+    };
+    nextAction = `Care-tilbud er sendt. Følg opp ${quoteFollowUpOn}.`;
     workStatus = "IN_PROGRESS";
   } else if (action === "accept") {
     if (!["draft", "sent"].includes(currentStatus)) return NextResponse.json({ error: "Tilbudet kan ikke aksepteres fra denne statusen." }, { status: 409 });
     quotePatch = { ...quotePatch, status: "accepted", accepted_at: now };
+    salesPatch = {
+      care_sales_stage: "accepted",
+      care_follow_up_on: null,
+      care_last_followup_at: now,
+    };
     nextAction = "Care-tilbud er akseptert. Opprett Care-kunde/eiendom og aktiver avtalen.";
     workStatus = "IN_PROGRESS";
   } else if (action === "decline") {
     if (!["draft", "sent"].includes(currentStatus)) return NextResponse.json({ error: "Tilbudet kan ikke avslås fra denne statusen." }, { status: 409 });
     quotePatch = { ...quotePatch, status: "declined", declined_at: now };
+    salesPatch = {
+      care_sales_stage: "not_relevant",
+      care_follow_up_on: null,
+      care_last_followup_at: now,
+    };
     nextAction = "Care-tilbud ble avslått. Vurder om kunden skal følges opp senere.";
     workStatus = "DONE";
   } else if (action === "cancel") {
     if (currentStatus === "accepted") return NextResponse.json({ error: "Et akseptert tilbud kan ikke kanselleres her." }, { status: 409 });
     quotePatch = { ...quotePatch, status: "cancelled" };
-    nextAction = "Care-tilbud er kansellert.";
-    workStatus = "DONE";
+    salesPatch = {
+      care_sales_stage: "contacted",
+      care_follow_up_on: null,
+      care_last_followup_at: now,
+    };
+    nextAction = "Care-tilbud er kansellert. Vurder neste oppfølging.";
+    workStatus = "IN_PROGRESS";
   }
 
   const { data: quote, error: quoteError } = await supabase
@@ -223,6 +254,7 @@ export async function POST(request: NextRequest) {
       care_quote_id: quote.id,
       care_quote_reference: quote.reference,
       care_quote_status: quote.status,
+      ...salesPatch,
     },
     updated_at: now,
   }).eq("id", workItemId);
