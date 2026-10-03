@@ -382,3 +382,88 @@ test("Care service demand separates intents and flags stale open leads", () => {
   assert.equal(klargjoring?.openLeads, 1);
   assert.equal(klargjoring?.contractedLeads, 0);
 });
+
+
+test("Care dashboard exposes explicit quote states and attaches quotes to leads", () => {
+  const dashboard = buildCareDashboard({
+    generatedAt: new Date("2026-10-03T12:00:00.000Z"),
+    plans: [{
+      id: "plan-standard",
+      code: "STANDARD",
+      name: "Standard",
+      visits_per_month: 2,
+      price_cents: 8900,
+      currency: "EUR",
+      is_active: true,
+    }],
+    quotes: [
+      {
+        id: "quote-draft",
+        work_item_id: "lead-draft",
+        contact_id: "contact-draft",
+        plan_id: "plan-standard",
+        reference: "CARE-Q-2026-DRAFT",
+        service_intent: "boligtilsyn",
+        status: "draft",
+        plan_snapshot: { id: "plan-standard", code: "STANDARD", name: "Standard", visits_per_month: 2, price_cents: 8900, currency: "EUR" },
+        monthly_price_cents: 8900,
+        currency: "EUR",
+        valid_until: "2026-10-20",
+        created_at: "2026-10-03T09:00:00.000Z",
+      },
+      {
+        id: "quote-sent",
+        work_item_id: "lead-sent",
+        contact_id: "contact-sent",
+        plan_id: "plan-standard",
+        reference: "CARE-Q-2026-SENT",
+        service_intent: "klargjoring",
+        status: "sent",
+        plan_snapshot: { id: "plan-standard", code: "STANDARD", name: "Standard", visits_per_month: 2, price_cents: 8900, currency: "EUR" },
+        monthly_price_cents: 8900,
+        currency: "EUR",
+        valid_until: "2026-10-20",
+        sent_at: "2026-10-03T10:00:00.000Z",
+        created_at: "2026-10-03T09:30:00.000Z",
+      },
+      {
+        id: "quote-accepted",
+        work_item_id: "lead-accepted",
+        contact_id: "contact-accepted",
+        plan_id: "plan-standard",
+        reference: "CARE-Q-2026-ACCEPT",
+        service_intent: "keyholding",
+        status: "accepted",
+        plan_snapshot: { id: "plan-standard", code: "STANDARD", name: "Standard", visits_per_month: 2, price_cents: 8900, currency: "EUR" },
+        monthly_price_cents: 8900,
+        currency: "EUR",
+        accepted_at: "2026-10-03T11:00:00.000Z",
+        created_at: "2026-10-03T08:30:00.000Z",
+      },
+    ],
+    careLeadWorkItems: [
+      { id: "lead-draft", source_id: "contact-draft", status: "IN_PROGRESS", metadata: { segment: "care", service_intent: "boligtilsyn" } },
+      { id: "lead-sent", source_id: "contact-sent", status: "IN_PROGRESS", metadata: { segment: "care", service_intent: "klargjoring" } },
+      { id: "lead-accepted", source_id: "contact-accepted", status: "IN_PROGRESS", metadata: { segment: "care", service_intent: "keyholding" } },
+    ],
+    careLeadContacts: [
+      { id: "contact-draft", name: "Draft Lead" },
+      { id: "contact-sent", name: "Sent Lead" },
+      { id: "contact-accepted", name: "Accepted Lead" },
+    ],
+  });
+
+  assert.equal(dashboard.summary.openQuotes, 2);
+  assert.equal(dashboard.summary.sentQuotes, 1);
+  assert.equal(dashboard.summary.acceptedQuotesAwaitingContract, 1);
+  assert.equal(dashboard.lifecycle.draftQuotes, 1);
+  assert.equal(dashboard.lifecycle.sentQuotes, 1);
+  assert.equal(dashboard.lifecycle.acceptedQuotesAwaitingContract, 1);
+  const sentLead = dashboard.leads.find((lead) => lead.id === "lead-sent");
+  assert.equal(sentLead?.careQuoteStatus, "sent");
+  assert.equal(sentLead?.careQuotePlanId, "plan-standard");
+  assert.equal(sentLead?.careQuotePlanName, "Standard");
+  assert.equal(sentLead?.careQuoteMonthlyPriceCents, 8900);
+  assert.equal(sentLead?.careQuoteReference, "CARE-Q-2026-SENT");
+  assert.equal(dashboard.workflows.find((item) => item.id === "leads")?.href, "/care/leads");
+});
