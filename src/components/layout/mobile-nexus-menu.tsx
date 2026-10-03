@@ -3,17 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, Mail, Megaphone, Menu, Search, Sparkles, Target, Users, X } from "lucide-react";
+import { Banknote, Clapperboard, Megaphone, Menu, Search, Settings, Target, Users, X } from "lucide-react";
 import { buildVisibleNavigation } from "@/lib/navigation";
 import type { AccessRole } from "@/lib/access-control";
 
 const CORE = [
   { href: "/nexus-os/today", label: "I dag", Icon: Target },
-  { href: "/customers", label: "Kunder", Icon: Users },
-  { href: "/nexus-os/communications", label: "E-post", Icon: Mail },
-  { href: "/inventory", label: "Eiendommer", Icon: Building2 },
-  { href: "/social-automation", label: "Markedsføring", Icon: Megaphone },
-  { href: "/nexus-os", label: "AI & autopilot", Icon: Sparkles },
+  { href: "/sales", label: "Sales", Icon: Users },
+  { href: "/marketing", label: "Marketing", Icon: Megaphone },
+  { href: "/content", label: "Content", Icon: Clapperboard },
+  { href: "/finance", label: "Finance", Icon: Banknote },
+  { href: "/operations", label: "Platform", Icon: Settings },
 ] as const;
 
 type CurrentUser = { email: string; role: AccessRole; permissions: string[] };
