@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   CircleUserRound,
   Clock3,
+  CalendarDays,
+  TrendingUp,
   RefreshCw,
   ShieldCheck,
   UserRoundCheck,
@@ -16,10 +18,12 @@ import {
 import type { AccessRole } from "@/lib/access-control";
 import type { TeamWorkloadItem, TeamWorkloadWorkspace } from "@/lib/revenue/team-workload";
 import type { TeamCapacitySuggestion } from "@/lib/revenue/team-capacity";
+import type { TeamCapacityForecast, TeamCapacityForecastSuggestion } from "@/lib/revenue/team-capacity-forecast";
 
 type Payload = {
   workspace: TeamWorkloadWorkspace;
   capacitySuggestions: TeamCapacitySuggestion[];
+  capacityForecast: TeamCapacityForecast;
   canManageAssignments: boolean;
   assignmentHistoryCount: number;
 };
@@ -106,6 +110,20 @@ export default function TeamWorkloadPage() {
     await assign(item, suggestion.toEmail);
   };
 
+  const approveForecastSuggestion = async (suggestion: TeamCapacityForecastSuggestion) => {
+    if (!data?.canManageAssignments) return;
+    const item = data.workspace.items.find(row => row.id === suggestion.itemId);
+    if (!item) {
+      setError("Saken i prognoseforslaget finnes ikke lenger i arbeidskøen.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Flytte «${suggestion.itemTitle}» fra ${suggestion.fromName} til ${suggestion.toName} før neste ukes belastning? Dette lagres som en vanlig Owner-godkjent tildeling.`,
+    );
+    if (!confirmed) return;
+    await assign(item, suggestion.toEmail);
+  };
+
   const visible = useMemo(() => {
     const items = data?.workspace.items || [];
     return items.filter((item) => {
@@ -148,6 +166,82 @@ export default function TeamWorkloadPage() {
             ["Kritisk", workspace?.summary.critical || 0, AlertTriangle],
           ].map(([label, value, Icon]: any) => <div key={label} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><Icon size={18} className="mb-3 text-primary-400"/><div className="text-2xl font-bold">{value}</div><div className="text-xs text-slate-500">{label}</div></div>)}
         </section>
+
+        {data?.capacityForecast && <section className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-400"><CalendarDays size={14}/> Neste {data.capacityForecast.horizonDays} dager</div>
+              <h2 className="mt-1 text-xl font-semibold">Kapasitetsprognose</h2>
+              <p className="mt-2 max-w-3xl text-sm text-slate-400">
+                Prognosen bruker kommende oppfølginger, visninger/closing, planlagte campaign-/marketing-oppgaver og personlige ansvarsområder.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-full border border-rose-800 px-2.5 py-1 text-rose-300">{data.capacityForecast.summary.risingHigh} på vei mot høy</span>
+              <span className="rounded-full border border-amber-800 px-2.5 py-1 text-amber-300">{data.capacityForecast.summary.staysHigh} fortsatt høy</span>
+              <span className="rounded-full border border-cyan-800 px-2.5 py-1 text-cyan-300">{data.capacityForecast.summary.suggestions} forebyggende forslag</span>
+            </div>
+          </div>
+
+          {(data.capacityForecast.riskMembers || []).length > 0
+            ? <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                {data.capacityForecast.riskMembers.map(person => <article key={person.email} className={`rounded-xl border p-4 ${person.risk === "RISING_HIGH" ? "border-rose-800/70 bg-rose-950/20" : "border-amber-800/60 bg-amber-950/15"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-100">{person.displayName}</div>
+                      <div className="mt-1 text-[11px] text-slate-500">{roleLabels[person.role]} · {person.responsibilityAreas} ansvarsområder</div>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${person.risk === "RISING_HIGH" ? "border-rose-800 text-rose-300" : "border-amber-800 text-amber-300"}`}>
+                      <TrendingUp size={11}/>{person.risk === "RISING_HIGH" ? "øker til høy" : "forblir høy"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
+                    <div className="rounded-lg border border-slate-800 p-2"><div className="text-lg font-semibold">{person.currentCapacityScore}</div><div className="text-slate-500">Nå</div></div>
+                    <div className="rounded-lg border border-slate-800 p-2"><div className="text-lg font-semibold text-cyan-200">{person.forecastScore}</div><div className="text-slate-500">Neste uke</div></div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">Største drivere</div>
+                    <div className="mt-2 space-y-1">
+                      {person.drivers.slice(0, 3).map(driver => <div key={driver.itemId} className="flex items-center justify-between gap-3 text-[11px]">
+                        <span className="min-w-0 truncate text-slate-400">{driver.title}</span>
+                        <span className="shrink-0 text-cyan-300">+{driver.contribution}</span>
+                      </div>)}
+                    </div>
+                  </div>
+                </article>)}
+              </div>
+            : <div className="mt-4 rounded-xl border border-emerald-900/50 bg-emerald-950/15 p-4 text-sm text-emerald-200">
+                Ingen i teamet er prognostisert til høy belastning de neste {data.capacityForecast.horizonDays} dagene.
+              </div>}
+
+          {(data.capacityForecast.suggestions || []).length > 0 && <div className="mt-5">
+            <div className="mb-3 text-sm font-semibold text-cyan-100">Fordel nå for å unngå høy belastning senere</div>
+            <div className="grid gap-3 xl:grid-cols-2">
+              {data.capacityForecast.suggestions.map(suggestion => <article key={suggestion.id} className="rounded-xl border border-cyan-900/60 bg-slate-950/45 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{suggestion.resourceType === "CONTACT" ? "Kunde" : "Oppgave"} · {suggestion.dueDate || "uten dato"}</div>
+                    <div className="mt-1 font-semibold">{suggestion.itemTitle}</div>
+                    <div className="mt-1 text-xs text-slate-400">{suggestion.fromName} → <span className="text-emerald-300">{suggestion.toName}</span></div>
+                  </div>
+                  <span className="rounded-full border border-cyan-800 px-2 py-1 text-[10px] text-cyan-300">forebyggende</span>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-400">{suggestion.reason}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-center text-[11px]">
+                  <div className="rounded-lg border border-slate-800 p-2"><div className="font-semibold text-rose-200">{suggestion.forecastBefore} → {suggestion.forecastAfter}</div><div className="text-slate-500">{suggestion.fromName}</div></div>
+                  <div className="rounded-lg border border-slate-800 p-2"><div className="font-semibold text-emerald-200">{suggestion.targetForecastBefore} → {suggestion.targetForecastAfter}</div><div className="text-slate-500">{suggestion.toName}</div></div>
+                </div>
+                <p className="mt-3 text-[10px] leading-4 text-slate-600">{suggestion.safety}</p>
+                {data.canManageAssignments && <button type="button"
+                  disabled={busy === suggestion.itemId}
+                  onClick={() => void approveForecastSuggestion(suggestion)}
+                  className="mt-3 rounded-lg border border-cyan-700 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-950/40 disabled:opacity-50">
+                  Godkjenn forebyggende omfordeling
+                </button>}
+              </article>)}
+            </div>
+          </div>}
+        </section>}
 
         {(data?.capacitySuggestions || []).length > 0 && <section className="rounded-2xl border border-amber-800/60 bg-amber-950/15 p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
