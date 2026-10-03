@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { GET as getExecutiveBriefing } from "../../executive-briefing/route";
 import type { ExecutiveBriefing } from "@/lib/revenue/executive-briefing";
-import { parseOperatingReviewSettings, OPERATING_REVIEW_SETTINGS_KEY } from "@/lib/revenue/operating-review";
+import { buildCapacityDecisionEffects, buildOperatingReviewJournal, parseOperatingReviewSettings, OPERATING_REVIEW_SETTINGS_KEY } from "@/lib/revenue/operating-review";
 import {
   WEEKLY_ISSUE_STATUSES,
   WEEKLY_MANAGEMENT_SETTINGS_KEY,
@@ -53,16 +53,17 @@ async function sessionFor(request: NextRequest) {
   return { email: context.email.toLowerCase(), role: context.role };
 }
 
-async function loadCurrentCapacity(request: NextRequest): Promise<{ capacity: ExecutiveBriefing["capacity"] | null; error: string | null }> {
+async function loadCurrentCapacity(request: NextRequest): Promise<{ briefing: ExecutiveBriefing | null; capacity: ExecutiveBriefing["capacity"] | null; error: string | null }> {
   try {
     const response = await getExecutiveBriefing(request);
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body?.briefing?.capacity) {
-      return { capacity: null, error: body?.error || "Kapasitetsbildet kunne ikke bygges." };
+      return { briefing: null, capacity: null, error: body?.error || "Kapasitetsbildet kunne ikke bygges." };
     }
-    return { capacity: (body.briefing as ExecutiveBriefing).capacity, error: null };
+    const briefing = body.briefing as ExecutiveBriefing;
+    return { briefing, capacity: briefing.capacity || null, error: null };
   } catch (error) {
-    return { capacity: null, error: error instanceof Error ? error.message : "Kapasitetsbildet kunne ikke bygges." };
+    return { briefing: null, capacity: null, error: error instanceof Error ? error.message : "Kapasitetsbildet kunne ikke bygges." };
   }
 }
 
@@ -128,13 +129,16 @@ export async function GET(request: NextRequest) {
 
   const [operating, weekly, capacity] = await Promise.all([loadOperatingSettings(supabase), loadWeeklySettings(supabase), loadCurrentCapacity(request)]);
   if (weekly.error) return NextResponse.json({ error: weekly.error, journal: null }, { status: 500 });
-  const currentSnapshot = createWeeklyManagementSnapshot(operating.settings, session.role, session.email);
+  const operatingJournal = buildOperatingReviewJournal(operating.settings, session.role);
+  const capacityDecisionEffects = buildCapacityDecisionEffects(operatingJournal, capacity.briefing);
+  const currentSnapshot = createWeeklyManagementSnapshot(operating.settings, session.role, session.email, new Date(), { capacityDecisionEffects });
   const journal = buildWeeklyManagementJournal(weekly.settings, session.role);
   return NextResponse.json({
     journal,
     currentSnapshot,
     operatingReviewWarning: operating.error,
     capacity: capacity.capacity,
+    capacityDecisionEffects,
     capacityWarning: capacity.error,
     user: { email: session.email, role: session.role },
     canWrite: canWriteWeeklyManagement(session.role),
@@ -151,16 +155,18 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const action = clean(body.action, 50).toUpperCase();
-  const [operating, weekly] = await Promise.all([loadOperatingSettings(supabase), loadWeeklySettings(supabase)]);
+  const [operating, weekly, capacity] = await Promise.all([loadOperatingSettings(supabase), loadWeeklySettings(supabase), loadCurrentCapacity(request)]);
   if (weekly.error) return NextResponse.json({ error: weekly.error }, { status: 500 });
   if (operating.error) return NextResponse.json({ error: `Operating Review-data kunne ikke hentes: ${operating.error}` }, { status: 503 });
   const journal = buildWeeklyManagementJournal(weekly.settings, session.role);
+  const operatingJournal = buildOperatingReviewJournal(operating.settings, session.role);
+  const capacityDecisionEffects = buildCapacityDecisionEffects(operatingJournal, capacity.briefing);
   const now = new Date();
   let event: WeeklyManagementEvent | null = null;
 
   if (action === "CAPTURE_WEEK") {
     if (journal.currentReviewId) return NextResponse.json({ error: "Denne ukens ledelsesgjennomgang finnes allerede. Bruk oppdater analyse.", reviewId: journal.currentReviewId }, { status: 409 });
-    const snapshot = createWeeklyManagementSnapshot(operating.settings, session.role, session.email, now);
+    const snapshot = createWeeklyManagementSnapshot(operating.settings, session.role, session.email, now, { capacityDecisionEffects });
     event = makeWeeklyManagementEvent({
       ...baseEvent({ type: "WEEK_CAPTURED", session, reviewId: snapshot.id, weekStart: snapshot.weekStart }),
       snapshot,
@@ -176,7 +182,7 @@ export async function POST(request: NextRequest) {
       if (review.completed) return NextResponse.json({ error: "Gjenåpne ukesgjennomgangen før analysen oppdateres." }, { status: 409 });
       if (review.weekStart !== journal.currentWeekStart) return NextResponse.json({ error: "Bare inneværende uke kan oppdateres." }, { status: 409 });
       if (review.capturedRole !== session.role) return NextResponse.json({ error: "Ukesanalysen kan bare oppdateres av sin aktive rolle." }, { status: 403 });
-      const snapshot = createWeeklyManagementSnapshot(operating.settings, session.role, session.email, now, { reviewId: review.id, revision: review.revision + 1 });
+      const snapshot = createWeeklyManagementSnapshot(operating.settings, session.role, session.email, now, { reviewId: review.id, revision: review.revision + 1, capacityDecisionEffects });
       if (snapshot.fingerprint === review.fingerprint) return NextResponse.json({ ok: true, unchanged: true, reviewId: review.id });
       event = makeWeeklyManagementEvent({
         ...baseEvent({ type: "WEEK_REFRESHED", session, reviewId: review.id, weekStart: review.weekStart }),

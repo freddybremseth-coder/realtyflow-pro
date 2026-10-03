@@ -14,6 +14,7 @@ import {
   makeOperatingReviewEvent,
   type OperatingReviewEvent,
   type OperatingReviewSettings,
+  type CapacityDecisionEffect,
 } from "./operating-review";
 import type { ExecutiveBriefing, ExecutiveDecision } from "./executive-briefing";
 import type { AccessRole } from "../access-control";
@@ -243,4 +244,66 @@ test("weekly management review keeps capacity decisions in TEAM source history",
   const team = snapshot.bySource.find((row) => row.id === "TEAM");
   assert.ok(team);
   assert.equal(team?.decisions, 1);
+});
+
+
+function capacityEffect(overrides: Partial<CapacityDecisionEffect> = {}): CapacityDecisionEffect {
+  return {
+    key: "7D:andrea@example.com",
+    reviewId: "capacity-review",
+    reviewDate: "2026-07-08",
+    decisionId: "capacity:7d:REDISTRIBUTE_NOW:andrea@example.com",
+    subject: "Andrea",
+    ownerEmail: "andrea@example.com",
+    horizon: "7D",
+    intervention: "REDISTRIBUTE_NOW",
+    status: "ACTION_PLANNED",
+    decidedAt: "2026-07-08T09:00:00.000Z",
+    followupAt: "2026-07-15",
+    responsibleEmail: "owner@example.com",
+    baselineDetail: "Kapasitet 280 → 430",
+    currentLabel: "På vei mot høy belastning",
+    currentDetail: "Kapasitet 310 → 460",
+    currentIntervention: "REDISTRIBUTE_NOW",
+    effect: "WORSENED",
+    explanation: "Kapasitetspresset har økt etter beslutningen.",
+    ...overrides,
+  };
+}
+
+test("weekly snapshot measures capacity decisions as management learning", () => {
+  const snapshot = createWeeklyManagementSnapshot(
+    operatingFixture(),
+    "OWNER",
+    "owner@example.com",
+    new Date("2026-07-12T10:00:00.000Z"),
+    {
+      capacityDecisionEffects: [
+        capacityEffect({ key: "7D:andrea@example.com", effect: "WORSENED" }),
+        capacityEffect({ key: "30D:marketing@example.com", ownerEmail: "marketing@example.com", subject: "Marketing", horizon: "30D", intervention: "AUTOMATE", effect: "IMPROVED", currentIntervention: null }),
+        capacityEffect({ key: "30D:sales@example.com", ownerEmail: "sales@example.com", subject: "Sales", horizon: "30D", intervention: "ROLE_REBALANCE", effect: "UNCHANGED", currentIntervention: "ROLE_REBALANCE" }),
+      ],
+    },
+  );
+  assert.equal(snapshot.capacityLearning.measured, 3);
+  assert.equal(snapshot.capacityLearning.improved, 1);
+  assert.equal(snapshot.capacityLearning.unchanged, 1);
+  assert.equal(snapshot.capacityLearning.worsened, 1);
+  const issue = snapshot.issues.find(item => item.type === "CAPACITY_ACTION_WORSENED");
+  assert.ok(issue);
+  assert.equal(issue?.source, "TEAM");
+  assert.equal(issue?.subject, "Andrea");
+  assert.match(issue?.recommendedAction || "", /registrerte kapasitetsbeslutningen/);
+});
+
+test("improved capacity decisions are learned but do not create a bottleneck", () => {
+  const snapshot = createWeeklyManagementSnapshot(
+    { version: 1, events: [], updatedAt: null },
+    "OWNER",
+    "owner@example.com",
+    new Date("2026-07-12T10:00:00.000Z"),
+    { capacityDecisionEffects: [capacityEffect({ effect: "IMPROVED", currentLabel: null, currentDetail: null, currentIntervention: null })] },
+  );
+  assert.equal(snapshot.capacityLearning.improved, 1);
+  assert.equal(snapshot.issues.some(item => item.type === "CAPACITY_ACTION_WORSENED"), false);
 });

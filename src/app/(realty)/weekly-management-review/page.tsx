@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Target,
   TrendingUp,
+  TrendingDown,
+  Minus,
   UsersRound,
   Wrench,
 } from "lucide-react";
@@ -360,6 +362,48 @@ function WeeklyReviewContent({
           )}
         </div>
       </section>
+
+      {review.capacityLearning.measured > 0 && <section className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-cyan-400">Kapasitetslæring</div>
+            <h2 className="mt-1 text-lg font-semibold">Virket kapasitetsgrepene?</h2>
+            <p className="mt-1 text-sm text-slate-400">Sammenligner registrerte kapasitetsbeslutninger i Operating Review med dagens kapasitetssignal.</p>
+          </div>
+          <Link href="/operating-review" className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 px-3 py-2 text-xs text-cyan-200 hover:bg-cyan-950/30">Åpne beslutningsjournal <ArrowRight size={13}/></Link>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 text-center"><div className="text-xl font-bold">{review.capacityLearning.measured}</div><div className="text-[10px] uppercase text-slate-600">Målt</div></div>
+          <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/15 p-3 text-center"><div className="text-xl font-bold text-emerald-300">{review.capacityLearning.improved}</div><div className="text-[10px] uppercase text-emerald-600">Forbedret</div></div>
+          <div className="rounded-xl border border-amber-900/60 bg-amber-950/15 p-3 text-center"><div className="text-xl font-bold text-amber-300">{review.capacityLearning.unchanged}</div><div className="text-[10px] uppercase text-amber-600">Uendret</div></div>
+          <div className="rounded-xl border border-rose-900/60 bg-rose-950/15 p-3 text-center"><div className="text-xl font-bold text-rose-300">{review.capacityLearning.worsened}</div><div className="text-[10px] uppercase text-rose-600">Forverret</div></div>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {review.capacityLearning.effects.map(effect => {
+            const Icon = effect.effect === "IMPROVED" ? TrendingDown : effect.effect === "WORSENED" ? TrendingUp : Minus;
+            const tone = effect.effect === "IMPROVED"
+              ? "border-emerald-900/60 bg-emerald-950/15"
+              : effect.effect === "WORSENED"
+                ? "border-rose-900/60 bg-rose-950/15"
+                : effect.effect === "UNCHANGED"
+                  ? "border-amber-900/60 bg-amber-950/15"
+                  : "border-slate-800 bg-slate-950/40";
+            const label = effect.effect === "IMPROVED" ? "Forbedret" : effect.effect === "WORSENED" ? "Forverret" : effect.effect === "UNCHANGED" ? "Uendret" : "Ikke målbart";
+            return <article key={effect.key} className={`rounded-xl border p-4 ${tone}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div><div className="font-semibold">{effect.subject}</div><div className="mt-1 text-[11px] text-slate-500">{effect.horizon} · {effect.intervention}</div></div>
+                <span className="inline-flex items-center gap-1 rounded-full border border-current/20 px-2 py-1 text-[10px]"><Icon size={11}/>{label}</span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{effect.explanation}</p>
+              <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-slate-600">
+                {effect.currentIntervention && <span>Nå: {effect.currentIntervention}</span>}
+                {effect.followupAt && <span>Oppfølging {effect.followupAt}</span>}
+                {effect.responsibleEmail && <span>{effect.responsibleEmail}</span>}
+              </div>
+            </article>;
+          })}
+        </div>
+      </section>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {metricCards.map(({ label, value, detail, icon: Icon }) => (
