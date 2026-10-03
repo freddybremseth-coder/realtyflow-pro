@@ -4,7 +4,7 @@ import { requireAdminApi } from "@/lib/api-admin";
 import {
   financeEventDate,
   financeMoney,
-  type BusinessBusinessFinancialEventWriteWrite,
+  type BusinessFinancialEventWrite,
 } from "@/lib/shared-core/finance";
 
 export const dynamic = "force-dynamic";
