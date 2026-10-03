@@ -153,3 +153,30 @@ test("team overload alert includes responsibility areas and concrete safe redist
   assert.doesNotMatch(overload.recommendedAction, /Capacity task 0/);
   assert.match(overload.recommendedAction, /Owner-godkjenning/);
 });
+
+
+test("capacity forecast warns before a balanced team member becomes high next week", () => {
+  const contacts = Array.from({ length: 5 }, (_, index) => ({
+    id: `forecast-viewing-${index}`,
+    name: `Viewing ${index}`,
+    brand_id: "soleada",
+    pipeline_status: "VIEWING",
+    next_followup: `2026-07-${12 + index}`,
+    interactions: [{
+      action: "team_owner_assigned",
+      date: "2026-07-10T08:00:00Z",
+      metadata: { owner_email: "sales@example.com" },
+    }],
+  }));
+  const alerts = center(contacts, [], [], { "sales@example.com": 1, "backup@example.com": 0 });
+  const forecast = alerts.active.find((alert) =>
+    alert.ruleId === "TEAM_CAPACITY_FORECAST" &&
+    alert.ownerEmail === "sales@example.com");
+  assert.ok(forecast);
+  assert.equal(forecast?.category, "TEAM");
+  assert.match(forecast?.title || "", /neste uke/);
+  assert.match(forecast?.detail || "", /neste 7 dager/);
+  assert.match(forecast?.recommendedAction || "", /Backup Sales/);
+  assert.match(forecast?.recommendedAction || "", /Owner-godkjenning/);
+  assert.equal(alerts.active.some((alert) => alert.ruleId === "TEAM_OVERLOAD" && alert.ownerEmail === "sales@example.com"), false);
+});
