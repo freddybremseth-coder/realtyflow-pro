@@ -10,6 +10,8 @@ import {
   Clock3,
   CalendarDays,
   TrendingUp,
+  BarChart3,
+  Wrench,
   RefreshCw,
   ShieldCheck,
   UserRoundCheck,
@@ -19,11 +21,13 @@ import type { AccessRole } from "@/lib/access-control";
 import type { TeamWorkloadItem, TeamWorkloadWorkspace } from "@/lib/revenue/team-workload";
 import type { TeamCapacitySuggestion } from "@/lib/revenue/team-capacity";
 import type { TeamCapacityForecast, TeamCapacityForecastSuggestion } from "@/lib/revenue/team-capacity-forecast";
+import type { TeamCapacityTrend } from "@/lib/revenue/team-capacity-trend";
 
 type Payload = {
   workspace: TeamWorkloadWorkspace;
   capacitySuggestions: TeamCapacitySuggestion[];
   capacityForecast: TeamCapacityForecast;
+  capacityTrend: TeamCapacityTrend;
   canManageAssignments: boolean;
   assignmentHistoryCount: number;
 };
@@ -241,6 +245,59 @@ export default function TeamWorkloadPage() {
               </article>)}
             </div>
           </div>}
+        </section>}
+
+        {data?.capacityTrend && <section className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-400"><BarChart3 size={14}/> Neste 30 dager</div>
+              <h2 className="mt-1 text-xl font-semibold">Trendkapasitet</h2>
+              <p className="mt-2 max-w-3xl text-sm text-slate-400">
+                Skiller kortvarige topper fra vedvarende press og foreslår riktig type tiltak uten å endre roller, bemanning eller automasjoner automatisk.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-full border border-rose-800 px-2.5 py-1 text-rose-300">{data.capacityTrend.summary.persistentHigh} vedvarende høy</span>
+              <span className="rounded-full border border-violet-800 px-2.5 py-1 text-violet-300">{data.capacityTrend.summary.rising} stigende</span>
+              <span className="rounded-full border border-amber-800 px-2.5 py-1 text-amber-300">{data.capacityTrend.summary.spike} kortvarig topp</span>
+            </div>
+          </div>
+
+          {(data.capacityTrend.attentionMembers || []).length > 0
+            ? <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {data.capacityTrend.attentionMembers.map(person => <article key={person.email} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-100">{person.displayName}</div>
+                      <div className="mt-1 text-[11px] text-slate-500">{roleLabels[person.role]} · {person.responsibilityAreas} ansvarsområder</div>
+                    </div>
+                    <span className="rounded-full border border-violet-800 px-2 py-1 text-[10px] font-semibold text-violet-300">
+                      {person.pattern === "PERSISTENT_HIGH" ? "vedvarende høy" : person.pattern === "RISING" ? "stigende trend" : "kortvarig topp"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    {person.weeks.slice(0,4).map(week => <div key={week.index} className="rounded-lg border border-slate-800 p-2 text-center">
+                      <div className={`text-sm font-semibold ${week.load === "HIGH" ? "text-rose-300" : week.load === "BALANCED" ? "text-amber-300" : "text-emerald-300"}`}>{week.score}</div>
+                      <div className="text-[10px] text-slate-600">Uke {week.index + 1}</div>
+                    </div>)}
+                  </div>
+                  <div className="mt-3 rounded-lg border border-violet-900/50 bg-violet-950/15 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-violet-200"><Wrench size={13}/>{person.interventionLabel}</div>
+                    <p className="mt-1 text-[11px] leading-5 text-slate-400">{person.rationale}</p>
+                    <div className="mt-2 text-[10px] uppercase tracking-wide text-slate-600">Sikkerhet: {person.confidence}</div>
+                  </div>
+                </article>)}
+              </div>
+            : <div className="mt-4 rounded-xl border border-emerald-900/50 bg-emerald-950/15 p-4 text-sm text-emerald-200">
+                Ingen vedvarende eller stigende kapasitetsmønstre er identifisert de neste 30 dagene.
+              </div>}
+
+          {(data.capacityTrend.summary.automationCandidates > 0 || data.capacityTrend.summary.roleRebalanceCandidates > 0 || data.capacityTrend.summary.staffingReviewCandidates > 0) &&
+            <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+              {data.capacityTrend.summary.automationCandidates > 0 && <Link href="/continuous-improvement" className="rounded-lg border border-violet-800 px-3 py-2 text-violet-200 hover:bg-violet-950/30">Automatiseringskandidater: {data.capacityTrend.summary.automationCandidates}</Link>}
+              {data.capacityTrend.summary.roleRebalanceCandidates > 0 && <span className="rounded-lg border border-cyan-800 px-3 py-2 text-cyan-200">Rolle-/ansvarsbalanse: {data.capacityTrend.summary.roleRebalanceCandidates}</span>}
+              {data.capacityTrend.summary.staffingReviewCandidates > 0 && <span className="rounded-lg border border-amber-800 px-3 py-2 text-amber-200">Bemanning bør vurderes: {data.capacityTrend.summary.staffingReviewCandidates}</span>}
+            </div>}
         </section>}
 
         {(data?.capacitySuggestions || []).length > 0 && <section className="rounded-2xl border border-amber-800/60 bg-amber-950/15 p-5">
