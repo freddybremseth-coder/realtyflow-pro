@@ -1175,17 +1175,98 @@ function KeysView({
   events,
   issues,
   workOrders,
+  properties,
+  onReload,
 }: {
   keys: CareKey[];
   events: CareCalendarEvent[];
   issues: Array<{ id: string; propertyLabel: string; title: string; severity: string; status: string; openedAt: string | null }>;
   workOrders: Array<{ id: string; propertyLabel: string; reference: string; status: string; description: string; scheduledFor: string | null; ownerTotalCents: number; currency: string }>;
+  properties: CareProperty[];
+  onReload: () => Promise<void> | void;
 }) {
-  if (keys.length === 0 && events.length === 0 && issues.length === 0 && workOrders.length === 0) {
-    return <EmptyState icon={KeyRound} title="Ingen nøkler eller kalenderhendelser ennå" detail="Care har tabeller for nøkkelregister, nøkkelhendelser, planlagte besøk, avvik og arbeidsordre. De blir synlige her når de får data." />;
+  const [propertyId, setPropertyId] = useState("");
+  const [label, setLabel] = useState("Hovednøkkel");
+  const [storageLocation, setStorageLocation] = useState("");
+  const [holderByKey, setHolderByKey] = useState<Record<string, string>>({});
+  const [reasonByKey, setReasonByKey] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState("");
+  const [keyError, setKeyError] = useState("");
+
+  async function registerKey(event: FormEvent) {
+    event.preventDefault();
+    setBusy("new");
+    setKeyError("");
+    try {
+      const response = await fetch("/api/care/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ propertyId, label, storageLocation }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke registrere nøkkelen.");
+      setPropertyId("");
+      setLabel("Hovednøkkel");
+      setStorageLocation("");
+      await onReload();
+    } catch (error) {
+      setKeyError(error instanceof Error ? error.message : "Kunne ikke registrere nøkkelen.");
+    } finally {
+      setBusy("");
+    }
   }
+
+  async function keyAction(key: CareKey, action: "checked_out" | "checked_in" | "lost" | "retired") {
+    setBusy(`${key.id}:${action}`);
+    setKeyError("");
+    try {
+      const response = await fetch("/api/care/keys", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keyId: key.id,
+          action,
+          holderName: holderByKey[key.id] || "",
+          reason: reasonByKey[key.id] || "",
+          storageLocation: action === "checked_in" ? (key.storageLocation || storageLocation || "") : "",
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere nøkkelen.");
+      setHolderByKey((current) => ({ ...current, [key.id]: "" }));
+      setReasonByKey((current) => ({ ...current, [key.id]: "" }));
+      await onReload();
+    } catch (error) {
+      setKeyError(error instanceof Error ? error.message : "Kunne ikke oppdatere nøkkelen.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
-    <section className="grid gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
+      <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Nøkkelrutine</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Registrer og spor Care-nøkler</h2>
+            <p className="mt-1 text-sm text-slate-400">Knytt nøkkelen til riktig Care-eiendom og logg utlevering/innlevering. Full adresse skal ikke brukes som nøkkelmerking.</p>
+          </div>
+          <span className="text-xs text-slate-500">{keys.length} registrerte nøkler</span>
+        </div>
+        <form onSubmit={registerKey} className="mt-4 grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_auto]">
+          <select required value={propertyId} onChange={(event) => setPropertyId(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white">
+            <option value="">Velg Care-eiendom</option>
+            {properties.map((property) => <option key={property.id} value={property.id}>{property.name} · {property.municipality || "område mangler"}</option>)}
+          </select>
+          <input required value={label} onChange={(event) => setLabel(event.target.value)} maxLength={120} placeholder="Hovednøkkel / sett A" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600" />
+          <input value={storageLocation} onChange={(event) => setStorageLocation(event.target.value)} maxLength={160} placeholder="Lagringsplass, f.eks. skap A-12" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600" />
+          <Button type="submit" disabled={busy === "new" || !propertyId}>{busy === "new" ? <Loader2 size={15} className="mr-2 animate-spin" /> : <KeyRound size={15} className="mr-2" />}Registrer</Button>
+        </form>
+        {keyError && <p className="mt-3 text-sm text-red-300">{keyError}</p>}
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-white">Nøkkelregister</h2>
         {keys.map((key) => (
@@ -1197,6 +1278,30 @@ function KeysView({
             <h3 className="mt-3 font-semibold text-white">{key.label}</h3>
             <p className="mt-1 text-sm text-slate-400">{key.propertyLabel}</p>
             <p className="mt-2 text-xs text-slate-500">Siste hendelse {dateLabel(key.lastEventAt)}{key.lastHolder ? ` · ${key.lastHolder}` : ""}</p>
+
+            {key.status !== "lost" && key.status !== "retired" && (
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                {key.status === "with_holder" ? (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="min-w-44 flex-1 space-y-1 text-xs text-slate-400">
+                      <span>Notat ved innlevering</span>
+                      <input value={reasonByKey[key.id] || ""} onChange={(event) => setReasonByKey((current) => ({ ...current, [key.id]: event.target.value }))} maxLength={300} placeholder="Valgfritt" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-600" />
+                    </label>
+                    <Button size="sm" disabled={busy.startsWith(key.id)} onClick={() => void keyAction(key, "checked_in")}>Sjekk inn</Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                    <input value={holderByKey[key.id] || ""} onChange={(event) => setHolderByKey((current) => ({ ...current, [key.id]: event.target.value }))} maxLength={160} placeholder="Hvem får nøkkelen?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-600" />
+                    <input value={reasonByKey[key.id] || ""} onChange={(event) => setReasonByKey((current) => ({ ...current, [key.id]: event.target.value }))} maxLength={300} placeholder="Årsak, f.eks. rørlegger" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-600" />
+                    <Button size="sm" disabled={busy.startsWith(key.id) || !(holderByKey[key.id] || "").trim()} onClick={() => void keyAction(key, "checked_out")}>Sjekk ut</Button>
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" disabled={busy.startsWith(key.id)} onClick={() => void keyAction(key, "lost")} className="rounded-lg border border-red-500/30 px-2.5 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-500/10">Marker mistet</button>
+                  <button type="button" disabled={busy.startsWith(key.id)} onClick={() => void keyAction(key, "retired")} className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:bg-slate-800">Ta ut av bruk</button>
+                </div>
+              </div>
+            )}
           </article>
         ))}
         {keys.length === 0 && <EmptyState icon={KeyRound} title="Ingen nøkler registrert" detail="Nøkkelregisteret fylles fra care.kh_keys." />}
@@ -1337,7 +1442,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
           {initialView === "customers" && <CustomersView properties={dashboard.properties} />}
           {initialView === "reports" && <ReportsView inspections={dashboard.inspections} reports={dashboard.reports} photos={dashboard.photos} />}
           {initialView === "invoices" && <InvoicesView invoices={dashboard.invoices} charges={dashboard.charges} plans={dashboard.plans} />}
-          {initialView === "keys" && <KeysView keys={dashboard.keys} events={dashboard.calendarEvents} issues={dashboard.issues} workOrders={dashboard.workOrders} />}
+          {initialView === "keys" && <KeysView keys={dashboard.keys} events={dashboard.calendarEvents} issues={dashboard.issues} workOrders={dashboard.workOrders} properties={dashboard.properties} onReload={load} />}
 
           <footer className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/55 p-4 text-xs text-slate-500">
             <CheckCircle2 size={16} className="text-emerald-300" />
