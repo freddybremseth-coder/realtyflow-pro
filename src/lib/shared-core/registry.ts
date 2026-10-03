@@ -14,8 +14,8 @@ export type SharedCoreDomain = {
   status: SharedCoreStatus;
   canonicalService: string;
   systemOfRecord: string;
-  consumers: Array<"sales" | "marketing" | "content" | "finance" | "operations" | "olivia" | "family">;
-  sources: string[];
+  consumers: ReadonlyArray<"sales" | "marketing" | "content" | "finance" | "operations" | "olivia" | "family">;
+  sources: readonly string[];
   nextStep: string;
 };
 
