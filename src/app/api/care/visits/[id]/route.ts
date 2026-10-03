@@ -59,8 +59,13 @@ async function loadInspection(supabase: any, inspectionId: string) {
   }
 
   const defs = Array.isArray(record(inspection.template_snapshot).items) ? record(inspection.template_snapshot).items : [];
-  const defsByCode = new Map(defs.map((item: any) => [String(item.code), item]));
-  const items = (itemsResult.data || []).map((item: any) => ({ ...defsByCode.get(String(item.item_code)), ...item }));
+  const defsByCode = new Map<string, Record<string, any>>(
+    defs.map((item: any) => [String(item.code), record(item)]),
+  );
+  const items = (itemsResult.data || []).map((item: any) => ({
+    ...(defsByCode.get(String(item.item_code)) || {}),
+    ...item,
+  }));
   const photos = await Promise.all((photosResult.data || []).map(async (photo: any) => ({
     ...photo,
     signed_url: await signedUrl(supabase, "kh-photos", photo.storage_path),
