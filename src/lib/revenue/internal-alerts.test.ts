@@ -7,10 +7,23 @@ const now = new Date("2026-07-11T12:00:00.000Z");
 const profiles: any[] = [
   { email: "sales@example.com", displayName: "Sara Sales", role: "SALES", active: true, createdAt: null, updatedAt: null, updatedBy: null },
   { email: "closing@example.com", displayName: "Clara Closing", role: "CLOSING", active: true, createdAt: null, updatedAt: null, updatedBy: null },
+  { email: "backup@example.com", displayName: "Backup Sales", role: "SALES", active: true, createdAt: null, updatedAt: null, updatedBy: null },
 ];
 
-function center(contacts: any[], workItems: any[] = [], acknowledgements: InternalAlertAcknowledgement[] = []) {
-  const team = buildTeamWorkload({ contacts, workItems, profiles, ownerEmails: ["owner@example.com"], now });
+function center(
+  contacts: any[],
+  workItems: any[] = [],
+  acknowledgements: InternalAlertAcknowledgement[] = [],
+  responsibilityCountsByEmail: Record<string, number> = {},
+) {
+  const team = buildTeamWorkload({
+    contacts,
+    workItems,
+    profiles,
+    ownerEmails: ["owner@example.com"],
+    now,
+    responsibilityCountsByEmail,
+  });
   return buildInternalAlertCenter({ contacts, team, acknowledgements, now });
 }
 
@@ -117,4 +130,26 @@ test("assigned overdue high-priority task becomes an execution alert and team ov
   const overload = alerts.active.find((alert) => alert.ruleId === "TEAM_OVERLOAD");
   assert.equal(overload?.severity, "CRITICAL");
   assert.equal(overload?.ownerEmail, "sales@example.com");
+});
+
+
+test("team overload alert includes responsibility areas and concrete safe redistribution when available", () => {
+  const workItems = Array.from({ length: 8 }, (_, index) => ({
+    id: `capacity-${index}`,
+    title: `Capacity task ${index}`,
+    description: "Safe internal follow-up",
+    status: "TO_DO",
+    priority: index === 0 ? "CRITICAL" : "MEDIUM",
+    due_date: "2026-07-20",
+    assigned_agent: "sales@example.com",
+    brand_id: "soleada",
+  }));
+  const alerts = center([], workItems, [], { "sales@example.com": 4, "backup@example.com": 1 });
+  const overload = alerts.active.find((alert) => alert.ruleId === "TEAM_OVERLOAD" && alert.ownerEmail === "sales@example.com");
+  assert.ok(overload);
+  assert.match(overload.detail, /4 ansvarsområder/);
+  assert.match(overload.reason, /workspace-ansvarsområder/);
+  assert.match(overload.recommendedAction, /Backup Sales/);
+  assert.doesNotMatch(overload.recommendedAction, /Capacity task 0/);
+  assert.match(overload.recommendedAction, /Owner-godkjenning/);
 });
