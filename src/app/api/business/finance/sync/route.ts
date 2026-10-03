@@ -1,33 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import {
+  financeEventDate,
+  financeMoney,
+  type BusinessBusinessFinancialEventWriteWrite,
+} from "@/lib/shared-core/finance";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type FinancialEvent = {
-  brand_id: string;
-  source_type: "crm" | "kdp" | "saas" | "olivia" | "manual";
-  source_id: string;
-  stream:
-    | "commission"
-    | "sale_value"
-    | "kdp_royalty"
-    | "saas_revenue"
-    | "saas_mrr"
-    | "olive_harvest"
-    | "olive_subsidy"
-    | "olive_expense"
-    | "manual_adjustment";
-  direction: "income" | "expense" | "metric";
-  status: "pending" | "recognized" | "paid" | "cancelled";
-  amount: number;
-  currency: string;
-  event_date: string;
-  description: string;
-  metadata: Record<string, unknown>;
-  updated_at: string;
-};
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -65,19 +46,9 @@ async function queryOliviaTable(
   return { data: [], error: lastError, schema: null };
 }
 
-function eventDate(value?: unknown) {
-  if (!value) return new Date().toISOString().slice(0, 10);
-  return String(value).slice(0, 10);
-}
-
-function money(value: unknown) {
-  const number = Number(value || 0);
-  return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
-}
-
 async function loadOliviaEvents() {
   const supabase = getOliviaSupabase();
-  if (!supabase) return { events: [] as FinancialEvent[], warnings: ["Olivia Supabase not configured"] };
+  if (!supabase) return { events: [] as BusinessFinancialEventWrite[], warnings: ["Olivia Supabase not configured"] };
 
   const [harvestRes, expenseRes, subsidyRes] = await Promise.allSettled([
     queryOliviaTable(supabase, "harvest_records", { orderBy: "harvest_date", ascending: false }),
@@ -94,10 +65,10 @@ async function loadOliviaEvents() {
   if (subsidyRes.status === "fulfilled" && subsidyRes.value.error) warnings.push(`Olivia subsidies: ${subsidyRes.value.error.message}`);
 
   const now = new Date().toISOString();
-  const events: FinancialEvent[] = [];
+  const events: BusinessFinancialEventWrite[] = [];
 
   for (const row of harvests) {
-    const amount = money(row.total_revenue ?? (Number(row.kilograms || 0) * Number(row.price_per_kg || 0)));
+    const amount = financeMoney(row.total_revenue ?? (Number(row.kilograms || 0) * Number(row.price_per_kg || 0)));
     if (!amount) continue;
     events.push({
       brand_id: "donaanna",
@@ -108,7 +79,7 @@ async function loadOliviaEvents() {
       status: "recognized",
       amount,
       currency: String(row.currency || "EUR"),
-      event_date: eventDate(row.harvest_date || row.date),
+      event_date: financeEventDate(row.harvest_date || row.date),
       description: `Olivia harvest${row.season ? ` ${row.season}` : ""}`,
       metadata: row as Record<string, unknown>,
       updated_at: now,
@@ -116,7 +87,7 @@ async function loadOliviaEvents() {
   }
 
   for (const row of subsidies) {
-    const amount = money(row.amount);
+    const amount = financeMoney(row.amount);
     if (!amount) continue;
     events.push({
       brand_id: "donaanna",
@@ -127,7 +98,7 @@ async function loadOliviaEvents() {
       status: "recognized",
       amount,
       currency: String(row.currency || "EUR"),
-      event_date: eventDate(row.date),
+      event_date: financeEventDate(row.date),
       description: `Olivia subsidy${row.category ? `: ${row.category}` : ""}`,
       metadata: row as Record<string, unknown>,
       updated_at: now,
@@ -135,7 +106,7 @@ async function loadOliviaEvents() {
   }
 
   for (const row of expenses) {
-    const amount = money(row.amount);
+    const amount = financeMoney(row.amount);
     if (!amount) continue;
     events.push({
       brand_id: "donaanna",
@@ -146,7 +117,7 @@ async function loadOliviaEvents() {
       status: "paid",
       amount,
       currency: String(row.currency || "EUR"),
-      event_date: eventDate(row.date),
+      event_date: financeEventDate(row.date),
       description: `Olivia expense${row.category ? `: ${row.category}` : ""}`,
       metadata: row as Record<string, unknown>,
       updated_at: now,
@@ -181,13 +152,13 @@ export async function POST(request: NextRequest) {
   if (saasRes.error) warnings.push(`SaaS: ${saasRes.error.message}`);
   warnings.push(...oliviaResult.warnings);
 
-  const events: FinancialEvent[] = [];
+  const events: BusinessFinancialEventWrite[] = [];
 
   for (const contact of contactsRes.data || []) {
     const brandId = String(contact.brand_id || "soleada");
     const status = contact.commission_paid_date ? "paid" : "pending";
-    const commission = money(contact.commission_amount);
-    const saleValue = money(contact.sale_price);
+    const commission = financeMoney(contact.commission_amount);
+    const saleValue = financeMoney(contact.sale_price);
 
     if (commission) {
       events.push({
@@ -199,7 +170,7 @@ export async function POST(request: NextRequest) {
         status,
         amount: commission,
         currency: "EUR",
-        event_date: eventDate(contact.commission_paid_date || contact.updated_at),
+        event_date: financeEventDate(contact.commission_paid_date || contact.updated_at),
         description: `Commission: ${contact.name || contact.email || "WON contact"}`,
         metadata: { contact_id: contact.id, sale_price: saleValue, pipeline_status: contact.pipeline_status },
         updated_at: now,
@@ -216,7 +187,7 @@ export async function POST(request: NextRequest) {
         status: "recognized",
         amount: saleValue,
         currency: "EUR",
-        event_date: eventDate(contact.updated_at),
+        event_date: financeEventDate(contact.updated_at),
         description: `Sale value: ${contact.name || contact.email || "WON contact"}`,
         metadata: { contact_id: contact.id, commission_amount: commission },
         updated_at: now,
@@ -225,7 +196,7 @@ export async function POST(request: NextRequest) {
   }
 
   for (const book of publishingRes.data || []) {
-    const royalties = money(book.royalties);
+    const royalties = financeMoney(book.royalties);
     if (!royalties) continue;
     events.push({
       brand_id: String(book.brand_id || "freddypublishing"),
@@ -236,7 +207,7 @@ export async function POST(request: NextRequest) {
       status: "recognized",
       amount: royalties,
       currency: String(book.currency || "USD"),
-      event_date: eventDate(book.updated_at),
+      event_date: financeEventDate(book.updated_at),
       description: `KDP royalties: ${book.title || book.asin || "Book"}`,
       metadata: { book_id: book.id, asin: book.asin, orders: book.orders },
       updated_at: now,
@@ -244,8 +215,8 @@ export async function POST(request: NextRequest) {
   }
 
   for (const app of saasRes.data || []) {
-    const revenue = money(app.total_revenue);
-    const mrr = money(app.mrr);
+    const revenue = financeMoney(app.total_revenue);
+    const mrr = financeMoney(app.mrr);
     const currency = String(app.currency || "USD");
 
     if (revenue) {
@@ -258,7 +229,7 @@ export async function POST(request: NextRequest) {
         status: "recognized",
         amount: revenue,
         currency,
-        event_date: eventDate(app.updated_at),
+        event_date: financeEventDate(app.updated_at),
         description: `SaaS revenue: ${app.name || app.slug}`,
         metadata: { app_id: app.id, slug: app.slug, arr: app.arr },
         updated_at: now,
@@ -275,7 +246,7 @@ export async function POST(request: NextRequest) {
         status: "recognized",
         amount: mrr,
         currency,
-        event_date: eventDate(app.updated_at),
+        event_date: financeEventDate(app.updated_at),
         description: `SaaS MRR: ${app.name || app.slug}`,
         metadata: { app_id: app.id, slug: app.slug, arr: app.arr },
         updated_at: now,
