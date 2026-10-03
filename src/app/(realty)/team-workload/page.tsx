@@ -15,9 +15,11 @@ import {
 } from "lucide-react";
 import type { AccessRole } from "@/lib/access-control";
 import type { TeamWorkloadItem, TeamWorkloadWorkspace } from "@/lib/revenue/team-workload";
+import type { TeamCapacitySuggestion } from "@/lib/revenue/team-capacity";
 
 type Payload = {
   workspace: TeamWorkloadWorkspace;
+  capacitySuggestions: TeamCapacitySuggestion[];
   canManageAssignments: boolean;
   assignmentHistoryCount: number;
 };
@@ -90,6 +92,20 @@ export default function TeamWorkloadPage() {
     setBusy("");
   };
 
+  const approveSuggestion = async (suggestion: TeamCapacitySuggestion) => {
+    if (!data?.canManageAssignments) return;
+    const item = data.workspace.items.find(row => row.id === suggestion.itemId);
+    if (!item) {
+      setError("Saken i omfordelingsforslaget finnes ikke lenger i arbeidskøen.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Flytte «${suggestion.itemTitle}» fra ${suggestion.fromName} til ${suggestion.toName}? Dette lagres som en vanlig Owner-godkjent tildeling.`,
+    );
+    if (!confirmed) return;
+    await assign(item, suggestion.toEmail);
+  };
+
   const visible = useMemo(() => {
     const items = data?.workspace.items || [];
     return items.filter((item) => {
@@ -133,13 +149,50 @@ export default function TeamWorkloadPage() {
           ].map(([label, value, Icon]: any) => <div key={label} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><Icon size={18} className="mb-3 text-primary-400"/><div className="text-2xl font-bold">{value}</div><div className="text-xs text-slate-500">{label}</div></div>)}
         </section>
 
+        {(data?.capacitySuggestions || []).length > 0 && <section className="rounded-2xl border border-amber-800/60 bg-amber-950/15 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">Proaktiv kapasitetsstyring</div>
+              <h2 className="mt-1 text-xl font-semibold">Forslag til trygg omfordeling</h2>
+              <p className="mt-2 max-w-3xl text-sm text-slate-400">
+                RealtyFlow foreslår bare saker som ikke er kritiske, forfalte, i forhandling eller vunnet. Ingen flytting skjer uten Owner-godkjenning.
+              </p>
+            </div>
+            <span className="rounded-full border border-amber-800 px-3 py-1 text-xs text-amber-300">{data?.capacitySuggestions.length || 0} forslag</span>
+          </div>
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            {(data?.capacitySuggestions || []).map(suggestion => <article key={suggestion.id} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{suggestion.resourceType === "CONTACT" ? "Kunde" : "Oppgave"} · {suggestion.brandId}</div>
+                  <div className="mt-1 font-semibold text-slate-200">{suggestion.itemTitle}</div>
+                  <p className="mt-1 text-xs text-slate-400">{suggestion.fromName} → <span className="text-emerald-300">{suggestion.toName}</span></p>
+                </div>
+                <span className="rounded-full border border-slate-700 px-2 py-1 text-[10px] text-slate-400">score {suggestion.itemScore}</span>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-400">{suggestion.reason}</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-center text-[11px]">
+                <div className="rounded-lg border border-slate-800 p-2"><div className="font-semibold text-amber-200">{suggestion.sourceCapacityBefore} → {suggestion.sourceCapacityAfter}</div><div className="text-slate-500">{suggestion.fromName}</div></div>
+                <div className="rounded-lg border border-slate-800 p-2"><div className="font-semibold text-emerald-200">{suggestion.targetCapacityBefore} → {suggestion.targetCapacityAfter}</div><div className="text-slate-500">{suggestion.toName}</div></div>
+              </div>
+              <p className="mt-3 text-[10px] leading-4 text-slate-600">{suggestion.safety}</p>
+              {data?.canManageAssignments && <button type="button"
+                disabled={busy === suggestion.itemId}
+                onClick={() => void approveSuggestion(suggestion)}
+                className="mt-3 rounded-lg border border-amber-700 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-950/40 disabled:opacity-50">
+                Godkjenn omfordeling
+              </button>}
+            </article>)}
+          </div>
+        </section>}
+
         <section>
           <div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-semibold">Belastning per person</h2><span className="text-xs text-slate-500">{data?.assignmentHistoryCount || 0} tildelingshendelser lagret</span></div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {(workspace?.members || []).map((row) => (
               <button key={row.email} onClick={() => setMember(member === row.email ? "all" : row.email)} className={`rounded-2xl border p-5 text-left transition ${member === row.email ? "border-primary-500 bg-primary-950/20" : "border-slate-800 bg-slate-900/70 hover:border-slate-700"}`}>
                 <div className="flex items-start justify-between gap-3"><div><div className="font-semibold">{row.displayName}</div><div className="text-xs text-slate-500">{row.email} · {roleLabels[row.role]}</div></div><span className={`rounded-full px-2 py-1 text-[10px] font-medium ${row.load === "HIGH" ? "bg-red-950 text-red-300" : row.load === "BALANCED" ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-300"}`}>{loadLabels[row.load]}</span></div>
-                <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs"><div><div className="text-lg font-semibold">{row.contacts}</div><div className="text-slate-500">Kunder</div></div><div><div className="text-lg font-semibold">{row.tasks}</div><div className="text-slate-500">Oppgaver</div></div><div><div className="text-lg font-semibold text-amber-300">{row.overdue}</div><div className="text-slate-500">Forfalt</div></div><div><div className="text-lg font-semibold text-red-300">{row.critical}</div><div className="text-slate-500">Kritisk</div></div></div>
+                <div className="mt-4 grid grid-cols-5 gap-2 text-center text-xs"><div><div className="text-lg font-semibold">{row.contacts}</div><div className="text-slate-500">Kunder</div></div><div><div className="text-lg font-semibold">{row.tasks}</div><div className="text-slate-500">Oppgaver</div></div><div><div className="text-lg font-semibold text-cyan-300">{row.responsibilityAreas}</div><div className="text-slate-500">Ansvar</div></div><div><div className="text-lg font-semibold text-amber-300">{row.overdue}</div><div className="text-slate-500">Forfalt</div></div><div><div className="text-lg font-semibold text-red-300">{row.critical}</div><div className="text-slate-500">Kritisk</div></div></div><div className="mt-3 text-[11px] text-slate-500">Kapasitetsscore: <span className="font-semibold text-slate-300">{row.capacityScore}</span></div>
               </button>
             ))}
           </div>
