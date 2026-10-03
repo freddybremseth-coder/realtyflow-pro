@@ -1,4 +1,5 @@
 export type CareView = "overview" | "leads" | "customers" | "reports" | "invoices" | "keys";
+export type CareSalesStage = "new" | "contacted" | "quote_sent" | "waiting_customer" | "activated" | "not_relevant";
 
 export type CareReadinessStatus = "ok" | "warning" | "empty";
 
@@ -20,6 +21,8 @@ export interface CareSummary {
   upcomingEvents: number;
   upcomingEvents7d: number;
   staleOpenLeads: number;
+  offersInProgress: number;
+  followUpsDue: number;
   openCharges: number;
   draftInvoices: number;
   invoiceTotalCents: number;
@@ -239,6 +242,10 @@ export interface CareLead {
   priority: string;
   pipelineStatus: string | null;
   nextAction: string | null;
+  salesStage: CareSalesStage;
+  followUpOn: string | null;
+  lastFollowUpAt: string | null;
+  salesNote: string | null;
   isExistingContact: boolean;
   createdAt: string | null;
   customerHref: string;
@@ -668,6 +675,19 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       || (requestType?.replace(/^care-/, "") || "")
       || "keyholding";
     const carePropertyId = optionalText(metadata, "care_property_id");
+    const careContractId = optionalText(metadata, "care_contract_id");
+    const rawSalesStage = optionalText(metadata, "care_sales_stage");
+    const salesStage: CareSalesStage = careContractId
+      ? "activated"
+      : rawSalesStage === "contacted"
+        || rawSalesStage === "quote_sent"
+        || rawSalesStage === "waiting_customer"
+        || rawSalesStage === "not_relevant"
+        || rawSalesStage === "new"
+        ? rawSalesStage
+        : isOpen(row.status)
+          ? "new"
+          : "not_relevant";
     const careProperty = carePropertyId ? propertiesById.get(carePropertyId) : undefined;
     return {
       id: text(row, "id"),
@@ -682,7 +702,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       preferredArea: optionalText(metadata, "preferred_area"),
       propertyType: optionalText(metadata, "property_type"),
       carePropertyId,
-      careContractId: optionalText(metadata, "care_contract_id"),
+      careContractId,
       careReference: optionalText(metadata, "care_reference"),
       carePropertyName: optionalText(careProperty, "name"),
       carePropertyType: optionalText(careProperty, "property_type"),
@@ -698,6 +718,10 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       priority: text(row, "priority", "MEDIUM"),
       pipelineStatus: optionalText(contact, "pipeline_status"),
       nextAction: optionalText(row, "next_action"),
+      salesStage,
+      followUpOn: optionalText(metadata, "care_follow_up_on"),
+      lastFollowUpAt: dateText(metadata, "care_last_followup_at"),
+      salesNote: optionalText(metadata, "care_sales_note"),
       isExistingContact: metadata.is_existing_contact === true,
       createdAt: dateText(row, "created_at") || dateText(row, "updated_at"),
       customerHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
@@ -723,6 +747,15 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     const createdAtMs = timestamp(createdAt);
     return isOpen(row.status) && createdAtMs > 0 && createdAtMs < staleLeadCutoff;
   }).length;
+  const madridToday = now.toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+  const offersInProgress = leads.filter((lead) =>
+    isOpen(lead.status) && (lead.salesStage === "quote_sent" || lead.salesStage === "waiting_customer")
+  ).length;
+  const followUpsDue = leads.filter((lead) =>
+    isOpen(lead.status)
+    && Boolean(lead.followUpOn)
+    && String(lead.followUpOn) <= madridToday
+  ).length;
   const openIssues = issues.filter((issue) => isOpen(issue.status)).length;
   const openWorkOrders = workOrders.filter((order) => isOpen(order.status)).length;
   const openCharges = charges.filter((charge) => isOpen(charge.status)).length;
@@ -747,6 +780,8 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     upcomingEvents,
     upcomingEvents7d,
     staleOpenLeads,
+    offersInProgress,
+    followUpsDue,
     openCharges,
     draftInvoices,
     invoiceTotalCents: invoices.reduce((sum, invoice) => sum + invoice.totalCents, 0),
