@@ -22,7 +22,7 @@ test("Care lead context joins CRM contacts and passes them to the dashboard mode
 });
 
 test("Care overview surfaces source page, service intent and direct customer card navigation", () => {
-  assert.match(dashboard, /Nye Care-henvendelser/);
+  assert.match(dashboard, /Prioriterte Care-henvendelser/);
   assert.match(dashboard, /careServiceLabel\(lead\.serviceIntent\)/);
   assert.match(dashboard, /sourcePageLabel\(lead\.pageUrl\)/);
   assert.match(dashboard, /lead\.source \|\| "Care webskjema"/);
