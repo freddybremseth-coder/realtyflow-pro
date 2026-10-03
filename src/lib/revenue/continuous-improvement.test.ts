@@ -76,6 +76,7 @@ function snapshot(weekStart: string, issues: WeeklyManagementIssue[], role: "SAL
     comparison: { completionRateDelta: null, overdueFollowupsDelta: null, repeatedDeferralsDelta: null },
     bySource: [],
     byRole: [],
+    capacityLearning: { measured: 0, improved: 0, unchanged: 0, worsened: 0, notMeasurable: 0, effects: [] },
     issues,
     warnings: [],
   };
@@ -254,4 +255,30 @@ test("parser rejects malformed records and compaction keeps bounded improvements
       ownerEmail: null, successMetric: null, targetValue: null, note: null }));
   }
   assert.equal(new Set(compactContinuousImprovementEvents(events).map((event) => event.improvementId)).size, 240);
+});
+
+
+test("repeated worsened capacity decisions become a continuous-improvement candidate", () => {
+  const capacityIssue = issue({
+    id: "weekly:CAPACITY_ACTION_WORSENED:andrea",
+    type: "CAPACITY_ACTION_WORSENED",
+    source: "TEAM",
+    subject: "Andrea",
+    title: "Kapasitetsgrep har ikke redusert presset",
+    detail: "Presset er fortsatt høyere enn ved beslutningen.",
+    recommendedAction: "Revurder kapasitetsgrepet.",
+    href: "/operating-review",
+    decisionKey: "capacity-effect:7D:andrea@example.com",
+    daysOpen: null,
+    deferrals: 0,
+  });
+  const weekly = weeklySettings([
+    { week: "2026-06-29", issues: [capacityIssue] },
+    { week: "2026-07-06", issues: [capacityIssue] },
+  ]);
+  const candidates = buildImprovementCandidates(weekly, "SALES", new Date("2026-07-12T10:00:00Z"), emptySettings);
+  const candidate = candidates.find(item => item.issueType === "CAPACITY_ACTION_WORSENED");
+  assert.ok(candidate);
+  assert.equal(candidate?.occurrenceWeeks, 2);
+  assert.equal(candidate?.source, "TEAM");
 });
