@@ -29,12 +29,15 @@ export function buildWorkspaceTodayActions(input: {
   contactCount: number;
   attention?: WorkspaceAttentionSignal[];
   responsibilities?: WorkspaceResponsibilityId[];
+  primaryResponsibilities?: WorkspaceResponsibilityId[];
   limit?: number;
 }): WorkspaceTodayAction[] {
-  const { brandKey, permissions, contactCount, attention = [], responsibilities = [], limit = 4 } = input;
+  const { brandKey, permissions, contactCount, attention = [], responsibilities = [], primaryResponsibilities = [], limit = 4 } = input;
   const actions: WorkspaceTodayAction[] = [];
   const scoped = responsibilities.length > 0;
   const owns = (responsibility: WorkspaceResponsibilityId) => !scoped || responsibilities.includes(responsibility);
+  const rank = (base: number, responsibility: WorkspaceResponsibilityId) =>
+    base + (primaryResponsibilities.includes(responsibility) ? 100 : 0);
 
   const canReadCrm = hasAny(permissions, ["crm.read", "crm.joint.read"]);
   if (canReadCrm && contactCount > 0 && owns("new-leads")) {
@@ -44,7 +47,7 @@ export function buildWorkspaceTodayActions(input: {
       description: `Du har ${contactCount} kunde${contactCount === 1 ? "" : "r"} tilgjengelig i dette arbeidsområdet. Start med neste konkrete kundesteg.`,
       reason: "Kundearbeid prioriteres foran ny aktivitet når det allerede finnes aktive relasjoner å følge opp.",
       area: "leads",
-      priority: 100,
+      priority: rank(100, "new-leads"),
       source: "crm",
     });
   }
@@ -62,7 +65,7 @@ export function buildWorkspaceTodayActions(input: {
             ? "Nexus følger dette fordi signalene kan påvirke vekst eller gjennomføring."
             : "Nexus viser dette som relevant kontekst for dagens arbeid.",
         area: "growth",
-        priority: score - index,
+        priority: rank(score - index, "nexus-review"),
         source: "nexus",
       });
     });
@@ -75,7 +78,7 @@ export function buildWorkspaceTodayActions(input: {
       description: "Prioriter selskaper med tydelig fit, dokumentert research og et realistisk neste kontaktsteg.",
       reason: "Corporate kan skape gjentakende leads, men bare når researchen ender i en konkret menneskelig handling.",
       area: "growth",
-      priority: 78,
+      priority: rank(78, "corporate"),
       source: "role",
     });
   }
@@ -90,7 +93,7 @@ export function buildWorkspaceTodayActions(input: {
       description: "Bruk søke- og læringssignalene til å forbedre en viktig side, artikkel eller publisering med tydelig neste steg.",
       reason: "Synlighet har verdi når den leder riktig målgruppe videre mot kontakt, møte eller salg.",
       area: "growth",
-      priority: 70,
+      priority: rank(70, "seo-content"),
       source: "role",
     });
   }
@@ -102,7 +105,7 @@ export function buildWorkspaceTodayActions(input: {
       description: "Velg relevant bolig- eller områdeinnhold, forhåndsvis resultatet og publiser først når det passer merkevaren.",
       reason: "Kort video kan gi rekkevidde og leads, men prioriteres etter aktive kunder og tydelige Nexus-signaler.",
       area: "growth",
-      priority: 62,
+      priority: rank(62, "social-reels"),
       source: "role",
     });
   }
@@ -114,7 +117,7 @@ export function buildWorkspaceTodayActions(input: {
       description: "Se etter en ferdig Zen Reel som kan publiseres som Short på verifisert kanal.",
       reason: "Gjenbruk av godt innhold øker distribusjonen uten å lage unødvendig merarbeid.",
       area: "growth",
-      priority: 58,
+      priority: rank(58, "social-reels"),
       source: "role",
     });
   }
@@ -126,7 +129,7 @@ export function buildWorkspaceTodayActions(input: {
       description: "Søk i publiserte boliger når en kunde trenger konkrete alternativer og dokumenter hvorfor forslagene passer.",
       reason: "Eiendomssøk er mest verdifullt når det er koblet til et konkret kundebehov.",
       area: "properties",
-      priority: contactCount > 0 ? 74 : 52,
+      priority: rank(contactCount > 0 ? 74 : 52, "property-matching"),
       source: "role",
     });
   }
@@ -138,7 +141,7 @@ export function buildWorkspaceTodayActions(input: {
       description: "Forbered neste relevante utsending, velg riktig segment og bruk tidligere klikkdata før du sender eller planlegger.",
       reason: "Nyhetsbrev er satt som ditt ansvar i denne merkevaren og bør drives av segment, samtykke og målbar respons.",
       area: "growth",
-      priority: 72,
+      priority: rank(72, "newsletter"),
       source: "role",
     });
   }

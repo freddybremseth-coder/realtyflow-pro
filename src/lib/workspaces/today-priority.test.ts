@@ -89,3 +89,30 @@ test("newsletter responsibility needs email draft/send capability", () => {
   });
   assert.deepEqual(actions.map(action => action.id), ["training"]);
 });
+
+
+test("primary responsibilities outrank support responsibilities on Today", () => {
+  const actions = buildWorkspaceTodayActions({
+    brandKey: "pinosoecolife",
+    permissions: ["crm.read","properties.catalog.read","email.read","email.draft"],
+    responsibilities: ["new-leads","property-matching","newsletter"],
+    primaryResponsibilities: ["newsletter"],
+    contactCount: 5,
+    limit: 10,
+  });
+  assert.equal(actions[0]?.id, "newsletter");
+  assert.equal(actions.some(action => action.id === "crm-follow-up"), true);
+  assert.equal(actions.some(action => action.id === "properties"), true);
+});
+
+test("support order is unchanged when no primary responsibility is assigned", () => {
+  const actions = buildWorkspaceTodayActions({
+    brandKey: "pinosoecolife",
+    permissions: ["crm.read","properties.catalog.read","email.read","email.draft"],
+    responsibilities: ["new-leads","property-matching","newsletter"],
+    primaryResponsibilities: [],
+    contactCount: 5,
+    limit: 10,
+  });
+  assert.equal(actions[0]?.id, "crm-follow-up");
+});

@@ -77,7 +77,7 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
             eq: () => ({
               eq: () => ({
                 maybeSingle: async () => ({
-                  data: { responsibilities: ["property-matching"] },
+                  data: { responsibilities: ["property-matching"], primary_responsibilities: ["property-matching"] },
                   error: null,
                 }),
               }),
@@ -105,6 +105,7 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
     assert.equal(JSON.stringify(body).includes("crm.read"), false);
     assert.equal(JSON.stringify(body).includes("crm.write"), false);
     assert.deepEqual(body.responsibilities, ["property-matching"]);
+    assert.deepEqual(body.primaryResponsibilities, ["property-matching"]);
   } finally {
     globalThis.fetch = originalFetch;
     if (oldUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -142,7 +143,10 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
             eq: () => ({
               eq: () => ({
                 maybeSingle: async () => ({
-                  data: { responsibilities: currentPermissions.includes("nexus.read") ? ["nexus-review"] : [] },
+                  data: {
+                    responsibilities: currentPermissions.includes("nexus.read") ? ["nexus-review"] : [],
+                    primary_responsibilities: currentPermissions.includes("nexus.read") ? ["nexus-review"] : [],
+                  },
                   error: null,
                 }),
               }),
@@ -231,6 +235,7 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
     const pinosoNexusBody = await pinosoNexus.json();
     assert.deepEqual(pinosoNexusBody.permissions, ["nexus.read"]);
     assert.deepEqual(pinosoNexusBody.responsibilities, ["nexus-review"]);
+    assert.deepEqual(pinosoNexusBody.primaryResponsibilities, ["nexus-review"]);
 
     currentBrand = "zeneco";
     currentPermissions = ["nexus.read"];
