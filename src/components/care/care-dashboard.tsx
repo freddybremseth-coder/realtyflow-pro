@@ -1214,7 +1214,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
         </div>
       ) : dashboard ? (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {summaryCards.map((card) => <MetricCard key={card.label} {...card} />)}
           </section>
 
