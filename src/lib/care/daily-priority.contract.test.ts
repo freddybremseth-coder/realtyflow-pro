@@ -36,3 +36,15 @@ test("Care lead list can filter to items that need action", () => {
   assert.match(source, /attentionOnly && !careLeadNeedsAttention\(lead\)/);
   assert.match(source, /Krever handling \(\{attentionCount\}\)/);
 });
+
+
+test("Care overview exposes a concrete operations queue with customer context", () => {
+  assert.match(source, /Operativ Care-kø/);
+  assert.match(source, /Besøk, avvik og arbeidsordre som kommer først/);
+  assert.match(source, /dashboard\.calendarEvents/);
+  assert.match(source, /dashboard\.issues/);
+  assert.match(source, /dashboard\.workOrders/);
+  assert.match(source, /propertyById\.get\(item\.propertyId\)/);
+  assert.match(source, /Kundekort/);
+  assert.match(source, /operationalQueue\.slice\(0, 8\)/);
+});
