@@ -124,6 +124,22 @@ function careServiceLabel(value: string) {
   return CARE_SERVICE_LABELS[value] || value || "Keyholding";
 }
 
+const CARE_DISCOVERY_LABELS: Record<string, string> = {
+  google_search: "Google",
+  bing_search: "Bing",
+  chatgpt: "ChatGPT",
+  google_gemini: "Gemini",
+  microsoft_copilot: "Copilot",
+  perplexity: "Perplexity",
+  brave_search: "Brave Search",
+  duckduckgo: "DuckDuckGo",
+};
+
+function careDiscoveryLabel(value: string | null) {
+  if (!value) return null;
+  return CARE_DISCOVERY_LABELS[value] || value;
+}
+
 const CARE_SALES_STAGE_LABELS: Record<CareSalesStage, string> = {
   new: "Ny",
   contacted: "Kontaktet",
@@ -534,6 +550,9 @@ function CareLeadCard({
         {(lead.utmSource || lead.utmCampaign) && (
           <p className="truncate"><span className="text-slate-400">Kampanje:</span> {[lead.utmSource, lead.utmMedium, lead.utmCampaign].filter(Boolean).join(" / ")}</p>
         )}
+        {careDiscoveryLabel(lead.discoverySource) && (
+          <p className="truncate"><span className="text-slate-400">Fant oss via:</span> <span className="text-cyan-300">{careDiscoveryLabel(lead.discoverySource)}</span></p>
+        )}
       </div>
 
       {lead.nextAction && (
@@ -571,6 +590,18 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
   const [followupLead, setFollowupLead] = useState<CareLead | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const service = params.get("service");
+    const attention = params.get("attention");
+    if (service && dashboard.leads.some((lead) => lead.serviceIntent === service)) {
+      setServiceFilter(service);
+    }
+    if (attention === "1" || attention === "true") {
+      setAttentionOnly(true);
+    }
+  }, [dashboard.leads]);
 
   const services = useMemo(() => {
     const values = Array.from(new Set(dashboard.leads.map((lead) => lead.serviceIntent).filter(Boolean)));
@@ -735,7 +766,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       label: "Kvalifiser nye Care-henvendelser",
       detail: "Åpne kundekortet, bekreft behov og opprett Care-eiendom når kunden er klar.",
       count: dashboard.lifecycle.awaitingProperty,
-      href: "#care-leads",
+      href: "/care/leads?attention=1",
       icon: Inbox,
     } : null,
     dashboard.lifecycle.awaitingContract > 0 ? {
@@ -743,7 +774,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       label: "Aktiver Care-avtale",
       detail: "Care-eiendom er opprettet, men aktiv plan og MRR mangler.",
       count: dashboard.lifecycle.awaitingContract,
-      href: "#care-leads",
+      href: "/care/leads?attention=1",
       icon: ShieldCheck,
     } : null,
     dashboard.lifecycle.propertiesWithoutNextVisit > 0 ? {
@@ -812,14 +843,21 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {dashboard.serviceDemand.map((item) => (
-              <article key={item.serviceIntent} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
-                <p className="text-sm font-semibold text-white">{careServiceLabel(item.serviceIntent)}</p>
+              <Link
+                key={item.serviceIntent}
+                href={`/care/leads?service=${encodeURIComponent(item.serviceIntent)}`}
+                className="rounded-lg border border-slate-800 bg-slate-950/45 p-4 transition hover:border-cyan-500/35 hover:bg-slate-950/70"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-white">{careServiceLabel(item.serviceIntent)}</p>
+                  <ChevronRight size={15} className="text-slate-600" />
+                </div>
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <div><strong className="text-2xl text-white">{item.trackedLeads}</strong><p className="text-[11px] text-slate-500">henvendelser</p></div>
                   <div className="text-right"><strong className="text-lg text-amber-200">{item.openLeads}</strong><p className="text-[11px] text-slate-500">åpne</p></div>
                 </div>
                 <div className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-500">{item.contractedLeads} avtaler · {item.leadToContractPercent}% konvertering</div>
-              </article>
+              </Link>
             ))}
           </div>
         </section>
