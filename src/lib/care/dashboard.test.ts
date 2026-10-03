@@ -162,6 +162,15 @@ test("Care dashboard summarizes contracts, reports, photos and invoices", () => 
   assert.equal(dashboard.leads[0]?.carePropertyId, null);
   assert.equal(dashboard.leads[0]?.careContractId, null);
   assert.equal(dashboard.leads[0]?.customerHref, "/customers/lead-contact-1");
+  assert.equal(dashboard.lifecycle.trackedLeads, 1);
+  assert.equal(dashboard.lifecycle.openLeads, 1);
+  assert.equal(dashboard.lifecycle.awaitingProperty, 1);
+  assert.equal(dashboard.lifecycle.awaitingContract, 0);
+  assert.equal(dashboard.lifecycle.contractedLeads, 0);
+  assert.equal(dashboard.lifecycle.leadToContractPercent, 0);
+  assert.equal(dashboard.lifecycle.propertiesWithoutNextVisit, 0);
+  assert.equal(dashboard.lifecycle.propertiesWithoutKey, 0);
+  assert.equal(dashboard.lifecycle.openOperationalIssues, 0);
 });
 
 test("Care dashboard marks empty customer setup without failing the ready schema", () => {
@@ -228,6 +237,9 @@ test("Care lead reuses an already onboarded Care property for later agreement ac
   assert.equal(lead?.carePostcode, "03581");
   assert.equal(lead?.careHasPool, true);
   assert.equal(lead?.careHasGarden, false);
+  assert.equal(dashboard.lifecycle.awaitingProperty, 0);
+  assert.equal(dashboard.lifecycle.awaitingContract, 1);
+  assert.equal(dashboard.lifecycle.contractedLeads, 0);
 });
 
 
@@ -260,4 +272,52 @@ test("Care lead queue keeps open enquiries ahead of newer completed items", () =
 
   assert.equal(dashboard.leads[0]?.id, "lead-open");
   assert.equal(dashboard.leads[1]?.id, "lead-done");
+});
+
+
+test("Care lifecycle flags active contracts without visit or key and calculates lead conversion", () => {
+  const dashboard = buildCareDashboard({
+    generatedAt: new Date("2026-10-03T08:00:00.000Z"),
+    plans: [{ id: "plan-1", code: "STANDARD", name: "Standard", price_cents: 8900, visits_per_month: 2, is_active: true }],
+    properties: [{
+      id: "property-1",
+      owner_id: "contact-1",
+      reference: "CARE-1",
+      name: "Casa Care",
+      property_type: "villa",
+      address_line: "Calle Uno 1",
+      municipality: "Altea",
+      status: "active",
+    }],
+    ownerContacts: [{ id: "contact-1", name: "Care Owner" }],
+    contracts: [{
+      id: "contract-1",
+      property_id: "property-1",
+      plan_id: "plan-1",
+      status: "active",
+      plan_snapshot: { name: "Standard", price_cents: 8900 },
+    }],
+    careLeadWorkItems: [{
+      id: "lead-1",
+      source_id: "contact-1",
+      status: "DONE",
+      metadata: {
+        segment: "care",
+        care_property_id: "property-1",
+        care_contract_id: "contract-1",
+        service_intent: "keyholding",
+      },
+    }],
+    careLeadContacts: [{ id: "contact-1", name: "Care Owner" }],
+    issues: [{ id: "issue-1", property_id: "property-1", status: "open", title: "Fukt" }],
+    workOrders: [{ id: "work-1", property_id: "property-1", status: "open", description: "Sjekk lekkasje" }],
+  });
+
+  assert.equal(dashboard.lifecycle.trackedLeads, 1);
+  assert.equal(dashboard.lifecycle.contractedLeads, 1);
+  assert.equal(dashboard.lifecycle.leadToContractPercent, 100);
+  assert.equal(dashboard.lifecycle.propertiesWithoutNextVisit, 1);
+  assert.equal(dashboard.lifecycle.propertiesWithoutKey, 1);
+  assert.equal(dashboard.lifecycle.openOperationalIssues, 2);
+  assert.equal(dashboard.summary.monthlyRecurringRevenueCents, 8900);
 });
