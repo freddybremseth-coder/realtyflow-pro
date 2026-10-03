@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
+import { mirrorSpecialistRenderedAsset } from "@/services/media/specialist-asset-bridge";
 import { REMASTER_SONG_READ_BRANDS } from "@/services/integrations/airtable-client";
 import {
   loadPublishedMixArt, loadPublishedMixBooks, selectApprovedPromotionItems, type PromotionItem,
@@ -154,7 +155,50 @@ export async function POST(request:NextRequest){
       selection:{...selection,visualCount:rendered.visualCount,publicUrl},
     }).eq("id",created.id).select("*").single();
     if(readyError)throw new Error("REEL_JOB_SAVE_FAILED: "+readyError.message);
-    return NextResponse.json({success:true,reel:ready,publicUrl},{status:201});
+
+    let mediaAssetId:string|null=null;
+    let mediaBridgeWarning:string|null=null;
+    try{
+      const mirrored=await mirrorSpecialistRenderedAsset(supabase,{
+        sourceSystem:"remaster_reel_jobs",
+        sourceJobId:String(created.id),
+        provider:"remaster",
+        brandId:input.brand,
+        title:input.title,
+        description:rendered.caption,
+        publicUrl,
+        storageBucket:"remaster-reels",
+        storagePath:objectPath,
+        mimeType:"video/mp4",
+        mediaType:"video",
+        durationSeconds:input.durationSeconds,
+        aspectRatio:"9:16",
+        model:"ffmpeg",
+        operation:"reel_render",
+        actorEmail:context.email,
+        completedAt:new Date().toISOString(),
+        sourceState:"ready",
+        sourceMetadata:{
+          songId:song.id,
+          songTitle:song.title,
+          channels:input.channels,
+          visualCount:rendered.visualCount,
+          selection,
+        },
+        tags:["reel",...input.channels],
+      });
+      mediaAssetId=mirrored.assetId;
+    }catch(bridgeError){
+      mediaBridgeWarning=bridgeError instanceof Error?bridgeError.message:String(bridgeError);
+    }
+
+    return NextResponse.json({
+      success:true,
+      reel:ready,
+      publicUrl,
+      mediaAssetId,
+      warnings:mediaBridgeWarning?[`Shared Media bridge: ${mediaBridgeWarning}`]:[],
+    },{status:201});
   }catch(error){
     const message=error instanceof Error?error.message:"Reel-rendering feilet.";
     await supabase.from("remaster_reel_jobs").update({
