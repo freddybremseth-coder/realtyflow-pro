@@ -48,7 +48,7 @@ export const SHARED_CORE_DOMAINS: readonly SharedCoreDomain[] = [
     systemOfRecord: "media_assets + media_generation_jobs + media_projects",
     consumers: ["marketing", "content", "operations"],
     sources: ["Media Studio", "Content Hub exports", "specialist renderers"],
-    nextStep: "Bridge Re-Master outputs into the canonical asset model instead of maintaining parallel asset libraries.",
+    nextStep: "Re-Master Reel outputs are mirrored reference-only into Media Studio; extend the same specialist-renderer contract to remaining reusable outputs.",
   },
   {
     id: "tasks",
