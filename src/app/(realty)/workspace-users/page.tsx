@@ -344,6 +344,35 @@ export default function WorkspaceUsersPage() {
     });
   }
 
+  function prepareResponsibilityAssignment(
+    userId: string,
+    brandKey: string,
+    responsibility: WorkspaceResponsibilityId,
+  ) {
+    const user = snapshot?.users.find(item => item.userId === userId);
+    if (!user) return;
+    const nextChoices = choicesForUser(user, snapshot?.brands || []);
+    const choice = nextChoices[brandKey];
+    if (!choice?.enabled) {
+      setError("Brukeren har ikke aktiv tilgang til denne merkevaren.");
+      return;
+    }
+    const permissions = permissionsForChoice(brandKey, choice);
+    if (!responsibilityAllowed(brandKey, responsibility, permissions)) {
+      setError("Brukeren har ikke rettighetene som kreves for dette ansvaret.");
+      return;
+    }
+    choice.responsibilities = Array.from(new Set([...choice.responsibilities, responsibility]));
+    editUser(user);
+    setChoices(nextChoices);
+    const responsibilityLabel = WORKSPACE_RESPONSIBILITIES.find(item => item.id === responsibility)?.label || responsibility;
+    const brandName = snapshot?.brands.find(item => item.brandKey === brandKey)?.name || brandKey;
+    setNotice(`Forslag klargjort: ${user.displayName} → ${responsibilityLabel} i ${brandName}. Kontroller og trykk «Lagre endringer» for å godkjenne.`);
+    window.requestAnimationFrame(() => {
+      document.getElementById("workspace-user-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   async function toggleLogin() {
     if (!snapshot || busy) return;
     const enabled = !snapshot.featureEnabled;
@@ -509,6 +538,7 @@ export default function WorkspaceUsersPage() {
       brands={snapshot.brands}
       users={snapshot.users}
       onSelectUser={selectUserFromResponsibilityOverview}
+      onPrepareAssignment={prepareResponsibilityAssignment}
     />}
 
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
