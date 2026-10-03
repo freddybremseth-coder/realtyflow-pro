@@ -1,3 +1,5 @@
+import type { AutomationRunStatus } from "@/lib/shared-core/tasks";
+
 export interface NexusAutomationAuditSupabase {
   from(table: string): {
     insert(values: Record<string, unknown>): Promise<{ error?: { message?: string } | null }>;
@@ -7,7 +9,7 @@ export interface NexusAutomationAuditSupabase {
 export interface NexusAutomationAuditInput {
   name: string;
   path: string;
-  status: "success" | "error";
+  status: Extract<AutomationRunStatus, "success" | "error">;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
   error?: string | null;
