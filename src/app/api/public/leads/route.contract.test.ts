@@ -90,4 +90,6 @@ test("Care leads remain a distinct Zen Eco Homes service segment", () => {
   assert.match(source, /property_type: propertyType \|\| null/);
   assert.match(source, /Zen Eco Homes Care: svar personlig/);
   assert.match(source, /const canOfferPortal = !isCare/);
+  assert.match(source, /body\.discovery_source \|\| body\.discoverySource/);
+  assert.match(source, /discovery_source: isCare \? discoverySource \|\| null : null/);
 });
