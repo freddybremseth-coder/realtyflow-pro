@@ -948,6 +948,16 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
 
   const workflows: CareWorkflow[] = [
     {
+      id: "leads",
+      label: "Leads & tilbud",
+      href: "/care/leads",
+      count: lifecycle.openLeads + summary.openQuotes,
+      status: lifecycle.openLeads || summary.openQuotes ? "warning" : "ok",
+      detail: lifecycle.openLeads || summary.openQuotes
+        ? `${lifecycle.openLeads} åpne leads · ${summary.openQuotes} aktive tilbud.`
+        : "Ingen åpne Care-leads eller tilbud.",
+    },
+    {
       id: "customers",
       label: "Kunder & eiendommer",
       href: "/care/customers",
