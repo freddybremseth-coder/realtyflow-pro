@@ -1,4 +1,4 @@
-export type CareView = "overview" | "customers" | "reports" | "invoices" | "keys";
+export type CareView = "overview" | "leads" | "customers" | "reports" | "invoices" | "keys";
 
 export type CareReadinessStatus = "ok" | "warning" | "empty";
 
@@ -18,6 +18,8 @@ export interface CareSummary {
   openWorkOrders: number;
   keys: number;
   upcomingEvents: number;
+  upcomingEvents7d: number;
+  staleOpenLeads: number;
   openCharges: number;
   draftInvoices: number;
   invoiceTotalCents: number;
@@ -200,6 +202,14 @@ export interface CareLifecycle {
   openOperationalIssues: number;
 }
 
+export interface CareServiceDemand {
+  serviceIntent: string;
+  trackedLeads: number;
+  openLeads: number;
+  contractedLeads: number;
+  leadToContractPercent: number;
+}
+
 export interface CareLead {
   id: string;
   contactId: string;
@@ -262,6 +272,7 @@ export interface CareDashboard {
   issues: CareIssue[];
   leads: CareLead[];
   lifecycle: CareLifecycle;
+  serviceDemand: CareServiceDemand[];
   recentActivity: CareActivity[];
   warnings: string[];
 }
@@ -698,9 +709,20 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       if (aOpen !== bOpen) return bOpen - aOpen;
       return timestamp(b.createdAt) - timestamp(a.createdAt);
     })
-    .slice(0, 20);
+    .slice(0, 80);
 
   const upcomingEvents = calendarEvents.filter((event) => timestamp(event.startsAt) >= now.getTime() && isOpen(event.status)).length;
+  const sevenDaysFromNow = now.getTime() + 7 * 24 * 60 * 60 * 1000;
+  const upcomingEvents7d = calendarEvents.filter((event) => {
+    const startsAt = timestamp(event.startsAt);
+    return startsAt >= now.getTime() && startsAt <= sevenDaysFromNow && isOpen(event.status);
+  }).length;
+  const staleLeadCutoff = now.getTime() - 24 * 60 * 60 * 1000;
+  const staleOpenLeads = rawCareLeadWorkItems.filter((row) => {
+    const createdAt = dateText(row, "created_at") || dateText(row, "updated_at");
+    const createdAtMs = timestamp(createdAt);
+    return isOpen(row.status) && createdAtMs > 0 && createdAtMs < staleLeadCutoff;
+  }).length;
   const openIssues = issues.filter((issue) => isOpen(issue.status)).length;
   const openWorkOrders = workOrders.filter((order) => isOpen(order.status)).length;
   const openCharges = charges.filter((charge) => isOpen(charge.status)).length;
@@ -723,6 +745,8 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     openWorkOrders,
     keys: keys.length,
     upcomingEvents,
+    upcomingEvents7d,
+    staleOpenLeads,
     openCharges,
     draftInvoices,
     invoiceTotalCents: invoices.reduce((sum, invoice) => sum + invoice.totalCents, 0),
@@ -750,6 +774,30 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     propertiesWithoutKey: activeCareProperties.filter((property) => property.keyCount === 0).length,
     openOperationalIssues: openIssues + openWorkOrders,
   };
+
+  const serviceDemandMap = new Map<string, { tracked: number; open: number; contracted: number }>();
+  for (const row of rawCareLeadWorkItems) {
+    const metadata = metadataFor(row);
+    const requestType = optionalText(metadata, "request_type");
+    const serviceIntent = optionalText(metadata, "service_intent")
+      || (requestType?.replace(/^care-/, "") || "")
+      || "keyholding";
+    const current = serviceDemandMap.get(serviceIntent) || { tracked: 0, open: 0, contracted: 0 };
+    current.tracked += 1;
+    if (isOpen(row.status)) current.open += 1;
+    if (optionalText(metadata, "care_contract_id")) current.contracted += 1;
+    serviceDemandMap.set(serviceIntent, current);
+  }
+  const serviceDemand: CareServiceDemand[] = [...serviceDemandMap.entries()]
+    .map(([serviceIntent, counts]) => ({
+      serviceIntent,
+      trackedLeads: counts.tracked,
+      openLeads: counts.open,
+      contractedLeads: counts.contracted,
+      leadToContractPercent: counts.tracked > 0 ? Math.round((counts.contracted / counts.tracked) * 100) : 0,
+    }))
+    .sort((a, b) => b.openLeads - a.openLeads || b.trackedLeads - a.trackedLeads || a.serviceIntent.localeCompare(b.serviceIntent));
+
 
   const readiness: CareReadinessItem[] = [
     {
@@ -869,6 +917,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     issues: compactRows(issues),
     leads,
     lifecycle,
+    serviceDemand,
     recentActivity,
     warnings: input.warnings || [],
   };

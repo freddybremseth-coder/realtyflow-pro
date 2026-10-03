@@ -146,6 +146,13 @@ test("Care dashboard summarizes contracts, reports, photos and invoices", () => 
   assert.equal(dashboard.summary.photos, 1);
   assert.equal(dashboard.summary.draftInvoices, 1);
   assert.equal(dashboard.summary.upcomingEvents, 1);
+  assert.equal(dashboard.summary.upcomingEvents7d, 1);
+  assert.equal(dashboard.summary.staleOpenLeads, 0);
+  assert.equal(dashboard.serviceDemand.length, 1);
+  assert.equal(dashboard.serviceDemand[0]?.serviceIntent, "boligtilsyn");
+  assert.equal(dashboard.serviceDemand[0]?.trackedLeads, 1);
+  assert.equal(dashboard.serviceDemand[0]?.openLeads, 1);
+  assert.equal(dashboard.serviceDemand[0]?.contractedLeads, 0);
   assert.equal(dashboard.properties[0]?.ownerName, "Test Owner");
   assert.equal(dashboard.properties[0]?.planName, "Standard");
   assert.equal(dashboard.reports[0]?.deliveryCount, 1);
@@ -320,4 +327,58 @@ test("Care lifecycle flags active contracts without visit or key and calculates 
   assert.equal(dashboard.lifecycle.propertiesWithoutKey, 1);
   assert.equal(dashboard.lifecycle.openOperationalIssues, 2);
   assert.equal(dashboard.summary.monthlyRecurringRevenueCents, 8900);
+});
+
+
+test("Care service demand separates intents and flags stale open leads", () => {
+  const dashboard = buildCareDashboard({
+    generatedAt: new Date("2026-10-03T12:00:00.000Z"),
+    careLeadWorkItems: [
+      {
+        id: "lead-old-open",
+        source_id: "contact-1",
+        status: "TO_DO",
+        created_at: "2026-10-01T08:00:00.000Z",
+        metadata: { segment: "care", service_intent: "boligtilsyn", request_type: "care-boligtilsyn" },
+      },
+      {
+        id: "lead-new-open",
+        source_id: "contact-2",
+        status: "TO_DO",
+        created_at: "2026-10-03T11:00:00.000Z",
+        metadata: { segment: "care", service_intent: "klargjoring", request_type: "care-klargjoring" },
+      },
+      {
+        id: "lead-contracted",
+        source_id: "contact-3",
+        status: "DONE",
+        created_at: "2026-10-02T10:00:00.000Z",
+        metadata: {
+          segment: "care",
+          service_intent: "boligtilsyn",
+          request_type: "care-boligtilsyn",
+          care_property_id: "property-3",
+          care_contract_id: "contract-3",
+        },
+      },
+    ],
+    careLeadContacts: [
+      { id: "contact-1", name: "Old lead" },
+      { id: "contact-2", name: "New lead" },
+      { id: "contact-3", name: "Contracted lead" },
+    ],
+  });
+
+  assert.equal(dashboard.summary.staleOpenLeads, 1);
+  assert.equal(dashboard.lifecycle.openLeads, 2);
+  assert.equal(dashboard.serviceDemand.length, 2);
+  const boligtilsyn = dashboard.serviceDemand.find((item) => item.serviceIntent === "boligtilsyn");
+  const klargjoring = dashboard.serviceDemand.find((item) => item.serviceIntent === "klargjoring");
+  assert.equal(boligtilsyn?.trackedLeads, 2);
+  assert.equal(boligtilsyn?.openLeads, 1);
+  assert.equal(boligtilsyn?.contractedLeads, 1);
+  assert.equal(boligtilsyn?.leadToContractPercent, 50);
+  assert.equal(klargjoring?.trackedLeads, 1);
+  assert.equal(klargjoring?.openLeads, 1);
+  assert.equal(klargjoring?.contractedLeads, 0);
 });
