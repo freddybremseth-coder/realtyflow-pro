@@ -396,6 +396,7 @@ test("Care service demand separates intents and flags stale open leads", () => {
 
   assert.equal(dashboard.summary.staleOpenLeads, 1);
   assert.equal(dashboard.summary.offersInProgress, 2);
+  assert.equal(dashboard.summary.quotedMonthlyRevenueCents, 8900);
   assert.equal(dashboard.summary.followUpsDue, 1);
   assert.equal(dashboard.lifecycle.openLeads, 2);
   assert.equal(dashboard.serviceDemand.length, 2);
