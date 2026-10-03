@@ -353,6 +353,11 @@ test("Care service demand separates intents and flags stale open leads", () => {
           care_sales_stage: "quote_sent",
           care_follow_up_on: "2026-10-03",
           care_sales_note: "Tilbud sendt på e-post.",
+          care_quote_plan_id: "plan-standard",
+          care_quote_plan_name: "Standard",
+          care_quote_price_cents: 8900,
+          care_quote_currency: "EUR",
+          care_quote_sent_at: "2026-10-02T09:00:00.000Z",
         },
       },
       {
@@ -391,11 +396,16 @@ test("Care service demand separates intents and flags stale open leads", () => {
 
   assert.equal(dashboard.summary.staleOpenLeads, 1);
   assert.equal(dashboard.summary.offersInProgress, 2);
+  assert.equal(dashboard.summary.quotedMonthlyRevenueCents, 8900);
   assert.equal(dashboard.summary.followUpsDue, 1);
   assert.equal(dashboard.lifecycle.openLeads, 2);
   assert.equal(dashboard.serviceDemand.length, 2);
   assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.salesStage, "quote_sent");
   assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.followUpOn, "2026-10-03");
+  assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.quotePlanId, "plan-standard");
+  assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.quotePlanName, "Standard");
+  assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.quotePriceCents, 8900);
+  assert.equal(dashboard.leads.find((lead) => lead.id === "lead-old-open")?.quoteCurrency, "EUR");
   assert.equal(dashboard.leads.find((lead) => lead.id === "lead-contracted")?.salesStage, "activated");
   const boligtilsyn = dashboard.serviceDemand.find((item) => item.serviceIntent === "boligtilsyn");
   const klargjoring = dashboard.serviceDemand.find((item) => item.serviceIntent === "klargjoring");

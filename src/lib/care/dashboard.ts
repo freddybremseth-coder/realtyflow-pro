@@ -22,6 +22,7 @@ export interface CareSummary {
   upcomingEvents7d: number;
   staleOpenLeads: number;
   offersInProgress: number;
+  quotedMonthlyRevenueCents: number;
   followUpsDue: number;
   openCharges: number;
   draftInvoices: number;
@@ -255,6 +256,11 @@ export interface CareLead {
   followUpOn: string | null;
   lastFollowUpAt: string | null;
   salesNote: string | null;
+  quotePlanId: string | null;
+  quotePlanName: string | null;
+  quotePriceCents: number;
+  quoteCurrency: string | null;
+  quoteSentAt: string | null;
   isExistingContact: boolean;
   createdAt: string | null;
   customerHref: string;
@@ -733,6 +739,11 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       followUpOn: optionalText(metadata, "care_follow_up_on"),
       lastFollowUpAt: dateText(metadata, "care_last_followup_at"),
       salesNote: optionalText(metadata, "care_sales_note"),
+      quotePlanId: optionalText(metadata, "care_quote_plan_id"),
+      quotePlanName: optionalText(metadata, "care_quote_plan_name"),
+      quotePriceCents: numberValue(metadata, "care_quote_price_cents"),
+      quoteCurrency: optionalText(metadata, "care_quote_currency"),
+      quoteSentAt: dateText(metadata, "care_quote_sent_at"),
       isExistingContact: metadata.is_existing_contact === true,
       createdAt: dateText(row, "created_at") || dateText(row, "updated_at"),
       customerHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
@@ -762,6 +773,9 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
   const offersInProgress = leads.filter((lead) =>
     isOpen(lead.status) && (lead.salesStage === "quote_sent" || lead.salesStage === "waiting_customer")
   ).length;
+  const quotedMonthlyRevenueCents = leads
+    .filter((lead) => isOpen(lead.status) && (lead.salesStage === "quote_sent" || lead.salesStage === "waiting_customer"))
+    .reduce((sum, lead) => sum + Math.max(0, lead.quotePriceCents || 0), 0);
   const followUpsDue = leads.filter((lead) =>
     isOpen(lead.status)
     && Boolean(lead.followUpOn)
@@ -792,6 +806,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     upcomingEvents7d,
     staleOpenLeads,
     offersInProgress,
+    quotedMonthlyRevenueCents,
     followUpsDue,
     openCharges,
     draftInvoices,
