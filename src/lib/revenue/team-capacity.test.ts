@@ -106,3 +106,53 @@ test("rebalancing never proposes negotiation, won, overdue or critical work", ()
   assert.equal(workspace.members.find(member => member.email === "busy@example.com")?.load, "HIGH");
   assert.deepEqual(buildTeamCapacitySuggestions(workspace), []);
 });
+
+
+test("matching specialist is preferred over Owner fallback", () => {
+  const workItems = Array.from({ length: 8 }, (_, index) => ({
+    id: `owner-fallback-${index}`,
+    title: `Sales queue ${index}`,
+    status: "TO_DO",
+    priority: "MEDIUM",
+    due_date: "2026-10-10",
+    assigned_agent: "busy@example.com",
+    brand_id: "soleada",
+  }));
+  const workspace = buildTeamWorkload({
+    profiles,
+    ownerEmails: ["owner@example.com"],
+    workItems,
+    now,
+    responsibilityCountsByEmail: {
+      "busy@example.com": 4,
+      "light@example.com": 1,
+    },
+  });
+  const suggestions = buildTeamCapacitySuggestions(workspace);
+  assert.equal(suggestions[0]?.toEmail, "light@example.com");
+});
+
+test("Owner remains fallback when no matching specialist is available", () => {
+  const onlyBusy: any[] = [
+    { email: "busy@example.com", displayName: "Busy Sales", role: "SALES", active: true },
+    { email: "closing@example.com", displayName: "Closing", role: "CLOSING", active: true },
+  ];
+  const workItems = Array.from({ length: 8 }, (_, index) => ({
+    id: `owner-only-${index}`,
+    title: `Sales queue ${index}`,
+    status: "TO_DO",
+    priority: "MEDIUM",
+    due_date: "2026-10-10",
+    assigned_agent: "busy@example.com",
+    brand_id: "soleada",
+  }));
+  const workspace = buildTeamWorkload({
+    profiles: onlyBusy,
+    ownerEmails: ["owner@example.com"],
+    workItems,
+    now,
+    responsibilityCountsByEmail: { "busy@example.com": 4 },
+  });
+  const suggestions = buildTeamCapacitySuggestions(workspace);
+  assert.equal(suggestions[0]?.toEmail, "owner@example.com");
+});
