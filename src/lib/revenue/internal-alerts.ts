@@ -1,6 +1,7 @@
 import type { TeamWorkloadWorkspace } from "@/lib/revenue/team-workload";
 import { buildTeamCapacitySuggestions } from "@/lib/revenue/team-capacity";
 import { buildTeamCapacityForecast } from "@/lib/revenue/team-capacity-forecast";
+import { buildTeamCapacityTrend } from "@/lib/revenue/team-capacity-trend";
 import { buildClosingOpportunity } from "@/lib/revenue/closing";
 import { buildCommissionCase } from "@/lib/revenue/commissions";
 import { buildServiceRevenueAccount } from "@/lib/revenue/service-revenue";
@@ -156,6 +157,34 @@ function alertDrafts(params: {
   const { contacts, team, now } = params;
   const capacitySuggestions = buildTeamCapacitySuggestions(team);
   const capacityForecast = buildTeamCapacityForecast(team, { now, horizonDays: 7 });
+  const capacityTrend = buildTeamCapacityTrend(team, { now, horizonDays: 30 });
+
+  for (const member of capacityTrend.members.filter(item => item.pattern === "PERSISTENT_HIGH")) {
+    const severity: InternalAlertSeverity =
+      member.intervention === "STAFFING_REVIEW" || member.intervention === "ROLE_REBALANCE" ? "HIGH" : "MEDIUM";
+    drafts.push({
+      id: `team-capacity-trend:${member.email}`,
+      ruleId: "TEAM_CAPACITY_TREND",
+      category: "TEAM",
+      severity,
+      escalation: escalationFor(severity),
+      score: Math.min(100, 62 + member.highWeeks * 7 + (member.intervention === "STAFFING_REVIEW" ? 10 : 0)),
+      title: `${member.displayName} har vedvarende kapasitetspress`,
+      detail: `Høy belastning i ${member.highWeeks} av de neste fire ukene. Dominerende driver: ${member.dominantKind || "blandet arbeid"}. ${member.responsibilityAreas} faste ansvarsområder.`,
+      reason: member.rationale,
+      recommendedAction: member.interventionLabel,
+      brandId: null,
+      resourceType: "team-member",
+      resourceId: member.email,
+      contactId: null,
+      ownerEmail: member.email,
+      ownerName: member.displayName,
+      dueAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      amountEur: null,
+      href: `/team-workload?trend=1&member=${encodeURIComponent(member.email)}`,
+      fingerprintParts: [member.pattern, member.highWeeks, member.dominantKind, member.intervention, member.responsibilityAreas, member.weeks.map(week => week.score)],
+    });
+  }
 
   for (const member of capacityForecast.members.filter(item => item.risk === "RISING_HIGH")) {
     const suggestion = capacityForecast.suggestions.find(item => item.fromEmail === member.email);
