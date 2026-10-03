@@ -72,7 +72,7 @@ export interface ExecutiveBriefing {
     unassigned: number;
     overdue: number;
   };
-  capacity: {
+  capacity?: {
     next7Days: {
       forecastHigh: number;
       risingHigh: number;
