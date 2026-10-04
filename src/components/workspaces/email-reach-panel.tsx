@@ -34,15 +34,40 @@ export type WorkspaceEmailHandoff = {
   sourceLabel?: string | null;
 };
 
+type InboxMessage = {
+  id: string;
+  messageId?: string | null;
+  threadId?: string | null;
+  fromAddress: string;
+  fromName?: string | null;
+  subject: string;
+  bodyText: string;
+  receivedAt?: string | null;
+  isRead: boolean;
+  repliedAt?: string | null;
+  crmContactId?: string | null;
+  contactName?: string | null;
+  aiSummary?: string | null;
+  aiIntent?: string | null;
+  aiUrgency?: string | null;
+  aiSuggestedAction?: string | null;
+};
+
 type Data = {
   sender: {
     configured: boolean;
     email?: string | null;
     displayName?: string | null;
     healthStatus?: string | null;
+    replyTo?: string | null;
+    primary?: boolean;
   };
   targets: Target[];
   drafts: Draft[];
+  inbox: {
+    messages: InboxMessage[];
+    unreadCount: number;
+  };
 };
 
 export function WorkspaceEmailReachPanel({
@@ -63,7 +88,7 @@ export function WorkspaceEmailReachPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"direct" | "reach" | "newsletter">("direct");
+  const [mode, setMode] = useState<"inbox" | "direct" | "reach" | "newsletter">("inbox");
   const [search, setSearch] = useState("");
   const [selectedTargetKey, setSelectedTargetKey] = useState("");
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -74,6 +99,8 @@ export function WorkspaceEmailReachPanel({
   const [topic, setTopic] = useState("");
   const [campaignDraft, setCampaignDraft] = useState<{ subject: string; preheader: string; bodyText: string } | null>(null);
   const [copied, setCopied] = useState<"subject" | "body" | null>(null);
+  const [selectedInboxId, setSelectedInboxId] = useState("");
+  const [replyBody, setReplyBody] = useState("");
 
   async function load(query = "") {
     setLoading(true); setError("");
@@ -88,6 +115,10 @@ export function WorkspaceEmailReachPanel({
         sender: body.sender || { configured: false },
         targets: Array.isArray(body.targets) ? body.targets : [],
         drafts: Array.isArray(body.drafts) ? body.drafts : [],
+        inbox: {
+          messages: Array.isArray(body.inbox?.messages) ? body.inbox.messages : [],
+          unreadCount: Number.isSafeInteger(body.inbox?.unreadCount) ? body.inbox.unreadCount : 0,
+        },
       });
     } catch (cause) {
       setData(null);
@@ -96,6 +127,11 @@ export function WorkspaceEmailReachPanel({
   }
 
   useEffect(() => { void load(); }, [brandKey]);
+
+  const selectedInboxMessage = useMemo(
+    () => data?.inbox.messages.find(message => message.id === selectedInboxId) || null,
+    [data, selectedInboxId],
+  );
 
   const selectedTarget = useMemo(() => {
     const [type, id] = selectedTargetKey.split(":");
@@ -130,6 +166,59 @@ export function WorkspaceEmailReachPanel({
     setNotice(`Utkastet for ${target.label} er klargjort. Kontroller teksten før du lagrer eller sender.`);
     onInitialDirectDraftConsumed?.();
   }, [data, initialDirectDraft, onInitialDirectDraftConsumed]);
+
+  async function openInboxMessage(message: InboxMessage) {
+    setSelectedInboxId(message.id);
+    setReplyBody("");
+    setMode("inbox");
+    setError("");
+    if (message.isRead) return;
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark_read", messageRowId: message.id }),
+      });
+      if (response.ok) {
+        setData(current => current ? {
+          ...current,
+          inbox: {
+            ...current.inbox,
+            unreadCount: Math.max(0, current.inbox.unreadCount - 1),
+            messages: current.inbox.messages.map(row => row.id === message.id ? { ...row, isRead: true } : row),
+          },
+        } : current);
+      }
+    } catch {
+      // Reading the message must remain usable even if read-state persistence fails.
+    }
+  }
+
+  async function sendInboxReply() {
+    if (!canSend || !selectedInboxMessage || !replyBody.trim() || busy) return;
+    if (!window.confirm(`Sende svar til ${selectedInboxMessage.fromName || selectedInboxMessage.fromAddress}?`)) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reply",
+          messageRowId: selectedInboxMessage.id,
+          bodyText: replyBody,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error?.message || "Svaret kunne ikke sendes.");
+      setNotice(`Svar sendt fra ${body.sender || "merkevarens primærkonto"}.`);
+      setReplyBody("");
+      await load(search);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Svaret kunne ikke sendes.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function resetDirect() {
     setSelectedTargetKey(""); setDraftId(null); setSubject(""); setBodyText("");
@@ -249,6 +338,10 @@ export function WorkspaceEmailReachPanel({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" onClick={() => setMode("inbox")}
+          className={`rounded-lg px-3 py-2 text-sm ${mode === "inbox" ? "bg-cyan-600 font-semibold text-white" : "border border-slate-700 text-slate-300"}`}>
+          Innboks{data.inbox.unreadCount > 0 ? ` · ${data.inbox.unreadCount}` : ""}
+        </button>
         <button type="button" onClick={() => setMode("direct")}
           className={`rounded-lg px-3 py-2 text-sm ${mode === "direct" ? "bg-cyan-600 font-semibold text-white" : "border border-slate-700 text-slate-300"}`}>
           Send oppfølging
@@ -268,9 +361,84 @@ export function WorkspaceEmailReachPanel({
         {data.sender.configured
           ? `${data.sender.displayName || brandKey} <${data.sender.email || "brand-konto"}>`
           : "Ingen aktiv e-postkonto er konfigurert for denne merkevaren."}
+        {data.sender.primary && <span> · Primær</span>}
+        {data.sender.replyTo && <span> · Reply-To: {data.sender.replyTo}</span>}
         {data.sender.healthStatus && <span> · {data.sender.healthStatus}</span>}
       </div>
     </div>
+
+    {mode === "inbox" && <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-semibold">Min innboks</h3>
+            <p className="mt-1 text-xs text-slate-500">Innkommende kundepost du har CRM-tilgang til i denne merkevaren.</p>
+          </div>
+          {data.inbox.unreadCount > 0 && <span className="rounded-full bg-cyan-950 px-2 py-1 text-xs font-semibold text-cyan-300">{data.inbox.unreadCount} ulest</span>}
+        </div>
+        <form className="relative mt-3 flex gap-2" onSubmit={event => { event.preventDefault(); void load(search); }}>
+          <label className="relative block flex-1">
+            <Search size={15} className="absolute left-3 top-3 text-slate-500"/>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Søk avsender, kunde eller emne"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-sm"/>
+          </label>
+          <button type="submit" className="rounded-lg border border-slate-700 px-3 text-sm">Søk</button>
+        </form>
+        <div className="mt-3 max-h-[620px] space-y-2 overflow-y-auto">
+          {data.inbox.messages.map(message => <button type="button" key={message.id}
+            onClick={() => void openInboxMessage(message)}
+            className={`w-full rounded-xl border p-3 text-left ${selectedInboxId === message.id ? "border-cyan-500 bg-cyan-950/25" : message.isRead ? "border-slate-800 bg-slate-950/40" : "border-cyan-900 bg-cyan-950/10 hover:border-cyan-700"}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <strong className={`block truncate text-sm ${message.isRead ? "font-medium" : "font-bold text-white"}`}>
+                  {message.fromName || message.contactName || message.fromAddress}
+                </strong>
+                <span className="mt-1 block truncate text-xs text-slate-400">{message.subject}</span>
+              </div>
+              {!message.isRead && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-cyan-400" aria-label="Ulest"/>}
+            </div>
+            <div className="mt-2 flex justify-between gap-3 text-[11px] text-slate-500">
+              <span className="truncate">{message.contactName || message.fromAddress}</span>
+              <span className="shrink-0">{message.receivedAt ? new Date(message.receivedAt).toLocaleString("no-NO") : ""}</span>
+            </div>
+          </button>)}
+          {!data.inbox.messages.length && <p className="p-4 text-sm text-slate-500">Ingen tilgjengelige kundemeldinger i innboksen.</p>}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+        {!selectedInboxMessage && <div className="py-14 text-center text-sm text-slate-500">Velg en e-post fra innboksen.</div>}
+        {selectedInboxMessage && <>
+          <div className="border-b border-slate-800 pb-4">
+            <p className="text-xs text-cyan-300">{selectedInboxMessage.contactName || "CRM-kunde"}</p>
+            <h3 className="mt-1 text-xl font-semibold">{selectedInboxMessage.subject}</h3>
+            <p className="mt-2 text-sm text-slate-400">
+              Fra {selectedInboxMessage.fromName || selectedInboxMessage.fromAddress} &lt;{selectedInboxMessage.fromAddress}&gt;
+            </p>
+            {selectedInboxMessage.receivedAt && <p className="mt-1 text-xs text-slate-500">{new Date(selectedInboxMessage.receivedAt).toLocaleString("no-NO")}</p>}
+          </div>
+          {(selectedInboxMessage.aiSummary || selectedInboxMessage.aiSuggestedAction) && <div className="mt-4 rounded-xl border border-violet-900/60 bg-violet-950/15 p-3 text-xs">
+            {selectedInboxMessage.aiSummary && <p><strong className="text-violet-200">AI-oppsummering:</strong> {selectedInboxMessage.aiSummary}</p>}
+            {selectedInboxMessage.aiSuggestedAction && <p className="mt-1 text-violet-300">Forslag: {selectedInboxMessage.aiSuggestedAction}</p>}
+          </div>}
+          <pre className="mt-5 max-h-[420px] overflow-y-auto whitespace-pre-wrap font-sans text-sm leading-6 text-slate-200">{selectedInboxMessage.bodyText || "(Ingen ren tekst tilgjengelig)"}</pre>
+          <div className="mt-6 border-t border-slate-800 pt-5">
+            <h4 className="font-semibold">Svar</h4>
+            <textarea value={replyBody} onChange={e => setReplyBody(e.target.value)}
+              disabled={!canSend} rows={8} maxLength={15000}
+              className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm leading-6"
+              placeholder={canSend ? "Skriv et personlig svar…" : "Du har lesetilgang, men ikke senderettighet."}/>
+            {canSend && <button type="button" onClick={() => void sendInboxReply()}
+              disabled={busy || !replyBody.trim() || !data.sender.configured}
+              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+              <Send size={15}/>{busy ? "Sender…" : "Send svar"}
+            </button>}
+            {selectedInboxMessage.repliedAt && <p className="mt-2 text-xs text-emerald-300">Besvart {new Date(selectedInboxMessage.repliedAt).toLocaleString("no-NO")}</p>}
+          </div>
+        </>}
+      </div>
+    </div>}
 
     {mode === "direct" && <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
       <div className="space-y-5">
