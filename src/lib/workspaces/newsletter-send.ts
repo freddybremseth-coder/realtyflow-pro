@@ -134,6 +134,8 @@ export async function sendWorkspaceNewsletterCampaign(input: {
       subject: campaign.subject,
       bodyText: `${campaign.body_text}\n\n---\nAvmeld nyhetsbrev: ${unsubscribe}`,
       bodyHtml,
+      replyTo: typeof config.reply_to_address === "string" && config.reply_to_address.trim()
+        ? config.reply_to_address.trim() : undefined,
     });
     if (result.success) sent += 1; else failed += 1;
     await supabase.schema("core").from("workspace_newsletter_deliveries").update({
