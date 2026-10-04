@@ -170,6 +170,41 @@ async function filterPropertiesForBrand(
   return visibleProperties.filter((property) => propertyMatchesBrand(property, brandId));
 }
 
+async function getLimitedPublicPropertiesForBrand(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  columns: string,
+  rawBrandId: string,
+  limit: number,
+) {
+  const matches: Record<string, unknown>[] = [];
+  const pageSize = 100;
+  let from = 0;
+
+  while (matches.length < limit) {
+    const { data, error } = await supabase
+      .from("properties")
+      .select(columns)
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    const rows = (data || []) as unknown as Record<string, unknown>[];
+    if (rows.length === 0) break;
+
+    const pageMatches = await filterPropertiesForBrand(
+      supabase,
+      rows.filter(isWebsiteVisible),
+      rawBrandId,
+    );
+    matches.push(...pageMatches);
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return matches.slice(0, limit);
+}
+
 async function upsertBrandVisibility(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   properties: Record<string, unknown>[],
@@ -308,6 +343,19 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // The public website commonly asks for only a handful of brand properties
+    // (for example six homepage cards). Do not read the full catalogue first:
+    // page through small chunks and stop as soon as enough visible matches exist.
+    if (!authenticated && brandId && limit > 0) {
+      const limited = await getLimitedPublicPropertiesForBrand(
+        supabase,
+        selectColumns,
+        brandId,
+        limit,
+      );
+      return NextResponse.json(limited);
+    }
+
     const allData = await getAllProperties(supabase, selectColumns);
     const scopedData = authenticated ? allData : allData.filter(isWebsiteVisible);
     if (!brandId) return NextResponse.json(limit ? scopedData.slice(0, limit) : scopedData);
