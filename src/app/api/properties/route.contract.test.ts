@@ -84,3 +84,34 @@ test("public property API supports lightweight summary, bounded limit and direct
     assert.doesNotMatch(summaryProjection, new RegExp(`\\b${heavyField}\\b`));
   }
 });
+
+
+test("direct property reads do not scan the full brand visibility table", () => {
+  assert.match(route, /const propertyIds = visibleProperties/);
+  assert.match(route, /propertyIds\.length > 0 && propertyIds\.length <= 100/);
+  assert.match(route, /visibilityQuery = visibilityQuery\.in\("property_id", propertyIds\)/);
+});
+
+test("invalid property lookup sentinel values are rejected before PostgREST", () => {
+  assert.match(route, /isInvalidLookupSentinel\(id\)/);
+  assert.match(route, /isInvalidLookupSentinel\(ref\)/);
+  assert.match(route, /if \(id && !isUuid\(id\)\)/);
+  assert.match(route, /Invalid property id/);
+});
+
+
+test("limited public brand reads stop before scanning the full property catalogue", () => {
+  assert.match(route, /getLimitedPublicPropertiesForBrand/);
+  assert.match(route, /const pageSize = 100/);
+  assert.match(route, /while \(matches\.length < limit\)/);
+  assert.match(route, /if \(!authenticated && brandId && limit > 0\)/);
+  assert.match(route, /return propertyGetJson\(limited, authenticated\)/);
+});
+
+
+test("anonymous property GET responses are edge-cacheable while authenticated reads stay private", () => {
+  assert.match(route, /function propertyGetJson/);
+  assert.match(route, /public, s-maxage=300, stale-while-revalidate=600/);
+  assert.match(route, /private, no-store/);
+  assert.match(route, /return propertyGetJson\(property, authenticated\)/);
+});

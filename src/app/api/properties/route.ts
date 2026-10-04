@@ -94,6 +94,24 @@ function isWebsiteVisible(property: Record<string, unknown>) {
   return property.show_on_website !== false && property.website_visible !== false;
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function isInvalidLookupSentinel(value: string | null) {
+  return value != null && ["", "null", "undefined"].includes(value.trim().toLowerCase());
+}
+
+function propertyGetJson(data: unknown, authenticated: boolean) {
+  return NextResponse.json(data, {
+    headers: {
+      "Cache-Control": authenticated
+        ? "private, no-store"
+        : "public, s-maxage=300, stale-while-revalidate=600",
+    },
+  });
+}
+
 async function getAllProperties(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   columns = "*",
@@ -129,10 +147,23 @@ async function filterPropertiesForBrand(
   const brandId = normalizeBrandId(rawBrandId);
   const visibleProperties = properties.filter(isWebsiteVisible);
 
-  const { data: visibilityRows, error } = await supabase
+  const propertyIds = visibleProperties
+    .map((property) => property.id)
+    .filter((id): id is string => typeof id === "string" && Boolean(id));
+
+  let visibilityQuery = supabase
     .from("property_brand_visibility")
     .select("property_id, visible")
     .eq("brand_id", brandId);
+
+  // Property detail reads should never scan every visibility row for a brand.
+  // Scope small candidate sets to the exact property IDs. Large catalogue reads
+  // keep the broad query to avoid constructing an oversized PostgREST in(...) URL.
+  if (propertyIds.length > 0 && propertyIds.length <= 100) {
+    visibilityQuery = visibilityQuery.in("property_id", propertyIds);
+  }
+
+  const { data: visibilityRows, error } = await visibilityQuery;
 
   if (!error && visibilityRows && visibilityRows.length > 0) {
     const visibilityById = new Map(
@@ -147,6 +178,41 @@ async function filterPropertiesForBrand(
   }
 
   return visibleProperties.filter((property) => propertyMatchesBrand(property, brandId));
+}
+
+async function getLimitedPublicPropertiesForBrand(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  columns: string,
+  rawBrandId: string,
+  limit: number,
+) {
+  const matches: Record<string, unknown>[] = [];
+  const pageSize = 100;
+  let from = 0;
+
+  while (matches.length < limit) {
+    const { data, error } = await supabase
+      .from("properties")
+      .select(columns)
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    const rows = (data || []) as unknown as Record<string, unknown>[];
+    if (rows.length === 0) break;
+
+    const pageMatches = await filterPropertiesForBrand(
+      supabase,
+      rows.filter(isWebsiteVisible),
+      rawBrandId,
+    );
+    matches.push(...pageMatches);
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return matches.slice(0, limit);
 }
 
 async function upsertBrandVisibility(
@@ -259,6 +325,16 @@ export async function GET(req: NextRequest) {
   const requestedLimit = Number(searchParams.get("limit") || 0);
   const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(Math.floor(requestedLimit), 500) : 0;
 
+  // Reject crawler/client sentinel values before PostgREST tries to cast them
+  // into the UUID property id. These produced repeated SQLSTATE 22P02 errors
+  // during the traffic spike before the Supabase outage.
+  if (isInvalidLookupSentinel(id) || isInvalidLookupSentinel(ref)) {
+    return NextResponse.json({ error: "Property not found" }, { status: 404 });
+  }
+  if (id && !isUuid(id)) {
+    return NextResponse.json({ error: "Invalid property id" }, { status: 400 });
+  }
+
   if (id || ref) {
     let query = supabase.from("properties").select(selectColumns);
     query = id ? query.eq("id", id) : query.eq("ref", ref as string);
@@ -273,16 +349,29 @@ export async function GET(req: NextRequest) {
         if (scoped.length === 0) return NextResponse.json({ error: "Property not found" }, { status: 404 });
       }
     }
-    return NextResponse.json(property);
+    return propertyGetJson(property, authenticated);
   }
 
   try {
+    // The public website commonly asks for only a handful of brand properties
+    // (for example six homepage cards). Do not read the full catalogue first:
+    // page through small chunks and stop as soon as enough visible matches exist.
+    if (!authenticated && brandId && limit > 0) {
+      const limited = await getLimitedPublicPropertiesForBrand(
+        supabase,
+        selectColumns,
+        brandId,
+        limit,
+      );
+      return propertyGetJson(limited, authenticated);
+    }
+
     const allData = await getAllProperties(supabase, selectColumns);
     const scopedData = authenticated ? allData : allData.filter(isWebsiteVisible);
-    if (!brandId) return NextResponse.json(limit ? scopedData.slice(0, limit) : scopedData);
+    if (!brandId) return propertyGetJson(limit ? scopedData.slice(0, limit) : scopedData, authenticated);
 
     const filteredData = await filterPropertiesForBrand(supabase, scopedData, brandId);
-    return NextResponse.json(limit ? filteredData.slice(0, limit) : filteredData);
+    return propertyGetJson(limit ? filteredData.slice(0, limit) : filteredData, authenticated);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch properties";
     return NextResponse.json({ error: message }, { status: 500 });
