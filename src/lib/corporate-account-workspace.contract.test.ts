@@ -14,6 +14,10 @@ const migration = fs.readFileSync(
   "supabase/migrations/20261004213000_corporate_account_workspace.sql",
   "utf8",
 );
+const api1881 = fs.readFileSync(
+  "src/lib/corporate-enrichment/api1881.ts",
+  "utf8",
+);
 
 test("Corporate Account Workspace is permission scoped and never auto-executes outreach", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "corporate\.read"\)/);
@@ -40,4 +44,16 @@ test("Corporate account tables are server-only and support strategy, touchpoints
   assert.match(migration, /grant select, insert, update, delete on table public\.corporate_account_strategies to service_role/);
   assert.match(migration, /professional_topics/);
   assert.match(migration, /Do not infer or store sensitive\/private interests/);
+});
+
+
+test("1881 enrichment uses the licensed official API contract and does not create people automatically", () => {
+  assert.match(api1881, /https:\/\/api\.1881\.no\/search\/v1/);
+  assert.match(api1881, /X-VK1881-API-CLIENT/);
+  assert.match(api1881, /VK1881Identity/);
+  assert.match(api1881, /\/company\/\?querystring=/);
+  assert.match(api1881, /automaticPersonCreation:\s*false/);
+  assert.match(api1881, /automaticOutreach:\s*false/);
+  assert.match(route, /action === "enrich_1881"/);
+  assert.match(route, /automaticPersonCreation:\s*false/);
 });
