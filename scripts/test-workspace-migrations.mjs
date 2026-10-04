@@ -29,6 +29,7 @@ const files = [
   "20261001170019_workspace_staff_preflight_public_art_metadata_exception.sql",
   "20261001171200_workspace_shared_safe_property_catalogue.sql",
   "20261001185327_workspace_personal_responsibilities.sql",
+  "20261004204500_workspace_email_inbox_primary_sender.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -247,6 +248,8 @@ try {
     "workspace_brand_content_publish_payload", "workspace_brand_content_publish_finalize",
     "workspace_brand_content_versions", "workspace_brand_content_restore_version",
     "workspace_brand_email_target_resolve", "workspace_brand_email_snapshot",
+    "workspace_brand_email_inbox_snapshot", "workspace_brand_email_message_resolve",
+    "workspace_brand_email_mark_read",
     "workspace_brand_email_draft_save", "workspace_brand_email_send_prepare",
     "workspace_brand_email_send_finalize",
     "workspace_brand_social_publish_snapshot", "workspace_brand_social_publish_prepare",
