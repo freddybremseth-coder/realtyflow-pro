@@ -34,6 +34,15 @@ type Payload = {
     key: string; title: string; intensity: number;
     successDefinition: string | null; reviewDueAt: string | null;
   }>;
+  corporateAdvisor?: {
+    enabled: boolean;
+    summary?: { evaluated: number; p1: number; p2: number; p3: number };
+    recommendations: Array<{
+      prospectId: string; companyName: string; priority: "P1"|"P2"|"P3"; score: number; stage: string;
+      recommendedModels: string[]; recommendedEntryRole: string; headline: string;
+      whyNow: string[]; missing: string[]; nextAction: string;
+    }>;
+  };
   attention: Attention[];
   warnings: string[];
 };
@@ -117,6 +126,30 @@ export function WorkspaceNexusInsightsPanel({ brandKey }: { brandKey: string }) 
         <strong className="mt-1 block text-2xl">{Number(value).toLocaleString("nb-NO")}</strong>
       </div>)}
     </div>}
+
+    {data?.corporateAdvisor?.enabled && data.corporateAdvisor.recommendations.length > 0 && <section className="rounded-xl border border-violet-900/60 bg-violet-950/15 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="flex items-center gap-2 font-semibold text-violet-100"><BrainCircuit size={16}/> Nexus Corporate Advisor</h4>
+          <p className="mt-1 text-xs text-slate-400">Prioriterer kontoer ut fra fit, strategi, beslutningsgruppe, kontaktkanal og planlagte aktiviteter.</p>
+        </div>
+        {data.corporateAdvisor.summary && <span className="text-xs text-violet-300">
+          P1 {data.corporateAdvisor.summary.p1} · P2 {data.corporateAdvisor.summary.p2} · P3 {data.corporateAdvisor.summary.p3}
+        </span>}
+      </div>
+      <div className="mt-3 space-y-3">
+        {data.corporateAdvisor.recommendations.slice(0,6).map(item => <article key={item.prospectId} className="rounded-lg border border-violet-900/40 bg-slate-950/45 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div><strong className="text-sm">{item.companyName}</strong><p className="mt-1 text-xs text-slate-500">{item.recommendedModels.join(" · ")} · inngang: {item.recommendedEntryRole}</p></div>
+            <span className="rounded-full border border-violet-800 px-2 py-1 text-[10px] font-black text-violet-300">{item.priority} · {item.score}/100</span>
+          </div>
+          <p className="mt-2 text-sm text-slate-200">{item.nextAction}</p>
+          {item.missing.length > 0 && <p className="mt-2 text-xs text-amber-300">Mangler: {item.missing.join(" · ")}</p>}
+          <a href={`/workspace/${encodeURIComponent(brandKey)}/corporate/${encodeURIComponent(item.prospectId)}`}
+            className="mt-3 inline-flex text-xs font-semibold text-cyan-300 underline">Åpne kontostrategi</a>
+        </article>)}
+      </div>
+    </section>}
 
     {data?.attention?.length ? <section>
       <h4 className="flex items-center gap-2 font-semibold"><AlertTriangle size={16}/> Trenger oppmerksomhet</h4>
