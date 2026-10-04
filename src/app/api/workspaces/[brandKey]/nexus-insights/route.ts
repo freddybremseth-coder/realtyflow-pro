@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
+import { buildCorporateAccountAdvice, rankCorporateAccountAdvice } from "@/lib/nexus/corporate-account-advisor";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,6 +33,86 @@ function safeNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+async function loadCorporateAdvisor(request: NextRequest, brandKey: string) {
+  if (brandKey !== "zeneco") return { enabled: false, recommendations: [] as ReturnType<typeof buildCorporateAccountAdvice>[] };
+
+  const corporateAccess = await requireBrandWorkspace(request, brandKey, "corporate.read");
+  if (!corporateAccess.value) return { enabled: false, recommendations: [] as ReturnType<typeof buildCorporateAccountAdvice>[] };
+  const supabase = corporateAccess.value.supabase;
+
+  const prospectsR = await supabase.from("corporate_prospects")
+    .select("id,company_name,organization_type,industry,employee_count,member_count,status,fit_score,fit_tier,evidence_gaps,evidence,next_action,next_followup")
+    .eq("brand_id", "zeneco")
+    .not("status", "in", '("DISQUALIFIED")')
+    .order("fit_score", { ascending: false })
+    .limit(100);
+  if (prospectsR.error || !(prospectsR.data || []).length) {
+    return { enabled: true, recommendations: [] as ReturnType<typeof buildCorporateAccountAdvice>[], warning: prospectsR.error ? "Corporate Advisor kunne ikke lese prospekter." : null };
+  }
+
+  const prospectIds = (prospectsR.data || []).map((row: any) => String(row.id));
+  const [strategiesR, contactsR, touchpointsR, enrichmentR] = await Promise.all([
+    supabase.from("corporate_account_strategies")
+      .select("prospect_id,stage,priority,account_models,objective,entry_angle,first_offer,account_owner_email,strategic_owner_email,next_review_at")
+      .in("prospect_id", prospectIds),
+    supabase.from("corporate_prospect_contacts")
+      .select("id,prospect_id,name,title,buying_role,status,is_primary,relationship_status,influence_level,email,phone,linkedin_url")
+      .in("prospect_id", prospectIds),
+    supabase.from("corporate_account_touchpoints")
+      .select("id,prospect_id,channel,activity_type,status,due_at,completed_at")
+      .in("prospect_id", prospectIds)
+      .in("status", ["PLANNED","COMPLETED"])
+      .order("due_at", { ascending: true, nullsFirst: false })
+      .limit(1000),
+    supabase.from("corporate_account_enrichment")
+      .select("prospect_id,provider,data_kind,fetched_at")
+      .in("prospect_id", prospectIds)
+      .order("fetched_at", { ascending: false })
+      .limit(500),
+  ]);
+
+  const strategyById = new Map((strategiesR.data || []).map((row: any) => [String(row.prospect_id), row]));
+  const contactsById = new Map<string, any[]>();
+  for (const row of contactsR.data || []) {
+    const key = String((row as any).prospect_id);
+    contactsById.set(key, [...(contactsById.get(key) || []), row]);
+  }
+  const touchpointsById = new Map<string, any[]>();
+  for (const row of touchpointsR.data || []) {
+    const key = String((row as any).prospect_id);
+    touchpointsById.set(key, [...(touchpointsById.get(key) || []), row]);
+  }
+  const enrichmentById = new Map<string, any[]>();
+  for (const row of enrichmentR.data || []) {
+    const key = String((row as any).prospect_id);
+    enrichmentById.set(key, [...(enrichmentById.get(key) || []), row]);
+  }
+
+  const recommendations = rankCorporateAccountAdvice((prospectsR.data || []).map((prospect: any) =>
+    buildCorporateAccountAdvice({
+      prospect,
+      strategy: strategyById.get(String(prospect.id)) || null,
+      contacts: contactsById.get(String(prospect.id)) || [],
+      touchpoints: touchpointsById.get(String(prospect.id)) || [],
+      enrichment: enrichmentById.get(String(prospect.id)) || [],
+    }),
+  ));
+
+  return {
+    enabled: true,
+    recommendations: recommendations.slice(0, 12),
+    summary: {
+      evaluated: recommendations.length,
+      p1: recommendations.filter(item => item.priority === "P1").length,
+      p2: recommendations.filter(item => item.priority === "P2").length,
+      p3: recommendations.filter(item => item.priority === "P3").length,
+    },
+    warning: [strategiesR.error, contactsR.error, touchpointsR.error, enrichmentR.error].some(Boolean)
+      ? "Corporate Advisor mangler deler av kontodataene i denne kjøringen."
+      : null,
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { brandKey: string } },
@@ -41,6 +122,8 @@ export async function GET(
 
   const supabase = access.value.supabase;
   const brandKey = params.brandKey;
+
+  const corporateAdvisor = await loadCorporateAdvisor(request, brandKey);
 
   const [sourcesR, learningR, planR, focusR, newsletterR] = await Promise.all([
     supabase.from("marketing_source_queue")
@@ -148,6 +231,12 @@ export async function GET(
   };
 
   const attention: Array<{ level: "info" | "watch" | "action"; title: string; detail: string }> = [];
+  const topCorporate = corporateAdvisor.recommendations?.[0];
+  if (topCorporate?.priority === "P1") attention.push({
+    level: "action",
+    title: `Corporate P1: ${topCorporate.companyName}`,
+    detail: topCorporate.nextAction,
+  });
   const ready = sourceByStatus.ready || 0;
   const blocked = sourceByStatus.blocked || 0;
   const pending = sourceByStatus.pending || 0;
@@ -210,6 +299,7 @@ export async function GET(
     growthPlan: plan,
     newsletterSummary,
     ownerFocus: focus,
+    corporateAdvisor,
     attention: attention.slice(0, 10),
     warnings: [
       sourcesR.error ? "Kildekøen kunne ikke leses komplett." : null,
@@ -217,6 +307,7 @@ export async function GET(
       planR.error ? "Vekstplanen kunne ikke leses." : null,
       focusR.error ? "Eierfokus kunne ikke leses." : null,
       newsletterR.error ? "Nyhetsbrevresultater kunne ikke leses." : null,
+      corporateAdvisor.warning || null,
     ].filter(Boolean),
     excluded: [
       "runtime_controls",
