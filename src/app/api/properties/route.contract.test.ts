@@ -84,3 +84,17 @@ test("public property API supports lightweight summary, bounded limit and direct
     assert.doesNotMatch(summaryProjection, new RegExp(`\\b${heavyField}\\b`));
   }
 });
+
+
+test("direct property reads do not scan the full brand visibility table", () => {
+  assert.match(route, /const propertyIds = visibleProperties/);
+  assert.match(route, /propertyIds\.length > 0 && propertyIds\.length <= 100/);
+  assert.match(route, /visibilityQuery = visibilityQuery\.in\("property_id", propertyIds\)/);
+});
+
+test("invalid property lookup sentinel values are rejected before PostgREST", () => {
+  assert.match(route, /isInvalidLookupSentinel\(id\)/);
+  assert.match(route, /isInvalidLookupSentinel\(ref\)/);
+  assert.match(route, /if \(id && !isUuid\(id\)\)/);
+  assert.match(route, /Invalid property id/);
+});
