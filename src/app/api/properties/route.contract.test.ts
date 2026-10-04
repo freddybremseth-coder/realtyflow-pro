@@ -107,3 +107,11 @@ test("limited public brand reads stop before scanning the full property catalogu
   assert.match(route, /if \(!authenticated && brandId && limit > 0\)/);
   assert.match(route, /return NextResponse\.json\(limited\)/);
 });
+
+
+test("anonymous property GET responses are edge-cacheable while authenticated reads stay private", () => {
+  assert.match(route, /function propertyGetJson/);
+  assert.match(route, /public, s-maxage=300, stale-while-revalidate=600/);
+  assert.match(route, /private, no-store/);
+  assert.match(route, /return propertyGetJson\(property, authenticated\)/);
+});
