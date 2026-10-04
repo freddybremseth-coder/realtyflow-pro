@@ -244,6 +244,7 @@ export async function POST(
       to: [recipient],
       subject: clean(prepared.subject, 180),
       bodyText: clean(prepared.bodyText, 15000),
+      replyTo: clean(config.reply_to_address, 254) || undefined,
     });
     if (!result.success) {
       await finalize(access.value.supabase, {
@@ -386,6 +387,7 @@ export async function POST(
       to: [recipient],
       subject,
       bodyText,
+      replyTo: clean(config.reply_to_address, 254) || undefined,
       inReplyTo: clean(original.messageId, 500) || undefined,
       references: [clean(original.messageId, 500)].filter(Boolean),
     });
