@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
+import { api1881Configured, search1881Company } from "@/lib/corporate-enrichment/api1881";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -99,9 +100,9 @@ async function loadAccount(supabase: any, prospectId: string) {
       enrichmentCapabilities: {
         brreg: { available: true, mode: "company_open_data" },
         api1881: {
-          available: Boolean(process.env.API1881_KEY || process.env.API_1881_KEY),
+          available: api1881Configured(),
           mode: "licensed_provider",
-          configured: Boolean(process.env.API1881_KEY || process.env.API_1881_KEY),
+          configured: api1881Configured(),
         },
         linkedin: {
           available: true,
@@ -155,6 +156,55 @@ export async function POST(
   if (!prospect) return fail(404, "ACCOUNT_NOT_FOUND");
 
   const actorEmail = access.value.verifiedEmail;
+
+  if (action === "enrich_1881") {
+    if (!api1881Configured()) {
+      return fail(409, "API1881_NOT_CONFIGURED", "1881 API-credentials mangler i RealtyFlow.");
+    }
+
+    const { data: company, error: companyError } = await access.value.supabase
+      .from("corporate_prospects")
+      .select("id,company_name,organization_number")
+      .eq("id", params.prospectId)
+      .eq("brand_id", "zeneco")
+      .maybeSingle();
+    if (companyError || !company) return fail(404, "ACCOUNT_NOT_FOUND");
+
+    const query = String(company.organization_number || company.company_name || "").trim();
+    if (!query) return fail(409, "API1881_QUERY_UNAVAILABLE");
+
+    let result: unknown;
+    try {
+      result = await search1881Company(query);
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : "API1881_FAILED";
+      return fail(502, code, "1881-oppslaget feilet.");
+    }
+
+    const { data: saved, error: saveError } = await access.value.supabase
+      .from("corporate_account_enrichment")
+      .insert({
+        prospect_id: params.prospectId,
+        provider: "api1881",
+        data_kind: "company_search",
+        provider_record_id: null,
+        source_url: "https://www.api1881.no/soke-api",
+        payload: result && typeof result === "object" ? result : { value: result },
+        verified_at: null,
+        verified_by_email: null,
+      })
+      .select("id,provider,data_kind,source_url,payload,fetched_at")
+      .single();
+    if (saveError || !saved) return fail(409, "API1881_SAVE_FAILED");
+
+    return NextResponse.json({
+      ok: true,
+      enrichment: saved,
+      automaticPersonCreation: false,
+      automaticOutreach: false,
+      externalContactStarted: false,
+    }, { headers: noStore });
+  }
 
   if (action === "save_strategy") {
     const stage = clean(body.stage, 40).toUpperCase() || "TARGET";
