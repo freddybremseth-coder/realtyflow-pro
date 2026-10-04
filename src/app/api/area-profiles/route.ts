@@ -12,15 +12,56 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { publicSupabaseError, SUPABASE_UNAVAILABLE_MESSAGE } from "@/lib/supabase/public-error";
 import { slugify } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
-function getSupabase() {
+const PUBLIC_AREA_READ_TIMEOUT_MS = 6000;
+let publicAreaCircuitOpenUntil = 0;
+
+function getSupabase(timeoutMs?: number) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return createClient(url, key);
+  if (!timeoutMs) return createClient(url, key);
+
+  const timedFetch: typeof fetch = async (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error("Supabase request timed out")),
+      timeoutMs,
+    );
+    const upstreamSignal = init?.signal;
+    const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
+
+    if (upstreamSignal) {
+      if (upstreamSignal.aborted) abortFromUpstream();
+      else upstreamSignal.addEventListener("abort", abortFromUpstream, { once: true });
+    }
+
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+      upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+    }
+  };
+
+  return createClient(url, key, { global: { fetch: timedFetch } });
+}
+
+function publicAreaUnavailableJson() {
+  return NextResponse.json(
+    { error: SUPABASE_UNAVAILABLE_MESSAGE, retryable: true, profiles: [] },
+    {
+      status: 503,
+      headers: {
+        "Retry-After": "15",
+        "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+      },
+    },
+  );
 }
 
 type PublicAreaProfile = {
@@ -67,7 +108,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "brandId is required" }, { status: 400 });
   }
 
-  const supabase = getSupabase();
+  if (publicOnly && publicAreaCircuitOpenUntil > Date.now()) {
+    return publicAreaUnavailableJson();
+  }
+
+  const supabase = getSupabase(publicOnly ? PUBLIC_AREA_READ_TIMEOUT_MS : undefined);
   if (!supabase) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
@@ -78,9 +123,25 @@ export async function GET(req: NextRequest) {
     .eq("brand_id", brandId)
     .order("name", { ascending: true });
 
-  const { data, error } = await query;
+  let result;
+  try {
+    result = await query;
+  } catch (error) {
+    if (publicOnly && publicSupabaseError(error) === SUPABASE_UNAVAILABLE_MESSAGE) {
+      publicAreaCircuitOpenUntil = Date.now() + 30_000;
+      return publicAreaUnavailableJson();
+    }
+    return NextResponse.json({ error: publicSupabaseError(error) }, { status: 500 });
+  }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const { data, error } = result;
+  if (error) {
+    if (publicOnly && publicSupabaseError(error) === SUPABASE_UNAVAILABLE_MESSAGE) {
+      publicAreaCircuitOpenUntil = Date.now() + 30_000;
+      return publicAreaUnavailableJson();
+    }
+    return NextResponse.json({ error: publicSupabaseError(error) }, { status: 500 });
+  }
   const profiles = publicOnly
     ? dedupePublicAreaProfiles((data || []) as PublicAreaProfile[])
     : data || [];
