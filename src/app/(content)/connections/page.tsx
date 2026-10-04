@@ -15,7 +15,7 @@ type Channel = {
   scopes: string[];
 };
 
-type BrandChannels = { brandId: string; channels: Channel[]; error?: string };
+type BrandChannels = { brandId: string; channels: Channel[]; error?: string; sourceUnavailable?: boolean };
 type HealthStatus = "ok" | "warning" | "error";
 type HealthCheck = {
   brand: string;
@@ -87,6 +87,7 @@ export default function ChannelConnectionsPage() {
               brandId: brand.id,
               channels: [],
               error: error instanceof Error ? error.message : String(error),
+              sourceUnavailable: true,
             };
           }
         }),
@@ -110,6 +111,7 @@ export default function ChannelConnectionsPage() {
   const rowByBrand = useMemo(() => new Map(rows.map((row) => [row.brandId, row])), [rows]);
   const checks = health.checks ?? [];
   const routingIssues = health.routingIssues ?? [];
+  const sourceUnavailable = rows.some((row) => row.sourceUnavailable || row.error);
   const totalConnected = rows.reduce((sum, row) => sum + row.channels.length, 0);
   const brandsFullyMeta = rows.filter((row) => row.channels.some((channel) => channel.platform === "facebook") && row.channels.some((channel) => channel.platform === "instagram")).length;
   const brandsCommunicationReady = rows.filter((row) => communicationReady(row.channels.filter((channel) => ["facebook", "instagram"].includes(channel.platform)))).length;
@@ -163,12 +165,20 @@ export default function ChannelConnectionsPage() {
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">CONNECTED ROWS</div><div className="mt-1 text-3xl font-black">{totalConnected}</div></div>
+        <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">CONNECTED ROWS</div><div className="mt-1 text-3xl font-black">{sourceUnavailable ? "—" : totalConnected}</div></div>
         <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">META COMPLETE</div><div className="mt-1 text-3xl font-black">{brandsFullyMeta}/{OWNED_GROWTH_BRANDS.length}</div></div>
         <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">META COMMUNICATIONS</div><div className="mt-1 text-3xl font-black">{brandsCommunicationReady}/{OWNED_GROWTH_BRANDS.length}</div></div>
         <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">YOUTUBE VERIFIED</div><div className="mt-1 text-3xl font-black">{brandsYoutubeVerified}/{OWNED_GROWTH_BRANDS.length}</div></div>
         <div className="rounded-xl border border-slate-300 bg-white p-4"><div className="text-xs font-black text-slate-600">LINKEDIN CONNECTED</div><div className="mt-1 text-3xl font-black">{brandsLinkedIn}/{OWNED_GROWTH_BRANDS.length}</div></div>
       </section>
+
+      {sourceUnavailable && (
+        <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 text-amber-950">
+          <div className="text-xs font-black uppercase tracking-[0.2em]">Datakilde utilgjengelig</div>
+          <h2 className="mt-1 text-xl font-black">Connections kan ikke verifiseres akkurat nå</h2>
+          <p className="mt-2 text-sm leading-6">Dette betyr ikke at kanalene er fjernet. RealtyFlow får ikke et stabilt svar fra Supabase, så lagrede tilkoblinger vises ikke som frakoblet før datakilden kan leses igjen.</p>
+        </section>
+      )}
 
       {routingIssues.length > 0 && (
         <section className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-5 text-rose-950">

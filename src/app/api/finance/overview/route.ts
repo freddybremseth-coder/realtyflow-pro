@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildFinanceOverview } from "@/lib/finance/overview";
+import { publicSupabaseError } from "@/lib/supabase/public-error";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,10 +32,10 @@ export async function GET(request: NextRequest) {
 
   const errors = [events.error, documents.error, payments.error]
     .filter(Boolean)
-    .map((error) => error?.message || String(error));
+    .map((error) => publicSupabaseError(error?.message || error));
 
   if (events.error) {
-    return NextResponse.json({ error: events.error.message, warnings: errors.slice(1) }, { status: 500 });
+    return NextResponse.json({ error: publicSupabaseError(events.error.message), warnings: errors.slice(1), retryable: true }, { status: 503 });
   }
 
   const overview = buildFinanceOverview({
