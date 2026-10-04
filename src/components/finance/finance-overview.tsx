@@ -25,9 +25,15 @@ export function FinanceOverview() {
     setLoading(true);
     fetch("/api/finance/overview", { cache: "no-store" })
       .then(async (response) => {
-        const body = await response.json();
+        const text = await response.text();
+        let body: ApiResponse = {};
+        try {
+          body = text ? JSON.parse(text) as ApiResponse : {};
+        } catch {
+          body = { error: response.ok ? "Ugyldig svar fra Finance." : "Finance-datakilden er midlertidig utilgjengelig. Prøv igjen." };
+        }
         if (!response.ok) throw new Error(body?.error || "Kunne ikke hente økonomioversikten");
-        return body as ApiResponse;
+        return body;
       })
       .then(setData)
       .catch((error) => setData({ error: error instanceof Error ? error.message : String(error) }))
@@ -41,7 +47,14 @@ export function FinanceOverview() {
   }
 
   if (!data?.overview) {
-    return <div className="rounded-2xl border border-rose-900/50 bg-rose-950/20 p-5 text-sm text-rose-300">{data?.error || "Ingen økonomidata tilgjengelig."}</div>;
+    return (
+      <div className="rounded-2xl border border-rose-900/50 bg-rose-950/20 p-5 text-sm text-rose-300">
+        <div>{data?.error || "Ingen økonomidata tilgjengelig."}</div>
+        <button onClick={load} className="mt-3 rounded-lg border border-rose-700/60 px-3 py-2 font-semibold hover:bg-rose-950/40">
+          Prøv igjen
+        </button>
+      </div>
+    );
   }
 
   const overview = data.overview;
