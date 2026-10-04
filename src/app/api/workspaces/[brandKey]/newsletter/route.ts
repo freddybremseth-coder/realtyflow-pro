@@ -25,7 +25,10 @@ function clean(value: unknown, max: number) {
 
 async function senderConfig(supabase: any, brandKey: string) {
   const { data } = await supabase.from("brand_email_configs")
-    .select("*").eq("brand_id", brandKey).eq("is_active", true).limit(1).maybeSingle();
+    .select("*").eq("brand_id", brandKey).eq("is_active", true)
+    .order("is_primary_sender", { ascending: false })
+    .order("updated_at", { ascending: false })
+    .limit(1).maybeSingle();
   return data || null;
 }
 
