@@ -102,6 +102,16 @@ function isInvalidLookupSentinel(value: string | null) {
   return value != null && ["", "null", "undefined"].includes(value.trim().toLowerCase());
 }
 
+function propertyGetJson(data: unknown, authenticated: boolean) {
+  return NextResponse.json(data, {
+    headers: {
+      "Cache-Control": authenticated
+        ? "private, no-store"
+        : "public, s-maxage=300, stale-while-revalidate=600",
+    },
+  });
+}
+
 async function getAllProperties(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   columns = "*",
@@ -339,7 +349,7 @@ export async function GET(req: NextRequest) {
         if (scoped.length === 0) return NextResponse.json({ error: "Property not found" }, { status: 404 });
       }
     }
-    return NextResponse.json(property);
+    return propertyGetJson(property, authenticated);
   }
 
   try {
@@ -353,15 +363,15 @@ export async function GET(req: NextRequest) {
         brandId,
         limit,
       );
-      return NextResponse.json(limited);
+      return propertyGetJson(limited, authenticated);
     }
 
     const allData = await getAllProperties(supabase, selectColumns);
     const scopedData = authenticated ? allData : allData.filter(isWebsiteVisible);
-    if (!brandId) return NextResponse.json(limit ? scopedData.slice(0, limit) : scopedData);
+    if (!brandId) return propertyGetJson(limit ? scopedData.slice(0, limit) : scopedData, authenticated);
 
     const filteredData = await filterPropertiesForBrand(supabase, scopedData, brandId);
-    return NextResponse.json(limit ? filteredData.slice(0, limit) : filteredData);
+    return propertyGetJson(limit ? filteredData.slice(0, limit) : filteredData, authenticated);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch properties";
     return NextResponse.json({ error: message }, { status: 500 });
