@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Building2, FileText, Mail, Megaphone, RefreshCw, Search, Video } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
@@ -410,6 +411,12 @@ export function GrowthCorporatePanel({
               </p>}
               {row.nextAction && <p className="mt-2 text-xs text-slate-300">Neste: {row.nextAction}</p>}
               {<div className="mt-2 flex flex-wrap gap-3">
+                <Link
+                  href={`/workspace/${encodeURIComponent(brandKey)}/corporate/${encodeURIComponent(row.id)}`}
+                  className="text-xs font-semibold text-violet-300 underline"
+                >
+                  Åpne konto
+                </Link>
                 {permissions.includes("email.draft") && row.readiness?.manualContactReady && <button type="button" className="text-xs font-semibold text-emerald-300 underline"
                   onClick={() => prepareCorporateEmail(row, "corporate")}>
                   Lag e-postutkast

@@ -30,6 +30,7 @@ const files = [
   "20261001171200_workspace_shared_safe_property_catalogue.sql",
   "20261001185327_workspace_personal_responsibilities.sql",
   "20261004204500_workspace_email_inbox_primary_sender.sql",
+  "20261004213000_corporate_account_workspace.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -139,6 +140,7 @@ try {
   await sql("create table public.search_discovery_events (id uuid primary key default gen_random_uuid(), brand_id text not null, source text not null, path text not null, occurred_at timestamptz not null default now())");
   await sql("create table public.automation_logs (id uuid primary key default gen_random_uuid(), action text not null, agent_name text, status text not null, details jsonb, created_at timestamptz default now())");
   await sql("create table public.corporate_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, organization_type text not null default 'company', country_code text not null default 'NO', city text, industry text, employee_count integer, member_count integer, website_url text, linkedin_company_url text, status text not null default 'RESEARCHED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', decision_roles text[] not null default '{}', source_url text, evidence jsonb not null default '{}'::jsonb, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
+  await sql("create table public.corporate_prospect_contacts (id uuid primary key default gen_random_uuid(), prospect_id uuid not null references public.corporate_prospects(id) on delete cascade, name text, title text, buying_role text, seniority text, email text, phone text, linkedin_url text, source_url text, confidence text, status text not null default 'IDENTIFIED', is_primary boolean not null default false, evidence jsonb not null default '{}'::jsonb, verified_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now())");
   await sql("create table public.corporate_partner_prospects (id uuid primary key default gen_random_uuid(), brand_id text not null, company_name text not null, partner_type text not null default 'other', country_code text not null default 'NO', city text, industry text, employee_count integer, website_url text, status text not null default 'DISCOVERED', fit_score smallint not null default 50, fit_tier text not null default 'B', fit_reasons text[] not null default '{}', evidence_gaps text[] not null default '{}', referral_angle text, source_url text, evidence jsonb not null default '{}'::jsonb, next_action text, next_followup timestamptz, updated_at timestamptz not null default now())");
   await sql("create table public.ad_campaigns (id uuid primary key default gen_random_uuid(), brand_id text, name text not null, product_name text not null, target_markets text[], audience_segments text[], funnel_stage text, offer text, status text not null default 'draft', total_creatives integer default 0, estimated_cost_usd numeric, growth_goal text default 'unspecified', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.portal_messages (id uuid primary key default gen_random_uuid())");
@@ -186,6 +188,7 @@ try {
   await sql("grant select, insert, update on public.contacts to service_role");
   await sql("grant select, insert, update on public.work_items to service_role");
   await sql("grant select on public.search_discovery_events, public.automation_logs, public.corporate_prospects, public.corporate_partner_prospects, public.ad_campaigns to service_role");
+  await sql("grant select, insert, update, delete on public.corporate_prospect_contacts to service_role");
   await sql("grant select on public.properties, public.property_brand_visibility, public.media_assets to service_role");
   for (const filename of files) {
     const contents = await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8");
