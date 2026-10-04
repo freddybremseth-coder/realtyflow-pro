@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
+import { publicSupabaseError, SUPABASE_UNAVAILABLE_MESSAGE } from "@/lib/supabase/public-error";
 import {
   classifyPropertyForBrands,
   normalizeBrandId,
@@ -83,11 +84,70 @@ const PUBLIC_PROPERTY_SUMMARY_SELECT = [
   "floor_label",
   "created_at",
 ].join(",");
-function getSupabase() {
+const PUBLIC_SUPABASE_READ_TIMEOUT_MS = 6000;
+let publicReadCircuitOpenUntil = 0;
+
+function getSupabase(timeoutMs?: number) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return createClient(url, key);
+
+  if (!timeoutMs) return createClient(url, key);
+
+  const timedFetch: typeof fetch = async (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error("Supabase request timed out")),
+      timeoutMs,
+    );
+    const upstreamSignal = init?.signal;
+    const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
+
+    if (upstreamSignal) {
+      if (upstreamSignal.aborted) abortFromUpstream();
+      else upstreamSignal.addEventListener("abort", abortFromUpstream, { once: true });
+    }
+
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+      upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+    }
+  };
+
+  return createClient(url, key, { global: { fetch: timedFetch } });
+}
+
+function propertyUnavailableJson(authenticated: boolean) {
+  return NextResponse.json(
+    { error: SUPABASE_UNAVAILABLE_MESSAGE, retryable: true },
+    {
+      status: 503,
+      headers: {
+        "Retry-After": "15",
+        "Cache-Control": authenticated
+          ? "private, no-store"
+          : "public, s-maxage=15, stale-while-revalidate=30",
+      },
+    },
+  );
+}
+
+function propertyReadErrorJson(error: unknown, authenticated: boolean) {
+  const message = publicSupabaseError(error);
+  if (message === SUPABASE_UNAVAILABLE_MESSAGE) {
+    publicReadCircuitOpenUntil = Date.now() + 30_000;
+    return propertyUnavailableJson(authenticated);
+  }
+
+  return NextResponse.json(
+    { error: message },
+    {
+      status: 500,
+      headers: { "Cache-Control": authenticated ? "private, no-store" : "no-store" },
+    },
+  );
 }
 
 function isWebsiteVisible(property: Record<string, unknown>) {
@@ -309,13 +369,17 @@ async function attachCachedFeedSourceFacts(
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
   const accessContext = await getRequestAccessContext(req);
   // A brand-scoped employee never receives internal listing fields from this
   // legacy public route, even with a signed workspace session.
   const authenticated = Boolean(accessContext && accessContext.role !== "WORKSPACE_MEMBER");
+  if (!authenticated && publicReadCircuitOpenUntil > Date.now()) {
+    return propertyUnavailableJson(false);
+  }
+
+  const supabase = getSupabase(PUBLIC_SUPABASE_READ_TIMEOUT_MS);
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+
   const { searchParams } = new URL(req.url);
   const summaryView = !authenticated && searchParams.get("view") === "summary";
   const selectColumns = authenticated ? "*" : summaryView ? PUBLIC_PROPERTY_SUMMARY_SELECT : PUBLIC_PROPERTY_SELECT;
@@ -338,8 +402,14 @@ export async function GET(req: NextRequest) {
   if (id || ref) {
     let query = supabase.from("properties").select(selectColumns);
     query = id ? query.eq("id", id) : query.eq("ref", ref as string);
-    const { data, error } = await query.maybeSingle();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    let detailResult;
+    try {
+      detailResult = await query.maybeSingle();
+    } catch (error) {
+      return propertyReadErrorJson(error, authenticated);
+    }
+    const { data, error } = detailResult;
+    if (error) return propertyReadErrorJson(error, authenticated);
     const property = data as unknown as Record<string, unknown> | null;
     if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
     if (!authenticated) {
@@ -373,8 +443,7 @@ export async function GET(req: NextRequest) {
     const filteredData = await filterPropertiesForBrand(supabase, scopedData, brandId);
     return propertyGetJson(limit ? filteredData.slice(0, limit) : filteredData, authenticated);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to fetch properties";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return propertyReadErrorJson(error, authenticated);
   }
 }
 

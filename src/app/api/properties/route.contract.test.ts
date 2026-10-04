@@ -115,3 +115,18 @@ test("anonymous property GET responses are edge-cacheable while authenticated re
   assert.match(route, /private, no-store/);
   assert.match(route, /return propertyGetJson\(property, authenticated\)/);
 });
+
+
+test("public property reads fail fast and circuit-break during Supabase outages", () => {
+  assert.match(route, /PUBLIC_SUPABASE_READ_TIMEOUT_MS = 6000/);
+  assert.match(route, /controller\.abort\(new Error\("Supabase request timed out"\)\)/);
+  assert.match(route, /publicReadCircuitOpenUntil = Date\.now\(\) \+ 30_000/);
+  assert.match(route, /if \(!authenticated && publicReadCircuitOpenUntil > Date\.now\(\)\)/);
+  assert.match(route, /status: 503/);
+  assert.match(route, /"Retry-After": "15"/);
+  assert.match(route, /public, s-maxage=15, stale-while-revalidate=30/);
+});
+
+test("authenticated property outage responses are never publicly cached", () => {
+  assert.match(route, /authenticated\s*\? "private, no-store"\s*:\s*"public, s-maxage=15, stale-while-revalidate=30"/);
+});
