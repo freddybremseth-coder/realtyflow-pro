@@ -20,11 +20,17 @@ create unique index if not exists brand_email_configs_one_primary_sender_per_bra
 
 -- Explicit current workspace sender policy.
 update public.brand_email_configs
-set is_primary_sender = case
-  when brand_id='pinosoecolife' and lower(email_address)='post@pinosoecolife.com' then true
-  when brand_id='zeneco' and lower(email_address)='freddy@zenecohomes.com' then true
-  else false
-end
+set
+  is_primary_sender = case
+    when brand_id='pinosoecolife' and lower(email_address)='post@pinosoecolife.com' then true
+    when brand_id='zeneco' and lower(email_address)='freddy@zenecohomes.com' then true
+    else false
+  end,
+  reply_to_address = case
+    when brand_id='pinosoecolife' and lower(email_address)='post@pinosoecolife.com' then 'post@pinosoecolife.com'
+    when brand_id='zeneco' and lower(email_address)='freddy@zenecohomes.com' then 'freddy@zenecohomes.com'
+    else reply_to_address
+  end
 where brand_id in ('pinosoecolife','zeneco');
 
 create or replace function public.workspace_brand_email_inbox_snapshot(
