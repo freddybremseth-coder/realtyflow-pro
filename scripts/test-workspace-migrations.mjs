@@ -29,6 +29,7 @@ const files = [
   "20261001170019_workspace_staff_preflight_public_art_metadata_exception.sql",
   "20261001171200_workspace_shared_safe_property_catalogue.sql",
   "20261001185327_workspace_personal_responsibilities.sql",
+  "20261004204500_workspace_email_inbox_primary_sender.sql",
 ];
 const localUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 assert(localUrl && ["localhost", "127.0.0.1", "::1"].includes(new URL(localUrl).hostname) &&
@@ -142,6 +143,7 @@ try {
   await sql("create table public.ad_campaigns (id uuid primary key default gen_random_uuid(), brand_id text, name text not null, product_name text not null, target_markets text[], audience_segments text[], funnel_stage text, offer text, status text not null default 'draft', total_creatives integer default 0, estimated_cost_usd numeric, growth_goal text default 'unspecified', created_at timestamptz default now(), updated_at timestamptz default now())");
   await sql("create table public.portal_messages (id uuid primary key default gen_random_uuid())");
   await sql("create table public.brand_settings (brand_id text primary key, settings jsonb)");
+  await sql("create table public.brand_email_configs (id uuid primary key default gen_random_uuid(), brand_id text not null, email_address text not null, is_active boolean not null default true, updated_at timestamptz default now())");
   await sql("create table public.agentic_approvals (id uuid primary key default gen_random_uuid(), title text)");
   await sql("create table public.plot_assets (id uuid primary key default gen_random_uuid(), show_on_website boolean default false)");
   await sql("alter table public.contacts enable row level security; alter table public.work_items enable row level security; alter table public.portal_messages enable row level security; alter table public.brand_settings enable row level security; alter table public.agentic_approvals enable row level security; alter table public.plot_assets enable row level security");
@@ -247,6 +249,8 @@ try {
     "workspace_brand_content_publish_payload", "workspace_brand_content_publish_finalize",
     "workspace_brand_content_versions", "workspace_brand_content_restore_version",
     "workspace_brand_email_target_resolve", "workspace_brand_email_snapshot",
+    "workspace_brand_email_inbox_snapshot", "workspace_brand_email_message_resolve",
+    "workspace_brand_email_mark_read",
     "workspace_brand_email_draft_save", "workspace_brand_email_send_prepare",
     "workspace_brand_email_send_finalize",
     "workspace_brand_social_publish_snapshot", "workspace_brand_social_publish_prepare",

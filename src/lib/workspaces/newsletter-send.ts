@@ -74,7 +74,9 @@ export async function sendWorkspaceNewsletterCampaign(input: {
       .select("id,email,name,unsubscribe_token,segments").eq("brand_id", brandId).eq("status", "active")
       .order("created_at", { ascending: true }).limit(500),
     supabase.from("brand_email_configs")
-      .select("*").eq("brand_id", brandKey).eq("is_active", true).limit(1).maybeSingle(),
+      .select("*").eq("brand_id", brandKey).eq("is_active", true)
+      .order("is_primary_sender", { ascending: false })
+      .order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (!campaign || !config) return { ok: false as const, code: "CAMPAIGN_OR_SENDER_NOT_READY" };
   if (!subscribers?.length) return { ok: false as const, code: "NO_ACTIVE_SUBSCRIBERS" };
@@ -132,6 +134,8 @@ export async function sendWorkspaceNewsletterCampaign(input: {
       subject: campaign.subject,
       bodyText: `${campaign.body_text}\n\n---\nAvmeld nyhetsbrev: ${unsubscribe}`,
       bodyHtml,
+      replyTo: typeof config.reply_to_address === "string" && config.reply_to_address.trim()
+        ? config.reply_to_address.trim() : undefined,
     });
     if (result.success) sent += 1; else failed += 1;
     await supabase.schema("core").from("workspace_newsletter_deliveries").update({

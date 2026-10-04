@@ -36,6 +36,7 @@ export interface OutgoingEmail {
   subject: string;
   bodyText: string;
   bodyHtml?: string;
+  replyTo?: string;
   inReplyTo?: string; // Message-ID of email being replied to
   references?: string[]; // For threading
   attachments?: OutgoingAttachment[];
@@ -97,6 +98,7 @@ export async function sendEmail(
       subject: email.subject,
       text: email.bodyText,
       html: email.bodyHtml || undefined,
+      replyTo: email.replyTo || undefined,
     };
 
     // Add threading headers for replies

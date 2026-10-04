@@ -25,7 +25,10 @@ function clean(value: unknown, max: number) {
 
 async function senderConfig(supabase: any, brandKey: string) {
   const { data } = await supabase.from("brand_email_configs")
-    .select("*").eq("brand_id", brandKey).eq("is_active", true).limit(1).maybeSingle();
+    .select("*").eq("brand_id", brandKey).eq("is_active", true)
+    .order("is_primary_sender", { ascending: false })
+    .order("updated_at", { ascending: false })
+    .limit(1).maybeSingle();
   return data || null;
 }
 
@@ -130,6 +133,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
       to: [access.value.verifiedEmail],
       subject: `TEST · ${subject}`,
       bodyText: `${bodyText}\n\n---\nDette er en testutsendelse fra RealtyFlow.`,
+      replyTo: clean(config.reply_to_address, 254) || undefined,
     });
     if (!result.success) return fail(502, "TEST_SEND_FAILED", result.error || "Testutsending feilet.");
     return NextResponse.json({ ok: true, sentTo: access.value.verifiedEmail }, { headers: noStore });

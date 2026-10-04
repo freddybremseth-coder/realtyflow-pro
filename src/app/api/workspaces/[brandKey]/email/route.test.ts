@@ -10,6 +10,7 @@ import { GET, POST } from "./route";
 const userId = "11111111-1111-4111-8111-111111111111";
 const targetId = "22222222-2222-4222-8222-222222222222";
 const draftId = "33333333-3333-4333-8333-333333333333";
+const messageRowId = "44444444-4444-4444-8444-444444444444";
 let permissions: string[] = ["email.read","email.draft","email.send","crm.read"];
 const rpcCalls: Array<{ name: string; args?: Record<string, unknown> }> = [];
 const sendCalls: any[] = [];
@@ -70,6 +71,47 @@ function fakeDb() {
           error: null,
         });
       }
+      if (name === "workspace_brand_email_inbox_snapshot") {
+        return Promise.resolve({
+          data: {
+            unreadCount: 1,
+            messages: [{
+              id: messageRowId,
+              messageId: "<customer@example.test>",
+              threadId: "<customer@example.test>",
+              fromAddress: "lead@example.test",
+              fromName: "Pinoso Lead",
+              subject: "Spørsmål om tomt",
+              bodyText: "Hei, kan dere hjelpe?",
+              receivedAt: "2026-10-04T10:00:00.000Z",
+              isRead: false,
+              repliedAt: null,
+              crmContactId: targetId,
+              contactName: "Pinoso Lead",
+            }],
+          },
+          error: null,
+        });
+      }
+      if (name === "workspace_brand_email_message_resolve") {
+        return Promise.resolve({
+          data: {
+            id: messageRowId,
+            messageId: "<customer@example.test>",
+            threadId: "<customer@example.test>",
+            fromAddress: "lead@example.test",
+            fromName: "Pinoso Lead",
+            subject: "Spørsmål om tomt",
+            bodyText: "Hei, kan dere hjelpe?",
+            crmContactId: targetId,
+            contactName: "Pinoso Lead",
+          },
+          error: null,
+        });
+      }
+      if (name === "workspace_brand_email_mark_read") {
+        return Promise.resolve({ data: true, error: null });
+      }
       if (name === "workspace_brand_email_draft_save") {
         return Promise.resolve({
           data: {
@@ -109,6 +151,7 @@ function fakeDb() {
             smtp_host: "smtp.example.test", smtp_port: 465, smtp_secure: true,
             encrypted_password: "encrypted", encryption_iv: "iv",
             is_active: true, health_status: "healthy",
+            is_primary_sender: true, reply_to_address: "team@pinosoecolife.com",
           },
           error: null,
         });
@@ -120,12 +163,19 @@ function fakeDb() {
         });
       }
       if (table === "email_messages") {
-        return {
+        const q: any = {
           insert: async (payload: any) => {
             updateCalls.push({ table, action: "insert", payload });
             return { data: null, error: null };
           },
+          update: (payload: any) => {
+            updateCalls.push({ table, action: "update", payload });
+            return q;
+          },
+          eq: () => q,
+          then: (resolve: any, reject: any) => Promise.resolve({ data: null, error: null }).then(resolve, reject),
         };
+        return q;
       }
       if (["contacts","corporate_prospects","corporate_partner_prospects"].includes(table)) {
         const q: any = {
@@ -214,6 +264,10 @@ test("email snapshot stays exact-brand and returns no mail credentials", async (
   const body = await response.json();
   assert.equal(body.targets[0].email, "lead@example.test");
   assert.equal(body.sender.email, "hello@pinosoecolife.com");
+  assert.equal(body.sender.primary, true);
+  assert.equal(body.sender.replyTo, "team@pinosoecolife.com");
+  assert.equal(body.inbox.unreadCount, 1);
+  assert.equal(body.inbox.messages[0].id, messageRowId);
   assert.equal(JSON.stringify(body).includes("encrypted_password"), false);
   assert.equal(JSON.stringify(body).includes("test-only"), false);
 
@@ -304,4 +358,39 @@ test("Reach campaign generation is brand-fixed and never starts bulk send or sub
   assert.ok(generation);
   assert.match(generation.campaignPrompt, /Pinoso EcoLife/);
   assert.doesNotMatch(generation.campaignPrompt, /brand_id.*zeneco/i);
+});
+
+
+test("workspace inbox reply stays inside visible CRM scope and threads the answer", async () => {
+  const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  const response = await POST(request("pinosoecolife", "POST", {
+    action: "reply",
+    messageRowId,
+    bodyText: "Ja, selvfølgelig. Jeg følger opp dette.",
+    recipient: "attacker@example.test",
+  }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(response.status, 200);
+  assert.equal(sendCalls.length, 1);
+  assert.deepEqual(sendCalls[0].email.to, ["lead@example.test"]);
+  assert.equal(sendCalls[0].email.inReplyTo, "<customer@example.test>");
+  assert.equal(sendCalls[0].email.replyTo, "team@pinosoecolife.com");
+  assert.equal(JSON.stringify(sendCalls[0]).includes("attacker@example.test"), false);
+  assert.ok(rpcCalls.some(item => item.name === "workspace_brand_email_message_resolve"));
+  assert.ok(updateCalls.some(item => item.table === "email_messages" && item.action === "insert"));
+  assert.ok(updateCalls.some(item => item.table === "email_messages" && item.action === "update"));
+});
+
+test("workspace inbox read state requires email.read and exact scoped message", async () => {
+  const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  const response = await POST(request("pinosoecolife", "POST", {
+    action: "mark_read", messageRowId,
+  }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(response.status, 200);
+  assert.ok(rpcCalls.some(item => item.name === "workspace_brand_email_mark_read"));
+
+  permissions = ["crm.read"];
+  const denied = await POST(request("pinosoecolife", "POST", {
+    action: "mark_read", messageRowId,
+  }, cookie) as any, { params: { brandKey: "pinosoecolife" } });
+  assert.equal(denied.status, 403);
 });
