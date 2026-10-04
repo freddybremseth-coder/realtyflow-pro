@@ -75,6 +75,13 @@ type AccountData = {
   strategy: Record<string, any> | null;
   contacts: Contact[];
   touchpoints: Touchpoint[];
+  advisor: {
+    priority: "P1"|"P2"|"P3"; score: number; stage: string; headline: string;
+    recommendedModels: string[]; recommendedEntryRole: string; whyNow: string[];
+    missing: string[]; nextAction: string;
+    channelSequence: Array<{order:number;channel:string;action:string}>;
+    guardrail: string;
+  };
   enrichmentCapabilities: {
     brreg: { available: boolean };
     api1881: { available: boolean; configured: boolean };
@@ -345,6 +352,32 @@ export default function CorporateAccountWorkspacePage({
 
     {error && <div className="rounded-2xl border border-rose-800 bg-rose-950/30 p-4 text-sm text-rose-200">{error}</div>}
     {notice && <div className="rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4 text-sm text-emerald-200">{notice}</div>}
+
+    <section className="rounded-2xl border border-violet-900/60 bg-violet-950/15 p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Nexus Corporate Advisor</p>
+          <h2 className="mt-2 text-xl font-bold text-white">{data.advisor.headline}</h2>
+          <p className="mt-2 text-sm text-slate-300">{data.advisor.nextAction}</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-violet-800 px-3 py-1.5 text-xs font-black text-violet-300">{data.advisor.priority} · {data.advisor.score}/100</span>
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div><p className="text-xs font-semibold text-slate-400">Anbefalt modell</p><p className="mt-1 text-sm text-slate-200">{data.advisor.recommendedModels.join(" · ")}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Anbefalt inngang</p><p className="mt-1 text-sm text-slate-200">{data.advisor.recommendedEntryRole}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Mangler før neste nivå</p><p className="mt-1 text-sm text-amber-300">{data.advisor.missing.join(" · ") || "Ingen kritiske mangler"}</p></div>
+      </div>
+      {data.advisor.whyNow.length > 0 && <div className="mt-4 flex flex-wrap gap-2">
+        {data.advisor.whyNow.map((reason,index) => <span key={index} className="rounded-full border border-slate-700 bg-slate-950/50 px-2.5 py-1 text-[11px] text-slate-300">{reason}</span>)}
+      </div>}
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {data.advisor.channelSequence.map(step => <div key={step.order} className="rounded-lg border border-slate-800 bg-slate-950/45 p-3">
+          <p className="text-[10px] font-black uppercase text-violet-300">{step.order}. {step.channel}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-300">{step.action}</p>
+        </div>)}
+      </div>
+      <p className="mt-4 text-[11px] text-slate-500">{data.advisor.guardrail}</p>
+    </section>
 
     <section className="grid gap-4 lg:grid-cols-3">
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
