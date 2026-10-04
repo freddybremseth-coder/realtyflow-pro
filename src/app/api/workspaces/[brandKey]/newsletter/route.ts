@@ -133,6 +133,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
       to: [access.value.verifiedEmail],
       subject: `TEST · ${subject}`,
       bodyText: `${bodyText}\n\n---\nDette er en testutsendelse fra RealtyFlow.`,
+      replyTo: clean(config.reply_to_address, 254) || undefined,
     });
     if (!result.success) return fail(502, "TEST_SEND_FAILED", result.error || "Testutsending feilet.");
     return NextResponse.json({ ok: true, sentTo: access.value.verifiedEmail }, { headers: noStore });
