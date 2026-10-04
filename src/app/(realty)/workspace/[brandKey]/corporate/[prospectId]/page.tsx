@@ -211,6 +211,19 @@ export default function CorporateAccountWorkspacePage({
     return body;
   }
 
+  async function run1881Enrichment() {
+    setBusy("1881"); setError(""); setNotice("");
+    try {
+      await post({ action: "enrich_1881" });
+      setNotice("1881-data er hentet og lagret som kildebevart enrichment. Ingen personer eller meldinger ble opprettet automatisk.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "1881-oppslaget feilet.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function saveStrategy() {
     setBusy("strategy"); setError(""); setNotice("");
     try {
@@ -494,7 +507,17 @@ export default function CorporateAccountWorkspacePage({
           <h2 className="font-semibold">Datakilder</h2>
           <div className="mt-3 space-y-2 text-sm">
             <div className="flex justify-between rounded-lg border border-slate-800 px-3 py-2"><span>Brønnøysund</span><span className="text-emerald-300">Klar</span></div>
-            <div className="flex justify-between rounded-lg border border-slate-800 px-3 py-2"><span>1881 API</span><span className={data.enrichmentCapabilities.api1881.configured ? "text-emerald-300" : "text-amber-300"}>{data.enrichmentCapabilities.api1881.configured ? "Koblet" : "API-nøkkel mangler"}</span></div>
+            <div className="rounded-lg border border-slate-800 px-3 py-2">
+              <div className="flex justify-between gap-3"><span>1881 API</span><span className={data.enrichmentCapabilities.api1881.configured ? "text-emerald-300" : "text-amber-300"}>{data.enrichmentCapabilities.api1881.configured ? "Koblet" : "API-credentials mangler"}</span></div>
+              <button
+                type="button"
+                disabled={!data.enrichmentCapabilities.api1881.configured || busy === "1881"}
+                onClick={() => void run1881Enrichment()}
+                className="mt-2 text-xs font-semibold text-cyan-300 underline disabled:text-slate-600 disabled:no-underline"
+              >
+                {busy === "1881" ? "Henter…" : "Berik bedriften fra 1881"}
+              </button>
+            </div>
             <div className="flex justify-between rounded-lg border border-slate-800 px-3 py-2"><span>LinkedIn</span><span className="text-cyan-300">Relasjonskanal</span></div>
           </div>
           <p className="mt-3 text-xs leading-5 text-slate-500">LinkedIn brukes ikke til automatisk profilscraping. Persondata skal være offentlig, relevant for B2B-arbeidet og kildebelagt.</p>
