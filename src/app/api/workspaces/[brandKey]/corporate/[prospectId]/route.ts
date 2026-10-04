@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { api1881Configured, search1881Company } from "@/lib/corporate-enrichment/api1881";
+import { buildCorporateAccountAdvice } from "@/lib/nexus/corporate-account-advisor";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -97,6 +98,13 @@ async function loadAccount(supabase: any, prospectId: string) {
       contacts: contactsResult.data || [],
       touchpoints: touchpointsResult.data || [],
       enrichment: enrichmentResult.data || [],
+      advisor: buildCorporateAccountAdvice({
+        prospect: prospectResult.data,
+        strategy: strategyResult.data || null,
+        contacts: contactsResult.data || [],
+        touchpoints: touchpointsResult.data || [],
+        enrichment: enrichmentResult.data || [],
+      }),
       enrichmentCapabilities: {
         brreg: { available: true, mode: "company_open_data" },
         api1881: {
