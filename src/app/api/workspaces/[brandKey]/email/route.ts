@@ -34,9 +34,11 @@ function cleanJson(value: string) {
 async function senderStatus(supabase: any, brandKey: string) {
   const { data, error } = await supabase
     .from("brand_email_configs")
-    .select("email_address,display_name,is_active,health_status")
+    .select("email_address,display_name,is_active,health_status,is_primary_sender,reply_to_address,updated_at")
     .eq("brand_id", brandKey)
     .eq("is_active", true)
+    .order("is_primary_sender", { ascending: false })
+    .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error || !data) return { configured: false, email: null, displayName: null, healthStatus: null };
@@ -45,6 +47,8 @@ async function senderStatus(supabase: any, brandKey: string) {
     email: data.email_address || null,
     displayName: data.display_name || null,
     healthStatus: data.health_status || null,
+    replyTo: data.reply_to_address || null,
+    primary: data.is_primary_sender === true,
   };
 }
 
@@ -80,8 +84,14 @@ export async function GET(
   if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
 
   const search = clean(new URL(request.url).searchParams.get("q"), 80);
-  const [{ data, error }, sender] = await Promise.all([
+  const [{ data, error }, inboxResult, sender] = await Promise.all([
     access.value.supabase.rpc("workspace_brand_email_snapshot", {
+      p_brand_key: params.brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_search: search,
+    }),
+    access.value.supabase.rpc("workspace_brand_email_inbox_snapshot", {
       p_brand_key: params.brandKey,
       p_user_id: access.value.verifiedUserId,
       p_email: access.value.verifiedEmail,
@@ -89,7 +99,7 @@ export async function GET(
     }),
     senderStatus(access.value.supabase, params.brandKey),
   ]);
-  if (error || !data) return fail(503, "EMAIL_WORKSPACE_UNAVAILABLE");
+  if (error || !data || inboxResult.error || !inboxResult.data) return fail(503, "EMAIL_WORKSPACE_UNAVAILABLE");
 
   return NextResponse.json({
     ok: true,
@@ -97,6 +107,10 @@ export async function GET(
     sender,
     targets: Array.isArray(data.targets) ? data.targets : [],
     drafts: Array.isArray(data.drafts) ? data.drafts : [],
+    inbox: {
+      messages: Array.isArray(inboxResult.data.messages) ? inboxResult.data.messages : [],
+      unreadCount: Number.isSafeInteger(inboxResult.data.unreadCount) ? inboxResult.data.unreadCount : 0,
+    },
   }, { headers: noStore });
 }
 
@@ -200,6 +214,8 @@ export async function POST(
       .select("*")
       .eq("brand_id", params.brandKey)
       .eq("is_active", true)
+      .order("is_primary_sender", { ascending: false })
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (configError || !config) {
@@ -295,6 +311,116 @@ export async function POST(
       sent: true,
       recipientLabel: clean(prepared.recipientLabel, 180),
       sentAt,
+    }, { headers: noStore });
+  }
+
+  if (action === "mark_read") {
+    const access = await requireBrandWorkspace(request, params.brandKey, "email.read");
+    if (!access.value || !access.value.verifiedUserId) return access.response || fail(403, "STAFF_ONLY");
+    const messageRowId = clean(body.messageRowId, 80);
+    if (!uuid.test(messageRowId)) return fail(400, "INVALID_MESSAGE_ID");
+    const { data, error } = await access.value.supabase.rpc("workspace_brand_email_mark_read", {
+      p_brand_key: params.brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+      p_message_row_id: messageRowId,
+    });
+    if (error || data !== true) return fail(403, "MESSAGE_NOT_AVAILABLE");
+    return NextResponse.json({ ok: true, read: true }, { headers: noStore });
+  }
+
+  if (action === "reply") {
+    const access = await requireBrandWorkspace(request, params.brandKey, "email.send");
+    if (!access.value || !access.value.verifiedUserId) return access.response || fail(403, "STAFF_ONLY");
+
+    const messageRowId = clean(body.messageRowId, 80);
+    const bodyText = clean(body.bodyText, 15000);
+    if (!uuid.test(messageRowId) || !bodyText) return fail(400, "INVALID_REPLY");
+
+    const { data: original, error: resolveError } = await access.value.supabase.rpc(
+      "workspace_brand_email_message_resolve",
+      {
+        p_brand_key: params.brandKey,
+        p_user_id: access.value.verifiedUserId,
+        p_email: access.value.verifiedEmail,
+        p_message_row_id: messageRowId,
+      },
+    );
+    if (resolveError || !original) return fail(403, "MESSAGE_NOT_AVAILABLE");
+
+    const recipient = clean(original.fromAddress, 254).toLowerCase();
+    if (!recipient || !recipient.includes("@")) return fail(409, "RECIPIENT_NOT_AVAILABLE");
+    const suppression = await getWorkspaceEmailRuntime().checkSuppression(access.value.supabase as any, [recipient]);
+    if (suppression.error || suppression.blocked) {
+      return fail(suppression.error ? 503 : 409,
+        suppression.error ? "SUPPRESSION_CHECK_FAILED" : "RECIPIENT_SUPPRESSED",
+        suppression.error ? "Kunne ikke kontrollere avmeldingsstatus." : "Mottakeren har avmeldt eller er sperret.");
+    }
+
+    const { data: config, error: configError } = await access.value.supabase
+      .from("brand_email_configs")
+      .select("*")
+      .eq("brand_id", params.brandKey)
+      .eq("is_active", true)
+      .order("is_primary_sender", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (configError || !config) return fail(409, "BRAND_EMAIL_NOT_CONFIGURED");
+
+    const recheck = await requireBrandWorkspace(request, params.brandKey, "email.send");
+    if (!recheck.value || recheck.value.verifiedUserId !== access.value.verifiedUserId) {
+      return recheck.response || fail(403, "ACCESS_DENIED");
+    }
+
+    let smtp;
+    try {
+      smtp = await getWorkspaceEmailRuntime().buildSmtp(config as any, config.display_name || undefined);
+    } catch {
+      return fail(503, "BRAND_EMAIL_AUTH_FAILED", "Merkevarens e-postkonto trenger ny tilkobling.");
+    }
+
+    const originalSubject = clean(original.subject, 180) || "(Uten emne)";
+    const subject = /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+    const result = await getWorkspaceEmailRuntime().send(smtp, {
+      to: [recipient],
+      subject,
+      bodyText,
+      inReplyTo: clean(original.messageId, 500) || undefined,
+      references: [clean(original.messageId, 500)].filter(Boolean),
+    });
+    if (!result.success) return fail(502, "EMAIL_REPLY_FAILED", "Svaret kunne ikke sendes.");
+
+    const sentAt = new Date().toISOString();
+    const { error: logError } = await access.value.supabase.from("email_messages").insert({
+      brand_id: params.brandKey,
+      message_id: result.messageId || null,
+      thread_id: clean(original.threadId, 500) || clean(original.messageId, 500) || result.messageId || null,
+      direction: "outbound",
+      from_address: config.email_address,
+      from_name: config.display_name || null,
+      to_addresses: [recipient],
+      subject,
+      body_text: bodyText,
+      body_html: null,
+      is_read: true,
+      received_at: sentAt,
+      crm_contact_id: uuid.test(clean(original.crmContactId, 80)) ? original.crmContactId : null,
+    });
+    if (logError) console.warn("[Workspace Email] reply log failed", logError.message);
+
+    await access.value.supabase.from("email_messages")
+      .update({ is_read: true, replied_at: sentAt })
+      .eq("id", messageRowId)
+      .eq("brand_id", params.brandKey)
+      .eq("direction", "inbound");
+
+    return NextResponse.json({
+      ok: true,
+      sent: true,
+      repliedAt: sentAt,
+      recipient,
+      sender: config.email_address,
     }, { headers: noStore });
   }
 
