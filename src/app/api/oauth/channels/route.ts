@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { brandIdCandidates, normalizeBrandId } from "@/lib/realty/brand-rules";
 import { createServerClient } from "@/lib/supabase/server";
+import { publicSupabaseError } from "@/lib/supabase/public-error";
 
 /**
  * GET /api/oauth/channels?brand_id=<id>&platform=<platform>
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
 
   const { data: channels, error: chanErr } = await chanQuery;
   if (chanErr) {
-    return NextResponse.json({ error: chanErr.message }, { status: 500 });
+    return NextResponse.json({ error: publicSupabaseError(chanErr.message), sourceUnavailable: true, retryable: true }, { status: 503 });
   }
 
   const channelRows = channels ?? [];
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest) {
     .select("social_channel_id, scopes, expires_at, rotated_at")
     .in("social_channel_id", ids);
   if (tokErr) {
-    return NextResponse.json({ error: tokErr.message }, { status: 500 });
+    return NextResponse.json({ error: publicSupabaseError(tokErr.message), sourceUnavailable: true, retryable: true }, { status: 503 });
   }
 
   const tokenByChannel = new Map<string, { scopes: string[]; expires_at: string | null; rotated_at: string }>();
