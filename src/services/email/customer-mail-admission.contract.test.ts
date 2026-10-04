@@ -58,3 +58,11 @@ test("live review candidates are promoted before historical review backlog", () 
   assert.ok(historicalOrder >= 0);
   assert.ok(receivedOrder > historicalOrder);
 });
+
+
+test("review scans avoid large HTML bodies until a message is actually promoted", () => {
+  assert.match(admission, /select\("id,external_message_id,external_thread_id,from_address,from_name,to_addresses,cc_addresses,subject,body_text,received_at,is_historical"\)/);
+  assert.doesNotMatch(admission, /select\("\*"\)[\s\S]*?admission_status", "review"/);
+  assert.match(admission, /select\("body_html"\)/);
+  assert.match(admission, /Customer-mail promotion HTML lookup failed/);
+});
