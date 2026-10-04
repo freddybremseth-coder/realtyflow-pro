@@ -98,3 +98,12 @@ test("invalid property lookup sentinel values are rejected before PostgREST", ()
   assert.match(route, /if \(id && !isUuid\(id\)\)/);
   assert.match(route, /Invalid property id/);
 });
+
+
+test("limited public brand reads stop before scanning the full property catalogue", () => {
+  assert.match(route, /getLimitedPublicPropertiesForBrand/);
+  assert.match(route, /const pageSize = 100/);
+  assert.match(route, /while \(matches\.length < limit\)/);
+  assert.match(route, /if \(!authenticated && brandId && limit > 0\)/);
+  assert.match(route, /return NextResponse\.json\(limited\)/);
+});
