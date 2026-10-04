@@ -105,7 +105,7 @@ test("limited public brand reads stop before scanning the full property catalogu
   assert.match(route, /const pageSize = 100/);
   assert.match(route, /while \(matches\.length < limit\)/);
   assert.match(route, /if \(!authenticated && brandId && limit > 0\)/);
-  assert.match(route, /return NextResponse\.json\(limited\)/);
+  assert.match(route, /return propertyGetJson\(limited, authenticated\)/);
 });
 
 
