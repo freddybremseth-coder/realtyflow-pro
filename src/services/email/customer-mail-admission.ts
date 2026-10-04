@@ -298,9 +298,11 @@ export async function promoteResolvedCustomerMailReviews(
     limit?: number;
   },
 ) {
+  // Keep the hot review scan narrow. Large HTML bodies are TOASTed and can
+  // consume substantial Disk IO when every review row is read in full.
   const { data, error } = await supabase
     .from("email_admission_queue")
-    .select("*")
+    .select("id,external_message_id,external_thread_id,from_address,from_name,to_addresses,cc_addresses,subject,body_text,received_at,is_historical")
     .eq("account_id", input.accountId)
     .eq("admission_status", "review")
     .eq("mailbox_role", "inbox")
@@ -344,6 +346,17 @@ export async function promoteResolvedCustomerMailReviews(
     let emailMessageId = existing.data?.id ? String(existing.data.id) : null;
     if (!emailMessageId) {
       const historical = Boolean(row.is_historical);
+      // Fetch the potentially large HTML body only for the small subset that is
+      // actually promoted. The review scan above intentionally avoids it.
+      const htmlResult = await supabase
+        .from("email_admission_queue")
+        .select("body_html")
+        .eq("id", row.id)
+        .maybeSingle();
+      if (htmlResult.error) {
+        throw new Error(`Customer-mail promotion HTML lookup failed: ${htmlResult.error.message}`);
+      }
+
       const inserted = await supabase.from("email_messages").insert({
         brand_id: input.brandId,
         message_id: message.messageId,
@@ -355,7 +368,7 @@ export async function promoteResolvedCustomerMailReviews(
         cc_addresses: message.cc?.map((item) => item.address) || null,
         subject: message.subject,
         body_text: message.bodyText || null,
-        body_html: message.bodyHtml || null,
+        body_html: htmlResult.data?.body_html || null,
         received_at: message.date.toISOString(),
         is_read: historical,
         is_archived: historical,
