@@ -43,7 +43,7 @@ async function loadCorporateAdvisor(request: NextRequest, brandKey: string) {
   const prospectsR = await supabase.from("corporate_prospects")
     .select("id,company_name,organization_type,industry,employee_count,member_count,status,fit_score,fit_tier,evidence_gaps,evidence,next_action,next_followup")
     .eq("brand_id", "zeneco")
-    .not("status", "in", '("DISQUALIFIED")')
+    .neq("status", "DISQUALIFIED")
     .order("fit_score", { ascending: false })
     .limit(100);
   if (prospectsR.error || !(prospectsR.data || []).length) {
