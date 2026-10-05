@@ -221,9 +221,16 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
   });
 
-  const criteriaConfirmation = /bekreft|confirm/i.test(String(input.subject || ""))
-    && /^(ja(?:,?\s*(?:det|dette|d)\s+stemmer)?|bekreftet)\b/i.test(text);
-  if (criteriaConfirmation) return result("update_preferences", 0.96, "refresh_buyer_profile", ["Customer explicitly confirms the stated search criteria."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
+  const criteriaSubject = /bekreft|confirm|forstått boligønskene dine riktig|understood your property requirements/i.test(String(input.subject || ""));
+  const criteriaReply = criteriaSubject
+    && Boolean(text)
+    && text.length <= 1200
+    && !/^(takk|thanks|gracias|ok|okay)[.! ]*$/i.test(text);
+  if (criteriaReply) return result("update_preferences", 0.96, "refresh_buyer_profile", ["Customer replies in the context of an explicit buyer-criteria confirmation or clarification."], {
+    shouldPauseNurture: true,
+    shouldRefreshBuyerProfile: true,
+    shouldRunPropertyMatching: false,
+  });
 
   const active = /\b(still interested|still looking|interested|yes we are|yes i am|ready to buy|ready to move forward|fortsatt interessert|fortsatt aktuelt|vi ser fortsatt|jeg ser fortsatt|interessert|klar til å kjøpe|aktuelt)\b/i.test(text);
   if (active) return result("active_interest", 0.91, "move_to_contact", ["Customer confirms active buying interest."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
