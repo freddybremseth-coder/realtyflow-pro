@@ -409,7 +409,6 @@ export async function sendBuyerCriteriaConfirmation(
     contact?.do_not_contact
     || contact?.email_suppressed
     || pipelineStatus === "ON_HOLD"
-    || nurtureStatus === "paused"
     || nurtureStatus === "stopped"
     || (waitingUntil && !Number.isNaN(waitingUntil.getTime()) && waitingUntil.getTime() > Date.now())
   ) {
