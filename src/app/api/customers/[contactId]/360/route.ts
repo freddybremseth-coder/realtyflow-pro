@@ -11,6 +11,7 @@ import {
   type CustomerTimelineEvent,
 } from "@/lib/customer-360";
 import { recommendRevenueAction } from "@/lib/revenue/today";
+import { extractLatestReplyText } from "@/services/email/latest-reply-text";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -175,13 +176,23 @@ export async function GET(
   for (const row of [...linkedById, ...inboundByEmail, ...outboundByEmail]) {
     const id = String(row.id || "");
     if (!id) continue;
-    emailMessageMap.set(id, { ...row, crm_contact_id: row.crm_contact_id || contactId });
+    const direction = String(row.direction || "").toLowerCase();
+    const rawBody = String(row.body_text || row.body_html || "").trim();
+    const readableBody = direction === "inbound"
+      ? (extractLatestReplyText(rawBody) || rawBody)
+      : rawBody;
+    emailMessageMap.set(id, {
+      ...row,
+      crm_contact_id: row.crm_contact_id || contactId,
+      body_text: readableBody.slice(0, 12000),
+      body_html: !readableBody && row.body_html ? String(row.body_html).slice(0, 12000) : null,
+    });
   }
   const linkedEmailMessages = [...emailMessageMap.values()].sort((a, b) => {
     const aTime = new Date(String(a.received_at || a.created_at || 0)).getTime();
     const bTime = new Date(String(b.received_at || b.created_at || 0)).getTime();
     return bTime - aTime;
-  });
+  }).slice(0, 150);
 
   let portalUser = null;
   if (portalUserSettled.status === "fulfilled") {
