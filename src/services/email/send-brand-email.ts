@@ -27,11 +27,11 @@ export async function sendBrandEmail(
   if (suppression.error) {
     return { success: false, skipped: true, error: `CRM suppression check failed: ${suppression.error}` };
   }
-  if (suppression.manualTakeoverEmails.length > 0) {
+  if ((suppression.manualTakeoverEmails || []).length > 0) {
     return {
       success: false,
       skipped: true,
-      error: `Recipient is under manual advisor takeover in CRM: ${suppression.manualTakeoverEmails.join(", ")}`,
+      error: `Recipient is under manual advisor takeover in CRM: ${(suppression.manualTakeoverEmails || []).join(", ")}`,
     };
   }
   if (!params.allowSuppressed && suppression.blocked) {
