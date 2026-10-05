@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowDownLeft,
   ArrowRight,
+  ArrowUpRight,
+  BotOff,
   Building2,
   CalendarClock,
   CheckCircle2,
@@ -19,6 +22,7 @@ import {
   Phone,
   RefreshCw,
   Target,
+  UserCheck,
   UserRound,
   X,
 } from "lucide-react";
@@ -53,6 +57,17 @@ interface Customer360Payload {
   presentations: Array<Record<string, any>>;
   messageDrafts: Array<Record<string, any>>;
   workItems: Array<Record<string, any>>;
+  communicationDialogue: {
+    sentCount: number;
+    replyCount: number;
+    lastSentAt: string | null;
+    lastReplyAt: string | null;
+    awaitingReply: boolean;
+    manualTakeover: boolean;
+    emailBlocked: boolean;
+    blockedReason: string | null;
+    messages: Array<Record<string, any>>;
+  };
   timeline: Array<{
     id: string;
     kind: string;
@@ -64,7 +79,7 @@ interface Customer360Payload {
   warnings: string[];
 }
 
-type CustomerCardTab = "overview" | "update" | "timeline" | "property" | "portal";
+type CustomerCardTab = "overview" | "dialog" | "update" | "timeline" | "property" | "portal";
 type CustomerUpdateTab = "details" | "update";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -157,6 +172,32 @@ function actionUsesCustomerUpdateTab(href?: string) {
   return Boolean(href && /^\/customers\/[^/]+$/.test(href));
 }
 
+function cleanEmailBody(message: Record<string, any>) {
+  const text = String(message.body_text || "").trim();
+  if (text) return text;
+  const html = String(message.body_html || "");
+  if (!html) return "";
+  return html
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n\s+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function communicationStatusLabel(data: Customer360Payload) {
+  if (data.communicationDialogue.manualTakeover) return "STOPPET AV DEG";
+  if (data.contact?.do_not_contact) return "STOPP / IKKE KONTAKT";
+  if (data.communicationDialogue.emailBlocked) return "BLOKKERT";
+  return "PÅ";
+}
+
 export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onClose: () => void }) {
   const [data, setData] = useState<Customer360Payload | null>(null);
   const [tab, setTab] = useState<CustomerCardTab>("overview");
@@ -165,6 +206,8 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   const [error, setError] = useState("");
   const [portalData, setPortalData] = useState<Record<string, any> | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [takeoverBusy, setTakeoverBusy] = useState(false);
+  const [takeoverMessage, setTakeoverMessage] = useState("");
 
   async function load() {
     setLoading(true);
@@ -216,6 +259,35 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
     setTab("update");
   }
 
+  async function setManualTakeover(action: "TAKE_OVER" | "RELEASE") {
+    const takingOver = action === "TAKE_OVER";
+    const confirmed = window.confirm(
+      takingOver
+        ? "Ta over denne kunden? Dette stopper automatisk kundemail fra RealtyFlow/Nexus, men beholder CRM, historikk og pipeline."
+        : "Gi kunden tilbake til RealtyFlow/Nexus? Den manuelle e-postsperren fjernes. Nurture forblir pauset til videre oppfølging aktiveres.",
+    );
+    if (!confirmed) return;
+
+    setTakeoverBusy(true);
+    setTakeoverMessage("");
+    setError("");
+    try {
+      const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/communication-control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke endre kundedialog-kontrollen.");
+      setTakeoverMessage(body?.message || (takingOver ? "Du har tatt over kunden." : "Takeover er fjernet."));
+      await load();
+    } catch (takeoverError) {
+      setError(takeoverError instanceof Error ? takeoverError.message : "Kunne ikke endre kundedialog-kontrollen.");
+    } finally {
+      setTakeoverBusy(false);
+    }
+  }
+
   const groupedCriteria = useMemo(() => {
     const groups: Record<string, Array<Record<string, any>>> = {
       hard_requirement: [],
@@ -253,6 +325,23 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
               )}
             </div>
             <div className="flex flex-wrap gap-2">
+              {data?.contact && !data.communicationDialogue.emailBlocked && (
+                <Button
+                  size="sm"
+                  onClick={() => void setManualTakeover("TAKE_OVER")}
+                  disabled={takeoverBusy}
+                  className="border border-amber-400/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25"
+                >
+                  {takeoverBusy ? <Loader2 size={15} className="mr-2 animate-spin" /> : <BotOff size={15} className="mr-2" />}
+                  Jeg tar over kunden
+                </Button>
+              )}
+              {data?.communicationDialogue.manualTakeover && (
+                <Button variant="outline" size="sm" onClick={() => void setManualTakeover("RELEASE")} disabled={takeoverBusy}>
+                  {takeoverBusy ? <Loader2 size={15} className="mr-2 animate-spin" /> : <UserCheck size={15} className="mr-2 text-emerald-300" />}
+                  Gi tilbake til Nexus
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={openContactDetails} disabled={!data?.contact}>
                 <Pencil size={15} className="mr-2" />Rediger kontaktinfo
               </Button>
@@ -279,6 +368,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
           <nav className="mt-4 flex gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/70 p-1">
             {([
               ["overview", "Oversikt"],
+              ["dialog", "E-post & svar"],
               ["update", "Detaljer & oppdatering"],
               ["timeline", "Historikk"],
               ["property", "Kjøperprofil, boliger & oppgaver"],
@@ -298,6 +388,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
           ) : !data ? null : (
             <>
               {data.warnings.map((warning) => <div key={warning} className="mb-3 flex gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200"><AlertTriangle size={17} />{warning}</div>)}
+              {takeoverMessage && <div className="mb-4 flex gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100"><UserCheck size={18} />{takeoverMessage}</div>}
 
               {tab === "overview" && (
                 <div className="space-y-5">
@@ -358,6 +449,101 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                         <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-300">{data.activeBuyerProfile.summary || "Profilen mangler oppsummering."}</p>
                       </> : <p className="mt-3 text-sm text-slate-500">Ingen koblet kjøperprofil.</p>}
                     </article>
+                  </section>
+                </div>
+              )}
+
+              {tab === "dialog" && (
+                <div className="space-y-5">
+                  <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Kundedialog</p>
+                        <h3 className="mt-1 text-xl font-semibold text-white">Hva er sendt – og hva har kunden svart?</h3>
+                        <p className="mt-2 text-sm text-slate-400">Viser både CRM-koblede meldinger og e-post som er funnet via kundens e-postadresse.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {data.communicationDialogue.manualTakeover ? (
+                          <>
+                            <span className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-100">
+                              <UserCheck size={16} className="mr-2" />Du har tatt over · auto e-post stoppet
+                            </span>
+                            <Button variant="outline" size="sm" onClick={() => void setManualTakeover("RELEASE")} disabled={takeoverBusy}>Gi tilbake til Nexus</Button>
+                          </>
+                        ) : data.communicationDialogue.emailBlocked ? (
+                          <span className="inline-flex items-center rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100">
+                            <BotOff size={16} className="mr-2" />E-post blokkert · {data.communicationDialogue.blockedReason || "CRM-sperre"}
+                          </span>
+                        ) : (
+                          <Button onClick={() => void setManualTakeover("TAKE_OVER")} disabled={takeoverBusy} className="border border-amber-400/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25">
+                            <BotOff size={16} className="mr-2" />Jeg tar over kunden
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <article className={`rounded-xl border p-4 ${data.communicationDialogue.manualTakeover || data.communicationDialogue.emailBlocked ? "border-red-500/30 bg-red-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Auto e-post</p>
+                      <strong className="mt-2 block text-xl text-white">{communicationStatusLabel(data)}</strong>
+                      <p className="mt-1 text-xs text-slate-400">{data.communicationDialogue.manualTakeover ? "Ingen systemmail sendes mens du har takeover." : "CRM-sperrer kontrolleres før utsendelse."}</p>
+                    </article>
+                    <article className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Sendt til kunden</p>
+                      <strong className="mt-2 block text-2xl text-white">{data.communicationDialogue.sentCount}</strong>
+                      <p className="mt-1 text-xs text-slate-400">Sist: {dateLabel(data.communicationDialogue.lastSentAt)}</p>
+                    </article>
+                    <article className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Svar fra kunden</p>
+                      <strong className="mt-2 block text-2xl text-white">{data.communicationDialogue.replyCount}</strong>
+                      <p className="mt-1 text-xs text-slate-400">Sist: {dateLabel(data.communicationDialogue.lastReplyAt)}</p>
+                    </article>
+                    <article className={`rounded-xl border p-4 ${data.communicationDialogue.awaitingReply ? "border-amber-500/30 bg-amber-500/10" : "border-slate-700 bg-slate-900/60"}`}>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Dialogstatus</p>
+                      <strong className="mt-2 block text-xl text-white">{data.communicationDialogue.awaitingReply ? "Venter på svar" : data.communicationDialogue.replyCount ? "Kunden har svart" : "Ingen svar registrert"}</strong>
+                      <p className="mt-1 text-xs text-slate-400">{data.communicationDialogue.awaitingReply ? "Siste hendelse er en utsendt e-post." : "Se tråden under for siste dialog."}</p>
+                    </article>
+                  </section>
+
+                  <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">E-posttråd</h3>
+                        <p className="mt-1 text-sm text-slate-500">Nyeste først. SENDT = fra RealtyFlow/merkevaren. SVAR = fra kunden.</p>
+                      </div>
+                      <Mail className="text-cyan-300" />
+                    </div>
+                    {data.communicationDialogue.messages.length === 0 ? (
+                      <p className="mt-5 text-sm text-slate-500">Ingen e-post er koblet til denne kunden ennå.</p>
+                    ) : (
+                      <div className="mt-5 space-y-3">
+                        {data.communicationDialogue.messages.slice(0, 100).map((message) => {
+                          const outbound = String(message.direction || "").toLowerCase() === "outbound";
+                          const body = cleanEmailBody(message);
+                          return (
+                            <article key={String(message.id)} className={`rounded-xl border p-4 ${outbound ? "border-cyan-500/25 bg-cyan-500/5" : "border-violet-500/25 bg-violet-500/5"}`}>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-black tracking-wide ${outbound ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-100" : "border-violet-400/40 bg-violet-500/15 text-violet-100"}`}>
+                                      {outbound ? <ArrowUpRight size={13} className="mr-1" /> : <ArrowDownLeft size={13} className="mr-1" />}
+                                      {outbound ? "SENDT" : "SVAR"}
+                                    </span>
+                                    <strong className="truncate text-sm text-white">{message.subject || "(uten emne)"}</strong>
+                                  </div>
+                                  <p className="mt-2 text-xs text-slate-500">
+                                    {outbound ? `Til: ${Array.isArray(message.to_addresses) ? message.to_addresses.join(", ") : data.contact.email || "kunden"}` : `Fra: ${message.from_name || message.from_address || data.contact.email || "kunden"}`}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 text-xs text-slate-500">{dateLabel(message.received_at || message.created_at)}</span>
+                              </div>
+                              {body ? <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-300">{body}</p> : <p className="mt-3 text-sm italic text-slate-500">Ingen tekstinnhold lagret.</p>}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
                   </section>
                 </div>
               )}
