@@ -625,6 +625,7 @@ export async function POST(
     const currentAccount = await loadAccount(access.value.supabase, params.prospectId, params.brandKey, actorEmail);
     if ("error" in currentAccount) return fail(503, "CORPORATE_ACCOUNT_UNAVAILABLE");
     if ("notFound" in currentAccount) return fail(404, "ACCOUNT_NOT_FOUND");
+    payload.stage_override_reason = stageOverrideReason || currentAccount.data.strategy?.stage_override_reason || null;
     const currentStage = clean(currentAccount.data.strategy?.stage, 40).toUpperCase() || "TARGET";
     const currentIndex = stageIndex(currentStage);
     const requestedIndex = stageIndex(stage);
