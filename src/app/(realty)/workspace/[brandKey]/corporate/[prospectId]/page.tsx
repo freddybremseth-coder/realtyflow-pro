@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Building2,
+  BrainCircuit,
   CalendarClock,
   CheckCircle2,
   ExternalLink,
@@ -13,6 +14,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  MessageSquareText,
   Phone,
   Plus,
   Save,
@@ -86,6 +88,20 @@ type CompanyProfile = {
   };
 };
 
+type SalesCoachOutput = {
+  summary: string;
+  currentPhase: "DISCOVER_PROBLEM"|"CONFIRM_PROBLEM"|"PRESENT_SOLUTION"|"CONFIRM_SOLUTION"|"NEXT_COMMITMENT";
+  problem: { hypothesis: string; evidence: string[]; questions: string[]; acceptanceSignals: string[] };
+  solution: { positioning: string; arguments: string[]; proofNeeded: string[]; acceptanceQuestions: string[] };
+  stakeholders: Array<{ role: string; objective: string; risk: string }>;
+  objections: Array<{ objection: string; response: string; followUpQuestion: string }>;
+  nextBestAction: { action: string; why: string; channel: string };
+  emailDraft: { subject: string; body: string };
+  sellerCoach: { do: string[]; avoid: string[]; callOpening: string };
+  evidenceGaps: string[];
+  confidence: "LOW"|"MEDIUM"|"HIGH";
+};
+
 type AccountData = {
   prospect: {
     id: string;
@@ -120,7 +136,23 @@ type AccountData = {
     missing: string[]; nextAction: string;
     channelSequence: Array<{order:number;channel:string;action:string}>;
     guardrail: string;
+    accountRole: string;
+    primaryModel: string;
+    secondaryModel: string | null;
+    scores: { fit: number; timing: number; access: number; intent: number; overall: number };
+    businessCaseCompleteness: number;
+    stageGuidance: { current: string; exitCriteria: string[]; next: string | null };
   };
+  coachRuns: Array<{
+    id: string;
+    mode: string;
+    source_text?: string | null;
+    seller_context?: string | null;
+    output: SalesCoachOutput;
+    provider?: string | null;
+    model?: string | null;
+    created_at: string;
+  }>;
   enrichmentCapabilities: {
     brreg: { available: boolean };
     api1881: { available: boolean; configured: boolean };
@@ -129,15 +161,36 @@ type AccountData = {
 };
 
 const MODELS = [
-  "Firmabolig",
-  "Management retreat",
   "Ansattfordel",
+  "Ledelse & team / Management retreat",
+  "Firmabolig / Corporate base",
   "Medlemsfordel",
   "Relokasjon",
-  "Investering",
   "Kunde-/partnerfordel",
-  "Referral partner",
+  "Eiendomsinvestering",
+  "Delt Corporate Home",
 ];
+
+const ACCOUNT_ROLES = [
+  ["END_CUSTOMER", "Sluttkunde"],
+  ["PARTNER", "Partner"],
+  ["MEMBER_ORGANIZATION", "Medlemsorganisasjon"],
+  ["ADVISOR", "Rådgiver"],
+  ["REFERRAL_PARTNER", "Referral partner"],
+] as const;
+
+const ENTRY_ROLES = [
+  "HR / People",
+  "CEO / daglig leder",
+  "CFO / økonomi",
+  "Styreleder",
+  "Partnerskap / medlemsansvarlig",
+  "Innkjøp",
+  "Office / Workplace",
+  "Eier",
+];
+
+const STAGES = ["TARGET","RESEARCH","STRATEGY_READY","OUTREACH","ENGAGED","MEETING","BUSINESS_CASE","SHORTLIST","DECISION","NEGOTIATION","WON","LOST"];
 
 function localDateTime(value?: string | null) {
   if (!value) return "";
@@ -159,10 +212,25 @@ export default function CorporateAccountWorkspacePage() {
   const [strategy, setStrategy] = useState({
     stage: "TARGET",
     priority: "P2",
+    accountRole: "END_CUSTOMER",
     accountModels: [] as string[],
+    primaryModel: "",
+    secondaryModel: "",
+    expansionModel: "",
     objective: "",
     entryAngle: "",
     firstOffer: "",
+    recommendedEntryRole: "",
+    championHypothesis: "",
+    problemHypothesis: "",
+    problemAcceptanceGoal: "",
+    solutionHypothesis: "",
+    solutionAcceptanceGoal: "",
+    coreMessage: "",
+    avoidMessage: "",
+    nextBestAction: "",
+    nextActionReason: "",
+    businessCase: {} as Record<string, unknown>,
     accountOwnerEmail: "",
     strategicOwnerEmail: "",
     estimatedValueEur: "",
@@ -171,6 +239,11 @@ export default function CorporateAccountWorkspacePage() {
     notes: "",
     linkedinMotion: "MANUAL_APPROVAL",
   });
+
+  const [coachMode, setCoachMode] = useState("NEXT_STEP");
+  const [coachSource, setCoachSource] = useState("");
+  const [coachContext, setCoachContext] = useState("");
+  const [coachOutput, setCoachOutput] = useState<SalesCoachOutput | null>(null);
 
   const [contactForm, setContactForm] = useState({
     name: "",
@@ -216,10 +289,25 @@ export default function CorporateAccountWorkspacePage() {
       setStrategy({
         stage: String(saved.stage || "TARGET"),
         priority: String(saved.priority || "P2"),
+        accountRole: String(saved.account_role || "END_CUSTOMER"),
         accountModels: Array.isArray(saved.account_models) ? saved.account_models : [],
+        primaryModel: String(saved.primary_model || ""),
+        secondaryModel: String(saved.secondary_model || ""),
+        expansionModel: String(saved.expansion_model || ""),
         objective: String(saved.objective || ""),
         entryAngle: String(saved.entry_angle || ""),
         firstOffer: String(saved.first_offer || ""),
+        recommendedEntryRole: String(saved.recommended_entry_role || ""),
+        championHypothesis: String(saved.champion_hypothesis || ""),
+        problemHypothesis: String(saved.problem_hypothesis || ""),
+        problemAcceptanceGoal: String(saved.problem_acceptance_goal || ""),
+        solutionHypothesis: String(saved.solution_hypothesis || ""),
+        solutionAcceptanceGoal: String(saved.solution_acceptance_goal || ""),
+        coreMessage: String(saved.core_message || ""),
+        avoidMessage: String(saved.avoid_message || ""),
+        nextBestAction: String(saved.next_best_action || ""),
+        nextActionReason: String(saved.next_action_reason || ""),
+        businessCase: saved.business_case && typeof saved.business_case === "object" ? saved.business_case : {},
         accountOwnerEmail: String(saved.account_owner_email || defaultOwnerEmail),
         strategicOwnerEmail: String(saved.strategic_owner_email || defaultOwnerEmail),
         estimatedValueEur: saved.estimated_value_eur == null ? "" : String(saved.estimated_value_eur),
@@ -332,6 +420,25 @@ export default function CorporateAccountWorkspacePage() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke lagre strategien.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runSalesCoach() {
+    setBusy("coach"); setError(""); setNotice("");
+    try {
+      const result = await post({
+        action: "sales_coach",
+        mode: coachMode,
+        sourceText: coachSource,
+        sellerContext: coachContext,
+      });
+      setCoachOutput(result.output as SalesCoachOutput);
+      setNotice("Nexus Sales Coach har analysert kontoen. Ingen melding er sendt.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Sales Coach feilet.");
     } finally {
       setBusy("");
     }
