@@ -100,7 +100,7 @@ const SIGNAL_PATTERNS: Record<CorporateCompanySignal, RegExp[]> = {
   new_office_signal: [
     /\bnytt\s+kontor\b/i,
     /\båpner\s+(?:et\s+)?kontor\b/i,
-    /\bnew\s+office\b/i,
+    /\bnew\s+(?:official\s+)?office\b/i,
     /\bopens?\s+(?:a\s+)?new\s+office\b/i,
     /\bnew\s+location\b/i,
   ],
