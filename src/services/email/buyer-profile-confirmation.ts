@@ -322,7 +322,7 @@ export function buildCriteriaConfirmationEmail(input: {
   const enrichmentBlock = followUpQuestions.length > 0
     ? [
         "",
-        "For å gjøre søket mer presist, trenger jeg bare:"
+        "For å gjøre søket mer presist, trenger jeg bare:",
         ...followUpQuestions.map((question, index) => `${index + 1}. ${question}`),
         "",
         "Du trenger ikke skrive langt. Et svar som «Ja – ca. €450k, leilighet, helst 2–3 soverom» er mer enn nok.",
