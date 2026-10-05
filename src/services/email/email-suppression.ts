@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type SuppressionCheckResult = {
   blocked: boolean;
   blockedEmails: string[];
+  manualTakeoverEmails: string[];
   error?: string;
 };
 
@@ -17,7 +18,7 @@ export async function checkCrmEmailSuppression(
   values: string[],
 ): Promise<SuppressionCheckResult> {
   const recipients = normalizeRecipientEmails(values);
-  if (!recipients.length) return { blocked: false, blockedEmails: [] };
+  if (!recipients.length) return { blocked: false, blockedEmails: [], manualTakeoverEmails: [] };
 
   const checks = await Promise.all(recipients.map(async (email) => {
     const [contactResult, inboundOptOutResult] = await Promise.all([
@@ -45,10 +46,13 @@ export async function checkCrmEmailSuppression(
   }));
 
   const failed = checks.find((check) => check.error);
-  if (failed?.error) return { blocked: true, blockedEmails: [], error: failed.error.message };
+  if (failed?.error) return { blocked: true, blockedEmails: [], manualTakeoverEmails: [], error: failed.error.message };
 
   const blockedEmails = Array.from(new Set(checks.flatMap((check) =>
     check.contactRows.length || check.inboundOptOutRows.length ? [check.email] : []
   )));
-  return { blocked: blockedEmails.length > 0, blockedEmails };
+  const manualTakeoverEmails = Array.from(new Set(checks.flatMap((check) =>
+    check.contactRows.some((row: any) => String(row.suppression_reason || "") === "manual_owner_takeover") ? [check.email] : []
+  )));
+  return { blocked: blockedEmails.length > 0, blockedEmails, manualTakeoverEmails };
 }
