@@ -137,6 +137,42 @@ test("vague multi-year pause stays parked without inventing a date", () => {
   assert.equal(deriveRequestedFollowUpAt("om noen år", now), null);
 });
 
+test("explicit not-interested and negative short replies close the buying journey", () => {
+  assert.equal(classifyInboundReply({ body: "Hei, takk for henvendelsen, men vi er ikke interessert." }).intent, "no_longer_buying");
+  assert.equal(classifyInboundReply({ body: "Hei, nei dessverre." }).intent, "no_longer_buying");
+  assert.equal(classifyInboundReply({ body: "Vi har slått oss til ro der vi er." }).intent, "no_longer_buying");
+  assert.equal(classifyInboundReply({ body: "Vi renoverer leiligheten i Albir og blir der forever." }).intent, "no_longer_buying");
+});
+
+test("ascii Norwegian purchase wording closes as purchased elsewhere", () => {
+  assert.equal(classifyInboundReply({ body: "Kjopte hus for et år siden i Torre." }).intent, "purchased_elsewhere");
+  assert.equal(classifyInboundReply({ body: "Vi fikk kjøpt tomtene og er nå i boligbygging." }).intent, "purchased_elsewhere");
+});
+
+test("multi-year ranges are parked and use the upper bound", () => {
+  const now = new Date("2026-09-26T07:07:15.000Z");
+  const classification = classifyInboundReply({
+    body: "Fortsatt interessert, men tidshorisonten er innen 2-4 år.",
+    now,
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.requestedFollowUpAt, "2030-09-26T07:07:15.000Z");
+});
+
+test("vague later wording is parked rather than treated as active", () => {
+  assert.equal(classifyInboundReply({ body: "Hei! Kanskje det er aktuelt seinare." }).intent, "follow_up_later");
+});
+
+test("short confirmation to criteria email is treated as a verified preference update", () => {
+  const classification = classifyInboundReply({
+    subject: "SV: Kan du bekrefte søkekriteriene dine?",
+    body: "Ja, det stemmer.",
+  });
+  assert.equal(classification.intent, "update_preferences");
+  assert.equal(classification.shouldRefreshBuyerProfile, true);
+  assert.equal(classification.shouldRunPropertyMatching, true);
+});
+
 test("plain customer question is not mistaken for a terminal outcome", () => {
   const classification = classifyInboundReply({ body: "How much is the community fee?" });
   assert.equal(classification.intent, "question");
