@@ -424,7 +424,7 @@ export async function runAccountDeepResearch(
   try {
     const { data: company, error } = await supabase
       .from("corporate_prospects")
-      .select("id,company_name,organization_number,domain,website_url,industry,employee_count,member_count,evidence,fit_score,fit_tier,status")
+      .select("id,company_name,organization_number,domain,organization_type,country_code,website_url,industry,employee_count,employee_band,member_count,decision_roles,source_url,evidence,fit_score,fit_tier,status")
       .eq("id", prospectId).eq("brand_id", "zeneco").maybeSingle();
     if (error) throw error;
     if (!company) throw new Error("ACCOUNT_NOT_FOUND");
