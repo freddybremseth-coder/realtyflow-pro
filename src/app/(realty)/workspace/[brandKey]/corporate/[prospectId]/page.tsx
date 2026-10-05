@@ -106,6 +106,11 @@ type AccountData = {
     next_action?: string | null;
   };
   strategy: Record<string, any> | null;
+  assignmentOptions: {
+    users: Array<{ email: string; displayName: string; role: "OWNER" | "MEMBER" }>;
+    defaultOwnerEmail?: string | null;
+    degraded?: boolean;
+  };
   companyProfile: CompanyProfile;
   contacts: Contact[];
   touchpoints: Touchpoint[];
@@ -207,6 +212,7 @@ export default function CorporateAccountWorkspacePage() {
       if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke hente Corporate-kontoen.");
       setData(body);
       const saved = body.strategy || {};
+      const defaultOwnerEmail = String(body.assignmentOptions?.defaultOwnerEmail || "");
       setStrategy({
         stage: String(saved.stage || "TARGET"),
         priority: String(saved.priority || "P2"),
@@ -214,8 +220,8 @@ export default function CorporateAccountWorkspacePage() {
         objective: String(saved.objective || ""),
         entryAngle: String(saved.entry_angle || ""),
         firstOffer: String(saved.first_offer || ""),
-        accountOwnerEmail: String(saved.account_owner_email || ""),
-        strategicOwnerEmail: String(saved.strategic_owner_email || ""),
+        accountOwnerEmail: String(saved.account_owner_email || defaultOwnerEmail),
+        strategicOwnerEmail: String(saved.strategic_owner_email || defaultOwnerEmail),
         estimatedValueEur: saved.estimated_value_eur == null ? "" : String(saved.estimated_value_eur),
         targetDate: String(saved.target_date || ""),
         nextReviewAt: localDateTime(saved.next_review_at),
@@ -546,8 +552,33 @@ export default function CorporateAccountWorkspacePage() {
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
         <div className="flex items-center gap-2"><UserRound size={18} className="text-cyan-300"/><h2 className="font-semibold">Ansvar & verdi</h2></div>
         <div className="mt-4 grid gap-3">
-          <input value={strategy.accountOwnerEmail} onChange={e => setStrategy(s => ({ ...s, accountOwnerEmail: e.target.value }))} placeholder="Account owner e-post" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
-          <input value={strategy.strategicOwnerEmail} onChange={e => setStrategy(s => ({ ...s, strategicOwnerEmail: e.target.value }))} placeholder="Strategisk ansvarlig e-post" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <label className="text-xs text-slate-500">
+            Account owner
+            <select
+              value={strategy.accountOwnerEmail}
+              onChange={e => setStrategy(s => ({ ...s, accountOwnerEmail: e.target.value }))}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+            >
+              {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>
+                {user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}
+              </option>)}
+            </select>
+          </label>
+          <label className="text-xs text-slate-500">
+            Strategisk ansvarlig
+            <select
+              value={strategy.strategicOwnerEmail}
+              onChange={e => setStrategy(s => ({ ...s, strategicOwnerEmail: e.target.value }))}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+            >
+              {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>
+                {user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}
+              </option>)}
+            </select>
+          </label>
+          <p className="text-[11px] leading-5 text-slate-500">
+            Nye kontoer får RealtyFlow Owner som standard. Du kan overstyre til en annen aktiv bruker med Corporate-tilgang.
+          </p>
           <input type="number" min="0" value={strategy.estimatedValueEur} onChange={e => setStrategy(s => ({ ...s, estimatedValueEur: e.target.value }))} placeholder="Estimert verdi €" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
           <label className="text-xs text-slate-500">Måldato<input type="date" value={strategy.targetDate} onChange={e => setStrategy(s => ({ ...s, targetDate: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"/></label>
           <label className="text-xs text-slate-500">Neste strategigjennomgang<input type="datetime-local" value={strategy.nextReviewAt} onChange={e => setStrategy(s => ({ ...s, nextReviewAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"/></label>
