@@ -188,7 +188,7 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
   });
 
-  const purchasedElsewhere = /\b(already bought|already purchased|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|allerede kjøpt)\b/i.test(text);
+  const purchasedElsewhere = /\b(already bought|already purchased|already have (?:a |the )?(?:house|home|property|apartment|villa)|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|allerede kjøpt|har allerede (?:en|et) (?:bolig|hus|leilighet|villa))\b/i.test(text);
   if (purchasedElsewhere) return result("purchased_elsewhere", 0.98, "mark_lost_purchased_elsewhere", ["Customer states that a property has already been purchased."], { shouldStopNurture: true });
 
   // Explicit temporary negatives must be evaluated before terminal phrases such
