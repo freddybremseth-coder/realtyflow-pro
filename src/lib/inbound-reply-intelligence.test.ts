@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyInboundReply, extractLatestReplyText, governInboundReply } from "./inbound-reply-intelligence";
+import { classifyInboundReply, deriveRequestedFollowUpAt, extractLatestReplyText, governInboundReply } from "./inbound-reply-intelligence";
 
 test("explicit do-not-contact is honored automatically and stops nurture", () => {
   const classification = classifyInboundReply({ body: "Please do not contact me again." });
@@ -101,6 +101,24 @@ test("temporary Norwegian not-now reply is not misclassified as active interest"
   assert.equal(classification.proposedPipelineAction, "schedule_followup");
   assert.equal(classification.requiresFastResponse, false);
   assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
+test("explicit multi-year pause derives a future waiting date", () => {
+  const now = new Date("2026-10-05T19:00:00.000Z");
+  const classification = classifyInboundReply({
+    body: "Jeg har låst midlene mine i fire år. Spør meg igjen om 4 år.",
+    now,
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.requestedFollowUpAt, "2030-10-05T19:00:00.000Z");
+});
+
+test("vague multi-year pause stays parked without inventing a date", () => {
+  const now = new Date("2026-10-05T19:00:00.000Z");
+  const classification = classifyInboundReply({ body: "Dette er på vent i noen år.", now });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.requestedFollowUpAt, null);
+  assert.equal(deriveRequestedFollowUpAt("om noen år", now), null);
 });
 
 test("plain customer question is not mistaken for a terminal outcome", () => {
