@@ -10,6 +10,18 @@ describe("assessPipelineMovement", () => {
     expect(result?.needsAction).toBe(false);
   });
 
+  it("treats ON_HOLD without a waiting date as fail-closed", () => {
+    const result = assessPipelineMovement({ id:"hold-no-date", email:"hold@example.com", pipeline_status:"ON_HOLD" }, now);
+    expect(result?.cause).toBe("waiting_planned");
+    expect(result?.needsAction).toBe(false);
+    expect(result?.action).toContain("ventedato");
+  });
+
+  it("excludes terminal reply classifications even if stage is still qualified", () => {
+    const result = assessPipelineMovement({ id:"stale-terminal", email:"x@example.com", pipeline_status:"QUALIFIED", last_reply_classification:"no_longer_buying" }, now);
+    expect(result).toBeNull();
+  });
+
   it("moves qualified buyers with direction toward matching", () => {
     const result = assessPipelineMovement({ id:"2", email:"b@example.com", pipeline_status:"QUALIFIED", preferred_location:"Altea", last_contact:"2026-09-01T10:00:00.000Z" }, now);
     expect(result?.cause).toBe("ready_for_matching");
