@@ -17,7 +17,10 @@ import {
   MessageSquareText,
   Phone,
   Plus,
+  RefreshCw,
   Save,
+  ShieldCheck,
+  TrendingUp,
   Target,
   UserRound,
   Users,
@@ -102,6 +105,32 @@ type SalesCoachOutput = {
   confidence: "LOW"|"MEDIUM"|"HIGH";
 };
 
+type IntelligenceFinding = {
+  id: string;
+  scope: "ACCOUNT"|"MARKET"|"REGULATORY";
+  signal_type: string;
+  title: string;
+  summary: string;
+  why_it_matters?: string | null;
+  source_url: string;
+  source_title?: string | null;
+  source_kind: string;
+  source_published_at?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at: string;
+  change_status: "NEW"|"CHANGED"|"UNCHANGED";
+  direction: "POSITIVE"|"NEUTRAL"|"NEGATIVE";
+  relevance: number;
+  strength?: number;
+  freshness?: number;
+  source_authority?: number;
+  confidence: number;
+  fit_delta?: number;
+  timing_delta?: number;
+  intent_delta?: number;
+  financial_capacity_delta?: number;
+};
+
 type AccountData = {
   prospect: {
     id: string;
@@ -163,6 +192,18 @@ type AccountData = {
     applied_by_email?: string | null;
     applied_fields?: string[];
   }>;
+  intelligence: {
+    account: IntelligenceFinding[];
+    summary: {
+      total: number;
+      materialChanges: number;
+      negativeSignals: number;
+      deltas: { fit: number; timing: number; intent: number; financialCapacity: number };
+      topChanges: IntelligenceFinding[];
+    };
+    market: IntelligenceFinding[];
+    regulatory: IntelligenceFinding[];
+  };
   enrichmentCapabilities: {
     brreg: { available: boolean };
     api1881: { available: boolean; configured: boolean };
@@ -376,6 +417,22 @@ export default function CorporateAccountWorkspacePage() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "1881-oppslaget feilet.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runCorporateIntelligence() {
+    setBusy("intelligence"); setError(""); setNotice("");
+    try {
+      const result = await post({ action: "run_intelligence" });
+      const count = Number(result?.result?.findingCount || 0);
+      const changed = Number(result?.result?.changedCount || 0);
+      const fresh = Number(result?.result?.newCount || 0);
+      setNotice("Corporate Intelligence er oppdatert: " + count + " funn, " + fresh + " nye og " + changed + " endrede. Ingen kontakt eller pipelinebevegelse er utført.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Corporate Intelligence feilet.");
     } finally {
       setBusy("");
     }
@@ -716,6 +773,88 @@ export default function CorporateAccountWorkspacePage() {
         </div>)}
       </div>
       <p className="mt-4 text-[11px] text-slate-500">{data.advisor.guardrail}</p>
+    </section>
+
+    <section className="rounded-2xl border border-emerald-900/60 bg-emerald-950/10 p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-300">
+            <TrendingUp size={16}/> Corporate Intelligence
+          </div>
+          <h2 className="mt-2 text-xl font-bold text-white">Hva har endret seg – og hvorfor betyr det noe?</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Dyp research på selskapets nettsider, årsrapporter/PDF-er og offentlig web. Funn er evidens, ikke automatisk pipelinebevegelse eller outreach.</p>
+        </div>
+        <button type="button" onClick={() => void runCorporateIntelligence()} disabled={busy === "intelligence"}
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          <RefreshCw size={15} className={busy === "intelligence" ? "animate-spin" : ""}/>{busy === "intelligence" ? "Research…" : "Kjør dyp research"}
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Aktive funn</p>
+          <p className="mt-1 text-xl font-black text-white">{data.intelligence.summary.total}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Nytt / endret</p>
+          <p className="mt-1 text-xl font-black text-emerald-300">{data.intelligence.summary.materialChanges}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Negative signaler</p>
+          <p className="mt-1 text-xl font-black text-rose-300">{data.intelligence.summary.negativeSignals}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Signalpåvirkning</p>
+          <p className="mt-1 text-xs leading-5 text-slate-300">
+            Fit {data.intelligence.summary.deltas.fit >= 0 ? "+" : ""}{data.intelligence.summary.deltas.fit}
+            {" · "}Timing {data.intelligence.summary.deltas.timing >= 0 ? "+" : ""}{data.intelligence.summary.deltas.timing}
+            {" · "}Intent {data.intelligence.summary.deltas.intent >= 0 ? "+" : ""}{data.intelligence.summary.deltas.intent}
+            {" · "}Kapasitet {data.intelligence.summary.deltas.financialCapacity >= 0 ? "+" : ""}{data.intelligence.summary.deltas.financialCapacity}
+          </p>
+        </div>
+      </div>
+
+      {data.intelligence.account.length > 0 ? <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {data.intelligence.account.slice(0, 8).map(item => <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.change_status === "NEW" ? "bg-emerald-950 text-emerald-300" : item.change_status === "CHANGED" ? "bg-amber-950 text-amber-300" : "bg-slate-800 text-slate-500"}`}>{item.change_status}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.direction === "NEGATIVE" ? "bg-rose-950 text-rose-300" : item.direction === "POSITIVE" ? "bg-cyan-950 text-cyan-300" : "bg-slate-800 text-slate-400"}`}>{item.direction}</span>
+            </div>
+            <span className="text-[10px] text-slate-600">Relevans {item.relevance} · confidence {item.confidence}</span>
+          </div>
+          <h3 className="mt-3 text-sm font-bold text-white">{item.title}</h3>
+          <p className="mt-2 text-xs leading-5 text-slate-300">{item.summary}</p>
+          {item.why_it_matters && <p className="mt-2 text-xs leading-5 text-emerald-200"><strong>Hvorfor viktig:</strong> {item.why_it_matters}</p>}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[10px] text-slate-600">{item.source_kind.replaceAll("_"," ")}</span>
+            <a href={item.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300">Kilde <ExternalLink size={12}/></a>
+          </div>
+        </article>)}
+      </div> : <div className="mt-4 rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">Ingen Intelligence-funn ennå. Kjør dyp research for denne kontoen.</div>}
+
+      {(data.intelligence.market.length > 0 || data.intelligence.regulatory.length > 0) && <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/35 p-4">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-cyan-300"><TrendingUp size={14}/> Markedswatch</div>
+          <div className="mt-3 space-y-3">
+            {data.intelligence.market.slice(0, 4).map(item => <div key={item.id} className="border-b border-slate-800 pb-3 last:border-0 last:pb-0">
+              <a href={item.source_url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-slate-200 hover:text-cyan-300">{item.title}</a>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{item.why_it_matters || item.summary}</p>
+            </div>)}
+            {!data.intelligence.market.length && <p className="text-xs text-slate-600">Ingen markedsfunn ennå.</p>}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/35 p-4">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-amber-300"><ShieldCheck size={14}/> Regelverkswatch</div>
+          <div className="mt-3 space-y-3">
+            {data.intelligence.regulatory.slice(0, 4).map(item => <div key={item.id} className="border-b border-slate-800 pb-3 last:border-0 last:pb-0">
+              <a href={item.source_url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-slate-200 hover:text-amber-300">{item.title}</a>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{item.why_it_matters || item.summary}</p>
+            </div>)}
+            {!data.intelligence.regulatory.length && <p className="text-xs text-slate-600">Ingen regelverksfunn ennå.</p>}
+          </div>
+        </div>
+      </div>}
     </section>
 
     <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
