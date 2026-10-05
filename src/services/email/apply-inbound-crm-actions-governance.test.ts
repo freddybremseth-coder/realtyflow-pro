@@ -54,7 +54,8 @@ test("explicit terminal customer outcomes auto-close sales pipeline and follow-u
 test("later replies are parked instead of becoming immediate sales follow-up", () => {
   assert.match(source, /classification\.intent === "follow_up_later"/);
   assert.match(source, /update\.pipeline_status = "ON_HOLD"/);
-  assert.match(source, /update\.waiting_on = "customer_requested_later_followup"/);
+  assert.match(source, /update\.waiting_on = "customer"/);
+  assert.match(source, /update\.waiting_reason = "Kunden har bedt om oppfølging senere\."/);
   assert.match(source, /update\.waiting_until = requestedFollowUpAt/);
   assert.match(source, /update\.next_followup = null/);
   assert.match(source, /email-crm-sync:follow-up-later/);
