@@ -103,6 +103,22 @@ test("temporary Norwegian not-now reply is not misclassified as active interest"
   assert.equal(classification.shouldRunPropertyMatching, false);
 });
 
+test("Stig-style reply with existing Marbella home and 1-2 year horizon is parked, not hot", () => {
+  const now = new Date("2026-10-04T16:03:13.000Z");
+  const classification = classifyInboundReply({
+    body: "Hei Freddy,\nJeg har ingen konkrete planer om å kjøpe bolig i Spania. Jeg har allerede en ganske stor leilighet i Marbella.\nMen det kan muligens bli aktuelt å vurdere noe om et år eller to.\n\nHilsen\nStig",
+    now,
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.shouldPauseNurture, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+  assert.equal(classification.requiresFastResponse, false);
+  assert.equal(classification.requestedFollowUpAt, "2028-10-04T16:03:13.000Z");
+  const governed = governInboundReply(classification);
+  assert.equal(governed.safety.tier, "AUTO");
+  assert.equal(governed.canApplyAutomatically, true);
+});
+
 test("explicit multi-year pause derives a future waiting date", () => {
   const now = new Date("2026-10-05T19:00:00.000Z");
   const classification = classifyInboundReply({
