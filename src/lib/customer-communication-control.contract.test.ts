@@ -23,6 +23,18 @@ const sendBrandEmailSource = fs.readFileSync(
   path.join(process.cwd(), "src/services/email/send-brand-email.ts"),
   "utf8",
 );
+const newsletterSource = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/email/newsletter/route.ts"),
+  "utf8",
+);
+const propertyPdfSource = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/property-pdf/send/route.ts"),
+  "utf8",
+);
+const multiPropertyPdfSource = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/property-pdf/multi/send/route.ts"),
+  "utf8",
+);
 
 test("manual takeover requires customer write access and never changes pipeline status", () => {
   assert.match(routeSource, /customers\.write/);
@@ -58,4 +70,13 @@ test("customer card exposes sent-versus-reply dialogue and takeover button", () 
   assert.match(cardSource, /SVAR/);
   assert.match(cardSource, /STOPPET AV DEG/);
   assert.match(cardSource, /communication-control/);
+});
+
+test("legacy direct SMTP customer send routes also enforce CRM communication control", () => {
+  for (const source of [newsletterSource, propertyPdfSource, multiPropertyPdfSource]) {
+    assert.match(source, /checkCrmEmailSuppression/);
+    const suppressionGate = source.indexOf("checkCrmEmailSuppression");
+    const sendGate = source.indexOf("sendEmail(");
+    assert.ok(suppressionGate >= 0 && sendGate >= 0 && suppressionGate < sendGate);
+  }
 });
