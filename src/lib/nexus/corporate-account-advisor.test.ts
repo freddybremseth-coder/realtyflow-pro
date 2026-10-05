@@ -83,3 +83,55 @@ test("ranking puts P1 ahead of P2 and P3", () => {
   ]);
   assert.deepEqual(ranked.map(item => item.priority), ["P1","P2","P3"]);
 });
+
+
+test("advisor slows outreach when fresh negative Intelligence evidence appears", () => {
+  const advice = buildCorporateAccountAdvice({
+    prospect: {
+      id: "p3",
+      company_name: "Cost Focus AS",
+      fit_score: 82,
+      fit_tier: "A",
+      evidence: { company_signal_research: { checked_at: "2026-10-05T10:00:00Z" } },
+    },
+    strategy: {
+      stage: "STRATEGY_READY",
+      objective: "Teste Corporate Home",
+      entry_angle: "HR / People",
+    },
+    intelligence: {
+      materialChanges: 1,
+      negativeSignals: 1,
+      deltas: { timing: -12, intent: -4 },
+      topChanges: [{
+        title: "Nytt kostnadskuttprogram",
+        direction: "NEGATIVE",
+        why_it_matters: "Timing bør vurderes.",
+        relevance: 94,
+      }],
+    },
+  });
+  assert.match(advice.nextAction, /Gjennomgå nytt negativt signal/i);
+  assert.ok(advice.whyNow.some(item => /negativt Intelligence-signal/i.test(item)));
+});
+
+test("manual next best action remains authoritative over Intelligence recommendation", () => {
+  const advice = buildCorporateAccountAdvice({
+    prospect: {
+      id: "p4",
+      company_name: "Owner Controlled AS",
+      fit_score: 80,
+      evidence: {},
+    },
+    strategy: {
+      stage: "STRATEGY_READY",
+      next_best_action: "Ring CFO torsdag som avtalt.",
+    },
+    intelligence: {
+      materialChanges: 1,
+      negativeSignals: 1,
+      topChanges: [{ title: "Kostnadskutt", direction: "NEGATIVE" }],
+    },
+  });
+  assert.equal(advice.nextAction, "Ring CFO torsdag som avtalt.");
+});
