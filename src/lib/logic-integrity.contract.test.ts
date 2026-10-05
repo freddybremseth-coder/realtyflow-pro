@@ -42,8 +42,9 @@ test("CSV import preserves the unique human property reference", () => {
   assert.match(inventory, /id: ref \? `CSV-\$\{ref\}`/);
 });
 
-test("workspace catalogue search preserves common reference characters and pagination uses look-ahead", () => {
-  assert.match(workspaceProperties, /\\p\{L\}\\p\{N\}\\s\._\\\/-/);
+test("workspace catalogue search stays injection-safe and pagination uses look-ahead", () => {
+  assert.match(workspaceProperties, /\\p\{L\}\\p\{N\}\\s-/);
+  assert.doesNotMatch(workspaceProperties, /\\s\._/);
   assert.match(workspaceProperties, /\.range\(\(page - 1\) \* perPage, page \* perPage\)/);
   assert.match(workspaceProperties, /const hasMore = safeRows\.length > perPage/);
   assert.match(workspaceProperties, /safeRows\.slice\(0, perPage\)/);
