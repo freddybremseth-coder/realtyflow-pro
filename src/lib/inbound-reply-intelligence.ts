@@ -127,8 +127,9 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     || /\b(bo der det ikke|not live in)[^.!?]{0,70}\b(golf|air\s?bnb|korttids|short[- ]term)\b/i.test(text);
   if (changed || explicitBuyerCriteria) return result("update_preferences", explicitBuyerCriteria ? 0.95 : 0.91, "refresh_buyer_profile", [explicitBuyerCriteria ? "Customer states explicit property or neighbourhood criteria." : "Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
-  const later = /\b(later|next year|in a few months|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|etter sommeren|etter jul)\b/i.test(text);
-  if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], { shouldPauseNurture: true });
+  const explicitFutureDelay = /\b(?:om|in)\s+\d{1,2}\s+(?:år|year|years|mnd|måned|måneder|month|months|uke|uker|week|weeks|dag|dager|day|days)\b/i.test(text);
+  const later = explicitFutureDelay || /\b(later|next year|in a few months|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|etter sommeren|etter jul)\b/i.test(text);
+  if (later) return result("follow_up_later", explicitFutureDelay ? 0.96 : 0.9, "schedule_followup", [explicitFutureDelay ? "Customer gives an explicit future delay for follow-up." : "Customer asks for a later follow-up."], { shouldPauseNurture: true });
 
   const active = /\b(still interested|still looking|interested|yes we are|yes i am|ready to buy|ready to move forward|fortsatt interessert|fortsatt aktuelt|vi ser fortsatt|jeg ser fortsatt|interessert|klar til å kjøpe|aktuelt)\b/i.test(text);
   if (active) return result("active_interest", 0.91, "move_to_contact", ["Customer confirms active buying interest."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
