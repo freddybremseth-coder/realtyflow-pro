@@ -52,6 +52,14 @@ function cleanJson(textValue: string) {
   return (fenced || textValue).trim();
 }
 
+function normalizeNorwegianEmailGreeting(value: unknown) {
+  const body = text(value);
+  if (!body) return "";
+  return body
+    .replace(/^Hei\s+der\s*[,!]?/i, "Hei,")
+    .replace(/^Hei\s+du\s*[,!]?/i, "Hei,");
+}
+
 function normalizeOutput(value: any, fallback: CorporateSalesCoachOutput): CorporateSalesCoachOutput {
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
   const phase = ["DISCOVER_PROBLEM","CONFIRM_PROBLEM","PRESENT_SOLUTION","CONFIRM_SOLUTION","NEXT_COMMITMENT"].includes(text(value.currentPhase))
