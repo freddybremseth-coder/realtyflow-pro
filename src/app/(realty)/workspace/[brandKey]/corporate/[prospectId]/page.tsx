@@ -129,6 +129,12 @@ type IntelligenceFinding = {
   timing_delta?: number;
   intent_delta?: number;
   financial_capacity_delta?: number;
+  evidence?: {
+    event_year?: number | null;
+    event_date_precision?: string | null;
+    historical?: boolean;
+    temporal_confidence?: string;
+  };
 };
 
 type AccountData = {
@@ -203,6 +209,19 @@ type AccountData = {
     };
     market: IntelligenceFinding[];
     regulatory: IntelligenceFinding[];
+    latestRun: {
+      id: string;
+      status: "RUNNING"|"SUCCESS"|"ERROR";
+      provider?: string | null;
+      started_at: string;
+      completed_at?: string | null;
+      source_count: number;
+      finding_count: number;
+      new_count: number;
+      changed_count: number;
+      warnings: string[];
+      summary?: Record<string, unknown>;
+    } | null;
   };
   enrichmentCapabilities: {
     brreg: { available: boolean };
@@ -429,7 +448,12 @@ export default function CorporateAccountWorkspacePage() {
       const count = Number(result?.result?.findingCount || 0);
       const changed = Number(result?.result?.changedCount || 0);
       const fresh = Number(result?.result?.newCount || 0);
-      setNotice("Corporate Intelligence er oppdatert: " + count + " funn, " + fresh + " nye og " + changed + " endrede. Ingen kontakt eller pipelinebevegelse er utført.");
+      const warnings = Array.isArray(result?.result?.warnings) ? result.result.warnings.filter(Boolean) : [];
+      setNotice(
+        "Corporate Intelligence er oppdatert: " + count + " funn, " + fresh + " nye i RealtyFlow og " + changed + " endrede." +
+        (warnings.length ? " Research-status: DEGRADED – " + warnings[0] : " Research-status: FULL.") +
+        " Ingen kontakt eller pipelinebevegelse er utført.",
+      );
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Corporate Intelligence feilet.");
@@ -657,6 +681,14 @@ export default function CorporateAccountWorkspacePage() {
   }
 
   const { prospect } = data;
+  const intelligenceDegraded = Boolean(
+    data.intelligence.latestRun &&
+    (
+      data.intelligence.latestRun.provider === "company_crawl" ||
+      (data.intelligence.latestRun.warnings || []).length > 0 ||
+      data.intelligence.latestRun.summary?.degraded_research === true
+    ),
+  );
   const currentStageIndex = STAGES.indexOf(data.stageGate.currentStage);
   const selectedStageIndex = STAGES.indexOf(strategy.stage);
   const stageSkipRequested = strategy.stage !== "LOST" &&
@@ -790,6 +822,24 @@ export default function CorporateAccountWorkspacePage() {
         </button>
       </div>
 
+      {data.intelligence.latestRun && <div className={`mt-4 rounded-xl border p-3 ${intelligenceDegraded ? "border-amber-800 bg-amber-950/20" : "border-emerald-800 bg-emerald-950/20"}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${intelligenceDegraded ? "bg-amber-950 text-amber-300" : "bg-emerald-950 text-emerald-300"}`}>
+              {intelligenceDegraded ? "DEGRADED RESEARCH" : "FULL RESEARCH"}
+            </span>
+            <span className="text-xs text-slate-400">Provider: {data.intelligence.latestRun.provider || "ukjent"}</span>
+            <span className="text-xs text-slate-500">· {data.intelligence.latestRun.source_count} kilder · {data.intelligence.latestRun.finding_count} funn</span>
+          </div>
+          <span className="text-[10px] text-slate-600">
+            {new Date(data.intelligence.latestRun.started_at).toLocaleString("nb-NO")}
+          </span>
+        </div>
+        {(data.intelligence.latestRun.warnings || []).length > 0 && <div className="mt-2 space-y-1">
+          {data.intelligence.latestRun.warnings.slice(0, 3).map((warning,index) => <p key={index} className="text-xs leading-5 text-amber-200">⚠ {warning}</p>)}
+        </div>}
+      </div>}
+
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Aktive funn</p>
@@ -818,13 +868,16 @@ export default function CorporateAccountWorkspacePage() {
         {data.intelligence.account.slice(0, 8).map(item => <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.change_status === "NEW" ? "bg-emerald-950 text-emerald-300" : item.change_status === "CHANGED" ? "bg-amber-950 text-amber-300" : "bg-slate-800 text-slate-500"}`}>{item.change_status}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.change_status === "NEW" ? "bg-emerald-950 text-emerald-300" : item.change_status === "CHANGED" ? "bg-amber-950 text-amber-300" : "bg-slate-800 text-slate-500"}`}>{item.change_status === "NEW" ? "NYTT FUNN" : item.change_status === "CHANGED" ? "ENDRET" : "UENDRET"}</span>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.direction === "NEGATIVE" ? "bg-rose-950 text-rose-300" : item.direction === "POSITIVE" ? "bg-cyan-950 text-cyan-300" : "bg-slate-800 text-slate-400"}`}>{item.direction}</span>
             </div>
-            <span className="text-[10px] text-slate-600">Relevans {item.relevance} · confidence {item.confidence}</span>
+            <span className="text-[10px] text-slate-600">Relevans {item.relevance} · freshness {item.freshness ?? "—"} · confidence {item.confidence}</span>
           </div>
           <h3 className="mt-3 text-sm font-bold text-white">{item.title}</h3>
           <p className="mt-2 text-xs leading-5 text-slate-300">{item.summary}</p>
+          {item.evidence?.event_year && <p className="mt-1 text-[11px] text-slate-500">
+            Hendelsesår: {item.evidence.event_year}{item.evidence.historical ? " · historisk kontekst" : ""}
+          </p>}
           {item.why_it_matters && <p className="mt-2 text-xs leading-5 text-emerald-200"><strong>Hvorfor viktig:</strong> {item.why_it_matters}</p>}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[10px] text-slate-600">{item.source_kind.replaceAll("_"," ")}</span>
