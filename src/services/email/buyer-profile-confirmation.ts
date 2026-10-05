@@ -300,7 +300,7 @@ export function buildCriteriaConfirmationEmail(input: {
           ? `Du har nevnt ${locations.join(", ")}. Hvis du skulle prioritere ett land eller område først, hva ville du valgt?`
           : "Jeg har foreløpig bare et ganske bredt område registrert.",
         "",
-        "Det viktigste jeg trenger fra deg nå er:"
+        "Det viktigste jeg trenger fra deg nå er:",
         ...questions.map((question, index) => `${index + 1}. ${question}`),
         "",
         "Du trenger ikke skrive langt. Et kort svar som «Alicante nord, ca. €450k, leilighet, 2–3 soverom» er mer enn nok.",
