@@ -25,6 +25,9 @@ alter table public.corporate_sales_coach_runs
   add column if not exists applied_by_email text,
   add column if not exists applied_fields jsonb not null default '[]'::jsonb;
 
+revoke all on table public.corporate_sales_coach_runs from public, anon, authenticated;
+grant select, insert, update, delete on table public.corporate_sales_coach_runs to service_role;
+
 comment on column public.corporate_account_strategies.problem_acceptance_status is
   'Explicit seller-recorded customer acceptance state. Never inferred from AI output.';
 comment on column public.corporate_account_strategies.solution_acceptance_status is
