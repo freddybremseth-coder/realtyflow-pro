@@ -6,6 +6,7 @@ import { readHotLeadSla } from "@/lib/revenue/hot-lead-work-item";
 import { applyPortalRecencyBoost } from "@/lib/revenue/portal-recency";
 import {
   buildRecommendedRevenuePlay,
+  isRevenueFollowupBlocked,
   type RevenueMemoryEventInput,
   type RevenuePriorityItem,
 } from "@/lib/revenue/today";
@@ -63,6 +64,8 @@ function workItemHref(sourceType: string) {
 
 function normalizeWorkItem(item: Record<string, any>, now: Date) {
   const sourceType = String(item.source_type || "manual").toLowerCase();
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const contactId = String(metadata.contact_id || "").trim() || null;
   const hotLead = readHotLeadSla(item.metadata, now);
   const priority = hotLead.isSlaOverdue
     ? "CRITICAL"
@@ -81,6 +84,7 @@ function normalizeWorkItem(item: Record<string, any>, now: Date) {
     brandId: normalizeBrandId(item.brand_id || item.brand) || null,
     sourceType,
     sourceId: item.source_id || null,
+    contactId,
     nextAction: hotLead.isSlaOverdue
       ? `SLA er overskredet. ${item.next_action ? String(item.next_action) : "Svar kunden nå og gjennomfør neste konkrete salgssteg."}`
       : item.next_action ? String(item.next_action) : null,
@@ -169,6 +173,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const blockedContactIds = new Set(
+    contacts
+      .filter((contact) => isRevenueFollowupBlocked(contact, now, {
+        revenueEvents: eventsByContact.get(String(contact.id || "")) || [],
+      }))
+      .map((contact) => String(contact.id || ""))
+      .filter(Boolean),
+  );
+
   const priorities = sortCanonicalRealEstatePriorities(
     contacts
       .map((contact) => {
@@ -182,6 +195,7 @@ export async function GET(request: NextRequest) {
   const workItems = (workItemsResult.data || [])
     .map((item) => normalizeWorkItem(item, now))
     .filter((item) => {
+      if (item.contactId && blockedContactIds.has(item.contactId)) return false;
       const brandMatches = item.brandId ? REAL_ESTATE_BRANDS.has(item.brandId) : false;
       return brandMatches || REVENUE_WORK_SOURCES.has(item.sourceType);
     })
