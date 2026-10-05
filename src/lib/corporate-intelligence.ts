@@ -110,17 +110,41 @@ function parsePublishedAt(value: unknown) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 
-function extractJsonArray(text: string): any[] {
+export function extractCorporateResearchJsonArray(text: string): any[] {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] || text;
-  const start = fenced.indexOf("[");
-  const end = fenced.lastIndexOf("]");
-  if (start < 0 || end <= start) return [];
-  try {
-    const parsed = JSON.parse(fenced.slice(start, end + 1));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  const candidate = fenced.split(/\nKilder:\s*\n/i)[0];
+  const start = candidate.indexOf("[");
+  if (start < 0) return [];
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < candidate.length; index += 1) {
+    const char = candidate[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "[") depth += 1;
+    if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(candidate.slice(start, index + 1));
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+    }
   }
+  return [];
 }
 
 function normalizeExternalFinding(value: any, scope: CorporateIntelligenceScope, prospectId?: string | null): CorporateIntelligenceFindingInput | null {
@@ -223,31 +247,107 @@ async function persistFinding(supabase: SupabaseClient, runId: string, input: Co
   return data;
 }
 
+const EVENT_SIGNALS = new Set<CorporateCompanySignal>([
+  "hiring_growth_signal",
+  "international_growth_signal",
+  "new_office_signal",
+  "leadership_change_signal",
+  "acquisition_signal",
+  "financial_strength_signal",
+  "cost_cutting_signal",
+  "restructuring_signal",
+]);
+
+function ownSignalScore(signal: CorporateCompanySignal, evidence: CorporateSignalEvidence, meta: any) {
+  const currentYear = new Date().getUTCFullYear();
+  const eventYear = Number(evidence.event_year || 0) || null;
+  const eventSignal = EVENT_SIGNALS.has(signal);
+
+  if (!eventSignal) {
+    return {
+      relevance: meta.relevance,
+      freshness: 75,
+      confidence: 90,
+      fit: meta.fit,
+      timing: Math.round(Number(meta.timing || 0) * 0.5),
+      intent: 0,
+      financial: 0,
+      historical: false,
+      dated: false,
+    };
+  }
+
+  if (!eventYear) {
+    return {
+      relevance: Math.min(Number(meta.relevance || 50), 55),
+      freshness: 30,
+      confidence: 65,
+      fit: 0,
+      timing: 0,
+      intent: 0,
+      financial: 0,
+      historical: false,
+      dated: false,
+    };
+  }
+
+  const age = Math.max(0, currentYear - eventYear);
+  const stale = age >= 2;
+  return {
+    relevance: stale ? Math.min(Number(meta.relevance || 50), age >= 3 ? 45 : 60) : meta.relevance,
+    freshness: age === 0 ? 92 : age === 1 ? 72 : age === 2 ? 45 : 20,
+    confidence: 90,
+    fit: stale ? Math.round(Number(meta.fit || 0) * 0.25) : meta.fit,
+    timing: stale ? 0 : meta.timing,
+    intent: stale ? 0 : meta.intent,
+    financial: stale ? 0 : meta.financial,
+    historical: stale,
+    dated: true,
+  };
+}
+
 function ownSiteFindings(prospectId: string, signals: Partial<Record<CorporateCompanySignal, CorporateSignalEvidence>>) {
-  return Object.entries(signals).flatMap(([signal, evidence]) => {
+  return Object.entries(signals).flatMap(([signalKey, evidence]) => {
     if (!evidence) return [];
-    const meta = COMPANY_SIGNAL_META[signal as CorporateCompanySignal];
+    const signal = signalKey as CorporateCompanySignal;
+    const meta = COMPANY_SIGNAL_META[signal];
     if (!meta) return [];
+    const score = ownSignalScore(signal, evidence, meta);
+    const yearNote = evidence.event_year ? " (" + evidence.event_year + ")" : "";
+    const freshnessNote = score.historical
+      ? " Historisk signal; brukes som kontekst og skal ikke drive dagens timing."
+      : EVENT_SIGNALS.has(signal) && !score.dated
+        ? " Dato er ikke bekreftet; brukes som svakt kontekstuelt signal."
+        : "";
+
     return [{
       prospectId,
       scope: "ACCOUNT" as const,
       signalType: signal,
-      title: meta.title,
-      summary: "Fant " + evidence.matched_terms.map((term) => "«" + term + "»").join(", ") + " på selskapets egen kilde.",
-      whyItMatters: meta.why,
+      title: meta.title + yearNote,
+      summary: "Fant " + evidence.matched_terms.map((term) => "«" + term + "»").join(", ") + " på selskapets egen kilde." + freshnessNote,
+      whyItMatters: meta.why + freshnessNote,
       sourceUrl: evidence.source_url,
       sourceKind: evidence.source_kind || "company_web",
       direction: meta.direction,
-      relevance: meta.relevance,
+      relevance: score.relevance,
       strength: meta.strength,
-      freshness: 88,
+      freshness: score.freshness,
       sourceAuthority: 95,
-      confidence: 90,
-      fitDelta: meta.fit,
-      timingDelta: meta.timing,
-      intentDelta: meta.intent,
-      financialCapacityDelta: meta.financial,
-      evidence: { matched_terms: evidence.matched_terms, checked_at: evidence.checked_at },
+      confidence: score.confidence,
+      fitDelta: score.fit,
+      timingDelta: score.timing,
+      intentDelta: score.intent,
+      financialCapacityDelta: score.financial,
+      evidence: {
+        matched_terms: evidence.matched_terms,
+        checked_at: evidence.checked_at,
+        context_snippets: evidence.context_snippets || [],
+        event_year: evidence.event_year || null,
+        event_date_precision: evidence.event_date_precision || null,
+        historical: score.historical,
+        temporal_confidence: score.dated ? "DATED" : EVENT_SIGNALS.has(signal) ? "UNDATED_EVENT" : "CURRENT_PAGE_STATE",
+      },
     } as CorporateIntelligenceFindingInput];
   });
 }
@@ -324,7 +424,7 @@ export async function runAccountDeepResearch(
   try {
     const { data: company, error } = await supabase
       .from("corporate_prospects")
-      .select("id,company_name,organization_number,domain,website_url,industry,employee_count,member_count,evidence,fit_score,fit_tier,status")
+      .select("id,company_name,organization_number,domain,organization_type,country_code,website_url,industry,employee_count,employee_band,member_count,decision_roles,source_url,evidence,fit_score,fit_tier,status")
       .eq("id", prospectId).eq("brand_id", "zeneco").maybeSingle();
     if (error) throw error;
     if (!company) throw new Error("ACCOUNT_NOT_FOUND");
@@ -339,8 +439,11 @@ export async function runAccountDeepResearch(
     let externalFindings: CorporateIntelligenceFindingInput[] = [];
     const external = await researchWeb(externalAccountPrompt(company), { maxTokens: 3200, maxSearches: 7 });
     provider = external.provider === "none" ? provider : provider + "+" + external.provider;
+    if (external.provider === "none") {
+      warnings.push("Ekstern webresearch leverte ikke data. Resultatet er basert på selskapets egne kilder og bør regnes som degraded research.");
+    }
     if (external.text) {
-      externalFindings = extractJsonArray(external.text)
+      externalFindings = extractCorporateResearchJsonArray(external.text)
         .map((item) => normalizeExternalFinding(item, "ACCOUNT", prospectId))
         .filter((item): item is CorporateIntelligenceFindingInput => Boolean(item))
         .slice(0, 8);
@@ -381,6 +484,7 @@ export async function runAccountDeepResearch(
         positive: persisted.filter((row) => row.direction === "POSITIVE").length,
         negative: persisted.filter((row) => row.direction === "NEGATIVE").length,
         material_changes: persisted.filter((row) => row.change_status === "NEW" || row.change_status === "CHANGED").length,
+        degraded_research: external.provider === "none",
       },
     });
 
@@ -403,7 +507,10 @@ export async function runCorporateWatch(
 
   try {
     const research = await researchWeb(watchPrompt(scope), { maxTokens: 3200, maxSearches: 8 });
-    const normalized = extractJsonArray(research.text)
+    if (research.provider === "none") {
+      warnings.push("Ekstern webresearch leverte ikke data; watch-kjøringen er degraded.");
+    }
+    const normalized = extractCorporateResearchJsonArray(research.text)
       .map((item) => normalizeExternalFinding(item, scope, null))
       .filter((item): item is CorporateIntelligenceFindingInput => Boolean(item))
       .slice(0, 8);

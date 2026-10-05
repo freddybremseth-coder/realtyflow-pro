@@ -71,3 +71,17 @@ test("Corporate Account Workspace exposes manual deep research and source links 
   assert.match(workspacePage, /why_it_matters/);
   assert.match(workspacePage, /source_url/);
 });
+
+
+test("Account Deep Research preserves authoritative prospect fields before rescoring", () => {
+  assert.match(engine, /organization_type,country_code,website_url,industry,employee_count,employee_band,member_count,decision_roles,source_url,evidence/);
+  assert.match(engine, /rescoreCorporateProspect\(\{ \.\.\.company, evidence: nextEvidence \}\)/);
+});
+
+test("Own-site event signals are temporally weighted instead of treated as automatically fresh", () => {
+  assert.match(engine, /EVENT_SIGNALS/);
+  assert.match(engine, /event_year/);
+  assert.match(engine, /freshness: age === 0 \? 92/);
+  assert.match(engine, /Historisk signal; brukes som kontekst/);
+  assert.match(engine, /Ekstern webresearch leverte ikke data/);
+});

@@ -21,6 +21,9 @@ export type CorporateSignalEvidence = {
   matched_terms: string[];
   checked_at: string;
   source_kind?: "company_web" | "company_pdf";
+  context_snippets?: string[];
+  event_year?: number | null;
+  event_date_precision?: "year" | null;
 };
 
 export type CorporateCompanySignalResearch = {
@@ -97,7 +100,7 @@ const SIGNAL_PATTERNS: Record<CorporateCompanySignal, RegExp[]> = {
   new_office_signal: [
     /\bnytt\s+kontor\b/i,
     /\båpner\s+(?:et\s+)?kontor\b/i,
-    /\bnew\s+office\b/i,
+    /\bnew\s+(?:official\s+)?office\b/i,
     /\bopens?\s+(?:a\s+)?new\s+office\b/i,
     /\bnew\s+location\b/i,
   ],
@@ -219,15 +222,42 @@ function linksFromHtml(html: string, pageUrl: string, host: string) {
   });
 }
 
-function matchedTerms(text: string, patterns: RegExp[]) {
+function signalEvidenceFromText(text: string, patterns: RegExp[]) {
   const terms: string[] = [];
+  const snippets: string[] = [];
+  let bestYear: number | null = null;
+  let bestYearDistance = Number.POSITIVE_INFINITY;
+
   for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (!match?.[0]) continue;
+    const match = pattern.exec(text);
+    if (!match?.[0] || match.index == null) continue;
+
     const term = match[0].trim();
     if (!terms.some((existing) => existing.toLowerCase() === term.toLowerCase())) terms.push(term);
+
+    const start = Math.max(0, match.index - 140);
+    const end = Math.min(text.length, match.index + match[0].length + 280);
+    const snippet = text.slice(start, end).replace(/\s+/g, " ").trim();
+    if (snippet && !snippets.includes(snippet)) snippets.push(snippet);
+
+    const localMatchIndex = match.index - start;
+    for (const yearMatch of snippet.matchAll(/\b(20\d{2})\b/g)) {
+      const year = Number(yearMatch[1]);
+      const yearIndex = yearMatch.index ?? 0;
+      const distance = Math.abs(yearIndex - localMatchIndex);
+      if (year >= 2000 && year <= new Date().getUTCFullYear() + 1 && distance < bestYearDistance) {
+        bestYear = year;
+        bestYearDistance = distance;
+      }
+    }
   }
-  return terms.slice(0, 4);
+
+  return {
+    matched_terms: terms.slice(0, 4),
+    context_snippets: snippets.slice(0, 3),
+    event_year: bestYear,
+    event_date_precision: bestYear ? "year" as const : null,
+  };
 }
 
 export function detectCorporateCompanySignals(
@@ -238,13 +268,16 @@ export function detectCorporateCompanySignals(
 ) {
   const signals: Partial<Record<CorporateCompanySignal, CorporateSignalEvidence>> = {};
   for (const [signal, patterns] of Object.entries(SIGNAL_PATTERNS) as Array<[CorporateCompanySignal, RegExp[]]>) {
-    const terms = matchedTerms(text, patterns);
-    if (!terms.length) continue;
+    const evidence = signalEvidenceFromText(text, patterns);
+    if (!evidence.matched_terms.length) continue;
     signals[signal] = {
       source_url: sourceUrl,
-      matched_terms: terms,
+      matched_terms: evidence.matched_terms,
       checked_at: checkedAt,
       source_kind: sourceKind,
+      context_snippets: evidence.context_snippets,
+      event_year: evidence.event_year,
+      event_date_precision: evidence.event_date_precision,
     };
   }
   return signals;
