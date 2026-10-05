@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { api1881Configured, search1881Company } from "@/lib/corporate-enrichment/api1881";
+import { fetchBrregCompanySnapshot } from "@/lib/corporate-enrichment/brreg";
+import { buildCorporateEnrichmentProfile } from "@/lib/corporate-enrichment/company-profile";
 import { buildCorporateAccountAdvice } from "@/lib/nexus/corporate-account-advisor";
 
 export const dynamic = "force-dynamic";
@@ -120,6 +122,10 @@ async function loadAccount(supabase: any, prospectId: string) {
       contacts: contactsResult.data || [],
       touchpoints: touchpointsResult.data || [],
       enrichment: enrichmentResult.data || [],
+      companyProfile: buildCorporateEnrichmentProfile(
+        prospectResult.data,
+        enrichmentResult.data || [],
+      ),
       advisor: buildCorporateAccountAdvice({
         prospect: prospectResult.data,
         strategy: strategyResult.data || null,
@@ -186,6 +192,59 @@ export async function POST(
   if (!prospect) return fail(404, "ACCOUNT_NOT_FOUND");
 
   const actorEmail = access.value.verifiedEmail;
+
+  if (action === "enrich_brreg") {
+    const { data: company, error: companyError } = await access.value.supabase
+      .from("corporate_prospects")
+      .select("id,company_name,organization_number")
+      .eq("id", params.prospectId)
+      .eq("brand_id", "zeneco")
+      .maybeSingle();
+    if (companyError || !company) return fail(404, "ACCOUNT_NOT_FOUND");
+
+    const organizationNumber = String(company.organization_number || "").replace(/\D/g, "");
+    if (!/^\d{9}$/.test(organizationNumber)) {
+      return fail(409, "BRREG_ORGNR_UNAVAILABLE", "Organisasjonsnummer mangler eller er ugyldig.");
+    }
+
+    let result: unknown;
+    try {
+      result = await fetchBrregCompanySnapshot(organizationNumber);
+    } catch (cause) {
+      const error = cause as Error & { status?: number };
+      const status = Number.isFinite(error?.status) ? Number(error.status) : null;
+      return fail(
+        502,
+        error instanceof Error ? error.message : "BRREG_FAILED",
+        status ? `Brønnøysund svarte HTTP ${status}.` : "Brønnøysund-oppslaget feilet.",
+      );
+    }
+
+    const { data: saved, error: saveError } = await access.value.supabase
+      .from("corporate_account_enrichment")
+      .insert({
+        prospect_id: params.prospectId,
+        provider: "brreg",
+        data_kind: "company_and_roles",
+        provider_record_id: organizationNumber,
+        source_url: `https://data.brreg.no/enhetsregisteret/api/enheter/${organizationNumber}`,
+        payload: result && typeof result === "object" ? result : { value: result },
+        verified_at: new Date().toISOString(),
+        verified_by_email: actorEmail,
+      })
+      .select("id,provider,data_kind,source_url,payload,fetched_at")
+      .single();
+    if (saveError || !saved) return fail(409, "BRREG_SAVE_FAILED");
+
+    return NextResponse.json({
+      ok: true,
+      enrichment: saved,
+      openData: true,
+      automaticPersonCreation: false,
+      automaticOutreach: false,
+      externalContactStarted: false,
+    }, { headers: noStore });
+  }
 
   if (action === "enrich_1881") {
     if (!api1881Configured()) {

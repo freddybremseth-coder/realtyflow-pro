@@ -18,6 +18,14 @@ const api1881 = fs.readFileSync(
   "src/lib/corporate-enrichment/api1881.ts",
   "utf8",
 );
+const brreg = fs.readFileSync(
+  "src/lib/corporate-enrichment/brreg.ts",
+  "utf8",
+);
+const companyProfile = fs.readFileSync(
+  "src/lib/corporate-enrichment/company-profile.ts",
+  "utf8",
+);
 
 test("Corporate Account Workspace is permission scoped and never auto-executes outreach", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "corporate\.read"\)/);
@@ -64,4 +72,20 @@ test("1881 enrichment supports the current subscription-key contract with legacy
   assert.match(route, /action === "enrich_1881"/);
   assert.match(route, /automaticPersonCreation:\s*false/);
   assert.match(route, /1881 svarte HTTP/);
+});
+
+
+test("Corporate enrichment surfaces 1881 values and free Brønnøysund roles without auto-creating people", () => {
+  assert.match(route, /action === "enrich_brreg"/);
+  assert.match(route, /fetchBrregCompanySnapshot/);
+  assert.match(route, /buildCorporateEnrichmentProfile/);
+  assert.match(brreg, /\/enheter\/\$\{encodeURIComponent\(orgnr\)\}\/roller/);
+  assert.match(companyProfile, /contactPoints/);
+  assert.match(companyProfile, /rollegrupper/);
+  assert.match(companyProfile, /verified:\s*sources\.length > 1/);
+  assert.match(page, /Oppdater Brønnøysund/);
+  assert.match(page, /bruker 1 søk/);
+  assert.match(page, /Offentlige roller/);
+  assert.match(page, /Legg til/);
+  assert.doesNotMatch(companyProfile, /birthDate:\s/);
 });

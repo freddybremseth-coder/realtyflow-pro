@@ -12,6 +12,7 @@ import {
   Linkedin,
   Loader2,
   Mail,
+  MapPin,
   Phone,
   Plus,
   Save,
@@ -54,6 +55,37 @@ type Touchpoint = {
   summary?: string | null;
 };
 
+type ProfileField = {
+  value: string;
+  label?: string;
+  sources: string[];
+  verified: boolean;
+  main?: boolean;
+};
+
+type PublicRole = {
+  name: string;
+  title: string;
+  sources: string[];
+  verified: boolean;
+  sourceUrl?: string | null;
+};
+
+type CompanyProfile = {
+  legalName?: string | null;
+  organizationNumber?: string | null;
+  address?: ProfileField | null;
+  phones: ProfileField[];
+  emails: ProfileField[];
+  websites: ProfileField[];
+  employees?: { value: number; sources: string[]; verified: boolean } | null;
+  publicRoles: PublicRole[];
+  providerStatus: {
+    api1881: { fetchedAt?: string | null; available: boolean };
+    brreg: { fetchedAt?: string | null; available: boolean };
+  };
+};
+
 type AccountData = {
   prospect: {
     id: string;
@@ -74,6 +106,7 @@ type AccountData = {
     next_action?: string | null;
   };
   strategy: Record<string, any> | null;
+  companyProfile: CompanyProfile;
   contacts: Contact[];
   touchpoints: Touchpoint[];
   advisor: {
@@ -221,10 +254,60 @@ export default function CorporateAccountWorkspacePage() {
     setBusy("1881"); setError(""); setNotice("");
     try {
       await post({ action: "enrich_1881" });
-      setNotice("1881-data er hentet og lagret som kildebevart enrichment. Ingen personer eller meldinger ble opprettet automatisk.");
+      setNotice("1881-data er hentet og vises nå i bedriftsprofilen. Ingen personer eller meldinger ble opprettet automatisk.");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "1881-oppslaget feilet.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runBrregEnrichment() {
+    setBusy("brreg"); setError(""); setNotice("");
+    try {
+      await post({ action: "enrich_brreg" });
+      setNotice("Brønnøysund-data og offentlige roller er oppdatert. Oppslaget er gratis og starter ingen kontakt.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Brønnøysund-oppslaget feilet.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function addPublicRole(role: PublicRole) {
+    const titleLower = role.title.toLowerCase();
+    const decisionMaker = titleLower.includes("daglig leder") ||
+      titleLower.includes("styrets leder") ||
+      titleLower.includes("styreleder");
+    setBusy(`role:${role.name}:${role.title}`); setError(""); setNotice("");
+    try {
+      await post({
+        action: "save_contact",
+        name: role.name,
+        title: role.title,
+        buyingRole: titleLower.includes("daglig leder") ? "CEO / Daglig leder" :
+          titleLower.includes("kontaktperson") ? "Kontaktperson" :
+          titleLower.includes("styre") ? "Styre" : role.title,
+        seniority: decisionMaker ? "Executive" : "",
+        email: "",
+        phone: "",
+        linkedinUrl: "",
+        sourceUrl: role.sourceUrl || "",
+        status: role.sourceUrl ? "VERIFIED" : "IDENTIFIED",
+        confidence: role.verified ? "HIGH" : "MEDIUM",
+        relationshipStatus: "NOT_CONTACTED",
+        influenceLevel: decisionMaker ? "DECISION_MAKER" : "UNKNOWN",
+        professionalRelevance: `Offentlig registrert rolle: ${role.title}. Kilder: ${role.sources.join(" + ")}.`,
+        professionalTopics: [],
+        isPrimary: titleLower.includes("daglig leder"),
+        linkedinFollowing: false,
+      });
+      setNotice(`${role.name} er lagt til i Decision Unit fra offentlig rollekilde.`);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kunne ikke legge rollen til i Decision Unit.");
     } finally {
       setBusy("");
     }
@@ -352,6 +435,57 @@ export default function CorporateAccountWorkspacePage() {
     {error && <div className="rounded-2xl border border-rose-800 bg-rose-950/30 p-4 text-sm text-rose-200">{error}</div>}
     {notice && <div className="rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4 text-sm text-emerald-200">{notice}</div>}
 
+    <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-300">Bedriftsdata</p>
+          <h2 className="mt-1 text-lg font-bold text-white">Brønnøysund + 1881</h2>
+          <p className="mt-1 text-xs text-slate-500">Felt merket «bekreftet» finnes i mer enn én kilde. Kildene beholdes per felt.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          <span className={`rounded-full px-2.5 py-1 font-semibold ${data.companyProfile.providerStatus.brreg.available ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
+            Brønnøysund {data.companyProfile.providerStatus.brreg.available ? "hentet" : "ikke hentet"}
+          </span>
+          <span className={`rounded-full px-2.5 py-1 font-semibold ${data.companyProfile.providerStatus.api1881.available ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
+            1881 {data.companyProfile.providerStatus.api1881.available ? "hentet" : "ikke hentet"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400"><MapPin size={14}/> Adresse</div>
+          <p className="mt-2 text-sm text-slate-200">{data.companyProfile.address?.value || "Ikke funnet"}</p>
+          {data.companyProfile.address && <p className="mt-2 text-[11px] text-slate-500">{data.companyProfile.address.sources.join(" + ")}{data.companyProfile.address.verified ? " · bekreftet" : ""}</p>}
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400"><Phone size={14}/> Telefon</div>
+          <div className="mt-2 space-y-2">
+            {data.companyProfile.phones.slice(0, 4).map(phone => <div key={phone.value}>
+              <p className="text-sm text-slate-200">{phone.value}{phone.main ? " · hovednummer" : ""}</p>
+              <p className="text-[11px] text-slate-500">{phone.sources.join(" + ")}{phone.verified ? " · bekreftet" : ""}</p>
+            </div>)}
+            {!data.companyProfile.phones.length && <p className="text-sm text-slate-500">Ikke funnet</p>}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400"><Mail size={14}/> E-post</div>
+          <div className="mt-2 space-y-2">
+            {data.companyProfile.emails.slice(0, 4).map(email => <div key={email.value}>
+              <p className="break-all text-sm text-slate-200">{email.value}</p>
+              <p className="text-[11px] text-slate-500">{email.sources.join(" + ")}{email.verified ? " · bekreftet" : ""}</p>
+            </div>)}
+            {!data.companyProfile.emails.length && <p className="text-sm text-slate-500">Ikke funnet</p>}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400"><Users size={14}/> Ansatte</div>
+          <p className="mt-2 text-2xl font-black text-white">{data.companyProfile.employees?.value?.toLocaleString("nb-NO") || "—"}</p>
+          {data.companyProfile.employees && <p className="mt-2 text-[11px] text-slate-500">{data.companyProfile.employees.sources.join(" + ")}{data.companyProfile.employees.verified ? " · bekreftet" : ""}</p>}
+        </div>
+      </div>
+    </section>
+
     <section className="rounded-2xl border border-violet-900/60 bg-violet-950/15 p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -439,6 +573,40 @@ export default function CorporateAccountWorkspacePage() {
           </div>
           <span className="text-xs text-slate-500">{data.contacts.length} personer</span>
         </div>
+
+        {data.companyProfile.publicRoles.length > 0 && <div className="mt-4 rounded-xl border border-cyan-900/50 bg-cyan-950/10 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-cyan-200">Offentlige roller</h3>
+              <p className="mt-1 text-xs text-slate-500">Daglig leder, kontaktperson og styre fra Brønnøysund/1881. Firmaets sentralbord og e-post kopieres ikke til personen.</p>
+            </div>
+            <span className="text-xs text-slate-500">{data.companyProfile.publicRoles.length} funnet</span>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {data.companyProfile.publicRoles.slice(0, 10).map(role => {
+              const exists = data.contacts.some(contact =>
+                contact.name.trim().toLowerCase() === role.name.trim().toLowerCase() &&
+                String(contact.title || "").trim().toLowerCase() === role.title.trim().toLowerCase()
+              );
+              const roleBusy = busy === `role:${role.name}:${role.title}`;
+              return <div key={`${role.name}:${role.title}`} className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-950/45 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-200">{role.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">{role.title}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">{role.sources.join(" + ")}{role.verified ? " · bekreftet av begge" : ""}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={exists || roleBusy}
+                  onClick={() => void addPublicRole(role)}
+                  className="rounded-lg border border-cyan-800 px-3 py-2 text-xs font-semibold text-cyan-200 disabled:border-slate-800 disabled:text-slate-600"
+                >
+                  {exists ? "I Decision Unit" : roleBusy ? "Legger til…" : "Legg til"}
+                </button>
+              </div>;
+            })}
+          </div>
+        </div>}
 
         <div className="mt-4 space-y-3">
           {data.contacts.map(contact => <article key={contact.id} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
@@ -538,7 +706,17 @@ export default function CorporateAccountWorkspacePage() {
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <h2 className="font-semibold">Datakilder</h2>
           <div className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between rounded-lg border border-slate-800 px-3 py-2"><span>Brønnøysund</span><span className="text-emerald-300">Klar</span></div>
+            <div className="rounded-lg border border-slate-800 px-3 py-2">
+              <div className="flex justify-between gap-3"><span>Brønnøysund</span><span className="text-emerald-300">Åpent API · gratis</span></div>
+              <button
+                type="button"
+                disabled={busy === "brreg" || !prospect.organization_number}
+                onClick={() => void runBrregEnrichment()}
+                className="mt-2 text-xs font-semibold text-cyan-300 underline disabled:text-slate-600 disabled:no-underline"
+              >
+                {busy === "brreg" ? "Henter…" : data.companyProfile.providerStatus.brreg.available ? "Oppdater Brønnøysund" : "Hent bedrift + roller"}
+              </button>
+            </div>
             <div className="rounded-lg border border-slate-800 px-3 py-2">
               <div className="flex justify-between gap-3"><span>1881 API</span><span className={data.enrichmentCapabilities.api1881.configured ? "text-emerald-300" : "text-amber-300"}>{data.enrichmentCapabilities.api1881.configured ? "Koblet" : "API-nøkkel mangler"}</span></div>
               <button
@@ -547,7 +725,7 @@ export default function CorporateAccountWorkspacePage() {
                 onClick={() => void run1881Enrichment()}
                 className="mt-2 text-xs font-semibold text-cyan-300 underline disabled:text-slate-600 disabled:no-underline"
               >
-                {busy === "1881" ? "Henter…" : "Berik bedriften fra 1881"}
+                {busy === "1881" ? "Henter…" : data.companyProfile.providerStatus.api1881.available ? "Oppdater 1881 (bruker 1 søk)" : "Hent fra 1881 (bruker 1 søk)"}
               </button>
             </div>
             <div className="flex justify-between rounded-lg border border-slate-800 px-3 py-2"><span>LinkedIn</span><span className="text-cyan-300">Relasjonskanal</span></div>
