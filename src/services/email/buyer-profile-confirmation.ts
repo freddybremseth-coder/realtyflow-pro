@@ -142,6 +142,60 @@ export function buildBuyerFollowUpQuestions(analysis: unknown): string[] {
   return questions;
 }
 
+function preferencePhrase(raw: unknown) {
+  const item = record(raw);
+  const key = String(item.key || "").trim();
+  const value = item.value;
+
+  if (key === "bedrooms" && typeof value === "number") return `${value} soverom`;
+  if (key === "bathrooms" && typeof value === "number") return `${value} bad`;
+  if (key === "pool" && value === true) return "basseng";
+  if (key === "parking" && value === true) return "parkering";
+  if (key === "distance_to_beach") {
+    const text = String(value || "").toLowerCase();
+    return text.includes("walk") || text.includes("gang") ? "gangavstand til stranden" : "kort avstand til stranden";
+  }
+  if (key === "golf_course_setting" && value === true) return "nærhet til golf";
+  if (key === "plot_area_m2") return "stor tomt eller mye uteareal";
+  if (key === "living_area_m2") return "god boareal";
+  if (key === "floor_position") return "ønsket etasje";
+  if (key === "location" && value) return String(value);
+  if (key === "property_type" && value) return String(value);
+  if (key === "other") {
+    const otherKey = String(item.otherKey || "").trim();
+    if (otherKey === "proximity_to_amenities") return "nærhet til butikker og aktiviteter";
+    if (otherKey === "sea_view") return "sjøutsikt";
+  }
+  return null;
+}
+
+export function buildBuyerPriorityQuestion(analysis: unknown): string | null {
+  const root = record(analysis);
+  const locations = preferredLocations(root).filter((value) => !isBroadBuyerLocation(value));
+
+  if (locations.length >= 2) {
+    const [first, second] = locations;
+    return `Hvis du skulle prioritere ett område først, er ${first} eller ${second} viktigst for deg?`;
+  }
+
+  const preferences = Array.isArray(root.preferences) ? root.preferences : [];
+  const ranked = preferences
+    .map((raw) => {
+      const item = record(raw);
+      return {
+        phrase: preferencePhrase(raw),
+        weight: typeof item.weight === "number" ? item.weight : 0.5,
+      };
+    })
+    .filter((item): item is { phrase: string; weight: number } => Boolean(item.phrase))
+    .sort((a, b) => b.weight - a.weight);
+
+  const unique = [...new Map(ranked.map((item) => [item.phrase, item])).values()];
+  if (unique.length < 2) return null;
+
+  return `Hvis vi må prioritere mellom ${unique[0].phrase} og ${unique[1].phrase}, hva er viktigst for deg?`;
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("nb-NO", { maximumFractionDigits: 0 }).format(value);
 }
@@ -215,7 +269,11 @@ export function buildCriteriaConfirmationEmail(input: {
   const firstName = String(input.customerName || "").trim().split(/\s+/)[0] || "";
   const greeting = firstName ? `Hei ${firstName},` : "Hei,";
   const criteriaLines = buildBuyerCriteriaLines(input.analysis);
-  const followUpQuestions = buildBuyerFollowUpQuestions(input.analysis);
+  const missingQuestions = buildBuyerFollowUpQuestions(input.analysis);
+  const priorityQuestion = buildBuyerPriorityQuestion(input.analysis);
+  const followUpQuestions = priorityQuestion && missingQuestions.length < 3
+    ? [...missingQuestions, priorityQuestion].slice(0, 3)
+    : missingQuestions.slice(0, 3);
   const locations = preferredLocations(input.analysis);
   const hasOnlyBroadLocations = locations.length > 0 && locations.every(isBroadBuyerLocation);
 
@@ -252,6 +310,7 @@ export function buildCriteriaConfirmationEmail(input: {
       ].join("\n"),
       criteriaLines,
       followUpQuestions: questions,
+      priorityQuestion: priorityQuestion && questions.includes(priorityQuestion) ? priorityQuestion : null,
       confirmationContextText: "",
     };
   }
@@ -297,6 +356,7 @@ export function buildCriteriaConfirmationEmail(input: {
     bodyText,
     criteriaLines,
     followUpQuestions,
+    priorityQuestion: priorityQuestion && followUpQuestions.includes(priorityQuestion) ? priorityQuestion : null,
     confirmationContextText: [
       "Kunden har eksplisitt bekreftet at følgende kriterier skal brukes i boligsøk fremover:",
       ...criteriaLines.map((line) => `- ${line}`),
@@ -441,6 +501,8 @@ export async function sendBuyerCriteriaConfirmation(
     confirmation_source_email_message_id: input.sourceEmailMessageId,
     confirmation_source_work_item_id: input.sourceWorkItemId,
     confirmation_criteria_lines: email.criteriaLines,
+    confirmation_follow_up_questions: email.followUpQuestions,
+    confirmation_priority_question: email.priorityQuestion,
     confirmation_context_text: email.confirmationContextText,
     confirmation_message_mode: email.mode,
     confirmation_send_status: sent.success ? "sent" : (sent.skipped ? "skipped" : "failed"),
