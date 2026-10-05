@@ -59,6 +59,8 @@ test("on-hold timing lead with advanced stage signal is high recovery potential"
   const item = buildRecoveryLead(dormant({
     pipeline_status: "ON_HOLD",
     notes: "Visning gjennomført. Kunden vil vente til etter sommeren.",
+    waiting_on: "customer",
+    waiting_until: "2026-06-01T10:00:00.000Z",
     updated_at: "2026-05-01T10:00:00.000Z",
   }), NOW);
   assert.ok(item);
@@ -66,6 +68,44 @@ test("on-hold timing lead with advanced stage signal is high recovery potential"
   assert.equal(item.priority, "HIGH");
   assert.equal(item.reason, "TIMING");
   assert.equal(item.priorStageSignal, "Visning");
+});
+
+test("future waiting lead is never recovered early", () => {
+  const item = buildRecoveryLead(dormant({
+    pipeline_status: "ON_HOLD",
+    nurture_status: "paused",
+    waiting_on: "customer",
+    waiting_until: "2028-10-04T16:03:13.000Z",
+    notes: "Har bolig i Marbella. Mulig nytt kjøp om ett til to år.",
+  }), NOW);
+  assert.ok(item);
+  assert.equal(item.disposition, "NURTURE");
+  assert.equal(item.dueNow, false);
+  assert.match(item.recommendedAction, /Ingen kundekontakt før 2028-10-04/);
+});
+
+test("on-hold lead without reopening date fails closed", () => {
+  const item = buildRecoveryLead(dormant({
+    pipeline_status: "ON_HOLD",
+    nurture_status: "paused",
+    waiting_on: "customer",
+  }), NOW);
+  assert.ok(item);
+  assert.equal(item.disposition, "NURTURE");
+  assert.equal(item.dueNow, false);
+  assert.match(item.recommendedAction, /Behold saken parkert/);
+});
+
+test("CRM suppression permanently removes a lost lead from recovery outreach", () => {
+  const item = buildRecoveryLead(dormant({
+    email_suppressed: true,
+    suppression_reason: "customer_no_longer_buying",
+    last_reply_classification: "no_longer_buying",
+  }), NOW);
+  assert.ok(item);
+  assert.equal(item.disposition, "DO_NOT_PURSUE");
+  assert.equal(item.recoveryScore, 0);
+  assert.equal(item.dueNow, false);
 });
 
 test("bought elsewhere and invalid leads are not pursued", () => {
@@ -98,7 +138,7 @@ test("overdue dormant lead is due now", () => {
 
 test("workspace separates recovery outcomes and values", () => {
   const result = buildRecoveryWorkspace([
-    dormant({ id: "recover", pipeline_status: "ON_HOLD", notes: "Visning gjennomført, venter til høsten", pipeline_value: 700_000 }),
+    dormant({ id: "recover", pipeline_status: "ON_HOLD", notes: "Visning gjennomført, venter til høsten", waiting_on: "customer", waiting_until: "2026-06-01T10:00:00.000Z", pipeline_value: 700_000 }),
     dormant({ id: "nurture", notes: "Ingen svar", pipeline_value: 300_000, next_followup: "2026-08-01T10:00:00.000Z" }),
     dormant({ id: "closed", notes: "Kjøpte annet sted", pipeline_value: 450_000 }),
   ], NOW);
@@ -110,7 +150,7 @@ test("workspace separates recovery outcomes and values", () => {
 });
 
 test("sorts recover-now and due leads before nurture and closed leads", () => {
-  const recover = buildRecoveryLead(dormant({ id: "recover", pipeline_status: "ON_HOLD", notes: "Visning, venter til høsten" }), NOW)!;
+  const recover = buildRecoveryLead(dormant({ id: "recover", pipeline_status: "ON_HOLD", notes: "Visning, venter til høsten", waiting_on: "customer", waiting_until: "2026-06-01T10:00:00.000Z" }), NOW)!;
   const nurture = buildRecoveryLead(dormant({ id: "nurture", notes: "Ingen svar", next_followup: "2026-08-01T10:00:00.000Z" }), NOW)!;
   const closed = buildRecoveryLead(dormant({ id: "closed", notes: "Kjøpte annet sted" }), NOW)!;
   assert.deepEqual(sortRecoveryLeads([closed, nurture, recover]).map((item) => item.id), ["recover", "nurture", "closed"]);
