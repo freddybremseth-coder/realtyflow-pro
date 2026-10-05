@@ -83,3 +83,31 @@ test("ranking puts P1 ahead of P2 and P3", () => {
   ]);
   assert.deepEqual(ranked.map(item => item.priority), ["P1","P2","P3"]);
 });
+
+
+test("documented inbound Corporate replies increase observed intent and timing without moving stage", () => {
+  const advice = buildCorporateAccountAdvice({
+    now: new Date("2026-10-05T19:00:00Z"),
+    prospect: {
+      id: "p-reply",
+      company_name: "Reply AS",
+      fit_score: 70,
+      evidence: {},
+      status: "RESEARCHED",
+    },
+    strategy: {
+      stage: "OUTREACH",
+      objective: "Avklare relevans",
+      entry_angle: "HR",
+    },
+    emails: [
+      { direction: "outbound", received_at: "2026-10-04T10:00:00Z" },
+      { direction: "inbound", received_at: "2026-10-05T10:00:00Z", ai_intent: "interested" },
+    ],
+  });
+
+  assert.equal(advice.stage, "OUTREACH");
+  assert.ok(advice.scores.intent > 10);
+  assert.ok(advice.scores.timing > 20);
+  assert.ok(advice.whyNow.some(item => /innkommende e-postsvar/i.test(item)));
+});
