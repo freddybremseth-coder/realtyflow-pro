@@ -1205,7 +1205,7 @@ export default function CorporateProspectBriefPage() {
                       </a>
                     )}
                     {realtyFlowPropertyHref(property) && (
-                      <Link href={realtyFlowPropertyHref(property)!} className="inline-flex items-center gap-1 text-xs font-black text-violet-800 hover:underline">
+                      <Link href={realtyFlowPropertyHref(property) || "/inventory"} className="inline-flex items-center gap-1 text-xs font-black text-violet-800 hover:underline">
                         Åpne i RealtyFlow <Building2 size={12} />
                       </Link>
                     )}
