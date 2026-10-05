@@ -55,7 +55,7 @@ export async function GET(
   }
   const perPage = 24;
   const safeSearch = term
-    ? term.replace(/[^\p{L}\p{N}\s._\/-]/gu, " ").replace(/\s+/g, " ").trim()
+    ? term.replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim()
     : "";
 
   if (access.value.verifiedUserId) {
