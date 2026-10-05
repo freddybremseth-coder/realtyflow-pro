@@ -78,3 +78,28 @@ test("PDF evidence keeps its source kind", () => {
   assert.equal(signals.financial_strength_signal?.source_kind, "company_pdf");
   assert.equal(signals.international_growth_signal?.source_kind, "company_pdf");
 });
+
+
+test("event signal evidence captures nearby event year", () => {
+  const signals = detectCorporateCompanySignals(
+    "2026 Current updates. 2023 Paul Harrison new CFO at AutoStore. 2023 AutoStore Opens New Official Office in Germany.",
+    "https://example.no/news",
+    "2026-10-06T00:00:00.000Z",
+  );
+
+  assert.equal(signals.leadership_change_signal?.event_year, 2023);
+  assert.equal(signals.new_office_signal?.event_year, 2023);
+  assert.equal(signals.leadership_change_signal?.event_date_precision, "year");
+  assert.ok(signals.leadership_change_signal?.context_snippets?.[0]?.includes("new CFO"));
+});
+
+test("persistent page-state signal can be undated without pretending it is an event", () => {
+  const signals = detectCorporateCompanySignals(
+    "Not all roles are suitable for remote work, but we make that clear in our job listings.",
+    "https://example.no/careers",
+    "2026-10-06T00:00:00.000Z",
+  );
+
+  assert.ok(signals.remote_workforce_signal);
+  assert.equal(signals.remote_workforce_signal?.event_year, null);
+});
