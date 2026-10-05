@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
 
   let contactsQuery = supabase
     .from("contacts")
-    .select("id,name,email,brand_id,brand,pipeline_status,nurture_status,property_interest,created_at,last_contact,last_ai_followup")
+    .select("id,name,email,brand_id,brand,pipeline_status,nurture_status,property_interest,created_at,last_contact,last_inbound_reply_at,last_ai_followup,do_not_contact,email_suppressed")
     .in("pipeline_status", ["NEW", "CONTACT", "QUALIFIED"])
     .not("email", "is", null)
     .limit(1000);
@@ -143,9 +143,11 @@ export async function GET(request: NextRequest) {
         propertyInterest: contact.property_interest,
         createdAt: contact.created_at,
         lastContact: contact.last_contact,
+        lastInboundReplyAt: contact.last_inbound_reply_at,
         lastAiFollowup: contact.last_ai_followup,
         latestRevenueEventAt: revenueByContact.get(contactId) || null,
         latestNurtureSentAt: nurtureByContact.get(contactId) || null,
+        explicitlyOptedOut: Boolean(contact.do_not_contact || contact.email_suppressed),
       };
       const assessment = assessDormantLead(candidate, criteria);
       const draft = composeDormantLeadReactivationDraft(candidate, criteria, assessment);
