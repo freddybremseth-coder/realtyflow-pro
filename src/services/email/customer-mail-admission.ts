@@ -216,6 +216,14 @@ export async function decideCustomerMailAdmission(
       return { status: "filtered", reason: "internal_same_domain", contactId: null, corporateProspectId: null };
     }
 
+    const corporateProspects = await resolveThreadCorporateProspectIds(supabase, brandId, message);
+    if (corporateProspects.length === 1) {
+      return { status: "accept", reason: "resolved_corporate_thread", contactId: null, corporateProspectId: corporateProspects[0] };
+    }
+    if (corporateProspects.length > 1) {
+      return { status: "review", reason: "ambiguous_corporate_thread", contactId: null, corporateProspectId: null };
+    }
+
     const exact = identityMatches(contactIndex, sender);
     if (exact.length === 1) {
       return { status: "accept", reason: "exact_global_contact", contactId: exact[0].id, corporateProspectId: null };
@@ -230,14 +238,6 @@ export async function decideCustomerMailAdmission(
     }
     if (threadContacts.length > 1) {
       return { status: "review", reason: "ambiguous_customer_thread", contactId: null, corporateProspectId: null };
-    }
-
-    const corporateProspects = await resolveThreadCorporateProspectIds(supabase, brandId, message);
-    if (corporateProspects.length === 1) {
-      return { status: "accept", reason: "resolved_corporate_thread", contactId: null, corporateProspectId: corporateProspects[0] };
-    }
-    if (corporateProspects.length > 1) {
-      return { status: "review", reason: "ambiguous_corporate_thread", contactId: null, corporateProspectId: null };
     }
 
     if (looksLikeVendorOutreach(message)) {
