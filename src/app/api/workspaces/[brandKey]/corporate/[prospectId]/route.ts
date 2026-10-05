@@ -4,6 +4,7 @@ import { api1881Configured, search1881Company } from "@/lib/corporate-enrichment
 import { fetchBrregCompanySnapshot } from "@/lib/corporate-enrichment/brreg";
 import { buildCorporateEnrichmentProfile } from "@/lib/corporate-enrichment/company-profile";
 import { buildCorporateAccountAdvice } from "@/lib/nexus/corporate-account-advisor";
+import { getAdminEmails } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,6 +59,82 @@ function stringList(value: unknown, maxItems = 12, maxLength = 120) {
     .slice(0, maxItems);
 }
 
+
+function ownerDisplayName(email: string) {
+  const local = email.split("@")[0] || email;
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || email;
+}
+
+async function loadAssignableCorporateOwners(supabase: any, brandId: string, actorEmail?: string) {
+  const configuredOwners = getAdminEmails()
+    .map(email => email.trim().toLowerCase())
+    .filter(email => emailPattern.test(email));
+
+  const [membershipsResult, directoryResult] = await Promise.all([
+    supabase.schema("core").from("brand_workspace_memberships")
+      .select("user_id,email,status,permissions")
+      .eq("brand_id", brandId)
+      .eq("status", "active"),
+    supabase.schema("core").from("workspace_user_directory")
+      .select("user_id,email,display_name,status,access_expires_at")
+      .eq("status", "active"),
+  ]);
+
+  const now = Date.now();
+  const directoryByUserId = new Map<string, any>();
+  for (const row of directoryResult.data || []) {
+    const expiresAt = row?.access_expires_at ? Date.parse(String(row.access_expires_at)) : null;
+    if (expiresAt && Number.isFinite(expiresAt) && expiresAt <= now) continue;
+    if (row?.user_id) directoryByUserId.set(String(row.user_id), row);
+  }
+
+  const byEmail = new Map<string, { email: string; displayName: string; role: "OWNER" | "MEMBER" }>();
+  for (const email of configuredOwners) {
+    byEmail.set(email, { email, displayName: ownerDisplayName(email), role: "OWNER" });
+  }
+
+  if (!membershipsResult.error && !directoryResult.error) {
+    for (const membership of membershipsResult.data || []) {
+      const email = String(membership?.email || "").trim().toLowerCase();
+      const permissions = Array.isArray(membership?.permissions) ? membership.permissions : [];
+      if (!emailPattern.test(email) ||
+          (!permissions.includes("corporate.read") && !permissions.includes("corporate.plan"))) continue;
+      const directory = directoryByUserId.get(String(membership?.user_id || ""));
+      if (!directory) continue;
+      byEmail.set(email, {
+        email,
+        displayName: String(directory.display_name || "").trim() || ownerDisplayName(email),
+        role: "MEMBER",
+      });
+    }
+  }
+
+  const normalizedActor = String(actorEmail || "").trim().toLowerCase();
+  if (normalizedActor && emailPattern.test(normalizedActor) && !byEmail.has(normalizedActor)) {
+    byEmail.set(normalizedActor, {
+      email: normalizedActor,
+      displayName: ownerDisplayName(normalizedActor),
+      role: configuredOwners.includes(normalizedActor) ? "OWNER" : "MEMBER",
+    });
+  }
+
+  const users = [...byEmail.values()].sort((a, b) => {
+    if (a.role !== b.role) return a.role === "OWNER" ? -1 : 1;
+    return a.displayName.localeCompare(b.displayName, "nb");
+  });
+  const defaultOwnerEmail = configuredOwners[0] || normalizedActor || users[0]?.email || null;
+
+  return {
+    users,
+    defaultOwnerEmail,
+    degraded: Boolean(membershipsResult.error || directoryResult.error),
+  };
+}
+
 function api1881FailureMessage(cause: unknown) {
   const error = cause as Error & { status?: number; body?: unknown; endpoint?: string };
   const status = Number.isFinite(error?.status) ? Number(error.status) : null;
@@ -80,7 +157,7 @@ function api1881FailureMessage(cause: unknown) {
     : "1881-oppslaget feilet.";
 }
 
-async function loadAccount(supabase: any, prospectId: string) {
+async function loadAccount(supabase: any, prospectId: string, brandId: string, actorEmail: string) {
   const [
     prospectResult,
     strategyResult,
@@ -115,10 +192,13 @@ async function loadAccount(supabase: any, prospectId: string) {
   if (error) return { error };
   if (!prospectResult.data) return { notFound: true };
 
+  const assignmentOptions = await loadAssignableCorporateOwners(supabase, brandId, actorEmail);
+
   return {
     data: {
       prospect: prospectResult.data,
       strategy: strategyResult.data || null,
+      assignmentOptions,
       contacts: contactsResult.data || [],
       touchpoints: touchpointsResult.data || [],
       enrichment: enrichmentResult.data || [],
@@ -160,7 +240,7 @@ export async function GET(
   const access = await requireBrandWorkspace(request, params.brandKey, "corporate.read");
   if (!access.value) return access.response;
 
-  const account = await loadAccount(access.value.supabase, params.prospectId);
+  const account = await loadAccount(access.value.supabase, params.prospectId, access.value.brandId, access.value.verifiedEmail);
   if ("error" in account) return fail(503, "CORPORATE_ACCOUNT_UNAVAILABLE");
   if ("notFound" in account) return fail(404, "ACCOUNT_NOT_FOUND");
 
@@ -318,6 +398,24 @@ export async function POST(
     if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return fail(400, "INVALID_TARGET_DATE");
     if (nextReviewAt && Number.isNaN(Date.parse(nextReviewAt))) return fail(400, "INVALID_REVIEW_DATE");
 
+    const assignable = await loadAssignableCorporateOwners(
+      access.value.supabase,
+      access.value.brandId,
+      actorEmail,
+    );
+    const allowedOwnerEmails = new Set(assignable.users.map(item => item.email));
+    const fallbackOwnerEmail = assignable.defaultOwnerEmail || actorEmail;
+    const accountOwnerEmail = cleanEmail(body.accountOwnerEmail) || fallbackOwnerEmail;
+    const strategicOwnerEmail = cleanEmail(body.strategicOwnerEmail) || fallbackOwnerEmail;
+    if ((accountOwnerEmail && !allowedOwnerEmails.has(accountOwnerEmail)) ||
+        (strategicOwnerEmail && !allowedOwnerEmails.has(strategicOwnerEmail))) {
+      return fail(
+        400,
+        "INVALID_ACCOUNT_OWNER",
+        "Velg en aktiv RealtyFlow-bruker med Corporate-tilgang.",
+      );
+    }
+
     const payload = {
       prospect_id: params.prospectId,
       stage,
@@ -326,8 +424,8 @@ export async function POST(
       objective: nullable(body.objective, 3000),
       entry_angle: nullable(body.entryAngle, 3000),
       first_offer: nullable(body.firstOffer, 3000),
-      account_owner_email: cleanEmail(body.accountOwnerEmail),
-      strategic_owner_email: cleanEmail(body.strategicOwnerEmail),
+      account_owner_email: accountOwnerEmail,
+      strategic_owner_email: strategicOwnerEmail,
       estimated_value_eur: estimatedValue,
       target_date: targetDate || null,
       next_review_at: nextReviewAt ? new Date(nextReviewAt).toISOString() : null,
