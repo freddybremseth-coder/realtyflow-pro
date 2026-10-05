@@ -27,7 +27,7 @@ export type CorporateCompanySignalResearch = {
   website_url: string;
   checked_at: string;
   pages_checked: string[];
-  documents_checked: Array<{ url: string; kind: "company_web" | "company_pdf" }>;
+  documents_checked?: Array<{ url: string; kind: "company_web" | "company_pdf" }>;
   signals: Partial<Record<CorporateCompanySignal, CorporateSignalEvidence>>;
   warnings: string[];
   personal_data_collected: false;
