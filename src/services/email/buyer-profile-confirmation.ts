@@ -426,6 +426,32 @@ export async function sendBuyerCriteriaConfirmation(
     .maybeSingle();
   if (reviewLookup.error) throw reviewLookup.error;
   const currentMetadata = record(reviewLookup.data?.metadata);
+
+  const pendingReviewLookup = await supabase
+    .from("work_items")
+    .select("id,status,metadata")
+    .eq("source_type", "ai_agent")
+    .eq("metadata->>kind", "buyer_profile_email_review")
+    .eq("metadata->>contact_id", input.contactId)
+    .neq("id", input.reviewWorkItemId)
+    .in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"])
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  if (pendingReviewLookup.error) throw pendingReviewLookup.error;
+
+  const otherPendingRequest = (pendingReviewLookup.data || []).find((row) => {
+    const metadata = record(row.metadata);
+    return metadata.confirmation_pending === true || metadata.criteria_clarification_pending === true;
+  });
+  if (otherPendingRequest) {
+    return {
+      sent: false as const,
+      skipped: true as const,
+      reason: "criteria_request_already_pending",
+      pendingReviewWorkItemId: String(otherPendingRequest.id),
+    };
+  }
+
   const priorExecutionKey = String(currentMetadata.confirmation_execution_idempotency_key || "");
   const priorExecutionStatus = String(currentMetadata.confirmation_execution_status || "").toLowerCase();
   if (priorExecutionKey === idempotencyKey && ["sending", "sent", "ambiguous"].includes(priorExecutionStatus)) {
@@ -495,6 +521,7 @@ export async function sendBuyerCriteriaConfirmation(
     ...claimedMetadata,
     confirmation_pending: sent.success && email.requiresConfirmation,
     confirmation_requested_at: sent.success && email.requiresConfirmation ? now : null,
+    criteria_clarification_pending: sent.success && !email.requiresConfirmation,
     criteria_clarification_requested_at: sent.success && !email.requiresConfirmation ? now : null,
     confirmation_message_id: sent.messageId || null,
     confirmation_recipient: recipient,
