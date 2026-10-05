@@ -111,12 +111,15 @@ export function personalizeCorporateOutreach(
   template: CorporateOutreachTemplate,
   input: { firstName?: string | null; companyName: string },
 ) {
-  const firstName = String(input.firstName || "").trim() || "der";
+  const firstName = String(input.firstName || "").trim();
   const companyName = String(input.companyName || "").trim();
+  const personalized = template.body
+    .replaceAll("{{company_name}}", companyName);
+
   return {
     ...template,
-    body: template.body
-      .replaceAll("{{first_name}}", firstName)
-      .replaceAll("{{company_name}}", companyName),
+    body: firstName
+      ? personalized.replaceAll("{{first_name}}", firstName)
+      : personalized.replace(/^Hei \{\{first_name\}\},/m, "Hei,").replaceAll("{{first_name}}", ""),
   };
 }
