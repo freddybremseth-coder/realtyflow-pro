@@ -394,13 +394,27 @@ export async function sendBuyerCriteriaConfirmation(
 ) {
   const contactResult = await supabase
     .from("contacts")
-    .select("id,name,email")
+    .select("id,name,email,pipeline_status,nurture_status,waiting_until,email_suppressed,do_not_contact")
     .eq("id", input.contactId)
     .maybeSingle();
   if (contactResult.error) throw contactResult.error;
   const contact = contactResult.data;
   const recipient = String(contact?.email || "").trim().toLowerCase();
   if (!recipient) return { sent: false as const, skipped: true as const, reason: "contact_missing_email" };
+
+  const pipelineStatus = String(contact?.pipeline_status || "").trim().toUpperCase();
+  const nurtureStatus = String(contact?.nurture_status || "").trim().toLowerCase();
+  const waitingUntil = contact?.waiting_until ? new Date(String(contact.waiting_until)) : null;
+  if (
+    contact?.do_not_contact
+    || contact?.email_suppressed
+    || pipelineStatus === "ON_HOLD"
+    || nurtureStatus === "paused"
+    || nurtureStatus === "stopped"
+    || (waitingUntil && !Number.isNaN(waitingUntil.getTime()) && waitingUntil.getTime() > Date.now())
+  ) {
+    return { sent: false as const, skipped: true as const, reason: "contact_not_active_for_criteria_email" };
+  }
 
   const email = buildCriteriaConfirmationEmail({ customerName: contact?.name, analysis: input.analysis });
   if (email.criteriaLines.length === 0) {
