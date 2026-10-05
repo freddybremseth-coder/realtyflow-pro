@@ -4,6 +4,7 @@ import { api1881Configured, search1881Company } from "@/lib/corporate-enrichment
 import { fetchBrregCompanySnapshot } from "@/lib/corporate-enrichment/brreg";
 import { buildCorporateEnrichmentProfile } from "@/lib/corporate-enrichment/company-profile";
 import { buildCorporateAccountAdvice } from "@/lib/nexus/corporate-account-advisor";
+import { runCorporateSalesCoach } from "@/lib/nexus/corporate-sales-coach";
 import { getAdminEmails } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -165,6 +166,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
     contactsResult,
     touchpointsResult,
     enrichmentResult,
+    coachRunsResult,
   ] = await Promise.all([
     supabase.from("corporate_prospects")
       .select("id,company_name,organization_number,domain,organization_type,country_code,city,industry,employee_count,employee_band,member_count,website_url,linkedin_company_url,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,evidence,next_action,next_followup,updated_at")
@@ -186,10 +188,15 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       .eq("prospect_id", prospectId)
       .order("fetched_at", { ascending: false })
       .limit(60),
+    supabase.from("corporate_sales_coach_runs")
+      .select("id,mode,source_text,seller_context,output,provider,model,created_by_email,created_at")
+      .eq("prospect_id", prospectId)
+      .order("created_at", { ascending: false })
+      .limit(12),
   ]);
 
   const error = prospectResult.error || strategyResult.error || contactsResult.error ||
-    touchpointsResult.error || enrichmentResult.error;
+    touchpointsResult.error || enrichmentResult.error || coachRunsResult.error;
   if (error) return { error };
   if (!prospectResult.data) return { notFound: true };
 
@@ -203,6 +210,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       contacts: contactsResult.data || [],
       touchpoints: touchpointsResult.data || [],
       enrichment: enrichmentResult.data || [],
+      coachRuns: coachRunsResult.data || [],
       companyProfile: buildCorporateEnrichmentProfile(
         prospectResult.data,
         enrichmentResult.data || [],
@@ -273,6 +281,56 @@ export async function POST(
   if (!prospect) return fail(404, "ACCOUNT_NOT_FOUND");
 
   const actorEmail = access.value.verifiedEmail;
+
+  if (action === "sales_coach") {
+    const mode = clean(body.mode, 30).toUpperCase();
+    if (!["NEXT_STEP","DISCOVERY","EMAIL","ARGUMENTS","OBJECTION","MEETING"].includes(mode)) {
+      return fail(400, "INVALID_COACH_MODE");
+    }
+
+    const account = await loadAccount(access.value.supabase, params.prospectId, params.brandKey, actorEmail);
+    if ("error" in account) return fail(503, "CORPORATE_ACCOUNT_UNAVAILABLE");
+    if ("notFound" in account) return fail(404, "ACCOUNT_NOT_FOUND");
+
+    const result = await runCorporateSalesCoach({
+      mode: mode as any,
+      companyName: account.data.prospect.company_name,
+      companyContext: account.data.prospect,
+      strategy: account.data.strategy,
+      contacts: account.data.contacts,
+      touchpoints: account.data.touchpoints,
+      advisor: account.data.advisor,
+      sourceText: clean(body.sourceText, 16000),
+      sellerContext: clean(body.sellerContext, 6000),
+    });
+
+    const { data: saved, error: saveError } = await access.value.supabase
+      .from("corporate_sales_coach_runs")
+      .insert({
+        prospect_id: params.prospectId,
+        mode,
+        source_text: nullable(body.sourceText, 16000),
+        seller_context: nullable(body.sellerContext, 6000),
+        output: result.output,
+        provider: result.provider,
+        model: result.model,
+        created_by_email: actorEmail,
+      })
+      .select("id,mode,source_text,seller_context,output,provider,model,created_by_email,created_at")
+      .single();
+    if (saveError || !saved) return fail(409, "SALES_COACH_SAVE_FAILED");
+
+    return NextResponse.json({
+      ok: true,
+      coachRun: saved,
+      output: result.output,
+      provider: result.provider,
+      model: result.model,
+      externalAction: false,
+      emailSent: false,
+      linkedinMessageSent: false,
+    }, { headers: noStore });
+  }
 
   if (action === "enrich_brreg") {
     const { data: company, error: companyError } = await access.value.supabase
@@ -432,6 +490,23 @@ export async function POST(
       next_review_at: nextReviewAt ? new Date(nextReviewAt).toISOString() : null,
       notes: nullable(body.notes, 8000),
       linkedin_motion: linkedinMotion,
+      account_role: ["END_CUSTOMER","PARTNER","MEMBER_ORGANIZATION","ADVISOR","REFERRAL_PARTNER"].includes(clean(body.accountRole, 40).toUpperCase())
+        ? clean(body.accountRole, 40).toUpperCase() : "END_CUSTOMER",
+      primary_model: nullable(body.primaryModel, 120),
+      secondary_model: nullable(body.secondaryModel, 120),
+      expansion_model: nullable(body.expansionModel, 120),
+      recommended_entry_role: nullable(body.recommendedEntryRole, 180),
+      champion_hypothesis: nullable(body.championHypothesis, 2000),
+      problem_hypothesis: nullable(body.problemHypothesis, 4000),
+      problem_acceptance_goal: nullable(body.problemAcceptanceGoal, 3000),
+      solution_hypothesis: nullable(body.solutionHypothesis, 4000),
+      solution_acceptance_goal: nullable(body.solutionAcceptanceGoal, 3000),
+      core_message: nullable(body.coreMessage, 4000),
+      avoid_message: nullable(body.avoidMessage, 3000),
+      next_best_action: nullable(body.nextBestAction, 3000),
+      next_action_reason: nullable(body.nextActionReason, 3000),
+      business_case: body.businessCase && typeof body.businessCase === "object" && !Array.isArray(body.businessCase)
+        ? body.businessCase : {},
       updated_by_email: actorEmail,
       updated_at: new Date().toISOString(),
     };
