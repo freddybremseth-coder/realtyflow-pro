@@ -375,7 +375,7 @@ export async function promoteResolvedCustomerMailReviews(
       contactIndex: input.contactIndex,
       ownedMailboxAddresses: input.ownedMailboxAddresses,
     });
-    if (decision.status !== "accept" || !decision.contactId) continue;
+    if (decision.status !== "accept" || (!decision.contactId && !decision.corporateProspectId)) continue;
 
     const existing = await supabase
       .from("email_messages")
@@ -405,6 +405,7 @@ export async function promoteResolvedCustomerMailReviews(
         is_read: historical,
         is_archived: historical,
         crm_contact_id: decision.contactId,
+        corporate_prospect_id: decision.corporateProspectId,
       }).select("id").single();
       if (inserted.error || !inserted.data?.id) {
         throw new Error(`Customer-mail review promotion failed: ${inserted.error?.message || "missing id"}`);
