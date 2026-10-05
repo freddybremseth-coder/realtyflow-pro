@@ -297,6 +297,7 @@ export async function runEmailHistoryBackfillJob(
               status: "review",
               reason: "history_storage_retry",
               contactId,
+              corporateProspectId,
             },
             historical: true,
           });
