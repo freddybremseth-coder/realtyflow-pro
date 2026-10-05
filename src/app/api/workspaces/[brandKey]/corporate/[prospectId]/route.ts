@@ -8,6 +8,7 @@ import { runCorporateSalesCoach } from "@/lib/nexus/corporate-sales-coach";
 import { evaluateCorporateStageGate, stageIndex } from "@/lib/nexus/corporate-sales-stage-gate";
 import { getAdminEmails } from "@/lib/admin-auth";
 import { runAccountDeepResearch, summarizeIntelligenceForAccount } from "@/lib/corporate-intelligence";
+import { rescoreCorporateProspect } from "@/lib/corporate-prospects";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -236,10 +237,15 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
   if (error) return { error };
   if (!prospectResult.data) return { notFound: true };
 
+  const effectiveProspect = {
+    ...prospectResult.data,
+    ...rescoreCorporateProspect(prospectResult.data as Record<string, unknown>),
+  };
+
   const assignmentOptions = await loadAssignableCorporateOwners(supabase, brandKey, actorEmail);
   const intelligenceSummary = summarizeIntelligenceForAccount(intelligenceResult.data || []);
   const advisor = buildCorporateAccountAdvice({
-    prospect: prospectResult.data,
+    prospect: effectiveProspect,
     strategy: strategyResult.data || null,
     contacts: contactsResult.data || [],
     touchpoints: touchpointsResult.data || [],
@@ -255,7 +261,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
 
   return {
     data: {
-      prospect: prospectResult.data,
+      prospect: effectiveProspect,
       strategy: strategyResult.data || null,
       assignmentOptions,
       contacts: contactsResult.data || [],
@@ -270,7 +276,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
         latestRun: intelligenceRunResult.data || null,
       },
       companyProfile: buildCorporateEnrichmentProfile(
-        prospectResult.data,
+        effectiveProspect,
         enrichmentResult.data || [],
       ),
       advisor,
@@ -326,7 +332,7 @@ export async function POST(
 
   const { data: prospect, error: prospectError } = await access.value.supabase
     .from("corporate_prospects")
-    .select("id")
+    .select("id,organization_type,country_code,industry,employee_count,employee_band,member_count,domain,website_url,decision_roles,source_url,evidence")
     .eq("id", params.prospectId)
     .eq("brand_id", "zeneco")
     .maybeSingle();
@@ -376,6 +382,20 @@ export async function POST(
       const message = String(reviewError.message || "");
       if (message.includes("INTELLIGENCE_FINDING_NOT_FOUND")) return fail(404, "INTELLIGENCE_FINDING_NOT_FOUND");
       return fail(409, "INTELLIGENCE_REVIEW_FAILED", "Kunne ikke lagre vurderingen av Intelligence-funnet.");
+    }
+
+    const { data: rescoredSource, error: rescoreReadError } = await access.value.supabase
+      .from("corporate_prospects")
+      .select("id,organization_type,country_code,industry,employee_count,employee_band,member_count,domain,website_url,decision_roles,source_url,evidence")
+      .eq("id", params.prospectId)
+      .eq("brand_id", "zeneco")
+      .maybeSingle();
+    if (!rescoreReadError && rescoredSource) {
+      const fit = rescoreCorporateProspect(rescoredSource as Record<string, unknown>);
+      await access.value.supabase
+        .from("corporate_prospects")
+        .update({ ...fit, updated_at: new Date().toISOString() })
+        .eq("id", params.prospectId);
     }
 
     return NextResponse.json({
