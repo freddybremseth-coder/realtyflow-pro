@@ -26,11 +26,14 @@ test("inbound reply interactions carry an explicit Nexus automation audit actor"
   assert.match(source, /actor_type: "automation"/);
 });
 
-test("explicit DNC is persisted as permanent stopped nurture", () => {
+test("explicit DNC is persisted as permanent stopped nurture and closed pipeline", () => {
   assert.match(source, /classification\.intent === "do_not_contact"/);
+  assert.match(source, /update\.pipeline_status = "LOST"/);
+  assert.match(source, /update\.lost_reason = "do_not_contact"/);
   assert.match(source, /update\.do_not_contact = true/);
   assert.match(source, /update\.email_suppressed = true/);
   assert.match(source, /update\.nurture_status = "stopped"/);
+  assert.match(source, /email-crm-sync:do-not-contact/);
 });
 
 test("explicit DNC also cancels all open sales work", () => {
