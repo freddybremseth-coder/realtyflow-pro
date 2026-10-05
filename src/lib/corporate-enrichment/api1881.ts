@@ -26,7 +26,11 @@ function createJwt(identity: string, secret: string) {
 }
 
 function modernSubscriptionKey() {
-  return (process.env.API1881_SUBSCRIPTION_KEY || "").trim();
+  return (
+    process.env.API1881_SUBSCRIPTION_KEY ||
+    process.env.API_1881_SECRET ||
+    ""
+  ).trim();
 }
 
 function legacyCredentials() {
@@ -51,8 +55,8 @@ function authHeaders(): Record<string, string> {
   if (key) {
     return {
       // Current api1881.no profile exposes Primary/Secondary API keys as a
-      // subscription key. Primary is used in normal operation; Secondary is
-      // intentionally not required so it can remain available for rotation.
+      // subscription key. API_1881_SECRET is accepted as a compatibility alias
+      // for the user's existing Vercel setup.
       "Ocp-Apim-Subscription-Key": key,
     };
   }

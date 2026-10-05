@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -71,8 +72,9 @@ type Prospect = {
   evidence?: Record<string, unknown> | null;
 };
 
-export default function CorporateProspectBriefPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function CorporateProspectBriefPage() {
+  const params = useParams<{ id: string }>();
+  const id = typeof params?.id === "string" ? params.id : "";
   const [brief, setBrief] = useState<Brief | null>(null);
   const [prospect, setProspect] = useState<Prospect | null>(null);
   const [contacts, setContacts] = useState<Array<Record<string, any>>>([]);
