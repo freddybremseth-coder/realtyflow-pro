@@ -135,7 +135,10 @@ export function WorkspacePropertyCatalogue({
         {items.map(item => {
           const canMarketHere = item.can_market_on_workspace_brand;
           return <article key={item.id} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
-          {item.primary_image && <img src={item.primary_image} alt="" className="aspect-video w-full object-cover" />}
+          {item.primary_image && <div className="relative">
+            <img src={item.primary_image} alt="" className="aspect-video w-full object-cover" />
+            {item.ref && <span className="absolute left-3 top-3 rounded-md border border-slate-500/60 bg-slate-950/80 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">Ref {item.ref}</span>}
+          </div>}
           <div className="p-4">
             <div className="flex items-start gap-3"><Building2 size={22} className="mt-1 shrink-0 text-cyan-400" />
               <div><h3 className="font-semibold">{item.title || item.property_type || "Bolig"}</h3>
