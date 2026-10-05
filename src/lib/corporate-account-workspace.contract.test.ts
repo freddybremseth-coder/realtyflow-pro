@@ -18,6 +18,14 @@ const strategyCoachMigration = fs.readFileSync(
   "supabase/migrations/20261005193000_corporate_account_strategy_sales_coach.sql",
   "utf8",
 );
+const learningLoopMigration = fs.readFileSync(
+  "supabase/migrations/20261005215000_corporate_sales_learning_loop.sql",
+  "utf8",
+);
+const stageGate = fs.readFileSync(
+  "src/lib/nexus/corporate-sales-stage-gate.ts",
+  "utf8",
+);
 const salesCoach = fs.readFileSync(
   "src/lib/nexus/corporate-sales-coach.ts",
   "utf8",
@@ -149,4 +157,30 @@ test("Nexus Sales Coach follows problem-to-solution acceptance and never auto-se
   assert.match(page, /Nexus AI Sales Coach/);
   assert.match(page, /Analyser e-post og foreslå svar/);
   assert.match(page, /Utkastet er ikke sendt/);
+});
+
+
+test("Corporate sales learning loop keeps AI hypotheses separate from customer-confirmed acceptance", () => {
+  assert.match(learningLoopMigration, /problem_acceptance_status/);
+  assert.match(learningLoopMigration, /problem_acceptance_evidence/);
+  assert.match(learningLoopMigration, /solution_acceptance_status/);
+  assert.match(learningLoopMigration, /solution_acceptance_evidence/);
+  assert.match(learningLoopMigration, /revoke all on table public\.corporate_sales_coach_runs from public, anon, authenticated/);
+  assert.match(learningLoopMigration, /grant select, insert, update, delete on table public\.corporate_sales_coach_runs to service_role/);
+  assert.match(route, /action === "apply_coach_strategy"/);
+  assert.match(route, /humanApproved:\s*true/);
+  assert.match(route, /applied_fields/);
+  assert.match(page, /Godkjenn og bruk i kontostrategi/);
+  assert.match(page, /Den markerer ikke problem eller løsning som faktisk akseptert av kunden/);
+});
+
+test("Corporate phase gate requires evidence and a human reason for deliberate early advancement", () => {
+  assert.match(stageGate, /problem_acceptance_status/);
+  assert.match(stageGate, /solution_acceptance_status/);
+  assert.match(stageGate, /readyToAdvance/);
+  assert.match(stageGate, /completionPercent/);
+  assert.match(route, /STAGE_GATE_NOT_READY/);
+  assert.match(route, /stageOverrideReason\.length < 12/);
+  assert.match(page, /Fasevakt/);
+  assert.match(page, /Overstyr fasevakt/);
 });
