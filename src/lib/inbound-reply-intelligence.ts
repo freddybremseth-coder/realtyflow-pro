@@ -117,12 +117,35 @@ function addYearsUtc(date: Date, years: number) {
   return next;
 }
 
+function followUpNumber(value: string) {
+  const normalized = normalize(value);
+  const wordNumbers: Record<string, number> = {
+    ett: 1, et: 1, en: 1, one: 1,
+    to: 2, two: 2,
+    tre: 3, three: 3,
+    fire: 4, four: 4,
+    fem: 5, five: 5,
+  };
+  if (/^\d{1,2}$/.test(normalized)) return Number(normalized);
+  return wordNumbers[normalized] || null;
+}
+
 export function deriveRequestedFollowUpAt(value: string | null | undefined, now = new Date()) {
   const text = normalize(extractLatestReplyText(value) || String(value || ""));
   if (!text) return null;
 
-  const years = text.match(/\b(?:om|in)\s+(\d{1,2})\s+(?:år|years?)\b/i);
-  if (years) return addYearsUtc(now, Number(years[1])).toISOString();
+  const yearRange = text.match(/\b(?:om\s+|in\s+)?(\d{1,2}|ett|et|en|one)\s*(?:-|–|til|eller|or)\s*(\d{1,2}|to|two|tre|three|fire|four|fem|five)\s*(?:år|years?)\b/i)
+    || text.match(/\b(?:om\s+|in\s+)?(ett|et|en|one)\s+(?:år|year)\s+(?:eller|or)\s+(to|two)\b/i);
+  if (yearRange) {
+    const upper = followUpNumber(yearRange[2]);
+    if (upper) return addYearsUtc(now, upper).toISOString();
+  }
+
+  const years = text.match(/\b(?:om|in)\s+(\d{1,2}|ett|et|en|one|to|two|tre|three|fire|four|fem|five)\s+(?:år|years?)\b/i);
+  if (years) {
+    const count = followUpNumber(years[1]);
+    if (count) return addYearsUtc(now, count).toISOString();
+  }
 
   const months = text.match(/\b(?:om|in)\s+(\d{1,2})\s+(?:mnd|måneder|months?)\b/i);
   if (months) return addMonthsUtc(now, Number(months[1])).toISOString();
