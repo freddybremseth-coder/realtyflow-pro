@@ -172,6 +172,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
     intelligenceResult,
     marketIntelligenceResult,
     regulatoryIntelligenceResult,
+    intelligenceRunResult,
   ] = await Promise.all([
     supabase.from("corporate_prospects")
       .select("id,company_name,organization_number,domain,organization_type,country_code,city,industry,employee_count,employee_band,member_count,website_url,linkedin_company_url,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,evidence,next_action,next_followup,updated_at")
@@ -219,11 +220,19 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       .eq("active", true)
       .order("last_seen_at", { ascending: false })
       .limit(8),
+    supabase.from("corporate_intelligence_runs")
+      .select("id,status,provider,started_at,completed_at,source_count,finding_count,new_count,changed_count,warnings,summary")
+      .eq("prospect_id", prospectId)
+      .eq("scope", "ACCOUNT")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const error = prospectResult.error || strategyResult.error || contactsResult.error ||
     touchpointsResult.error || enrichmentResult.error || coachRunsResult.error ||
-    intelligenceResult.error || marketIntelligenceResult.error || regulatoryIntelligenceResult.error;
+    intelligenceResult.error || marketIntelligenceResult.error || regulatoryIntelligenceResult.error ||
+    intelligenceRunResult.error;
   if (error) return { error };
   if (!prospectResult.data) return { notFound: true };
 
@@ -258,6 +267,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
         summary: intelligenceSummary,
         market: marketIntelligenceResult.data || [],
         regulatory: regulatoryIntelligenceResult.data || [],
+        latestRun: intelligenceRunResult.data || null,
       },
       companyProfile: buildCorporateEnrichmentProfile(
         prospectResult.data,
