@@ -110,7 +110,7 @@ function parsePublishedAt(value: unknown) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 
-function extractJsonArray(text: string): any[] {
+export function extractCorporateResearchJsonArray(text: string): any[] {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] || text;
   const candidate = fenced.split(/\nKilder:\s*\n/i)[0];
   const start = candidate.indexOf("[");
@@ -443,7 +443,7 @@ export async function runAccountDeepResearch(
       warnings.push("Ekstern webresearch leverte ikke data. Resultatet er basert på selskapets egne kilder og bør regnes som degraded research.");
     }
     if (external.text) {
-      externalFindings = extractJsonArray(external.text)
+      externalFindings = extractCorporateResearchJsonArray(external.text)
         .map((item) => normalizeExternalFinding(item, "ACCOUNT", prospectId))
         .filter((item): item is CorporateIntelligenceFindingInput => Boolean(item))
         .slice(0, 8);
@@ -510,7 +510,7 @@ export async function runCorporateWatch(
     if (research.provider === "none") {
       warnings.push("Ekstern webresearch leverte ikke data; watch-kjøringen er degraded.");
     }
-    const normalized = extractJsonArray(research.text)
+    const normalized = extractCorporateResearchJsonArray(research.text)
       .map((item) => normalizeExternalFinding(item, scope, null))
       .filter((item): item is CorporateIntelligenceFindingInput => Boolean(item))
       .slice(0, 8);
