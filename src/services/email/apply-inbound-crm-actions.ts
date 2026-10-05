@@ -32,6 +32,23 @@ function lostReasonForIntent(intent: InboundReplyIntent) {
   return intent === "purchased_elsewhere" ? "purchased_elsewhere" : "no_longer_buying";
 }
 
+function explicitFollowUpDate(text: string, now = new Date()) {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ");
+  const years = normalized.match(/\b(?:om|in)\s+(\d{1,2})\s+(?:år|year|years)\b/);
+  const months = normalized.match(/\b(?:om|in)\s+(\d{1,2})\s+(?:mnd|måned|måneder|month|months)\b/);
+  const weeks = normalized.match(/\b(?:om|in)\s+(\d{1,3})\s+(?:uke|uker|week|weeks)\b/);
+  const days = normalized.match(/\b(?:om|in)\s+(\d{1,3})\s+(?:dag|dager|day|days)\b/);
+  const date = new Date(now);
+
+  if (years) date.setFullYear(date.getFullYear() + Math.min(10, Number(years[1])));
+  else if (months) date.setMonth(date.getMonth() + Math.min(120, Number(months[1])));
+  else if (weeks) date.setDate(date.getDate() + Math.min(520, Number(weeks[1])) * 7);
+  else if (days) date.setDate(date.getDate() + Math.min(3650, Number(days[1])));
+  else return null;
+
+  return date.toISOString();
+}
+
 async function closeOpenSalesWorkItems(supabase: SupabaseClient, contactId: string, reason: string, now: string) {
   const result = await supabase
     .from("work_items")
@@ -166,8 +183,12 @@ export async function applyInboundCrmActions(
   const classification = classifyInboundReply({ subject, body });
   const governance = governInboundReply(classification);
   const sla = decideHotLeadSla(classification);
-  const now = new Date().toISOString();
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
   const responseDue = responseDueAt(now, sla.responseMinutes);
+  const followUpAt = classification.intent === "follow_up_later"
+    ? explicitFollowUpDate(`${subject}\n${body}`, nowDate)
+    : null;
 
   const { data: contact } = fromAddress
     ? await supabase
@@ -281,6 +302,14 @@ export async function applyInboundCrmActions(
     update.pipeline_status = "CONTACT";
     update.nurture_status = "paused";
     nextPipelineStatus = "CONTACT";
+  } else if (classification.intent === "follow_up_later" && governance.canApplyAutomatically) {
+    update.pipeline_status = "ON_HOLD";
+    update.nurture_status = "paused";
+    update.waiting_on = "customer";
+    update.waiting_reason = "Kunden har eksplisitt bedt om senere oppfølging.";
+    update.waiting_until = followUpAt;
+    update.next_followup = followUpAt;
+    nextPipelineStatus = "ON_HOLD";
   } else if (classification.shouldPauseNurture) {
     // A customer reply pauses nurture. Real-time urgency is represented by the
     // governed work item / response_due_at SLA below, not by abusing the CRM
@@ -328,6 +357,20 @@ export async function applyInboundCrmActions(
       actorId: "Nexus Email Autopilot",
       createdBy: "email-crm-sync:active-interest",
     }).catch(() => undefined);
+  } else if (classification.intent === "follow_up_later" && governance.canApplyAutomatically) {
+    await closeOpenSalesWorkItems(supabase, String(contact.id), "kunden har bedt om senere oppfølging", now);
+    if (normalizedPreviousPipelineStatus !== "ON_HOLD") {
+      await recordPipelineTransition(supabase, {
+        contactId: String(contact.id),
+        brandId: params.brandId,
+        previousStatus: previousPipelineStatus,
+        nextStatus: "ON_HOLD",
+        occurredAt: now,
+        actorType: "customer",
+        actorId: fromAddress || null,
+        createdBy: "email-crm-sync:follow-up-later",
+      }).catch(() => undefined);
+    }
   }
 
   let workItemCreated = false;
@@ -356,7 +399,20 @@ export async function applyInboundCrmActions(
       : `/customers?contactId=${encodeURIComponent(String(contact.id))}`,
   };
 
-  if (isTerminalSalesOutcome(classification.intent) && !terminalAutoClose) {
+  if (classification.intent === "follow_up_later" && governance.canApplyAutomatically) {
+    if (!followUpAt) {
+      workItemCreated = await ensureWorkItem(supabase, {
+        sourceId: `${params.emailMessageId}:set-hold-date`,
+        title: `Sett gjenopptakelsesdato: ${contact.name || fromAddress}`,
+        description: `${subject || "Innkommende e-post"}\n${summary}`,
+        priority: "LOW",
+        brandId: params.brandId,
+        nextAction: "Kunden er satt på vent og automatiske salgsutsendelser er pauset. Sett en intern gjenopptakelsesdato når det passer.",
+        aiScore: 25,
+        metadata,
+      });
+    }
+  } else if (isTerminalSalesOutcome(classification.intent) && !terminalAutoClose) {
     workItemCreated = await ensureWorkItem(supabase, {
       sourceId: `${params.emailMessageId}:terminal-outcome-review`,
       title: `Bekreft terminal kundeutfall: ${contact.name || fromAddress}`,
