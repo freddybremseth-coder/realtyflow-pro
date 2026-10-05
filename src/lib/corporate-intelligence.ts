@@ -464,9 +464,23 @@ export async function runAccountDeepResearch(
     if (ownResearch) {
       const existingEvidence = company.evidence && typeof company.evidence === "object" && !Array.isArray(company.evidence)
         ? company.evidence as Record<string, unknown> : {};
+      const reviewOverrides =
+        existingEvidence.corporate_intelligence_review_overrides &&
+        typeof existingEvidence.corporate_intelligence_review_overrides === "object" &&
+        !Array.isArray(existingEvidence.corporate_intelligence_review_overrides)
+          ? { ...existingEvidence.corporate_intelligence_review_overrides as Record<string, unknown> }
+          : {};
+      for (const row of persisted) {
+        const signalType = String(row.signal_type || "");
+        if (!signalType) continue;
+        const reviewStatus = String(row.review_status || "PENDING").toUpperCase();
+        reviewOverrides[signalType] = reviewStatus;
+      }
+
       const nextEvidence = {
         ...existingEvidence,
         ...signalEvidencePatch(ownResearch),
+        corporate_intelligence_review_overrides: reviewOverrides,
         corporate_intelligence_summary: {
           checked_at: new Date().toISOString(),
           provider,
