@@ -69,48 +69,49 @@ function ownerDisplayName(email: string) {
     .join(" ") || email;
 }
 
-async function loadAssignableCorporateOwners(supabase: any, brandId: string, actorEmail?: string) {
+async function loadAssignableCorporateOwners(supabase: any, brandKey: string, actorEmail?: string) {
   const configuredOwners = getAdminEmails()
     .map(email => email.trim().toLowerCase())
     .filter(email => emailPattern.test(email));
 
-  const [membershipsResult, directoryResult] = await Promise.all([
-    supabase.schema("core").from("brand_workspace_memberships")
-      .select("user_id,email,status,permissions")
-      .eq("brand_id", brandId)
-      .eq("status", "active"),
-    supabase.schema("core").from("workspace_user_directory")
-      .select("user_id,email,display_name,status,access_expires_at")
-      .eq("status", "active"),
-  ]);
-
-  const now = Date.now();
-  const directoryByUserId = new Map<string, any>();
-  for (const row of directoryResult.data || []) {
-    const expiresAt = row?.access_expires_at ? Date.parse(String(row.access_expires_at)) : null;
-    if (expiresAt && Number.isFinite(expiresAt) && expiresAt <= now) continue;
-    if (row?.user_id) directoryByUserId.set(String(row.user_id), row);
-  }
+  // core is intentionally not exposed through the Data API. Use the existing
+  // service-role-only snapshot RPC, then return only active Corporate users
+  // for this brand to the client.
+  const { data: snapshot, error: snapshotError } = await supabase.rpc("workspace_user_admin_snapshot");
+  const snapshotUsers = !snapshotError &&
+    snapshot && typeof snapshot === "object" && !Array.isArray(snapshot) &&
+    Array.isArray((snapshot as Record<string, unknown>).users)
+      ? (snapshot as { users: any[] }).users
+      : [];
 
   const byEmail = new Map<string, { email: string; displayName: string; role: "OWNER" | "MEMBER" }>();
   for (const email of configuredOwners) {
     byEmail.set(email, { email, displayName: ownerDisplayName(email), role: "OWNER" });
   }
 
-  if (!membershipsResult.error && !directoryResult.error) {
-    for (const membership of membershipsResult.data || []) {
-      const email = String(membership?.email || "").trim().toLowerCase();
-      const permissions = Array.isArray(membership?.permissions) ? membership.permissions : [];
-      if (!emailPattern.test(email) ||
-          (!permissions.includes("corporate.read") && !permissions.includes("corporate.plan"))) continue;
-      const directory = directoryByUserId.get(String(membership?.user_id || ""));
-      if (!directory) continue;
-      byEmail.set(email, {
-        email,
-        displayName: String(directory.display_name || "").trim() || ownerDisplayName(email),
-        role: "MEMBER",
-      });
-    }
+  const now = Date.now();
+  for (const user of snapshotUsers) {
+    if (String(user?.status || "") !== "active") continue;
+    const expiresAt = user?.access_expires_at ? Date.parse(String(user.access_expires_at)) : null;
+    if (expiresAt && Number.isFinite(expiresAt) && expiresAt <= now) continue;
+
+    const memberships = Array.isArray(user?.memberships) ? user.memberships : [];
+    const membership = memberships.find((item: any) =>
+      String(item?.brand_key || "") === brandKey &&
+      String(item?.status || "") === "active",
+    );
+    if (!membership) continue;
+
+    const permissions = Array.isArray(membership.permissions) ? membership.permissions : [];
+    if (!permissions.includes("corporate.read") && !permissions.includes("corporate.plan")) continue;
+
+    const email = String(user?.email || "").trim().toLowerCase();
+    if (!emailPattern.test(email)) continue;
+    byEmail.set(email, {
+      email,
+      displayName: String(user?.display_name || "").trim() || ownerDisplayName(email),
+      role: configuredOwners.includes(email) ? "OWNER" : "MEMBER",
+    });
   }
 
   const normalizedActor = String(actorEmail || "").trim().toLowerCase();
@@ -131,7 +132,7 @@ async function loadAssignableCorporateOwners(supabase: any, brandId: string, act
   return {
     users,
     defaultOwnerEmail,
-    degraded: Boolean(membershipsResult.error || directoryResult.error),
+    degraded: Boolean(snapshotError),
   };
 }
 
@@ -157,7 +158,7 @@ function api1881FailureMessage(cause: unknown) {
     : "1881-oppslaget feilet.";
 }
 
-async function loadAccount(supabase: any, prospectId: string, brandId: string, actorEmail: string) {
+async function loadAccount(supabase: any, prospectId: string, brandKey: string, actorEmail: string) {
   const [
     prospectResult,
     strategyResult,
@@ -192,7 +193,7 @@ async function loadAccount(supabase: any, prospectId: string, brandId: string, a
   if (error) return { error };
   if (!prospectResult.data) return { notFound: true };
 
-  const assignmentOptions = await loadAssignableCorporateOwners(supabase, brandId, actorEmail);
+  const assignmentOptions = await loadAssignableCorporateOwners(supabase, brandKey, actorEmail);
 
   return {
     data: {
@@ -240,7 +241,7 @@ export async function GET(
   const access = await requireBrandWorkspace(request, params.brandKey, "corporate.read");
   if (!access.value) return access.response;
 
-  const account = await loadAccount(access.value.supabase, params.prospectId, access.value.brandId, access.value.verifiedEmail);
+  const account = await loadAccount(access.value.supabase, params.prospectId, params.brandKey, access.value.verifiedEmail);
   if ("error" in account) return fail(503, "CORPORATE_ACCOUNT_UNAVAILABLE");
   if ("notFound" in account) return fail(404, "ACCOUNT_NOT_FOUND");
 
@@ -400,7 +401,7 @@ export async function POST(
 
     const assignable = await loadAssignableCorporateOwners(
       access.value.supabase,
-      access.value.brandId,
+      params.brandKey,
       actorEmail,
     );
     const allowedOwnerEmails = new Set(assignable.users.map(item => item.email));
