@@ -215,7 +215,7 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     || /\b(bo der det ikke|not live in)[^.!?]{0,70}\b(golf|air\s?bnb|korttids|short[- ]term)\b/i.test(text);
   if (changed || explicitBuyerCriteria) return result("update_preferences", explicitBuyerCriteria ? 0.95 : 0.91, "refresh_buyer_profile", [explicitBuyerCriteria ? "Customer states explicit property or neighbourhood criteria." : "Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
-  const later = /\b(later|next year|in a few months|after summer|after christmas|in \d{1,2} (?:years?|months?|weeks?)|a few years|put (?:this|me|us) on hold|senere|seinare|kanskje senere|kanskje det er aktuelt senere|kanskje det er aktuelt seinare|neste år|om noen måneder|om \d{1,2} (?:år|mnd|måneder|uker)|om noen år|etter sommeren|etter jul|på vent)\b/i.test(text);
+  const later = /\b(later|next year|in a few months|after summer|after christmas|in \d{1,2} (?:years?|months?|weeks?)|a few years|put (?:this|me|us) on hold|senere|seinare|kanskje senere|kanskje det er aktuelt senere|kanskje det er aktuelt seinare|neste år|om noen måneder|om \d{1,2} (?:år|mnd|måneder|uker)|om noen år|etter sommeren|etter jul|på vent|litt frem i tid|litt fram i tid|kjøpet ligger[^.!?]{0,30}frem i tid|kjøpet ligger[^.!?]{0,30}fram i tid)\b/i.test(text);
   if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], {
     shouldPauseNurture: true,
     requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
