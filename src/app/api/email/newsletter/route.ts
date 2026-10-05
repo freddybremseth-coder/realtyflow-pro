@@ -49,16 +49,16 @@ export async function POST(req: NextRequest) {
     if (recipients === "pipeline_phase" && pipeline_phase) {
       query = query.eq("pipeline_status", pipeline_phase);
     }
-    if (recipients === "individual") {
-      const requested = Array.from(new Set(
-        (Array.isArray(individual_emails) ? individual_emails : [])
-          .map((value: unknown) => String(value || "").trim().toLowerCase())
-          .filter((value: string) => value.includes("@")),
-      )).slice(0, 500);
-      if (requested.length === 0) {
-        return NextResponse.json({ error: "Ingen gyldige individuelle mottakere valgt" }, { status: 400 });
-      }
-      query = query.in("email", requested);
+    const requestedIndividuals = recipients === "individual"
+      ? new Set(
+          (Array.isArray(individual_emails) ? individual_emails : [])
+            .map((value: unknown) => String(value || "").trim().toLowerCase())
+            .filter((value: string) => value.includes("@"))
+            .slice(0, 500),
+        )
+      : null;
+    if (recipients === "individual" && requestedIndividuals?.size === 0) {
+      return NextResponse.json({ error: "Ingen gyldige individuelle mottakere valgt" }, { status: 400 });
     }
     if (recipients === "category" && category) {
       // Reserved for future category support. Brand and suppression boundaries
@@ -73,7 +73,8 @@ export async function POST(req: NextRequest) {
     const emailAddresses = Array.from(new Set(
       (contacts || [])
         .map((contact) => String(contact.email || "").trim().toLowerCase())
-        .filter((email) => email.includes("@")),
+        .filter((email) => email.includes("@"))
+        .filter((email) => !requestedIndividuals || requestedIndividuals.has(email)),
     ));
 
     if (emailAddresses.length === 0) {
