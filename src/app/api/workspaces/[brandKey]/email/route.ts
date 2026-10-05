@@ -272,6 +272,7 @@ export async function POST(
       is_read: true,
       received_at: sentAt,
       crm_contact_id: targetType === "lead" && uuid.test(targetId) ? targetId : null,
+      corporate_prospect_id: targetType === "corporate" && uuid.test(targetId) ? targetId : null,
     });
     if (logError) console.warn("[Workspace Email] sent message log failed", logError.message);
 
