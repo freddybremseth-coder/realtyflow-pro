@@ -84,18 +84,23 @@ interface Contact {
   email: string;
   pipeline_status: string;
   brand_id: string;
+  brand?: string;
   phone?: string;
   property_interest?: string;
+  do_not_contact?: boolean;
+  email_suppressed?: boolean;
 }
 
 interface Property {
   id: string;
+  ref?: string | null;
   title: string;
   location: string;
   price: number;
   bedrooms?: number;
   bathrooms?: number;
   area_m2?: number;
+  primary_image?: string;
   image_url?: string;
   description?: string;
   property_type?: string;
@@ -159,9 +164,8 @@ export default function ContentStudioPage() {
   const [nlBrand, setNlBrand] = useState(BRANDS[0].id);
   const [nlSubject, setNlSubject] = useState("");
   const [nlBodyHtml, setNlBodyHtml] = useState("");
-  const [nlRecipientMode, setNlRecipientMode] = useState<"all" | "pipeline_phase" | "brand" | "individual">("all");
+  const [nlRecipientMode, setNlRecipientMode] = useState<"all" | "pipeline_phase" | "individual">("all");
   const [nlPipelinePhase, setNlPipelinePhase] = useState("NEW");
-  const [nlBrandFilter, setNlBrandFilter] = useState("");
   const [nlIndividualEmails, setNlIndividualEmails] = useState<string[]>([]);
   const [nlContacts, setNlContacts] = useState<Contact[]>([]);
   const [nlContactSearch, setNlContactSearch] = useState("");
@@ -183,6 +187,11 @@ export default function ContentStudioPage() {
 
   const currentBrand = BRANDS.find((b) => b.id === selectedBrand) ?? BRANDS[0];
   const nlCurrentBrand = BRANDS.find((b) => b.id === nlBrand) ?? BRANDS[0];
+
+  useEffect(() => {
+    // Individual selections never carry across brands.
+    setNlIndividualEmails([]);
+  }, [nlBrand]);
 
   useEffect(() => {
     try {
@@ -420,20 +429,27 @@ export default function ContentStudioPage() {
     }
   }, [activeTab, fetchNewsletterData]);
 
+  const newsletterEligibleContacts = nlContacts.filter((contact) => {
+    const contactBrand = contact.brand_id || contact.brand || "";
+    return contactBrand === nlBrand
+      && Boolean(contact.email && contact.email.includes("@"))
+      && !contact.do_not_contact
+      && !contact.email_suppressed;
+  });
+
   const getRecipientCount = () => {
-    let contacts = nlContacts;
-    if (nlRecipientMode === "individual") return nlIndividualEmails.length;
+    let contacts = newsletterEligibleContacts;
+    if (nlRecipientMode === "individual") {
+      const selected = new Set(nlIndividualEmails.map((email) => email.trim().toLowerCase()));
+      return contacts.filter((contact) => selected.has(contact.email.trim().toLowerCase())).length;
+    }
     if (nlRecipientMode === "pipeline_phase") {
-      contacts = contacts.filter((c) => c.pipeline_status === nlPipelinePhase);
+      contacts = contacts.filter((contact) => contact.pipeline_status === nlPipelinePhase);
     }
-    if (nlRecipientMode === "brand" && nlBrandFilter) {
-      contacts = contacts.filter((c) => c.brand_id === nlBrandFilter);
-    }
-    return contacts.filter((c) => c.email && c.email.includes("@")).length;
+    return contacts.length;
   };
 
-  const filteredContacts = nlContacts
-    .filter((c) => c.email && c.email.includes("@"))
+  const filteredContacts = newsletterEligibleContacts
     .filter((c) => {
       if (!nlContactSearch) return true;
       const q = nlContactSearch.toLowerCase();
@@ -444,6 +460,7 @@ export default function ContentStudioPage() {
     if (!nlPropertySearch) return true;
     const q = nlPropertySearch.toLowerCase();
     return (
+      p.ref?.toLowerCase().includes(q) ||
       p.title?.toLowerCase().includes(q) ||
       p.location?.toLowerCase().includes(q) ||
       p.property_type?.toLowerCase().includes(q)
@@ -492,10 +509,12 @@ export default function ContentStudioPage() {
 
     for (const prop of nlSelectedProperties) {
       html += `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:16px;background:#f8fafc">`;
-      if (prop.image_url) {
-        html += `<img src="${prop.image_url}" alt="${prop.title}" style="width:100%;max-height:240px;object-fit:cover;border-radius:8px;margin-bottom:12px" />`;
+      const propertyImage = prop.primary_image || prop.image_url;
+      if (propertyImage) {
+        html += `<img src="${propertyImage}" alt="${prop.title}" style="width:100%;max-height:240px;object-fit:cover;border-radius:8px;margin-bottom:12px" />`;
       }
       html += `<h3 style="color:#1e293b;font-size:18px;margin:0 0 8px">${prop.title}</h3>`;
+      if (prop.ref) html += `<p style="color:#94a3b8;font-size:12px;margin:0 0 6px">Ref. ${prop.ref}</p>`;
       html += `<p style="color:#64748b;font-size:14px;margin:0 0 8px"><strong>📍 ${prop.location}</strong></p>`;
       html += `<p style="color:#0ea5e9;font-size:20px;font-weight:bold;margin:0 0 8px">€${prop.price?.toLocaleString("no-NO")}</p>`;
       const details = [];
@@ -626,7 +645,6 @@ export default function ContentStudioPage() {
       };
 
       if (nlRecipientMode === "pipeline_phase") payload.pipeline_phase = nlPipelinePhase;
-      if (nlRecipientMode === "brand") payload.brand_filter = nlBrandFilter;
       if (nlRecipientMode === "individual") payload.individual_emails = nlIndividualEmails;
 
       const res = await fetch("/api/email/newsletter", {
@@ -1269,9 +1287,8 @@ export default function ContentStudioPage() {
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: "all" as const, label: "Alle kontakter", icon: Users },
+                    { id: "all" as const, label: "Alle i valgt merkevare", icon: Users },
                     { id: "pipeline_phase" as const, label: "Pipeline-fase", icon: Filter },
-                    { id: "brand" as const, label: "Per brand", icon: Palette },
                     { id: "individual" as const, label: "Velg enkelt", icon: Search },
                   ].map((mode) => (
                     <button
@@ -1297,19 +1314,6 @@ export default function ContentStudioPage() {
                   >
                     {LEAD_STATUSES.map((s) => (
                       <option key={s} value={s}>{PIPELINE_LABELS[s] || s}</option>
-                    ))}
-                  </select>
-                )}
-
-                {nlRecipientMode === "brand" && (
-                  <select
-                    value={nlBrandFilter}
-                    onChange={(e) => setNlBrandFilter(e.target.value)}
-                    className="w-full h-9 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                  >
-                    <option value="">Alle brands</option>
-                    {BRANDS.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
                 )}
