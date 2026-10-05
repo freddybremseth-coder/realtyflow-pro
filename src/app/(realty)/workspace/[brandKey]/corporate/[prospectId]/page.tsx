@@ -143,6 +143,13 @@ type AccountData = {
     businessCaseCompleteness: number;
     stageGuidance: { current: string; exitCriteria: string[]; next: string | null };
   };
+  stageGate: {
+    currentStage: string;
+    nextStage: string | null;
+    readyToAdvance: boolean;
+    completionPercent: number;
+    criteria: Array<{ id: string; label: string; met: boolean; evidence?: string | null }>;
+  };
   coachRuns: Array<{
     id: string;
     mode: string;
@@ -152,6 +159,9 @@ type AccountData = {
     provider?: string | null;
     model?: string | null;
     created_at: string;
+    applied_at?: string | null;
+    applied_by_email?: string | null;
+    applied_fields?: string[];
   }>;
   enrichmentCapabilities: {
     brreg: { available: boolean };
@@ -224,8 +234,12 @@ export default function CorporateAccountWorkspacePage() {
     championHypothesis: "",
     problemHypothesis: "",
     problemAcceptanceGoal: "",
+    problemAcceptanceStatus: "UNKNOWN",
+    problemAcceptanceEvidence: "",
     solutionHypothesis: "",
     solutionAcceptanceGoal: "",
+    solutionAcceptanceStatus: "UNKNOWN",
+    solutionAcceptanceEvidence: "",
     coreMessage: "",
     avoidMessage: "",
     nextBestAction: "",
@@ -236,6 +250,7 @@ export default function CorporateAccountWorkspacePage() {
     estimatedValueEur: "",
     targetDate: "",
     nextReviewAt: "",
+    stageOverrideReason: "",
     notes: "",
     linkedinMotion: "MANUAL_APPROVAL",
   });
@@ -244,6 +259,7 @@ export default function CorporateAccountWorkspacePage() {
   const [coachSource, setCoachSource] = useState("");
   const [coachContext, setCoachContext] = useState("");
   const [coachOutput, setCoachOutput] = useState<SalesCoachOutput | null>(null);
+  const [coachRunId, setCoachRunId] = useState("");
 
   const [contactForm, setContactForm] = useState({
     name: "",
@@ -287,6 +303,7 @@ export default function CorporateAccountWorkspacePage() {
       const saved = body.strategy || {};
       const latestCoach = Array.isArray(body.coachRuns) && body.coachRuns[0]?.output ? body.coachRuns[0].output : null;
       setCoachOutput(latestCoach);
+      setCoachRunId(Array.isArray(body.coachRuns) && body.coachRuns[0]?.id ? String(body.coachRuns[0].id) : "");
       const defaultOwnerEmail = String(body.assignmentOptions?.defaultOwnerEmail || "");
       setStrategy({
         stage: String(saved.stage || "TARGET"),
@@ -303,8 +320,12 @@ export default function CorporateAccountWorkspacePage() {
         championHypothesis: String(saved.champion_hypothesis || ""),
         problemHypothesis: String(saved.problem_hypothesis || ""),
         problemAcceptanceGoal: String(saved.problem_acceptance_goal || ""),
+        problemAcceptanceStatus: String(saved.problem_acceptance_status || "UNKNOWN"),
+        problemAcceptanceEvidence: String(saved.problem_acceptance_evidence || ""),
         solutionHypothesis: String(saved.solution_hypothesis || ""),
         solutionAcceptanceGoal: String(saved.solution_acceptance_goal || ""),
+        solutionAcceptanceStatus: String(saved.solution_acceptance_status || "UNKNOWN"),
+        solutionAcceptanceEvidence: String(saved.solution_acceptance_evidence || ""),
         coreMessage: String(saved.core_message || ""),
         avoidMessage: String(saved.avoid_message || ""),
         nextBestAction: String(saved.next_best_action || ""),
@@ -315,6 +336,7 @@ export default function CorporateAccountWorkspacePage() {
         estimatedValueEur: saved.estimated_value_eur == null ? "" : String(saved.estimated_value_eur),
         targetDate: String(saved.target_date || ""),
         nextReviewAt: localDateTime(saved.next_review_at),
+        stageOverrideReason: String(saved.stage_override_reason || ""),
         notes: String(saved.notes || ""),
         linkedinMotion: String(saved.linkedin_motion || "MANUAL_APPROVAL"),
       });
@@ -437,10 +459,39 @@ export default function CorporateAccountWorkspacePage() {
         sellerContext: coachContext,
       });
       setCoachOutput(result.output as SalesCoachOutput);
+      setCoachRunId(String(result.coachRun?.id || ""));
       setNotice("Nexus Sales Coach har analysert kontoen. Ingen melding er sendt.");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sales Coach feilet.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function applyCoachToStrategy() {
+    if (!coachRunId || !coachOutput) {
+      setError("Kjør Sales Coach først.");
+      return;
+    }
+    setBusy("coach-apply"); setError(""); setNotice("");
+    try {
+      const result = await post({
+        action: "apply_coach_strategy",
+        coachRunId,
+        fields: [
+          "problemHypothesis",
+          "problemAcceptanceGoal",
+          "solutionHypothesis",
+          "solutionAcceptanceGoal",
+          "nextBestAction",
+          "nextActionReason",
+        ],
+      });
+      setNotice(`Coach-funn er godkjent inn i kontostrategien (${result.appliedFields?.length || 0} felt). Ingen ekstern handling er utført.`);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kunne ikke bruke coach-funn i strategien.");
     } finally {
       setBusy("");
     }
@@ -683,6 +734,30 @@ export default function CorporateAccountWorkspacePage() {
             <textarea value={strategy.solutionAcceptanceGoal} onChange={e => setStrategy(s => ({ ...s, solutionAcceptanceGoal: e.target.value }))} rows={4} placeholder="Løsningsaksept: Hva må kunden validere for å gå videre?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-amber-900/50 bg-amber-950/10 p-3">
+              <label className="text-xs font-semibold text-amber-200">Faktisk problemaksept
+                <select value={strategy.problemAcceptanceStatus} onChange={e => setStrategy(s => ({ ...s, problemAcceptanceStatus: e.target.value }))} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                  <option value="UNKNOWN">Ikke bekreftet</option>
+                  <option value="PARTIAL">Delvis bekreftet</option>
+                  <option value="CONFIRMED">Bekreftet av kunden</option>
+                  <option value="REJECTED">Avvist / korrigert</option>
+                </select>
+              </label>
+              <textarea value={strategy.problemAcceptanceEvidence} onChange={e => setStrategy(s => ({ ...s, problemAcceptanceEvidence: e.target.value }))} rows={3} placeholder="Evidens: hva sa kunden, i hvilket møte/e-post, og hva ble faktisk bekreftet?" className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            </div>
+            <div className="rounded-lg border border-emerald-900/50 bg-emerald-950/10 p-3">
+              <label className="text-xs font-semibold text-emerald-200">Faktisk løsningsaksept
+                <select value={strategy.solutionAcceptanceStatus} onChange={e => setStrategy(s => ({ ...s, solutionAcceptanceStatus: e.target.value }))} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                  <option value="UNKNOWN">Ikke bekreftet</option>
+                  <option value="PARTIAL">Delvis bekreftet</option>
+                  <option value="CONFIRMED">Bekreftet av kunden</option>
+                  <option value="REJECTED">Avvist / må endres</option>
+                </select>
+              </label>
+              <textarea value={strategy.solutionAcceptanceEvidence} onChange={e => setStrategy(s => ({ ...s, solutionAcceptanceEvidence: e.target.value }))} rows={3} placeholder="Evidens: hva ved løsningen bekreftet kunden, og hvilke forbehold står igjen?" className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
             <textarea value={strategy.coreMessage} onChange={e => setStrategy(s => ({ ...s, coreMessage: e.target.value }))} rows={3} placeholder="Kjernebudskap: Hva skal vi si?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
             <textarea value={strategy.avoidMessage} onChange={e => setStrategy(s => ({ ...s, avoidMessage: e.target.value }))} rows={3} placeholder="Ikke start med: f.eks. investering, prisvekst eller boligobjekt" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
           </div>
@@ -743,11 +818,22 @@ export default function CorporateAccountWorkspacePage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Fasekriterier · {data.advisor.stageGuidance.current}</p>
-          <div className="mt-3 space-y-2">
-            {data.advisor.stageGuidance.exitCriteria.map(item => <div key={item} className="flex items-start gap-2 text-xs text-slate-300"><CheckCircle2 size={14} className="mt-0.5 text-slate-600"/><span>{item}</span></div>)}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Fasevakt · {data.stageGate.currentStage}</p>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${data.stageGate.readyToAdvance ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"}`}>
+              {data.stageGate.completionPercent}% · {data.stageGate.readyToAdvance ? "klar" : "ikke klar"}
+            </span>
           </div>
-          {data.advisor.stageGuidance.next && <p className="mt-3 text-[11px] text-slate-500">Neste fase når kriteriene er oppfylt: <strong className="text-slate-300">{data.advisor.stageGuidance.next}</strong></p>}
+          <div className="mt-3 space-y-2">
+            {data.stageGate.criteria.map(item => <div key={item.id} className="flex items-start gap-2 text-xs text-slate-300">
+              <span className={item.met ? "text-emerald-300" : "text-slate-600"}>{item.met ? "✓" : "○"}</span>
+              <div><span>{item.label}</span>{item.evidence && <p className="mt-0.5 text-[11px] text-slate-500">{item.evidence}</p>}</div>
+            </div>)}
+          </div>
+          {data.stageGate.nextStage && <p className="mt-3 text-[11px] text-slate-500">Neste fase: <strong className="text-slate-300">{data.stageGate.nextStage}</strong>. Fasevakt kontrolleres når strategien lagres.</p>}
+          {!data.stageGate.readyToAdvance && <label className="mt-3 block text-xs text-slate-500">Overstyr fasevakt
+            <textarea value={strategy.stageOverrideReason} onChange={e => setStrategy(s => ({ ...s, stageOverrideReason: e.target.value }))} rows={2} placeholder="Kun ved bevisst overstyring: skriv hvorfor kontoen skal videre før kriteriene er komplette." className="mt-1 w-full rounded-lg border border-amber-900/60 bg-slate-950 px-3 py-2 text-sm text-slate-200"/>
+          </label>}
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4">
           <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Ansvar & verdi</p>
@@ -819,6 +905,13 @@ export default function CorporateAccountWorkspacePage() {
               <p className="mt-3 text-sm font-semibold text-white">Neste beste handling</p>
               <p className="mt-1 text-sm text-cyan-200">{coachOutput.nextBestAction.action}</p>
               <p className="mt-1 text-xs text-slate-500">{coachOutput.nextBestAction.why} · {coachOutput.nextBestAction.channel}</p>
+              <div className="mt-4 border-t border-violet-900/50 pt-4">
+                <p className="text-xs font-semibold text-slate-300">Læringssløyfe</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500">Knappen under kopierer problemhypotese, akseptmål, løsningshypotese og neste handling til kontostrategien. Den markerer ikke problem eller løsning som faktisk akseptert av kunden.</p>
+                <button type="button" onClick={() => void applyCoachToStrategy()} disabled={!coachRunId || busy === "coach-apply"} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-violet-700 px-3 py-2 text-xs font-semibold text-violet-200 disabled:opacity-50">
+                  <CheckCircle2 size={14}/>{busy === "coach-apply" ? "Oppdaterer strategi…" : "Godkjenn og bruk i kontostrategi"}
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-3 lg:grid-cols-2">
