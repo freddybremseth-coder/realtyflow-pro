@@ -94,22 +94,26 @@ export async function GET(
     // reaches this PostgREST query; their brand scope is enforced in one RPC.
     query = query.or(`title.ilike.%${safeSearch}%,town.ilike.%${safeSearch}%,location.ilike.%${safeSearch}%,ref.ilike.%${safeSearch}%`);
   }
+  // Fetch one look-ahead row so hasMore reflects reality instead of assuming
+  // that a full 24-row page guarantees another page.
   const { data, error } = await query.order("created_at", { ascending: false })
-    .range((page - 1) * perPage, page * perPage - 1);
+    .range((page - 1) * perPage, page * perPage);
   if (error) return NextResponse.json({ ok: false, error: { code: "CATALOGUE_UNAVAILABLE" } }, {
     status: 503, headers: noStore,
   });
   // Owner fallback uses the same safe public projection. Owners may create
   // content from this owner context; staff receives exact per-brand marketing
   // eligibility from the membership-checked RPC above.
-  const properties = (data || []).map((row: unknown) => safeCatalogueRow({
+  const safeRows = (data || []).map((row: unknown) => safeCatalogueRow({
     ...(row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {}),
     marketable_by_brands: [],
     can_market_on_workspace_brand: true,
   })).filter(Boolean);
+  const hasMore = safeRows.length > perPage;
+  const properties = safeRows.slice(0, perPage);
   return NextResponse.json({
     ok: true, brand: brandKey, page, pageSize: perPage,
     scope: "shared_public_catalogue_owner", properties,
-    hasMore: properties.length === perPage,
+    hasMore,
   }, { headers: noStore });
 }

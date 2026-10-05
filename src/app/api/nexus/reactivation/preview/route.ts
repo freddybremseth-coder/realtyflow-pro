@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
   const [contactResult, revenueResult, nurtureResult, profileResult] = await Promise.all([
     supabase
       .from("contacts")
-      .select("id,name,email,brand_id,brand,pipeline_status,nurture_status,property_interest,created_at,last_contact,last_ai_followup")
+      .select("id,name,email,brand_id,brand,pipeline_status,nurture_status,property_interest,created_at,last_contact,last_inbound_reply_at,last_ai_followup,do_not_contact,email_suppressed")
       .eq("id", contactId)
       .maybeSingle(),
     supabase
@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
     lastAiFollowup: contact.last_ai_followup,
     latestRevenueEventAt,
     latestNurtureSentAt,
+    explicitlyOptedOut: Boolean(contact.do_not_contact || contact.email_suppressed),
   };
 
   const assessment = assessDormantLead(candidate, criteria);

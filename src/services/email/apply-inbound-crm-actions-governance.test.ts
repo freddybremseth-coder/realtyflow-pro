@@ -73,6 +73,19 @@ test("terminal fallback still requires review when governance does not allow AUT
   assert.match(source, /Bekreft terminal kundeutfall/);
 });
 
+test("explicit later replies move the customer to ON_HOLD without creating a sales chase", () => {
+  assert.match(source, /classification\.intent === "follow_up_later"[\s\S]*governance\.canApplyAutomatically/);
+  assert.match(source, /update\.pipeline_status = "ON_HOLD"/);
+  assert.match(source, /update\.nurture_status = "paused"/);
+  assert.match(source, /update\.waiting_on = "customer"/);
+  assert.match(source, /update\.waiting_until = followUpAt/);
+  assert.match(source, /nextPipelineStatus = "ON_HOLD"/);
+  assert.match(source, /email-crm-sync:follow-up-later/);
+  assert.match(source, /kunden har bedt om senere oppfølging/);
+  assert.match(source, /set-hold-date/);
+});
+
+
 test("work items use source-based idempotency lookup", () => {
   assert.match(source, /\.eq\("source_type", "crm"\)/);
   assert.match(source, /\.eq\("source_id", input\.sourceId\)/);

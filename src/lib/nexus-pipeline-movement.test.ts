@@ -16,9 +16,12 @@ describe("assessPipelineMovement", () => {
     expect(result?.targetStage).toBe("MATCHING");
   });
 
-  it("flags qualified buyers without direction", () => {
+  it("does not advance qualified buyers without documented direction", () => {
     const result = assessPipelineMovement({ id:"3", email:"c@example.com", pipeline_status:"QUALIFIED", last_contact:"2026-09-01T10:00:00.000Z" }, now);
     expect(result?.cause).toBe("missing_buyer_direction");
+    expect(result?.targetStage).toBeNull();
+    expect(result?.priority).toBe("MEDIUM");
+    expect(result?.action).toContain("fortsatt er aktuelt");
   });
 
   it("surfaces unknown pipeline states as data quality", () => {

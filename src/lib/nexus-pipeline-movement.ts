@@ -126,7 +126,7 @@ export function assessPipelineMovement(contact: PipelineMovementContact, now = n
     const hasDirection = Boolean(String(contact.property_interest || "").trim() || String(contact.preferred_location || "").trim());
     return hasDirection
       ? { score:78, cause:"ready_for_matching", causeLabel:"Klar for matching", action:"Lag personlig shortlist med 2–3 boliger", reason:"Kvalifisert kunde har registrert bolig-/områdeinteresse", targetStage:"MATCHING", priority:"HIGH", needsAction:true, reactivationSegment:null, reactivationScore:null, href:customerHref }
-      : { score:76, cause:"missing_buyer_direction", causeLabel:"Mangler kjøpsretning", action:"Avklar område, budsjett og minimumskrav", reason:"Kvalifisert kunde mangler tydelig boligretning", targetStage:"MATCHING", priority:"HIGH", needsAction:true, reactivationSegment:null, reactivationScore:null, href:customerHref };
+      : { score:64, cause:"missing_buyer_direction", causeLabel:"Kvalifisering må avklares", action:"Avklar om kjøp fortsatt er aktuelt før kriterier etterspørres", reason:"Status er QUALIFIED, men systemet mangler dokumentert aktiv kjøpsretning. Ikke flytt kunden til matching uten ny bekreftelse.", targetStage:null, priority:"MEDIUM", needsAction:true, reactivationSegment:null, reactivationScore:null, href:customerHref };
   }
 
   if (stage === "MATCHING") return { score:staleDays != null && staleDays >= 2 ? 88 : 72, cause:"matching_stalled", causeLabel:"Matching må videre", action:"Oppdater shortlist og be om valg", reason:staleDays != null ? `${staleDays} dager siden siste dokumenterte aktivitet` : "Kunden er i boligmatching", targetStage:"VIEWING", priority:"HIGH", needsAction:true, reactivationSegment:null, reactivationScore:null, href:customerHref };
