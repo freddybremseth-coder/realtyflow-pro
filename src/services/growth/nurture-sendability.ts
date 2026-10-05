@@ -6,6 +6,10 @@ export type NurtureSendabilityReason =
   | "DUPLICATE_EMAIL"
   | "DO_NOT_CONTACT"
   | "EMAIL_SUPPRESSED"
+  | "NURTURE_PAUSED"
+  | "NURTURE_STOPPED"
+  | "ON_HOLD"
+  | "WAITING_UNTIL"
   | "TERMINAL_PIPELINE"
   | "UNRESOLVED_INBOUND_REPLY";
 
@@ -15,8 +19,11 @@ export type NurtureSendabilityInput = {
   doNotContact?: boolean | null;
   emailSuppressed?: boolean | null;
   pipelineStatus?: string | null;
+  nurtureStatus?: string | null;
+  waitingUntil?: string | null;
   lastInboundReplyAt?: string | null;
   lastRealSendAt?: string | null;
+  now?: Date;
 };
 
 export type NurtureSendabilityDecision = {
@@ -64,9 +71,26 @@ export function evaluateNurtureSendability(
     return { sendable: false, normalizedEmail, reason: "EMAIL_SUPPRESSED", requiresReview: false };
   }
 
+  const nurtureStatus = String(input.nurtureStatus || "").trim().toLowerCase();
+  if (nurtureStatus === "stopped") {
+    return { sendable: false, normalizedEmail, reason: "NURTURE_STOPPED", requiresReview: false };
+  }
+  if (nurtureStatus === "paused") {
+    return { sendable: false, normalizedEmail, reason: "NURTURE_PAUSED", requiresReview: false };
+  }
+
   const pipeline = String(input.pipelineStatus || "").trim().toUpperCase();
+  if (pipeline === "ON_HOLD") {
+    return { sendable: false, normalizedEmail, reason: "ON_HOLD", requiresReview: false };
+  }
   if (TERMINAL_PIPELINE.has(pipeline)) {
     return { sendable: false, normalizedEmail, reason: "TERMINAL_PIPELINE", requiresReview: false };
+  }
+
+  const waitingUntil = validTimestamp(input.waitingUntil);
+  const now = input.now?.getTime() ?? Date.now();
+  if (waitingUntil !== null && waitingUntil > now) {
+    return { sendable: false, normalizedEmail, reason: "WAITING_UNTIL", requiresReview: false };
   }
 
   if ((input.normalizedEmailCount ?? 1) > 1) {
