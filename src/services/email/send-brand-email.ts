@@ -23,14 +23,19 @@ export async function sendBrandEmail(
     allowSuppressed?: boolean;
   }
 ): Promise<{ success: boolean; skipped?: boolean; messageId?: string; error?: string }> {
-  if (!params.allowSuppressed) {
-    const suppression = await checkCrmEmailSuppression(supabase, params.to);
-    if (suppression.error) {
-      return { success: false, skipped: true, error: `CRM suppression check failed: ${suppression.error}` };
-    }
-    if (suppression.blocked) {
-      return { success: false, skipped: true, error: `Recipient suppressed in CRM${suppression.blockedEmails.length ? `: ${suppression.blockedEmails.join(", ")}` : ""}` };
-    }
+  const suppression = await checkCrmEmailSuppression(supabase, params.to);
+  if (suppression.error) {
+    return { success: false, skipped: true, error: `CRM suppression check failed: ${suppression.error}` };
+  }
+  if (suppression.manualTakeoverEmails.length > 0) {
+    return {
+      success: false,
+      skipped: true,
+      error: `Recipient is under manual advisor takeover in CRM: ${suppression.manualTakeoverEmails.join(", ")}`,
+    };
+  }
+  if (!params.allowSuppressed && suppression.blocked) {
+    return { success: false, skipped: true, error: `Recipient suppressed in CRM${suppression.blockedEmails.length ? `: ${suppression.blockedEmails.join(", ")}` : ""}` };
   }
 
   let configQuery = supabase
