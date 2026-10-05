@@ -51,6 +51,7 @@ set search_path = public, pg_temp
 as $$
 declare
   v_previous_status text;
+  v_signal_type text;
   v_result jsonb;
 begin
   if p_review_status not in ('PENDING','CONFIRMED','IGNORED','OUTDATED') then
@@ -60,8 +61,8 @@ begin
     raise exception 'REVIEWER_EMAIL_REQUIRED';
   end if;
 
-  select review_status
-    into v_previous_status
+  select review_status, signal_type
+    into v_previous_status, v_signal_type
   from public.corporate_intelligence_findings
   where id = p_finding_id
     and prospect_id = p_prospect_id
@@ -88,6 +89,18 @@ begin
     'reviewed_at', reviewed_at,
     'reviewed_by_email', reviewed_by_email
   ) into v_result;
+
+  update public.corporate_prospects
+  set
+    evidence = jsonb_set(
+      coalesce(evidence, '{}'::jsonb),
+      '{corporate_intelligence_review_overrides}',
+      coalesce(evidence->'corporate_intelligence_review_overrides', '{}'::jsonb)
+        || jsonb_build_object(v_signal_type, p_review_status),
+      true
+    ),
+    updated_at = now()
+  where id = p_prospect_id;
 
   insert into public.corporate_intelligence_reviews (
     finding_id,
