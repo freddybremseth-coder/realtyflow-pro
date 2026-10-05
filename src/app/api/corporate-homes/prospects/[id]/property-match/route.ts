@@ -43,6 +43,13 @@ function propertyWebsiteUrl(ref: unknown) {
   return value ? `https://www.zenecohomes.com/eiendommer/${encodeURIComponent(value)}` : null;
 }
 
+function propertyRealtyFlowUrl(id: unknown, ref: unknown) {
+  const propertyId = textValue(id);
+  if (propertyId) return `/inventory?propertyId=${encodeURIComponent(propertyId)}`;
+  const propertyRef = textValue(ref);
+  return propertyRef ? `/inventory?propertyRef=${encodeURIComponent(propertyRef)}` : null;
+}
+
 async function loadProspectAndMatches(supabase: ReturnType<typeof getSupabase>, id: string) {
   if (!supabase) throw new Error("Supabase not configured");
 
@@ -99,6 +106,7 @@ async function loadProspectAndMatches(supabase: ReturnType<typeof getSupabase>, 
       garage: property.garage,
       primary_image: property.primary_image,
       website_url: propertyWebsiteUrl(property.ref || property.external_id),
+      realtyflow_url: propertyRealtyFlowUrl(property.id, property.ref || property.external_id),
       rank: index + 1,
       corporate_match_score: match.score,
       corporate_model: match.model,
@@ -171,6 +179,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const now = new Date().toISOString();
     const currentEvidence = objectValue(result.prospect.evidence);
     const persistedShortlist = result.properties.slice(0, 5).map((property) => ({
+      id: property.id,
       ref: property.ref,
       title: property.title,
       location: property.location,
@@ -179,6 +188,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       bathrooms: property.bathrooms,
       property_type: property.property_type,
       website_url: property.website_url,
+      realtyflow_url: property.realtyflow_url,
       corporate_match_score: property.corporate_match_score,
       corporate_use_classification: property.corporate_use_classification,
       corporate_match_reasons: property.corporate_match_reasons.slice(0, 5),
