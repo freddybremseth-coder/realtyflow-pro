@@ -89,3 +89,20 @@ test("Corporate enrichment surfaces 1881 values and free Brønnøysund roles wit
   assert.match(page, /Legg til/);
   assert.doesNotMatch(companyProfile, /birthDate:\s/);
 });
+
+
+test("Corporate ownership uses active system users and defaults to the primary RealtyFlow owner", () => {
+  assert.match(route, /getAdminEmails/);
+  assert.match(route, /brand_workspace_memberships/);
+  assert.match(route, /workspace_user_directory/);
+  assert.match(route, /corporate\.read/);
+  assert.match(route, /corporate\.plan/);
+  assert.match(route, /defaultOwnerEmail/);
+  assert.match(route, /INVALID_ACCOUNT_OWNER/);
+  assert.match(page, /Account owner/);
+  assert.match(page, /Strategisk ansvarlig/);
+  assert.match(page, /data\.assignmentOptions\.users\.map/);
+  assert.match(page, /Nye kontoer får RealtyFlow Owner som standard/);
+  assert.doesNotMatch(page, /placeholder="Account owner e-post"/);
+  assert.doesNotMatch(page, /placeholder="Strategisk ansvarlig e-post"/);
+});
