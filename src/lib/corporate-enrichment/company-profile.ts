@@ -12,6 +12,8 @@ type ProspectLike = {
   city?: string | null;
   employee_count?: number | null;
   website_url?: string | null;
+  source_url?: string | null;
+  evidence?: unknown;
 };
 
 export type CorporateProfileField = {
@@ -105,6 +107,18 @@ function brregAddress(entity: Record<string, any> | null) {
   return [...lines, postal].filter(Boolean).join(", ");
 }
 
+function storedBrregAddress(evidence: Record<string, any> | null) {
+  const address = asRecord(evidence?.business_address);
+  if (!address) return "";
+  const lines = array(address.adresse).map(text).filter(Boolean);
+  const postal = [text(address.postnummer), text(address.poststed)].filter(Boolean).join(" ");
+  return [...lines, postal].filter(Boolean).join(", ");
+}
+
+function evidenceIsBrreg(evidence: Record<string, any> | null) {
+  return text(evidence?.provider).toLowerCase().includes("brønnøysund");
+}
+
 function brregRoleRows(payload: Record<string, any> | null) {
   const result: CorporatePublicRole[] = [];
   const rolePayload = asRecord(payload?.roles) || payload;
@@ -196,6 +210,7 @@ export function buildCorporateEnrichmentProfile(
   const brregRow = newest(rows, "brreg");
   const apiPayload = asRecord(apiRow?.payload);
   const brregPayload = asRecord(brregRow?.payload);
+  const prospectEvidence = asRecord(prospect.evidence);
   const contact = api1881Contact(apiPayload);
   const entity = asRecord(brregPayload?.entity);
 
@@ -229,6 +244,12 @@ export function buildCorporateEnrichmentProfile(
   const brregWebsite = text(entity?.hjemmeside);
   if (brregEmail) emails.push({ value: brregEmail, label: "E-post", sources: ["Brønnøysund"], verified: false });
   if (brregWebsite) websites.push({ value: brregWebsite, label: "Hjemmeside", sources: ["Brønnøysund"], verified: false });
+
+  const storedCompanyContact = asRecord(prospectEvidence?.generic_company_contact);
+  const storedGenericEmail = text(storedCompanyContact?.generic_email);
+  if (storedGenericEmail) {
+    emails.push({ value: storedGenericEmail, label: "Generell e-post", sources: ["Bedriftens nettsted"], verified: false });
+  }
   if (text(prospect.website_url)) websites.push({ value: text(prospect.website_url), label: "RealtyFlow", sources: ["RealtyFlow"], verified: false });
 
   const addressCandidates: CorporateProfileField[] = [];
@@ -236,12 +257,19 @@ export function buildCorporateEnrichmentProfile(
   if (apiAddress) addressCandidates.push({ value: apiAddress, sources: ["1881"], verified: false });
   const brAddress = brregAddress(entity);
   if (brAddress) addressCandidates.push({ value: brAddress, sources: ["Brønnøysund"], verified: false });
+  const storedAddress = storedBrregAddress(prospectEvidence);
+  if (storedAddress && evidenceIsBrreg(prospectEvidence)) {
+    addressCandidates.push({ value: storedAddress, sources: ["Brønnøysund"], verified: false });
+  }
   const mergedAddresses = mergeFields(addressCandidates, normalized);
 
+  const storedEmployeeSource = evidenceIsBrreg(prospectEvidence) && prospectEvidence?.has_registered_employee_count === true
+    ? "Brønnøysund"
+    : "RealtyFlow";
   const employeeCandidates = [
     contact?.legalInformation?.employees != null ? { value: Number(contact.legalInformation.employees), source: "1881" } : null,
     entity?.antallAnsatte != null ? { value: Number(entity.antallAnsatte), source: "Brønnøysund" } : null,
-    prospect.employee_count != null ? { value: Number(prospect.employee_count), source: "RealtyFlow" } : null,
+    prospect.employee_count != null ? { value: Number(prospect.employee_count), source: storedEmployeeSource } : null,
   ].filter(Boolean) as Array<{ value: number; source: string }>;
   const employeeValue = employeeCandidates.find(item => Number.isFinite(item.value))?.value ?? null;
   const employeeSources = employeeValue == null
