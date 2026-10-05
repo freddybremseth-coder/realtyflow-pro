@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
   const currentContactPromise = pageContext.contactId
     ? supabase
         .from("contacts")
-        .select("id,name,email,phone,brand_id,brand,pipeline_status,pipeline_value,nurture_status,property_interest,preferred_location,last_contact,last_inbound_reply_at,next_followup,waiting_on,waiting_reason,waiting_until,updated_at,created_at,email_suppressed,do_not_contact,lost_reason,notes,interactions")
+        .select("id,name,email,phone,brand_id,brand,pipeline_status,pipeline_value,nurture_status,property_interest,preferred_location,last_contact,last_inbound_reply_at,last_reply_classification,next_followup,waiting_on,waiting_reason,waiting_until,updated_at,created_at,email_suppressed,do_not_contact,lost_reason,notes,interactions")
         .eq("id", pageContext.contactId)
         .maybeSingle()
     : Promise.resolve({ data: null, error: null });
