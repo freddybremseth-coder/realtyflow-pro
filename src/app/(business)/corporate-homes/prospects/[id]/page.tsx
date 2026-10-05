@@ -623,6 +623,12 @@ export default function CorporateProspectBriefPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/workspace/zeneco/corporate/${encodeURIComponent(id)}`}
+              className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-bold text-violet-900"
+            >
+              <Building2 size={16} /> Åpne konto
+            </Link>
             {prospect?.converted_contact_id ? (
               <Link href={`/customers?contactId=${encodeURIComponent(prospect.converted_contact_id)}&tab=all`} className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-900">
                 <CheckCircle2 size={16} /> Åpne CRM

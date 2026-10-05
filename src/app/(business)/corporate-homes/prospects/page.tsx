@@ -644,6 +644,7 @@ export default function CorporateProspectsPage() {
                 <th className="px-3 py-3">Beslutningsroller</th>
                 <th className="px-3 py-3">Fase</th>
                 <th className="px-3 py-3">Datagap</th>
+                <th className="px-3 py-3">Konto</th>
                 <th className="px-3 py-3">CRM</th>
               </tr>
             </thead>
@@ -694,6 +695,14 @@ export default function CorporateProspectsPage() {
                     {(prospect.evidence_gaps || []).slice(0, 3).join(" · ") || "Ingen store gap"}
                   </td>
                   <td className="px-3 py-4">
+                    <Link
+                      href={`/workspace/zeneco/corporate/${encodeURIComponent(prospect.id)}`}
+                      className="inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2.5 py-2 text-xs font-bold text-violet-800 hover:underline"
+                    >
+                      Åpne konto
+                    </Link>
+                  </td>
+                  <td className="px-3 py-4">
                     {prospect.converted_contact_id ? (
                       <Link href={`/customers?contactId=${encodeURIComponent(prospect.converted_contact_id)}&tab=all`} className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-2 text-xs font-bold text-emerald-800 hover:underline">
                         <CheckCircle2 size={14} /> I CRM
@@ -708,7 +717,7 @@ export default function CorporateProspectsPage() {
                   </td>
                 </tr>
               ))}
-              {!loading && prospects.length === 0 && <tr><td colSpan={9} className="px-3 py-12 text-center text-slate-500">Ingen prospekter matcher filteret.</td></tr>}
+              {!loading && prospects.length === 0 && <tr><td colSpan={10} className="px-3 py-12 text-center text-slate-500">Ingen prospekter matcher filteret.</td></tr>}
             </tbody>
           </table>
         </div>
