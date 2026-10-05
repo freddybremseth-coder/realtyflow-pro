@@ -52,6 +52,14 @@ function cleanJson(textValue: string) {
   return (fenced || textValue).trim();
 }
 
+function normalizeNorwegianEmailGreeting(value: unknown) {
+  const body = text(value);
+  if (!body) return "";
+  return body
+    .replace(/^Hei\s+der\s*[,!]?/i, "Hei,")
+    .replace(/^Hei\s+du\s*[,!]?/i, "Hei,");
+}
+
 function normalizeOutput(value: any, fallback: CorporateSalesCoachOutput): CorporateSalesCoachOutput {
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
   const phase = ["DISCOVER_PROBLEM","CONFIRM_PROBLEM","PRESENT_SOLUTION","CONFIRM_SOLUTION","NEXT_COMMITMENT"].includes(text(value.currentPhase))
@@ -96,7 +104,7 @@ function normalizeOutput(value: any, fallback: CorporateSalesCoachOutput): Corpo
     },
     emailDraft: {
       subject: text(value.emailDraft?.subject) || fallback.emailDraft.subject,
-      body: text(value.emailDraft?.body) || fallback.emailDraft.body,
+      body: normalizeNorwegianEmailGreeting(value.emailDraft?.body) || fallback.emailDraft.body,
     },
     sellerCoach: {
       do: stringList(value.sellerCoach?.do) || fallback.sellerCoach.do,
@@ -219,6 +227,7 @@ Zen Corporate Homes-fakta som kan brukes når de er relevante:
 - For partnerkontoer skal Zen komplettere partnerens rolle, ikke forsøke å erstatte kundens etablerte rådgiver.
 
 Hvis en e-post er limt inn, analyser kundens ord og skriv et forslag til svar, men aldri send.
+Norsk e-posthilsen skal være naturlig: bruk "Hei {fornavn}," når et verifisert fornavn finnes, ellers "Hei,". Bruk aldri "Hei der".
 Svar KUN som gyldig JSON med feltene:
 summary, currentPhase,
 problem {hypothesis,evidence[],questions[],acceptanceSignals[]},

@@ -65,6 +65,13 @@ type Brief = {
   guardrails: string[];
 };
 
+function realtyFlowPropertyHref(property: Record<string, any>) {
+  if (property?.realtyflow_url) return String(property.realtyflow_url);
+  if (property?.id) return `/inventory?propertyId=${encodeURIComponent(String(property.id))}`;
+  if (property?.ref) return `/inventory?propertyRef=${encodeURIComponent(String(property.ref))}`;
+  return null;
+}
+
 type Prospect = {
   id: string;
   converted_contact_id?: string | null;
@@ -1191,11 +1198,18 @@ export default function CorporateProspectBriefPage() {
                     {(property.corporate_match_reasons || []).slice(0, 3).map((reason: string) => <div key={reason}>✓ {reason}</div>)}
                     {(property.corporate_match_cautions || []).slice(0, 2).map((caution: string) => <div key={caution} className="text-amber-800">• {caution}</div>)}
                   </div>
-                  {property.website_url && (
-                    <a href={property.website_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
-                      Åpne bolig <ExternalLink size={12} />
-                    </a>
-                  )}
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    {property.website_url && (
+                      <a href={property.website_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
+                        Åpne på nettsiden <ExternalLink size={12} />
+                      </a>
+                    )}
+                    {realtyFlowPropertyHref(property) && (
+                      <Link href={realtyFlowPropertyHref(property) || "/inventory"} className="inline-flex items-center gap-1 text-xs font-black text-violet-800 hover:underline">
+                        Åpne i RealtyFlow <Building2 size={12} />
+                      </Link>
+                    )}
+                  </div>
                 </article>
               ))}
             </div>
