@@ -288,7 +288,8 @@ export async function applyInboundCrmActions(
     update.pipeline_status = "ON_HOLD";
     update.nurture_status = "paused";
     update.next_followup = null;
-    update.waiting_on = "customer_requested_later_followup";
+    update.waiting_on = "customer";
+    update.waiting_reason = "Kunden har bedt om oppfølging senere.";
     update.waiting_until = requestedFollowUpAt;
     nextPipelineStatus = "ON_HOLD";
   } else if (activeInterestAutoAdvance) {
