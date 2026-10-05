@@ -95,6 +95,15 @@ test("later request pauses nurture and schedules follow-up", () => {
   assert.equal(classification.shouldPauseNurture, true);
 });
 
+test("on-sight and not-today wording is parked instead of qualified", () => {
+  const classification = classifyInboundReply({
+    body: "Ja, på sikt er det aktuelt. Men ikke per dags dato.",
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.shouldPauseNurture, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
 test("temporary Norwegian not-now reply is not misclassified as active interest", () => {
   const classification = classifyInboundReply({ body: "Boligkjøp i Spania er ikke aktuelt for oss med det første, men takk for henvendelsen." });
   assert.equal(classification.intent, "follow_up_later");
