@@ -206,6 +206,7 @@ export async function runEmailHistoryBackfillJob(
       }
 
       const contactId = decision.contactId;
+      const corporateProspectId = decision.corporateProspectId;
       const duplicate = await findHeuristicDuplicate(supabase, job.brand_id, message);
       if (duplicate?.id) {
         deduped += 1;
@@ -216,6 +217,15 @@ export async function runEmailHistoryBackfillJob(
             .eq("id", duplicate.id)
             .is("crm_contact_id", null);
           if (linkError) throw new Error(`History duplicate CRM link failed: ${linkError.message}`);
+          linked += 1;
+        }
+        if (corporateProspectId) {
+          const { error: corporateLinkError } = await supabase
+            .from("email_messages")
+            .update({ corporate_prospect_id: corporateProspectId })
+            .eq("id", duplicate.id)
+            .is("corporate_prospect_id", null);
+          if (corporateLinkError) throw new Error(`History duplicate Corporate link failed: ${corporateLinkError.message}`);
           linked += 1;
         }
         await rememberImapMessageId(supabase, String(duplicate.id), messageId);
@@ -241,6 +251,7 @@ export async function runEmailHistoryBackfillJob(
           is_read: true,
           is_archived: true,
           crm_contact_id: contactId,
+          corporate_prospect_id: corporateProspectId,
         })
         .select("id")
         .single();
