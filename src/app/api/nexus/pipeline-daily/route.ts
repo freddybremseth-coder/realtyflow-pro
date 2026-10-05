@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
   const [contactsR, inboundR, workR, recommendationsR, transitionsR, automationR, pendingInboundR] = await Promise.all([
-    supabase.from("contacts").select("id,name,email,phone,brand_id,brand,pipeline_status,pipeline_value,updated_at,created_at,last_contact,last_inbound_reply_at,next_followup,waiting_on,waiting_reason,waiting_until,property_interest,nurture_status,nurture_sequence,interactions,email_suppressed,do_not_contact,lost_reason").order("updated_at", { ascending: false }).limit(3000),
+    supabase.from("contacts").select("id,name,email,phone,brand_id,brand,pipeline_status,pipeline_value,updated_at,created_at,last_contact,last_inbound_reply_at,last_reply_classification,next_followup,waiting_on,waiting_reason,waiting_until,property_interest,nurture_status,nurture_sequence,interactions,email_suppressed,do_not_contact,lost_reason").order("updated_at", { ascending: false }).limit(3000),
     supabase.from("email_messages").select("id,crm_contact_id,crm_reply_classification,received_at,created_at").eq("direction", "inbound").eq("is_archived", false).gte("received_at", since24).limit(1000),
     supabase.from("work_items").select("id,status,priority,source_type,metadata,created_at,updated_at").gte("updated_at", since7d).limit(2000),
     supabase.from("revenue_events").select("id,contact_id,occurred_at,created_at,metadata").eq("event_type", "automation_recommended").eq("source_system", "nexus_movement").eq("source_type", "pipeline_movement_recommendation").gte("occurred_at", since90d).limit(10000),
