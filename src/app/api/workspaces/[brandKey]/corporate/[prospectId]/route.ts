@@ -167,6 +167,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
     touchpointsResult,
     enrichmentResult,
     coachRunsResult,
+    emailResult,
   ] = await Promise.all([
     supabase.from("corporate_prospects")
       .select("id,company_name,organization_number,domain,organization_type,country_code,city,industry,employee_count,employee_band,member_count,website_url,linkedin_company_url,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,evidence,next_action,next_followup,updated_at")
@@ -193,10 +194,16 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       .eq("prospect_id", prospectId)
       .order("created_at", { ascending: false })
       .limit(12),
+    supabase.from("email_messages")
+      .select("id,message_id,thread_id,direction,from_address,from_name,to_addresses,subject,body_text,ai_summary,ai_intent,ai_urgency,ai_sentiment,received_at,is_read")
+      .eq("brand_id", brandKey)
+      .eq("corporate_prospect_id", prospectId)
+      .order("received_at", { ascending: false })
+      .limit(40),
   ]);
 
   const error = prospectResult.error || strategyResult.error || contactsResult.error ||
-    touchpointsResult.error || enrichmentResult.error || coachRunsResult.error;
+    touchpointsResult.error || enrichmentResult.error || coachRunsResult.error || emailResult.error;
   if (error) return { error };
   if (!prospectResult.data) return { notFound: true };
 
@@ -211,6 +218,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       touchpoints: touchpointsResult.data || [],
       enrichment: enrichmentResult.data || [],
       coachRuns: coachRunsResult.data || [],
+      emails: emailResult.data || [],
       companyProfile: buildCorporateEnrichmentProfile(
         prospectResult.data,
         enrichmentResult.data || [],
@@ -221,6 +229,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
         contacts: contactsResult.data || [],
         touchpoints: touchpointsResult.data || [],
         enrichment: enrichmentResult.data || [],
+        emails: emailResult.data || [],
       }),
       enrichmentCapabilities: {
         brreg: { available: true, mode: "company_open_data" },
