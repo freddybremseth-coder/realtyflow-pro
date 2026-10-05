@@ -565,6 +565,11 @@ export default function CorporateAccountWorkspacePage() {
   }
 
   const { prospect } = data;
+  const currentStageIndex = STAGES.indexOf(data.stageGate.currentStage);
+  const selectedStageIndex = STAGES.indexOf(strategy.stage);
+  const stageSkipRequested = strategy.stage !== "LOST" &&
+    currentStageIndex >= 0 &&
+    selectedStageIndex > currentStageIndex + 1;
 
   return <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
     <header className="rounded-3xl border border-slate-800 bg-slate-900/75 p-5 sm:p-7">
@@ -832,7 +837,7 @@ export default function CorporateAccountWorkspacePage() {
           </div>
           {data.stageGate.nextStage && <p className="mt-3 text-[11px] text-slate-500">Neste fase: <strong className="text-slate-300">{data.stageGate.nextStage}</strong>. Fasevakt kontrolleres når strategien lagres.</p>}
           {data.strategy?.stage_override_reason && <p className="mt-3 text-[11px] leading-5 text-slate-600">Siste registrerte overstyring: {String(data.strategy.stage_override_reason)}</p>}
-          {!data.stageGate.readyToAdvance && <label className="mt-3 block text-xs text-slate-500">Overstyr fasevakt
+          {(!data.stageGate.readyToAdvance || stageSkipRequested) && <label className="mt-3 block text-xs text-slate-500">Overstyr fasevakt
             <textarea value={strategy.stageOverrideReason} onChange={e => setStrategy(s => ({ ...s, stageOverrideReason: e.target.value }))} rows={2} placeholder="Kun ved bevisst overstyring: skriv hvorfor kontoen skal videre før kriteriene er komplette." className="mt-1 w-full rounded-lg border border-amber-900/60 bg-slate-950 px-3 py-2 text-sm text-slate-200"/>
           </label>}
         </div>
