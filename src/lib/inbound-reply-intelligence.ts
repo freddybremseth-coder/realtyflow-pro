@@ -182,13 +182,13 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     || /\b(do not contact|don't contact|dont contact|stop contacting|unsubscribe|remove me|avmeld|ikke kontakt|ikke send|stopp e-?post|stopp mail)\b/i.test(text);
   if (dnc) return result("do_not_contact", 0.995, "suppress_contact", ["Explicit do-not-contact signal detected."], { shouldStopNurture: true });
 
-  const longHorizonPause = /\b(no concrete plans|no plans to buy|maybe in one or two years|in one or two years|in a year or two|ingen konkrete planer|ingen planer om å kjøpe|om ett til to år|om et år eller to|ett til to år|et år eller to|om noen år|på vent i noen år)\b/i.test(text);
+  const longHorizonPause = /\b(no concrete plans|no plans to buy|maybe in one or two years|in one or two years|in a year or two|ingen konkrete planer|ingen planer om å kjøpe|om ett til to år|om et år eller to|ett til to år|et år eller to|\d{1,2}\s*(?:-|–|til)\s*\d{1,2}\s*år|tidshorisonten?[^.!?]{0,40}\d{1,2}\s*(?:-|–|til)\s*\d{1,2}\s*år|om noen år|på vent i noen år)\b/i.test(text);
   if (longHorizonPause) return result("follow_up_later", 0.98, "schedule_followup", ["Customer explicitly states that buying is not current and may only be relevant much later."], {
     shouldPauseNurture: true,
     requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
   });
 
-  const purchasedElsewhere = /\b(already bought|already purchased|already have (?:a |the )?(?:house|home|property|apartment|villa)|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|allerede kjøpt|har allerede (?:en|et) (?:bolig|hus|leilighet|villa))\b/i.test(text);
+  const purchasedElsewhere = /\b(already bought|already purchased|already have (?:a |the )?(?:house|home|property|apartment|villa)|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|kjopte (?:hus|bolig|leilighet)|vi fikk kjøpt tomt(?:en|ene)?|boligbygging|allerede kjøpt|har allerede (?:en|et) (?:bolig|hus|leilighet|villa))\b/i.test(text);
   if (purchasedElsewhere) return result("purchased_elsewhere", 0.98, "mark_lost_purchased_elsewhere", ["Customer states that a property has already been purchased."], { shouldStopNurture: true });
 
   // Explicit temporary negatives must be evaluated before terminal phrases such
@@ -199,7 +199,7 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
   });
 
-  const noLongerBuying = /\b(no longer looking|not looking anymore|not buying anymore|not going to buy|decided not to buy|we are not buying|i am not buying|no longer interested in buying|not interested anymore|not relevant anymore|decided to rent|rent instead|ikke lenger på utkikk|ser ikke lenger etter bolig|skal ikke kjøpe|kommer ikke til å kjøpe|har bestemt oss for ikke å kjøpe|har bestemt meg for ikke å kjøpe|ikke aktuelt å kjøpe|ikke aktuelt lenger|ikke lenger aktuelt|ikke aktuelt for oss|ikke aktuelt for meg|ikke interessert lenger|har bestemt oss for å leie|har bestemt meg for å leie|skal leie i fremtiden)\b/i.test(text);
+  const noLongerBuying = /\b(no longer looking|not looking anymore|not buying anymore|not going to buy|decided not to buy|we are not buying|i am not buying|no longer interested in buying|not interested anymore|not relevant anymore|decided to rent|rent instead|ikke lenger på utkikk|ser ikke lenger etter bolig|skal ikke kjøpe|kommer ikke til å kjøpe|har bestemt oss for ikke å kjøpe|har bestemt meg for ikke å kjøpe|ikke aktuelt å kjøpe|ikke aktuelt lenger|ikke lenger aktuelt|ikke aktuelt for oss|ikke aktuelt for meg|ikke interessert|nei dessverre|slått oss til ro der vi er|blir der [\"']?forever|har bestemt oss for å leie|har bestemt meg for å leie|skal leie i fremtiden)\b/i.test(text);
   if (noLongerBuying) return result("no_longer_buying", 0.97, "mark_lost_no_longer_buying", ["Customer explicitly states that the buying journey has ended."], { shouldStopNurture: true });
 
   const viewing = /\b(viewing|view it|see the property|see this property|book a viewing|schedule a viewing|visning|se boligen|se denne|kan vi se|booke visning|avtale visning)\b/i.test(text);
@@ -215,11 +215,15 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     || /\b(bo der det ikke|not live in)[^.!?]{0,70}\b(golf|air\s?bnb|korttids|short[- ]term)\b/i.test(text);
   if (changed || explicitBuyerCriteria) return result("update_preferences", explicitBuyerCriteria ? 0.95 : 0.91, "refresh_buyer_profile", [explicitBuyerCriteria ? "Customer states explicit property or neighbourhood criteria." : "Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
-  const later = /\b(later|next year|in a few months|after summer|after christmas|in \d{1,2} (?:years?|months?|weeks?)|a few years|put (?:this|me|us) on hold|senere|kanskje senere|neste år|om noen måneder|om \d{1,2} (?:år|mnd|måneder|uker)|om noen år|etter sommeren|etter jul|på vent)\b/i.test(text);
+  const later = /\b(later|next year|in a few months|after summer|after christmas|in \d{1,2} (?:years?|months?|weeks?)|a few years|put (?:this|me|us) on hold|senere|seinare|kanskje senere|kanskje det er aktuelt senere|kanskje det er aktuelt seinare|neste år|om noen måneder|om \d{1,2} (?:år|mnd|måneder|uker)|om noen år|etter sommeren|etter jul|på vent)\b/i.test(text);
   if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], {
     shouldPauseNurture: true,
     requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
   });
+
+  const criteriaConfirmation = /bekreft|confirm/i.test(String(input.subject || ""))
+    && /^(ja(?:,?\s*(?:det|dette|d)\s+stemmer)?|bekreftet)\b/i.test(text);
+  if (criteriaConfirmation) return result("update_preferences", 0.96, "refresh_buyer_profile", ["Customer explicitly confirms the stated search criteria."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
   const active = /\b(still interested|still looking|interested|yes we are|yes i am|ready to buy|ready to move forward|fortsatt interessert|fortsatt aktuelt|vi ser fortsatt|jeg ser fortsatt|interessert|klar til å kjøpe|aktuelt)\b/i.test(text);
   if (active) return result("active_interest", 0.91, "move_to_contact", ["Customer confirms active buying interest."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
