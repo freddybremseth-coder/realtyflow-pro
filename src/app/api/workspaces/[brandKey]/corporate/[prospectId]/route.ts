@@ -395,17 +395,31 @@ export async function POST(
     }
     if (!appliedFields.length) return fail(409, "COACH_FIELDS_EMPTY");
 
-    const { data: strategyData, error: strategyError } = await access.value.supabase
+    const { data: existingStrategy, error: existingStrategyError } = await access.value.supabase
       .from("corporate_account_strategies")
-      .upsert({
-        prospect_id: params.prospectId,
-        ...strategyUpdate,
-        updated_by_email: actorEmail,
-        updated_at: new Date().toISOString(),
-        created_by_email: actorEmail,
-      }, { onConflict: "prospect_id" })
-      .select("*")
-      .single();
+      .select("prospect_id")
+      .eq("prospect_id", params.prospectId)
+      .maybeSingle();
+    if (existingStrategyError) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
+
+    const strategyWrite = existingStrategy
+      ? access.value.supabase
+          .from("corporate_account_strategies")
+          .update({
+            ...strategyUpdate,
+            updated_by_email: actorEmail,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("prospect_id", params.prospectId)
+      : access.value.supabase
+          .from("corporate_account_strategies")
+          .insert({
+            prospect_id: params.prospectId,
+            ...strategyUpdate,
+            updated_by_email: actorEmail,
+            created_by_email: actorEmail,
+          });
+    const { data: strategyData, error: strategyError } = await strategyWrite.select("*").single();
     if (strategyError || !strategyData) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
 
     const { error: runUpdateError } = await access.value.supabase
