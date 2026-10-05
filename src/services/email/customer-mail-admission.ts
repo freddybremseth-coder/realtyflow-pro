@@ -15,6 +15,7 @@ export type CustomerMailAdmissionDecision = {
   status: CustomerMailAdmissionStatus;
   reason: string;
   contactId: string | null;
+  corporateProspectId: string | null;
 };
 
 const VENDOR_OUTREACH_PATTERNS = [
@@ -102,6 +103,37 @@ export async function loadOwnedMailboxAddresses(supabase: SupabaseClient) {
   return new Set((data || []).map((row) => normalizeCustomerIdentityEmail(row.email_address)).filter(Boolean));
 }
 
+async function resolveThreadCorporateProspectIds(
+  supabase: SupabaseClient,
+  brandId: string,
+  message: CustomerMailAdmissionMessage,
+) {
+  if (brandId !== "zeneco") return [] as string[];
+  const refs = unique([
+    message.inReplyTo,
+    message.threadId,
+    ...(message.references || []),
+  ].map((value) => String(value || "").trim()).filter(Boolean)).slice(0, 8);
+
+  const prospectIds = new Set<string>();
+  for (const ref of refs) {
+    for (const field of ["message_id", "thread_id"] as const) {
+      const { data, error } = await supabase
+        .from("email_messages")
+        .select("corporate_prospect_id")
+        .eq("brand_id", brandId)
+        .eq(field, ref)
+        .not("corporate_prospect_id", "is", null)
+        .limit(10);
+      if (error) throw new Error(`Corporate-mail thread lookup failed: ${error.message}`);
+      for (const row of data || []) {
+        if (row.corporate_prospect_id) prospectIds.add(String(row.corporate_prospect_id));
+      }
+    }
+  }
+  return [...prospectIds];
+}
+
 async function resolveThreadContactIds(
   supabase: SupabaseClient,
   brandId: string,
@@ -171,40 +203,48 @@ export async function decideCustomerMailAdmission(
       autoSubmitted: message.autoSubmitted,
     });
     if (kind !== "customer") {
-      return { status: "filtered", reason: `inbound_${kind}`, contactId: null };
+      return { status: "filtered", reason: `inbound_${kind}`, contactId: null, corporateProspectId: null };
     }
 
     const sender = normalizeCustomerIdentityEmail(message.from.address);
     if (sender && ownedMailboxAddresses?.has(sender)) {
-      return { status: "filtered", reason: "owned_mailbox_address", contactId: null };
+      return { status: "filtered", reason: "owned_mailbox_address", contactId: null, corporateProspectId: null };
     }
 
     const accountDomain = domainOf(accountEmail);
     if (sender && accountDomain && domainOf(sender) === accountDomain) {
-      return { status: "filtered", reason: "internal_same_domain", contactId: null };
+      return { status: "filtered", reason: "internal_same_domain", contactId: null, corporateProspectId: null };
+    }
+
+    const corporateProspects = await resolveThreadCorporateProspectIds(supabase, brandId, message);
+    if (corporateProspects.length === 1) {
+      return { status: "accept", reason: "resolved_corporate_thread", contactId: null, corporateProspectId: corporateProspects[0] };
+    }
+    if (corporateProspects.length > 1) {
+      return { status: "review", reason: "ambiguous_corporate_thread", contactId: null, corporateProspectId: null };
     }
 
     const exact = identityMatches(contactIndex, sender);
     if (exact.length === 1) {
-      return { status: "accept", reason: "exact_global_contact", contactId: exact[0].id };
+      return { status: "accept", reason: "exact_global_contact", contactId: exact[0].id, corporateProspectId: null };
     }
     if (exact.length > 1) {
-      return { status: "review", reason: "duplicate_global_contact_email", contactId: null };
+      return { status: "review", reason: "duplicate_global_contact_email", contactId: null, corporateProspectId: null };
     }
 
     const threadContacts = await resolveThreadContactIds(supabase, brandId, message, contactIndex);
     if (threadContacts.length === 1) {
-      return { status: "accept", reason: "resolved_customer_thread", contactId: threadContacts[0] };
+      return { status: "accept", reason: "resolved_customer_thread", contactId: threadContacts[0], corporateProspectId: null };
     }
     if (threadContacts.length > 1) {
-      return { status: "review", reason: "ambiguous_customer_thread", contactId: null };
+      return { status: "review", reason: "ambiguous_customer_thread", contactId: null, corporateProspectId: null };
     }
 
     if (looksLikeVendorOutreach(message)) {
-      return { status: "filtered", reason: "vendor_outreach", contactId: null };
+      return { status: "filtered", reason: "vendor_outreach", contactId: null, corporateProspectId: null };
     }
 
-    return { status: "review", reason: "unknown_sender_candidate", contactId: null };
+    return { status: "review", reason: "unknown_sender_candidate", contactId: null, corporateProspectId: null };
   }
 
   const recipients = resolveRecipientContacts(
@@ -212,21 +252,26 @@ export async function decideCustomerMailAdmission(
     [...message.to, ...(message.cc || [])],
   );
   if (recipients.ambiguous) {
-    return { status: "filtered", reason: "outbound_ambiguous_recipient", contactId: null };
+    return { status: "filtered", reason: "outbound_ambiguous_recipient", contactId: null, corporateProspectId: null };
   }
   if (recipients.ids.length === 1) {
-    return { status: "accept", reason: "outbound_exact_global_contact", contactId: recipients.ids[0] };
+    return { status: "accept", reason: "outbound_exact_global_contact", contactId: recipients.ids[0], corporateProspectId: null };
   }
   if (recipients.ids.length > 1) {
-    return { status: "filtered", reason: "outbound_multi_customer", contactId: null };
+    return { status: "filtered", reason: "outbound_multi_customer", contactId: null, corporateProspectId: null };
   }
 
   const threadContacts = await resolveThreadContactIds(supabase, brandId, message, contactIndex);
   if (threadContacts.length === 1) {
-    return { status: "accept", reason: "outbound_customer_thread", contactId: threadContacts[0] };
+    return { status: "accept", reason: "outbound_customer_thread", contactId: threadContacts[0], corporateProspectId: null };
   }
 
-  return { status: "filtered", reason: "outbound_non_customer", contactId: null };
+  const corporateProspects = await resolveThreadCorporateProspectIds(supabase, brandId, message);
+  if (corporateProspects.length === 1) {
+    return { status: "accept", reason: "outbound_corporate_thread", contactId: null, corporateProspectId: corporateProspects[0] };
+  }
+
+  return { status: "filtered", reason: "outbound_non_customer", contactId: null, corporateProspectId: null };
 }
 
 export async function recordCustomerMailAdmission(
@@ -330,7 +375,7 @@ export async function promoteResolvedCustomerMailReviews(
       contactIndex: input.contactIndex,
       ownedMailboxAddresses: input.ownedMailboxAddresses,
     });
-    if (decision.status !== "accept" || !decision.contactId) continue;
+    if (decision.status !== "accept" || (!decision.contactId && !decision.corporateProspectId)) continue;
 
     const existing = await supabase
       .from("email_messages")
@@ -360,6 +405,7 @@ export async function promoteResolvedCustomerMailReviews(
         is_read: historical,
         is_archived: historical,
         crm_contact_id: decision.contactId,
+        corporate_prospect_id: decision.corporateProspectId,
       }).select("id").single();
       if (inserted.error || !inserted.data?.id) {
         throw new Error(`Customer-mail review promotion failed: ${inserted.error?.message || "missing id"}`);

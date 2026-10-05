@@ -156,6 +156,7 @@ export async function GET(request: NextRequest) {
           body_html: email.bodyHtml || null,
           received_at: email.date.toISOString(),
           crm_contact_id: decision.contactId,
+          corporate_prospect_id: decision.corporateProspectId,
         }).select("id").single();
         if (insertError) continue;
         existingIds.add(email.messageId);

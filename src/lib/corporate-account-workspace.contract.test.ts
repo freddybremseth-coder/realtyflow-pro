@@ -169,3 +169,13 @@ test("Sales Coach recommendation can be promoted into strategy fields only by ex
   assert.match(page, /solutionHypothesis:\s*solution \|\| current\.solutionHypothesis/);
   assert.match(page, /Trykk «Lagre strategi» for å gjøre endringen varig/);
 });
+
+
+test("Corporate Account Workspace exposes linked customer replies to Sales Coach without automatic stage changes", () => {
+  assert.match(route, /corporate_prospect_id/);
+  assert.match(route, /emails:\s*emailResult\.data \|\| \[\]/);
+  assert.match(page, /Siste kundesvar/);
+  assert.match(page, /Analyser siste svar/);
+  assert.match(page, /runSalesCoach\(source, "EMAIL"\)/);
+  assert.match(page, /flytter aldri pipeline automatisk/);
+});

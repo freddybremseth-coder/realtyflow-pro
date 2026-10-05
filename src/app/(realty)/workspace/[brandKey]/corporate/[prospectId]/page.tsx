@@ -143,6 +143,23 @@ type AccountData = {
     businessCaseCompleteness: number;
     stageGuidance: { current: string; exitCriteria: string[]; next: string | null };
   };
+  emails: Array<{
+    id: string;
+    message_id?: string | null;
+    thread_id?: string | null;
+    direction: "inbound" | "outbound" | string;
+    from_address?: string | null;
+    from_name?: string | null;
+    to_addresses?: string[] | null;
+    subject?: string | null;
+    body_text?: string | null;
+    ai_summary?: string | null;
+    ai_intent?: string | null;
+    ai_urgency?: string | null;
+    ai_sentiment?: string | null;
+    received_at?: string | null;
+    is_read?: boolean | null;
+  }>;
   coachRuns: Array<{
     id: string;
     mode: string;
@@ -427,16 +444,22 @@ export default function CorporateAccountWorkspacePage() {
     }
   }
 
-  async function runSalesCoach() {
+  async function runSalesCoach(sourceOverride?: string, modeOverride?: string) {
     setBusy("coach"); setError(""); setNotice("");
+    const effectiveSource = typeof sourceOverride === "string" ? sourceOverride : coachSource;
+    const effectiveMode = modeOverride || coachMode;
     try {
       const result = await post({
         action: "sales_coach",
-        mode: coachMode,
-        sourceText: coachSource,
+        mode: effectiveMode,
+        sourceText: effectiveSource,
         sellerContext: coachContext,
       });
       setCoachOutput(result.output as SalesCoachOutput);
+      if (typeof sourceOverride === "string") {
+        setCoachMode(effectiveMode);
+        setCoachSource(effectiveSource);
+      }
       setNotice("Nexus Sales Coach har analysert kontoen. Ingen melding er sendt.");
       await load();
     } catch (cause) {
@@ -838,6 +861,38 @@ export default function CorporateAccountWorkspacePage() {
         <span className="rounded-full border border-violet-800 bg-violet-950 px-3 py-1 text-[11px] font-semibold text-violet-200">Human approved · no auto-send</span>
       </div>
 
+      {data.emails.some(email => email.direction === "inbound") && (() => {
+        const latestReply = data.emails.find(email => email.direction === "inbound");
+        if (!latestReply) return null;
+        const source = [
+          latestReply.subject ? `Emne: ${latestReply.subject}` : "",
+          latestReply.from_name || latestReply.from_address ? `Fra: ${latestReply.from_name || latestReply.from_address}` : "",
+          latestReply.body_text || latestReply.ai_summary || "",
+        ].filter(Boolean).join("\n\n");
+        return <div className="mt-4 rounded-xl border border-cyan-900/70 bg-cyan-950/15 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-300">Siste kundesvar</p>
+              <p className="mt-1 truncate text-sm font-semibold text-white">{latestReply.subject || "(uten emne)"}</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {latestReply.from_name || latestReply.from_address || "Ukjent avsender"}
+                {latestReply.received_at ? ` · ${new Date(latestReply.received_at).toLocaleString("nb-NO")}` : ""}
+              </p>
+              <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-slate-300">
+                {latestReply.body_text || latestReply.ai_summary || "Svarteksten er ikke tilgjengelig."}
+              </p>
+            </div>
+            <button type="button"
+              onClick={() => void runSalesCoach(source, "EMAIL")}
+              disabled={busy === "coach"}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+              <BrainCircuit size={15}/> Analyser siste svar
+            </button>
+          </div>
+          <p className="mt-3 text-[11px] text-slate-600">Svarsignalet påvirker Nexus sin Timing/Intent-vurdering, men flytter aldri pipeline automatisk.</p>
+        </div>;
+      })()}
+
       <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
         <div className="space-y-3">
           <label className="text-xs text-slate-400">Hva vil du ha hjelp til?
@@ -852,7 +907,7 @@ export default function CorporateAccountWorkspacePage() {
           </label>
           <textarea value={coachSource} onChange={e => setCoachSource(e.target.value)} rows={8} placeholder="Lim inn kundens e-post, innvending, møtenotat eller annen relevant tekst. La stå tomt for å coache kun på kontoens lagrede data." className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm"/>
           <textarea value={coachContext} onChange={e => setCoachContext(e.target.value)} rows={3} placeholder="Din egen kommentar: Hva er du usikker på? Hva vil du oppnå i neste kontakt?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
-          <button type="button" onClick={() => void runSalesCoach()} disabled={busy === "coach"} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+          <button type="button" onClick={() => void runSalesCoach(undefined, undefined)} disabled={busy === "coach"} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             <MessageSquareText size={16}/>{busy === "coach" ? "Coach analyserer…" : "Kjør Sales Coach"}
           </button>
           {data.coachRuns.length > 0 && <p className="text-[11px] text-slate-500">{data.coachRuns.length} siste coach-kjøringer lagret på kontoen.</p>}
