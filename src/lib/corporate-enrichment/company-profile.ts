@@ -225,8 +225,10 @@ export function buildCorporateEnrichmentProfile(
   ] as Array<[string, string]>) {
     if (value) phones.push({ value, label, sources: ["Brønnøysund"], verified: false });
   }
-  if (text(entity?.epostadresse)) emails.push({ value: text(entity.epostadresse), label: "E-post", sources: ["Brønnøysund"], verified: false });
-  if (text(entity?.hjemmeside)) websites.push({ value: text(entity.hjemmeside), label: "Hjemmeside", sources: ["Brønnøysund"], verified: false });
+  const brregEmail = text(entity?.epostadresse);
+  const brregWebsite = text(entity?.hjemmeside);
+  if (brregEmail) emails.push({ value: brregEmail, label: "E-post", sources: ["Brønnøysund"], verified: false });
+  if (brregWebsite) websites.push({ value: brregWebsite, label: "Hjemmeside", sources: ["Brønnøysund"], verified: false });
   if (text(prospect.website_url)) websites.push({ value: text(prospect.website_url), label: "RealtyFlow", sources: ["RealtyFlow"], verified: false });
 
   const addressCandidates: CorporateProfileField[] = [];
