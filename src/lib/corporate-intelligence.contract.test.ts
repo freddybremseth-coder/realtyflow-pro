@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 const migration = fs.readFileSync("supabase/migrations/20261005214500_corporate_intelligence_v2.sql", "utf8");
+const reviewMigration = fs.readFileSync("supabase/migrations/20261005230000_corporate_intelligence_review_gate.sql", "utf8");
 const engine = fs.readFileSync("src/lib/corporate-intelligence.ts", "utf8");
 const runner = fs.readFileSync("src/lib/corporate-intelligence-runner.ts", "utf8");
 const accountCron = fs.readFileSync("src/app/api/cron/corporate-intelligence-accounts/route.ts", "utf8");
@@ -84,4 +85,32 @@ test("Own-site event signals are temporally weighted instead of treated as autom
   assert.match(engine, /freshness: age === 0 \? 92/);
   assert.match(engine, /Historisk signal; brukes som kontekst/);
   assert.match(engine, /Ekstern webresearch leverte ikke data/);
+});
+
+
+test("Signal Review Gate is service-role-only, atomic and audited", () => {
+  assert.match(reviewMigration, /review_status text not null default 'PENDING'/);
+  assert.match(reviewMigration, /corporate_intelligence_reviews/);
+  assert.match(reviewMigration, /security invoker/);
+  assert.match(reviewMigration, /corporate_intelligence_review_finding/);
+  assert.match(reviewMigration, /corporate_intelligence_review_overrides/);
+  assert.match(reviewMigration, /revoke all on function public\.corporate_intelligence_review_finding[\s\S]*from public, anon, authenticated/);
+  assert.match(reviewMigration, /grant execute on function public\.corporate_intelligence_review_finding[\s\S]*to service_role/);
+});
+
+test("Review Gate is exposed in Account Workspace without adding external actions", () => {
+  assert.match(workspaceApi, /action === "review_intelligence"/);
+  assert.match(workspaceApi, /corporate_intelligence_review_finding/);
+  assert.match(workspaceApi, /rescoreCorporateProspect/);
+  assert.match(workspacePage, /Bekreft/);
+  assert.match(workspacePage, /Ignorer/);
+  assert.match(workspacePage, /Utdatert/);
+  assert.match(workspacePage, /Påvirker Nexus/);
+  assert.doesNotMatch(workspaceApi, /sendEmail\s*\(|sendMessage\s*\(/);
+});
+
+test("Changed Intelligence resets stale human review to pending", () => {
+  assert.match(engine, /existing && existing\.content_hash !== nextHash/);
+  assert.match(engine, /review_status: "PENDING"/);
+  assert.match(engine, /corporate_intelligence_review_overrides/);
 });
