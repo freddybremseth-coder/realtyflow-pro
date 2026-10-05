@@ -46,8 +46,8 @@ test("confirmation email asks the customer to approve or correct specific criter
   assert.equal(email.mode, "confirmation");
   assert.equal(email.requiresConfirmation, true);
   assert.match(email.bodyText, /Hei Kari,/);
-  assert.match(email.bodyText, /Kan du bekrefte at dette er kriteriene/);
-  assert.match(email.bodyText, /Ja, dette stemmer/);
+  assert.match(email.bodyText, /Ser dette riktig ut\?/);
+  assert.match(email.bodyText, /beliggenhet, standard eller pris/);
   assert.match(email.confirmationContextText, /Kunden har eksplisitt bekreftet/);
 });
 
@@ -65,11 +65,10 @@ test("broad country-only location becomes a natural clarification instead of a s
 
   assert.equal(email.mode, "location_clarification");
   assert.equal(email.requiresConfirmation, false);
-  assert.equal(email.subject, "Hvilket område i Spania er mest aktuelt?");
-  assert.match(email.bodyText, /ser etter bolig i Spania/);
-  assert.match(email.bodyText, /Hvilke områder eller byer er mest aktuelle/);
-  assert.doesNotMatch(email.bodyText, /Kan du bekrefte at dette er kriteriene/);
-  assert.doesNotMatch(email.bodyText, /Ja, dette stemmer/);
+  assert.equal(email.subject, "Hvilket område skal jeg prioritere i boligsøket?");
+  assert.match(email.bodyText, /bredt område registrert/);
+  assert.match(email.bodyText, /Hvilke 1–3 områder eller byer er mest aktuelle/);
+  assert.doesNotMatch(email.bodyText, /Ser dette riktig ut\?/);
   assert.equal(email.confirmationContextText, "");
 });
 
@@ -93,11 +92,66 @@ test("broad location clarification preserves useful known criteria without askin
   assert.doesNotMatch(email.bodyText, /– Område: Spain/);
 });
 
+test("confirmation email asks only for high-value missing information", () => {
+  const email = buildCriteriaConfirmationEmail({
+    customerName: "Roy",
+    analysis: {
+      budget: { amount: null, currency: "EUR" },
+      locations: { preferred: ["Punta Prima"] },
+      propertyTypes: [],
+      hardRequirements: [{ key: "bedrooms", value: 2 }],
+      preferences: [{ key: "pool", value: true }],
+      exclusions: [],
+      missingInformation: [
+        { key: "total_budget", priority: "high", question: "What is your budget?" },
+        { key: "property_type", priority: "high", question: "What property type?" },
+        { key: "bedrooms", priority: "medium", question: "How many bedrooms?" },
+      ],
+    },
+  });
+
+  assert.equal(email.mode, "confirmation");
+  assert.equal(email.followUpQuestions.length, 2);
+  assert.match(email.bodyText, /totalbudsjett/);
+  assert.match(email.bodyText, /leilighet, rekkehus eller villa/);
+  assert.doesNotMatch(email.bodyText, /Hvor mange soverom trenger du minimum/);
+  assert.match(email.bodyText, /Du trenger ikke skrive langt/);
+});
+
+test("multi-country broad preference triggers prioritization instead of empty confirmation", () => {
+  const email = buildCriteriaConfirmationEmail({
+    customerName: "Ellen",
+    analysis: {
+      locations: { preferred: ["Spain", "Portugal", "Greece"] },
+      propertyTypes: [],
+      hardRequirements: [],
+      preferences: [],
+      exclusions: [],
+      missingInformation: [
+        { key: "location", priority: "high" },
+        { key: "total_budget", priority: "high" },
+        { key: "property_type", priority: "high" },
+      ],
+    },
+  });
+
+  assert.equal(email.mode, "location_clarification");
+  assert.equal(email.requiresConfirmation, false);
+  assert.match(email.bodyText, /Spania|Spain/);
+  assert.match(email.bodyText, /Portugal/);
+  assert.match(email.bodyText, /Greece/);
+  assert.match(email.bodyText, /prioritere ett land eller område først/);
+  assert.match(email.bodyText, /totalbudsjett/);
+  assert.match(email.bodyText, /leilighet, rekkehus eller villa/);
+});
+
 test("broad location detector covers country and over-broad regional values", () => {
   assert.equal(isBroadBuyerLocation("Spain"), true);
   assert.equal(isBroadBuyerLocation("Spania"), true);
   assert.equal(isBroadBuyerLocation("España"), true);
   assert.equal(isBroadBuyerLocation("Costa Blanca"), true);
+  assert.equal(isBroadBuyerLocation("Portugal"), true);
+  assert.equal(isBroadBuyerLocation("Greece"), true);
   assert.equal(isBroadBuyerLocation("Altea"), false);
   assert.equal(isBroadBuyerLocation("Villajoyosa"), false);
 });
