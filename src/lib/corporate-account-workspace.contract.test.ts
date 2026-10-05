@@ -150,3 +150,22 @@ test("Nexus Sales Coach follows problem-to-solution acceptance and never auto-se
   assert.match(page, /Analyser e-post og foreslå svar/);
   assert.match(page, /Utkastet er ikke sendt/);
 });
+
+
+test("Sales Coach can hand a draft to E-post Reach without supplying a browser recipient address", () => {
+  assert.match(page, /saveCoachEmailDraft/);
+  assert.match(page, /\/api\/workspaces\/\$\{encodeURIComponent\(brandKey\)\}\/email/);
+  assert.match(page, /targetType:\s*"corporate"/);
+  assert.match(page, /targetId:\s*prospectId/);
+  assert.match(page, /Lagre i E-post \/ Reach/);
+  assert.match(page, /Ingenting sendes uten eksplisitt handling/);
+  assert.doesNotMatch(page, /recipientEmail:\s*coachOutput/);
+});
+
+test("Sales Coach recommendation can be promoted into strategy fields only by explicit seller action", () => {
+  assert.match(page, /applyCoachRecommendation/);
+  assert.match(page, /nextBestAction:\s*next \|\| current\.nextBestAction/);
+  assert.match(page, /problemHypothesis:\s*problem \|\| current\.problemHypothesis/);
+  assert.match(page, /solutionHypothesis:\s*solution \|\| current\.solutionHypothesis/);
+  assert.match(page, /Trykk «Lagre strategi» for å gjøre endringen varig/);
+});

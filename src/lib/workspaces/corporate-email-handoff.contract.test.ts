@@ -54,3 +54,15 @@ test("Corporate workspace uses canonical readiness and company-channel gates bef
   assert.match(growth, /row\.readiness\?\.manualContactReady/);
   assert.match(growth, /row\.companyChannelReady/);
 });
+
+
+test("Corporate Sales Coach deep-links directly into the email work area", () => {
+  const account = fs.readFileSync("src/app/(realty)/workspace/[brandKey]/corporate/[prospectId]/page.tsx", "utf8");
+  const workspace = fs.readFileSync("src/app/(realty)/workspace/[brandKey]/page.tsx", "utf8");
+  const growthPanel = fs.readFileSync("src/components/workspaces/growth-corporate-panel.tsx", "utf8");
+  assert.match(account, /\?tab=growth&area=email/);
+  assert.match(workspace, /URLSearchParams\(window\.location\.search\)/);
+  assert.match(workspace, /initialArea=\{requestedArea\}/);
+  assert.match(growthPanel, /initialArea\?: string \| null/);
+  assert.match(growthPanel, /availableAreas\.includes\(initialArea as WorkArea\)/);
+});

@@ -62,9 +62,11 @@ const kindLabels: Record<string, string> = {
 export function GrowthCorporatePanel({
   brandKey,
   permissions,
+  initialArea,
 }: {
   brandKey: string;
   permissions: WorkspacePermission[];
+  initialArea?: string | null;
 }) {
   const [data, setData] = useState<GrowthData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,7 +80,11 @@ export function GrowthCorporatePanel({
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("MEDIUM");
   const [sourceId, setSourceId] = useState("");
-  const [area, setArea] = useState<WorkArea>("corporate");
+  const [area, setArea] = useState<WorkArea>(
+    initialArea && ["corporate","content","email","visibility","ads","plan"].includes(initialArea)
+      ? initialArea as WorkArea
+      : "corporate",
+  );
   const [emailHandoff, setEmailHandoff] = useState<WorkspaceEmailHandoff | null>(null);
   const [partnerProgressBusy, setPartnerProgressBusy] = useState("");
   const [partnerLinkCopied, setPartnerLinkCopied] = useState("");
@@ -133,10 +139,15 @@ export function GrowthCorporatePanel({
   }, [allowedKinds, kind]);
 
   useEffect(() => {
+    if (initialArea && ["corporate","content","email","visibility","ads","plan"].includes(initialArea) &&
+        availableAreas.includes(initialArea as WorkArea)) {
+      setArea(initialArea as WorkArea);
+      return;
+    }
     if (!availableAreas.includes(area)) {
       setArea(availableAreas[0] || "plan");
     }
-  }, [availableAreas, area]);
+  }, [availableAreas, area, initialArea]);
 
   const needsGrowthSnapshot = permissions.some(permission => [
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",
