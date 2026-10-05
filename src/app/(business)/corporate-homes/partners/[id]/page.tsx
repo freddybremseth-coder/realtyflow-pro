@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -63,8 +64,9 @@ type Brief = {
   guardrails: string[];
 };
 
-export default function CorporatePartnerBriefPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function CorporatePartnerBriefPage() {
+  const params = useParams<{ id: string }>();
+  const id = typeof params?.id === "string" ? params.id : "";
   const [brief, setBrief] = useState<Brief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
