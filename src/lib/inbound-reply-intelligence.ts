@@ -158,6 +158,16 @@ export function governInboundReply(classification: InboundReplyClassification): 
     return { classification, safety, canApplyAutomatically: safety.tier === "AUTO" && safety.allowed };
   }
 
+  if (classification.intent === "follow_up_later" && classification.confidence >= 0.9) {
+    const safety: AutopilotSafetyDecision = {
+      tier: "AUTO",
+      allowed: true,
+      reason: "Explicit customer-stated temporary pause may safely move sales follow-up to ON_HOLD",
+      requiresAudit: true,
+    };
+    return { classification, safety, canApplyAutomatically: true };
+  }
+
   const risk = classification.intent === "unclear" ? "high" : "medium";
   const safety = decideAutopilotTier({ actionType: classification.shouldRefreshBuyerProfile ? "buyer_profile_activation" : "data_update", risk, confidence: classification.confidence, requiredDataComplete: classification.intent !== "unclear" });
   return { classification, safety, canApplyAutomatically: safety.tier === "AUTO" && safety.allowed };
