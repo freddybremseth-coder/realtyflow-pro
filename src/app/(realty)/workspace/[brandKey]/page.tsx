@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { WorkspacePropertyCatalogue, type WorkspacePropertyCard } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
@@ -45,7 +45,10 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
 
 export default function FocusedWorkspacePage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const brandKey = String(params.brandKey || "");
+  const requestedTab = searchParams.get("tab");
+  const requestedArea = searchParams.get("area");
   const [tab, setTab] = useState<Tab>("today");
   const [permissions, setPermissions] = useState<WorkspacePermission[]>([]);
   const [responsibilities, setResponsibilities] = useState<WorkspaceResponsibilityId[]>([]);
@@ -87,11 +90,21 @@ export default function FocusedWorkspacePage() {
           : res.status === 401 ? "Du må logge inn for å åpne arbeidsområdet."
           : "Arbeidsområdet er ikke tilgjengelig ennå. Kontroller databaseoppsettet.");
       return body;
-    }).then(body => { if (!abort.signal.aborted) { setPermissions(body.permissions || []); setResponsibilities(body.responsibilities || []); } })
+    }).then(body => {
+      if (!abort.signal.aborted) {
+        const nextPermissions = (body.permissions || []) as WorkspacePermission[];
+        setPermissions(nextPermissions);
+        setResponsibilities(body.responsibilities || []);
+        const candidate = tabs.find(item => item.id === requestedTab);
+        if (candidate && (!candidate.permitted || candidate.permitted.some(permission => nextPermissions.includes(permission)))) {
+          setTab(candidate.id);
+        }
+      }
+    })
       .catch(cause => { if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "Kunne ikke åpne arbeidsområdet."); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [brandKey]);
+  }, [brandKey, requestedTab]);
 
   async function loadCrm() {
     if (!permissions.includes("crm.read") && !permissions.includes("crm.joint.read")) return;
@@ -383,7 +396,7 @@ export default function FocusedWorkspacePage() {
           />}
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
-            {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} />}
+            {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} initialArea={requestedArea} />}
             {showNexus && <details open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-violet-100">Nexus OS · innsikt</strong>
