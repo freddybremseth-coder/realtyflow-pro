@@ -222,6 +222,7 @@ test("broad location detector covers country and over-broad regional values", ()
 
 test("short explicit confirmations are accepted", () => {
   assert.equal(isAffirmativeCriteriaConfirmation("Ja, dette stemmer."), true);
+  assert.equal(isAffirmativeCriteriaConfirmation("Ja d stemmer"), true);
   assert.equal(isAffirmativeCriteriaConfirmation("Stemmer, takk!"), true);
   assert.equal(isAffirmativeCriteriaConfirmation("Yes, that is correct."), true);
   assert.equal(isAffirmativeCriteriaConfirmation("Sí, correcto."), true);
