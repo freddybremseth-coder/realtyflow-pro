@@ -5,6 +5,7 @@ import { fetchBrregCompanySnapshot } from "@/lib/corporate-enrichment/brreg";
 import { buildCorporateEnrichmentProfile } from "@/lib/corporate-enrichment/company-profile";
 import { buildCorporateAccountAdvice } from "@/lib/nexus/corporate-account-advisor";
 import { runCorporateSalesCoach } from "@/lib/nexus/corporate-sales-coach";
+import { evaluateCorporateStageGate, stageIndex } from "@/lib/nexus/corporate-sales-stage-gate";
 import { getAdminEmails } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -189,7 +190,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       .order("fetched_at", { ascending: false })
       .limit(60),
     supabase.from("corporate_sales_coach_runs")
-      .select("id,mode,source_text,seller_context,output,provider,model,created_by_email,created_at")
+      .select("id,mode,source_text,seller_context,output,provider,model,created_by_email,created_at,applied_at,applied_by_email,applied_fields")
       .eq("prospect_id", prospectId)
       .order("created_at", { ascending: false })
       .limit(12),
@@ -201,6 +202,19 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
   if (!prospectResult.data) return { notFound: true };
 
   const assignmentOptions = await loadAssignableCorporateOwners(supabase, brandKey, actorEmail);
+  const advisor = buildCorporateAccountAdvice({
+    prospect: prospectResult.data,
+    strategy: strategyResult.data || null,
+    contacts: contactsResult.data || [],
+    touchpoints: touchpointsResult.data || [],
+    enrichment: enrichmentResult.data || [],
+  });
+  const stageGate = evaluateCorporateStageGate({
+    strategy: strategyResult.data || null,
+    advisor,
+    contacts: contactsResult.data || [],
+    touchpoints: touchpointsResult.data || [],
+  });
 
   return {
     data: {
@@ -215,13 +229,8 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
         prospectResult.data,
         enrichmentResult.data || [],
       ),
-      advisor: buildCorporateAccountAdvice({
-        prospect: prospectResult.data,
-        strategy: strategyResult.data || null,
-        contacts: contactsResult.data || [],
-        touchpoints: touchpointsResult.data || [],
-        enrichment: enrichmentResult.data || [],
-      }),
+      advisor,
+      stageGate,
       enrichmentCapabilities: {
         brreg: { available: true, mode: "company_open_data" },
         api1881: {
@@ -326,6 +335,118 @@ export async function POST(
       output: result.output,
       provider: result.provider,
       model: result.model,
+      externalAction: false,
+      emailSent: false,
+      linkedinMessageSent: false,
+    }, { headers: noStore });
+  }
+
+  if (action === "apply_coach_strategy") {
+    const coachRunId = clean(body.coachRunId, 80);
+    if (!uuid.test(coachRunId)) return fail(400, "INVALID_COACH_RUN");
+
+    const allowed = new Set([
+      "problemHypothesis",
+      "problemAcceptanceGoal",
+      "solutionHypothesis",
+      "solutionAcceptanceGoal",
+      "nextBestAction",
+      "nextActionReason",
+    ]);
+    const requested = stringList(body.fields, 8, 80).filter(field => allowed.has(field));
+    if (!requested.length) return fail(400, "NO_COACH_FIELDS_SELECTED");
+
+    const { data: run, error: runError } = await access.value.supabase
+      .from("corporate_sales_coach_runs")
+      .select("id,output")
+      .eq("id", coachRunId)
+      .eq("prospect_id", params.prospectId)
+      .maybeSingle();
+    if (runError || !run) return fail(404, "COACH_RUN_NOT_FOUND");
+
+    const output = run.output && typeof run.output === "object" && !Array.isArray(run.output)
+      ? run.output as Record<string, any> : {};
+    const problem = output.problem && typeof output.problem === "object" ? output.problem : {};
+    const solution = output.solution && typeof output.solution === "object" ? output.solution : {};
+    const nextBest = output.nextBestAction && typeof output.nextBestAction === "object" ? output.nextBestAction : {};
+
+    const candidates: Record<string, { column: string; value: string }> = {
+      problemHypothesis: { column: "problem_hypothesis", value: clean(problem.hypothesis, 4000) },
+      problemAcceptanceGoal: {
+        column: "problem_acceptance_goal",
+        value: stringList(problem.acceptanceSignals, 8, 500).join("\n"),
+      },
+      solutionHypothesis: { column: "solution_hypothesis", value: clean(solution.positioning, 4000) },
+      solutionAcceptanceGoal: {
+        column: "solution_acceptance_goal",
+        value: stringList(solution.acceptanceQuestions, 8, 500).join("\n"),
+      },
+      nextBestAction: { column: "next_best_action", value: clean(nextBest.action, 3000) },
+      nextActionReason: { column: "next_action_reason", value: clean(nextBest.why, 3000) },
+    };
+
+    const strategyUpdate: Record<string, unknown> = {};
+    const appliedFields: string[] = [];
+    for (const field of requested) {
+      const candidate = candidates[field];
+      if (!candidate?.value) continue;
+      strategyUpdate[candidate.column] = candidate.value;
+      appliedFields.push(field);
+    }
+    if (!appliedFields.length) return fail(409, "COACH_FIELDS_EMPTY");
+
+    const { data: existingStrategy, error: existingStrategyError } = await access.value.supabase
+      .from("corporate_account_strategies")
+      .select("prospect_id")
+      .eq("prospect_id", params.prospectId)
+      .maybeSingle();
+    if (existingStrategyError) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
+
+    let strategyData: Record<string, unknown> | null = null;
+    if (existingStrategy) {
+      const write = await access.value.supabase
+        .from("corporate_account_strategies")
+        .update({
+          ...strategyUpdate,
+          updated_by_email: actorEmail,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("prospect_id", params.prospectId)
+        .select("*")
+        .single();
+      if (write.error || !write.data) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
+      strategyData = write.data as Record<string, unknown>;
+    } else {
+      const write = await access.value.supabase
+        .from("corporate_account_strategies")
+        .insert({
+          prospect_id: params.prospectId,
+          ...strategyUpdate,
+          updated_by_email: actorEmail,
+          created_by_email: actorEmail,
+        })
+        .select("*")
+        .single();
+      if (write.error || !write.data) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
+      strategyData = write.data as Record<string, unknown>;
+    }
+
+    const { error: runUpdateError } = await access.value.supabase
+      .from("corporate_sales_coach_runs")
+      .update({
+        applied_at: new Date().toISOString(),
+        applied_by_email: actorEmail,
+        applied_fields: appliedFields,
+      })
+      .eq("id", coachRunId)
+      .eq("prospect_id", params.prospectId);
+    if (runUpdateError) return fail(409, "COACH_APPLY_AUDIT_FAILED");
+
+    return NextResponse.json({
+      ok: true,
+      strategy: strategyData,
+      appliedFields,
+      humanApproved: true,
       externalAction: false,
       emailSent: false,
       linkedinMessageSent: false,
@@ -457,6 +578,14 @@ export async function POST(
     if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return fail(400, "INVALID_TARGET_DATE");
     if (nextReviewAt && Number.isNaN(Date.parse(nextReviewAt))) return fail(400, "INVALID_REVIEW_DATE");
 
+    const problemAcceptanceStatus = clean(body.problemAcceptanceStatus, 20).toUpperCase() || "UNKNOWN";
+    const solutionAcceptanceStatus = clean(body.solutionAcceptanceStatus, 20).toUpperCase() || "UNKNOWN";
+    const stageOverrideReason = clean(body.stageOverrideReason, 2000);
+    if (!["UNKNOWN","PARTIAL","CONFIRMED","REJECTED"].includes(problemAcceptanceStatus) ||
+        !["UNKNOWN","PARTIAL","CONFIRMED","REJECTED"].includes(solutionAcceptanceStatus)) {
+      return fail(400, "INVALID_ACCEPTANCE_STATUS");
+    }
+
     const assignable = await loadAssignableCorporateOwners(
       access.value.supabase,
       params.brandKey,
@@ -507,9 +636,49 @@ export async function POST(
       next_action_reason: nullable(body.nextActionReason, 3000),
       business_case: body.businessCase && typeof body.businessCase === "object" && !Array.isArray(body.businessCase)
         ? body.businessCase : {},
+      problem_acceptance_status: problemAcceptanceStatus,
+      problem_acceptance_evidence: nullable(body.problemAcceptanceEvidence, 5000),
+      solution_acceptance_status: solutionAcceptanceStatus,
+      solution_acceptance_evidence: nullable(body.solutionAcceptanceEvidence, 5000),
+      stage_override_reason: stageOverrideReason || null,
       updated_by_email: actorEmail,
       updated_at: new Date().toISOString(),
     };
+
+    const currentAccount = await loadAccount(access.value.supabase, params.prospectId, params.brandKey, actorEmail);
+    if ("error" in currentAccount) return fail(503, "CORPORATE_ACCOUNT_UNAVAILABLE");
+    if ("notFound" in currentAccount) return fail(404, "ACCOUNT_NOT_FOUND");
+    payload.stage_override_reason = stageOverrideReason || currentAccount.data.strategy?.stage_override_reason || null;
+    const currentStage = clean(currentAccount.data.strategy?.stage, 40).toUpperCase() || "TARGET";
+    const currentIndex = stageIndex(currentStage);
+    const requestedIndex = stageIndex(stage);
+    const proposedStrategy = { ...(currentAccount.data.strategy || {}), ...payload, stage: currentStage };
+    const proposedAdvisor = buildCorporateAccountAdvice({
+      prospect: currentAccount.data.prospect,
+      strategy: proposedStrategy,
+      contacts: currentAccount.data.contacts,
+      touchpoints: currentAccount.data.touchpoints,
+      enrichment: currentAccount.data.enrichment,
+    });
+    const gate = evaluateCorporateStageGate({
+      strategy: proposedStrategy,
+      advisor: proposedAdvisor,
+      contacts: currentAccount.data.contacts,
+      touchpoints: currentAccount.data.touchpoints,
+    });
+    const advancing = stage !== "LOST" && currentIndex >= 0 && requestedIndex > currentIndex;
+    const skippingStage = advancing && requestedIndex > currentIndex + 1;
+    if (advancing && (!gate.readyToAdvance || skippingStage) && stageOverrideReason.length < 12) {
+      const missing = gate.criteria.filter(item => !item.met).map(item => item.label);
+      const detail = skippingStage
+        ? `Du forsøker å hoppe fra ${currentStage} til ${stage}.`
+        : `Mangler: ${missing.join(" · ") || "fasekriterier"}.`;
+      return fail(
+        409,
+        "STAGE_GATE_NOT_READY",
+        `Fasevakt: ${detail} Legg inn en kort begrunnelse i «Overstyr fasevakt» dersom du bevisst skal gå videre.`,
+      );
+    }
 
     const { data, error } = await access.value.supabase
       .from("corporate_account_strategies")
