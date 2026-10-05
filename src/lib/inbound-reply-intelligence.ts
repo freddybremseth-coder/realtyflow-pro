@@ -193,7 +193,7 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
 
   // Explicit temporary negatives must be evaluated before terminal phrases such
   // as "ikke aktuelt for oss", otherwise "... med det første" becomes LOST.
-  const temporaryPause = /\b(not now|not at the moment|not for now|not anytime soon|not in the near future|ikke nå|ikke aktuelt(?: for (?:oss|meg|dem|ham|henne))? (?:nå|akkurat nå|med det første)|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund)\b/i.test(text);
+  const temporaryPause = /\b(not now|not at the moment|not for now|not anytime soon|not in the near future|ikke nå|ikke aktuelt(?: for (?:oss|meg|dem|ham|henne))? (?:nå|akkurat nå|med det første)|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund|på sikt|ikke per dags dato|ikke i dag|senere en gang)\b/i.test(text);
   if (temporaryPause) return result("follow_up_later", 0.94, "schedule_followup", ["Customer indicates that buying is not current but may be relevant later."], {
     shouldPauseNurture: true,
     requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
