@@ -62,6 +62,13 @@ export type CorporateAdvisorInput = {
   contacts?: CorporateAdvisorContact[];
   touchpoints?: CorporateAdvisorTouchpoint[];
   enrichment?: Array<{ provider?: string | null; data_kind?: string | null; fetched_at?: string | null }>;
+  emails?: Array<{
+    direction?: string | null;
+    received_at?: string | null;
+    ai_intent?: string | null;
+    ai_urgency?: string | null;
+    ai_sentiment?: string | null;
+  }>;
   now?: Date;
 };
 
@@ -175,6 +182,14 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   const companyChannel = hasCompanyChannel(evidence);
   const signalResearch = hasSignalResearch(evidence);
   const provider1881 = (input.enrichment || []).some(row => text(row.provider).toLowerCase() === "api1881");
+  const corporateEmails = input.emails || [];
+  const inboundEmails = corporateEmails.filter(row => text(row.direction).toLowerCase() === "inbound");
+  const latestInbound = inboundEmails
+    .filter(row => Number.isFinite(Date.parse(text(row.received_at))))
+    .sort((a,b) => Date.parse(text(b.received_at)) - Date.parse(text(a.received_at)))[0] || null;
+  const latestInboundAgeDays = latestInbound
+    ? Math.max(0, (now.getTime() - Date.parse(text(latestInbound.received_at))) / 86_400_000)
+    : null;
 
   const planned = touchpoints.filter(t => text(t.status).toUpperCase() === "PLANNED");
   const overdue = planned.filter(t => {
@@ -203,6 +218,16 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   if (planned.length) { score += 5; timingScore += 10; }
   if (overdue.length) { score += 8; whyNow.push(`${overdue.length} planlagt aktivitet er forfalt.`); }
   if (provider1881) score += 3;
+
+  if (inboundEmails.length > 0) {
+    intentScore += Math.min(30, 12 + inboundEmails.length * 4);
+    accessScore += 10;
+    whyNow.push(`Kontoen har ${inboundEmails.length} dokumentert(e) innkommende e-postsvar.`);
+    if (latestInboundAgeDays !== null && latestInboundAgeDays <= 14) {
+      timingScore += 15;
+      whyNow.push("Kunden har svart i løpet av de siste 14 dagene.");
+    }
+  }
 
   const stage = text(strategy?.stage) || text(input.prospect.status) || "TARGET";
   if (["ENGAGED","MEETING","BUSINESS_CASE","SHORTLIST","DECISION","NEGOTIATION"].includes(stage.toUpperCase())) {
