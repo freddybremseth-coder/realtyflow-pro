@@ -244,6 +244,16 @@ export function governInboundReply(classification: InboundReplyClassification): 
     return { classification, safety, canApplyAutomatically: safety.tier === "AUTO" && safety.allowed };
   }
 
+  if (classification.intent === "follow_up_later" && classification.confidence >= 0.9) {
+    const safety: AutopilotSafetyDecision = {
+      tier: "AUTO",
+      allowed: true,
+      reason: "Explicit later-buying request should pause active sales follow-up immediately",
+      requiresAudit: true,
+    };
+    return { classification, safety, canApplyAutomatically: true };
+  }
+
   if (classification.intent === "active_interest") {
     const safety = decideAutopilotTier({ actionType: "pipeline_transition", risk: "low", confidence: classification.confidence, currentStage: "NEW", targetStage: "CONTACT" });
     return { classification, safety, canApplyAutomatically: safety.tier === "AUTO" && safety.allowed };
