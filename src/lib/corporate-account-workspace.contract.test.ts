@@ -18,6 +18,14 @@ const strategyCoachMigration = fs.readFileSync(
   "supabase/migrations/20261005193000_corporate_account_strategy_sales_coach.sql",
   "utf8",
 );
+const learningLoopMigration = fs.readFileSync(
+  "supabase/migrations/20261005215000_corporate_sales_learning_loop.sql",
+  "utf8",
+);
+const stageGate = fs.readFileSync(
+  "src/lib/nexus/corporate-sales-stage-gate.ts",
+  "utf8",
+);
 const salesCoach = fs.readFileSync(
   "src/lib/nexus/corporate-sales-coach.ts",
   "utf8",
@@ -162,10 +170,35 @@ test("Sales Coach can hand a draft to E-post Reach without supplying a browser r
   assert.doesNotMatch(page, /recipientEmail:\s*coachOutput/);
 });
 
-test("Sales Coach recommendation can be promoted into strategy fields only by explicit seller action", () => {
+test("Sales Coach recommendation can be promoted into strategy only by explicit audited seller action", () => {
   assert.match(page, /applyCoachRecommendation/);
-  assert.match(page, /nextBestAction:\s*next \|\| current\.nextBestAction/);
-  assert.match(page, /problemHypothesis:\s*problem \|\| current\.problemHypothesis/);
-  assert.match(page, /solutionHypothesis:\s*solution \|\| current\.solutionHypothesis/);
-  assert.match(page, /Trykk «Lagre strategi» for å gjøre endringen varig/);
+  assert.match(page, /action:\s*"apply_coach_strategy"/);
+  assert.match(page, /Godkjenn og bruk i kontostrategi/);
+  assert.match(route, /action === "apply_coach_strategy"/);
+  assert.match(route, /humanApproved:\s*true/);
+  assert.match(route, /applied_fields/);
+  assert.match(route, /externalAction:\s*false/);
+  assert.match(page, /Faktisk problem- og løsningsaksept må registreres separat med kundeevidens/);
+});
+
+test("Corporate sales learning loop stores explicit customer acceptance separately from AI hypotheses", () => {
+  assert.match(learningLoopMigration, /problem_acceptance_status/);
+  assert.match(learningLoopMigration, /problem_acceptance_evidence/);
+  assert.match(learningLoopMigration, /solution_acceptance_status/);
+  assert.match(learningLoopMigration, /solution_acceptance_evidence/);
+  assert.match(learningLoopMigration, /revoke all on table public\.corporate_sales_coach_runs from public, anon, authenticated/);
+  assert.match(learningLoopMigration, /grant select, insert, update, delete on table public\.corporate_sales_coach_runs to service_role/);
+  assert.match(page, /Faktisk problemaksept/);
+  assert.match(page, /Faktisk løsningsaksept/);
+});
+
+test("Corporate phase gate requires evidence and a human reason for deliberate early advancement", () => {
+  assert.match(stageGate, /problem_acceptance_status/);
+  assert.match(stageGate, /solution_acceptance_status/);
+  assert.match(stageGate, /readyToAdvance/);
+  assert.match(stageGate, /completionPercent/);
+  assert.match(route, /STAGE_GATE_NOT_READY/);
+  assert.match(route, /stageOverrideReason\.length < 12/);
+  assert.match(page, /Fasevakt/);
+  assert.match(page, /Overstyr fasevakt/);
 });
