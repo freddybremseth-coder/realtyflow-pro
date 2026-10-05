@@ -254,6 +254,8 @@ export async function applyInboundCrmActions(
     && (normalizedPreviousPipelineStatus === "NEW" || normalizedPreviousPipelineStatus === "");
 
   if (classification.intent === "do_not_contact") {
+    update.pipeline_status = "LOST";
+    update.lost_reason = "do_not_contact";
     update.do_not_contact = true;
     update.email_suppressed = true;
     update.unsubscribe_at = now;
@@ -262,6 +264,7 @@ export async function applyInboundCrmActions(
     update.next_followup = null;
     update.waiting_on = null;
     update.waiting_until = null;
+    nextPipelineStatus = "LOST";
     suppressed = true;
   } else if (terminalAutoClose) {
     update.pipeline_status = "LOST";
@@ -315,6 +318,18 @@ export async function applyInboundCrmActions(
 
   if (classification.intent === "do_not_contact") {
     await closeOpenSalesWorkItems(supabase, String(contact.id), "kunden har bedt om stopp / ingen videre kontakt", now);
+    if (normalizedPreviousPipelineStatus !== "LOST") {
+      await recordPipelineTransition(supabase, {
+        contactId: String(contact.id),
+        brandId: params.brandId,
+        previousStatus: previousPipelineStatus,
+        nextStatus: "LOST",
+        occurredAt: now,
+        actorType: "customer",
+        actorId: fromAddress || null,
+        createdBy: "email-crm-sync:do-not-contact",
+      }).catch(() => undefined);
+    }
   } else if (terminalAutoClose) {
     await closeOpenSalesWorkItems(
       supabase,
