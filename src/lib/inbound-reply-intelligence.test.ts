@@ -188,7 +188,27 @@ test("short confirmation to criteria email is treated as a verified preference u
   });
   assert.equal(classification.intent, "update_preferences");
   assert.equal(classification.shouldRefreshBuyerProfile, true);
-  assert.equal(classification.shouldRunPropertyMatching, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
+test("new criteria subject makes short location replies profile updates", () => {
+  const classification = classifyInboundReply({
+    subject: "Re: Har jeg forstått boligønskene dine riktig?",
+    body: "Punta Prima",
+  });
+  assert.equal(classification.intent, "update_preferences");
+  assert.equal(classification.shouldRefreshBuyerProfile, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
+test("criteria email reply with richer details still waits for Buyer Profile approval before matching", () => {
+  const classification = classifyInboundReply({
+    subject: "Re: Har jeg forstått boligønskene dine riktig?",
+    body: "Ja – ca. €450k, leilighet, helst 3 soverom.",
+  });
+  assert.equal(classification.intent, "update_preferences");
+  assert.equal(classification.shouldRefreshBuyerProfile, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
 });
 
 test("plain customer question is not mistaken for a terminal outcome", () => {
