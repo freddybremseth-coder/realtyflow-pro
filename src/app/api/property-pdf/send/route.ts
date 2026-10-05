@@ -16,6 +16,7 @@ import {
 } from "@/lib/revenue/email-events";
 import { buildSmtpConfigFromAccount } from "@/services/email/account-auth";
 import { sendEmail, type OutgoingEmail } from "@/services/email/smtp-sender";
+import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
 import path from "path";
 import fs from "fs/promises";
 import {
@@ -80,6 +81,14 @@ export async function POST(req: NextRequest) {
     const ccAddresses = body.cc ? (Array.isArray(body.cc) ? body.cc : [body.cc]) : undefined;
     const supabase = getSupabase();
     if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+
+    const suppression = await checkCrmEmailSuppression(supabase, toAddresses);
+    if (suppression.error) {
+      return NextResponse.json({ error: `CRM suppression check failed: ${suppression.error}` }, { status: 503 });
+    }
+    if (suppression.blocked) {
+      return NextResponse.json({ error: "Recipient is blocked by CRM communication control", blocked: suppression.blockedEmails }, { status: 409 });
+    }
 
     const { data: propertyRow, error: propErr } = await supabase.from("properties").select("*").eq("id", propertyId).maybeSingle();
     if (propErr) return NextResponse.json({ error: propErr.message }, { status: 500 });
