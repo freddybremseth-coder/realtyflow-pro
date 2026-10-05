@@ -48,39 +48,6 @@ interface Property {
   marketing_description?: string;
 }
 
-const INITIAL_PROPERTIES: Property[] = [
-  {
-    id: "P001", title: "Moderne villa med havutsikt", description: "Spektakulær villa med panoramautsikt over Middelhavet. Moderne design med åpen planløsning.",
-    location: "Altea, Costa Blanca", price: 485000, type: "Villa", bedrooms: 4, bathrooms: 3, area: 220, plotArea: 800,
-    status: "TILGJENGELIG", featured: true, views: 342, imageColor: "from-blue-600/30 to-cyan-600/20", source: "manual", yearBuilt: 2021, pool: true, garage: true, energyRating: "B",
-  },
-  {
-    id: "P002", title: "Lys toppleilighet med terrasse", description: "Nydelig toppleilighet med stor terrasse og havglimt. Sentralt beliggende.",
-    location: "Benidorm, Costa Blanca", price: 189000, type: "Leilighet", bedrooms: 2, bathrooms: 1, area: 85, plotArea: 0,
-    status: "TILGJENGELIG", featured: false, views: 218, imageColor: "from-amber-600/30 to-orange-600/20", source: "manual", yearBuilt: 2018, energyRating: "C",
-  },
-  {
-    id: "P003", title: "Eksklusiv penthouse med infinity-basseng", description: "Luksus penthouse på toppen av eksklusivt kompleks med privat basseng på takterrassen.",
-    location: "Alicante sentrum", price: 620000, type: "Penthouse", bedrooms: 3, bathrooms: 2, area: 165, plotArea: 0,
-    status: "RESERVERT", featured: true, views: 567, imageColor: "from-purple-600/30 to-pink-600/20", source: "manual", yearBuilt: 2023, pool: true, energyRating: "A",
-  },
-  {
-    id: "P004", title: "Sjarmerende rekkehus nær strand", description: "Hyggelig rekkehus kun 5 minutters gange fra stranden. Felles bassengområde.",
-    location: "Torrevieja, Costa Blanca", price: 215000, type: "Rekkehus", bedrooms: 3, bathrooms: 2, area: 120, plotArea: 60,
-    status: "TILGJENGELIG", featured: false, views: 156, imageColor: "from-emerald-600/30 to-teal-600/20", source: "manual", yearBuilt: 2015, pool: true,
-  },
-  {
-    id: "P005", title: "Luksusvilla med privat basseng", description: "Eksklusiv villa med stort privat basseng, tropisk hage og fantastisk utsikt.",
-    location: "Javea, Costa Blanca", price: 750000, type: "Villa", bedrooms: 5, bathrooms: 4, area: 350, plotArea: 1200,
-    status: "TILGJENGELIG", featured: true, views: 489, imageColor: "from-rose-600/30 to-red-600/20", source: "manual", yearBuilt: 2022, pool: true, garage: true, energyRating: "A",
-  },
-  {
-    id: "P006", title: "Koselig bungalow i rolig område", description: "Sjarmerende bungalow i rolig nabolag med felles basseng og hage.",
-    location: "La Nucia, Costa Blanca", price: 175000, type: "Bungalow", bedrooms: 2, bathrooms: 1, area: 75, plotArea: 40,
-    status: "SOLGT", featured: false, views: 98, imageColor: "from-indigo-600/30 to-blue-600/20", source: "manual", yearBuilt: 2010,
-  },
-];
-
 const propertyTypes = ["Alle", "Villa", "Leilighet", "Penthouse", "Rekkehus", "Bungalow", "Finca", "Duplex", "Byggetomt"];
 const WEBSITE_BRANDS = ["zeneco", "pinosoecolife"];
 const REAL_ESTATE_BRANDS = BRANDS.filter((brand) => brand.type === "real_estate");
@@ -328,13 +295,16 @@ function parseCsvProperties(csvText: string): Property[] {
   const bathroomsIdx = findCol("bathroom", "bad", "baño", "baths");
   const areaIdx = findCol("area", "areal", "superficie", "m2", "size");
   const descIdx = findCol("description", "beskrivelse", "descripcion");
+  const refIdx = findCol("reference", "referanse", "referencia", "property_ref", "property id", "listing_ref", "listing id", "ref");
 
   for (let i = 1; i < lines.length; i++) {
     const vals = lines[i].split(/[,;\t]/).map(v => v.trim().replace(/^["']|["']$/g, ""));
     if (vals.length < 2) continue;
 
+    const ref = refIdx >= 0 ? String(vals[refIdx] || "").trim() : "";
+
     properties.push({
-      id: `CSV-${i}-${Date.now()}`,
+      id: ref ? `CSV-${ref}` : `CSV-${i}-${Date.now()}`,
       title: (titleIdx >= 0 ? vals[titleIdx] : "") || `Eiendom ${i}`,
       description: descIdx >= 0 ? vals[descIdx] || "" : "",
       location: (locationIdx >= 0 ? vals[locationIdx] : "") || "Ukjent",
@@ -349,6 +319,7 @@ function parseCsvProperties(csvText: string): Property[] {
       views: 0,
       imageColor: gradients[Math.floor(Math.random() * gradients.length)],
       source: "csv",
+      ref: ref || undefined,
     });
   }
 
@@ -517,24 +488,26 @@ async function apiSaveProperties(properties: Property[]): Promise<{ inserted: nu
 }
 
 export default function InventoryPage() {
-  const [properties, setProperties] = useState<Property[]>(INITIAL_PROPERTIES);
-  const [dbLoaded, setDbLoaded] = useState(false);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [inventoryError, setInventoryError] = useState("");
   const openedPropertyFromQueryRef = useRef<string | null>(null);
 
-  // Load properties from Supabase on mount
+  // Production inventory must never fall back to believable demo listings.
+  // Empty data stays empty; API failures are shown explicitly.
   useEffect(() => {
     fetch('/api/properties')
-      .then(res => res.json())
-      .then((data: Record<string, unknown>[] | { error: string }) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setProperties(data.map(dbRowToProperty));
-        }
-        // If API returns empty array, keep INITIAL_PROPERTIES as fallback
-        setDbLoaded(true);
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Kunne ikke hente eiendommer (HTTP ${res.status})`);
+        return res.json();
       })
-      .catch(() => {
-        // On error, keep INITIAL_PROPERTIES as fallback
-        setDbLoaded(false);
+      .then((data: Record<string, unknown>[] | { error: string }) => {
+        if (!Array.isArray(data)) throw new Error("Ugyldig svar fra eiendoms-API");
+        setProperties(data.map(dbRowToProperty));
+        setInventoryError("");
+      })
+      .catch((error) => {
+        setProperties([]);
+        setInventoryError(error instanceof Error ? error.message : "Kunne ikke hente eiendommer");
       });
   }, []);
 
@@ -1077,6 +1050,14 @@ REGLER:
           </Button>
         </div>
       </div>
+
+      {inventoryError && (
+        <Card className="border-red-500/30 bg-red-500/10">
+          <CardContent className="p-4 text-sm text-red-100">
+            <strong>Eiendomsdata kunne ikke lastes.</strong> {inventoryError}. Ingen demo- eller eksempelboliger vises som erstatning.
+          </CardContent>
+        </Card>
+      )}
 
       <DomainWorkItems
         title="Eiendom-hub"
