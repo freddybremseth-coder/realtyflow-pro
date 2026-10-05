@@ -1014,8 +1014,18 @@ REGLER:
     setSavingPublication(null);
   };
 
+  const normalizedSearch = search.trim().toLowerCase();
   const filtered = properties.filter((p) => {
-    if (search && !p.title.toLowerCase().includes(search.toLowerCase()) && !p.location.toLowerCase().includes(search.toLowerCase())) return false;
+    if (normalizedSearch) {
+      const searchableText = [
+        p.ref,
+        p.title,
+        p.location,
+        p.type,
+        p.id,
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!searchableText.includes(normalizedSearch)) return false;
+    }
     if (typeFilter !== "Alle" && p.type !== typeFilter) return false;
     if (bedroomFilter !== "Alle") {
       const min = parseInt(bedroomFilter);
@@ -1123,7 +1133,7 @@ REGLER:
           <div className="flex flex-col lg:flex-row gap-3">
             <div className="relative flex-1">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <Input placeholder="Søk etter eiendommer..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+              <Input placeholder="Søk på ref.nr, tittel, sted eller boligtype..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1.5">
@@ -1182,8 +1192,13 @@ REGLER:
                   ) : (
                     <Building2 size={48} className="text-slate-400/30" />
                   )}
+                  {property.ref && (
+                    <Badge variant="outline" className="absolute top-3 left-3 border-slate-500/60 bg-slate-950/80 text-[10px] font-semibold text-white backdrop-blur-sm">
+                      Ref {property.ref}
+                    </Badge>
+                  )}
                   {property.featured && (
-                    <Badge className="absolute top-3 left-3 bg-amber-500/90 text-white border-0 text-[10px]">Fremhevet</Badge>
+                    <Badge className={`absolute ${property.ref ? "top-11" : "top-3"} left-3 bg-amber-500/90 text-white border-0 text-[10px]`}>Fremhevet</Badge>
                   )}
                   <Badge variant={statusVariant(property.status)} className="absolute top-3 right-3 text-[10px]">{property.status}</Badge>
                   <button onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}
@@ -1264,7 +1279,10 @@ REGLER:
                     <Badge variant={statusVariant(property.status)} className="text-[10px]">{property.status}</Badge>
                     {property.source !== "manual" && <Badge variant="outline" className="text-[10px]">{sourceLabel(property.source)}</Badge>}
                   </div>
-                  <div className="flex items-center gap-1 text-xs text-slate-400"><MapPin size={11} /><span>{property.location}</span></div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                    <span className="flex items-center gap-1"><MapPin size={11} />{property.location}</span>
+                    {property.ref && <span className="font-medium text-slate-300">Ref {property.ref}</span>}
+                  </div>
                   <div className="flex items-center gap-4 text-xs text-slate-300 mt-1.5">
                     <span className="text-base font-bold text-emerald-400">€{property.price.toLocaleString("nb-NO")}</span>
                     <span>{property.bedrooms} sov</span>
