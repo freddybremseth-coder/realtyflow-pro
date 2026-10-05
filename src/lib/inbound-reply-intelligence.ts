@@ -32,6 +32,7 @@ export interface InboundReplyClassification {
   shouldRefreshBuyerProfile: boolean;
   shouldRunPropertyMatching: boolean;
   requiresFastResponse: boolean;
+  requestedFollowUpAt: string | null;
 }
 
 export interface GovernedInboundReplyDecision {
@@ -89,11 +90,66 @@ function result(
     shouldRefreshBuyerProfile: false,
     shouldRunPropertyMatching: false,
     requiresFastResponse: false,
+    requestedFollowUpAt: null,
     ...overrides,
   };
 }
 
-export function classifyInboundReply(input: { subject?: string | null; body?: string | null }): InboundReplyClassification {
+function addMonthsUtc(date: Date, months: number) {
+  const next = new Date(date.getTime());
+  const day = next.getUTCDate();
+  next.setUTCDate(1);
+  next.setUTCMonth(next.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+  next.setUTCDate(Math.min(day, lastDay));
+  return next;
+}
+
+function addYearsUtc(date: Date, years: number) {
+  const next = new Date(date.getTime());
+  const month = next.getUTCMonth();
+  const day = next.getUTCDate();
+  next.setUTCDate(1);
+  next.setUTCFullYear(next.getUTCFullYear() + years);
+  next.setUTCMonth(month);
+  const lastDay = new Date(Date.UTC(next.getUTCFullYear(), month + 1, 0)).getUTCDate();
+  next.setUTCDate(Math.min(day, lastDay));
+  return next;
+}
+
+export function deriveRequestedFollowUpAt(value: string | null | undefined, now = new Date()) {
+  const text = normalize(extractLatestReplyText(value) || String(value || ""));
+  if (!text) return null;
+
+  const years = text.match(/\b(?:om|in)\s+(\d{1,2})\s+(?:år|years?)\b/i);
+  if (years) return addYearsUtc(now, Number(years[1])).toISOString();
+
+  const months = text.match(/\b(?:om|in)\s+(\d{1,2})\s+(?:mnd|måneder|months?)\b/i);
+  if (months) return addMonthsUtc(now, Number(months[1])).toISOString();
+
+  const weeks = text.match(/\b(?:om|in)\s+(\d{1,2})\s+(?:uker|weeks?)\b/i);
+  if (weeks) {
+    const next = new Date(now.getTime() + Number(weeks[1]) * 7 * 86_400_000);
+    return next.toISOString();
+  }
+
+  if (/\b(neste år|next year)\b/i.test(text)) return addYearsUtc(now, 1).toISOString();
+
+  if (/\b(etter sommeren|after summer)\b/i.test(text)) {
+    let year = now.getUTCFullYear();
+    let target = new Date(Date.UTC(year, 8, 15, 9, 0, 0));
+    if (target.getTime() <= now.getTime()) target = new Date(Date.UTC(year + 1, 8, 15, 9, 0, 0));
+    return target.toISOString();
+  }
+
+  if (/\b(etter jul|after christmas)\b/i.test(text)) {
+    return new Date(Date.UTC(now.getUTCFullYear() + 1, 0, 15, 9, 0, 0)).toISOString();
+  }
+
+  return null;
+}
+
+export function classifyInboundReply(input: { subject?: string | null; body?: string | null; now?: Date }): InboundReplyClassification {
   const latestReply = extractLatestReplyText(input.body);
   // Do not let a reply subject like "Re: Er bolig ... fortsatt aktuelt?" create
   // positive intent. Subject is fallback only when there is no usable body.
@@ -109,7 +165,10 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
   // Explicit temporary negatives must be evaluated before terminal phrases such
   // as "ikke aktuelt for oss", otherwise "... med det første" becomes LOST.
   const temporaryPause = /\b(not now|not at the moment|not for now|not anytime soon|not in the near future|ikke nå|ikke aktuelt(?: for (?:oss|meg|dem|ham|henne))? (?:nå|akkurat nå|med det første)|ikke med det første|foreløpig ikke aktuelt|ikke foreløpig|ikke på en stund)\b/i.test(text);
-  if (temporaryPause) return result("follow_up_later", 0.94, "schedule_followup", ["Customer indicates that buying is not current but may be relevant later."], { shouldPauseNurture: true });
+  if (temporaryPause) return result("follow_up_later", 0.94, "schedule_followup", ["Customer indicates that buying is not current but may be relevant later."], {
+    shouldPauseNurture: true,
+    requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
+  });
 
   const noLongerBuying = /\b(no longer looking|not looking anymore|not buying anymore|not going to buy|decided not to buy|we are not buying|i am not buying|no longer interested in buying|not interested anymore|not relevant anymore|decided to rent|rent instead|ikke lenger på utkikk|ser ikke lenger etter bolig|skal ikke kjøpe|kommer ikke til å kjøpe|har bestemt oss for ikke å kjøpe|har bestemt meg for ikke å kjøpe|ikke aktuelt å kjøpe|ikke aktuelt lenger|ikke lenger aktuelt|ikke aktuelt for oss|ikke aktuelt for meg|ikke interessert lenger|har bestemt oss for å leie|har bestemt meg for å leie|skal leie i fremtiden)\b/i.test(text);
   if (noLongerBuying) return result("no_longer_buying", 0.97, "mark_lost_no_longer_buying", ["Customer explicitly states that the buying journey has ended."], { shouldStopNurture: true });
@@ -127,8 +186,11 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     || /\b(bo der det ikke|not live in)[^.!?]{0,70}\b(golf|air\s?bnb|korttids|short[- ]term)\b/i.test(text);
   if (changed || explicitBuyerCriteria) return result("update_preferences", explicitBuyerCriteria ? 0.95 : 0.91, "refresh_buyer_profile", [explicitBuyerCriteria ? "Customer states explicit property or neighbourhood criteria." : "Customer indicates changed buying requirements."], { shouldPauseNurture: true, shouldRefreshBuyerProfile: true, shouldRunPropertyMatching: true });
 
-  const later = /\b(later|next year|in a few months|after summer|after christmas|senere|kanskje senere|neste år|om noen måneder|etter sommeren|etter jul)\b/i.test(text);
-  if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], { shouldPauseNurture: true });
+  const later = /\b(later|next year|in a few months|after summer|after christmas|in \d{1,2} (?:years?|months?|weeks?)|a few years|put (?:this|me|us) on hold|senere|kanskje senere|neste år|om noen måneder|om \d{1,2} (?:år|mnd|måneder|uker)|om noen år|etter sommeren|etter jul|på vent)\b/i.test(text);
+  if (later) return result("follow_up_later", 0.9, "schedule_followup", ["Customer asks for a later follow-up."], {
+    shouldPauseNurture: true,
+    requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
+  });
 
   const active = /\b(still interested|still looking|interested|yes we are|yes i am|ready to buy|ready to move forward|fortsatt interessert|fortsatt aktuelt|vi ser fortsatt|jeg ser fortsatt|interessert|klar til å kjøpe|aktuelt)\b/i.test(text);
   if (active) return result("active_interest", 0.91, "move_to_contact", ["Customer confirms active buying interest."], { shouldPauseNurture: true, shouldRunPropertyMatching: true, requiresFastResponse: true });
