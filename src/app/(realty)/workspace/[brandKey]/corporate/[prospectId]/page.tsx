@@ -918,7 +918,7 @@ export default function CorporateAccountWorkspacePage() {
                   <ExternalLink size={14}/> Åpne E-post / Reach
                 </Link>
               </div>
-              <p className="mt-3 text-[11px] text-slate-600">Lagring oppretter bare et utkast mot en server-godkjent Corporate-mottaker. Ingenting sendes uten eksplisitt handling i E-post / Reach.</p>
+              <p className="mt-3 text-[11px] text-slate-600">Utkastet er ikke sendt. Lagring oppretter bare et utkast mot en server-godkjent Corporate-mottaker. Ingenting sendes uten eksplisitt handling i E-post / Reach.</p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
