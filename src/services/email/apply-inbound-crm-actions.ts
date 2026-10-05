@@ -168,6 +168,7 @@ export async function applyInboundCrmActions(
   const sla = decideHotLeadSla(classification);
   const now = new Date().toISOString();
   const responseDue = responseDueAt(now, sla.responseMinutes);
+  const requestedFollowUpAt = classification.requestedFollowUpAt;
 
   const { data: contact } = fromAddress
     ? await supabase
@@ -259,6 +260,8 @@ export async function applyInboundCrmActions(
     update.suppression_reason = "customer_unsubscribe_reply";
     update.nurture_status = "stopped";
     update.next_followup = null;
+    update.waiting_on = null;
+    update.waiting_until = null;
     suppressed = true;
   } else if (terminalAutoClose) {
     update.pipeline_status = "LOST";
@@ -269,6 +272,8 @@ export async function applyInboundCrmActions(
       : "customer_no_longer_buying";
     update.nurture_status = "stopped";
     update.next_followup = null;
+    update.waiting_on = null;
+    update.waiting_until = null;
     nextPipelineStatus = "LOST";
     suppressed = true;
   } else if (isTerminalSalesOutcome(classification.intent)) {
@@ -276,7 +281,16 @@ export async function applyInboundCrmActions(
     update.suppression_reason = "terminal_outcome_pending_review";
     update.nurture_status = "stopped";
     update.next_followup = null;
+    update.waiting_on = null;
+    update.waiting_until = null;
     suppressed = true;
+  } else if (classification.intent === "follow_up_later") {
+    update.pipeline_status = "ON_HOLD";
+    update.nurture_status = "paused";
+    update.next_followup = null;
+    update.waiting_on = "customer_requested_later_followup";
+    update.waiting_until = requestedFollowUpAt;
+    nextPipelineStatus = "ON_HOLD";
   } else if (activeInterestAutoAdvance) {
     update.pipeline_status = "CONTACT";
     update.nurture_status = "paused";
@@ -317,6 +331,27 @@ export async function applyInboundCrmActions(
       actorId: fromAddress || null,
       createdBy: "email-crm-sync:terminal-reply",
     }).catch(() => undefined);
+  } else if (classification.intent === "follow_up_later") {
+    await closeOpenSalesWorkItems(
+      supabase,
+      String(contact.id),
+      requestedFollowUpAt
+        ? `kunden ba om pause til ${requestedFollowUpAt.slice(0, 10)}`
+        : "kunden ba om oppfølging senere; dato må avklares internt",
+      now,
+    );
+    if (normalizedPreviousPipelineStatus !== "ON_HOLD") {
+      await recordPipelineTransition(supabase, {
+        contactId: String(contact.id),
+        brandId: params.brandId,
+        previousStatus: previousPipelineStatus,
+        nextStatus: "ON_HOLD",
+        occurredAt: now,
+        actorType: "customer",
+        actorId: fromAddress || null,
+        createdBy: "email-crm-sync:follow-up-later",
+      }).catch(() => undefined);
+    }
   } else if (activeInterestAutoAdvance) {
     await recordPipelineTransition(supabase, {
       contactId: String(contact.id),
@@ -367,7 +402,18 @@ export async function applyInboundCrmActions(
       aiScore: 80,
       metadata,
     });
-  } else if (!terminalAutoClose && classification.intent !== "do_not_contact" && classification.intent !== "unclear") {
+  } else if (classification.intent === "follow_up_later" && !requestedFollowUpAt) {
+    workItemCreated = await ensureWorkItem(supabase, {
+      sourceId: `${params.emailMessageId}:follow-up-date-review`,
+      title: `Sett ventedato: ${contact.name || fromAddress}`,
+      description: `${subject || "Innkommende e-post"}\n${summary}`,
+      priority: "LOW",
+      brandId: params.brandId,
+      nextAction: "Sett ønsket oppfølgingsdato. Ikke kontakt kunden før datoen er avklart.",
+      aiScore: 35,
+      metadata,
+    });
+  } else if (!terminalAutoClose && classification.intent !== "do_not_contact" && classification.intent !== "unclear" && classification.intent !== "follow_up_later") {
     workItemCreated = await ensureWorkItem(supabase, {
       sourceId: params.emailMessageId,
       title: sla.isHotLead ? `HOT LEAD: ${contact.name || fromAddress}` : `Følg opp kundesvar: ${contact.name || fromAddress}`,
