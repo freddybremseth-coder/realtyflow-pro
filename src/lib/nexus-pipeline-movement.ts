@@ -29,6 +29,7 @@ export interface PipelineMovementContact extends CustomerListContact {
   do_not_contact?: boolean | null;
   email_suppressed?: boolean | null;
   last_inbound_reply_at?: string | null;
+  last_reply_classification?: string | null;
 }
 
 export interface PipelineMovementAssessment {
@@ -63,7 +64,15 @@ function daysSince(value: unknown, now: Date) {
 
 export function assessPipelineMovement(contact: PipelineMovementContact, now = new Date()): PipelineMovementAssessment | null {
   const stage = normalizeRealEstateStage(contact.pipeline_status);
-  if (["WON","LOST"].includes(stage) || contact.do_not_contact || contact.email_suppressed) return null;
+  const lastReplyClassification = String(contact.last_reply_classification || "").trim().toLowerCase();
+  const nurtureStatus = String(contact.nurture_status || "").trim().toLowerCase();
+  if (
+    ["WON","LOST"].includes(stage)
+    || contact.do_not_contact
+    || contact.email_suppressed
+    || nurtureStatus === "stopped"
+    || ["do_not_contact","purchased_elsewhere","no_longer_buying"].includes(lastReplyClassification)
+  ) return null;
   const actionPriority = buildCustomerListAction(contact, now);
   const customerHref = href(contact.id);
 
@@ -73,10 +82,14 @@ export function assessPipelineMovement(contact: PipelineMovementContact, now = n
 
   if (contact.waiting_on) {
     const until = validDate(contact.waiting_until);
-    const overdue = !until || until.getTime() < now.getTime();
+    const overdue = Boolean(until && until.getTime() < now.getTime());
     return overdue
       ? { score:97, cause:"waiting_overdue", causeLabel:"Ventetid utløpt", action:"Gjenoppta oppfølging", reason:actionPriority.reason, targetStage:stage === "ON_HOLD" ? "CONTACT" : stage, priority:"CRITICAL", needsAction:true, reactivationSegment:null, reactivationScore:null, href:customerHref }
-      : { score:18, cause:"waiting_planned", causeLabel:"Planlagt venting", action:actionPriority.label, reason:actionPriority.reason, targetStage:null, priority:"LOW", needsAction:false, reactivationSegment:null, reactivationScore:null, href:customerHref };
+      : { score:18, cause:"waiting_planned", causeLabel:"Planlagt venting", action:until ? actionPriority.label : "Sett ventedato internt", reason:until ? actionPriority.reason : "Kunden er parkert uten ventedato. Ingen kundekontakt skal skje før datoen er avklart.", targetStage:null, priority:"LOW", needsAction:false, reactivationSegment:null, reactivationScore:null, href:customerHref };
+  }
+
+  if (stage === "ON_HOLD") {
+    return { score:15, cause:"waiting_planned", causeLabel:"Parkert kunde", action:"Sett ventedato internt", reason:"ON_HOLD uten aktiv venteregel behandles fail-closed. Ingen kundekontakt før saken er eksplisitt gjenåpnet.", targetStage:null, priority:"LOW", needsAction:false, reactivationSegment:null, reactivationScore:null, href:customerHref };
   }
 
   if (!contact.email && !contact.phone) {
