@@ -235,6 +235,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
     contacts: contactsResult.data || [],
     touchpoints: touchpointsResult.data || [],
     enrichment: enrichmentResult.data || [],
+    intelligence: intelligenceSummary,
   });
   const stageGate = evaluateCorporateStageGate({
     strategy: strategyResult.data || null,
