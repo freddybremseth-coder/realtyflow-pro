@@ -18,6 +18,7 @@ export interface DormantLeadContact {
   propertyInterest?: string | null;
   createdAt?: string | null;
   lastContact?: string | null;
+  lastInboundReplyAt?: string | null;
   lastAiFollowup?: string | null;
   latestInteractionAt?: string | null;
   latestRevenueEventAt?: string | null;
@@ -44,19 +45,36 @@ function validDate(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function lastOutboundTouch(contact: DormantLeadContact) {
+  const values = [contact.lastAiFollowup, contact.latestNurtureSentAt]
+    .map(validDate)
+    .filter((date): date is Date => Boolean(date));
+  if (!values.length) return null;
+  return new Date(Math.max(...values.map((date) => date.getTime())));
+}
+
 export function lastMeaningfulEngagement(contact: DormantLeadContact) {
-  const values = [
-    contact.lastContact,
-    contact.lastAiFollowup,
+  const confirmedCustomerSignals = [
+    contact.lastInboundReplyAt,
     contact.latestInteractionAt,
-    contact.latestRevenueEventAt,
-    contact.latestNurtureSentAt,
   ]
     .map(validDate)
     .filter((date): date is Date => Boolean(date));
 
-  if (!values.length) return null;
-  return new Date(Math.max(...values.map((date) => date.getTime()))).toISOString();
+  if (confirmedCustomerSignals.length) {
+    return new Date(Math.max(...confirmedCustomerSignals.map((date) => date.getTime()))).toISOString();
+  }
+
+  // last_contact is a legacy mixed-direction field. Use it only when it is
+  // newer than known automated outbound activity; otherwise an email we sent
+  // must not make the customer look engaged.
+  const legacyLastContact = validDate(contact.lastContact);
+  const outbound = lastOutboundTouch(contact);
+  if (legacyLastContact && (!outbound || legacyLastContact.getTime() > outbound.getTime() + 1000)) {
+    return legacyLastContact.toISOString();
+  }
+
+  return null;
 }
 
 export function assessDormantLead(
@@ -71,6 +89,8 @@ export function assessDormantLead(
   const lastEngagement = lastMeaningfulEngagement(contact);
   const anchor = validDate(lastEngagement) || validDate(contact.createdAt);
   const dormantDays = anchor ? Math.max(0, Math.floor((now.getTime() - anchor.getTime()) / DAY_MS)) : null;
+  const outbound = lastOutboundTouch(contact);
+  const outboundDays = outbound ? Math.max(0, Math.floor((now.getTime() - outbound.getTime()) / DAY_MS)) : null;
   const lifestyle = buildBuyerLifestyleProfile(criteria);
   const gaps = buyerLifestyleDiscoveryGaps(criteria);
 
@@ -127,6 +147,11 @@ export function assessDormantLead(
     reasons.push("Ingen sikker aktivitetsdato; alder er ukjent.");
   }
 
+  if (outboundDays !== null && outboundDays < 30) {
+    score -= 25;
+    reasons.push("Nylig utsendelse fra oss gir 30 dagers reaktiverings-cooldown; dette er ikke kundens aktivitet.");
+  }
+
   if (contact.propertyInterest) {
     score += 10;
     reasons.push("Dokumentert bolig-/områdeinteresse finnes.");
@@ -150,7 +175,8 @@ export function assessDormantLead(
     dormantDays,
     lastMeaningfulEngagementAt: lastEngagement,
     reasons,
-    eligibleForDraft: dormantDays === null ? score >= 75 : dormantDays >= 90 && score >= 45,
+    eligibleForDraft: (dormantDays === null ? score >= 75 : dormantDays >= 90 && score >= 45)
+      && (outboundDays === null || outboundDays >= 30),
     lifestyleSummary: lifestyle.confirmed.slice(0, 5).map((item) => `${item.namespace}:${item.dimension}`),
     inferredQuestions: gaps.slice(0, 3).map((item) => item.question),
   };
