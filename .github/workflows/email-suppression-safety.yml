@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "src/services/email/email-suppression.ts"
+      - "src/services/email/send-brand-email.ts"
       - "src/services/email/email-suppression.contract.test.ts"
       - ".github/workflows/email-suppression-safety.yml"
   push:
