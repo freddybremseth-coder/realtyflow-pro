@@ -446,6 +446,57 @@ export default function CorporateAccountWorkspacePage() {
     }
   }
 
+  async function saveCoachEmailDraft() {
+    if (!coachOutput?.emailDraft?.subject?.trim() || !coachOutput?.emailDraft?.body?.trim()) {
+      setError("Coachen har ikke et ferdig e-postutkast å lagre.");
+      return;
+    }
+    setBusy("coach-email"); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save",
+          targetType: "corporate",
+          targetId: prospectId,
+          subject: coachOutput.emailDraft.subject,
+          bodyText: coachOutput.emailDraft.body,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const code = body?.error?.code || "";
+        const message = body?.error?.message ||
+          (response.status === 403 ? "Du mangler tilgang til å lage e-postutkast i dette arbeidsområdet." :
+           code === "EMAIL_DRAFT_SAVE_FAILED" ? "Kontoen har ikke en godkjent e-postmottaker i E-post / Reach ennå." :
+           "Kunne ikke lagre e-postutkastet.");
+        throw new Error(message);
+      }
+      setNotice("Coach-utkastet er lagret i E-post / Reach. Ingenting er sendt.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kunne ikke lagre coach-utkastet.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function applyCoachRecommendation() {
+    if (!coachOutput) return;
+    const next = coachOutput.nextBestAction?.action?.trim();
+    const reason = coachOutput.nextBestAction?.why?.trim();
+    const problem = coachOutput.problem?.hypothesis?.trim();
+    const solution = coachOutput.solution?.positioning?.trim();
+    setStrategy(current => ({
+      ...current,
+      nextBestAction: next || current.nextBestAction,
+      nextActionReason: reason || current.nextActionReason,
+      problemHypothesis: problem || current.problemHypothesis,
+      solutionHypothesis: solution || current.solutionHypothesis,
+    }));
+    setNotice("Coachens anbefaling er lagt inn i strategifeltene. Trykk «Lagre strategi» for å gjøre endringen varig.");
+  }
+
   async function saveContact() {
     if (!contactForm.name.trim()) {
       setError("Navn på personen mangler.");
@@ -853,7 +904,21 @@ export default function CorporateAccountWorkspacePage() {
               <div className="flex items-center gap-2"><Mail size={15} className="text-cyan-300"/><p className="text-xs font-black uppercase text-cyan-300">Forslag til e-post</p></div>
               <p className="mt-3 text-sm font-semibold text-white">{coachOutput.emailDraft.subject}</p>
               <pre className="mt-2 whitespace-pre-wrap font-sans text-xs leading-6 text-slate-300">{coachOutput.emailDraft.body}</pre>
-              <p className="mt-3 text-[11px] text-slate-600">Utkastet er ikke sendt. Tilpass og godkjenn før det eventuelt brukes i E-post Reach.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => void saveCoachEmailDraft()} disabled={busy === "coach-email"}
+                  className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                  <Mail size={14}/>{busy === "coach-email" ? "Lagrer…" : "Lagre i E-post / Reach"}
+                </button>
+                <button type="button" onClick={() => void applyCoachRecommendation()}
+                  className="inline-flex items-center gap-2 rounded-lg border border-violet-700 px-3 py-2 text-xs font-semibold text-violet-200">
+                  <Target size={14}/> Bruk anbefaling i strategi
+                </button>
+                <Link href={`/workspace/${encodeURIComponent(brandKey)}?tab=growth&area=email`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300">
+                  <ExternalLink size={14}/> Åpne E-post / Reach
+                </Link>
+              </div>
+              <p className="mt-3 text-[11px] text-slate-600">Lagring oppretter bare et utkast mot en server-godkjent Corporate-mottaker. Ingenting sendes uten eksplisitt handling i E-post / Reach.</p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
