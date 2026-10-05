@@ -56,6 +56,28 @@ function stringList(value: unknown, maxItems = 12, maxLength = 120) {
     .slice(0, maxItems);
 }
 
+function api1881FailureMessage(cause: unknown) {
+  const error = cause as Error & { status?: number; body?: unknown; endpoint?: string };
+  const status = Number.isFinite(error?.status) ? Number(error.status) : null;
+  const body = error?.body && typeof error.body === "object" && !Array.isArray(error.body)
+    ? error.body as Record<string, unknown>
+    : null;
+  const providerMessage = [
+    body?.message,
+    body?.error_description,
+    body?.detail,
+    body?.title,
+    typeof body?.error === "string" ? body.error : null,
+  ].find(value => typeof value === "string" && value.trim());
+  const cleanedProviderMessage = typeof providerMessage === "string"
+    ? providerMessage.replace(/[\r\n\t]+/g, " ").trim().slice(0, 280)
+    : "";
+  if (status) return `1881 svarte HTTP ${status}${cleanedProviderMessage ? `: ${cleanedProviderMessage}` : "."}`;
+  return error instanceof Error && error.message
+    ? `1881-oppslaget feilet (${error.message}).`
+    : "1881-oppslaget feilet.";
+}
+
 async function loadAccount(supabase: any, prospectId: string) {
   const [
     prospectResult,
@@ -186,7 +208,7 @@ export async function POST(
       result = await search1881Company(query);
     } catch (cause) {
       const code = cause instanceof Error ? cause.message : "API1881_FAILED";
-      return fail(502, code, "1881-oppslaget feilet.");
+      return fail(502, code, api1881FailureMessage(cause));
     }
 
     const { data: saved, error: saveError } = await access.value.supabase
