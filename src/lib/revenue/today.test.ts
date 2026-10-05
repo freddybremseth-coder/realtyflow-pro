@@ -69,6 +69,73 @@ test("closed contacts are excluded from the active revenue inbox", () => {
   );
 });
 
+test("suppressed contacts never appear in Revenue Today regardless of score", () => {
+  assert.equal(
+    buildRevenuePriority({
+      id: "suppressed-1",
+      email: "suppressed@example.com",
+      phone: "+4712345678",
+      pipeline_status: "QUALIFIED",
+      buying_signal_score: 100,
+      notes: "Ready for reservation and viewing.",
+      email_suppressed: true,
+    }, NOW),
+    null,
+  );
+});
+
+test("future waiting contacts stay out of Revenue Today until the waiting date", () => {
+  assert.equal(
+    buildRevenuePriority({
+      id: "waiting-1",
+      email: "waiting@example.com",
+      pipeline_status: "ON_HOLD",
+      waiting_on: "customer_requested_later_followup",
+      waiting_until: "2027-07-11T08:00:00.000Z",
+    }, NOW),
+    null,
+  );
+
+  const due = buildRevenuePriority({
+    id: "waiting-due",
+    email: "waiting@example.com",
+    pipeline_status: "ON_HOLD",
+    waiting_on: "customer_requested_later_followup",
+    waiting_until: "2026-07-10T08:00:00.000Z",
+  }, NOW);
+  assert.ok(due);
+});
+
+test("latest terminal customer reply is a hard stop even if CRM flags were missed", () => {
+  const item = buildRevenuePriority({
+    id: "stale-qualified",
+    email: "buyer@example.com",
+    phone: "+4712345678",
+    pipeline_status: "QUALIFIED",
+    buying_signal_score: 100,
+    notes: "Ready for reservation.",
+  }, NOW, {
+    revenueEvents: [{
+      event_type: "email_received",
+      title: "Re: Er bolig fortsatt aktuelt?",
+      description: "Ikke aktuelt lenger.",
+      occurred_at: "2026-07-10T12:00:00.000Z",
+    }],
+  });
+  assert.equal(item, null);
+});
+
+test("outbound unsubscribe wording is not treated as customer buying intent", () => {
+  const memory = scoreRevenueMemorySignals([{
+    event_type: "message_sent",
+    title: "E-post sendt",
+    description: "Hvis dette ikke er aktuelt, svar stopp.",
+    occurred_at: "2026-07-10T12:00:00.000Z",
+  }], NOW);
+  assert.equal(memory.reasons.includes("negativt signal i kundeminne"), false);
+  assert.equal(memory.reasons.includes("sterkt kjøpssignal i kundeminne"), false);
+});
+
 test("missing contact channels becomes the first recommended action", () => {
   const action = recommendRevenueAction(
     {
