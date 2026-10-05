@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildBuyerCriteriaLines,
   buildCriteriaConfirmationEmail,
+  buildBuyerPriorityQuestion,
   isAffirmativeCriteriaConfirmation,
   isBroadBuyerLocation,
 } from "@/services/email/buyer-profile-confirmation";
@@ -143,6 +144,69 @@ test("multi-country broad preference triggers prioritization instead of empty co
   assert.match(email.bodyText, /prioritere ett land eller område først/);
   assert.match(email.bodyText, /totalbudsjett/);
   assert.match(email.bodyText, /leilighet, rekkehus eller villa/);
+});
+
+test("priority question prefers concrete area choice when several areas are known", () => {
+  const question = buildBuyerPriorityQuestion({
+    locations: { preferred: ["Punta Prima", "La Mata"] },
+    preferences: [
+      { key: "pool", value: true, weight: 0.8 },
+      { key: "distance_to_beach", value: "walking distance", weight: 0.7 },
+    ],
+  });
+
+  assert.equal(question, "Hvis du skulle prioritere ett område først, er Punta Prima eller La Mata viktigst for deg?");
+});
+
+test("priority question compares only documented soft preferences", () => {
+  const question = buildBuyerPriorityQuestion({
+    locations: { preferred: ["Villajoyosa"] },
+    hardRequirements: [{ key: "bedrooms", value: 3 }],
+    preferences: [
+      { key: "pool", value: true, weight: 0.9 },
+      { key: "distance_to_beach", value: "walking distance", weight: 0.8 },
+    ],
+  });
+
+  assert.equal(question, "Hvis vi må prioritere mellom basseng og gangavstand til stranden, hva er viktigst for deg?");
+});
+
+test("hard requirements are never turned into a tradeoff question", () => {
+  const question = buildBuyerPriorityQuestion({
+    locations: { preferred: ["Villajoyosa"] },
+    hardRequirements: [
+      { key: "bedrooms", value: 3 },
+      { key: "bathrooms", value: 2 },
+    ],
+    preferences: [],
+  });
+
+  assert.equal(question, null);
+});
+
+test("priority question is added only when fewer than three missing-data questions remain", () => {
+  const email = buildCriteriaConfirmationEmail({
+    customerName: "Roy",
+    analysis: {
+      budget: { amount: 450000, currency: "EUR" },
+      locations: { preferred: ["Punta Prima"] },
+      propertyTypes: [],
+      hardRequirements: [],
+      preferences: [
+        { key: "pool", value: true, weight: 0.9 },
+        { key: "distance_to_beach", value: "walking distance", weight: 0.8 },
+      ],
+      exclusions: [],
+      missingInformation: [
+        { key: "property_type", priority: "high" },
+        { key: "bedrooms", priority: "medium" },
+      ],
+    },
+  });
+
+  assert.equal(email.followUpQuestions.length, 3);
+  assert.equal(email.priorityQuestion, "Hvis vi må prioritere mellom basseng og gangavstand til stranden, hva er viktigst for deg?");
+  assert.match(email.bodyText, /Hvis vi må prioritere mellom basseng og gangavstand til stranden/);
 });
 
 test("broad location detector covers country and over-broad regional values", () => {
