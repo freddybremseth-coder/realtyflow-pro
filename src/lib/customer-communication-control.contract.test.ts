@@ -44,6 +44,14 @@ test("manual takeover requires customer write access and never changes pipeline 
   assert.doesNotMatch(routeSource, /pipeline_status:/);
 });
 
+test("manual takeover never overwrites a stronger existing CRM suppression", () => {
+  assert.match(routeSource, /existingSuppressionReason/);
+  assert.match(routeSource, /contact\.do_not_contact/);
+  assert.match(routeSource, /contact\.email_suppressed/);
+  assert.match(routeSource, /existingSuppressionReason !== "manual_owner_takeover"/);
+  assert.match(routeSource, /sterkere CRM-sperre/);
+});
+
 test("manual takeover is a hard system-email block even for allowSuppressed sends", () => {
   assert.match(suppressionSource, /manualTakeoverEmails/);
   assert.match(suppressionSource, /manual_owner_takeover/);
