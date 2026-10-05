@@ -58,3 +58,22 @@ test("live review candidates are promoted before historical review backlog", () 
   assert.ok(historicalOrder >= 0);
   assert.ok(receivedOrder > historicalOrder);
 });
+
+
+test("Corporate replies inherit account linkage only from exact governed thread evidence", () => {
+  assert.match(admission, /resolveThreadCorporateProspectIds/);
+  assert.match(admission, /message\.inReplyTo/);
+  assert.match(admission, /message\.references/);
+  assert.match(admission, /corporate_prospect_id/);
+  assert.match(admission, /resolved_corporate_thread/);
+  assert.match(admission, /ambiguous_corporate_thread/);
+  const corporateIndex = admission.indexOf("resolveThreadCorporateProspectIds(supabase, brandId, message)");
+  const exactContactIndex = admission.indexOf("const exact = identityMatches", corporateIndex);
+  assert.ok(corporateIndex >= 0 && exactContactIndex > corporateIndex);
+  assert.doesNotMatch(admission, /company_name.*from_address|from_address.*company_name/i);
+});
+
+test("live ingest persists resolved Corporate account id without inventing a CRM contact", () => {
+  assert.match(ingest, /corporate_prospect_id:\s*decision\.corporateProspectId/);
+  assert.match(ingest, /crm_contact_id:\s*decision\.contactId/);
+});
