@@ -402,25 +402,34 @@ export async function POST(
       .maybeSingle();
     if (existingStrategyError) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
 
-    const strategyWrite = existingStrategy
-      ? access.value.supabase
-          .from("corporate_account_strategies")
-          .update({
-            ...strategyUpdate,
-            updated_by_email: actorEmail,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("prospect_id", params.prospectId)
-      : access.value.supabase
-          .from("corporate_account_strategies")
-          .insert({
-            prospect_id: params.prospectId,
-            ...strategyUpdate,
-            updated_by_email: actorEmail,
-            created_by_email: actorEmail,
-          });
-    const { data: strategyData, error: strategyError } = await strategyWrite.select("*").single();
-    if (strategyError || !strategyData) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
+    let strategyData: Record<string, unknown> | null = null;
+    if (existingStrategy) {
+      const write = await access.value.supabase
+        .from("corporate_account_strategies")
+        .update({
+          ...strategyUpdate,
+          updated_by_email: actorEmail,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("prospect_id", params.prospectId)
+        .select("*")
+        .single();
+      if (write.error || !write.data) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
+      strategyData = write.data as Record<string, unknown>;
+    } else {
+      const write = await access.value.supabase
+        .from("corporate_account_strategies")
+        .insert({
+          prospect_id: params.prospectId,
+          ...strategyUpdate,
+          updated_by_email: actorEmail,
+          created_by_email: actorEmail,
+        })
+        .select("*")
+        .single();
+      if (write.error || !write.data) return fail(409, "COACH_STRATEGY_APPLY_FAILED");
+      strategyData = write.data as Record<string, unknown>;
+    }
 
     const { error: runUpdateError } = await access.value.supabase
       .from("corporate_sales_coach_runs")
