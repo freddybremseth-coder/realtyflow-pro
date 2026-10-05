@@ -61,7 +61,7 @@ test("Corporate Sales Coach deep-links directly into the email work area", () =>
   const workspace = fs.readFileSync("src/app/(realty)/workspace/[brandKey]/page.tsx", "utf8");
   const growthPanel = fs.readFileSync("src/components/workspaces/growth-corporate-panel.tsx", "utf8");
   assert.match(account, /\?tab=growth&area=email/);
-  assert.match(workspace, /useSearchParams/);
+  assert.match(workspace, /URLSearchParams\(window\.location\.search\)/);
   assert.match(workspace, /initialArea=\{requestedArea\}/);
   assert.match(growthPanel, /initialArea\?: string \| null/);
   assert.match(growthPanel, /availableAreas\.includes\(initialArea as WorkArea\)/);
