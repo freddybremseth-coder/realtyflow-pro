@@ -200,7 +200,7 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       .order("created_at", { ascending: false })
       .limit(12),
     supabase.from("corporate_intelligence_findings")
-      .select("id,scope,signal_type,title,summary,why_it_matters,source_url,source_title,source_kind,source_published_at,first_seen_at,last_seen_at,change_status,direction,relevance,strength,freshness,source_authority,confidence,fit_delta,timing_delta,intent_delta,financial_capacity_delta,evidence,active")
+      .select("id,scope,signal_type,title,summary,why_it_matters,source_url,source_title,source_kind,source_published_at,first_seen_at,last_seen_at,change_status,direction,relevance,strength,freshness,source_authority,confidence,fit_delta,timing_delta,intent_delta,financial_capacity_delta,evidence,active,review_status,review_note,reviewed_at,reviewed_by_email")
       .eq("prospect_id", prospectId)
       .eq("scope", "ACCOUNT")
       .eq("active", true)
@@ -353,7 +353,41 @@ export async function POST(
     }
   }
 
-    if (action === "sales_coach") {
+    if (action === "review_intelligence") {
+    const findingId = clean(body.findingId, 80);
+    const reviewStatus = clean(body.reviewStatus, 20).toUpperCase();
+    const reviewNote = clean(body.reviewNote, 1200);
+    if (!uuid.test(findingId)) return fail(400, "INVALID_INTELLIGENCE_FINDING");
+    if (!["PENDING","CONFIRMED","IGNORED","OUTDATED"].includes(reviewStatus)) {
+      return fail(400, "INVALID_INTELLIGENCE_REVIEW_STATUS");
+    }
+
+    const { data: reviewed, error: reviewError } = await access.value.supabase.rpc(
+      "corporate_intelligence_review_finding",
+      {
+        p_finding_id: findingId,
+        p_prospect_id: params.prospectId,
+        p_review_status: reviewStatus,
+        p_note: reviewNote || null,
+        p_reviewer_email: actorEmail,
+      },
+    );
+    if (reviewError) {
+      const message = String(reviewError.message || "");
+      if (message.includes("INTELLIGENCE_FINDING_NOT_FOUND")) return fail(404, "INTELLIGENCE_FINDING_NOT_FOUND");
+      return fail(409, "INTELLIGENCE_REVIEW_FAILED", "Kunne ikke lagre vurderingen av Intelligence-funnet.");
+    }
+
+    return NextResponse.json({
+      ok: true,
+      finding: reviewed,
+      externalAction: false,
+      outreachStarted: false,
+      pipelineMoved: false,
+    }, { headers: noStore });
+  }
+
+  if (action === "sales_coach") {
     const mode = clean(body.mode, 30).toUpperCase();
     if (!["NEXT_STEP","DISCOVERY","EMAIL","ARGUMENTS","OBJECTION","MEETING"].includes(mode)) {
       return fail(400, "INVALID_COACH_MODE");
