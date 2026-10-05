@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue, type WorkspacePropertyCard } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
@@ -45,10 +45,9 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
 
 export default function FocusedWorkspacePage() {
   const params = useParams();
-  const searchParams = useSearchParams();
   const brandKey = String(params.brandKey || "");
-  const requestedTab = searchParams.get("tab");
-  const requestedArea = searchParams.get("area");
+  const [requestedTab, setRequestedTab] = useState<string | null>(null);
+  const [requestedArea, setRequestedArea] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("today");
   const [permissions, setPermissions] = useState<WorkspacePermission[]>([]);
   const [responsibilities, setResponsibilities] = useState<WorkspaceResponsibilityId[]>([]);
@@ -72,6 +71,12 @@ export default function FocusedWorkspacePage() {
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    setRequestedTab(query.get("tab"));
+    setRequestedArea(query.get("area"));
+  }, [brandKey]);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
