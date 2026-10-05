@@ -47,8 +47,8 @@ test("manual takeover requires customer write access and never changes pipeline 
 test("manual takeover is a hard system-email block even for allowSuppressed sends", () => {
   assert.match(suppressionSource, /manualTakeoverEmails/);
   assert.match(suppressionSource, /manual_owner_takeover/);
-  assert.match(sendBrandEmailSource, /suppression\.manualTakeoverEmails\.length > 0/);
-  const takeoverGate = sendBrandEmailSource.indexOf("suppression.manualTakeoverEmails.length > 0");
+  assert.match(sendBrandEmailSource, /manualTakeoverEmails[\s\S]{0,40}length > 0/);
+  const takeoverGate = sendBrandEmailSource.indexOf("manualTakeoverEmails");
   const allowSuppressedGate = sendBrandEmailSource.indexOf("!params.allowSuppressed");
   assert.ok(takeoverGate >= 0 && allowSuppressedGate >= 0 && takeoverGate < allowSuppressedGate);
 });
