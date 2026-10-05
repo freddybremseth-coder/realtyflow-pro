@@ -129,6 +129,10 @@ type IntelligenceFinding = {
   timing_delta?: number;
   intent_delta?: number;
   financial_capacity_delta?: number;
+  review_status?: "PENDING"|"CONFIRMED"|"IGNORED"|"OUTDATED";
+  review_note?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by_email?: string | null;
   evidence?: {
     event_year?: number | null;
     event_date_precision?: string | null;
@@ -202,6 +206,11 @@ type AccountData = {
     account: IntelligenceFinding[];
     summary: {
       total: number;
+      effectiveTotal: number;
+      reviewPending: number;
+      confirmed: number;
+      ignoredOrOutdated: number;
+      historical: number;
       materialChanges: number;
       negativeSignals: number;
       deltas: { fit: number; timing: number; intent: number; financialCapacity: number };
@@ -457,6 +466,29 @@ export default function CorporateAccountWorkspacePage() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Corporate Intelligence feilet.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function reviewIntelligenceFinding(
+    finding: IntelligenceFinding,
+    reviewStatus: "PENDING"|"CONFIRMED"|"IGNORED"|"OUTDATED",
+  ) {
+    setBusy("review:" + finding.id); setError(""); setNotice("");
+    try {
+      await post({
+        action: "review_intelligence",
+        findingId: finding.id,
+        reviewStatus,
+      });
+      const label = reviewStatus === "CONFIRMED" ? "bekreftet" :
+        reviewStatus === "IGNORED" ? "ignorert" :
+        reviewStatus === "OUTDATED" ? "markert utdatert" : "gjenåpnet for vurdering";
+      setNotice("Intelligence-funnet er " + label + ". Nexus-rådet er oppdatert uten ekstern handling.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kunne ikke lagre Intelligence-vurderingen.");
     } finally {
       setBusy("");
     }
@@ -840,6 +872,14 @@ export default function CorporateAccountWorkspacePage() {
         </div>}
       </div>}
 
+      <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+        <span className="rounded-full border border-slate-700 bg-slate-950/50 px-2.5 py-1 text-slate-300">Påvirker Nexus: {data.intelligence.summary.effectiveTotal}</span>
+        <span className="rounded-full border border-amber-800 bg-amber-950/30 px-2.5 py-1 text-amber-300">Til vurdering: {data.intelligence.summary.reviewPending}</span>
+        <span className="rounded-full border border-emerald-800 bg-emerald-950/30 px-2.5 py-1 text-emerald-300">Bekreftet: {data.intelligence.summary.confirmed}</span>
+        <span className="rounded-full border border-slate-700 bg-slate-950/50 px-2.5 py-1 text-slate-400">Ignorert/utdatert: {data.intelligence.summary.ignoredOrOutdated}</span>
+        <span className="rounded-full border border-slate-700 bg-slate-950/50 px-2.5 py-1 text-slate-500">Historisk: {data.intelligence.summary.historical}</span>
+      </div>
+
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Aktive funn</p>
@@ -865,11 +905,22 @@ export default function CorporateAccountWorkspacePage() {
       </div>
 
       {data.intelligence.account.length > 0 ? <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {data.intelligence.account.slice(0, 8).map(item => <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+        {data.intelligence.account.slice(0, 8).map(item => {
+          const reviewStatus = item.review_status || "PENDING";
+          const excluded = reviewStatus === "IGNORED" || reviewStatus === "OUTDATED";
+          return <article key={item.id} className={`rounded-xl border border-slate-800 bg-slate-950/45 p-4 ${excluded ? "opacity-65" : ""}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.change_status === "NEW" ? "bg-emerald-950 text-emerald-300" : item.change_status === "CHANGED" ? "bg-amber-950 text-amber-300" : "bg-slate-800 text-slate-500"}`}>{item.change_status === "NEW" ? "NYTT FUNN" : item.change_status === "CHANGED" ? "ENDRET" : "UENDRET"}</span>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.direction === "NEGATIVE" ? "bg-rose-950 text-rose-300" : item.direction === "POSITIVE" ? "bg-cyan-950 text-cyan-300" : "bg-slate-800 text-slate-400"}`}>{item.direction}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+                reviewStatus === "CONFIRMED" ? "bg-emerald-950 text-emerald-300" :
+                reviewStatus === "IGNORED" ? "bg-slate-800 text-slate-400" :
+                reviewStatus === "OUTDATED" ? "bg-orange-950 text-orange-300" :
+                "bg-amber-950 text-amber-300"
+              }`}>
+                {reviewStatus === "CONFIRMED" ? "BEKREFTET" : reviewStatus === "IGNORED" ? "IGNORERT" : reviewStatus === "OUTDATED" ? "UTDATERT" : "TIL VURDERING"}
+              </span>
             </div>
             <span className="text-[10px] text-slate-600">Relevans {item.relevance} · freshness {item.freshness ?? "—"} · confidence {item.confidence}</span>
           </div>
@@ -883,7 +934,29 @@ export default function CorporateAccountWorkspacePage() {
             <span className="text-[10px] text-slate-600">{item.source_kind.replaceAll("_"," ")}</span>
             <a href={item.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300">Kilde <ExternalLink size={12}/></a>
           </div>
-        </article>)}
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-800 pt-3">
+            {reviewStatus !== "CONFIRMED" && <button type="button" disabled={busy === "review:" + item.id}
+              onClick={() => void reviewIntelligenceFinding(item, "CONFIRMED")}
+              className="rounded-lg border border-emerald-800 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 disabled:opacity-50">
+              Bekreft
+            </button>}
+            {reviewStatus !== "IGNORED" && <button type="button" disabled={busy === "review:" + item.id}
+              onClick={() => void reviewIntelligenceFinding(item, "IGNORED")}
+              className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 disabled:opacity-50">
+              Ignorer
+            </button>}
+            {reviewStatus !== "OUTDATED" && <button type="button" disabled={busy === "review:" + item.id}
+              onClick={() => void reviewIntelligenceFinding(item, "OUTDATED")}
+              className="rounded-lg border border-orange-900 px-2.5 py-1.5 text-[11px] font-semibold text-orange-300 disabled:opacity-50">
+              Utdatert
+            </button>}
+            {reviewStatus !== "PENDING" && <button type="button" disabled={busy === "review:" + item.id}
+              onClick={() => void reviewIntelligenceFinding(item, "PENDING")}
+              className="rounded-lg border border-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 disabled:opacity-50">
+              Gjenåpne
+            </button>}
+          </div>
+        </article>})}
       </div> : <div className="mt-4 rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">Ingen Intelligence-funn ennå. Kjør dyp research for denne kontoen.</div>}
 
       {(data.intelligence.market.length > 0 || data.intelligence.regulatory.length > 0) && <div className="mt-5 grid gap-4 lg:grid-cols-2">

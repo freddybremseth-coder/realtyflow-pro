@@ -262,7 +262,15 @@ export function scoreCorporateProspect(input: {
     ["retreat_signal", "Dokumentert signal om samlinger / retreats"],
     ["existing_cabin_signal", "Dokumentert eksisterende hytte-, reise- eller personalordning"],
   ];
+  const reviewOverrides =
+    evidence.corporate_intelligence_review_overrides &&
+    typeof evidence.corporate_intelligence_review_overrides === "object" &&
+    !Array.isArray(evidence.corporate_intelligence_review_overrides)
+      ? evidence.corporate_intelligence_review_overrides as Record<string, unknown>
+      : {};
   for (const [key, reason] of signalMap) {
+    const reviewStatus = String(reviewOverrides[key] || "").toUpperCase();
+    if (reviewStatus === "IGNORED" || reviewStatus === "OUTDATED") continue;
     const value = evidence[key];
     const present = value === true || (typeof value === "string" && value.trim().length > 0);
     if (!present) continue;

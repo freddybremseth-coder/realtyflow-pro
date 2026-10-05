@@ -98,3 +98,36 @@ test("Corporate Homes scoring rewards documented people-and-travel buying signal
   assert.ok(withSignals.reasons.includes("Dokumentert signal om fjernarbeid / distribuert arbeidsstyrke"));
   assert.ok(withSignals.reasons.includes("Dokumentert signal om samlinger / retreats"));
 });
+
+
+test("Corporate fit scoring excludes legacy signals ignored by Intelligence review", () => {
+  const base = normalizeCorporateProspect({
+    company_name: "Review Gate AS",
+    country_code: "NO",
+    industry: "IT konsulent",
+    employee_count: 80,
+    website_url: "https://review-gate.example",
+    source_url: "https://data.brreg.no/example",
+    evidence: {
+      remote_workforce_signal: "https://review-gate.example/careers",
+    },
+  });
+  const ignored = normalizeCorporateProspect({
+    company_name: "Review Gate AS",
+    country_code: "NO",
+    industry: "IT konsulent",
+    employee_count: 80,
+    website_url: "https://review-gate.example",
+    source_url: "https://data.brreg.no/example",
+    evidence: {
+      remote_workforce_signal: "https://review-gate.example/careers",
+      corporate_intelligence_review_overrides: {
+        remote_workforce_signal: "IGNORED",
+      },
+    },
+  });
+
+  assert.equal(base.fit_score - ignored.fit_score, 4);
+  assert.ok(base.fit_reasons.includes("Dokumentert signal om fjernarbeid / distribuert arbeidsstyrke"));
+  assert.ok(!ignored.fit_reasons.includes("Dokumentert signal om fjernarbeid / distribuert arbeidsstyrke"));
+});

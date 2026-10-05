@@ -194,7 +194,7 @@ async function persistFinding(supabase: SupabaseClient, runId: string, input: Co
   const nextHash = findingContentHash(input);
   let query = supabase
     .from("corporate_intelligence_findings")
-    .select("id,content_hash,first_seen_at")
+    .select("id,content_hash,first_seen_at,review_status,review_note,reviewed_at,reviewed_by_email")
     .eq("scope", input.scope)
     .eq("fingerprint", fingerprint);
 
@@ -235,6 +235,12 @@ async function persistFinding(supabase: SupabaseClient, runId: string, input: Co
     evidence: input.evidence || {},
     active: true,
     updated_at: now,
+    ...(existing && existing.content_hash !== nextHash ? {
+      review_status: "PENDING",
+      review_note: null,
+      reviewed_at: null,
+      reviewed_by_email: null,
+    } : {}),
   };
 
   if (existing?.id) {
@@ -458,9 +464,23 @@ export async function runAccountDeepResearch(
     if (ownResearch) {
       const existingEvidence = company.evidence && typeof company.evidence === "object" && !Array.isArray(company.evidence)
         ? company.evidence as Record<string, unknown> : {};
+      const reviewOverrides =
+        existingEvidence.corporate_intelligence_review_overrides &&
+        typeof existingEvidence.corporate_intelligence_review_overrides === "object" &&
+        !Array.isArray(existingEvidence.corporate_intelligence_review_overrides)
+          ? { ...existingEvidence.corporate_intelligence_review_overrides as Record<string, unknown> }
+          : {};
+      for (const row of persisted) {
+        const signalType = String(row.signal_type || "");
+        if (!signalType) continue;
+        const reviewStatus = String(row.review_status || "PENDING").toUpperCase();
+        reviewOverrides[signalType] = reviewStatus;
+      }
+
       const nextEvidence = {
         ...existingEvidence,
         ...signalEvidencePatch(ownResearch),
+        corporate_intelligence_review_overrides: reviewOverrides,
         corporate_intelligence_summary: {
           checked_at: new Date().toISOString(),
           provider,
@@ -540,7 +560,15 @@ export async function runCorporateWatch(
 
 export function summarizeIntelligenceForAccount(findings: Array<Record<string, any>>) {
   const active = findings.filter((row) => row.active !== false);
-  const deltas = active.reduce((acc, row) => {
+  const reviewable = active.filter((row) => !["IGNORED","OUTDATED"].includes(String(row.review_status || "PENDING")));
+  const effective = reviewable.filter((row) => {
+    const evidence = row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence)
+      ? row.evidence as Record<string, unknown>
+      : {};
+    return evidence.historical !== true;
+  });
+
+  const deltas = effective.reduce((acc, row) => {
     acc.fit += Number(row.fit_delta || 0);
     acc.timing += Number(row.timing_delta || 0);
     acc.intent += Number(row.intent_delta || 0);
@@ -548,14 +576,24 @@ export function summarizeIntelligenceForAccount(findings: Array<Record<string, a
     return acc;
   }, { fit: 0, timing: 0, intent: 0, financialCapacity: 0 });
 
-  const material = active
+  const material = effective
     .filter((row) => ["NEW","CHANGED"].includes(String(row.change_status || "")))
     .sort((a,b) => Number(b.relevance || 0) * Number(b.confidence || 0) - Number(a.relevance || 0) * Number(a.confidence || 0));
 
   return {
     total: active.length,
+    effectiveTotal: effective.length,
+    reviewPending: active.filter((row) => String(row.review_status || "PENDING") === "PENDING").length,
+    confirmed: active.filter((row) => String(row.review_status || "") === "CONFIRMED").length,
+    ignoredOrOutdated: active.filter((row) => ["IGNORED","OUTDATED"].includes(String(row.review_status || ""))).length,
+    historical: active.filter((row) => {
+      const evidence = row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence)
+        ? row.evidence as Record<string, unknown>
+        : {};
+      return evidence.historical === true;
+    }).length,
     materialChanges: material.length,
-    negativeSignals: active.filter((row) => row.direction === "NEGATIVE").length,
+    negativeSignals: effective.filter((row) => row.direction === "NEGATIVE").length,
     deltas: {
       fit: clamp(deltas.fit, -25, 25, 0),
       timing: clamp(deltas.timing, -25, 25, 0),
