@@ -163,6 +163,15 @@ test("vague later wording is parked rather than treated as active", () => {
   assert.equal(classifyInboundReply({ body: "Hei! Kanskje det er aktuelt seinare." }).intent, "follow_up_later");
 });
 
+test("still interested but explicitly future timing is parked", () => {
+  const classification = classifyInboundReply({
+    body: "Vi er fortsatt absolutt interessert i bolig i Spania, men selve boligkjøpet ligger litt frem i tid.",
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.shouldPauseNurture, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
 test("short confirmation to criteria email is treated as a verified preference update", () => {
   const classification = classifyInboundReply({
     subject: "SV: Kan du bekrefte søkekriteriene dine?",
