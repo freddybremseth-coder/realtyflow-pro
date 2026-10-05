@@ -220,7 +220,12 @@ export async function GET(request: NextRequest) {
         metadata = record(refreshed.data?.metadata);
       }
 
-      if (metadata.confirmation_pending !== true || !metadata.confirmation_requested_at) continue;
+      const confirmationPending = metadata.confirmation_pending === true && Boolean(metadata.confirmation_requested_at);
+      const clarificationPending = metadata.criteria_clarification_pending === true && Boolean(metadata.criteria_clarification_requested_at);
+      if (!confirmationPending && !clarificationPending) continue;
+      const responseRequestedAt = confirmationPending
+        ? String(metadata.confirmation_requested_at)
+        : String(metadata.criteria_clarification_requested_at);
 
       const contact = await supabase
         .from("contacts")
@@ -239,7 +244,7 @@ export async function GET(request: NextRequest) {
         .select("id,subject,body_text,body_html,received_at")
         .eq("direction", "inbound")
         .ilike("from_address", contactEmail)
-        .gt("received_at", String(metadata.confirmation_requested_at))
+        .gt("received_at", responseRequestedAt)
         .order("received_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -250,6 +255,24 @@ export async function GET(request: NextRequest) {
       }
 
       const latestReply = extractLatestReplyText(String(inbound.data.body_text || inbound.data.body_html || ""));
+
+      if (clarificationPending) {
+        correctionReplies += 1;
+        await finishConfirmationReview(supabase, {
+          reviewWorkItemId: String(row.id),
+          metadata,
+          outcome: "criteria_clarification_reply_received",
+          responseEmailMessageId: String(inbound.data.id),
+          nextAction: "Kunden svarte på kriterieavklaringen. Nexus behandler svaret som ny kriterieinformasjon og bygger Buyer Profile på nytt.",
+          done: true,
+          extra: {
+            criteria_clarification_pending: false,
+            criteria_clarification_reply_preview: latestReply.slice(0, 800),
+          },
+        });
+        continue;
+      }
+
       if (!isAffirmativeCriteriaConfirmation(latestReply)) {
         const priorityQuestion = metadata.confirmation_priority_question;
         const contextualPriorityAnswer = isContextualPriorityAnswer(latestReply, priorityQuestion);
