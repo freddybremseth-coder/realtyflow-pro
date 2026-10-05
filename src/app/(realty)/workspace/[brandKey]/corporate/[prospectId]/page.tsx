@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -107,12 +108,10 @@ function localDateTime(value?: string | null) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export default function CorporateAccountWorkspacePage({
-  params,
-}: {
-  params: Promise<{ brandKey: string; prospectId: string }>;
-}) {
-  const { brandKey, prospectId } = use(params);
+export default function CorporateAccountWorkspacePage() {
+  const params = useParams<{ brandKey: string; prospectId: string }>();
+  const brandKey = typeof params?.brandKey === "string" ? params.brandKey : "";
+  const prospectId = typeof params?.prospectId === "string" ? params.prospectId : "";
   const [data, setData] = useState<AccountData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
