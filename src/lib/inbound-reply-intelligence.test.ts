@@ -88,11 +88,14 @@ test("specific property links are treated as active property interest", () => {
   assert.equal(classification.requiresFastResponse, true);
 });
 
-test("later request pauses nurture and schedules follow-up", () => {
+test("later request pauses nurture and is governed as a safe hold signal", () => {
   const classification = classifyInboundReply({ body: "Not now, please contact us after summer." });
   assert.equal(classification.intent, "follow_up_later");
   assert.equal(classification.proposedPipelineAction, "schedule_followup");
   assert.equal(classification.shouldPauseNurture, true);
+  const governed = governInboundReply(classification);
+  assert.equal(governed.safety.tier, "AUTO");
+  assert.equal(governed.canApplyAutomatically, true);
 });
 
 test("temporary Norwegian not-now reply is not misclassified as active interest", () => {
@@ -101,6 +104,14 @@ test("temporary Norwegian not-now reply is not misclassified as active interest"
   assert.equal(classification.proposedPipelineAction, "schedule_followup");
   assert.equal(classification.requiresFastResponse, false);
   assert.equal(classification.shouldRunPropertyMatching, false);
+  assert.equal(governInboundReply(classification).canApplyAutomatically, true);
+});
+
+test("explicit multi-year delay is a temporary hold, not LOST", () => {
+  const classification = classifyInboundReply({ body: "Jeg har låst midlene mine i 4 år. Spør meg igjen om 4 år." });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.shouldStopNurture, false);
+  assert.equal(governInboundReply(classification).canApplyAutomatically, true);
 });
 
 test("plain customer question is not mistaken for a terminal outcome", () => {
