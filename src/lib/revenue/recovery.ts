@@ -37,6 +37,14 @@ export interface RecoveryContactInput {
   next_followup?: string | null;
   lost_at?: string | null;
   closed_at?: string | null;
+  nurture_status?: string | null;
+  do_not_contact?: boolean | null;
+  email_suppressed?: boolean | null;
+  suppression_reason?: string | null;
+  waiting_on?: string | null;
+  waiting_reason?: string | null;
+  waiting_until?: string | null;
+  last_reply_classification?: string | null;
 }
 
 export interface RecoveryLead {
@@ -266,9 +274,19 @@ export function buildRecoveryLead(contact: RecoveryContactInput, now = new Date(
   const haystack = textFor(contact, rows);
   const doNotPursueEvent = latestInteraction(rows, ["recovery_do_not_pursue"]);
   const reactivationPlan = latestInteraction(rows, ["recovery_plan_logged", "recovery_reviewed"]);
+  const nurtureStatus = String(contact.nurture_status || "").trim().toLowerCase();
+  const lastReplyClassification = String(contact.last_reply_classification || "").trim().toLowerCase();
+  const explicitSuppression = Boolean(contact.do_not_contact || contact.email_suppressed)
+    || nurtureStatus === "stopped"
+    || ["do_not_contact", "purchased_elsewhere", "no_longer_buying"].includes(lastReplyClassification);
   const doNotPursue = Boolean(doNotPursueEvent)
+    || explicitSuppression
     || reasonResult.reason === "BOUGHT_ELSEWHERE"
     || reasonResult.reason === "INVALID_DUPLICATE";
+
+  const waitingUntil = safeDate(contact.waiting_until);
+  const futureWaiting = Boolean(waitingUntil && waitingUntil.getTime() > now.getTime());
+  const parkedWithoutDate = stage === "ON_HOLD" && !waitingUntil;
 
   const dealValue = Math.max(0, numberValue(contact.pipeline_value) || numberValue(contact.sale_price));
   const dormantSinceDate = dormantDate(contact, stage);
@@ -276,7 +294,10 @@ export function buildRecoveryLead(contact: RecoveryContactInput, now = new Date(
   const lastContact = safeDate(contact.last_contact || contact.updated_at || contact.created_at);
   const nextFollowup = safeDate(contact.next_followup);
   const overdue = Boolean(nextFollowup && nextFollowup.getTime() < now.getTime());
-  const dueNow = !doNotPursue && (overdue || (!nextFollowup && daysDormant >= (stage === "ON_HOLD" ? 30 : 60)));
+  const dueNow = !doNotPursue
+    && !futureWaiting
+    && !parkedWithoutDate
+    && (overdue || (!nextFollowup && daysDormant >= (stage === "ON_HOLD" ? 30 : 60)));
   const missingContactChannel = !String(contact.email || "").trim() && !String(contact.phone || "").trim();
   const priorStage = previousStageSignal(haystack);
 
@@ -299,9 +320,11 @@ export function buildRecoveryLead(contact: RecoveryContactInput, now = new Date(
 
   const disposition: RecoveryDisposition = doNotPursue
     ? "DO_NOT_PURSUE"
-    : score >= 70
-      ? "RECOVER_NOW"
-      : "NURTURE";
+    : futureWaiting || parkedWithoutDate
+      ? "NURTURE"
+      : score >= 70
+        ? "RECOVER_NOW"
+        : "NURTURE";
   const priority: RecoveryPriority = disposition === "RECOVER_NOW" || (overdue && score >= 50)
     ? "HIGH"
     : score >= 45
@@ -312,11 +335,15 @@ export function buildRecoveryLead(contact: RecoveryContactInput, now = new Date(
   if (reasonResult.reason === "UNKNOWN") issues.push("Taps- eller pauseårsak mangler");
   if (missingContactChannel) issues.push("Gyldig kontaktkanal mangler");
   if (overdue) issues.push("Planlagt oppfølging er forsinket");
-  if (!nextFollowup && !doNotPursue) issues.push("Ny vurderingsdato er ikke satt");
+  if (!nextFollowup && !doNotPursue && !futureWaiting && !parkedWithoutDate) issues.push("Ny vurderingsdato er ikke satt");
+  if (futureWaiting) issues.push(`Kunden er parkert til ${waitingUntil?.toISOString().slice(0, 10)}`);
+  if (parkedWithoutDate) issues.push("Kunden er parkert uten gjenåpningsdato");
   if (doNotPursue) issues.push("Saken er markert eller klassifisert som ikke aktuell");
 
   let recommendedAction = "Sett en konkret ny vurderingsdato og behold saken i modning.";
   if (doNotPursue) recommendedAction = "Behold saken lukket og unngå ny kontakt uten et nytt innkommende signal.";
+  else if (futureWaiting) recommendedAction = `Ingen kundekontakt før ${waitingUntil?.toISOString().slice(0, 10)}. Behold saken parkert til avtalt horisont.`;
+  else if (parkedWithoutDate) recommendedAction = "Behold saken parkert. Sett eventuelt en intern vurderingsdato uten å kontakte kunden før saken eksplisitt gjenåpnes.";
   else if (missingContactChannel) recommendedAction = "Kontroller kontaktdata før en eventuell gjenopptakelse.";
   else if (reasonResult.reason === "UNKNOWN") recommendedAction = "Registrer hvorfor saken stoppet før du vurderer ny kontakt.";
   else if (disposition === "RECOVER_NOW" && overdue) recommendedAction = "Gå gjennom saken nå, kontakt kunden manuelt og registrer resultatet.";
