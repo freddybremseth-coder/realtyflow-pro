@@ -48,15 +48,20 @@ test("Corporate account tables are server-only and support strategy, touchpoints
 
 
 test("1881 enrichment supports the current subscription-key contract with legacy fallback and does not create people automatically", () => {
+  assert.match(api1881, /https:\/\/services\.api1881\.no/);
   assert.match(api1881, /https:\/\/api\.1881\.no\/search\/v1/);
   assert.match(api1881, /API1881_SUBSCRIPTION_KEY/);
   assert.match(api1881, /API_1881_SECRET/);
   assert.match(api1881, /Ocp-Apim-Subscription-Key/);
   assert.match(api1881, /X-VK1881-API-CLIENT/);
   assert.match(api1881, /VK1881Identity/);
+  assert.match(api1881, /\/lookup\/organizationnumber\//);
+  assert.match(api1881, /\/search\/unit\?query=/);
+  assert.match(api1881, /\/lookup\/phonenumber\//);
   assert.match(api1881, /\/company\/\?querystring=/);
   assert.match(api1881, /automaticPersonCreation:\s*false/);
   assert.match(api1881, /automaticOutreach:\s*false/);
   assert.match(route, /action === "enrich_1881"/);
   assert.match(route, /automaticPersonCreation:\s*false/);
+  assert.match(route, /1881 svarte HTTP/);
 });
