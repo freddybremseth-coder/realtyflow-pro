@@ -23,5 +23,10 @@ test("Corporate dossier uses explicit persist action and shows classification", 
   assert.match(page, /method: "POST"/);
   assert.match(page, /Lag og lagre boligshortlist/);
   assert.match(page, /corporate_use_classification/);
-  assert.match(page, /Åpne bolig/);
+  assert.match(page, /Åpne på nettsiden/);
+  assert.match(page, /Åpne i RealtyFlow/);
+  assert.match(page, /realtyFlowPropertyHref/);
+  assert.match(route, /realtyflow_url/);
+  assert.match(route, /\/inventory\?propertyId=/);
+  assert.match(route, /\/inventory\?propertyRef=/);
 });
