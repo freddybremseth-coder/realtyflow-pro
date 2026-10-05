@@ -87,7 +87,7 @@ test("broad location clarification preserves useful known criteria without askin
   });
 
   assert.equal(email.mode, "location_clarification");
-  assert.match(email.bodyText, /Budsjett: EUR 500[ .]?000/);
+  assert.match(email.bodyText, /Budsjett: EUR 500\s?000/u);
   assert.match(email.bodyText, /Boligtype: villa/);
   assert.match(email.bodyText, /Soverom: 3/);
   assert.doesNotMatch(email.bodyText, /– Område: Spain/);
