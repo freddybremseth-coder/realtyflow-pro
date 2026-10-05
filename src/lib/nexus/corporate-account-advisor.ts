@@ -62,6 +62,12 @@ export type CorporateAdvisorInput = {
   contacts?: CorporateAdvisorContact[];
   touchpoints?: CorporateAdvisorTouchpoint[];
   enrichment?: Array<{ provider?: string | null; data_kind?: string | null; fetched_at?: string | null }>;
+  intelligence?: {
+    materialChanges?: number;
+    negativeSignals?: number;
+    deltas?: { fit?: number; timing?: number; intent?: number; financialCapacity?: number };
+    topChanges?: Array<{ title?: string; direction?: string; why_it_matters?: string | null; relevance?: number }>;
+  };
   now?: Date;
 };
 
@@ -204,7 +210,19 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   if (overdue.length) { score += 8; whyNow.push(`${overdue.length} planlagt aktivitet er forfalt.`); }
   if (provider1881) score += 3;
 
-  const stage = text(strategy?.stage) || text(input.prospect.status) || "TARGET";
+  const intelligence = input.intelligence || {};
+  const materialChanges = Number(intelligence.materialChanges || 0);
+  const negativeSignals = Number(intelligence.negativeSignals || 0);
+  if (materialChanges > 0) {
+    timingScore += Math.max(-15, Math.min(15, Number(intelligence.deltas?.timing || 0)));
+    intentScore += Math.max(-10, Math.min(10, Number(intelligence.deltas?.intent || 0)));
+    whyNow.push(materialChanges + " nytt/endrede Intelligence-signal" + (materialChanges === 1 ? "" : "er") + " bør vurderes.");
+  }
+  if (negativeSignals > 0) {
+    whyNow.push(negativeSignals + " negativt Intelligence-signal" + (negativeSignals === 1 ? "" : "er") + " krever forsiktig timing.");
+  }
+
+    const stage = text(strategy?.stage) || text(input.prospect.status) || "TARGET";
   if (["ENGAGED","MEETING","BUSINESS_CASE","SHORTLIST","DECISION","NEGOTIATION"].includes(stage.toUpperCase())) {
     score += 12;
     intentScore += ["DECISION","NEGOTIATION"].includes(stage.toUpperCase()) ? 65 : ["BUSINESS_CASE","SHORTLIST"].includes(stage.toUpperCase()) ? 45 : 25;
@@ -223,8 +241,11 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   else priority = score >= 72 ? "P1" : score >= 52 ? "P2" : "P3";
 
   let nextAction = "";
+  const topNegativeChange = (intelligence.topChanges || []).find(item => text(item.direction).toUpperCase() === "NEGATIVE");
   if (strategy?.next_best_action) {
     nextAction = text(strategy.next_best_action);
+  } else if (topNegativeChange) {
+    nextAction = "Gjennomgå nytt negativt signal før videre outreach: " + text(topNegativeChange.title) + ". Avklar om timing eller prioritet skal endres.";
   } else if (!strategy?.objective || !strategy?.entry_angle) {
     nextAction = `Definer mål og inngang for ${input.prospect.company_name}; anbefalt start er ${primaryModel} mot ${entryRole}.`;
   } else if (!decisionMaker) {
