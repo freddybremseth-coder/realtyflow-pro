@@ -295,6 +295,14 @@
     {
       "path": "/api/cron/workspace-newsletter-send",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/corporate-intelligence-watch",
+      "schedule": "50 5 * * *"
+    },
+    {
+      "path": "/api/cron/corporate-intelligence-accounts",
+      "schedule": "45 6 * * *"
     }
   ]
 }

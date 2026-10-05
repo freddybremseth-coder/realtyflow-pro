@@ -54,3 +54,27 @@ test("Signal evidence patch stores company-level evidence only", () => {
   assert.equal("email" in patch, false);
   assert.equal("phone" in patch, false);
 });
+
+
+test("Corporate company signals detect growth, financial and negative timing signals", () => {
+  const signals = detectCorporateCompanySignals(
+    "Vi vokser og rekrutterer. Selskapet åpner nytt kontor etter rekordomsetning. Samtidig varsles kostnadskutt og omorganisering.",
+    "https://example.no/nyheter",
+  );
+  assert.ok(signals.hiring_growth_signal);
+  assert.ok(signals.new_office_signal);
+  assert.ok(signals.financial_strength_signal);
+  assert.ok(signals.cost_cutting_signal);
+  assert.ok(signals.restructuring_signal);
+});
+
+test("PDF evidence keeps its source kind", () => {
+  const signals = detectCorporateCompanySignals(
+    "Annual report: record revenue and international expansion.",
+    "https://example.no/annual-report.pdf",
+    "2026-10-05T20:00:00.000Z",
+    "company_pdf",
+  );
+  assert.equal(signals.financial_strength_signal?.source_kind, "company_pdf");
+  assert.equal(signals.international_growth_signal?.source_kind, "company_pdf");
+});

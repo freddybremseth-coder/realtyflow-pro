@@ -7,6 +7,7 @@ import { buildCorporateAccountAdvice } from "@/lib/nexus/corporate-account-advis
 import { runCorporateSalesCoach } from "@/lib/nexus/corporate-sales-coach";
 import { evaluateCorporateStageGate, stageIndex } from "@/lib/nexus/corporate-sales-stage-gate";
 import { getAdminEmails } from "@/lib/admin-auth";
+import { runAccountDeepResearch, summarizeIntelligenceForAccount } from "@/lib/corporate-intelligence";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -168,6 +169,9 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
     touchpointsResult,
     enrichmentResult,
     coachRunsResult,
+    intelligenceResult,
+    marketIntelligenceResult,
+    regulatoryIntelligenceResult,
   ] = await Promise.all([
     supabase.from("corporate_prospects")
       .select("id,company_name,organization_number,domain,organization_type,country_code,city,industry,employee_count,employee_band,member_count,website_url,linkedin_company_url,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,evidence,next_action,next_followup,updated_at")
@@ -194,20 +198,44 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       .eq("prospect_id", prospectId)
       .order("created_at", { ascending: false })
       .limit(12),
+    supabase.from("corporate_intelligence_findings")
+      .select("id,scope,signal_type,title,summary,why_it_matters,source_url,source_title,source_kind,source_published_at,first_seen_at,last_seen_at,change_status,direction,relevance,strength,freshness,source_authority,confidence,fit_delta,timing_delta,intent_delta,financial_capacity_delta,evidence,active")
+      .eq("prospect_id", prospectId)
+      .eq("scope", "ACCOUNT")
+      .eq("active", true)
+      .order("last_seen_at", { ascending: false })
+      .limit(40),
+    supabase.from("corporate_intelligence_findings")
+      .select("id,scope,signal_type,title,summary,why_it_matters,source_url,source_title,source_kind,source_published_at,last_seen_at,change_status,direction,relevance,confidence")
+      .is("prospect_id", null)
+      .eq("scope", "MARKET")
+      .eq("active", true)
+      .order("last_seen_at", { ascending: false })
+      .limit(8),
+    supabase.from("corporate_intelligence_findings")
+      .select("id,scope,signal_type,title,summary,why_it_matters,source_url,source_title,source_kind,source_published_at,last_seen_at,change_status,direction,relevance,confidence")
+      .is("prospect_id", null)
+      .eq("scope", "REGULATORY")
+      .eq("active", true)
+      .order("last_seen_at", { ascending: false })
+      .limit(8),
   ]);
 
   const error = prospectResult.error || strategyResult.error || contactsResult.error ||
-    touchpointsResult.error || enrichmentResult.error || coachRunsResult.error;
+    touchpointsResult.error || enrichmentResult.error || coachRunsResult.error ||
+    intelligenceResult.error || marketIntelligenceResult.error || regulatoryIntelligenceResult.error;
   if (error) return { error };
   if (!prospectResult.data) return { notFound: true };
 
   const assignmentOptions = await loadAssignableCorporateOwners(supabase, brandKey, actorEmail);
+  const intelligenceSummary = summarizeIntelligenceForAccount(intelligenceResult.data || []);
   const advisor = buildCorporateAccountAdvice({
     prospect: prospectResult.data,
     strategy: strategyResult.data || null,
     contacts: contactsResult.data || [],
     touchpoints: touchpointsResult.data || [],
     enrichment: enrichmentResult.data || [],
+    intelligence: intelligenceSummary,
   });
   const stageGate = evaluateCorporateStageGate({
     strategy: strategyResult.data || null,
@@ -225,6 +253,12 @@ async function loadAccount(supabase: any, prospectId: string, brandKey: string, 
       touchpoints: touchpointsResult.data || [],
       enrichment: enrichmentResult.data || [],
       coachRuns: coachRunsResult.data || [],
+      intelligence: {
+        account: intelligenceResult.data || [],
+        summary: intelligenceSummary,
+        market: marketIntelligenceResult.data || [],
+        regulatory: regulatoryIntelligenceResult.data || [],
+      },
       companyProfile: buildCorporateEnrichmentProfile(
         prospectResult.data,
         enrichmentResult.data || [],
@@ -291,7 +325,25 @@ export async function POST(
 
   const actorEmail = access.value.verifiedEmail;
 
-  if (action === "sales_coach") {
+  if (action === "run_intelligence") {
+    try {
+      const result = await runAccountDeepResearch(access.value.supabase, params.prospectId, {
+        trigger: "manual",
+        createdByEmail: actorEmail,
+      });
+      return NextResponse.json({
+        ok: true,
+        result,
+        externalAction: false,
+        outreachStarted: false,
+        pipelineMoved: false,
+      }, { headers: noStore });
+    } catch (cause) {
+      return fail(503, "CORPORATE_INTELLIGENCE_FAILED", cause instanceof Error ? cause.message : "Corporate Intelligence feilet.");
+    }
+  }
+
+    if (action === "sales_coach") {
     const mode = clean(body.mode, 30).toUpperCase();
     if (!["NEXT_STEP","DISCOVERY","EMAIL","ARGUMENTS","OBJECTION","MEETING"].includes(mode)) {
       return fail(400, "INVALID_COACH_MODE");
