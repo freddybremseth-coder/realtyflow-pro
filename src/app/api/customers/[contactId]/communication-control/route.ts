@@ -69,6 +69,17 @@ export async function POST(
 
   const now = new Date().toISOString();
   const action = parsed.data.action;
+  const existingSuppressionReason = String(contact.suppression_reason || "");
+
+  if (
+    action === "TAKE_OVER"
+    && (contact.do_not_contact || (contact.email_suppressed && existingSuppressionReason !== "manual_owner_takeover"))
+  ) {
+    return NextResponse.json({
+      ok: false,
+      error: "Kunden har allerede en sterkere CRM-sperre (STOPP/unsubscribe/annen suppression). Den blir ikke overskrevet av manuell takeover.",
+    }, { status: 409 });
+  }
 
   if (action === "RELEASE") {
     if (contact.do_not_contact) {
