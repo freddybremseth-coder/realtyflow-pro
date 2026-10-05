@@ -182,6 +182,12 @@ export function classifyInboundReply(input: { subject?: string | null; body?: st
     || /\b(do not contact|don't contact|dont contact|stop contacting|unsubscribe|remove me|avmeld|ikke kontakt|ikke send|stopp e-?post|stopp mail)\b/i.test(text);
   if (dnc) return result("do_not_contact", 0.995, "suppress_contact", ["Explicit do-not-contact signal detected."], { shouldStopNurture: true });
 
+  const longHorizonPause = /\b(no concrete plans|no plans to buy|maybe in one or two years|in one or two years|in a year or two|ingen konkrete planer|ingen planer om å kjøpe|om ett til to år|om et år eller to|ett til to år|et år eller to|om noen år|på vent i noen år)\b/i.test(text);
+  if (longHorizonPause) return result("follow_up_later", 0.98, "schedule_followup", ["Customer explicitly states that buying is not current and may only be relevant much later."], {
+    shouldPauseNurture: true,
+    requestedFollowUpAt: deriveRequestedFollowUpAt(latestReply || input.body, input.now || new Date()),
+  });
+
   const purchasedElsewhere = /\b(already bought|already purchased|bought (a |the )?(house|home|property|apartment|villa)|purchased elsewhere|bought elsewhere|we bought|i bought|har kjøpt|kjøpt bolig|kjøpt hus|kjøpt leilighet|kjøpt et annet sted|allerede kjøpt)\b/i.test(text);
   if (purchasedElsewhere) return result("purchased_elsewhere", 0.98, "mark_lost_purchased_elsewhere", ["Customer states that a property has already been purchased."], { shouldStopNurture: true });
 
