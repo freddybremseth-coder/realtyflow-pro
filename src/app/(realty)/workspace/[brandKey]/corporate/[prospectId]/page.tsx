@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Building2,
+  BrainCircuit,
   CalendarClock,
   CheckCircle2,
   ExternalLink,
@@ -13,6 +14,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  MessageSquareText,
   Phone,
   Plus,
   Save,
@@ -86,6 +88,20 @@ type CompanyProfile = {
   };
 };
 
+type SalesCoachOutput = {
+  summary: string;
+  currentPhase: "DISCOVER_PROBLEM"|"CONFIRM_PROBLEM"|"PRESENT_SOLUTION"|"CONFIRM_SOLUTION"|"NEXT_COMMITMENT";
+  problem: { hypothesis: string; evidence: string[]; questions: string[]; acceptanceSignals: string[] };
+  solution: { positioning: string; arguments: string[]; proofNeeded: string[]; acceptanceQuestions: string[] };
+  stakeholders: Array<{ role: string; objective: string; risk: string }>;
+  objections: Array<{ objection: string; response: string; followUpQuestion: string }>;
+  nextBestAction: { action: string; why: string; channel: string };
+  emailDraft: { subject: string; body: string };
+  sellerCoach: { do: string[]; avoid: string[]; callOpening: string };
+  evidenceGaps: string[];
+  confidence: "LOW"|"MEDIUM"|"HIGH";
+};
+
 type AccountData = {
   prospect: {
     id: string;
@@ -120,7 +136,23 @@ type AccountData = {
     missing: string[]; nextAction: string;
     channelSequence: Array<{order:number;channel:string;action:string}>;
     guardrail: string;
+    accountRole: string;
+    primaryModel: string;
+    secondaryModel: string | null;
+    scores: { fit: number; timing: number; access: number; intent: number; overall: number };
+    businessCaseCompleteness: number;
+    stageGuidance: { current: string; exitCriteria: string[]; next: string | null };
   };
+  coachRuns: Array<{
+    id: string;
+    mode: string;
+    source_text?: string | null;
+    seller_context?: string | null;
+    output: SalesCoachOutput;
+    provider?: string | null;
+    model?: string | null;
+    created_at: string;
+  }>;
   enrichmentCapabilities: {
     brreg: { available: boolean };
     api1881: { available: boolean; configured: boolean };
@@ -129,15 +161,36 @@ type AccountData = {
 };
 
 const MODELS = [
-  "Firmabolig",
-  "Management retreat",
   "Ansattfordel",
+  "Ledelse & team / Management retreat",
+  "Firmabolig / Corporate base",
   "Medlemsfordel",
   "Relokasjon",
-  "Investering",
   "Kunde-/partnerfordel",
-  "Referral partner",
+  "Eiendomsinvestering",
+  "Delt Corporate Home",
 ];
+
+const ACCOUNT_ROLES = [
+  ["END_CUSTOMER", "Sluttkunde"],
+  ["PARTNER", "Partner"],
+  ["MEMBER_ORGANIZATION", "Medlemsorganisasjon"],
+  ["ADVISOR", "Rådgiver"],
+  ["REFERRAL_PARTNER", "Referral partner"],
+] as const;
+
+const ENTRY_ROLES = [
+  "HR / People",
+  "CEO / daglig leder",
+  "CFO / økonomi",
+  "Styreleder",
+  "Partnerskap / medlemsansvarlig",
+  "Innkjøp",
+  "Office / Workplace",
+  "Eier",
+];
+
+const STAGES = ["TARGET","RESEARCH","STRATEGY_READY","OUTREACH","ENGAGED","MEETING","BUSINESS_CASE","SHORTLIST","DECISION","NEGOTIATION","WON","LOST"];
 
 function localDateTime(value?: string | null) {
   if (!value) return "";
@@ -159,10 +212,25 @@ export default function CorporateAccountWorkspacePage() {
   const [strategy, setStrategy] = useState({
     stage: "TARGET",
     priority: "P2",
+    accountRole: "END_CUSTOMER",
     accountModels: [] as string[],
+    primaryModel: "",
+    secondaryModel: "",
+    expansionModel: "",
     objective: "",
     entryAngle: "",
     firstOffer: "",
+    recommendedEntryRole: "",
+    championHypothesis: "",
+    problemHypothesis: "",
+    problemAcceptanceGoal: "",
+    solutionHypothesis: "",
+    solutionAcceptanceGoal: "",
+    coreMessage: "",
+    avoidMessage: "",
+    nextBestAction: "",
+    nextActionReason: "",
+    businessCase: {} as Record<string, unknown>,
     accountOwnerEmail: "",
     strategicOwnerEmail: "",
     estimatedValueEur: "",
@@ -171,6 +239,11 @@ export default function CorporateAccountWorkspacePage() {
     notes: "",
     linkedinMotion: "MANUAL_APPROVAL",
   });
+
+  const [coachMode, setCoachMode] = useState("NEXT_STEP");
+  const [coachSource, setCoachSource] = useState("");
+  const [coachContext, setCoachContext] = useState("");
+  const [coachOutput, setCoachOutput] = useState<SalesCoachOutput | null>(null);
 
   const [contactForm, setContactForm] = useState({
     name: "",
@@ -212,14 +285,31 @@ export default function CorporateAccountWorkspacePage() {
       if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke hente Corporate-kontoen.");
       setData(body);
       const saved = body.strategy || {};
+      const latestCoach = Array.isArray(body.coachRuns) && body.coachRuns[0]?.output ? body.coachRuns[0].output : null;
+      setCoachOutput(latestCoach);
       const defaultOwnerEmail = String(body.assignmentOptions?.defaultOwnerEmail || "");
       setStrategy({
         stage: String(saved.stage || "TARGET"),
         priority: String(saved.priority || "P2"),
+        accountRole: String(saved.account_role || "END_CUSTOMER"),
         accountModels: Array.isArray(saved.account_models) ? saved.account_models : [],
+        primaryModel: String(saved.primary_model || ""),
+        secondaryModel: String(saved.secondary_model || ""),
+        expansionModel: String(saved.expansion_model || ""),
         objective: String(saved.objective || ""),
         entryAngle: String(saved.entry_angle || ""),
         firstOffer: String(saved.first_offer || ""),
+        recommendedEntryRole: String(saved.recommended_entry_role || ""),
+        championHypothesis: String(saved.champion_hypothesis || ""),
+        problemHypothesis: String(saved.problem_hypothesis || ""),
+        problemAcceptanceGoal: String(saved.problem_acceptance_goal || ""),
+        solutionHypothesis: String(saved.solution_hypothesis || ""),
+        solutionAcceptanceGoal: String(saved.solution_acceptance_goal || ""),
+        coreMessage: String(saved.core_message || ""),
+        avoidMessage: String(saved.avoid_message || ""),
+        nextBestAction: String(saved.next_best_action || ""),
+        nextActionReason: String(saved.next_action_reason || ""),
+        businessCase: saved.business_case && typeof saved.business_case === "object" ? saved.business_case : {},
         accountOwnerEmail: String(saved.account_owner_email || defaultOwnerEmail),
         strategicOwnerEmail: String(saved.strategic_owner_email || defaultOwnerEmail),
         estimatedValueEur: saved.estimated_value_eur == null ? "" : String(saved.estimated_value_eur),
@@ -332,6 +422,25 @@ export default function CorporateAccountWorkspacePage() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke lagre strategien.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runSalesCoach() {
+    setBusy("coach"); setError(""); setNotice("");
+    try {
+      const result = await post({
+        action: "sales_coach",
+        mode: coachMode,
+        sourceText: coachSource,
+        sellerContext: coachContext,
+      });
+      setCoachOutput(result.output as SalesCoachOutput);
+      setNotice("Nexus Sales Coach har analysert kontoen. Ingen melding er sendt.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Sales Coach feilet.");
     } finally {
       setBusy("");
     }
@@ -518,79 +627,246 @@ export default function CorporateAccountWorkspacePage() {
       <p className="mt-4 text-[11px] text-slate-500">{data.advisor.guardrail}</p>
     </section>
 
-    <section className="grid gap-4 lg:grid-cols-3">
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-        <div className="flex items-center gap-2"><Target size={18} className="text-cyan-300"/><h2 className="font-semibold">Kontostrategi</h2></div>
-        <p className="mt-1 text-xs text-slate-500">Hva vil vi oppnå, hvorfor denne kontoen og hvilken inngang skal vi bruke?</p>
-
-        <div className="mt-4 grid gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            <select value={strategy.stage} onChange={e => setStrategy(s => ({ ...s, stage: e.target.value }))} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-              {["TARGET","RESEARCH","STRATEGY_READY","OUTREACH","ENGAGED","MEETING","BUSINESS_CASE","SHORTLIST","DECISION","NEGOTIATION","WON","LOST"].map(v => <option key={v}>{v}</option>)}
-            </select>
-            <select value={strategy.priority} onChange={e => setStrategy(s => ({ ...s, priority: e.target.value }))} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+    <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <div className="flex items-center gap-2"><Target size={18} className="text-cyan-300"/><h2 className="font-semibold">Kontostrategi</h2></div>
+          <p className="mt-1 text-xs text-slate-500">Hvorfor denne kontoen, hvilket problem skal vi forstå, hvem skal vi gå via og hva er neste beste handling?</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-[11px] text-slate-500">Prioritet
+            <select value={strategy.priority} onChange={e => setStrategy(s => ({ ...s, priority: e.target.value }))} className="ml-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
               {["P1","P2","P3"].map(v => <option key={v}>{v}</option>)}
             </select>
-          </div>
-          <textarea value={strategy.objective} onChange={e => setStrategy(s => ({ ...s, objective: e.target.value }))} rows={3} placeholder="Mål: Hva ønsker vi å oppnå med denne kontoen?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
-          <textarea value={strategy.entryAngle} onChange={e => setStrategy(s => ({ ...s, entryAngle: e.target.value }))} rows={3} placeholder="Inngang: HR, medlemsfordel, firmabolig, ledersamling…" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
-          <textarea value={strategy.firstOffer} onChange={e => setStrategy(s => ({ ...s, firstOffer: e.target.value }))} rows={3} placeholder="Første tilbud: f.eks. kostnadsfri Corporate Home Assessment" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-        <div className="flex items-center gap-2"><Users size={18} className="text-cyan-300"/><h2 className="font-semibold">Salgsmodell</h2></div>
-        <div className="mt-4 grid gap-2">
-          {MODELS.map(model => <label key={model} className="flex items-center gap-2 rounded-lg border border-slate-800 px-3 py-2 text-sm">
-            <input type="checkbox" checked={strategy.accountModels.includes(model)}
-              onChange={e => setStrategy(s => ({ ...s, accountModels: e.target.checked ? [...s.accountModels, model] : s.accountModels.filter(v => v !== model) }))}/>
-            {model}
-          </label>)}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-        <div className="flex items-center gap-2"><UserRound size={18} className="text-cyan-300"/><h2 className="font-semibold">Ansvar & verdi</h2></div>
-        <div className="mt-4 grid gap-3">
-          <label className="text-xs text-slate-500">
-            Account owner
-            <select
-              value={strategy.accountOwnerEmail}
-              onChange={e => setStrategy(s => ({ ...s, accountOwnerEmail: e.target.value }))}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
-            >
-              {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>
-                {user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}
-              </option>)}
-            </select>
           </label>
-          <label className="text-xs text-slate-500">
-            Strategisk ansvarlig
-            <select
-              value={strategy.strategicOwnerEmail}
-              onChange={e => setStrategy(s => ({ ...s, strategicOwnerEmail: e.target.value }))}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
-            >
-              {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>
-                {user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}
-              </option>)}
-            </select>
-          </label>
-          <p className="text-[11px] leading-5 text-slate-500">
-            Nye kontoer får RealtyFlow Owner som standard. Du kan overstyre til en annen aktiv bruker med Corporate-tilgang.
-          </p>
-          <input type="number" min="0" value={strategy.estimatedValueEur} onChange={e => setStrategy(s => ({ ...s, estimatedValueEur: e.target.value }))} placeholder="Estimert verdi €" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
-          <label className="text-xs text-slate-500">Måldato<input type="date" value={strategy.targetDate} onChange={e => setStrategy(s => ({ ...s, targetDate: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"/></label>
-          <label className="text-xs text-slate-500">Neste strategigjennomgang<input type="datetime-local" value={strategy.nextReviewAt} onChange={e => setStrategy(s => ({ ...s, nextReviewAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"/></label>
-          <select value={strategy.linkedinMotion} onChange={e => setStrategy(s => ({ ...s, linkedinMotion: e.target.value }))} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-            <option value="MANUAL_APPROVAL">LinkedIn: manuell godkjenning</option>
-            <option value="RELATIONSHIP_ONLY">LinkedIn: relasjonsbygging</option>
-            <option value="OFF">LinkedIn: av</option>
-          </select>
-          <textarea value={strategy.notes} onChange={e => setStrategy(s => ({ ...s, notes: e.target.value }))} rows={3} placeholder="Strateginotater" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
           <button type="button" onClick={() => void saveStrategy()} disabled={busy === "strategy"} className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
             <Save size={15}/>{busy === "strategy" ? "Lagrer…" : "Lagre strategi"}
           </button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto pb-1">
+        <div className="flex min-w-max gap-1.5">
+          {STAGES.map(stage => <button
+            key={stage}
+            type="button"
+            onClick={() => setStrategy(s => ({ ...s, stage }))}
+            className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${strategy.stage === stage ? "border-cyan-500 bg-cyan-950 text-cyan-200" : "border-slate-800 bg-slate-950/50 text-slate-500 hover:text-slate-300"}`}
+          >{stage}</button>)}
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          ["Fit", data.advisor.scores.fit],
+          ["Timing", data.advisor.scores.timing],
+          ["Access", data.advisor.scores.access],
+          ["Intent", data.advisor.scores.intent],
+          ["Account score", data.advisor.scores.overall],
+        ].map(([label,value]) => <div key={String(label)} className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+          <p className="mt-1 text-xl font-black text-white">{value}<span className="text-xs font-medium text-slate-500">/100</span></p>
+        </div>)}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/30 p-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-300">Strategisk hypotese</p>
+            <p className="mt-1 text-xs text-slate-500">Skal endres når kunden gir ny informasjon. Hypotese er ikke fakta.</p>
+          </div>
+          <textarea value={strategy.objective} onChange={e => setStrategy(s => ({ ...s, objective: e.target.value }))} rows={2} placeholder="Hvorfor denne kontoen og hva ønsker vi å oppnå?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <div className="grid gap-3 md:grid-cols-2">
+            <textarea value={strategy.problemHypothesis} onChange={e => setStrategy(s => ({ ...s, problemHypothesis: e.target.value }))} rows={4} placeholder="Problemhypotese: Hva tror vi de prøver å løse?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            <textarea value={strategy.problemAcceptanceGoal} onChange={e => setStrategy(s => ({ ...s, problemAcceptanceGoal: e.target.value }))} rows={4} placeholder="Problemaksept: Hva må kunden selv bekrefte før vi går til løsning?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            <textarea value={strategy.solutionHypothesis} onChange={e => setStrategy(s => ({ ...s, solutionHypothesis: e.target.value }))} rows={4} placeholder="Løsningshypotese: Hvilken modell kan passe hvis problemet bekreftes?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            <textarea value={strategy.solutionAcceptanceGoal} onChange={e => setStrategy(s => ({ ...s, solutionAcceptanceGoal: e.target.value }))} rows={4} placeholder="Løsningsaksept: Hva må kunden validere for å gå videre?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <textarea value={strategy.coreMessage} onChange={e => setStrategy(s => ({ ...s, coreMessage: e.target.value }))} rows={3} placeholder="Kjernebudskap: Hva skal vi si?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            <textarea value={strategy.avoidMessage} onChange={e => setStrategy(s => ({ ...s, avoidMessage: e.target.value }))} rows={3} placeholder="Ikke start med: f.eks. investering, prisvekst eller boligobjekt" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <textarea value={strategy.nextBestAction} onChange={e => setStrategy(s => ({ ...s, nextBestAction: e.target.value }))} rows={3} placeholder={`Neste beste handling · Nexus foreslår: ${data.advisor.nextAction}`} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            <textarea value={strategy.nextActionReason} onChange={e => setStrategy(s => ({ ...s, nextActionReason: e.target.value }))} rows={3} placeholder="Hvorfor er dette riktig neste steg?" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/30 p-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-300">Kontorolle & salgsmodell</p>
+            <p className="mt-1 text-xs text-slate-500">Referral partner er nå en kontorolle, ikke en salgsmodell.</p>
+          </div>
+          <label className="text-xs text-slate-500">Kontorolle
+            <select value={strategy.accountRole} onChange={e => setStrategy(s => ({ ...s, accountRole: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+              {ACCOUNT_ROLES.map(([value,label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-xs text-slate-500">Primær modell
+              <select value={strategy.primaryModel} onChange={e => setStrategy(s => ({ ...s, primaryModel: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                <option value="">Velg / la Nexus foreslå</option>
+                {MODELS.map(model => <option key={model}>{model}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-slate-500">Sekundær modell
+              <select value={strategy.secondaryModel} onChange={e => setStrategy(s => ({ ...s, secondaryModel: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                <option value="">Ingen ennå</option>
+                {MODELS.map(model => <option key={model}>{model}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="text-xs text-slate-500">Mulig utvidelse
+            <select value={strategy.expansionModel} onChange={e => setStrategy(s => ({ ...s, expansionModel: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+              <option value="">Ingen ennå</option>
+              {MODELS.map(model => <option key={model}>{model}</option>)}
+            </select>
+          </label>
+          <label className="text-xs text-slate-500">Anbefalt inngang
+            <select value={strategy.recommendedEntryRole} onChange={e => setStrategy(s => ({ ...s, recommendedEntryRole: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+              <option value="">{data.advisor.recommendedEntryRole || "Velg rolle"}</option>
+              {ENTRY_ROLES.map(role => <option key={role}>{role}</option>)}
+            </select>
+          </label>
+          <textarea value={strategy.championHypothesis} onChange={e => setStrategy(s => ({ ...s, championHypothesis: e.target.value }))} rows={2} placeholder="Champion-hypotese: Hvem kan drive saken internt?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <textarea value={strategy.entryAngle} onChange={e => setStrategy(s => ({ ...s, entryAngle: e.target.value }))} rows={2} placeholder="Inngangsvinkel: hvorfor akkurat denne rollen?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <textarea value={strategy.firstOffer} onChange={e => setStrategy(s => ({ ...s, firstOffer: e.target.value }))} rows={2} placeholder="Første tilbud: f.eks. Corporate Home Assessment / beslutningsnotat" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <div className="rounded-lg border border-slate-800 bg-slate-950/55 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-slate-300">Business case completeness</p>
+              <span className="text-sm font-black text-cyan-300">{data.advisor.businessCaseCompleteness}%</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-cyan-600" style={{ width: `${data.advisor.businessCaseCompleteness}%` }}/></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Fasekriterier · {data.advisor.stageGuidance.current}</p>
+          <div className="mt-3 space-y-2">
+            {data.advisor.stageGuidance.exitCriteria.map(item => <div key={item} className="flex items-start gap-2 text-xs text-slate-300"><CheckCircle2 size={14} className="mt-0.5 text-slate-600"/><span>{item}</span></div>)}
+          </div>
+          {data.advisor.stageGuidance.next && <p className="mt-3 text-[11px] text-slate-500">Neste fase når kriteriene er oppfylt: <strong className="text-slate-300">{data.advisor.stageGuidance.next}</strong></p>}
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Ansvar & verdi</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <label className="text-xs text-slate-500">Account owner
+              <select value={strategy.accountOwnerEmail} onChange={e => setStrategy(s => ({ ...s, accountOwnerEmail: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>{user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-slate-500">Strategisk ansvarlig
+              <select value={strategy.strategicOwnerEmail} onChange={e => setStrategy(s => ({ ...s, strategicOwnerEmail: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>{user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}</option>)}
+              </select>
+            </label>
+            <input type="number" min="0" value={strategy.estimatedValueEur} onChange={e => setStrategy(s => ({ ...s, estimatedValueEur: e.target.value }))} placeholder="Estimert verdi €" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+            <label className="text-xs text-slate-500">Måldato<input type="date" value={strategy.targetDate} onChange={e => setStrategy(s => ({ ...s, targetDate: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"/></label>
+            <label className="text-xs text-slate-500 md:col-span-2">Neste strategigjennomgang<input type="datetime-local" value={strategy.nextReviewAt} onChange={e => setStrategy(s => ({ ...s, nextReviewAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"/></label>
+          </div>
+          <label className="mt-3 block text-xs text-slate-500">LinkedIn-bevegelse
+            <select value={strategy.linkedinMotion} onChange={e => setStrategy(s => ({ ...s, linkedinMotion: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+              <option value="MANUAL_APPROVAL">LinkedIn: manuell godkjenning</option>
+              <option value="RELATIONSHIP_ONLY">LinkedIn: relasjonsbygging</option>
+              <option value="OFF">LinkedIn: av</option>
+            </select>
+          </label>
+          <p className="mt-3 text-[11px] leading-5 text-slate-500">Nye kontoer får RealtyFlow Owner som standard. Du kan overstyre til en annen aktiv bruker med Corporate-tilgang.</p>
+        </div>
+      </div>
+    </section>
+
+    <section className="rounded-2xl border border-violet-900/60 bg-violet-950/15 p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2"><BrainCircuit size={19} className="text-violet-300"/><h2 className="font-semibold">Nexus AI Sales Coach</h2></div>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Coach på laget for denne kontoen: avdekk problem → få kunden til å bekrefte problemet → presenter relevant løsning → test løsningsaksept → avtal konkret neste steg. Coach lager råd og utkast, men sender ingenting.</p>
+        </div>
+        <span className="rounded-full border border-violet-800 bg-violet-950 px-3 py-1 text-[11px] font-semibold text-violet-200">Human approved · no auto-send</span>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+        <div className="space-y-3">
+          <label className="text-xs text-slate-400">Hva vil du ha hjelp til?
+            <select value={coachMode} onChange={e => setCoachMode(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+              <option value="NEXT_STEP">Hva bør jeg gjøre nå?</option>
+              <option value="DISCOVERY">Discovery: spørsmål og problemforståelse</option>
+              <option value="EMAIL">Analyser e-post og foreslå svar</option>
+              <option value="ARGUMENTS">Argumenter og verdihistorie</option>
+              <option value="OBJECTION">Håndter innvending</option>
+              <option value="MEETING">Forbered møte</option>
+            </select>
+          </label>
+          <textarea value={coachSource} onChange={e => setCoachSource(e.target.value)} rows={8} placeholder="Lim inn kundens e-post, innvending, møtenotat eller annen relevant tekst. La stå tomt for å coache kun på kontoens lagrede data." className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm"/>
+          <textarea value={coachContext} onChange={e => setCoachContext(e.target.value)} rows={3} placeholder="Din egen kommentar: Hva er du usikker på? Hva vil du oppnå i neste kontakt?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <button type="button" onClick={() => void runSalesCoach()} disabled={busy === "coach"} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+            <MessageSquareText size={16}/>{busy === "coach" ? "Coach analyserer…" : "Kjør Sales Coach"}
+          </button>
+          {data.coachRuns.length > 0 && <p className="text-[11px] text-slate-500">{data.coachRuns.length} siste coach-kjøringer lagret på kontoen.</p>}
+        </div>
+
+        <div className="min-w-0">
+          {!coachOutput ? <div className="rounded-xl border border-dashed border-slate-700 p-6 text-sm text-slate-500">Kjør coachen for å få konto-spesifikke spørsmål, argumenter, akseptsignaler, innvendinger, neste handling og e-postutkast.</div> :
+          <div className="space-y-4">
+            <div className="rounded-xl border border-violet-800/60 bg-slate-950/55 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">{coachOutput.currentPhase.replaceAll("_"," ")}</p>
+                <span className="text-[11px] text-slate-500">Confidence {coachOutput.confidence}</span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-200">{coachOutput.summary}</p>
+              <p className="mt-3 text-sm font-semibold text-white">Neste beste handling</p>
+              <p className="mt-1 text-sm text-cyan-200">{coachOutput.nextBestAction.action}</p>
+              <p className="mt-1 text-xs text-slate-500">{coachOutput.nextBestAction.why} · {coachOutput.nextBestAction.channel}</p>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                <p className="text-xs font-black uppercase text-amber-300">1–2 · Problem & problemaksept</p>
+                <p className="mt-2 text-sm text-slate-200">{coachOutput.problem.hypothesis}</p>
+                <p className="mt-3 text-xs font-semibold text-slate-400">Spørsmål</p>
+                <ul className="mt-2 space-y-2 text-xs leading-5 text-slate-300">{coachOutput.problem.questions.map(q => <li key={q}>• {q}</li>)}</ul>
+                <p className="mt-3 text-xs font-semibold text-slate-400">Tegn på reell problemaksept</p>
+                <ul className="mt-2 space-y-1 text-xs text-slate-400">{coachOutput.problem.acceptanceSignals.map(q => <li key={q}>• {q}</li>)}</ul>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                <p className="text-xs font-black uppercase text-emerald-300">3–4 · Løsning & løsningsaksept</p>
+                <p className="mt-2 text-sm text-slate-200">{coachOutput.solution.positioning}</p>
+                <p className="mt-3 text-xs font-semibold text-slate-400">Argumenter</p>
+                <ul className="mt-2 space-y-2 text-xs leading-5 text-slate-300">{coachOutput.solution.arguments.map(q => <li key={q}>• {q}</li>)}</ul>
+                <p className="mt-3 text-xs font-semibold text-slate-400">Spørsmål for løsningsaksept</p>
+                <ul className="mt-2 space-y-1 text-xs text-slate-400">{coachOutput.solution.acceptanceQuestions.map(q => <li key={q}>• {q}</li>)}</ul>
+              </div>
+            </div>
+
+            {coachOutput.objections.length > 0 && <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+              <p className="text-xs font-black uppercase text-rose-300">Innvendinger</p>
+              <div className="mt-3 space-y-3">{coachOutput.objections.map(item => <div key={item.objection} className="border-b border-slate-800 pb-3 last:border-0 last:pb-0">
+                <p className="text-sm font-semibold text-slate-200">{item.objection}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{item.response}</p>
+                <p className="mt-1 text-xs text-cyan-300">Spør: {item.followUpQuestion}</p>
+              </div>)}</div>
+            </div>}
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+              <div className="flex items-center gap-2"><Mail size={15} className="text-cyan-300"/><p className="text-xs font-black uppercase text-cyan-300">Forslag til e-post</p></div>
+              <p className="mt-3 text-sm font-semibold text-white">{coachOutput.emailDraft.subject}</p>
+              <pre className="mt-2 whitespace-pre-wrap font-sans text-xs leading-6 text-slate-300">{coachOutput.emailDraft.body}</pre>
+              <p className="mt-3 text-[11px] text-slate-600">Utkastet er ikke sendt. Tilpass og godkjenn før det eventuelt brukes i E-post Reach.</p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                <p className="text-xs font-black uppercase text-emerald-300">Gjør</p>
+                <ul className="mt-2 space-y-1 text-xs text-slate-300">{coachOutput.sellerCoach.do.map(q => <li key={q}>• {q}</li>)}</ul>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                <p className="text-xs font-black uppercase text-rose-300">Unngå</p>
+                <ul className="mt-2 space-y-1 text-xs text-slate-300">{coachOutput.sellerCoach.avoid.map(q => <li key={q}>• {q}</li>)}</ul>
+              </div>
+            </div>
+          </div>}
         </div>
       </div>
     </section>

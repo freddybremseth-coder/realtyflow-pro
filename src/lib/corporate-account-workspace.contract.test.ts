@@ -14,6 +14,14 @@ const migration = fs.readFileSync(
   "supabase/migrations/20261004213000_corporate_account_workspace.sql",
   "utf8",
 );
+const strategyCoachMigration = fs.readFileSync(
+  "supabase/migrations/20261005193000_corporate_account_strategy_sales_coach.sql",
+  "utf8",
+);
+const salesCoach = fs.readFileSync(
+  "src/lib/nexus/corporate-sales-coach.ts",
+  "utf8",
+);
 const api1881 = fs.readFileSync(
   "src/lib/corporate-enrichment/api1881.ts",
   "utf8",
@@ -107,4 +115,38 @@ test("Corporate ownership uses active system users and defaults to the primary R
   assert.match(page, /Nye kontoer får RealtyFlow Owner som standard/);
   assert.doesNotMatch(page, /placeholder="Account owner e-post"/);
   assert.doesNotMatch(page, /placeholder="Strategisk ansvarlig e-post"/);
+});
+
+
+test("Corporate Account Strategy v2 separates pipeline, priority, account role and sales motion", () => {
+  assert.match(strategyCoachMigration, /account_role/);
+  assert.match(strategyCoachMigration, /problem_hypothesis/);
+  assert.match(strategyCoachMigration, /problem_acceptance_goal/);
+  assert.match(strategyCoachMigration, /solution_hypothesis/);
+  assert.match(strategyCoachMigration, /solution_acceptance_goal/);
+  assert.match(strategyCoachMigration, /next_best_action/);
+  assert.match(page, /Account score/);
+  assert.match(page, /Timing/);
+  assert.match(page, /Access/);
+  assert.match(page, /Intent/);
+  assert.match(page, /Referral partner er nå en kontorolle/);
+  assert.match(page, /Business case completeness/);
+});
+
+test("Nexus Sales Coach follows problem-to-solution acceptance and never auto-sends", () => {
+  assert.match(strategyCoachMigration, /create table if not exists public\.corporate_sales_coach_runs/);
+  assert.match(strategyCoachMigration, /revoke all on table public\.corporate_sales_coach_runs from public, anon, authenticated/);
+  assert.match(route, /action === "sales_coach"/);
+  assert.match(route, /runCorporateSalesCoach/);
+  assert.match(route, /emailSent:\s*false/);
+  assert.match(route, /linkedinMessageSent:\s*false/);
+  assert.match(salesCoach, /DISCOVER_PROBLEM/);
+  assert.match(salesCoach, /CONFIRM_PROBLEM/);
+  assert.match(salesCoach, /PRESENT_SOLUTION/);
+  assert.match(salesCoach, /CONFIRM_SOLUTION/);
+  assert.match(salesCoach, /NEXT_COMMITMENT/);
+  assert.match(salesCoach, /Du skal ikke bruke manipulasjon, press, falsk knapphet/);
+  assert.match(page, /Nexus AI Sales Coach/);
+  assert.match(page, /Analyser e-post og foreslå svar/);
+  assert.match(page, /Utkastet er ikke sendt/);
 });
