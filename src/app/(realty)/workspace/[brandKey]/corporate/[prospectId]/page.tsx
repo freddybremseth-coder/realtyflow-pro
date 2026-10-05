@@ -541,7 +541,7 @@ export default function CorporateAccountWorkspacePage({
           <div className="mt-3 space-y-2 text-sm">
             <div className="flex justify-between rounded-lg border border-slate-800 px-3 py-2"><span>Brønnøysund</span><span className="text-emerald-300">Klar</span></div>
             <div className="rounded-lg border border-slate-800 px-3 py-2">
-              <div className="flex justify-between gap-3"><span>1881 API</span><span className={data.enrichmentCapabilities.api1881.configured ? "text-emerald-300" : "text-amber-300"}>{data.enrichmentCapabilities.api1881.configured ? "Koblet" : "API-credentials mangler"}</span></div>
+              <div className="flex justify-between gap-3"><span>1881 API</span><span className={data.enrichmentCapabilities.api1881.configured ? "text-emerald-300" : "text-amber-300"}>{data.enrichmentCapabilities.api1881.configured ? "Koblet" : "API-nøkkel mangler"}</span></div>
               <button
                 type="button"
                 disabled={!data.enrichmentCapabilities.api1881.configured || busy === "1881"}

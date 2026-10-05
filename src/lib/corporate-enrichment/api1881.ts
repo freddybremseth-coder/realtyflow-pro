@@ -1,7 +1,7 @@
 import "server-only";
 import crypto from "node:crypto";
 
-const API_BASE = "https://api.1881.no/search/v1";
+const API_BASE = process.env.API1881_BASE_URL || "https://api.1881.no/search/v1";
 
 function base64url(value: string | Buffer) {
   return Buffer.from(value).toString("base64")
@@ -25,38 +25,65 @@ function createJwt(identity: string, secret: string) {
   return `JWT ${unsigned}.${base64url(signature)}`;
 }
 
+function modernSubscriptionKey() {
+  return (process.env.API1881_SUBSCRIPTION_KEY || "").trim();
+}
+
+function legacyCredentials() {
+  const clientId = (process.env.API1881_CLIENT_ID || "").trim();
+  const identity = (process.env.API1881_IDENTITY || "").trim();
+  const secret = (process.env.API1881_SECRET || "").trim();
+  return clientId && identity && secret ? { clientId, identity, secret } : null;
+}
+
+export function api1881AuthMode(): "subscription_key" | "legacy_jwt" | "unconfigured" {
+  if (modernSubscriptionKey()) return "subscription_key";
+  if (legacyCredentials()) return "legacy_jwt";
+  return "unconfigured";
+}
+
 export function api1881Configured() {
-  return Boolean(
-    process.env.API1881_CLIENT_ID &&
-    process.env.API1881_IDENTITY &&
-    process.env.API1881_SECRET,
-  );
+  return api1881AuthMode() !== "unconfigured";
+}
+
+function authHeaders(): Record<string, string> {
+  const key = modernSubscriptionKey();
+  if (key) {
+    return {
+      // Current api1881.no profile exposes Primary/Secondary API keys as a
+      // subscription key. Primary is used in normal operation; Secondary is
+      // intentionally not required so it can remain available for rotation.
+      "Ocp-Apim-Subscription-Key": key,
+    };
+  }
+
+  const legacy = legacyCredentials();
+  if (legacy) {
+    return {
+      "X-VK1881-API-CLIENT": legacy.clientId,
+      Authorization: createJwt(legacy.identity, legacy.secret),
+    };
+  }
+
+  throw new Error("API1881_NOT_CONFIGURED");
 }
 
 async function api1881Fetch(path: string) {
-  const clientId = process.env.API1881_CLIENT_ID || "";
-  const identity = process.env.API1881_IDENTITY || "";
-  const secret = process.env.API1881_SECRET || "";
-  if (!clientId || !identity || !secret) {
-    throw new Error("API1881_NOT_CONFIGURED");
-  }
-
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       Accept: "application/json",
-      "X-VK1881-API-CLIENT": clientId,
-      Authorization: createJwt(identity, secret),
+      ...authHeaders(),
     },
     cache: "no-store",
     signal: AbortSignal.timeout(12000),
   });
 
-  const text = await response.text();
+  const responseText = await response.text();
   let body: unknown = null;
   try {
-    body = text ? JSON.parse(text) : null;
+    body = responseText ? JSON.parse(responseText) : null;
   } catch {
-    body = { raw: text.slice(0, 5000) };
+    body = { raw: responseText.slice(0, 5000) };
   }
 
   if (!response.ok) {
@@ -84,7 +111,7 @@ export async function lookup1881Phone(number: string) {
 export const API1881_SOURCE = {
   provider: "api1881",
   baseUrl: API_BASE,
-  contractSource: "opp1881/public-api-test",
+  contractSource: "api1881.no current subscription key + legacy public-api-test fallback",
   automaticPersonCreation: false,
   automaticOutreach: false,
 } as const;
