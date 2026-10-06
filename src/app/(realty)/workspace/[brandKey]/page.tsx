@@ -335,96 +335,220 @@ export default function FocusedWorkspacePage() {
           </section>
         )}
         {!loading && !error && showCrm && tab === "leads" && (
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold">Kunder & leads · {title}</h2>
-              <button className="inline-flex items-center gap-2 text-sm text-cyan-300" onClick={() => void loadCrm()}><RefreshCw size={15}/> Oppdater</button>
+          <section className="space-y-5">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">CRM-arbeidsflate</p>
+                  <h2 className="mt-1 text-xl font-semibold">Kunder & leads · ${title}</h2>
+                  <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                    Søk, filtrer og prioriter kundene du faktisk har tilgang til. RealtyFlow viser oppfølgingsbehov og status uten å åpne økonomi eller private CRM-data.
+                  </p>
+                </div>
+                <button className="inline-flex items-center gap-2 text-sm text-cyan-300" onClick={() => void loadCrm()}>
+                  <RefreshCw size={15}/> Oppdater
+                </button>
+              </div>
+
+              {crmSummary && <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Matcher filter</p>
+                  <p className="mt-1 text-2xl font-semibold">${crmSummary.matchedCount}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Bør følges opp</p>
+                  <p className="mt-1 text-2xl font-semibold text-amber-300">${crmSummary.staleCount}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Ingen aktivitet registrert siste 7 dager</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">På denne siden</p>
+                  <p className="mt-1 text-2xl font-semibold">${contacts.length}</p>
+                </div>
+              </div>}
+
+              {crmSummary && Object.keys(crmSummary.statusCounts).length > 0 && <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setCrmStatus(""); setCrmPage(1); }}
+                  className={\`rounded-full border px-3 py-1.5 text-xs ${!crmStatus ? "border-cyan-600 bg-cyan-950/30 text-cyan-200" : "border-slate-700 text-slate-400"}\`}>
+                  Alle · ${crmSummary.matchedCount}
+                </button>
+                {Object.entries(crmSummary.statusCounts).map(([status, count]) => (
+                  <button key={status} type="button" onClick={() => {
+                    if (crmStatuses.includes(status as typeof crmStatuses[number])) {
+                      setCrmStatus(status); setCrmPage(1);
+                    }
+                  }}
+                    className={\`rounded-full border px-3 py-1.5 text-xs ${crmStatus === status ? "border-cyan-600 bg-cyan-950/30 text-cyan-200" : "border-slate-700 text-slate-400"}\`}>
+                    ${crmStatusLabels[status] || status} · ${count}
+                  </button>
+                ))}
+              </div>}
+
+              <form className="mt-5 space-y-3" onSubmit={event => {
+                event.preventDefault();
+                setCrmPage(1);
+                setCrmQuery(search.trim());
+                setCrmSource(crmSourceDraft.trim());
+              }}>
+                <div className="grid gap-3 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+                  <label className="relative block">
+                    <Search size={17} className="absolute left-3 top-3 text-slate-500" />
+                    <input value={search} onChange={event => setSearch(event.target.value)}
+                      placeholder="Navn, e-post eller telefon"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm" />
+                  </label>
+                  <input value={crmSourceDraft} onChange={event => setCrmSourceDraft(event.target.value)}
+                    placeholder="Kilde, f.eks. website"
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm" />
+                  <select value={crmStatus} onChange={event => { setCrmStatus(event.target.value); setCrmPage(1); }}
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm">
+                    <option value="">Alle statuser</option>
+                    {crmStatuses.map(status => <option value={status} key={status}>${crmStatusLabels[status]}</option>)}
+                  </select>
+                  <select value={crmSort} onChange={event => { setCrmSort(event.target.value); setCrmPage(1); }}
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm">
+                    <option value="updated_desc">Nylig oppdatert</option>
+                    <option value="updated_asc">Eldst oppdatert</option>
+                    <option value="created_desc">Nyeste lead</option>
+                    <option value="name_asc">Navn A–Å</option>
+                  </select>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Bruk filter</button>
+                  <button type="button" onClick={() => {
+                    setSearch(""); setCrmQuery(""); setCrmSourceDraft(""); setCrmSource("");
+                    setCrmStatus(""); setCrmSort("updated_desc"); setCrmPage(1);
+                  }} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300">
+                    Nullstill
+                  </button>
+                </div>
+              </form>
             </div>
-            <form className="relative mt-4 flex gap-2" onSubmit={event => { event.preventDefault(); setCrmPage(1); setCrmQuery(search.trim()); }}>
-              <label className="relative block flex-1"><Search size={17} className="absolute left-3 top-3 text-slate-500" />
-              <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Søk etter navn, e-post eller telefon"
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm" /></label>
-              <button type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Søk</button>
-            </form>
-            {selectedCustomer && <div className="mt-5 rounded-2xl border border-cyan-800/70 bg-cyan-950/15 p-5">
+
+            {selectedCustomer && <div className="rounded-2xl border border-cyan-800/70 bg-cyan-950/15 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Åpen kunde</p>
-                  <h3 className="mt-1 text-xl font-semibold">{selectedCustomer.name || "Uten navn"}</h3>
+                  <h3 className="mt-1 text-xl font-semibold">${selectedCustomer.name || "Uten navn"}</h3>
                   <p className="mt-1 text-sm text-slate-300">
-                    {selectedCustomer.email || "Ingen e-post"}{selectedCustomer.phone ? ` · ${selectedCustomer.phone}` : ""}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Status: <span className="text-cyan-200">{selectedCustomer.pipeline_status || "Uten status"}</span>
-                    {selectedCustomer.source ? ` · Kilde: ${selectedCustomer.source}` : ""}
+                    ${selectedCustomer.email || "Ingen e-post"}${selectedCustomer.phone ? \` · ${selectedCustomer.phone}\` : ""}
                   </p>
                 </div>
                 <button type="button" onClick={() => { setSelectedCustomerId(""); resetContactForm(); }}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300">Lukk kundekort</button>
               </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-[11px] uppercase text-slate-500">Status</p>
+                  <p className="mt-1 text-sm text-cyan-200">${crmStatusLabels[selectedCustomer.pipeline_status || "UNSET"] || selectedCustomer.pipeline_status || "Uten status"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-[11px] uppercase text-slate-500">Kilde</p>
+                  <p className="mt-1 text-sm">${selectedCustomer.source || "Ikke registrert"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-[11px] uppercase text-slate-500">Opprettet</p>
+                  <p className="mt-1 text-sm">${crmDate(selectedCustomer.created_at)}</p>
+                </div>
+                <div className={\`rounded-xl border p-3 ${crmIsStale(selectedCustomer.updated_at) ? "border-amber-800 bg-amber-950/20" : "border-slate-800 bg-slate-950/40"}\`}>
+                  <p className="text-[11px] uppercase text-slate-500">Sist oppdatert</p>
+                  <p className={\`mt-1 text-sm ${crmIsStale(selectedCustomer.updated_at) ? "text-amber-300" : ""}\`}>
+                    ${crmDate(selectedCustomer.updated_at)}
+                  </p>
+                  {crmIsStale(selectedCustomer.updated_at) && <p className="mt-1 text-[11px] text-amber-300">Bør vurderes for oppfølging</p>}
+                </div>
+              </div>
+
               <div className="mt-4 flex flex-wrap gap-2">
                 {canEditCrm && <button type="button" className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200" onClick={() => {
                   setEditingId(selectedCustomer.id); setFormName(selectedCustomer.name || "");
                   setFormEmail(selectedCustomer.email || ""); setFormPhone(selectedCustomer.phone || "");
                   setContactError(""); setContactNotice("");
                 }}>Rediger kontakt</button>}
+                {selectedCustomer.email && <a href={\`mailto:${selectedCustomer.email}\`}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Send e-post</a>}
+                {selectedCustomer.phone && <a href={\`tel:${selectedCustomer.phone}\`}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Ring</a>}
                 {showProperties && <button type="button" onClick={() => setTab("properties")}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Finn bolig</button>}
                 {permissions.includes("email.read") && <button type="button" onClick={() => setTab("growth")}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">E-post / Reach</button>}
               </div>
-              <p className="mt-3 text-xs text-slate-500">
-                RealtyFlow holder kundearbeidet innenfor {title}. Økonomi, gamle private CRM-notater og andre merkevarer er ikke tilgjengelige her.
-              </p>
+
+              <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/35 p-3 text-xs text-slate-400">
+                Kontaktdata: ${selectedCustomer.email ? "e-post ✓" : "e-post mangler"} · ${selectedCustomer.phone ? "telefon ✓" : "telefon mangler"}.
+                RealtyFlow holder arbeidet innenfor ${title}; økonomi, private notater og andre merkevarer er ikke eksponert.
+              </div>
+
               {showJointTasks && <div className="mt-5 border-t border-slate-800 pt-5">
                 <ZenJointTasks contacts={[selectedCustomer]} canWrite={canWriteJointTasks}
                   selectedContactId={selectedCustomer.id} hideContactSelector />
               </div>}
             </div>}
-            {canEditCrm && (canCreateCrm || editingId) && <form className="mt-5 space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
-              <h3 className="font-semibold">{editingId ? "Rediger kunde" : "Legg til kunde"}</h3>
-              <p className="text-xs text-slate-400">Kun navn, e-post og telefon kan endres her. Merkevare og økonomiske felt låses av serveren.</p>
+
+            {canEditCrm && (canCreateCrm || editingId) && <form className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
+              <h3 className="font-semibold">${editingId ? "Rediger kunde" : "Legg til kunde"}</h3>
+              <p className="text-xs text-slate-400">Kontaktfeltene kan redigeres her. Pipeline-status, private notater og økonomi endres ikke fra medarbeiderflaten.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-xs text-slate-300">Navn *<input required maxLength={140} value={formName} onChange={e => setFormName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"/></label>
                 <label className="text-xs text-slate-300">E-post<input type="email" maxLength={254} value={formEmail} onChange={e => setFormEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"/></label>
                 <label className="text-xs text-slate-300">Telefon<input maxLength={60} value={formPhone} onChange={e => setFormPhone(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"/></label>
               </div>
-              {contactNotice && <p role="status" className="text-sm text-emerald-300">{contactNotice}</p>}
-              {contactError && <p role="alert" className="text-sm text-amber-300">{contactError}</p>}
-              <div className="flex gap-2"><button disabled={savingContact || !formName.trim()} type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{savingContact ? "Lagrer…" : editingId ? "Lagre endringer" : "Opprett kunde"}</button>
+              {contactNotice && <p role="status" className="text-sm text-emerald-300">${contactNotice}</p>}
+              {contactError && <p role="alert" className="text-sm text-amber-300">${contactError}</p>}
+              <div className="flex gap-2">
+                <button disabled={savingContact || !formName.trim()} type="submit" className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                  ${savingContact ? "Lagrer…" : editingId ? "Lagre endringer" : "Opprett kunde"}
+                </button>
                 {editingId && <button type="button" onClick={resetContactForm} className="rounded-lg border border-slate-700 px-4 py-2 text-sm">Avbryt</button>}
               </div>
             </form>}
-            {crmBusy && <p className="mt-4 text-sm text-slate-400">Laster CRM…</p>}
-            {crmError && <p role="alert" className="mt-4 text-sm text-amber-300">{crmError}</p>}
-            {!crmBusy && !crmError && <div className="mt-4 space-y-2">
-              {filtered.map(contact => <article key={contact.id}
-                className={`rounded-xl border p-3 ${selectedCustomerId === contact.id ? "border-cyan-600 bg-cyan-950/20" : "border-slate-800 bg-slate-950/50"}`}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-medium">{contact.name || "Uten navn"}</h3>
-                    <p className="mt-1 text-sm text-slate-400">{contact.email || "Ingen e-post"}{contact.phone ? ` · ${contact.phone}` : ""}</p>
-                    <p className="mt-1 text-xs text-cyan-300">{contact.pipeline_status || "Uten status"}</p>
+
+            {crmBusy && <p className="text-sm text-slate-400">Laster CRM…</p>}
+            {crmError && <p role="alert" className="text-sm text-amber-300">${crmError}</p>}
+            {!crmBusy && !crmError && <div className="space-y-2">
+              {filtered.map(contact => {
+                const stale = crmIsStale(contact.updated_at);
+                return <article key={contact.id}
+                  className={\`rounded-xl border p-3 ${selectedCustomerId === contact.id ? "border-cyan-600 bg-cyan-950/20" : stale ? "border-amber-900/60 bg-amber-950/10" : "border-slate-800 bg-slate-950/50"}\`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-medium">${contact.name || "Uten navn"}</h3>
+                        {stale && <span className="rounded-full border border-amber-800 px-2 py-0.5 text-[10px] text-amber-300">Oppfølging</span>}
+                      </div>
+                      <p className="mt-1 text-sm text-slate-400">${contact.email || "Ingen e-post"}${contact.phone ? \` · ${contact.phone}\` : ""}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        <span className="text-cyan-300">${crmStatusLabels[contact.pipeline_status || "UNSET"] || contact.pipeline_status || "Uten status"}</span>
+                        ${contact.source ? \` · ${contact.source}\` : ""} · Oppdatert ${crmDate(contact.updated_at)}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => { setSelectedCustomerId(contact.id); resetContactForm(); }}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-cyan-200">
+                      ${selectedCustomerId === contact.id ? "Kunde åpnet" : "Åpne kundearbeid"}
+                    </button>
                   </div>
-                  <button type="button" onClick={() => { setSelectedCustomerId(contact.id); resetContactForm(); }}
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-cyan-200">
-                    {selectedCustomerId === contact.id ? "Kunde åpnet" : "Åpne kundearbeid"}
-                  </button>
-                </div>
-              </article>)}
-              {filtered.length === 0 && <p className="p-4 text-sm text-slate-400">Ingen kunder funnet på denne siden.</p>}
+                </article>;
+              })}
+              {filtered.length === 0 && <p className="rounded-xl border border-dashed border-slate-800 p-4 text-sm text-slate-400">
+                Ingen kunder matcher søket og filtrene.
+              </p>}
             </div>}
-            {!crmBusy && !crmError && <div className="mt-4 flex items-center justify-between gap-3">
+
+            {!crmBusy && !crmError && <div className="flex items-center justify-between gap-3">
               <button type="button" disabled={crmPage === 1} onClick={() => setCrmPage(page => Math.max(1, page - 1))}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-40">Forrige</button>
-              <span className="text-xs text-slate-400">Side {crmPage}</span>
+              <span className="text-xs text-slate-400">Side ${crmPage}</span>
               <button type="button" disabled={!crmHasMore || crmPage >= 1000} onClick={() => setCrmPage(page => page + 1)}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-40">Neste</button>
             </div>}
-            {!selectedCustomer && showJointTasks && <p className="mt-4 rounded-xl border border-dashed border-slate-800 p-4 text-sm text-slate-500">
+
+            {!selectedCustomer && showJointTasks && <p className="rounded-xl border border-dashed border-slate-800 p-4 text-sm text-slate-500">
               Åpne en kunde for å samle kontakt, neste handling og felles oppgaver i samme kundekort.
             </p>}
-            <p className="mt-4 text-xs text-slate-500">Søk og visning er avgrenset til merkevaren. Opprettelse og redigering er begrenset til kontaktopplysninger; status, notater, avtaler og økonomi er ikke åpnet for medarbeidere.</p>
+            <p className="text-xs text-slate-500">
+              Zen-visningen er fortsatt begrenset til eksplisitt godkjente nye felles leads. Historiske Zen-kunder, private notater og økonomifelt er ikke gjort tilgjengelige.
+            </p>
           </section>
         )}
         {!loading && !error && showProperties && tab === "properties" &&
