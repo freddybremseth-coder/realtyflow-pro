@@ -244,6 +244,66 @@ function parseVariants(raw: string, sourceUrl: string) {
   });
 }
 
+async function brandMediaOrganizationId(supabase: any, brandKey: string) {
+  const { data: organization } = await supabase.from("media_assets")
+    .select("organization_id")
+    .eq("brand_id", brandKey)
+    .not("organization_id", "is", null)
+    .is("deleted_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (!organization?.organization_id) throw new Error("BRAND_MEDIA_ORGANIZATION_MISSING");
+  return organization.organization_id as string;
+}
+
+async function registerBrandWebsiteImage(
+  supabase: any,
+  input: {
+    brandKey: string;
+    actorUserId: string | null;
+    actorEmail: string;
+    articleUrl: string;
+    imageUrl: string;
+    title: string;
+  },
+) {
+  if (!/^https:\/\//i.test(input.imageUrl)) return "";
+  const { data: existing } = await supabase.from("media_assets")
+    .select("id,public_url")
+    .eq("brand_id", input.brandKey)
+    .eq("public_url", input.imageUrl)
+    .is("deleted_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return existing.public_url || input.imageUrl;
+
+  const organizationId = await brandMediaOrganizationId(supabase, input.brandKey);
+  const { error } = await supabase.from("media_assets").insert({
+    organization_id: organizationId,
+    user_id: input.actorUserId,
+    brand_id: input.brandKey,
+    media_type: "image",
+    asset_type: "uploaded_reference",
+    title: ("Guide/Magasin · " + input.title).slice(0, 200),
+    description: "Brand-nettsidebilde registrert av SoMe Studio fra godkjent guide/magasin-side.",
+    public_url: input.imageUrl,
+    signed_url_required: false,
+    provider: "brand-website",
+    ai_generated: false,
+    ai_edited: false,
+    metadata_json: {
+      workspace_social_studio: true,
+      source: "brand_article_og_image",
+      article_url: input.articleUrl,
+      actor_email: input.actorEmail,
+    },
+    tags: ["social-studio", input.brandKey, "guide-magasin"],
+    status: "active",
+  });
+  if (error) throw new Error("SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED: " + error.message);
+  return input.imageUrl;
+}
+
 async function registerRenderedAsset(
   supabase: any,
   input: {
@@ -267,17 +327,10 @@ async function registerRenderedAsset(
     .maybeSingle();
   if (existing?.id) return existing.public_url || input.imageUrl;
 
-  const { data: organization } = await supabase.from("media_assets")
-    .select("organization_id")
-    .eq("brand_id", input.brandKey)
-    .not("organization_id", "is", null)
-    .is("deleted_at", null)
-    .limit(1)
-    .maybeSingle();
-  if (!organization?.organization_id) throw new Error("BRAND_MEDIA_ORGANIZATION_MISSING");
+  const organizationId = await brandMediaOrganizationId(supabase, input.brandKey);
 
   const { error } = await supabase.from("media_assets").insert({
-    organization_id: organization.organization_id,
+    organization_id: organizationId,
     user_id: input.actorUserId,
     brand_id: input.brandKey,
     property_id: input.propertyId,
@@ -403,6 +456,16 @@ export async function POST(
       sourceTitle = article.title;
       sourceUrl = article.url;
       sourceImageUrl = requestedImageUrl || article.imageUrl;
+      if (!requestedImageUrl && article.imageUrl) {
+        sourceImageUrl = await registerBrandWebsiteImage(access.value.supabase, {
+          brandKey: params.brandKey,
+          actorUserId: access.value.verifiedUserId,
+          actorEmail: access.value.verifiedEmail,
+          articleUrl: article.url,
+          imageUrl: article.imageUrl,
+          title: article.title,
+        });
+      }
       sourceText = [
         article.description ? "Ingress: " + article.description : "",
         article.text,
@@ -483,7 +546,8 @@ export async function POST(
       "ARTICLE_REDIRECT_OUTSIDE_BRAND", "ARTICLE_FETCH_FAILED", "ARTICLE_NOT_HTML",
       "ARTICLE_TOO_LARGE", "PROPERTY_LOOKUP_INVALID", "PROPERTY_NOT_FOUND",
       "PROPERTY_NOT_MARKETABLE_FOR_BRAND", "SOCIAL_STUDIO_AI_INVALID",
-      "BRAND_MEDIA_ORGANIZATION_MISSING", "PROPERTY_CARD_FFMPEG_MISSING",
+      "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
+      "PROPERTY_CARD_FFMPEG_MISSING",
     ];
     const status = known.some((code) => message.startsWith(code)) ? 409 : 500;
     return fail(status, message.split(":")[0], status === 500 ? "SoMe Studio kunne ikke fullføre oppgaven." : undefined);
