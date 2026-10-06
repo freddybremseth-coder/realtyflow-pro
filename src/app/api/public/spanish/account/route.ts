@@ -12,15 +12,20 @@ export async function GET(request: NextRequest) {
   const context = await requireSpanishUser(request);
   if ("error" in context) return context.error;
 
-  const { data, error } = await context.supabase.rpc("spanish_account_snapshot", {
-    p_user_id: context.user.id,
-  });
-  if (error) {
-    console.error("[Spanish Account] Snapshot error:", error);
+  const [accountResult, usageResult] = await Promise.all([
+    context.supabase.rpc("spanish_account_snapshot", { p_user_id: context.user.id }),
+    context.supabase.rpc("spanish_usage_summary", { p_user_id: context.user.id }),
+  ]);
+
+  if (accountResult.error || usageResult.error) {
+    console.error("[Spanish Account] Snapshot error:", accountResult.error || usageResult.error);
     return spanishJson(request, { error: "Could not load account" }, 500);
   }
 
-  return spanishJson(request, { account: data });
+  return spanishJson(request, {
+    account: accountResult.data,
+    usage: usageResult.data,
+  });
 }
 
 export async function PUT(request: NextRequest) {
