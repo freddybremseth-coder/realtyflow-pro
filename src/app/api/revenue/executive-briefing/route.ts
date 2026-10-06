@@ -17,6 +17,7 @@ import {
 import { buildExecutionWorkspace } from "@/lib/revenue/execution";
 import { buildTeamWorkload } from "@/lib/revenue/team-workload";
 import { responsibilityLoadByEmail } from "@/lib/revenue/team-capacity";
+import { loadWorkspaceTeamCoreSnapshot } from "@/lib/workspaces/team-core-snapshot";
 import { buildTeamCapacityForecast } from "@/lib/revenue/team-capacity-forecast";
 import { buildTeamCapacityTrend } from "@/lib/revenue/team-capacity-trend";
 import { buildInternalAlertCenter, type InternalAlertAcknowledgement } from "@/lib/revenue/internal-alerts";
@@ -293,9 +294,7 @@ export async function GET(request: NextRequest) {
     supabase.from("brand_settings").select("settings").eq("brand_id", ALERT_SETTINGS_KEY).maybeSingle(),
     loadAccessSettings(),
     calendarEvents(session.role, now),
-    supabase.schema("core").from("workspace_user_directory").select("user_id,email,status,access_expires_at"),
-    supabase.schema("core").from("brand_workspace_memberships").select("brand_id,user_id,status"),
-    supabase.schema("core").from("brand_workspace_responsibilities").select("brand_id,user_id,responsibilities"),
+    loadWorkspaceTeamCoreSnapshot(supabase),
   ]);
 
   if (results[0].status === "rejected" || results[0].value?.error) {
@@ -320,13 +319,14 @@ export async function GET(request: NextRequest) {
   const calendar = results[10].status === "fulfilled"
     ? results[10].value
     : { configured: false, events: [] as BriefingCalendarEvent[], warning: "Google Calendar kunne ikke leses." };
-  const workspaceUsers = rows(results[11], "workspace_user_directory", warnings, false);
-  const workspaceMemberships = rows(results[12], "brand_workspace_memberships", warnings, false);
-  const workspaceResponsibilities = rows(results[13], "brand_workspace_responsibilities", warnings, false);
+  const workspaceTeam = results[11].status === "fulfilled"
+    ? results[11].value
+    : { users: [], memberships: [], responsibilities: [], brands: [], error: "workspace responsibility load: utilgjengelig" };
+  if (workspaceTeam.error) warnings.push(`workspace responsibility load: ${workspaceTeam.error}`);
   const responsibilityCountsByEmail = responsibilityLoadByEmail({
-    users: workspaceUsers,
-    memberships: workspaceMemberships,
-    responsibilities: workspaceResponsibilities,
+    users: workspaceTeam.users,
+    memberships: workspaceTeam.memberships,
+    responsibilities: workspaceTeam.responsibilities,
     now,
   });
 

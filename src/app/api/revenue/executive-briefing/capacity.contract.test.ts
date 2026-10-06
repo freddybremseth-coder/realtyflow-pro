@@ -8,9 +8,8 @@ const weeklyRoute = fileURLToPath(new URL("../command/weekly-management-review/r
 
 test("Executive Briefing uses responsibility-aware team capacity", async () => {
   const source = await readFile(executiveRoute, "utf8");
-  assert.match(source, /schema\("core"\)\.from\("workspace_user_directory"\)/);
-  assert.match(source, /schema\("core"\)\.from\("brand_workspace_memberships"\)/);
-  assert.match(source, /schema\("core"\)\.from\("brand_workspace_responsibilities"\)/);
+  assert.match(source, /loadWorkspaceTeamCoreSnapshot/);
+  assert.doesNotMatch(source, /schema\("core"\)/);
   assert.match(source, /responsibilityLoadByEmail/);
   assert.match(source, /buildTeamCapacityForecast/);
   assert.match(source, /buildTeamCapacityTrend/);

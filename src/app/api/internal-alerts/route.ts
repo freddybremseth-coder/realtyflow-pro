@@ -5,6 +5,7 @@ import { hasPermission, type AccessRole } from "@/lib/access-control";
 import { loadAccessSettings } from "@/lib/access-control-server";
 import { buildTeamWorkload } from "@/lib/revenue/team-workload";
 import { responsibilityLoadByEmail } from "@/lib/revenue/team-capacity";
+import { loadWorkspaceTeamCoreSnapshot } from "@/lib/workspaces/team-core-snapshot";
 import {
   buildInternalAlertCenter,
   type InternalAlert,
@@ -214,15 +215,13 @@ async function buildFreshCenter(request: NextRequest, supabase: any) {
   // Middleware independently rejects this path for WORKSPACE_MEMBER.
   if (tokenSession.role === "WORKSPACE_MEMBER")
     return { error: "Scoped workspace required", status: 403, center: null, session: null, settings: null };
-  const [contactsResult, workResult, accessResult, assignmentRow, alertRow, workspaceUsersResult, workspaceMembershipsResult, workspaceResponsibilitiesResult] = await Promise.all([
+  const [contactsResult, workResult, accessResult, assignmentRow, alertRow, workspaceTeamResult] = await Promise.all([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(3000),
     supabase.from("work_items").select("*").in("status", OPEN_TASK_STATUSES).order("due_date", { ascending: true, nullsFirst: false }).limit(2000),
     loadAccessSettings(),
     loadSettingsRow(supabase, ASSIGNMENT_SETTINGS_KEY),
     loadSettingsRow(supabase, ALERT_SETTINGS_KEY),
-    supabase.schema("core").from("workspace_user_directory").select("user_id,email,status,access_expires_at"),
-    supabase.schema("core").from("brand_workspace_memberships").select("brand_id,user_id,status"),
-    supabase.schema("core").from("brand_workspace_responsibilities").select("brand_id,user_id,responsibilities"),
+    loadWorkspaceTeamCoreSnapshot(supabase),
   ]);
   if (contactsResult.error) return { error: contactsResult.error.message, status: 500, center: null, session: tokenSession, settings: null };
   if (accessResult.error && tokenSession.role !== "OWNER") return { error: `Access profile unavailable: ${accessResult.error}`, status: 503, center: null, session: null, settings: null };
@@ -247,14 +246,14 @@ async function buildFreshCenter(request: NextRequest, supabase: any) {
   } else workItems = workResult.data || [];
   if (assignmentRow.error) warnings.push(`team assignments: ${assignmentRow.error}`);
   if (alertRow.error) warnings.push(`alert acknowledgements: ${alertRow.error}`);
-  if (workspaceUsersResult.error || workspaceMembershipsResult.error || workspaceResponsibilitiesResult.error) {
+  if (workspaceTeamResult.error) {
     warnings.push("workspace responsibility load: utilgjengelig");
   }
 
   const responsibilityCountsByEmail = responsibilityLoadByEmail({
-    users: workspaceUsersResult.data || [],
-    memberships: workspaceMembershipsResult.data || [],
-    responsibilities: workspaceResponsibilitiesResult.data || [],
+    users: workspaceTeamResult.users,
+    memberships: workspaceTeamResult.memberships,
+    responsibilities: workspaceTeamResult.responsibilities,
   });
   const assignments = parseAssignmentSettings(assignmentRow.data?.settings);
   const alertSettings = parseAlertSettings(alertRow.data?.settings);

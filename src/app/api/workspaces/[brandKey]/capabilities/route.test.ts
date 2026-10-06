@@ -64,28 +64,24 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
   process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED = "true";
   const permitted = ["crm.read", "crm.write", "properties.catalog.read"];
   setPlatformSupabaseFactoryForTests(() => ({
-    rpc: async () => ({
-      data: { brand: { id: "zeneco-uuid", brand_key: "zeneco" },
-        grant: { brand_id: "zeneco-uuid", user_id: "staff-id", email: "staff@example.test", status: "active", permissions: permitted } },
-      error: null,
-    }),
-    schema: () => ({
-      from: (table: string) => {
-        assert.equal(table, "brand_workspace_responsibilities");
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({
-                  data: { responsibilities: ["property-matching"] },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        };
-      },
-    }),
+    rpc: async (method: string) => {
+      if (method === "workspace_brand_grant") return {
+        data: { brand: { id: "zeneco-uuid", brand_key: "zeneco" },
+          grant: { brand_id: "zeneco-uuid", user_id: "staff-id", email: "staff@example.test", status: "active", permissions: permitted } },
+        error: null,
+      };
+      if (method === "workspace_user_admin_snapshot") return {
+        data: {
+          brands: [{ id: "zeneco-uuid", brand_key: "zeneco", display_name: "Zeneco" }],
+          users: [{ user_id: "staff-id", email: "staff@example.test", display_name: "Staff", status: "active",
+            account_kind: "staff", access_expires_at: null,
+            memberships: [{ brand_id: "zeneco-uuid", brand_key: "zeneco", brand_name: "Zeneco", status: "active",
+              permissions: permitted, responsibilities: ["property-matching"] }] }],
+        },
+        error: null,
+      };
+      throw new Error("Unexpected RPC " + method);
+    },
     auth: { admin: { getUserById: async (id: string) => ({
       data: { user: { id, email: "staff@example.test" } }, error: null,
     }) } },
@@ -129,28 +125,25 @@ test("Zen joint-write is not advertised without joint-read; Pinoso cannot advert
   let currentBrand = "zeneco";
   let currentPermissions = ["crm.joint.write", "properties.catalog.read"];
   setPlatformSupabaseFactoryForTests(() => ({
-    rpc: async () => ({
-      data: { brand: { id: "brand-id", brand_key: currentBrand },
-        grant: { brand_id: "brand-id", user_id: "staff-id", email: "staff@example.test",
-          status: "active", permissions: currentPermissions } }, error: null,
-    }),
-    schema: () => ({
-      from: (table: string) => {
-        assert.equal(table, "brand_workspace_responsibilities");
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({
-                  data: { responsibilities: currentPermissions.includes("nexus.read") ? ["nexus-review"] : [] },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        };
-      },
-    }),
+    rpc: async (method: string) => {
+      if (method === "workspace_brand_grant") return {
+        data: { brand: { id: "brand-id", brand_key: currentBrand },
+          grant: { brand_id: "brand-id", user_id: "staff-id", email: "staff@example.test",
+            status: "active", permissions: currentPermissions } }, error: null,
+      };
+      if (method === "workspace_user_admin_snapshot") return {
+        data: {
+          brands: [{ id: "brand-id", brand_key: currentBrand, display_name: currentBrand }],
+          users: [{ user_id: "staff-id", email: "staff@example.test", display_name: "Staff", status: "active",
+            account_kind: "staff", access_expires_at: null,
+            memberships: [{ brand_id: "brand-id", brand_key: currentBrand, brand_name: currentBrand, status: "active",
+              permissions: currentPermissions,
+              responsibilities: currentPermissions.includes("nexus.read") ? ["nexus-review"] : [] }] }],
+        },
+        error: null,
+      };
+      throw new Error("Unexpected RPC " + method);
+    },
     auth: { admin: { getUserById: async (id: string) => ({
       data: { user: { id, email: "staff@example.test" } }, error: null,
     }) } },
