@@ -75,6 +75,8 @@ export function WorkspaceSocialStudio({
   const [source, setSource] = useState<GeneratedSource | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [styles, setStyles] = useState<Record<string, string>>({});
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [previewing, setPreviewing] = useState("");
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
@@ -90,6 +92,7 @@ export function WorkspaceSocialStudio({
       initialProperty.ref ? "Ref " + initialProperty.ref : "",
     ].filter(Boolean).join(" · "));
     setVariants([]);
+    setPreviews({});
     setSource(null);
     setError("");
     setNotice("Boligen er hentet fra Eiendommer. Lag tre forslag når du er klar.");
@@ -109,6 +112,7 @@ export function WorkspaceSocialStudio({
     setError("");
     setNotice("");
     setVariants([]);
+    setPreviews({});
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
         method: "POST",
@@ -144,6 +148,22 @@ export function WorkspaceSocialStudio({
       setError(cause instanceof Error ? cause.message : "Kunne ikke lage forslag.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function previewVariant(variant: Variant) {
+    if (source?.type !== "property" || !source.propertyLookup || previewing) return;
+    setPreviewing(variant.id);
+    setError("");
+    try {
+      const channel: Channel = activePlatforms.has("instagram") ? "instagram" : "facebook";
+      const previewUrl = await renderPropertyImage(variant, channel);
+      if (!previewUrl) throw new Error("Forhåndsvisningen kunne ikke rendres.");
+      setPreviews(current => ({ ...current, [variant.id]: previewUrl }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Forhåndsvisningen kunne ikke rendres.");
+    } finally {
+      setPreviewing("");
     }
   }
 
@@ -288,10 +308,23 @@ export function WorkspaceSocialStudio({
 
         {source?.type === "property" && <label className="mt-3 block text-xs text-slate-300">Eiendomsmal
           <select value={styles[variant.id] || variant.creativeStyle}
-            onChange={(event) => setStyles(current => ({ ...current, [variant.id]: event.target.value }))}
+            onChange={(event) => {
+              setStyles(current => ({ ...current, [variant.id]: event.target.value }));
+              setPreviews(current => {
+                const next = { ...current };
+                delete next[variant.id];
+                return next;
+              });
+            }}
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
             {PROPERTY_STYLES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
+          <button type="button" onClick={() => void previewVariant(variant)} disabled={Boolean(previewing)}
+            className="mt-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 disabled:opacity-40">
+            {previewing === variant.id ? "Renderer…" : "Forhåndsvis valgt mal"}
+          </button>
+          {previews[variant.id] && <img src={previews[variant.id]} alt={"Forhåndsvisning av " + variant.label}
+            className="mt-3 aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />}
         </label>}
 
         <div className="mt-4 space-y-3">
