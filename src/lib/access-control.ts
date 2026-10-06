@@ -219,7 +219,7 @@ export function permissionForNavHref(href: string): AccessPermission | "OWNER_ON
   if (href === "/team-workload") return "revenue.read";
   if (href === "/customers" || href.startsWith("/customers/")) return "customers.read";
   if (["/billing", "/dona-anna", "/commissions", "/monthly-close", "/goals"].includes(href)) return "finance.read";
-  if (["/attribution", "/ad-campaigns", "/analytics", "/ai-personal-brand", "/media-studio", "/corporate-homes"].includes(href)) return "marketing.read";
+  if (["/attribution", "/ad-campaigns", "/analytics", "/ai-personal-brand", "/media-studio", "/corporate-homes", "/sales/corporate-homes"].includes(href)) return "marketing.read";
   if (href === "/care" || href.startsWith("/care/")) return "keyholding.read";
   if (href === "/service-revenue") return "keyholding.read";
   if (["/closing", "/closing-pack"].includes(href)) return "closing.read";
