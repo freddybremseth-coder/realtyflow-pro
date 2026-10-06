@@ -88,6 +88,13 @@ interface Customer360Payload {
       readyToAdvance: boolean;
       criteria: Array<{ id: string; label: string; met: boolean; evidence?: string | null }>;
     };
+    commitmentLadder: Array<{
+      id: string;
+      label: string;
+      status: "CONFIRMED" | "PARTIAL" | "OPEN" | "NOT_APPLICABLE";
+      evidence: string | null;
+      nextQuestion: string | null;
+    }>;
     discoveryQuestions: string[];
     coach: { do: string[]; avoid: string[] };
     guardrail: string;
@@ -557,6 +564,39 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                         </div>
                       )}
                     </article>
+                  </section>
+
+                  <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Beslutningsstige</p>
+                        <h3 className="mt-1 text-lg font-semibold text-white">Hva har kunden faktisk bekreftet?</h3>
+                        <p className="mt-1 text-sm text-slate-400">Skiller dokumentert fremdrift fra antakelser. Neste steg bør flytte én åpen linje mot bekreftet.</p>
+                      </div>
+                      <span className="text-xs text-slate-500">Behov → kriterier → alternativer → reaksjon → beslutning → forpliktelse</span>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {data.salesIntelligence.commitmentLadder.map((step) => {
+                        const statusClass = step.status === "CONFIRMED"
+                          ? "border-emerald-500/25 bg-emerald-500/5"
+                          : step.status === "PARTIAL"
+                            ? "border-amber-500/25 bg-amber-500/5"
+                            : step.status === "OPEN"
+                              ? "border-cyan-500/25 bg-cyan-500/5"
+                              : "border-slate-800 bg-slate-950/40";
+                        const statusLabel = step.status === "CONFIRMED" ? "Bekreftet" : step.status === "PARTIAL" ? "Delvis" : step.status === "OPEN" ? "Åpen" : "Ikke aktuell ennå";
+                        return (
+                          <article key={step.id} className={`rounded-xl border p-4 ${statusClass}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <strong className="text-sm text-white">{step.label}</strong>
+                              <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">{statusLabel}</span>
+                            </div>
+                            {step.evidence && <p className="mt-2 text-xs leading-5 text-slate-400">{step.evidence}</p>}
+                            {step.nextQuestion && <p className="mt-3 text-xs leading-5 text-cyan-200"><b>Neste spørsmål:</b> {step.nextQuestion}</p>}
+                          </article>
+                        );
+                      })}
+                    </div>
                   </section>
 
                   <section className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-5">
