@@ -453,35 +453,46 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
 
               {tab === "overview" && (
                 <div className="space-y-5">
-                  <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+                  <section className="grid gap-4 xl:grid-cols-[1.55fr_.95fr]">
                     <article className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-emerald-300">Neste beste handling</span>
-                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${priorityClasses(data.nextAction?.priority)}`}>{data.nextAction?.priority || "MEDIUM"}</span>
+                        <span className="text-sm font-semibold text-emerald-300">Nexus · neste beste handling</span>
+                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${momentumClasses(data.salesIntelligence.momentum)}`}>{data.salesIntelligence.momentum}</span>
+                        <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-200">{data.salesIntelligence.priority} · {data.salesIntelligence.score}/100</span>
                       </div>
-                      <h3 className="mt-3 text-lg font-semibold text-white">{data.nextAction?.title || "Følg opp kunden"}</h3>
-                      <p className="mt-2 text-sm leading-6 text-slate-200">{data.nextAction?.description || "Åpne kundeoppdatering og registrer neste steg."}</p>
-                      {data.nextAction?.reason && <p className="mt-2 text-xs text-slate-400">Hvorfor: {data.nextAction.reason}</p>}
-                      <p className="mt-1 text-xs text-slate-500">Oppfølging: {dateLabel(data.contact.next_followup)}</p>
+                      <h3 className="mt-3 text-lg font-semibold text-white">{data.salesIntelligence.headline}</h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-200">{data.salesIntelligence.nextBestAction.action}</p>
+                      <p className="mt-2 text-xs text-slate-400">Hvorfor: {data.salesIntelligence.nextBestAction.why}</p>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {actionUsesCustomerUpdateTab(data.nextAction?.primaryHref) ? (
-                          <Button size="sm" onClick={openCustomerUpdate}>{data.nextAction?.primaryLabel || "Registrer oppdatering"}</Button>
-                        ) : data.nextAction?.primaryHref ? (
-                          <Button asChild size="sm"><Link href={data.nextAction.primaryHref}>{data.nextAction.primaryLabel || "Åpne handling"}<ArrowRight size={14} className="ml-1" /></Link></Button>
-                        ) : (
-                          <Button size="sm" onClick={openCustomerUpdate}>Registrer oppdatering</Button>
-                        )}
-                        {data.nextAction?.secondaryHref && (
-                          actionUsesCustomerUpdateTab(data.nextAction.secondaryHref)
-                            ? <Button size="sm" variant="outline" onClick={openCustomerUpdate}>{data.nextAction.secondaryLabel || "Registrer oppdatering"}</Button>
-                            : <Button asChild size="sm" variant="outline"><Link href={data.nextAction.secondaryHref}>{data.nextAction.secondaryLabel || "Åpne"}</Link></Button>
-                        )}
+                        <Button size="sm" onClick={() => void runSalesCoach("NEXT_STEP")} disabled={salesCoachBusy}>
+                          {salesCoachBusy && salesCoachMode === "NEXT_STEP" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Sparkles size={14} className="mr-2" />}
+                          Coach meg på neste steg
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={openCustomerUpdate}>Registrer neste steg</Button>
+                        {data.salesIntelligence.nextBestAction.channel !== "NONE" && <span className="inline-flex items-center rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-400">Anbefalt kanal: {data.salesIntelligence.nextBestAction.channel}</span>}
                       </div>
                     </article>
+
                     <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
-                      <div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-wide text-slate-500">Profilkompletthet</p><strong className="mt-1 block text-3xl text-white">{data.completeness.score}%</strong></div><ClipboardCheck className="text-cyan-300" size={30} /></div>
-                      <div className="mt-4 space-y-2">
-                        {data.completeness.checks.map((check) => <div key={check.id} className="flex items-center gap-2 text-sm"><CheckCircle2 size={15} className={check.complete ? "text-emerald-400" : "text-slate-600"} /><span className={check.complete ? "text-slate-300" : "text-slate-500"}>{check.label}</span></div>)}
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Salgsmodenhet</p>
+                          <strong className="mt-1 block text-3xl text-white">{data.salesIntelligence.scores.overall}%</strong>
+                        </div>
+                        <ClipboardCheck className="text-cyan-300" size={30} />
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          ["Profil", data.salesIntelligence.scores.profile],
+                          ["Engasjement", data.salesIntelligence.scores.engagement],
+                          ["Timing", data.salesIntelligence.scores.timing],
+                          ["Intensjon", data.salesIntelligence.scores.intent],
+                        ].map(([label, value]) => (
+                          <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                            <span className="text-slate-500">{label}</span>
+                            <strong className="mt-1 block text-lg text-white">{Number(value)}%</strong>
+                          </div>
+                        ))}
                       </div>
                     </article>
                   </section>
