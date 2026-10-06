@@ -21,21 +21,35 @@ export async function sendBrandEmail(
     fromName?: string;
     /** Only for explicit transactional/legal/operational communication. */
     allowSuppressed?: boolean;
+    /** Explicit human send from Customer 360. Allows manual takeover, never STOPP/unsubscribe. */
+    manualAdvisorAction?: boolean;
+    /** Optional direct CRM linkage for the outbound email log. */
+    crmContactId?: string;
   }
 ): Promise<{ success: boolean; skipped?: boolean; messageId?: string; error?: string }> {
   const suppression = await checkCrmEmailSuppression(supabase, params.to);
   if (suppression.error) {
     return { success: false, skipped: true, error: `CRM suppression check failed: ${suppression.error}` };
   }
-  if ((suppression.manualTakeoverEmails || []).length > 0) {
-    return {
-      success: false,
-      skipped: true,
-      error: `Recipient is under manual advisor takeover in CRM: ${(suppression.manualTakeoverEmails || []).join(", ")}`,
-    };
-  }
-  if (!params.allowSuppressed && suppression.blocked) {
-    return { success: false, skipped: true, error: `Recipient suppressed in CRM${suppression.blockedEmails.length ? `: ${suppression.blockedEmails.join(", ")}` : ""}` };
+  if (params.manualAdvisorAction) {
+    if ((suppression.hardBlockedEmails || []).length > 0) {
+      return {
+        success: false,
+        skipped: true,
+        error: `Recipient has a hard CRM email block: ${(suppression.hardBlockedEmails || []).join(", ")}`,
+      };
+    }
+  } else {
+    if ((suppression.manualTakeoverEmails || []).length > 0) {
+      return {
+        success: false,
+        skipped: true,
+        error: `Recipient is under manual advisor takeover in CRM: ${(suppression.manualTakeoverEmails || []).join(", ")}`,
+      };
+    }
+    if (!params.allowSuppressed && suppression.blocked) {
+      return { success: false, skipped: true, error: `Recipient suppressed in CRM${suppression.blockedEmails.length ? `: ${suppression.blockedEmails.join(", ")}` : ""}` };
+    }
   }
 
   let configQuery = supabase
@@ -76,6 +90,7 @@ export async function sendBrandEmail(
     body_html: params.bodyHtml || null,
     is_read: true,
     received_at: new Date().toISOString(),
+    crm_contact_id: params.crmContactId || null,
   });
 
   return { success: true, messageId: result.messageId };
