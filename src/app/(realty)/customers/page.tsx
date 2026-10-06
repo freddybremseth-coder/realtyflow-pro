@@ -20,6 +20,7 @@ import {
   ShieldOff,
   ShieldX,
   Sparkles,
+  Trash2,
   Target,
   Users,
 } from "lucide-react";
@@ -162,6 +163,7 @@ export default function CustomersPage() {
   const [error, setError] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [spamBusyId, setSpamBusyId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -233,6 +235,31 @@ export default function CustomersPage() {
       setError(spamError instanceof Error ? spamError.message : "Kunne ikke markere kontakten som spam.");
     } finally {
       setSpamBusyId(null);
+    }
+  }
+
+  async function deleteContact(contact: Contact) {
+    const label = contact.name || contact.email || "denne kontakten";
+    if (!window.confirm(`Slett ${label} permanent? Bruk dette for duplikater/testkontakter. For uønskede henvendelser bør du bruke Spam slik at videre kontakt også blokkeres.`)) return;
+    setDeleteBusyId(contact.id);
+    setError("");
+    try {
+      const response = await fetch("/api/contacts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: contact.id }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke slette kontakten.");
+      setContacts((current) => current.filter((item) => item.id !== contact.id));
+      if (selectedContactId === contact.id) {
+        setSelectedContactId(null);
+        syncUrl({ contactId: null });
+      }
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Kunne ikke slette kontakten.");
+    } finally {
+      setDeleteBusyId(null);
     }
   }
 
@@ -425,15 +452,25 @@ export default function CustomersPage() {
                 </div>
                 <div className="mt-4 border-t border-slate-800 pt-3 text-xs font-medium text-cyan-300">Åpne Customer 360 og gjør neste steg →</div>
               </button>
-              <div className="flex justify-end border-t border-slate-800 px-3 py-2">
+              <div className="flex justify-end gap-1 border-t border-slate-800 px-3 py-2">
                 <button
                   type="button"
                   onClick={() => void markSpam(contact)}
-                  disabled={spamBusyId === contact.id}
+                  disabled={spamBusyId === contact.id || deleteBusyId === contact.id}
                   className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-red-500/10 hover:text-red-300 disabled:cursor-wait disabled:opacity-60"
                 >
                   {spamBusyId === contact.id ? <Loader2 size={13} className="animate-spin" /> : <ShieldX size={13} />}
                   Spam
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deleteContact(contact)}
+                  disabled={deleteBusyId === contact.id || spamBusyId === contact.id}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-300 disabled:cursor-wait disabled:opacity-60"
+                  title="Slett duplikat eller testkontakt permanent"
+                >
+                  {deleteBusyId === contact.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  Slett
                 </button>
               </div>
               </div>
