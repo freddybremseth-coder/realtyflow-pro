@@ -48,7 +48,7 @@ type GrowthData = {
 type WorkArea = "corporate" | "content" | "email" | "visibility" | "ads" | "plan";
 
 const kindLabels: Record<string, string> = {
-  corporate: "Corporate research / neste steg",
+  corporate: "Bedriftskartlegging / neste steg",
   seo: "SEO",
   geo: "GEO · generativ søk",
   aeo: "AEO · svarmotorer",
@@ -58,6 +58,46 @@ const kindLabels: Record<string, string> = {
   video: "Video",
   info_meeting: "Informasjonsmøte / webinar",
 };
+
+const corporateStatusLabels: Record<string,string> = {
+  DISCOVERED: "Oppdaget",
+  RESEARCHED: "Kartlagt",
+  QUALIFIED: "Kvalifisert",
+  CONTACT_READY: "Klar for manuell kontakt",
+  CONTACTED: "Kontaktet",
+  ENGAGED: "I dialog",
+  MEETING: "Møte",
+  OPPORTUNITY: "Salgsmulighet",
+  BUSINESS_CASE: "Beslutningsgrunnlag",
+  SHORTLIST: "Kortliste",
+  DECISION: "Beslutning",
+  NEGOTIATION: "Forhandling",
+  PARTNER: "Aktiv partner",
+  WON: "Vunnet",
+  LOST: "Tapt",
+  DISQUALIFIED: "Ikke aktuell",
+};
+
+const partnerTypeLabels: Record<string,string> = {
+  accounting_tax: "Regnskap og skatt",
+  legal: "Juridisk rådgivning",
+  management_consulting: "Bedriftsrådgivning",
+  hr_recruitment: "HR og rekruttering",
+  business_membership: "Medlemsorganisasjon",
+  corporate_travel: "Bedriftsreise",
+  wealth_advisory: "Formuesrådgivning",
+  other: "Annen partner",
+};
+
+function corporateStatusLabel(value?: string | null) {
+  const key = String(value || "").trim().toUpperCase();
+  return corporateStatusLabels[key] || String(value || "").replaceAll("_", " ").toLowerCase();
+}
+
+function partnerTypeLabel(value?: string | null) {
+  const key = String(value || "").trim();
+  return partnerTypeLabels[key] || key.replaceAll("_", " ");
+}
 
 export function GrowthCorporatePanel({
   brandKey,
@@ -176,7 +216,7 @@ export function GrowthCorporatePanel({
       }
       return {
         label: "Lag arbeidsoppgave",
-        title: `Corporate partner · ${row.companyName}`,
+        title: `Bedriftspartner · ${row.companyName}`,
         description: row.referralAngle || "Planlegg neste kontrollerte steg for partnerprospektet.",
         nextAction: row.nextAction || "",
       };
@@ -185,17 +225,17 @@ export function GrowthCorporatePanel({
     if (status === "CONTACTED") {
       return {
         label: "Planlegg oppfølging",
-        title: `Følg opp Corporate · ${row.companyName}`,
-        description: "Første Corporate-henvendelse er sendt. Følg opp uten å gjenta budskapet og styr mot et tydelig ja/nei til en kort behovsavklaring.",
-        nextAction: row.nextAction || "Følg opp første henvendelse og avklar om selskapet ønsker et Corporate Home Assessment.",
+        title: `Følg opp bedriftskunde · ${row.companyName}`,
+        description: "Første bedriftshenvendelse er sendt. Følg opp uten å gjenta budskapet og styr mot et tydelig ja eller nei til en kort behovsavklaring.",
+        nextAction: row.nextAction || "Følg opp første henvendelse og avklar om selskapet ønsker en bedriftsvurdering.",
       };
     }
     if (status === "ENGAGED") {
       return {
-        label: "Forbered discovery-møte",
-        title: `Corporate discovery · ${row.companyName}`,
+        label: "Forbered behovsmøte",
+        title: `Behovsavklaring · ${row.companyName}`,
         description: "Forbered mål, brukere, budsjett, tidslinje, beslutningsprosess og ønsket boligmodell. Ingen møteinvitasjon sendes fra denne oppgaven.",
-        nextAction: row.nextAction || "Forbered discovery-møte og samle det som mangler til Corporate Home Assessment.",
+        nextAction: row.nextAction || "Forbered behovsmøte og samle det som mangler til Corporate Home Assessment.",
       };
     }
     if (status === "MEETING") {
@@ -203,21 +243,21 @@ export function GrowthCorporatePanel({
         label: "Forbered registrert møte",
         title: `Møteforberedelse · ${row.companyName}`,
         description: "Møte er registrert. Samle selskapets mål, brukergruppe, budsjett, beslutningstakere, tidslinje og spørsmål som må avklares.",
-        nextAction: row.nextAction || "Gjør Corporate discovery klar før det registrerte møtet.",
+        nextAction: row.nextAction || "Gjør behovsavklaringen klar før det registrerte møtet.",
       };
     }
     if (status === "OPPORTUNITY") {
       return {
-        label: "Forbered Decision Pack",
-        title: `Decision Pack · ${row.companyName}`,
-        description: "Selskapet er en aktiv opportunity. Samle beslutningskriterier, relevant shortlist, kostnadsbilde og åpne avklaringer før neste beslutningspunkt.",
-        nextAction: row.nextAction || "Forbered Decision Pack med beslutningskriterier og relevante boligalternativer.",
+        label: "Forbered beslutningspakke",
+        title: `Beslutningspakke · ${row.companyName}`,
+        description: "Selskapet er en aktiv salgsmulighet. Samle beslutningskriterier, relevant kortliste, kostnadsbilde og åpne avklaringer før neste beslutningspunkt.",
+        nextAction: row.nextAction || "Forbered beslutningspakke med beslutningskriterier og relevante boligalternativer.",
       };
     }
     return {
       label: "Lag arbeidsoppgave",
-      title: `Corporate · ${row.companyName}`,
-      description: "Planlegg neste kontrollerte steg for Corporate-prospektet.",
+      title: `Bedrift · ${row.companyName}`,
+      description: "Planlegg neste kontrollerte steg for bedriftsprospektet.",
       nextAction: row.nextAction || "",
     };
   }
@@ -317,8 +357,8 @@ export function GrowthCorporatePanel({
       const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/growth`, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error(response.status === 403
-        ? "Du har ikke Growth/Corporate-tilgang i dette arbeidsområdet."
-        : "Growth/Corporate-data kunne ikke hentes.");
+        ? "Du har ikke tilgang til vekst- og bedriftsarbeidet i denne arbeidsflaten."
+        : "Data for vekst og bedrift kunne ikke hentes.");
       setData({
         corporate: body.corporate || null,
         visibility: body.visibility || null,
@@ -327,7 +367,7 @@ export function GrowthCorporatePanel({
       });
     } catch (cause) {
       setData(null);
-      setError(cause instanceof Error ? cause.message : "Growth/Corporate-data kunne ikke hentes.");
+      setError(cause instanceof Error ? cause.message : "Data for vekst og bedrift kunne ikke hentes.");
     } finally { setLoading(false); }
   }
 
@@ -360,7 +400,7 @@ export function GrowthCorporatePanel({
     } finally { setBusy(false); }
   }
 
-  if (loading) return <p className="text-sm text-slate-400">Laster Growth & Corporate…</p>;
+  if (loading) return <p className="text-sm text-slate-400">Laster vekst og bedrift…</p>;
 
   return <section className="space-y-5">
     {error && <p role="alert" className="rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">{error}</p>}
@@ -372,7 +412,7 @@ export function GrowthCorporatePanel({
         {availableAreas.includes("corporate") && <button type="button" onClick={() => setArea("corporate")}
           className={`rounded-xl border p-4 text-left ${area === "corporate" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
           <Building2 size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Finn og jobb med bedrifter</strong>
-          <span className="mt-1 block text-xs text-slate-500">Corporate Homes og partnerkanaler</span>
+          <span className="mt-1 block text-xs text-slate-500">Bedrift og partnerkanaler</span>
         </button>}
         {availableAreas.includes("content") && <button type="button" onClick={() => setArea("content")}
           className={`rounded-xl border p-4 text-left ${area === "content" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
@@ -397,7 +437,7 @@ export function GrowthCorporatePanel({
         {availableAreas.includes("plan") && <button type="button" onClick={() => setArea("plan")}
           className={`rounded-xl border p-4 text-left ${area === "plan" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
           <Video size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Planlegg neste aktivitet</strong>
-          <span className="mt-1 block text-xs text-slate-500">Video, webinar, møte, SEO eller Corporate</span>
+          <span className="mt-1 block text-xs text-slate-500">Video, webinar, møte, SEO eller bedriftsarbeid</span>
         </button>}
       </div>
     </div>
@@ -405,7 +445,7 @@ export function GrowthCorporatePanel({
     {area === "corporate" && data?.corporate && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold"><Building2 size={19}/> Corporate Homes</h2>
+          <h2 className="flex items-center gap-2 text-xl font-semibold"><Building2 size={19}/> Bedrift og partnerkanaler</h2>
           <p className="mt-1 text-xs text-slate-400">Bedrifter og partnerkanaler for Zen Eco Homes. Ingen automatisk kontakt eller statusendring.</p>
         </div>
         <button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 text-sm text-cyan-300"><RefreshCw size={15}/> Oppdater</button>
@@ -416,7 +456,7 @@ export function GrowthCorporatePanel({
           <div className="mt-2 max-h-[420px] space-y-2 overflow-y-auto">
             {orderedCorporateProspects.map(row => <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
               <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
-              <p className="mt-1 text-xs text-slate-400">{[row.city,row.industry,row.status].filter(Boolean).join(" · ")}</p>
+              <p className="mt-1 text-xs text-slate-400">{[row.city,row.industry,corporateStatusLabel(row.status)].filter(Boolean).join(" · ")}</p>
               {row.readiness && <p className={`mt-2 text-xs ${row.readiness.manualContactReady ? "text-emerald-300" : row.readiness.qualificationReady ? "text-cyan-300" : "text-slate-500"}`}>
                 {row.readiness.label}
               </p>}
@@ -448,18 +488,18 @@ export function GrowthCorporatePanel({
               const stats = row.referralStats || { leads: 0, active: 0, qualified: 0, won: 0, pipelineValue: 0 };
               return <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
                 <div className="flex justify-between gap-3"><strong className="text-sm">{row.companyName}</strong><span className="text-xs text-cyan-300">{row.fitTier} · {row.fitScore}</span></div>
-                <p className="mt-1 text-xs text-slate-400">{[row.partnerType,row.city,row.status].filter(Boolean).join(" · ")}</p>
+                <p className="mt-1 text-xs text-slate-400">{[partnerTypeLabel(row.partnerType),row.city,corporateStatusLabel(row.status)].filter(Boolean).join(" · ")}</p>
                 <p className={`mt-2 text-xs ${row.companyChannelReady ? "text-emerald-300" : "text-slate-500"}`}>
                   {row.companyChannelReady ? "Offisiell selskapskanal klar" : "Selskapskanal mangler"}
                 </p>
                 {row.referralAngle && <p className="mt-2 text-xs text-slate-300">{row.referralAngle}</p>}
 
                 {(stats.leads > 0 || status === "PARTNER") && <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2 text-center">
-                  <div><div className="text-lg font-black text-white">{stats.leads}</div><div className="text-[10px] uppercase text-slate-500">Leads</div></div>
+                  <div><div className="text-lg font-black text-white">{stats.leads}</div><div className="text-[10px] uppercase text-slate-500">Henvisninger</div></div>
                   <div><div className="text-lg font-black text-cyan-300">{stats.qualified}</div><div className="text-[10px] uppercase text-slate-500">Kval.</div></div>
                   <div><div className="text-lg font-black text-emerald-300">{stats.won}</div><div className="text-[10px] uppercase text-slate-500">Salg</div></div>
                   {stats.pipelineValue > 0 && <div className="col-span-3 text-[11px] font-semibold text-slate-300">
-                    Aktiv pipeline €{Math.round(stats.pipelineValue).toLocaleString("no-NO")}
+                    Aktiv salgstrakt €{Math.round(stats.pipelineValue).toLocaleString("no-NO")}
                   </div>}
                 </div>}
 
