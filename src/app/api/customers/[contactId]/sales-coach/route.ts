@@ -58,9 +58,8 @@ export async function POST(
     supabase
       .from("work_items")
       .select("*")
-      .or(`source_id.eq.${contactId},metadata->>contact_id.eq.${contactId}`)
       .order("created_at", { ascending: false })
-      .limit(100),
+      .limit(250),
     supabase
       .from("email_messages")
       .select("id,direction,from_address,to_addresses,subject,body_text,body_html,received_at,created_at,crm_contact_id")
@@ -135,12 +134,18 @@ export async function POST(
     messages: sortedMessages,
   };
 
+  const contactWorkItems = (workItems || []).filter((item: any) =>
+    String(item.source_id || "") === contactId
+    || String(item.metadata?.contact_id || "") === contactId
+    || (email && String(item.metadata?.email || "").trim().toLowerCase() === email),
+  );
+
   const advisor = buildCustomerSalesAdvice({
     contact,
     activeBuyerProfile: activeProfile,
     criteria: criteria || [],
     shortlists: shortlists || [],
-    workItems: workItems || [],
+    workItems: contactWorkItems,
     communicationDialogue,
     now: new Date(),
   });
