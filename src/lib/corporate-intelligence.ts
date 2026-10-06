@@ -363,7 +363,7 @@ function externalAccountPrompt(company: Record<string, any>) {
   const domain = clean(company.domain || company.website_url, 500);
   const orgNo = clean(company.organization_number, 50);
   return [
-    "Research selskapet \"" + companyName + "\"" + (orgNo ? " (org.nr. " + orgNo + ")" : "") + (domain ? ", offisielt domene " + domain : "") + " for Zen Corporate Homes.",
+    "Analyser selskapet \"" + companyName + "\"" + (orgNo ? " (org.nr. " + orgNo + ")" : "") + (domain ? ", offisielt domene " + domain : "") + " for Zen Corporate Homes.",
     "Finn KUN offentlig, profesjonell informasjon på selskapsnivå. Ikke finn eller returner private/sensitive personopplysninger og ikke gjør kontaktberikelse.",
     "Prioriter ferske kilder fra de siste 12 månedene, men ta med siste årsrapport/strategirapport når relevant.",
     "Se spesielt etter disse signaltypene: " + EXTERNAL_SIGNAL_TYPES.slice(0, 12).join(", ") + ".",
@@ -446,14 +446,14 @@ export async function runAccountDeepResearch(
     const external = await researchWeb(externalAccountPrompt(company), { maxTokens: 3200, maxSearches: 7 });
     provider = external.provider === "none" ? provider : provider + "+" + external.provider;
     if (external.provider === "none") {
-      warnings.push("Ekstern webresearch leverte ikke data. Resultatet er basert på selskapets egne kilder og bør regnes som degraded research.");
+      warnings.push("Ekstern nettanalyse leverte ikke data. Resultatet er basert på selskapets egne kilder og er merket som begrenset analyse.");
     }
     if (external.text) {
       externalFindings = extractCorporateResearchJsonArray(external.text)
         .map((item) => normalizeExternalFinding(item, "ACCOUNT", prospectId))
         .filter((item): item is CorporateIntelligenceFindingInput => Boolean(item))
         .slice(0, 8);
-      if (!externalFindings.length) warnings.push("Ekstern webresearch ga ingen strukturerte funn.");
+      if (!externalFindings.length) warnings.push("Ekstern nettanalyse ga ingen strukturerte funn.");
     }
 
     const persisted: Array<Record<string, any>> = [];
@@ -528,14 +528,14 @@ export async function runCorporateWatch(
   try {
     const research = await researchWeb(watchPrompt(scope), { maxTokens: 3200, maxSearches: 8 });
     if (research.provider === "none") {
-      warnings.push("Ekstern webresearch leverte ikke data; watch-kjøringen er degraded.");
+      warnings.push("Ekstern nettanalyse leverte ikke data; overvåkingen er kjørt med begrenset analyse.");
     }
     const normalized = extractCorporateResearchJsonArray(research.text)
       .map((item) => normalizeExternalFinding(item, scope, null))
       .filter((item): item is CorporateIntelligenceFindingInput => Boolean(item))
       .slice(0, 8);
 
-    if (research.text && !normalized.length) warnings.push("Webresearch ga ingen strukturerte funn.");
+    if (research.text && !normalized.length) warnings.push("Nettanalysen ga ingen strukturerte funn.");
     const persisted: Array<Record<string, any>> = [];
     for (const finding of normalized) persisted.push(await persistFinding(supabase, runId, finding) as Record<string, any>);
 
@@ -552,7 +552,7 @@ export async function runCorporateWatch(
 
     return { success: true, runId, scope, prospectId: null, provider: research.provider, sourceCount, findingCount: persisted.length, newCount, changedCount, warnings, findings: persisted, externalAction: false as const };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Corporate watch failed";
+    const message = error instanceof Error ? error.message : "Bedriftsovervåkingen feilet";
     await finishRun(supabase, runId, { status: "ERROR", warnings: [message] });
     throw error;
   }
