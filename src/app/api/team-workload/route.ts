@@ -5,6 +5,7 @@ import { verifyAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { loadAccessSettings } from "@/lib/access-control-server";
 import { buildTeamWorkload, type TeamResourceType } from "@/lib/revenue/team-workload";
 import { buildTeamCapacitySuggestions, responsibilityLoadByEmail } from "@/lib/revenue/team-capacity";
+import { loadWorkspaceTeamCoreSnapshot } from "@/lib/workspaces/team-core-snapshot";
 import { buildTeamCapacityForecast } from "@/lib/revenue/team-capacity-forecast";
 import { buildTeamCapacityTrend } from "@/lib/revenue/team-capacity-trend";
 import type { AccessRole } from "@/lib/access-control";
@@ -164,14 +165,12 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured", workspace: null }, { status: 500 });
 
-  const [contactsResult, workResult, accessResult, assignmentsResult, workspaceUsersResult, workspaceMembershipsResult, workspaceResponsibilitiesResult] = await Promise.all([
+  const [contactsResult, workResult, accessResult, assignmentsResult, workspaceTeamResult] = await Promise.all([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(2500),
     supabase.from("work_items").select("*").in("status", OPEN_TASK_STATUSES).order("due_date", { ascending: true, nullsFirst: false }).limit(1500),
     loadAccessSettings(),
     loadAssignmentSettings(supabase),
-    supabase.schema("core").from("workspace_user_directory").select("user_id,email,status,access_expires_at"),
-    supabase.schema("core").from("brand_workspace_memberships").select("brand_id,user_id,status"),
-    supabase.schema("core").from("brand_workspace_responsibilities").select("brand_id,user_id,responsibilities"),
+    loadWorkspaceTeamCoreSnapshot(supabase),
   ]);
   if (contactsResult.error) return NextResponse.json({ error: contactsResult.error.message, workspace: null }, { status: 500 });
 
@@ -179,13 +178,13 @@ export async function GET(request: NextRequest) {
   if (workResult.error) warnings.push(`work_items: ${workResult.error.message}`);
   if (accessResult.error) warnings.push(`access-control: ${accessResult.error}`);
   if (assignmentsResult.error) warnings.push(`team assignments: ${assignmentsResult.error}`);
-  if (workspaceUsersResult.error || workspaceMembershipsResult.error || workspaceResponsibilitiesResult.error) {
+  if (workspaceTeamResult.error) {
     warnings.push("workspace responsibility load: utilgjengelig");
   }
   const responsibilityCountsByEmail = responsibilityLoadByEmail({
-    users: workspaceUsersResult.data || [],
-    memberships: workspaceMembershipsResult.data || [],
-    responsibilities: workspaceResponsibilitiesResult.data || [],
+    users: workspaceTeamResult.users,
+    memberships: workspaceTeamResult.memberships,
+    responsibilities: workspaceTeamResult.responsibilities,
   });
   const overlay = overlayAssignments(contactsResult.data || [], workResult.data || [], assignmentsResult.settings.events);
   const workspace = buildTeamWorkload({
