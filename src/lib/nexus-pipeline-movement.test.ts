@@ -28,9 +28,12 @@ test("moves qualified buyers with direction toward matching", () => {
   assert.equal(result?.targetStage, "MATCHING");
 });
 
-test("flags qualified buyers without direction", () => {
+test("flags qualified buyers without direction without advancing them", () => {
   const result = assessPipelineMovement({ id:"3", email:"c@example.com", pipeline_status:"QUALIFIED", last_contact:"2026-09-01T10:00:00.000Z" }, now);
   assert.equal(result?.cause, "missing_buyer_direction");
+  assert.equal(result?.targetStage, null);
+  assert.equal(result?.priority, "MEDIUM");
+  assert.match(result?.action || "", /fortsatt er aktuelt/i);
 });
 
 test("surfaces unknown pipeline states as data quality", () => {
