@@ -70,9 +70,12 @@ async function accessContact(
   request: NextRequest,
   brandKey: string,
   contactId: string,
-  permission: "customer360.read" | "customer360.write",
+  write: boolean,
 ) {
   if (!uuid.test(contactId)) return { value: null, response: fail(400, "INVALID_CONTACT") };
+  const permission = brandKey === "zeneco"
+    ? (write ? "crm.joint.write" : "crm.joint.read")
+    : (write ? "crm.write" : "crm.read");
   const access = await requireBrandWorkspace(request, brandKey, permission);
   if (!access.value) return access;
   if (!access.value.verifiedUserId) return { value: null, response: fail(403, "STAFF_ONLY") };
@@ -96,7 +99,7 @@ async function accessContact(
 
 export async function GET(request: NextRequest, { params }: { params: { brandKey: string } }) {
   const contactId = String(new URL(request.url).searchParams.get("contactId") || "").trim();
-  const access = await accessContact(request, params.brandKey, contactId, "customer360.read");
+  const access = await accessContact(request, params.brandKey, contactId, false);
   if (!access.value) return access.response;
 
   const { supabase, contact } = access.value;
@@ -247,7 +250,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
   const body: any = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "INVALID_UPDATE");
   const contactId = String(body.contactId || "").trim();
-  const access = await accessContact(request, params.brandKey, contactId, "customer360.write");
+  const access = await accessContact(request, params.brandKey, contactId, true);
   if (!access.value) return access.response;
 
   const current = access.value.contact as Record<string, any>;
