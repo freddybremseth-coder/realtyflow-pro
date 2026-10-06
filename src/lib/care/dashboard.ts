@@ -22,6 +22,7 @@ export interface CareSummary {
   upcomingEvents7d: number;
   staleOpenLeads: number;
   offersInProgress: number;
+  quotedMonthlyRevenueCents: number;
   followUpsDue: number;
   openQuotes: number;
   sentQuotes: number;
@@ -909,6 +910,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     upcomingEvents7d,
     staleOpenLeads,
     offersInProgress,
+    quotedMonthlyRevenueCents,
     followUpsDue,
     openQuotes,
     sentQuotes,
