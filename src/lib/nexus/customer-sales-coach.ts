@@ -52,12 +52,12 @@ function stringList(value: unknown, max = 8) {
 }
 
 function cleanJson(textValue: string) {
-  const fenced = textValue.match(/```(?:json)?s*([sS]*?)s*```/i)?.[1];
+  const fenced = textValue.match(/\`\`\`(?:json)?\s*([\s\S]*?)\s*\`\`\`/i)?.[1];
   return (fenced || textValue).trim();
 }
 
 function firstName(value: unknown) {
-  return text(value).split(/s+/)[0] || "";
+  return text(value).split(/\s+/)[0] || "";
 }
 
 function normalizeEmailGreeting(value: unknown, name: unknown) {
@@ -65,8 +65,8 @@ function normalizeEmailGreeting(value: unknown, name: unknown) {
   if (!body) return "";
   const preferred = firstName(name);
   return body
-    .replace(/^Heis+ders*[,!]?/i, preferred ? `Hei ${preferred},` : "Hei,")
-    .replace(/^Heis+dus*[,!]?/i, preferred ? `Hei ${preferred},` : "Hei,");
+    .replace(/^Hei\s+der\s*[,!]?/i, preferred ? \`Hei \${preferred},\` : "Hei,")
+    .replace(/^Hei\s+du\s*[,!]?/i, preferred ? \`Hei \${preferred},\` : "Hei,");
 }
 
 function phaseFromStage(stage: string): CustomerSalesCoachOutput["currentPhase"] {
