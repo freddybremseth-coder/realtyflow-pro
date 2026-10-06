@@ -251,6 +251,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   const [salesCoachMode, setSalesCoachMode] = useState<"NEXT_STEP" | "DISCOVERY" | "EMAIL" | "OBJECTION" | "MEETING">("NEXT_STEP");
   const [salesCoach, setSalesCoach] = useState<Record<string, any> | null>(null);
   const [salesCoachMeta, setSalesCoachMeta] = useState<{ provider?: string; model?: string } | null>(null);
+  const [salesCoachSourceText, setSalesCoachSourceText] = useState("");
 
   async function load() {
     setLoading(true);
@@ -272,6 +273,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
     setUpdateDefaultTab("update");
     setSalesCoach(null);
     setSalesCoachMeta(null);
+    setSalesCoachSourceText("");
     void load();
   }, [contactId]);
 
@@ -312,7 +314,7 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
       const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/sales-coach`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, sourceText: salesCoachSourceText.trim() || undefined }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre AI Sales Coach.");
@@ -607,6 +609,19 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Coachen bruker Buyer Profile, siste kundesvar, pipeline, shortlist og salgsfasen. Den foreslår og skriver utkast, men sender aldri noe.</p>
                       </div>
                       {salesCoachMeta?.provider && <span className="text-xs text-slate-500">{salesCoachMeta.provider}{salesCoachMeta.model ? ` · ${salesCoachMeta.model}` : ""}</span>}
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor={`sales-coach-source-${contactId}`}>Valgfri kundetekst å analysere</label>
+                      <textarea
+                        id={`sales-coach-source-${contactId}`}
+                        value={salesCoachSourceText}
+                        onChange={(event) => setSalesCoachSourceText(event.target.value)}
+                        rows={4}
+                        className="mt-2 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm leading-6 text-slate-200 outline-none focus:border-violet-400"
+                        placeholder="Lim inn f.eks. en WhatsApp-melding, e-post eller notat fra telefonsamtale. La stå tomt for å bruke siste registrerte kundesvar."
+                      />
+                      <p className="mt-2 text-xs text-slate-500">Teksten brukes bare som analysegrunnlag sammen med Buyer Profile og CRM-historikken. Coachen sender ingenting.</p>
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
