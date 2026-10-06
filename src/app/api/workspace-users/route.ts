@@ -147,12 +147,20 @@ function safeSnapshot(value: unknown) {
           !m.permissions.every(permission =>
             typeof permission === "string" &&
             WORKSPACE_PERMISSIONS.includes(permission as WorkspacePermission))) return null;
+      const permissions = m.permissions as WorkspacePermission[];
+      const responsibilities = normalizeResponsibilities(
+        m.brand_key,
+        m.responsibilities ?? [],
+        permissions,
+      );
+      if (!responsibilities) return null;
       return {
         brandId: typeof m.brand_id === "string" ? m.brand_id : "",
         brandKey: m.brand_key,
         brandName: typeof m.brand_name === "string" ? m.brand_name : m.brand_key,
         status: m.status === "active" ? "active" : m.status === "revoked" ? "revoked" : "disabled",
-        permissions: m.permissions as WorkspacePermission[],
+        permissions,
+        responsibilities,
         updatedAt: typeof m.updated_at === "string" ? m.updated_at : null,
       };
     }).filter(Boolean);
@@ -179,30 +187,17 @@ async function syncResponsibilities(params: {
   actor: string;
 }) {
   const { supabase, userId, brandAccess, actor } = params;
-  const brandKeys = brandAccess.map(item => item.brandKey);
-  const { data: brands, error: brandError } = await supabase.schema("core").from("brands")
-    .select("id,brand_key").in("brand_key", brandKeys);
-  if (brandError || !Array.isArray(brands) || brands.length !== brandAccess.length) {
-    return { ok: false as const, error: "RESPONSIBILITY_BRAND_RESOLUTION_FAILED" };
+  const { data, error } = await supabase.rpc("workspace_user_responsibilities_replace", {
+    p_user_id: userId,
+    p_brand_responsibilities: brandAccess.map(item => ({
+      brandKey: item.brandKey,
+      responsibilities: item.responsibilities,
+    })),
+    p_actor: actor,
+  });
+  if (error || data !== true) {
+    return { ok: false as const, error: "RESPONSIBILITY_SAVE_FAILED" };
   }
-  const idByKey = new Map(brands.map((brand: any) => [brand.brand_key, brand.id]));
-  for (const access of brandAccess) {
-    const brandId = idByKey.get(access.brandKey);
-    if (!brandId) return { ok: false as const, error: "RESPONSIBILITY_BRAND_RESOLUTION_FAILED" };
-    const { error } = await supabase.schema("core").from("brand_workspace_responsibilities").upsert({
-      brand_id: brandId,
-      user_id: userId,
-      responsibilities: access.responsibilities,
-      updated_by_email: actor,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "brand_id,user_id" });
-    if (error) return { ok: false as const, error: "RESPONSIBILITY_SAVE_FAILED" };
-  }
-  const selectedBrandIds = brands.map((brand: any) => brand.id);
-  let revokeQuery = supabase.schema("core").from("brand_workspace_responsibilities").delete().eq("user_id", userId);
-  if (selectedBrandIds.length) revokeQuery = revokeQuery.not("brand_id", "in", `(${selectedBrandIds.join(",")})`);
-  const { error: cleanupError } = await revokeQuery;
-  if (cleanupError) return { ok: false as const, error: "RESPONSIBILITY_CLEANUP_FAILED" };
   return { ok: true as const };
 }
 
@@ -230,23 +225,8 @@ export async function GET(request: NextRequest) {
   const { snapshot, error } = await loadSnapshot(supabase);
   if (error || !snapshot) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
   const runtime = await getWorkspaceRuntimeState(supabase);
-  const { data: responsibilityRows, error: responsibilityError } = await supabase.schema("core")
-    .from("brand_workspace_responsibilities")
-    .select("brand_id,user_id,responsibilities");
-  if (responsibilityError) return reply({ error: "WORKSPACE_USERS_UNAVAILABLE" }, 503);
-  const responsibilityMap = new Map((responsibilityRows || []).map((row: any) => [
-    `${row.user_id}:${row.brand_id}`,
-    Array.isArray(row.responsibilities) ? row.responsibilities : [],
-  ]));
-  const users = snapshot.users.map((user: any) => ({
-    ...user,
-    memberships: user.memberships.map((membership: any) => ({
-      ...membership,
-      responsibilities: responsibilityMap.get(`${user.userId}:${membership.brandId}`) || [],
-    })),
-  }));
   return reply({
-    ok: true, ...snapshot, users,
+    ok: true, ...snapshot,
     featureEnabled: runtime.enabled,
     featureStatus: runtime.error ? "unavailable" : "ready",
     passwordStorage: "supabase-auth-only",
