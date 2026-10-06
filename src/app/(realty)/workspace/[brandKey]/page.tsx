@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { WorkspacePropertyCatalogue, type WorkspacePropertyCard } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import type { WorkspaceSocialPropertySeed } from "@/components/workspaces/social-studio-panel";
@@ -613,7 +613,7 @@ export default function FocusedWorkspacePage() {
                 <WorkspaceYoutubePanel brandKey={brandKey} canPublish={permissions.includes("youtube.publish")} />
               </div>
             </details>}
-            {showMarketing && <details open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+            {showMarketing && <details id="workspace-focus-social" open={requestedFocus === "social" || Boolean(socialPropertySeed)} className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">SoMe Studio · Content Hub</strong>
                 <p className="mt-1 text-sm text-slate-400">Lag tre varierte Facebook/Instagram-konsepter fra eiendom, guide/magasin eller eget tema — og lagre valgte utkast i Content Hub.</p>
