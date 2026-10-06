@@ -23,6 +23,10 @@ export interface CareSummary {
   staleOpenLeads: number;
   offersInProgress: number;
   followUpsDue: number;
+  openQuotes: number;
+  sentQuotes: number;
+  expiredQuotes: number;
+  acceptedQuotesAwaitingContract: number;
   openCharges: number;
   draftInvoices: number;
   invoiceTotalCents: number;
@@ -198,6 +202,9 @@ export interface CareLifecycle {
   openLeads: number;
   awaitingProperty: number;
   awaitingContract: number;
+  draftQuotes: number;
+  sentQuotes: number;
+  acceptedQuotesAwaitingContract: number;
   contractedLeads: number;
   leadToContractPercent: number;
   propertiesWithoutNextVisit: number;
@@ -221,6 +228,28 @@ export interface CareDiscoveryDemand {
   leadToContractPercent: number;
 }
 
+export interface CareQuote {
+  id: string;
+  workItemId: string;
+  contactId: string;
+  propertyId: string | null;
+  planId: string | null;
+  reference: string;
+  serviceIntent: string;
+  status: string;
+  planName: string | null;
+  visitsPerMonth: number;
+  monthlyPriceCents: number;
+  currency: string;
+  validUntil: string | null;
+  notes: string | null;
+  sentAt: string | null;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface CareLead {
   id: string;
   contactId: string;
@@ -236,6 +265,16 @@ export interface CareLead {
   carePropertyId: string | null;
   careContractId: string | null;
   careReference: string | null;
+  careQuoteId: string | null;
+  careQuoteReference: string | null;
+  careQuoteStatus: string | null;
+  careQuotePlanId: string | null;
+  careQuotePlanName: string | null;
+  careQuoteMonthlyPriceCents: number;
+  careQuoteCurrency: string;
+  careQuoteValidUntil: string | null;
+  careQuoteSentAt: string | null;
+  careQuoteAcceptedAt: string | null;
   carePropertyName: string | null;
   carePropertyType: string | null;
   carePropertyAddress: string | null;
@@ -276,6 +315,7 @@ export interface CareDashboard {
   readiness: CareReadinessItem[];
   workflows: CareWorkflow[];
   plans: CarePlan[];
+  quotes: CareQuote[];
   properties: CareProperty[];
   inspections: CareInspection[];
   reports: CareReport[];
@@ -303,6 +343,7 @@ export interface CareDashboardInput {
   properties?: Array<Record<string, unknown>>;
   ownerContacts?: Array<Record<string, unknown>>;
   contracts?: Array<Record<string, unknown>>;
+  quotes?: Array<Record<string, unknown>>;
   inspections?: Array<Record<string, unknown>>;
   reports?: Array<Record<string, unknown>>;
   reportDeliveries?: Array<Record<string, unknown>>;
@@ -363,6 +404,14 @@ function timestamp(value: string | null) {
   if (!value) return 0;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function moneyQuote(cents: number, currency: string) {
+  return new Intl.NumberFormat("nb-NO", {
+    style: "currency",
+    currency: currency || "EUR",
+    maximumFractionDigits: 0,
+  }).format((cents || 0) / 100);
 }
 
 function normalizeStatus(value: unknown) {
@@ -461,6 +510,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
   const rawPlans = input.plans || [];
   const rawProperties = input.properties || [];
   const rawContracts = input.contracts || [];
+  const rawQuotes = input.quotes || [];
   const rawInspections = input.inspections || [];
   const rawReports = input.reports || [];
   const rawDeliveries = input.reportDeliveries || [];
@@ -673,6 +723,36 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     tradeCode: optionalText(row, "trade_code"),
   })).filter((item) => item.id);
 
+  const quotes: CareQuote[] = rawQuotes.map((row) => {
+    const planSnapshot = row.plan_snapshot && typeof row.plan_snapshot === "object" && !Array.isArray(row.plan_snapshot)
+      ? row.plan_snapshot as Record<string, unknown>
+      : {};
+    return {
+      id: text(row, "id"),
+      workItemId: text(row, "work_item_id"),
+      contactId: text(row, "contact_id"),
+      propertyId: optionalText(row, "property_id"),
+      planId: optionalText(row, "plan_id"),
+      reference: text(row, "reference"),
+      serviceIntent: text(row, "service_intent", "keyholding"),
+      status: text(row, "status", "draft"),
+      planName: optionalText(planSnapshot, "name") || optionalText(planSnapshot, "code"),
+      visitsPerMonth: numberValue(planSnapshot, "visits_per_month"),
+      monthlyPriceCents: numberValue(row, "monthly_price_cents"),
+      currency: text(row, "currency", "EUR"),
+      validUntil: dateText(row, "valid_until"),
+      notes: optionalText(row, "notes"),
+      sentAt: dateText(row, "sent_at"),
+      acceptedAt: dateText(row, "accepted_at"),
+      declinedAt: dateText(row, "declined_at"),
+      createdAt: dateText(row, "created_at"),
+      updatedAt: dateText(row, "updated_at"),
+    };
+  }).filter((quote) => quote.id && quote.workItemId)
+    .sort((a, b) => timestamp(b.updatedAt || b.createdAt) - timestamp(a.updatedAt || a.createdAt));
+
+  const quotesByWorkItem = new Map(quotes.map((quote) => [quote.workItemId, quote]));
+
   const careLeadContactsById = byId(rawCareLeadContacts);
   const leads: CareLead[] = rawCareLeadWorkItems.map((row) => {
     const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
@@ -699,6 +779,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
           ? "new"
           : "not_relevant";
     const careProperty = carePropertyId ? propertiesById.get(carePropertyId) : undefined;
+    const quote = quotesByWorkItem.get(text(row, "id"));
     return {
       id: text(row, "id"),
       contactId,
@@ -714,6 +795,16 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       carePropertyId,
       careContractId,
       careReference: optionalText(metadata, "care_reference"),
+      careQuoteId: quote?.id || optionalText(metadata, "care_quote_id"),
+      careQuoteReference: quote?.reference || optionalText(metadata, "care_quote_reference"),
+      careQuoteStatus: quote?.status || optionalText(metadata, "care_quote_status"),
+      careQuotePlanId: quote?.planId || null,
+      careQuotePlanName: quote?.planName || null,
+      careQuoteMonthlyPriceCents: quote?.monthlyPriceCents || 0,
+      careQuoteCurrency: quote?.currency || "EUR",
+      careQuoteValidUntil: quote?.validUntil || null,
+      careQuoteSentAt: quote?.sentAt || null,
+      careQuoteAcceptedAt: quote?.acceptedAt || null,
       carePropertyName: optionalText(careProperty, "name"),
       carePropertyType: optionalText(careProperty, "property_type"),
       carePropertyAddress: optionalText(careProperty, "address_line"),
@@ -767,6 +858,19 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     && Boolean(lead.followUpOn)
     && String(lead.followUpOn) <= madridToday
   ).length;
+  const quoteStatus = (quote: CareQuote) => normalizeStatus(quote.status);
+  const openQuotes = quotes.filter((quote) => ["draft", "sent"].includes(quoteStatus(quote))).length;
+  const sentQuotes = quotes.filter((quote) => quoteStatus(quote) === "sent").length;
+  const expiredQuotes = quotes.filter((quote) => {
+    if (quoteStatus(quote) === "expired") return true;
+    const validUntil = timestamp(quote.validUntil);
+    return quoteStatus(quote) === "sent" && validUntil > 0 && validUntil < now.getTime();
+  }).length;
+  const acceptedQuotesAwaitingContract = quotes.filter((quote) => {
+    if (quoteStatus(quote) !== "accepted") return false;
+    const lead = leads.find((item) => item.id === quote.workItemId);
+    return !lead?.careContractId;
+  }).length;
   const openIssues = issues.filter((issue) => isOpen(issue.status)).length;
   const openWorkOrders = workOrders.filter((order) => isOpen(order.status)).length;
   const openCharges = charges.filter((charge) => isOpen(charge.status)).length;
@@ -793,6 +897,10 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     staleOpenLeads,
     offersInProgress,
     followUpsDue,
+    openQuotes,
+    sentQuotes,
+    expiredQuotes,
+    acceptedQuotesAwaitingContract,
     openCharges,
     draftInvoices,
     invoiceTotalCents: invoices.reduce((sum, invoice) => sum + invoice.totalCents, 0),
@@ -814,6 +922,9 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     openLeads: openLeadRows.length,
     awaitingProperty: openLeadRows.filter((row) => !optionalText(metadataFor(row), "care_property_id")).length,
     awaitingContract: openLeadRows.filter((row) => Boolean(optionalText(metadataFor(row), "care_property_id")) && !optionalText(metadataFor(row), "care_contract_id")).length,
+    draftQuotes: quotes.filter((quote) => quoteStatus(quote) === "draft").length,
+    sentQuotes,
+    acceptedQuotesAwaitingContract,
     contractedLeads: contractedLeadCount,
     leadToContractPercent: trackedLeadCount > 0 ? Math.round((contractedLeadCount / trackedLeadCount) * 100) : 0,
     propertiesWithoutNextVisit: activeCareProperties.filter((property) => !property.nextEventAt).length,
@@ -901,6 +1012,16 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
 
   const workflows: CareWorkflow[] = [
     {
+      id: "leads",
+      label: "Leads & tilbud",
+      href: "/care/leads",
+      count: lifecycle.openLeads + summary.openQuotes,
+      status: lifecycle.openLeads || summary.openQuotes ? "warning" : "ok",
+      detail: lifecycle.openLeads || summary.openQuotes
+        ? `${lifecycle.openLeads} åpne leads · ${summary.openQuotes} aktive tilbud.`
+        : "Ingen åpne Care-leads eller tilbud.",
+    },
+    {
       id: "customers",
       label: "Kunder & eiendommer",
       href: "/care/customers",
@@ -935,6 +1056,13 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
   ];
 
   const recentActivity: CareActivity[] = [
+    ...quotes.map((item) => ({
+      id: `quote:${item.id}`,
+      at: item.acceptedAt || item.sentAt || item.updatedAt || item.createdAt,
+      label: "Tilbud",
+      detail: `${item.reference || "Care-tilbud"} · ${item.status} · ${moneyQuote(item.monthlyPriceCents, item.currency)}`,
+      href: "/care/leads",
+    })),
     ...inspections.map((item) => ({
       id: `inspection:${item.id}`,
       at: item.completedAt || item.startedAt,
@@ -972,6 +1100,7 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
     readiness,
     workflows,
     plans: compactRows(plans),
+    quotes: compactRows(quotes),
     properties: compactRows(properties),
     inspections: compactRows(inspections),
     reports: compactRows(reports),
