@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
   sourceError(sourceErrors, "Runtime", runtimeR.error, "/nexus-os/runtime");
   sourceError(sourceErrors, "Social", channelsR.error || tokenR.error, "/nexus-os/communications/social");
   sourceError(sourceErrors, "Email", emailConfigsR.error, "/nexus-os/communications/readiness");
-  if (workspaceTeamR.error) sourceErrors.push({ source: "Team ansvar", message: workspaceTeamR.error, href: "/workspace-users" });
+  sourceError(sourceErrors, "Team ansvar", workspaceTeamR.error ? { message: workspaceTeamR.error } : null, "/workspace-users");
   for (const result of candidateResults) sourceError(sourceErrors, `Book Growth/${result.table}`, result.error, "/book-growth");
 
   const approvals = approvalsR.error ? [] : (approvalsR.data ?? []);
