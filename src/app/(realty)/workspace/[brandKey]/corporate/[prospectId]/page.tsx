@@ -276,6 +276,14 @@ const ENTRY_ROLES = [
   "Eier",
 ];
 
+const ENTRY_ROLE_LABELS: Record<string,string> = {
+  "HR / People": "HR / personal",
+  "HR / People & Culture": "HR / personal",
+  "Office / Workplace": "Kontor / arbeidsplass",
+  "CEO / owner": "CEO / eier",
+  "CEO / Owner": "CEO / eier",
+};
+
 const STAGES = ["TARGET","RESEARCH","STRATEGY_READY","OUTREACH","ENGAGED","MEETING","BUSINESS_CASE","SHORTLIST","DECISION","NEGOTIATION","WON","LOST"];
 
 const STAGE_LABELS: Record<string,string> = {
@@ -384,6 +392,11 @@ function labelOf(map: Record<string,string>, value?: string | null) {
 function modelLabel(value?: string | null) {
   const key = String(value || "").trim();
   return MODEL_LABELS[key] || key;
+}
+
+function entryRoleLabel(value?: string | null) {
+  const key = String(value || "").trim();
+  return ENTRY_ROLE_LABELS[key] || key;
 }
 
 function providerLabel(value?: string | null) {
@@ -506,14 +519,14 @@ export default function CorporateAccountWorkspacePage() {
         stage: String(saved.stage || "TARGET"),
         priority: String(saved.priority || "P2"),
         accountRole: String(saved.account_role || "END_CUSTOMER"),
-        accountModels: Array.isArray(saved.account_models) ? saved.account_models : [],
-        primaryModel: String(saved.primary_model || ""),
-        secondaryModel: String(saved.secondary_model || ""),
-        expansionModel: String(saved.expansion_model || ""),
+        accountModels: Array.isArray(saved.account_models) ? saved.account_models.map(modelLabel) : [],
+        primaryModel: modelLabel(String(saved.primary_model || "")),
+        secondaryModel: modelLabel(String(saved.secondary_model || "")),
+        expansionModel: modelLabel(String(saved.expansion_model || "")),
         objective: String(saved.objective || ""),
         entryAngle: String(saved.entry_angle || ""),
         firstOffer: String(saved.first_offer || ""),
-        recommendedEntryRole: String(saved.recommended_entry_role || ""),
+        recommendedEntryRole: entryRoleLabel(String(saved.recommended_entry_role || "")),
         championHypothesis: String(saved.champion_hypothesis || ""),
         problemHypothesis: String(saved.problem_hypothesis || ""),
         problemAcceptanceGoal: String(saved.problem_acceptance_goal || ""),
@@ -613,10 +626,10 @@ export default function CorporateAccountWorkspacePage() {
       const label = reviewStatus === "CONFIRMED" ? "bekreftet" :
         reviewStatus === "IGNORED" ? "ignorert" :
         reviewStatus === "OUTDATED" ? "markert utdatert" : "gjenåpnet for vurdering";
-      setNotice("Intelligence-funnet er " + label + ". Nexus-rådet er oppdatert uten ekstern handling.");
+      setNotice("Innsiktsfunnet er " + label + ". Nexus-rådet er oppdatert uten at noe er sendt eller flyttet i salgsprosessen.");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Kunne ikke lagre Intelligence-vurderingen.");
+      setError(cause instanceof Error ? cause.message : "Kunne ikke lagre vurderingen av innsiktsfunnet.");
     } finally {
       setBusy("");
     }
@@ -663,7 +676,7 @@ export default function CorporateAccountWorkspacePage() {
         isPrimary: titleLower.includes("daglig leder"),
         linkedinFollowing: false,
       });
-      setNotice(`${role.name} er lagt til i Beslutningsgruppe fra offentlig rollekilde.`);
+      setNotice(`${role.name} er lagt til i beslutningsgruppen fra en offentlig rollekilde.`);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke legge rollen til i beslutningsgruppen.");
@@ -712,7 +725,7 @@ export default function CorporateAccountWorkspacePage() {
 
   async function saveCoachEmailDraft() {
     if (!coachOutput?.emailDraft?.subject?.trim() || !coachOutput?.emailDraft?.body?.trim()) {
-      setError("Coachen har ikke et ferdig e-postutkast å lagre.");
+      setError("Salgscoachen har ikke et ferdig e-postutkast å lagre.");
       return;
     }
     setBusy("coach-email"); setError(""); setNotice("");
@@ -739,7 +752,7 @@ export default function CorporateAccountWorkspacePage() {
       }
       setNotice("Utkastet fra salgscoachen er lagret i E-post / Reach. Ingenting er sendt.");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Kunne ikke lagre coach-utkastet.");
+      setError(cause instanceof Error ? cause.message : "Kunne ikke lagre utkastet fra salgscoachen.");
     } finally {
       setBusy("");
     }
@@ -764,7 +777,7 @@ export default function CorporateAccountWorkspacePage() {
           "nextActionReason",
         ],
       });
-      setNotice(`Coach-funn er godkjent inn i kontostrategien (${result.appliedFields?.length || 0} felt). Ingen ekstern handling er utført.`);
+      setNotice(`Funn fra salgscoachen er godkjent inn i kontostrategien (${result.appliedFields?.length || 0} felt). Ingenting er sendt eller flyttet i salgsprosessen.`);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke bruke funn fra salgscoachen i strategien.");
@@ -952,7 +965,7 @@ export default function CorporateAccountWorkspacePage() {
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <div><p className="text-xs font-semibold text-slate-400">Anbefalt modell</p><p className="mt-1 text-sm text-slate-200">{data.advisor.recommendedModels.map(modelLabel).join(" · ")}</p></div>
-        <div><p className="text-xs font-semibold text-slate-400">Anbefalt inngang</p><p className="mt-1 text-sm text-slate-200">{modelLabel(data.advisor.recommendedEntryRole)}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Anbefalt inngang</p><p className="mt-1 text-sm text-slate-200">{entryRoleLabel(data.advisor.recommendedEntryRole)}</p></div>
         <div><p className="text-xs font-semibold text-slate-400">Mangler før neste nivå</p><p className="mt-1 text-sm text-amber-300">{data.advisor.missing.join(" · ") || "Ingen kritiske mangler"}</p></div>
       </div>
       {data.advisor.whyNow.length > 0 && <div className="mt-4 flex flex-wrap gap-2">
@@ -960,7 +973,7 @@ export default function CorporateAccountWorkspacePage() {
       </div>}
       <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {data.advisor.channelSequence.map(step => <div key={step.order} className="rounded-lg border border-slate-800 bg-slate-950/45 p-3">
-          <p className="text-[10px] font-black uppercase text-violet-300">{step.order}. {step.channel}</p>
+          <p className="text-[10px] font-black uppercase text-violet-300">{step.order}. {labelOf(CHANNEL_LABELS, step.channel)}</p>
           <p className="mt-1 text-xs leading-5 text-slate-300">{step.action}</p>
         </div>)}
       </div>
@@ -1302,7 +1315,7 @@ export default function CorporateAccountWorkspacePage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex items-center gap-2"><BrainCircuit size={19} className="text-violet-300"/><h2 className="font-semibold">Nexus AI-salgscoach</h2></div>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Coach på laget for denne kontoen: avdekk problem → få kunden til å bekrefte problemet → presenter relevant løsning → test løsningsaksept → avtal konkret neste steg. Coach lager råd og utkast, men sender ingenting.</p>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Salgscoachen hjelper deg på denne kontoen: avdekk problem → få kunden til å bekrefte problemet → presenter relevant løsning → test løsningsaksept → avtal konkret neste steg. Den lager råd og utkast, men sender ingenting.</p>
         </div>
         <span className="rounded-full border border-violet-800 bg-violet-950 px-3 py-1 text-[11px] font-semibold text-violet-200">Menneskelig godkjenning · ingen automatisk sending</span>
       </div>
@@ -1324,7 +1337,7 @@ export default function CorporateAccountWorkspacePage() {
           <button type="button" onClick={() => void runSalesCoach()} disabled={busy === "coach"} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             <MessageSquareText size={16}/>{busy === "coach" ? "Salgscoachen analyserer…" : "Kjør salgscoach"}
           </button>
-          {data.coachRuns.length > 0 && <p className="text-[11px] text-slate-500">{data.coachRuns.length} siste kjøringer med salgscoachen lagret på kontoen.</p>}
+          {data.coachRuns.length > 0 && <p className="text-[11px] text-slate-500">{data.coachRuns.length} siste analyser fra salgscoachen er lagret på kontoen.</p>}
         </div>
 
         <div className="min-w-0">
@@ -1388,7 +1401,7 @@ export default function CorporateAccountWorkspacePage() {
                 </Link>
               </div>
               <p className="mt-3 text-[11px] text-slate-600">Utkastet er ikke sendt. Lagring oppretter bare et utkast mot en server-godkjent bedriftsmottaker. Ingenting sendes uten eksplisitt handling i E-post / Reach.</p>
-              <p className="mt-2 text-[11px] text-violet-300/80">«Godkjenn og bruk» skriver bare salgscoachens hypoteser, akseptmål og neste handling til strategien med revisjonsspor. Faktisk problem- og løsningsaksept må registreres separat med kundeevidens.</p>
+              <p className="mt-2 text-[11px] text-violet-300/80">«Godkjenn og bruk» skriver bare salgscoachens hypoteser, akseptmål og neste handling til strategien med revisjonsspor. Faktisk problem- og løsningsaksept må registreres separat med dokumentasjon fra kunden.</p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
