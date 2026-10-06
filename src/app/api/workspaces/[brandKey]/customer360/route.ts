@@ -26,7 +26,10 @@ const CONTACT_COLUMNS = [
 ].join(",");
 
 function fail(status: number, code: string, message?: string) {
-  return NextResponse.json({ ok: false, error: { code, ...(message ? { message } : {}) }, { status, headers: noStore });
+  return NextResponse.json(
+    { ok: false, error: { code, ...(message ? { message } : {}) } },
+    { status, headers: noStore },
+  );
 }
 
 function safeWrite(request: NextRequest) {
