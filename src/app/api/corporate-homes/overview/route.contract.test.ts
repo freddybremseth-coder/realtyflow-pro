@@ -17,7 +17,7 @@ test("Corporate Homes overview includes prospect and discovery command-center da
 
 test("Corporate Homes dashboard surfaces prospect progress and CRM promotion state", () => {
   assert.match(page, /norske selskapsprospekter/);
-  assert.match(page, /A-fit/);
+  assert.match(page, /A-match/);
   assert.match(page, /B-fit/);
   assert.match(page, /Promotert til CRM/);
   assert.match(page, /Siste discovery/);
@@ -43,7 +43,7 @@ test("Corporate Homes overview attributes actual leads by acquisition channel", 
 
 test("Corporate Homes dashboard surfaces channel performance before paid scaling", () => {
   assert.match(page, /Kanalresultater/);
-  assert.match(page, /Lead → kval\./);
+  assert.match(page, /Henvendelse → kval\./);
   assert.match(page, /Aktiv pipeline/);
   assert.match(page, /før annonsebudsjett skaleres/);
 });
