@@ -252,8 +252,8 @@ const MODELS = [
 
 const MODEL_LABELS: Record<string,string> = {
   "Ledelse & team / Management retreat": "Ledelse og teamsamlinger",
-  "Firmabolig / Bedrift base": "Firmabolig / fast bedriftsbase",
-  "Delt Bedrift Home": "Delt firmabolig",
+  "Firmabolig / Corporate base": "Firmabolig / fast bedriftsbase",
+  "Delt Corporate Home": "Delt firmabolig",
   "Management retreat": "Ledelse og teamsamlinger",
 };
 
@@ -406,7 +406,7 @@ function localDateTime(value?: string | null) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export default function BedriftAccountWorkspacePage() {
+export default function CorporateAccountWorkspacePage() {
   const params = useParams<{ brandKey: string; prospectId: string }>();
   const brandKey = typeof params?.brandKey === "string" ? params.brandKey : "";
   const prospectId = typeof params?.prospectId === "string" ? params.prospectId : "";
@@ -578,7 +578,7 @@ export default function BedriftAccountWorkspacePage() {
     }
   }
 
-  async function runBedriftIntelligence() {
+  async function runCorporateIntelligence() {
     setBusy("intelligence"); setError(""); setNotice("");
     try {
       const result = await post({ action: "run_intelligence" });
@@ -976,7 +976,7 @@ export default function BedriftAccountWorkspacePage() {
           <h2 className="mt-2 text-xl font-bold text-white">Hva har endret seg – og hvorfor betyr det noe?</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Dybdeanalyse av selskapets nettsider, årsrapporter, PDF-er og offentlige nettkilder. Funn er beslutningsstøtte, ikke automatisk kontakt eller flytting i salgsprosessen.</p>
         </div>
-        <button type="button" onClick={() => void runBedriftIntelligence()} disabled={busy === "intelligence"}
+        <button type="button" onClick={() => void runCorporateIntelligence()} disabled={busy === "intelligence"}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           <RefreshCw size={15} className={busy === "intelligence" ? "animate-spin" : ""}/>{busy === "intelligence" ? "Analyserer…" : "Kjør dybdeanalyse"}
         </button>
