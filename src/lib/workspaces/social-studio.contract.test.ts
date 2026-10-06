@@ -7,6 +7,7 @@ const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[
 const studio = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/social-studio-panel.tsx"), "utf8");
 const catalogue = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/property-catalogue.tsx"), "utf8");
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"), "utf8");
+const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -62,4 +63,14 @@ test("Property catalogue hands a selected listing into the shared SoMe Studio", 
   assert.match(catalogue, /Lag SoMe/);
   assert.match(workspace, /socialPropertySeed/);
   assert.match(workspace, /initialProperty=\{socialPropertySeed\}/);
+});
+
+
+test("Owner Inventory opens the canonical SoMe Studio instead of the legacy one-shot generator", () => {
+  assert.match(inventory, /WorkspaceMarketingPanel/);
+  assert.match(inventory, /Lag SoMe · 3 forslag/);
+  assert.match(inventory, /setSocialStudioProperty/);
+  assert.doesNotMatch(inventory, /generateSoMePost/);
+  assert.doesNotMatch(inventory, /Lag SoMe-post for/);
+  assert.match(studio, /setPropertyLookup\(initialProperty\.ref \|\| initialProperty\.id\)/);
 });
