@@ -47,7 +47,7 @@ test("advisor prioritizes a documented account with strategy, decision maker and
   assert.equal(advice.priority, "P1");
   assert.ok(advice.score >= 70);
   assert.match(advice.nextAction, /forfalt/i);
-  assert.equal(advice.recommendedEntryRole, "HR / People");
+  assert.equal(advice.recommendedEntryRole, "HR / personal");
   assert.equal(advice.channelSequence[0].channel, "LINKEDIN");
 });
 
@@ -112,7 +112,7 @@ test("advisor slows outreach when fresh negative Intelligence evidence appears",
     },
   });
   assert.match(advice.nextAction, /Gjennomgå nytt negativt signal/i);
-  assert.ok(advice.whyNow.some(item => /negativt Intelligence-signal/i.test(item)));
+  assert.ok(advice.whyNow.some(item => /negativt innsiktssignal/i.test(item)));
 });
 
 test("manual next best action remains authoritative over Intelligence recommendation", () => {
