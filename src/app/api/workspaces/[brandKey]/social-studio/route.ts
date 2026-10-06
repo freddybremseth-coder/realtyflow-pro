@@ -174,6 +174,161 @@ async function fetchBrandArticle(brandKey: string, rawUrl: string) {
   };
 }
 
+
+type PublicEditorialPage = {
+  url: string;
+  title: string;
+  summary: string;
+  imageUrl: string | null;
+  kind: "guide" | "magazine" | "area" | "article";
+  updatedAt: string | null;
+};
+
+function xmlText(value: string) {
+  return decodeEntities(value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")).trim();
+}
+
+function sameBrandPublicUrl(brandKey: string, raw: string) {
+  try {
+    const url = new URL(raw);
+    return allowedBrandUrl(brandKey, url) && !url.search && !url.hash && !url.username && !url.password
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function classifyEditorialPath(brandKey: string, pathname: string): PublicEditorialPage["kind"] | null {
+  const path = pathname.toLowerCase().replace(/\/+$/, "") || "/";
+  if (/^\/(?:guide|guides|kjoperguider|kjøperguider)\/[^/]+$/.test(path)) return "guide";
+  if (/^\/magasin\/[^/]+$/.test(path)) return "magazine";
+  if (/^\/(?:omrader|områder|areas)\/[^/]+$/.test(path)) return "area";
+  if (brandKey === "pinosoecolife" &&
+      /^\/(?:bolig-i-|tomt-i-|villa-med-|kjop|kjøp|bygge|nybygg|finca|livet-i-)[a-z0-9æøåáéíóúüñç-]+$/.test(path)) {
+    return "guide";
+  }
+  return null;
+}
+
+function humanizeSlug(pathname: string) {
+  const slug = pathname.split("/").filter(Boolean).pop() || "";
+  return decodeURIComponent(slug)
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim();
+}
+
+async function fetchBoundedText(url: URL, expected: RegExp, maxBytes: number) {
+  const response = await fetch(url, {
+    redirect: "manual",
+    signal: AbortSignal.timeout(8_000),
+    headers: { "User-Agent": "RealtyFlow-Social-Studio/2.0" },
+  });
+  if (!response.ok) return "";
+  const contentType = response.headers.get("content-type") || "";
+  if (!expected.test(contentType)) return "";
+  const length = Number(response.headers.get("content-length") || 0);
+  if (length > maxBytes) return "";
+  const body = await response.text();
+  return body.length <= maxBytes ? body : "";
+}
+
+function sitemapUrls(xml: string, brandKey: string) {
+  const out: Array<{ url: URL; updatedAt: string | null }> = [];
+  for (const match of xml.matchAll(/<url(?:\s[^>]*)?>([\s\S]*?)<\/url>/gi)) {
+    const block = match[1];
+    const loc = xmlText(block.match(/<loc(?:\s[^>]*)?>([\s\S]*?)<\/loc>/i)?.[1] || "");
+    const url = sameBrandPublicUrl(brandKey, loc);
+    if (!url) continue;
+    const kind = classifyEditorialPath(brandKey, url.pathname);
+    if (!kind) continue;
+    const lastmod = xmlText(block.match(/<lastmod(?:\s[^>]*)?>([\s\S]*?)<\/lastmod>/i)?.[1] || "");
+    out.push({ url, updatedAt: lastmod || null });
+  }
+  return out;
+}
+
+function sitemapChildren(xml: string, brandKey: string) {
+  const out: URL[] = [];
+  for (const match of xml.matchAll(/<sitemap(?:\s[^>]*)?>([\s\S]*?)<\/sitemap>/gi)) {
+    const loc = xmlText(match[1].match(/<loc(?:\s[^>]*)?>([\s\S]*?)<\/loc>/i)?.[1] || "");
+    const url = sameBrandPublicUrl(brandKey, loc);
+    if (url) out.push(url);
+  }
+  return out.slice(0, 6);
+}
+
+async function discoverPublicWebsitePages(brandKey: string, website: string) {
+  const base = new URL(website);
+  const sitemap = new URL("/sitemap.xml", base);
+  const rootXml = await fetchBoundedText(sitemap, /xml|text\//i, 1_500_000);
+  const candidates = new Map<string, { url: URL; updatedAt: string | null }>();
+
+  const addXml = (xml: string) => {
+    for (const item of sitemapUrls(xml, brandKey)) {
+      if (!candidates.has(item.url.pathname)) candidates.set(item.url.pathname, item);
+    }
+  };
+
+  if (rootXml) {
+    addXml(rootXml);
+    if (/<sitemapindex(?:\s|>)/i.test(rootXml)) {
+      const childMaps = sitemapChildren(rootXml, brandKey);
+      const childXml = await Promise.all(childMaps.map((url) => fetchBoundedText(url, /xml|text\//i, 1_500_000)));
+      childXml.forEach(addXml);
+    }
+  }
+
+  // Fallback/augmentation for brands whose sitemap is unavailable or incomplete.
+  const indexPaths = brandKey === "zeneco"
+    ? ["/guide", "/magasin", "/omrader"]
+    : ["/magasin", "/omrader", "/"];
+  const indexHtml = await Promise.all(indexPaths.map((path) =>
+    fetchBoundedText(new URL(path, base), /text\/html/i, 1_500_000)));
+  for (const html of indexHtml) {
+    for (const match of html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>/gi)) {
+      let resolved: URL;
+      try { resolved = new URL(decodeEntities(match[1]), base); } catch { continue; }
+      const safe = sameBrandPublicUrl(brandKey, resolved.href);
+      if (!safe || !classifyEditorialPath(brandKey, safe.pathname)) continue;
+      if (!candidates.has(safe.pathname)) candidates.set(safe.pathname, { url: safe, updatedAt: null });
+    }
+  }
+
+  const selected = [...candidates.values()]
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .slice(0, 36);
+
+  const snapshots = await Promise.all(selected.map(async (candidate) => {
+    const html = await fetchBoundedText(candidate.url, /text\/html/i, 1_500_000);
+    const kind = classifyEditorialPath(brandKey, candidate.url.pathname);
+    if (!kind) return null;
+    const title = html ? htmlTitle(html) : humanizeSlug(candidate.url.pathname);
+    const summary = html
+      ? metaContent(html, "description") || metaContent(html, "og:description")
+      : "";
+    const imageRaw = html ? metaContent(html, "og:image") : "";
+    let imageUrl: string | null = null;
+    if (imageRaw) {
+      try {
+        const resolved = new URL(imageRaw, candidate.url);
+        if (resolved.protocol === "https:") imageUrl = resolved.href;
+      } catch {}
+    }
+    return {
+      url: candidate.url.href,
+      title: title || humanizeSlug(candidate.url.pathname),
+      summary: compactText(summary, 360),
+      imageUrl,
+      kind,
+      updatedAt: candidate.updatedAt,
+    } satisfies PublicEditorialPage;
+  }));
+
+  return snapshots.filter((item): item is PublicEditorialPage => Boolean(item?.title && item?.url));
+}
+
 async function loadMarketableProperty(supabase: any, brandKey: string, lookup: string) {
   if (!lookup || lookup.length > 100) throw new Error("PROPERTY_LOOKUP_INVALID");
   let query = supabase.from("properties")
@@ -323,7 +478,7 @@ async function discoverEditorialContent(
   website: string,
   property: any | null,
 ) {
-  const [{ data: settingsRow }, websiteResult, socialResult, areaResult] = await Promise.all([
+  const [{ data: settingsRow }, websiteResult, socialResult, areaResult, publicPages] = await Promise.all([
     supabase.from("brand_settings").select("settings").eq("brand_id", brandKey).maybeSingle(),
     supabase.from("content_publications")
       .select("id,title,description,ai_description,tags,media_urls,ai_image_url,content_type,published_at,created_at,updated_at")
@@ -346,6 +501,7 @@ async function discoverEditorialContent(
       .eq("show_on_website", true)
       .order("updated_at", { ascending: false })
       .limit(100),
+    discoverPublicWebsitePages(brandKey, website),
   ]);
 
   if (websiteResult.error) throw new Error("SOCIAL_STUDIO_CONTENT_DISCOVERY_FAILED");
@@ -402,6 +558,33 @@ async function discoverEditorialContent(
     };
     base.score = editorialScore(base, haystack, tokens, Boolean(property));
     items.push(base);
+  }
+
+  const knownUrls = new Set(items.map((item) => item.url).filter(Boolean));
+  for (const page of publicPages) {
+    if (knownUrls.has(page.url)) continue;
+    const lastShared = recentSocial.find((social: any) =>
+      page.url && String(social.description || "").includes(page.url));
+    const haystack = [page.title, page.summary, page.url].join(" ").toLowerCase();
+    const base: EditorialItem = {
+      id: "web:" + page.url,
+      kind: page.kind,
+      sourceType: "article",
+      title: page.title,
+      summary: page.summary,
+      url: page.url,
+      imageUrl: page.imageUrl,
+      publishedAt: null,
+      updatedAt: page.updatedAt,
+      lastSharedAt: lastShared ? itemDate(lastShared) : null,
+      notShared60Days: !lastShared,
+      score: 0,
+      contentId: null,
+      areaId: null,
+    };
+    base.score = editorialScore(base, haystack, tokens, Boolean(property));
+    items.push(base);
+    knownUrls.add(page.url);
   }
 
   if (!areaResult.error) {
