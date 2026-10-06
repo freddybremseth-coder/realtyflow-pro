@@ -24,3 +24,18 @@ test("property social cards are uploaded as reusable public campaign assets", ()
   assert.match(renderer, /upsert: true/);
   assert.match(renderer, /getPublicUrl/);
 });
+
+
+test("premium property cards use distinct compositions instead of one shared overlay", () => {
+  assert.match(renderer, /PROPERTY_SOCIAL_CARD_VERSION = "psc-2\.0"/);
+  assert.match(renderer, /case "minimal_premium"/);
+  assert.match(renderer, /case "fact_card"/);
+  assert.match(renderer, /case "question_hook"/);
+  assert.match(renderer, /case "lifestyle"/);
+  assert.match(renderer, /case "advisor"/);
+  assert.match(renderer, /case "carousel"/);
+  assert.match(renderer, /case "hero_property"/);
+  assert.match(renderer, /w=460:h=ih/);
+  assert.match(renderer, /x=54:y=390:w=972:h=440/);
+  assert.match(renderer, /PROPERTY_SOCIAL_CARD_VERSION\}\|\$\{input\.brandId\}/);
+});
