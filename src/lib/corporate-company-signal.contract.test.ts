@@ -12,8 +12,11 @@ const bootstrap = fs.readFileSync("src/app/api/cron/corporate-homes-bootstrap/ro
 test("Company signal research is SSRF guarded and same-host bounded", () => {
   assert.match(research, /validatePublicWebsiteUrl/);
   assert.match(research, /sameCompanyHost/);
-  assert.match(research, /MAX_PAGES = 4/);
+  assert.match(research, /MAX_PAGES = 8/);
   assert.match(research, /redirect: "manual"/);
+  assert.match(research, /application\/pdf/);
+  assert.match(research, /unpdf/);
+  assert.match(research, /documents_checked/);
   assert.match(research, /personal_data_collected: false/);
   assert.doesNotMatch(research, /mailto:|tel:/);
 });
