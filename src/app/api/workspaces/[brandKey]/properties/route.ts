@@ -96,7 +96,10 @@ export async function GET(
   const cleanText = (value: string) => value
     ? value.replace(/[^\p{L}\p{N}\s._-]/gu, " ").replace(/\s+/g, " ").trim()
     : "";
-  const safeSearch = cleanText(term);
+  const normalizedSearch = cleanText(term);
+  const safeSearch = normalizedSearch.includes("@")
+    ? normalizedSearch
+    : normalizedSearch.replace(/[.,()]/g, " ").replace(/\s+/g, " ").trim();
   const safeArea = cleanText(area);
   const safePropertyType = cleanText(propertyType);
 
