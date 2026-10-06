@@ -36,10 +36,11 @@ test("Customer 360 outreach requires explicit reviewed confirmation before send"
 
 test("AI generation cannot itself send email", () => {
   const generateIndex = route.indexOf('parsed.data.action === "GENERATE"');
-  const sendIndex = route.indexOf("sendBrandEmail");
-  assert.ok(generateIndex >= 0 && sendIndex > generateIndex);
-  const generateBlock = route.slice(generateIndex, route.indexOf("const freshLoaded", generateIndex));
-  assert.doesNotMatch(generateBlock, /sendBrandEmail/);
+  const manualSendIndex = route.indexOf("const freshLoaded", generateIndex);
+  assert.ok(generateIndex >= 0 && manualSendIndex > generateIndex);
+  const generateBlock = route.slice(generateIndex, manualSendIndex);
+  assert.doesNotMatch(generateBlock, /await sendBrandEmail/);
+  assert.ok(route.indexOf("await sendBrandEmail", manualSendIndex) > manualSendIndex);
 });
 
 test("manual Customer 360 send rechecks eligibility and hard suppression immediately before provider send", () => {
