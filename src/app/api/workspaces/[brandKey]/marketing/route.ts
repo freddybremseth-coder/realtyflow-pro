@@ -81,16 +81,14 @@ async function ownerMarketingSnapshot(supabase: any, brandKey: string) {
 async function ownerImageApproved(supabase: any, brandKey: string, imageUrl: string) {
   if (!imageUrl) return true;
 
-  const { data: media } = await supabase
+  const { data: mediaRows } = await supabase
     .from("media_assets")
-    .select("id")
+    .select("id,public_url,thumbnail_url")
     .eq("brand_id", brandKey)
     .is("deleted_at", null)
     .eq("signed_url_required", false)
-    .or(`public_url.eq.${imageUrl},thumbnail_url.eq.${imageUrl}`)
-    .limit(1)
-    .maybeSingle();
-  if (media?.id) return true;
+    .limit(500);
+  if ((mediaRows || []).some((row: any) => imageUrl === row.public_url || imageUrl === row.thumbnail_url)) return true;
 
   const { data: visibility, error: visibilityError } = await supabase
     .from("property_brand_visibility")
