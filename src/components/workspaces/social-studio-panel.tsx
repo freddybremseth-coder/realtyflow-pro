@@ -205,7 +205,14 @@ export function WorkspaceSocialStudio({
         body: JSON.stringify({
           title: (source?.title || variant.hook || variant.label).slice(0, 200),
           description: text,
-          tags: variant.tags,
+          tags: Array.from(new Set([
+            ...variant.tags,
+            "concept-" + variant.id.replace(/_/g, "-"),
+            "source-" + (source?.type || sourceType),
+            ...(source?.type === "property"
+              ? ["style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-")]
+              : []),
+          ])).slice(0, 20),
           platforms: [channel],
           imageUrl: approvedImageUrl || "",
         }),
