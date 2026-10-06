@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { FilePlus2, Megaphone, RefreshCw } from "lucide-react";
+import { WorkspaceSocialStudio, type WorkspaceSocialPropertySeed } from "@/components/workspaces/social-studio-panel";
 
 type Channel = { platform: string; name: string };
 type Publication = {
@@ -40,9 +41,13 @@ const platformLabel: Record<string, string> = {
 export function WorkspaceMarketingPanel({
   brandKey,
   canDraft,
+  initialProperty,
+  onInitialPropertyConsumed,
 }: {
   brandKey: string;
   canDraft: boolean;
+  initialProperty?: WorkspaceSocialPropertySeed | null;
+  onInitialPropertyConsumed?: () => void;
 }) {
   const [data, setData] = useState<MarketingPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,10 +176,19 @@ export function WorkspaceMarketingPanel({
       </div>
     </div>
 
+    {canDraft && <WorkspaceSocialStudio
+      brandKey={brandKey}
+      canDraft={canDraft}
+      activePlatforms={activePlatforms}
+      initialProperty={initialProperty}
+      onInitialPropertyConsumed={onInitialPropertyConsumed}
+      onDraftSaved={load}
+    />}
+
     {canDraft && <form onSubmit={event => { event.preventDefault(); void createDraft(); }}
       className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-      <h2 className="flex items-center gap-2 text-xl font-semibold"><FilePlus2 size={19}/> Nytt innholdsutkast</h2>
-      <p className="mt-1 text-xs text-slate-400">Denne delen lagrer bare utkast. Har du egen publiseringsrettighet, bruker du «Publiser til sosiale medier» etter at utkastet er klart.</p>
+      <h2 className="flex items-center gap-2 text-xl font-semibold"><FilePlus2 size={19}/> Manuelt innholdsutkast</h2>
+      <p className="mt-1 text-xs text-slate-400">Bruk dette når du vil skrive innholdet selv. SoMe Studio over lager tre redaksjonelle forslag og er standardflyten for eiendom, guide/magasin og egne temaer.</p>
       <div className="mt-4 grid gap-3">
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={200}
