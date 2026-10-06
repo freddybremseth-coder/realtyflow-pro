@@ -408,6 +408,8 @@ async function syncSpanishSubscription(supabase: any, object: StripeObject) {
     p_period_start: toIso(object.current_period_start),
     p_period_end: toIso(object.current_period_end),
     p_cancel_at_period_end: Boolean(object.cancel_at_period_end),
+    p_billing_cycle:
+      object.items?.data?.[0]?.price?.recurring?.interval === 'year' ? 'yearly' : 'monthly',
   }), 'Synchronize Spanish subscription');
 
   console.log('[Stripe Webhook] Spanish Platform Core subscription synchronized', object.id);
