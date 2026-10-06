@@ -45,6 +45,7 @@ test("owner navigation is organized around four work apps plus home and platform
   assert.equal(sections.find((section) => section.id === "platform")?.items[0]?.href, "/operations");
 
   assert.equal(sections.find((section) => section.id === "sales")?.items.some((item) => item.href === "/inventory/property-360"), true);
+  assert.equal(sections.find((section) => section.id === "sales")?.items.some((item) => item.href === "/sales/corporate-homes"), true);
   assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/nexus-os/brand-brain"), true);
   assert.equal(sections.find((section) => section.id === "content")?.items.some((item) => item.href === "/book-growth"), true);
   assert.equal(sections.find((section) => section.id === "finance")?.items.some((item) => item.href === "/care/invoices"), true);
@@ -62,11 +63,13 @@ test("role navigation keeps permission boundaries while exposing the right app",
   assert.equal(salesHrefs.includes("/personal-intelligence"), false);
   assert.equal(salesHrefs.includes("/communications"), true);
   assert.equal(salesHrefs.includes("/customers"), true);
+  assert.equal(salesHrefs.includes("/sales/corporate-homes"), true);
 
   const marketing = buildVisibleNavigation("MARKETING", permissionsForRole("MARKETING"))
     .flatMap((section) => section.items.map((item) => item.href));
   assert.equal(marketing.includes("/marketing"), true);
   assert.equal(marketing.includes("/content"), true);
+  assert.equal(marketing.includes("/corporate-homes"), true);
   assert.equal(marketing.includes("/operations"), false);
 
   const finance = buildVisibleNavigation("FINANCE", permissionsForRole("FINANCE"))
@@ -78,6 +81,8 @@ test("role navigation keeps permission boundaries while exposing the right app",
 test("active section follows the four-app information architecture", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.equal(activeNavigationSection("/customers/abc", sections), "sales");
+  assert.equal(activeNavigationSection("/sales/corporate-homes", sections), "sales");
+  assert.equal(activeNavigationSection("/corporate-homes", sections), "marketing");
   assert.equal(activeNavigationSection("/closing/deal-1", sections), "sales");
   assert.equal(activeNavigationSection("/care/reports", sections), "sales");
   assert.equal(activeNavigationSection("/inventory/property-360", sections), "sales");

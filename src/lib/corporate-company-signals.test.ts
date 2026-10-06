@@ -54,3 +54,52 @@ test("Signal evidence patch stores company-level evidence only", () => {
   assert.equal("email" in patch, false);
   assert.equal("phone" in patch, false);
 });
+
+
+test("Corporate company signals detect growth, financial and negative timing signals", () => {
+  const signals = detectCorporateCompanySignals(
+    "Vi vokser og rekrutterer. Selskapet åpner nytt kontor etter rekordomsetning. Samtidig varsles kostnadskutt og omorganisering.",
+    "https://example.no/nyheter",
+  );
+  assert.ok(signals.hiring_growth_signal);
+  assert.ok(signals.new_office_signal);
+  assert.ok(signals.financial_strength_signal);
+  assert.ok(signals.cost_cutting_signal);
+  assert.ok(signals.restructuring_signal);
+});
+
+test("PDF evidence keeps its source kind", () => {
+  const signals = detectCorporateCompanySignals(
+    "Annual report: record revenue and international expansion.",
+    "https://example.no/annual-report.pdf",
+    "2026-10-05T20:00:00.000Z",
+    "company_pdf",
+  );
+  assert.equal(signals.financial_strength_signal?.source_kind, "company_pdf");
+  assert.equal(signals.international_growth_signal?.source_kind, "company_pdf");
+});
+
+
+test("event signal evidence captures nearby event year", () => {
+  const signals = detectCorporateCompanySignals(
+    "2026 Current updates. 2023 Paul Harrison new CFO at AutoStore. 2023 AutoStore Opens New Official Office in Germany.",
+    "https://example.no/news",
+    "2026-10-06T00:00:00.000Z",
+  );
+
+  assert.equal(signals.leadership_change_signal?.event_year, 2023);
+  assert.equal(signals.new_office_signal?.event_year, 2023);
+  assert.equal(signals.leadership_change_signal?.event_date_precision, "year");
+  assert.ok(signals.leadership_change_signal?.context_snippets?.[0]?.includes("new CFO"));
+});
+
+test("persistent page-state signal can be undated without pretending it is an event", () => {
+  const signals = detectCorporateCompanySignals(
+    "Not all roles are suitable for remote work, but we make that clear in our job listings.",
+    "https://example.no/careers",
+    "2026-10-06T00:00:00.000Z",
+  );
+
+  assert.ok(signals.remote_workforce_signal);
+  assert.equal(signals.remote_workforce_signal?.event_year, null);
+});
