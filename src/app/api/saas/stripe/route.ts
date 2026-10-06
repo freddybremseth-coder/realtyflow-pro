@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
               : null,
           }, { onConflict: 'stripe_subscription_id' }), 'Upsert SaaS subscription');
 
+          await syncSpanishSubscription(supabase, data);
           await syncStripeBillingState(supabase, event, data);
 
           // Update app metrics
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
 
       // ─── Subscription updated (upgrade/downgrade/cancel) ─────
       case 'customer.subscription.updated': {
+        await syncSpanishSubscription(supabase, data);
         const synced = await syncStripeBillingState(supabase, event, data);
         if (synced.legacyAppId) await recalculateAppMetrics(supabase, synced.legacyAppId);
         break;
@@ -164,6 +166,7 @@ export async function POST(request: NextRequest) {
 
       // ─── Subscription deleted ────────────────────────────────
       case 'customer.subscription.deleted': {
+        await syncSpanishSubscription(supabase, data);
         const synced = await syncStripeBillingState(supabase, event, data);
         if (synced.legacyAppId) await recalculateAppMetrics(supabase, synced.legacyAppId);
         break;
@@ -388,6 +391,30 @@ type StripeBillingSync = {
   tenantId?: string | null;
   legacyAppId?: string | null;
 };
+
+async function syncSpanishSubscription(supabase: any, object: StripeObject) {
+  if (object.metadata?.app_slug !== 'spanish' || !object.metadata?.tenant_id || !object.id) return;
+
+  const toIso = (seconds: unknown) => {
+    const parsed = Number(seconds || 0);
+    return parsed > 0 ? new Date(parsed * 1000).toISOString() : null;
+  };
+
+  requireDbResult(await supabase.rpc('spanish_bind_stripe_subscription', {
+    p_tenant_id: object.metadata.tenant_id,
+    p_customer_id: typeof object.customer === 'string' ? object.customer : object.customer?.id || null,
+    p_subscription_id: object.id,
+    p_status: object.status || 'suspended',
+    p_period_start: toIso(object.current_period_start),
+    p_period_end: toIso(object.current_period_end),
+    p_cancel_at_period_end: Boolean(object.cancel_at_period_end),
+    p_billing_cycle:
+      object.items?.data?.[0]?.price?.recurring?.interval === 'year' ? 'yearly' : 'monthly',
+  }), 'Synchronize Spanish subscription');
+
+  console.log('[Stripe Webhook] Spanish Platform Core subscription synchronized', object.id);
+}
+
 
 async function syncStripeBillingState(
   supabase: any,
