@@ -235,6 +235,9 @@ export function buildCustomerSalesCoachFallback(input: CustomerSalesCoachInput):
 
 export async function runCustomerSalesCoach(input: CustomerSalesCoachInput) {
   const fallback = buildCustomerSalesCoachFallback(input);
+  if (input.advisor.nextBestAction.channel === "NONE" || ["PAUSED", "CLOSED"].includes(input.advisor.momentum)) {
+    return { output: fallback, provider: "deterministic", model: "guardrail" };
+  }
   if (!isNexusAIConfigured()) return { output: fallback, provider: "deterministic", model: "fallback" };
 
   const systemPrompt = `Du er Nexus Sales Coach i RealtyFlow for rådgivning til privatkunder som vurderer boligkjøp i Spania.
