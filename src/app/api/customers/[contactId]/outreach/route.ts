@@ -177,7 +177,7 @@ export async function GET(
     eligibility: {
       ...loaded.eligibility,
       allowed: loaded.eligibility.allowed && Boolean(loaded.sender),
-      blockedReason: loaded.sender ? loaded.eligibility.blockedReason : "Ingen aktiv e-postsender er konfigurert for merkevaren.",
+      blockedReason: loaded.eligibility.blockedReason || (!loaded.sender ? "Ingen aktiv e-postsender er konfigurert for merkevaren." : null),
     },
     awaitingReply: loaded.awaitingReply,
     manualTakeover: String(loaded.contact.suppression_reason || "") === "manual_owner_takeover",
