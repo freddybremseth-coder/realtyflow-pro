@@ -1061,6 +1061,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
             ["Nye leads", dashboard.lifecycle.awaitingProperty, "må kvalifiseres"],
             ["Tilbud sendt", dashboard.lifecycle.sentQuotes, "venter på svar"],
             ["Akseptert", dashboard.lifecycle.acceptedQuotesAwaitingContract, "må aktiveres"],
+            ["Tilbuds-MRR", moneyFromCents(dashboard.summary.quotedMonthlyRevenueCents), "åpne tilbud per måned"],
             ["Avtale aktivert", dashboard.lifecycle.contractedLeads, "fra Care-leads"],
             ["MRR", moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), String(dashboard.summary.activeContracts) + " aktive avtaler"],
           ].map(([label, value, detail]) => (
