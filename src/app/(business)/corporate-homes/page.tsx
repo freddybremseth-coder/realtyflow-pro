@@ -1130,7 +1130,7 @@ export default function CorporateHomesGrowthPage() {
               </div>
               <div className="mt-auto flex flex-wrap gap-3 pt-4">
                 <Link href={`/corporate-homes/prospects/${encodeURIComponent(prospect.id)}`} className="inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
-                  Åpne dossier <ArrowRight size={13} />
+                  Åpne bedriftsprofil <ArrowRight size={13} />
                 </Link>
                 <Link href={`/workspace/zeneco/corporate/${encodeURIComponent(prospect.id)}`} className="inline-flex items-center gap-1 text-xs font-black text-violet-800 hover:underline">
                   Åpne konto <ArrowRight size={13} />
