@@ -213,7 +213,8 @@ export function WorkspaceSocialStudio({
   function chooseEditorialItem(item: EditorialItem) {
     setSelectedContent(item);
     setContentId(item.contentId || "");
-    setImageUrl(item.imageUrl || "");
+    // Let the server re-fetch/register the canonical brand image for selected content.
+    setImageUrl("");
     setVariants([]);
     setPreviews({});
     setSource(null);
@@ -408,10 +409,11 @@ export function WorkspaceSocialStudio({
             setAreaLookup("");
           }
         }}
-        className={"rounded-xl border p-4 text-left transition " + (sourceType === id
-          ? "border-cyan-600 bg-cyan-950/35"
-          : "border-slate-800 bg-slate-900/70 hover:border-slate-600")}>
-        <Icon size={20} className={sourceType === id ? "text-cyan-300" : "text-slate-400"}/>
+        className={"rounded-xl border p-4 text-left transition " + (
+          (sourceType === id || (id === "article" && sourceType === "area"))
+            ? "border-cyan-600 bg-cyan-950/35"
+            : "border-slate-800 bg-slate-900/70 hover:border-slate-600")}>
+        <Icon size={20} className={(sourceType === id || (id === "article" && sourceType === "area")) ? "text-cyan-300" : "text-slate-400"}/>
         <div className="mt-2 font-semibold">{label}</div>
         <div className="mt-1 text-xs text-slate-400">{hint}</div>
       </button>)}
