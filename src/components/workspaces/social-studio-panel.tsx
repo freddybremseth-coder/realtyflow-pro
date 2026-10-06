@@ -85,7 +85,9 @@ export function WorkspaceSocialStudio({
   useEffect(() => {
     if (!initialProperty?.id) return;
     setSourceType("property");
-    setPropertyLookup(initialProperty.id);
+    // Prefer the canonical property reference when available. Inventory can contain
+    // non-UUID local/import IDs, while the server accepts either UUID or unique ref.
+    setPropertyLookup(initialProperty.ref || initialProperty.id);
     setPropertyLabel([
       initialProperty.title || initialProperty.ref || "Bolig",
       initialProperty.town || initialProperty.location || "",
