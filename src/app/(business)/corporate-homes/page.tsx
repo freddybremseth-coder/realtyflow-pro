@@ -65,7 +65,7 @@ type Overview = {
     rates: {
       prospectToContacted: number;
       contactedToMeeting: number;
-      meetingToSalgsmulighet: number;
+      meetingToOpportunity: number;
       opportunityToViewing: number;
       viewingToOffer: number;
     };
@@ -528,7 +528,7 @@ export default function CorporateHomesGrowthPage() {
             <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">B2B-vekst og salgstrakt</h1>
             <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">
               Ett arbeidsområde for bedrifter, foreninger og medlemsorganisasjoner som vurderer bolig i Spania.
-              Leads fra Corporate Homes-siden merkes som høyprioritert B2B og beholdes i den ordinære Zen Eco Homes-pipelinen.
+              Henvendelser fra Zen Corporate Homes-siden merkes som høyprioritert B2B og beholdes i den ordinære Zen Eco Homes-salgstrakten.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -612,7 +612,7 @@ export default function CorporateHomesGrowthPage() {
           {[
             ["Prospekt → kontakt", data?.revenueFunnel.rates.prospectToContacted ?? 0],
             ["Kontakt → møte", data?.revenueFunnel.rates.contactedToMeeting ?? 0],
-            ["Møte → salgsmulighet", data?.revenueFunnel.rates.meetingToSalgsmulighet ?? 0],
+            ["Møte → salgsmulighet", data?.revenueFunnel.rates.meetingToOpportunity ?? 0],
             ["Salgsmulighet → visning", data?.revenueFunnel.rates.opportunityToViewing ?? 0],
             ["Visning → tilbud", data?.revenueFunnel.rates.viewingToOffer ?? 0],
           ].map(([label, value]) => (
@@ -637,7 +637,7 @@ export default function CorporateHomesGrowthPage() {
             <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Ukentlig Growth Review</p>
             <h2 className="mt-2 text-xl font-black text-slate-950">Hvor mister bedriftsløpet fremdrift nå?</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Mandagsreviewen bruker bare dokumenterte Corporate-statusdata og bekreftede Revenue OS-utfall.
+              Mandagsgjennomgangen bruker bare dokumenterte bedriftsstatuser og bekreftede Revenue OS-utfall.
               Den peker på målt flaskehals og neste analysefokus, men endrer aldri annonsebudsjett eller kontakter kunder automatisk.
             </p>
           </div>
@@ -819,7 +819,7 @@ export default function CorporateHomesGrowthPage() {
           </>
         ) : (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-            Første ukentlige Corporate Growth Review er ikke lagret ennå. Reviewen opprettes automatisk når cron-jobben kjører.
+            Første ukentlige bedriftsgjennomgang er ikke lagret ennå. Gjennomgangen opprettes automatisk når den planlagte jobben kjører.
           </div>
         )}
 
@@ -835,7 +835,7 @@ export default function CorporateHomesGrowthPage() {
           <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Kanalresultater</p>
           <h2 className="mt-2 text-xl font-black text-slate-950">Mål bedriftskanalene helt til faktisk visning og tilbud</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-            Google, LinkedIn, Meta, outbound og organisk/direct sammenlignes på faktiske Corporate-leads,
+            Google, LinkedIn, Meta, utgående kontakt og organisk/direkte trafikk sammenlignes på faktiske bedriftshenvendelser,
             kvalifisering, pipelineverdi og dokumenterte kommersielle utfall. Visning og tilbud kommer kun fra bekreftede Revenue OS-events.
             Dette er styringsgrunnlaget før annonsebudsjett skaleres; RealtyFlow endrer ikke spend automatisk.
           </p>
@@ -1017,7 +1017,7 @@ export default function CorporateHomesGrowthPage() {
                   <div className="mt-1 text-xs text-slate-500">{partner.industry || partnerType(partner.partnerType)}</div>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-black ${partner.fitTier === "A" ? "bg-emerald-100 text-emerald-900" : "bg-cyan-100 text-cyan-900"}`}>
-                  {partner.fitTier} · {partner.fitScore}
+                  {partner.fitTier}-match · {partner.fitScore}
                 </span>
               </div>
               <p className="mt-3 text-xs leading-5 text-slate-600">{partner.referralAngle || "Henvisningsvinkel må vurderes."}</p>
@@ -1087,7 +1087,7 @@ export default function CorporateHomesGrowthPage() {
             <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Fokus nå</p>
             <h2 className="mt-2 text-xl font-black text-slate-950">Prospekter som er nærmest menneskelig kvalifisering</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Dette er ikke en automatisk salgsbeslutning. Listen sorteres etter dokumentert readiness og Corporate Homes-fit,
+              Dette er ikke en automatisk salgsbeslutning. Listen sorteres etter dokumentert klarhet og match for Zen Corporate Homes,
               og viser neste konto å undersøke — ikke hvem systemet skal kontakte automatisk.
             </p>
             <p className="mt-2 text-xs font-semibold text-slate-500">{data?.prospects.focusRule || ""}</p>
@@ -1108,7 +1108,7 @@ export default function CorporateHomesGrowthPage() {
                   <div className="mt-1 text-xs text-slate-500">{prospect.industry || "Bransje ikke kartlagt"} · {prospect.size}</div>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-black ${prospect.fitTier === "A" ? "bg-emerald-100 text-emerald-900" : "bg-cyan-100 text-cyan-900"}`}>
-                  {prospect.fitTier} · {prospect.fitScore}
+                  {prospect.fitTier}-match · {prospect.fitScore}
                 </span>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -1150,7 +1150,7 @@ export default function CorporateHomesGrowthPage() {
             <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-800">Bedriftens innholdsmotor</p>
             <h2 className="mt-2 text-xl font-black text-slate-950">Tre norske B2B-poster per uke</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              RealtyFlow roterer gjennom de 23 Corporate-guidene og lager ferdige norske utkast med artikkellenke og bedriftsvurdering som CTA.
+              RealtyFlow roterer gjennom bedriftsguidene og lager ferdige norske utkast med artikkellenke og bedriftsvurdering som tydelig handling.
               Utkastene legges i Content Hub for LinkedIn og Facebook. Ingenting publiseres eksternt av denne motoren.
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
@@ -1348,7 +1348,7 @@ export default function CorporateHomesGrowthPage() {
             </div>
             <h2 className="mt-2 text-xl font-black text-slate-950">Bygg etterspørsel med faglig verdi — og spor den helt til salg</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Webinar og mindre digitale events brukes som en egen Corporate-kanal for ledere, HR, økonomi, styrer og medlemsorganisasjoner.
+              Webinar og mindre digitale arrangementer brukes som en egen bedriftskanal for ledere, HR, økonomi, styrer og medlemsorganisasjoner.
               Deltakere går videre via en sporbar bedriftsvurdering, slik at faktisk kvalifisering, møte, visning og tilbud kan måles i samme funnel.
             </p>
           </div>
