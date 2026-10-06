@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 import { DomainWorkItems } from "@/components/hub/domain-work-items";
+import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 
 interface Property {
   id: string;
@@ -586,9 +587,8 @@ export default function InventoryPage() {
   const [publishingDrafts, setPublishingDrafts] = useState(false);
   const [draftsCreated, setDraftsCreated] = useState(false);
 
-  // SoMe post state
-  const [generatingSoMe, setGeneratingSoMe] = useState<string | null>(null);
-  const [someSuccess, setSomeSuccess] = useState<string | null>(null);
+  // Canonical SoMe Studio opened from Inventory. This replaces the legacy one-shot agent post generator.
+  const [socialStudioProperty, setSocialStudioProperty] = useState<Property | null>(null);
 
   // AI selling-copy state
   const [generatingCopy, setGeneratingCopy] = useState<string | null>(null);
@@ -742,105 +742,6 @@ export default function InventoryPage() {
       setCopyError(err instanceof Error ? err.message : "Ukjent feil");
     } finally {
       setGeneratingCopy(null);
-    }
-  };
-
-  const generateSoMePost = async (property: Property, brandId = selectedBrand) => {
-    setGeneratingSoMe(property.id);
-    setSomeSuccess(null);
-    try {
-      // Use the agent command API to generate a SoMe post
-      const brandObj = BRANDS.find(b => b.id === brandId) || BRANDS[0];
-      const prompt = `VIKTIG: Returner KUN selve SoMe-posten. INGEN innledning, INGEN forklaring, INGEN "Her er posten:" eller lignende. Start direkte med postteksten.
-
-Du er en profesjonell eiendomsmarkedsfører for ${brandObj.name}. Skriv en selgende, engasjerende SoMe-post på norsk for denne eiendommen.
-
-EIENDOM:
-- Tittel: ${property.title}
-- Type: ${property.type}
-- Beliggenhet: ${property.location}
-- Pris: €${property.price.toLocaleString("nb-NO")}
-- Soverom: ${property.bedrooms}
-- Bad: ${property.bathrooms}
-- Areal: ${property.area} m²
-- Tomt: ${property.plotArea || 0} m²
-- Basseng: ${property.pool ? "Ja" : "Nei"}
-- Garasje: ${property.garage ? "Ja" : "Nei"}
-- Beskrivelse: ${property.description || "Ingen"}
-
-REGLER:
-- Skriv BARE selve posten, ingenting annet
-- Kort, selgende tekst som skaper drømmer og lyst
-- Inkluder relevante emojis
-- Inkluder 5-8 relevante hashtags på slutten
-- Maks 200 ord
-- Ikke skriv "Her er posten" eller noe lignende
-- Ikke forklar hva du gjør
-- Start rett på den selgende teksten`;
-
-      const agentRes = await fetch("/api/agents/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt }),
-      });
-      const agentData = await agentRes.json();
-
-      const postContent = typeof agentData.response === "string"
-        ? agentData.response
-        : agentData.plan?.steps?.[0]?.result || `${property.title}\n\n${property.description}\n\n📍 ${property.location}\n💰 €${property.price.toLocaleString("nb-NO")}\n🛏️ ${property.bedrooms} soverom | 🛁 ${property.bathrooms} bad | 📐 ${property.area} m²`;
-
-      const propertyImage = property.imageUrl || property.gallery?.[0] || null;
-      const baseTags = [
-        "eiendom",
-        property.type.toLowerCase(),
-        property.location.split(",")[0].trim().toLowerCase(),
-        brandId,
-      ].filter(Boolean);
-
-      // Create one clear draft per publishing platform. Content Hub will now
-      // preselect the intended platform, so the user can approve/publish with
-      // less room for account mixups.
-      const drafts = [
-        { platform: "facebook", prefix: "Facebook" },
-        { platform: "instagram", prefix: "Instagram" },
-        { platform: "linkedin", prefix: "LinkedIn" },
-      ].map(({ platform, prefix }) => ({
-          brand_id: brandId,
-          title: `${prefix}: ${property.title}`,
-          description: postContent,
-          tags: [platform, ...baseTags],
-          content_type: "marketing_post",
-          status: "draft",
-          ai_image_url: propertyImage,
-          scheduled_platforms: [platform],
-          metadata: {
-            platform,
-            property_id: property.id,
-            property_title: property.title,
-            property_image: propertyImage,
-            brand_id: brandId,
-            brand_name: brandObj.name,
-          },
-        }));
-
-      const draftRes = await fetch("/api/marketing-kit/drafts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ drafts, property_id: property.id }),
-      });
-      const draftData = await draftRes.json();
-
-      if (draftData.success) {
-        setSomeSuccess(property.id);
-        setTimeout(() => setSomeSuccess(null), 4000);
-      } else {
-        alert("Kunne ikke opprette utkast: " + (draftData.error || "Ukjent feil"));
-      }
-    } catch (err) {
-      console.error("SoMe generation failed:", err);
-      alert("Feil ved generering av SoMe-post");
-    } finally {
-      setGeneratingSoMe(null);
     }
   };
 
@@ -1052,7 +953,7 @@ REGLER:
   const selectedSoMeBrand = REAL_ESTATE_BRANDS.find((brand) => brand.id === selectedBrand) || REAL_ESTATE_BRANDS[0] || BRANDS[0];
   const handleSelectedBrandChange = (brandId: string) => {
     setSelectedBrand(brandId);
-    setSomeSuccess(null);
+    setSocialStudioProperty(null);
     setDraftsCreated(false);
   };
 
@@ -1237,21 +1138,15 @@ REGLER:
                       size="sm"
                       variant="outline"
                       className="flex-1 text-xs border-purple-500/30 text-purple-300 hover:bg-purple-500/10 hover:text-purple-200"
-                      title={`Lag SoMe-post for ${selectedSoMeBrand.name}`}
-                      disabled={generatingSoMe === property.id}
+                      title={`Lag tre SoMe-konsepter for ${selectedSoMeBrand.name}`}
+                      disabled={!["zeneco", "pinosoecolife"].includes(selectedSoMeBrand.id)}
                       onClick={(e) => {
                         e.stopPropagation();
-                        generateSoMePost(property, selectedSoMeBrand.id);
+                        setSocialStudioProperty(property);
                       }}
                     >
-                      {generatingSoMe === property.id ? (
-                        <Loader2 size={12} className="mr-1.5 animate-spin" />
-                      ) : someSuccess === property.id ? (
-                        <CheckCircle2 size={12} className="mr-1.5 text-emerald-400" />
-                      ) : (
-                        <Instagram size={12} className="mr-1.5" />
-                      )}
-                      {generatingSoMe === property.id ? "Genererer..." : someSuccess === property.id ? "Opprettet!" : "SoMe"}
+                      <Sparkles size={12} className="mr-1.5" />
+                      Lag SoMe · 3 forslag
                     </Button>
                     <Button
                       size="sm"
@@ -1293,18 +1188,12 @@ REGLER:
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    title={`Lag SoMe-post for ${selectedSoMeBrand.name}`}
-                    disabled={generatingSoMe === property.id}
-                    onClick={(e) => { e.stopPropagation(); generateSoMePost(property, selectedSoMeBrand.id); }}
-                    className="text-purple-400 hover:text-purple-300 disabled:opacity-50"
+                    title={`Lag tre SoMe-konsepter for ${selectedSoMeBrand.name}`}
+                    disabled={!["zeneco", "pinosoecolife"].includes(selectedSoMeBrand.id)}
+                    onClick={(e) => { e.stopPropagation(); setSocialStudioProperty(property); }}
+                    className="text-purple-400 hover:text-purple-300 disabled:cursor-not-allowed disabled:opacity-30"
                   >
-                    {generatingSoMe === property.id ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : someSuccess === property.id ? (
-                      <CheckCircle2 size={14} className="text-emerald-400" />
-                    ) : (
-                      <Instagram size={14} />
-                    )}
+                    <Sparkles size={14} />
                   </button>
                   <button
                     title="Lag YouTube-video"
@@ -1786,25 +1675,23 @@ REGLER:
                 <div className="mb-3 text-xs text-red-400">{copyError}</div>
               ) : null}
 
-              {/* SoMe Post Button */}
+              {/* Canonical SoMe Studio */}
               <Button
                 className="w-full mb-3 bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-500 hover:to-orange-400 text-white font-medium"
-                disabled={generatingSoMe === showDetailModal.id}
-                onClick={() => generateSoMePost(showDetailModal, selectedSoMeBrand.id)}
+                disabled={!["zeneco", "pinosoecolife"].includes(selectedSoMeBrand.id)}
+                onClick={() => {
+                  setSocialStudioProperty(showDetailModal);
+                  setShowDetailModal(null);
+                }}
               >
-                {generatingSoMe === showDetailModal.id ? (
-                  <Loader2 size={16} className="mr-2 animate-spin" />
-                ) : someSuccess === showDetailModal.id ? (
-                  <CheckCircle2 size={16} className="mr-2" />
-                ) : (
-                  <Instagram size={16} className="mr-2" />
-                )}
-                {generatingSoMe === showDetailModal.id
-                  ? "Genererer SoMe-innlegg..."
-                  : someSuccess === showDetailModal.id
-                    ? "Opprettet i Content Hub!"
-                    : `Lag SoMe-post for ${selectedSoMeBrand.name}`}
+                <Sparkles size={16} className="mr-2" />
+                Lag SoMe · 3 forslag for {selectedSoMeBrand.name}
               </Button>
+              {!["zeneco", "pinosoecolife"].includes(selectedSoMeBrand.id) && (
+                <p className="-mt-1 mb-3 text-xs text-amber-300">
+                  SoMe Studio er foreløpig aktivert for Zen Eco Homes og Pinoso EcoLife.
+                </p>
+              )}
 
               <div className="flex flex-wrap items-center gap-2">
                 {leadIntelligenceReturnPath && (
@@ -2540,6 +2427,46 @@ REGLER:
                 </div>
               </>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {socialStudioProperty && (
+        <div
+          className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/75 p-4 sm:p-8"
+          onClick={() => setSocialStudioProperty(null)}
+        >
+          <div
+            className="w-full max-w-6xl rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/95 px-5 py-4 backdrop-blur">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Eiendommer → SoMe Studio</p>
+                <h2 className="mt-1 text-lg font-semibold text-white">{socialStudioProperty.title}</h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  {selectedSoMeBrand.name} · {socialStudioProperty.ref ? `Ref ${socialStudioProperty.ref} · ` : ""}{socialStudioProperty.location}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setSocialStudioProperty(null)}>
+                <X size={14} className="mr-1.5" /> Lukk
+              </Button>
+            </div>
+
+            <div className="p-5">
+              <WorkspaceMarketingPanel
+                brandKey={selectedSoMeBrand.id}
+                canDraft={true}
+                initialProperty={{
+                  id: socialStudioProperty.id,
+                  ref: socialStudioProperty.ref || null,
+                  title: socialStudioProperty.title || null,
+                  town: null,
+                  location: socialStudioProperty.location || null,
+                  primary_image: socialStudioProperty.imageUrl || socialStudioProperty.gallery?.[0] || null,
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
