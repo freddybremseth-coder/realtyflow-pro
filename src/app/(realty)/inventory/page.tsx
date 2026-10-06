@@ -14,7 +14,7 @@ import {
   DollarSign, BarChart3, Instagram, Linkedin,
   Facebook, Mail, MessageSquare, Clock, Send, Youtube,
   ChevronLeft, ChevronRight, Image as ImageIcon,
-  Wand2,
+  Wand2, Download,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 import { DomainWorkItems } from "@/components/hub/domain-work-items";
@@ -127,6 +127,26 @@ function safeLeadIntelligenceReturnPath(value: string | null) {
   } catch {
     return null;
   }
+}
+
+function safeDownloadStem(value: string) {
+  return value
+    .trim()
+    .replace(/[^A-Za-z0-9À-ž_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "realtyflow-tekst";
+}
+
+function downloadPlainText(text: string, filename: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 // Parse RedSP XML feed - matches actual RedSP v3 format:
