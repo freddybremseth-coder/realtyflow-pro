@@ -54,3 +54,20 @@ test("terminal pipeline customer is closed for sales email", () => {
     assert.equal(state.shouldReceiveEmail, false);
   }
 });
+
+test("manual advisor takeover is visible in CRM and remains non-sendable", () => {
+  const state = buildCustomerCommunicationState(
+    {
+      email: "buyer@example.com",
+      pipeline_status: "QUALIFIED",
+      nurture_status: "paused",
+      email_suppressed: true,
+      suppression_reason: "manual_owner_takeover",
+    },
+    empty,
+  );
+  assert.equal(state.status, "STOPPED");
+  assert.equal(state.label, "Manuelt overtatt");
+  assert.equal(state.shouldReceiveEmail, false);
+  assert.equal(state.blockedReason, "manual_owner_takeover");
+});

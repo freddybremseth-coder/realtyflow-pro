@@ -11,6 +11,7 @@ import {
   type CustomerTimelineEvent,
 } from "@/lib/customer-360";
 import { recommendRevenueAction } from "@/lib/revenue/today";
+import { extractLatestReplyText } from "@/services/email/latest-reply-text";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -134,13 +135,31 @@ export async function GET(
       .limit(150),
     supabase
       .from("email_messages")
-      .select("id,brand_id,direction,from_address,to_addresses,subject,ai_intent,ai_urgency,ai_sentiment,received_at,created_at,matched_lead_id,matched_customer_id")
-      .or(`matched_lead_id.eq.${contactId},matched_customer_id.eq.${contactId}`)
+      .select("id,brand_id,message_id,thread_id,direction,from_address,from_name,to_addresses,subject,body_text,body_html,ai_intent,ai_urgency,ai_sentiment,is_read,replied_at,received_at,created_at,crm_contact_id,matched_lead_id,matched_customer_id")
+      .or(`crm_contact_id.eq.${contactId},matched_lead_id.eq.${contactId},matched_customer_id.eq.${contactId}`)
       .order("received_at", { ascending: false })
-      .limit(150),
+      .limit(200),
+    email
+      ? supabase
+          .from("email_messages")
+          .select("id,brand_id,message_id,thread_id,direction,from_address,from_name,to_addresses,subject,body_text,body_html,ai_intent,ai_urgency,ai_sentiment,is_read,replied_at,received_at,created_at,crm_contact_id,matched_lead_id,matched_customer_id")
+          .eq("direction", "inbound")
+          .ilike("from_address", email)
+          .order("received_at", { ascending: false })
+          .limit(200)
+      : Promise.resolve({ data: [], error: null }),
+    email
+      ? supabase
+          .from("email_messages")
+          .select("id,brand_id,message_id,thread_id,direction,from_address,from_name,to_addresses,subject,body_text,body_html,ai_intent,ai_urgency,ai_sentiment,is_read,replied_at,received_at,created_at,crm_contact_id,matched_lead_id,matched_customer_id")
+          .eq("direction", "outbound")
+          .contains("to_addresses", [email])
+          .order("received_at", { ascending: false })
+          .limit(200)
+      : Promise.resolve({ data: [], error: null }),
   ];
 
-  const [criteriaSettled, shortlistsSettled, presentationsSettled, draftsSettled, portalSettled, portalUserSettled, workItemsSettled, revenueEventsSettled, nurtureEventsSettled, emailMessagesSettled] = await Promise.allSettled(queries);
+  const [criteriaSettled, shortlistsSettled, presentationsSettled, draftsSettled, portalSettled, portalUserSettled, workItemsSettled, revenueEventsSettled, nurtureEventsSettled, emailMessagesSettled, inboundByEmailSettled, outboundByEmailSettled] = await Promise.allSettled(queries);
 
   const criteria = fulfilledData(criteriaSettled, "buyer_profile_criteria", warnings);
   const shortlists = fulfilledData(shortlistsSettled, "lead_property_shortlists", warnings);
@@ -150,7 +169,30 @@ export async function GET(
   const allWorkItems = fulfilledData(workItemsSettled, "work_items", warnings);
   const revenueEvents = fulfilledData(revenueEventsSettled, "revenue_events", warnings);
   const nurtureEvents = fulfilledData(nurtureEventsSettled, "lead_nurture_events", warnings);
-  const linkedEmailMessages = fulfilledData(emailMessagesSettled, "email_messages", warnings);
+  const linkedById = fulfilledData(emailMessagesSettled, "email_messages", warnings);
+  const inboundByEmail = fulfilledData(inboundByEmailSettled, "email_messages_inbound_by_address", warnings);
+  const outboundByEmail = fulfilledData(outboundByEmailSettled, "email_messages_outbound_by_address", warnings);
+  const emailMessageMap = new Map<string, any>();
+  for (const row of [...linkedById, ...inboundByEmail, ...outboundByEmail]) {
+    const id = String(row.id || "");
+    if (!id) continue;
+    const direction = String(row.direction || "").toLowerCase();
+    const rawBody = String(row.body_text || row.body_html || "").trim();
+    const readableBody = direction === "inbound"
+      ? (extractLatestReplyText(rawBody) || rawBody)
+      : rawBody;
+    emailMessageMap.set(id, {
+      ...row,
+      crm_contact_id: row.crm_contact_id || contactId,
+      body_text: readableBody.slice(0, 12000),
+      body_html: !readableBody && row.body_html ? String(row.body_html).slice(0, 12000) : null,
+    });
+  }
+  const linkedEmailMessages = [...emailMessageMap.values()].sort((a, b) => {
+    const aTime = new Date(String(a.received_at || a.created_at || 0)).getTime();
+    const bTime = new Date(String(b.received_at || b.created_at || 0)).getTime();
+    return bTime - aTime;
+  }).slice(0, 150);
 
   let portalUser = null;
   if (portalUserSettled.status === "fulfilled") {
@@ -191,6 +233,24 @@ export async function GET(
   const crmInteractionEvents = buildContactInteractionEvents(contact.interactions);
   const nurtureTimelineEvents = buildNurtureTimelineEvents(nurtureEvents);
   const linkedEmailTimelineEvents = buildLinkedEmailTimelineEvents(linkedEmailMessages);
+  const sentMessages = linkedEmailMessages.filter((row: any) => String(row.direction || "").toLowerCase() === "outbound");
+  const replyMessages = linkedEmailMessages.filter((row: any) => String(row.direction || "").toLowerCase() === "inbound");
+  const lastSentAt = sentMessages[0]?.received_at || sentMessages[0]?.created_at || null;
+  const lastReplyAt = replyMessages[0]?.received_at || replyMessages[0]?.created_at || null;
+  const lastSentTime = lastSentAt ? new Date(String(lastSentAt)).getTime() : 0;
+  const lastReplyTime = lastReplyAt ? new Date(String(lastReplyAt)).getTime() : 0;
+  const manualTakeover = contact.email_suppressed === true && String(contact.suppression_reason || "") === "manual_owner_takeover";
+  const communicationDialogue = {
+    sentCount: sentMessages.length,
+    replyCount: replyMessages.length,
+    lastSentAt,
+    lastReplyAt,
+    awaitingReply: lastSentTime > 0 && lastSentTime > lastReplyTime,
+    manualTakeover,
+    emailBlocked: Boolean(contact.email_suppressed || contact.do_not_contact),
+    blockedReason: contact.suppression_reason || (contact.do_not_contact ? "do_not_contact" : null),
+    messages: linkedEmailMessages,
+  };
 
   const timeline = buildCustomerTimeline([
     crmInteractionEvents,
@@ -224,6 +284,7 @@ export async function GET(
     revenueEvents,
     nurtureEvents,
     linkedEmailMessages,
+    communicationDialogue,
     communicationCoverage: {
       crmInteractions: crmInteractionEvents.length,
       portalMessages: portalMessages.length,

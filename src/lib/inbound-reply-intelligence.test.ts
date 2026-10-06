@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyInboundReply, extractLatestReplyText, governInboundReply } from "./inbound-reply-intelligence";
+import { classifyInboundReply, deriveRequestedFollowUpAt, extractLatestReplyText, governInboundReply } from "./inbound-reply-intelligence";
 
 test("explicit do-not-contact is honored automatically and stops nurture", () => {
   const classification = classifyInboundReply({ body: "Please do not contact me again." });
@@ -95,11 +95,119 @@ test("later request pauses nurture and schedules follow-up", () => {
   assert.equal(classification.shouldPauseNurture, true);
 });
 
+test("on-sight and not-today wording is parked instead of qualified", () => {
+  const classification = classifyInboundReply({
+    body: "Ja, på sikt er det aktuelt. Men ikke per dags dato.",
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.shouldPauseNurture, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
 test("temporary Norwegian not-now reply is not misclassified as active interest", () => {
   const classification = classifyInboundReply({ body: "Boligkjøp i Spania er ikke aktuelt for oss med det første, men takk for henvendelsen." });
   assert.equal(classification.intent, "follow_up_later");
   assert.equal(classification.proposedPipelineAction, "schedule_followup");
   assert.equal(classification.requiresFastResponse, false);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
+test("Stig-style reply with existing Marbella home and 1-2 year horizon is parked, not hot", () => {
+  const now = new Date("2026-10-04T16:03:13.000Z");
+  const classification = classifyInboundReply({
+    body: "Hei Freddy,\nJeg har ingen konkrete planer om å kjøpe bolig i Spania. Jeg har allerede en ganske stor leilighet i Marbella.\nMen det kan muligens bli aktuelt å vurdere noe om et år eller to.\n\nHilsen\nStig",
+    now,
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.shouldPauseNurture, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+  assert.equal(classification.requiresFastResponse, false);
+  assert.equal(classification.requestedFollowUpAt, "2028-10-04T16:03:13.000Z");
+  const governed = governInboundReply(classification);
+  assert.equal(governed.safety.tier, "AUTO");
+  assert.equal(governed.canApplyAutomatically, true);
+});
+
+test("explicit multi-year pause derives a future waiting date", () => {
+  const now = new Date("2026-10-05T19:00:00.000Z");
+  const classification = classifyInboundReply({
+    body: "Jeg har låst midlene mine i fire år. Spør meg igjen om 4 år.",
+    now,
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.requestedFollowUpAt, "2030-10-05T19:00:00.000Z");
+});
+
+test("vague multi-year pause stays parked without inventing a date", () => {
+  const now = new Date("2026-10-05T19:00:00.000Z");
+  const classification = classifyInboundReply({ body: "Dette er på vent i noen år.", now });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.requestedFollowUpAt, null);
+  assert.equal(deriveRequestedFollowUpAt("om noen år", now), null);
+});
+
+test("explicit not-interested and negative short replies close the buying journey", () => {
+  assert.equal(classifyInboundReply({ body: "Hei, takk for henvendelsen, men vi er ikke interessert." }).intent, "no_longer_buying");
+  assert.equal(classifyInboundReply({ body: "Hei, nei dessverre." }).intent, "no_longer_buying");
+  assert.equal(classifyInboundReply({ body: "Vi har slått oss til ro der vi er." }).intent, "no_longer_buying");
+  assert.equal(classifyInboundReply({ body: "Vi renoverer leiligheten i Albir og blir der forever." }).intent, "no_longer_buying");
+});
+
+test("ascii Norwegian purchase wording closes as purchased elsewhere", () => {
+  assert.equal(classifyInboundReply({ body: "Kjopte hus for et år siden i Torre." }).intent, "purchased_elsewhere");
+  assert.equal(classifyInboundReply({ body: "Vi fikk kjøpt tomtene og er nå i boligbygging." }).intent, "purchased_elsewhere");
+});
+
+test("multi-year ranges are parked and use the upper bound", () => {
+  const now = new Date("2026-09-26T07:07:15.000Z");
+  const classification = classifyInboundReply({
+    body: "Fortsatt interessert, men tidshorisonten er innen 2-4 år.",
+    now,
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.requestedFollowUpAt, "2030-09-26T07:07:15.000Z");
+});
+
+test("vague later wording is parked rather than treated as active", () => {
+  assert.equal(classifyInboundReply({ body: "Hei! Kanskje det er aktuelt seinare." }).intent, "follow_up_later");
+});
+
+test("still interested but explicitly future timing is parked", () => {
+  const classification = classifyInboundReply({
+    body: "Vi er fortsatt absolutt interessert i bolig i Spania, men selve boligkjøpet ligger litt frem i tid.",
+  });
+  assert.equal(classification.intent, "follow_up_later");
+  assert.equal(classification.shouldPauseNurture, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
+test("short confirmation to criteria email is treated as a verified preference update", () => {
+  const classification = classifyInboundReply({
+    subject: "SV: Kan du bekrefte søkekriteriene dine?",
+    body: "Ja, det stemmer.",
+  });
+  assert.equal(classification.intent, "update_preferences");
+  assert.equal(classification.shouldRefreshBuyerProfile, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
+test("new criteria subject makes short location replies profile updates", () => {
+  const classification = classifyInboundReply({
+    subject: "Re: Har jeg forstått boligønskene dine riktig?",
+    body: "Punta Prima",
+  });
+  assert.equal(classification.intent, "update_preferences");
+  assert.equal(classification.shouldRefreshBuyerProfile, true);
+  assert.equal(classification.shouldRunPropertyMatching, false);
+});
+
+test("criteria email reply with richer details still waits for Buyer Profile approval before matching", () => {
+  const classification = classifyInboundReply({
+    subject: "Re: Har jeg forstått boligønskene dine riktig?",
+    body: "Ja – ca. €450k, leilighet, helst 3 soverom.",
+  });
+  assert.equal(classification.intent, "update_preferences");
+  assert.equal(classification.shouldRefreshBuyerProfile, true);
   assert.equal(classification.shouldRunPropertyMatching, false);
 });
 

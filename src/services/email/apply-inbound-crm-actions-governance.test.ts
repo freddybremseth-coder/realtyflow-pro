@@ -26,11 +26,14 @@ test("inbound reply interactions carry an explicit Nexus automation audit actor"
   assert.match(source, /actor_type: "automation"/);
 });
 
-test("explicit DNC is persisted as permanent stopped nurture", () => {
+test("explicit DNC is persisted as permanent stopped nurture and closed pipeline", () => {
   assert.match(source, /classification\.intent === "do_not_contact"/);
+  assert.match(source, /update\.pipeline_status = "LOST"/);
+  assert.match(source, /update\.lost_reason = "do_not_contact"/);
   assert.match(source, /update\.do_not_contact = true/);
   assert.match(source, /update\.email_suppressed = true/);
   assert.match(source, /update\.nurture_status = "stopped"/);
+  assert.match(source, /email-crm-sync:do-not-contact/);
 });
 
 test("explicit DNC also cancels all open sales work", () => {
@@ -46,6 +49,23 @@ test("explicit terminal customer outcomes auto-close sales pipeline and follow-u
   assert.match(source, /update\.next_followup = null/);
   assert.match(source, /nextPipelineStatus = "LOST"/);
   assert.match(source, /recordPipelineTransition/);
+});
+
+test("later replies are parked instead of becoming immediate sales follow-up", () => {
+  assert.match(source, /classification\.intent === "follow_up_later"/);
+  assert.match(source, /update\.pipeline_status = "ON_HOLD"/);
+  assert.match(source, /update\.waiting_on = "customer"/);
+  assert.match(source, /update\.waiting_reason = "Kunden har bedt om oppfølging senere\."/);
+  assert.match(source, /update\.waiting_until = requestedFollowUpAt/);
+  assert.match(source, /update\.next_followup = null/);
+  assert.match(source, /email-crm-sync:follow-up-later/);
+  assert.match(source, /classification\.intent !== "follow_up_later"/);
+});
+
+test("vague later replies create only an internal date-review task", () => {
+  assert.match(source, /follow-up-date-review/);
+  assert.match(source, /Sett ventedato/);
+  assert.match(source, /Ikke kontakt kunden før datoen er avklart/);
 });
 
 test("governed active interest auto-advances only NEW leads to CONTACT and keeps human follow-up work", () => {

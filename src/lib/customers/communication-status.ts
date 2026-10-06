@@ -59,12 +59,14 @@ export function buildCustomerCommunicationState(
     return { ...base, status: "NO_EMAIL", label: "Mangler e-post", shouldReceiveEmail: false, blockedReason: "no_email" };
   }
   if (doNotContact || suppressed) {
+    const suppressionReason = String(contact.suppression_reason || "email_suppressed");
+    const manualTakeover = suppressionReason === "manual_owner_takeover";
     return {
       ...base,
       status: "STOPPED",
-      label: doNotContact ? "STOPP / ikke kontakt" : "E-post stoppet",
+      label: doNotContact ? "STOPP / ikke kontakt" : manualTakeover ? "Manuelt overtatt" : "E-post stoppet",
       shouldReceiveEmail: false,
-      blockedReason: doNotContact ? "do_not_contact" : String(contact.suppression_reason || "email_suppressed"),
+      blockedReason: doNotContact ? "do_not_contact" : suppressionReason,
     };
   }
   if (["WON", "LOST"].includes(pipeline)) {

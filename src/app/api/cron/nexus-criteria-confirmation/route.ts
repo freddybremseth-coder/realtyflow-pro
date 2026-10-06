@@ -59,6 +59,22 @@ function isExplicitCriteriaCorrection(value: string | null | undefined) {
   return /\b(nei|endre|endring|endret|feil|skal være|i stedet|isteden|bortsett|budsjett|pris|soverom|bad|område|sted|boligtype|villa|leilighet|rekkehus|instead|change|changed|wrong|budget|price|bedroom|bathroom|location|property type|except|cambiar|cambio|incorrecto|presupuesto|precio|dormitorio|baño|zona|tipo de vivienda)\b/i.test(normalized);
 }
 
+function isContextualPriorityAnswer(value: string | null | undefined, priorityQuestion: unknown) {
+  const question = String(priorityQuestion || "").trim();
+  if (!question) return false;
+
+  const latest = extractLatestReplyText(value || "") || String(value || "");
+  const normalized = latest
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized || normalized.length > 180) return false;
+  if (/^(ja|yes|si|sí|nei|no|takk|thanks|gracias|ok|okay|vet ikke|usikker|ingen preferanse)[.! ]*$/i.test(normalized)) return false;
+  return /[a-zæøåáéíóúñ]{2,}/i.test(normalized);
+}
+
 async function finishConfirmationReview(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   input: {
@@ -204,7 +220,12 @@ export async function GET(request: NextRequest) {
         metadata = record(refreshed.data?.metadata);
       }
 
-      if (metadata.confirmation_pending !== true || !metadata.confirmation_requested_at) continue;
+      const confirmationPending = metadata.confirmation_pending === true && Boolean(metadata.confirmation_requested_at);
+      const clarificationPending = metadata.criteria_clarification_pending === true && Boolean(metadata.criteria_clarification_requested_at);
+      if (!confirmationPending && !clarificationPending) continue;
+      const responseRequestedAt = confirmationPending
+        ? String(metadata.confirmation_requested_at)
+        : String(metadata.criteria_clarification_requested_at);
 
       const contact = await supabase
         .from("contacts")
@@ -223,7 +244,7 @@ export async function GET(request: NextRequest) {
         .select("id,subject,body_text,body_html,received_at")
         .eq("direction", "inbound")
         .ilike("from_address", contactEmail)
-        .gt("received_at", String(metadata.confirmation_requested_at))
+        .gt("received_at", responseRequestedAt)
         .order("received_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -234,16 +255,42 @@ export async function GET(request: NextRequest) {
       }
 
       const latestReply = extractLatestReplyText(String(inbound.data.body_text || inbound.data.body_html || ""));
+
+      if (clarificationPending) {
+        correctionReplies += 1;
+        await finishConfirmationReview(supabase, {
+          reviewWorkItemId: String(row.id),
+          metadata,
+          outcome: "criteria_clarification_reply_received",
+          responseEmailMessageId: String(inbound.data.id),
+          nextAction: "Kunden svarte på kriterieavklaringen. Nexus behandler svaret som ny kriterieinformasjon og bygger Buyer Profile på nytt.",
+          done: true,
+          extra: {
+            criteria_clarification_pending: false,
+            criteria_clarification_reply_preview: latestReply.slice(0, 800),
+          },
+        });
+        continue;
+      }
+
       if (!isAffirmativeCriteriaConfirmation(latestReply)) {
-        if (isExplicitCriteriaCorrection(latestReply)) {
+        const priorityQuestion = metadata.confirmation_priority_question;
+        const contextualPriorityAnswer = isContextualPriorityAnswer(latestReply, priorityQuestion);
+        if (isExplicitCriteriaCorrection(latestReply) || contextualPriorityAnswer) {
           correctionReplies += 1;
           await finishConfirmationReview(supabase, {
             reviewWorkItemId: String(row.id),
             metadata,
             outcome: "correction_or_clarification_received",
             responseEmailMessageId: String(inbound.data.id),
-            nextAction: "Kunden svarte med en tydelig korrigering eller utdyping. Nexus behandler det nye kundesvaret og bygger kriteriene på nytt.",
+            nextAction: contextualPriorityAnswer
+              ? "Kunden svarte på prioriteringsspørsmålet. Nexus behandler svaret som ny kriterieinformasjon og bygger kriteriene på nytt."
+              : "Kunden svarte med en tydelig korrigering eller utdyping. Nexus behandler det nye kundesvaret og bygger kriteriene på nytt.",
             done: true,
+            extra: contextualPriorityAnswer ? {
+              contextual_priority_question: String(priorityQuestion || ""),
+              contextual_priority_answer: latestReply.slice(0, 300),
+            } : undefined,
           });
         } else {
           ambiguousReplies += 1;

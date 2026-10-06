@@ -1,3 +1,5 @@
+import { classifyInboundReply, type InboundReplyIntent } from "@/lib/inbound-reply-intelligence";
+
 export type RevenuePriorityKind = "new" | "overdue" | "hot" | "closing" | "followup";
 export type RevenuePriorityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
@@ -20,6 +22,12 @@ export interface RevenueContactInput {
   created_at?: string | null;
   buying_signal_score?: number | null;
   purchase_signal_score?: number | null;
+  do_not_contact?: boolean | null;
+  email_suppressed?: boolean | null;
+  nurture_status?: string | null;
+  waiting_on?: string | null;
+  waiting_until?: string | null;
+  last_reply_classification?: string | null;
 }
 
 export interface RevenueMemoryEventInput {
@@ -157,6 +165,67 @@ function eventSourceSystem(event: RevenueMemoryEventInput) {
   return String(event.source_system || "").trim().toLowerCase();
 }
 
+const TERMINAL_REPLY_INTENTS = new Set<InboundReplyIntent>([
+  "do_not_contact",
+  "purchased_elsewhere",
+  "no_longer_buying",
+]);
+
+function latestCustomerReplyIntent(
+  events: RevenueMemoryEventInput[] | null | undefined,
+): InboundReplyIntent | null {
+  const sorted = [...(events || [])]
+    .map((event) => ({ event, at: eventTime(event) }))
+    .filter((item): item is { event: RevenueMemoryEventInput; at: Date } => Boolean(item.at))
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  const latestInbound = sorted.find((item) => {
+    return item.event.event_type === "email_received"
+      || eventSourceType(item.event) === "customer_message";
+  });
+  if (!latestInbound) return null;
+
+  const metadata = latestInbound.event.metadata && typeof latestInbound.event.metadata === "object"
+    ? latestInbound.event.metadata
+    : {};
+  const subject = String(metadata.subject || latestInbound.event.title || "");
+  const body = [
+    latestInbound.event.description,
+    metadata.body_preview,
+    metadata.summary,
+  ].map((value) => String(value || "")).filter(Boolean).join("\n");
+
+  return classifyInboundReply({ subject, body }).intent;
+}
+
+export function isRevenueFollowupBlocked(
+  contact: RevenueContactInput,
+  now = new Date(),
+  context: RevenueRecommendationContext = {},
+) {
+  if (contact.do_not_contact || contact.email_suppressed) return true;
+
+  const nurtureStatus = String(contact.nurture_status || "").trim().toLowerCase();
+  if (nurtureStatus === "stopped") return true;
+
+  const lastClassification = String(contact.last_reply_classification || "").trim().toLowerCase() as InboundReplyIntent;
+  if (TERMINAL_REPLY_INTENTS.has(lastClassification)) return true;
+
+  const waitingUntil = safeDate(contact.waiting_until);
+  const waitingOn = Boolean(String(contact.waiting_on || "").trim());
+  const stage = normalizeStage(contact.pipeline_status);
+  if (waitingUntil && waitingUntil.getTime() > now.getTime()) return true;
+  if ((waitingOn || stage === "ON_HOLD") && !waitingUntil) return true;
+
+  const latestIntent = latestCustomerReplyIntent(context.revenueEvents);
+  if (latestIntent && TERMINAL_REPLY_INTENTS.has(latestIntent)) return true;
+  if (latestIntent === "follow_up_later") {
+    if (!waitingUntil || waitingUntil.getTime() > now.getTime()) return true;
+  }
+
+  return false;
+}
+
 export function recommendActionFromRevenueMemory(
   events: RevenueMemoryEventInput[] | null | undefined,
   now = new Date(),
@@ -280,16 +349,20 @@ export function scoreRevenueMemorySignals(
     reasons.push("oppfølging sendt uten registrert svar");
   }
 
-  const hotText = sorted
-    .filter((item) => daysBetween(item.at, now) <= 14)
+  const customerSignalText = sorted
+    .filter((item) => {
+      if (daysBetween(item.at, now) > 14) return false;
+      return item.event.event_type === "email_received"
+        || ["customer_message", "preferences_updated"].includes(eventSourceType(item.event));
+    })
     .map((item) => eventText(item.event))
     .join(" ");
-  if (/reservasjon|reserve|reservation|tilbud|offer|klar|ready|finansiering|mortgage|reise|flight/.test(hotText)) {
+  if (/reservasjon|reserve|reservation|tilbud|offer|klar|ready|finansiering|mortgage|reise|flight/.test(customerSignalText)) {
     score += 10;
     reasons.push("sterkt kjøpssignal i kundeminne");
   }
 
-  if (/stopp|ikke aktuelt|not interested|unsubscribe/.test(hotText)) {
+  if (/stopp|ikke aktuelt|not interested|unsubscribe/.test(customerSignalText)) {
     score -= 25;
     reasons.push("negativt signal i kundeminne");
   }
@@ -380,6 +453,7 @@ export function buildRevenuePriority(
 ): RevenuePriorityItem | null {
   const stage = normalizeStage(contact.pipeline_status);
   if (!ACTIVE_STAGES.has(stage)) return null;
+  if (isRevenueFollowupBlocked(contact, now, context)) return null;
 
   const memoryScore = scoreRevenueMemorySignals(context.revenueEvents, now);
   const score = Math.max(0, Math.min(100, scoreRevenueContact(contact, now) + memoryScore.score));

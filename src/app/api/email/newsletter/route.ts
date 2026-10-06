@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { buildSmtpConfigFromAccount } from "@/services/email/account-auth";
 import { sendEmail, type OutgoingEmail } from "@/services/email/smtp-sender";
+import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
 import { requireAdminApi } from "@/lib/api-admin";
 
 function getSupabase() {
@@ -59,6 +60,17 @@ export async function POST(req: NextRequest) {
     let successCount = 0;
     let failCount = 0;
     for (const email of emailAddresses) {
+      const suppression = await checkCrmEmailSuppression(supabase, [email]);
+      if (suppression.error || suppression.blocked) {
+        failCount++;
+        results.push({
+          email,
+          success: false,
+          error: suppression.error ? `CRM suppression check failed: ${suppression.error}` : "Recipient blocked by CRM communication control",
+        });
+        continue;
+      }
+
       const outgoingEmail: OutgoingEmail = {
         to: [email],
         subject,

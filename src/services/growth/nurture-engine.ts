@@ -213,7 +213,7 @@ export async function runNurtureCycle(
   let query = supabase
     .from("contacts")
     .select(
-      "id, name, email, brand_id, brand, source, pipeline_status, nurture_status, nurture_sequence, property_interest, created_at, nurture_enrolled_at, do_not_contact, email_suppressed, last_inbound_reply_at",
+      "id, name, email, brand_id, brand, source, pipeline_status, nurture_status, nurture_sequence, property_interest, created_at, nurture_enrolled_at, do_not_contact, email_suppressed, last_inbound_reply_at, waiting_until",
     )
     .order("created_at", { ascending: false })
     .limit(Math.max(limit, 1000));
@@ -311,6 +311,8 @@ export async function runNurtureCycle(
       doNotContact: contact.do_not_contact,
       emailSuppressed: contact.email_suppressed,
       pipelineStatus: status,
+      nurtureStatus: contact.nurture_status,
+      waitingUntil: contact.waiting_until,
       lastInboundReplyAt: contact.last_inbound_reply_at,
       lastRealSendAt,
     });

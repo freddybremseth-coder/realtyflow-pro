@@ -82,6 +82,21 @@ test("explicitly linked outbound email is marked outbound", () => {
   assert.equal(events[0].title, "E-post sendt: Boligforslag");
 });
 
+test("CRM-contact-linked email is included with body preview", () => {
+  const events = buildLinkedEmailTimelineEvents([{
+    id: "mail-crm-1",
+    direction: "inbound",
+    subject: "Svar på kriterier",
+    body_text: "Punta Prima er viktigst for oss.",
+    crm_contact_id: "contact-3",
+    received_at: "2026-08-29T10:00:00.000Z",
+  }]);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].direction, "in");
+  assert.match(String(events[0].detail), /Punta Prima er viktigst/);
+});
+
 test("unlinked email is excluded even if it has a valid timestamp", () => {
   const events = buildLinkedEmailTimelineEvents([{
     id: "mail-unlinked",

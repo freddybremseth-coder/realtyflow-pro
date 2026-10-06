@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   let contactsQuery = supabase
     .from("contacts")
-    .select("id,name,email,brand_id,brand,pipeline_status,nurture_status,do_not_contact,email_suppressed,suppression_reason,last_inbound_reply_at")
+    .select("id,name,email,brand_id,brand,pipeline_status,nurture_status,do_not_contact,email_suppressed,suppression_reason,last_inbound_reply_at,waiting_until")
     .limit(2500);
   if (brandId) contactsQuery = contactsQuery.eq("brand_id", brandId);
 
@@ -113,6 +113,8 @@ export async function POST(request: NextRequest) {
       doNotContact: contact.do_not_contact,
       emailSuppressed: contact.email_suppressed,
       pipelineStatus: contact.pipeline_status,
+      nurtureStatus: contact.nurture_status,
+      waitingUntil: contact.waiting_until,
       lastInboundReplyAt: contact.last_inbound_reply_at,
       lastRealSendAt: summary.lastSentAt,
     });

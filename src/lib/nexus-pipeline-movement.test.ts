@@ -1,29 +1,40 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import test from "node:test";
 import { assessPipelineMovement } from "./nexus-pipeline-movement";
 
 const now = new Date("2026-09-07T18:00:00.000Z");
 
-describe("assessPipelineMovement", () => {
-  it("keeps planned waiting out of stagnation", () => {
-    const result = assessPipelineMovement({ id:"1", email:"a@example.com", pipeline_status:"ON_HOLD", waiting_on:"customer", waiting_until:"2026-10-01T10:00:00.000Z", waiting_reason:"Kunden kommer i oktober" }, now);
-    expect(result?.cause).toBe("waiting_planned");
-    expect(result?.needsAction).toBe(false);
-  });
+test("keeps planned waiting out of stagnation", () => {
+  const result = assessPipelineMovement({ id:"1", email:"a@example.com", pipeline_status:"ON_HOLD", waiting_on:"customer", waiting_until:"2026-10-01T10:00:00.000Z", waiting_reason:"Kunden kommer i oktober" }, now);
+  assert.equal(result?.cause, "waiting_planned");
+  assert.equal(result?.needsAction, false);
+});
 
-  it("moves qualified buyers with direction toward matching", () => {
-    const result = assessPipelineMovement({ id:"2", email:"b@example.com", pipeline_status:"QUALIFIED", preferred_location:"Altea", last_contact:"2026-09-01T10:00:00.000Z" }, now);
-    expect(result?.cause).toBe("ready_for_matching");
-    expect(result?.targetStage).toBe("MATCHING");
-  });
+test("treats ON_HOLD without a waiting date as fail-closed", () => {
+  const result = assessPipelineMovement({ id:"hold-no-date", email:"hold@example.com", pipeline_status:"ON_HOLD" }, now);
+  assert.equal(result?.cause, "waiting_planned");
+  assert.equal(result?.needsAction, false);
+  assert.match(result?.action || "", /ventedato/i);
+});
 
-  it("flags qualified buyers without direction", () => {
-    const result = assessPipelineMovement({ id:"3", email:"c@example.com", pipeline_status:"QUALIFIED", last_contact:"2026-09-01T10:00:00.000Z" }, now);
-    expect(result?.cause).toBe("missing_buyer_direction");
-  });
+test("excludes terminal reply classifications even if stage is still qualified", () => {
+  const result = assessPipelineMovement({ id:"stale-terminal", email:"x@example.com", pipeline_status:"QUALIFIED", last_reply_classification:"no_longer_buying" }, now);
+  assert.equal(result, null);
+});
 
-  it("surfaces unknown pipeline states as data quality", () => {
-    const result = assessPipelineMovement({ id:"4", email:"d@example.com", pipeline_status:"paid" }, now);
-    expect(result?.cause).toBe("data_quality");
-    expect(result?.priority).toBe("CRITICAL");
-  });
+test("moves qualified buyers with direction toward matching", () => {
+  const result = assessPipelineMovement({ id:"2", email:"b@example.com", pipeline_status:"QUALIFIED", preferred_location:"Altea", last_contact:"2026-09-01T10:00:00.000Z" }, now);
+  assert.equal(result?.cause, "ready_for_matching");
+  assert.equal(result?.targetStage, "MATCHING");
+});
+
+test("flags qualified buyers without direction", () => {
+  const result = assessPipelineMovement({ id:"3", email:"c@example.com", pipeline_status:"QUALIFIED", last_contact:"2026-09-01T10:00:00.000Z" }, now);
+  assert.equal(result?.cause, "missing_buyer_direction");
+});
+
+test("surfaces unknown pipeline states as data quality", () => {
+  const result = assessPipelineMovement({ id:"4", email:"d@example.com", pipeline_status:"paid" }, now);
+  assert.equal(result?.cause, "data_quality");
+  assert.equal(result?.priority, "CRITICAL");
 });

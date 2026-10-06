@@ -12,6 +12,17 @@ assert.equal(evaluateNurtureSendability({ email: "buyer@example.com", doNotConta
 assert.equal(evaluateNurtureSendability({ email: "buyer@example.com", emailSuppressed: true }).reason, "EMAIL_SUPPRESSED");
 assert.equal(evaluateNurtureSendability({ email: "buyer@example.com", pipelineStatus: "LOST" }).reason, "TERMINAL_PIPELINE");
 assert.equal(evaluateNurtureSendability({ email: "buyer@example.com", pipelineStatus: "WON" }).reason, "TERMINAL_PIPELINE");
+assert.equal(evaluateNurtureSendability({ email: "buyer@example.com", nurtureStatus: "paused" }).reason, "NURTURE_PAUSED");
+assert.equal(evaluateNurtureSendability({ email: "buyer@example.com", nurtureStatus: "stopped" }).reason, "NURTURE_STOPPED");
+assert.equal(evaluateNurtureSendability({ email: "buyer@example.com", pipelineStatus: "ON_HOLD" }).reason, "ON_HOLD");
+assert.equal(
+  evaluateNurtureSendability({
+    email: "buyer@example.com",
+    waitingUntil: "2028-10-04T16:03:13Z",
+    now: new Date("2026-10-05T19:00:00Z"),
+  }).reason,
+  "WAITING_UNTIL",
+);
 
 const unresolved = evaluateNurtureSendability({
   email: "buyer@example.com",
