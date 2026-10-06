@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   const addressLine = clean(body.addressLine, 240);
   const municipality = clean(body.municipality, 120);
   const postcode = clean(body.postcode, 24);
-  const planId = clean(body.planId, 80);
+  const requestedPlanId = clean(body.planId, 80);
   const startsOn = clean(body.startsOn, 10) || new Date().toISOString().slice(0, 10);
   const billingDay = Math.round(Number(body.billingDay || 1));
 
@@ -59,9 +59,29 @@ export async function POST(request: NextRequest) {
   if (!addressLine || !municipality) {
     return NextResponse.json({ error: "Adresse og kommune er påkrevd." }, { status: 400 });
   }
-  if (planId && !UUID.test(planId)) {
+  if (requestedPlanId && !UUID.test(requestedPlanId)) {
     return NextResponse.json({ error: "Ugyldig Care-plan." }, { status: 400 });
   }
+
+  const { data: acceptedQuote, error: quoteError } = await supabase
+    .schema("care")
+    .from("kh_quotes")
+    .select("id,plan_id,status")
+    .eq("work_item_id", workItemId)
+    .eq("contact_id", contactId)
+    .maybeSingle();
+
+  if (quoteError && !/relation .*kh_quotes.*does not exist/i.test(String(quoteError.message || ""))) {
+    return NextResponse.json({ error: quoteError.message }, { status: 400 });
+  }
+
+  const acceptedQuotePlanId = acceptedQuote?.status === "accepted" && UUID.test(String(acceptedQuote.plan_id || ""))
+    ? String(acceptedQuote.plan_id)
+    : "";
+  if (acceptedQuotePlanId && requestedPlanId && requestedPlanId !== acceptedQuotePlanId) {
+    return NextResponse.json({ error: "Care-planen må samsvare med det aksepterte tilbudet." }, { status: 409 });
+  }
+  const planId = acceptedQuotePlanId || requestedPlanId;
   if (!validDate(startsOn)) {
     return NextResponse.json({ error: "Ugyldig startdato." }, { status: 400 });
   }
@@ -91,6 +111,18 @@ export async function POST(request: NextRequest) {
       { error: migrationMissing ? "Care-onboarding er ikke aktivert i databasen ennå." : message },
       { status: migrationMissing ? 503 : 400 },
     );
+  }
+
+  const onboarding = data && typeof data === "object" && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : {};
+  const propertyId = clean(onboarding.property_id, 80);
+  if (acceptedQuote?.id && UUID.test(propertyId)) {
+    await supabase
+      .schema("care")
+      .from("kh_quotes")
+      .update({ property_id: propertyId, updated_at: new Date().toISOString() })
+      .eq("id", acceptedQuote.id);
   }
 
   return NextResponse.json({ success: true, onboarding: data });
