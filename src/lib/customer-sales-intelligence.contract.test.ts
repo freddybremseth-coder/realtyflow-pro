@@ -43,6 +43,9 @@ test("Customer 360 exposes an on-demand AI Sales Coach without auto-send", () =>
   assert.match(cardSource, /AI Sales Coach/);
   assert.match(cardSource, /Hjelp meg å dra salget fremover/);
   assert.match(cardSource, /runSalesCoach/);
+  assert.match(cardSource, /Valgfri kundetekst å analysere/);
+  assert.match(cardSource, /WhatsApp-melding/);
+  assert.match(cardSource, /sourceText: salesCoachSourceText/);
   assert.match(routeSource, /emailSent:\s*false/);
   assert.match(routeSource, /autoSendAllowed:\s*false/);
   assert.match(routeSource, /externalAction:\s*false/);
