@@ -562,7 +562,7 @@ async function discoverEditorialContent(
 
   const knownUrls = new Set(items.map((item) => item.url).filter(Boolean));
   for (const page of publicPages) {
-    if (knownUrls.has(page.url)) continue;
+    if (page.kind === "area" || knownUrls.has(page.url)) continue;
     const lastShared = recentSocial.find((social: any) =>
       page.url && String(social.description || "").includes(page.url));
     const haystack = [page.title, page.summary, page.url].join(" ").toLowerCase();
@@ -623,7 +623,9 @@ async function discoverEditorialContent(
 
   const byScore = [...items].sort((a, b) => b.score - a.score || String(b.publishedAt || b.updatedAt || "").localeCompare(String(a.publishedAt || a.updatedAt || "")));
   const byRecent = [...items].sort((a, b) => String(b.publishedAt || b.updatedAt || "").localeCompare(String(a.publishedAt || a.updatedAt || "")));
-  const guides = byRecent.filter((item) => item.kind === "guide").slice(0, 12);
+  const recentGuides = byRecent.filter((item) =>
+    item.kind === "guide" && recentEnough(item.publishedAt || item.updatedAt, 45));
+  const guides = (recentGuides.length ? recentGuides : byRecent.filter((item) => item.kind === "guide")).slice(0, 12);
   const magazine = byRecent.filter((item) => item.kind === "magazine" || item.kind === "article").slice(0, 12);
   const areas = byScore.filter((item) => item.kind === "area").slice(0, 12);
   const notShared = byScore.filter((item) => item.notShared60Days).slice(0, 12);
