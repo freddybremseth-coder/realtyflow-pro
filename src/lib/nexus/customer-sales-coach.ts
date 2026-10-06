@@ -172,8 +172,8 @@ export function buildCustomerSalesCoachFallback(input: CustomerSalesCoachInput):
       : "Flytt salget fremover ved å redusere én konkret usikkerhet og få ett gjensidig neste steg.",
     currentPhase: phaseFromStage(stage),
     customerSituation: {
-      needHypothesis: input.activeBuyerProfile?.summary
-        ? text(input.activeBuyerProfile.summary)
+      needHypothesis: input.buyerProfile?.summary
+        ? text(input.buyerProfile.summary)
         : `Kunden er i ${stage}-fasen, men behovet må fortsatt styres av bekreftet Buyer Profile og kundens egne svar.`,
       evidence,
       uncertainties: input.advisor.missing.concat(input.advisor.risks).slice(0, 6),
