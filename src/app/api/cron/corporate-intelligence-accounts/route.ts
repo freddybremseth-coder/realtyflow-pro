@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(await runCorporateIntelligenceAccountBatch(supabase, { trigger: "cron" }));
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Corporate Intelligence account batch failed" },
+      { error: error instanceof Error ? error.message : "Batchkjøring for bedriftsinnsikt feilet" },
       { status: 500 },
     );
   }
