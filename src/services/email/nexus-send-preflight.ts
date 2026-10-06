@@ -80,6 +80,8 @@ export async function runNexusSendPreflight(input: { supabase: SupabaseClient; b
     contact = contactResult.data;
   }
   const recipient = text(contact?.email);
-  const suppression = recipient ? await checkCrmEmailSuppression(supabase, [recipient]) : { blocked: false, blockedEmails: [] as string[] };
+  const suppression = recipient
+    ? await checkCrmEmailSuppression(supabase, [recipient])
+    : { blocked: false, blockedEmails: [] as string[], manualTakeoverEmails: [] as string[], error: undefined };
   return assessNexusSendPreflight({ brandId, profile, shortlist, presentation, draft, contact, shortlistItems: shortlistItemsResult.data || [], senderConfigured: Boolean(senderResult.data?.length), suppressionBlocked: suppression.blocked, suppressionError: suppression.error || null });
 }
