@@ -65,8 +65,8 @@ function normalizeEmailGreeting(value: unknown, name: unknown) {
   if (!body) return "";
   const preferred = firstName(name);
   return body
-    .replace(/^Hei\s+der\s*[,!]?/i, preferred ? \`Hei \${preferred},\` : "Hei,")
-    .replace(/^Hei\s+du\s*[,!]?/i, preferred ? \`Hei \${preferred},\` : "Hei,");
+    .replace(/^Hei\s+der\s*[,!]?/i, preferred ? `Hei ${preferred},` : "Hei,")
+    .replace(/^Hei\s+du\s*[,!]?/i, preferred ? `Hei ${preferred},` : "Hei,");
 }
 
 function phaseFromStage(stage: string): CustomerSalesCoachOutput["currentPhase"] {
