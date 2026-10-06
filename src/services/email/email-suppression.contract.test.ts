@@ -23,7 +23,7 @@ test("email suppression includes inbound opt-out evidence", () => {
 
 test("email suppression remains fail closed", () => {
   assert.match(source, /contactResult\.error \|\| inboundOptOutResult\.error/);
-  assert.match(source, /return \{ blocked: true, blockedEmails: \[\], manualTakeoverEmails: \[\], error: failed\.error\.message \}/);
+  assert.match(source, /return \{ blocked: true, blockedEmails: \[\], manualTakeoverEmails: \[\], hardBlockedEmails: \[\], error: failed\.error\.message \}/);
 });
 
 test("existing CRM suppression remains authoritative", () => {
@@ -37,9 +37,12 @@ test("manual advisor takeover is exposed separately from ordinary suppression", 
   assert.match(source, /manual_owner_takeover/);
 });
 
-test("manual advisor takeover blocks sendBrandEmail even when allowSuppressed is true", () => {
+test("manual advisor takeover remains blocked for automation but explicit manualAdvisorAction cannot bypass hard suppression", () => {
   assert.match(senderSource, /manualTakeoverEmails/);
+  assert.match(senderSource, /manualAdvisorAction/);
+  assert.match(senderSource, /hardBlockedEmails/);
+  assert.match(senderSource, /Recipient has a hard CRM email block/);
+  const manualGate = senderSource.indexOf("params.manualAdvisorAction");
   const takeoverGate = senderSource.indexOf("manualTakeoverEmails");
-  const allowSuppressedGate = senderSource.indexOf("!params.allowSuppressed");
-  assert.ok(takeoverGate >= 0 && allowSuppressedGate >= 0 && takeoverGate < allowSuppressedGate);
+  assert.ok(manualGate >= 0 && takeoverGate > manualGate);
 });
