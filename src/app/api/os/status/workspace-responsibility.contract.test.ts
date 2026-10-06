@@ -6,11 +6,10 @@ import { fileURLToPath } from "node:url";
 const routePath = fileURLToPath(new URL("./route.ts", import.meta.url));
 const pagePath = fileURLToPath(new URL("../../../(content)/os/page.tsx", import.meta.url));
 
-test("OS status reads workspace responsibility coverage from server-only core tables", async () => {
+test("OS status reads workspace responsibility coverage through the service-only snapshot boundary", async () => {
   const source = await readFile(routePath, "utf8");
-  assert.match(source, /schema\("core"\)\.from\("workspace_user_directory"\)/);
-  assert.match(source, /schema\("core"\)\.from\("brand_workspace_memberships"\)/);
-  assert.match(source, /schema\("core"\)\.from\("brand_workspace_responsibilities"\)/);
+  assert.match(source, /loadWorkspaceTeamCoreSnapshot/);
+  assert.doesNotMatch(source, /schema\("core"\)/);
   assert.match(source, /buildWorkspaceTeamResponsibilityOverview/);
   assert.match(source, /buildWorkspaceResponsibilityAttention/);
   assert.match(source, /sourceError\(sourceErrors, "Team ansvar"/);
