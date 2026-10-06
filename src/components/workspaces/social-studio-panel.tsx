@@ -235,10 +235,10 @@ export function WorkspaceSocialStudio({
   }
 
   useEffect(() => {
-    if (sourceType !== "article" && sourceType !== "area") return;
     if (editorial || editorialBusy) return;
+    if (sourceType !== "article" && sourceType !== "area" && !propertyContext?.id) return;
     void loadEditorialContent();
-  }, [sourceType, brandKey, companionPropertyLookup]);
+  }, [sourceType, brandKey, companionPropertyLookup, propertyContext?.id]);
 
   async function generate() {
     if (!canGenerate) return;
@@ -396,7 +396,18 @@ export function WorkspaceSocialStudio({
 
     <div className="mt-5 grid gap-3 md:grid-cols-3">
       {sourceOptions.map(({ id, label, hint, icon: Icon }) => <button type="button" key={id}
-        onClick={() => { setSourceType(id); setVariants([]); setSource(null); setError(""); setNotice(""); }}
+        onClick={() => {
+          setSourceType(id);
+          setVariants([]);
+          setSource(null);
+          setError("");
+          setNotice("");
+          if (id === "article") {
+            setSelectedContent(null);
+            setContentId("");
+            setAreaLookup("");
+          }
+        }}
         className={"rounded-xl border p-4 text-left transition " + (sourceType === id
           ? "border-cyan-600 bg-cyan-950/35"
           : "border-slate-800 bg-slate-900/70 hover:border-slate-600")}>
@@ -405,6 +416,87 @@ export function WorkspaceSocialStudio({
         <div className="mt-1 text-xs text-slate-400">{hint}</div>
       </button>)}
     </div>
+
+    {(sourceType === "article" || sourceType === "area" || propertyContext?.id) && <section className="mt-5 rounded-2xl border border-violet-900/60 bg-violet-950/10 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-violet-300">Redaksjonell innholdsvelger</p>
+          <h3 className="mt-1 text-lg font-semibold">Velg hva som er smartest å fronte nå</h3>
+          <p className="mt-1 max-w-3xl text-xs text-slate-400">
+            RealtyFlow rangerer publiserte guider, magasininnhold og områder, og ser samtidig på hva som ikke er delt de siste 60 dagene.
+          </p>
+        </div>
+        <button type="button" onClick={() => void loadEditorialContent()} disabled={editorialBusy}
+          className="rounded-lg border border-violet-700 px-3 py-2 text-xs text-violet-200 disabled:opacity-40">
+          {editorialBusy ? "Henter…" : editorial ? "Oppdater forslag" : "Hent forslag"}
+        </button>
+      </div>
+
+      {propertyContext?.id && <div className="mt-3 rounded-xl border border-cyan-900/60 bg-cyan-950/20 p-3">
+        <p className="text-xs font-semibold text-cyan-200">Kontekstbolig</p>
+        <p className="mt-1 text-sm text-slate-200">
+          {propertyContext.title || propertyContext.ref || "Valgt bolig"}
+          {propertyContext.location ? " · " + propertyContext.location : ""}
+          {propertyContext.ref ? " · Ref " + propertyContext.ref : ""}
+        </p>
+        <p className="mt-1 text-xs text-slate-400">Velger du innhold under, lager RealtyFlow tre konsepter som kan koble innholdet til denne boligen uten å blande fakta.</p>
+      </div>}
+
+      {editorialError && <p className="mt-3 rounded-lg border border-amber-800 bg-amber-950/20 p-3 text-xs text-amber-200">{editorialError}</p>}
+
+      {editorial?.pairings?.length > 0 && propertyContext?.id && <div className="mt-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Foreslåtte kombinasjoner</p>
+        <div className="mt-2 grid gap-2 md:grid-cols-2">
+          {editorial.pairings.map(pairing => {
+            const item = [
+              ...editorial.recommended,
+              ...editorial.newGuides,
+              ...editorial.magazine,
+              ...editorial.areas,
+              ...editorial.notShared60Days,
+            ].find(candidate => candidate.id === pairing.itemId);
+            if (!item) return null;
+            return <button key={pairing.itemId} type="button" onClick={() => chooseEditorialItem(item)}
+              className="rounded-xl border border-cyan-900/60 bg-slate-950/55 p-3 text-left hover:border-cyan-600">
+              <div className="text-sm font-semibold text-slate-100">{pairing.recommendation}</div>
+              <div className="mt-1 text-xs text-slate-400">{pairing.reason}</div>
+              <div className="mt-2 text-[11px] font-semibold text-cyan-300">Anbefalt vinkel: Advisor / Insight →</div>
+            </button>;
+          })}
+        </div>
+      </div>}
+
+      <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        {EDITORIAL_CATEGORIES.map(category => <button key={category.id} type="button"
+          onClick={() => setEditorialCategory(category.id)}
+          className={"shrink-0 rounded-full border px-3 py-1.5 text-xs " + (editorialCategory === category.id
+            ? "border-violet-500 bg-violet-950/60 text-violet-100"
+            : "border-slate-700 text-slate-400 hover:border-slate-500")}>
+          {category.label}
+        </button>)}
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {editorialItems.map(item => <button key={item.id} type="button" onClick={() => chooseEditorialItem(item)}
+          className={"rounded-xl border p-3 text-left transition " + (selectedContent?.id === item.id
+            ? "border-emerald-600 bg-emerald-950/20"
+            : "border-slate-800 bg-slate-950/50 hover:border-slate-600")}>
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-300">
+              {item.kind === "area" ? "Område" : item.kind === "guide" ? "Guide" : item.kind === "magazine" ? "Magasin" : "Artikkel"}
+            </span>
+            {item.notShared60Days && <span className="rounded-full border border-amber-800 px-2 py-0.5 text-[9px] text-amber-300">60+ dager</span>}
+          </div>
+          <div className="mt-1 text-sm font-semibold text-slate-100">{item.title}</div>
+          {item.summary && <div className="mt-1 line-clamp-2 text-xs text-slate-400">{item.summary}</div>}
+          <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-500">
+            {formatContentDate(item.publishedAt || item.updatedAt) && <span>{formatContentDate(item.publishedAt || item.updatedAt)}</span>}
+            {item.score > 0 && <span>Relevans {item.score}</span>}
+          </div>
+        </button>)}
+        {!editorialBusy && editorial && editorialItems.length === 0 && <p className="text-xs text-slate-500">Ingen innholdskilder i denne kategorien ennå.</p>}
+      </div>
+    </section>}
 
     <div className="mt-5 grid gap-3">
       {sourceType === "property" && <>
@@ -415,18 +507,34 @@ export function WorkspaceSocialStudio({
             placeholder="F.eks. N9950"/>
         </label>
       </>}
-      {sourceType === "article" && <label className="text-xs text-slate-300">Lenke til Guide / Magasin
-        <input type="url" value={articleUrl} onChange={(event) => setArticleUrl(event.target.value)}
-          maxLength={2000} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-          placeholder={brandKey === "zeneco" ? "https://www.zenecohomes.com/guide/…" : "https://www.pinosoecolife.com/…"} />
-        <span className="mt-1 block text-[11px] text-slate-500">Kun merkevarens eget nettsted kan hentes. Artikkelteksten brukes som faktakilde.</span>
-      </label>}
+      {sourceType === "article" && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+        {selectedContent?.sourceType === "article" && <div className="mb-3 rounded-lg border border-emerald-900 bg-emerald-950/20 p-3">
+          <p className="text-xs font-semibold text-emerald-300">Valgt fra innholdsvelgeren</p>
+          <p className="mt-1 text-sm font-semibold text-slate-100">{selectedContent.title}</p>
+          {propertyContext?.id && <p className="mt-1 text-xs text-slate-400">Kombineres med valgt bolig. Advisor/Insight vil bruke koblingen når den er naturlig.</p>}
+        </div>}
+        <label className="text-xs text-slate-300">Guide / Magasin-URL
+          <input type="url" value={articleUrl} onChange={(event) => {
+              setArticleUrl(event.target.value);
+              setSelectedContent(null);
+              setContentId("");
+            }}
+            maxLength={2000} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+            placeholder={brandKey === "zeneco" ? "https://www.zenecohomes.com/guide/…" : "https://www.pinosoecolife.com/…"} />
+          <span className="mt-1 block text-[11px] text-slate-500">Du kan fortsatt lime inn URL manuelt. Kun merkevarens godkjente domene hentes.</span>
+        </label>
+      </div>}
+      {sourceType === "area" && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+        <p className="text-xs font-semibold text-emerald-300">Valgt område</p>
+        <p className="mt-1 text-sm font-semibold text-slate-100">{selectedContent?.title || "Område fra RealtyFlow"}</p>
+        <p className="mt-1 text-xs text-slate-400">Områdeprofilen brukes direkte som faktakilde. Ingen nettside-URL trenger å limes inn.</p>
+      </div>}
       {sourceType === "topic" && <label className="text-xs text-slate-300">Tema
         <textarea value={topic} onChange={(event) => setTopic(event.target.value)} maxLength={1200} rows={3}
           className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
           placeholder="F.eks. Hva bør en norsk kjøper vite før han velger Finestrat som helårsbolig?"/>
       </label>}
-      {sourceType !== "property" && <label className="text-xs text-slate-300">Bildeadresse <span className="text-slate-500">(valgfritt)</span>
+      {sourceType !== "property" && sourceType !== "area" && <label className="text-xs text-slate-300">Bildeadresse <span className="text-slate-500">(valgfritt)</span>
         <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} maxLength={2000}
           className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="https://…"/>
         <span className="mt-1 block text-[11px] text-slate-500">Instagram krever at bildet allerede er godkjent brand-media i RealtyFlow.</span>
