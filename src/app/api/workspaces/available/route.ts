@@ -42,8 +42,6 @@ export async function GET(request: NextRequest) {
         (Array.isArray(grant.permissions) && grant.permissions.includes("tasks.joint.read"))) &&
       (permission !== "crm.joint.write" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("crm.joint.read"))) &&
-      (permission !== "customer360.write" ||
-        (Array.isArray(grant.permissions) && grant.permissions.includes("customer360.read"))) &&
       (permission !== "marketing.draft" ||
         (Array.isArray(grant.permissions) && grant.permissions.includes("marketing.read"))) &&
       (permission !== "marketing.publish" ||
