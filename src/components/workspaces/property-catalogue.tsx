@@ -17,9 +17,35 @@ export type WorkspacePropertyCard = {
   property_type: string | null;
   primary_image: string | null;
   source: string | null;
+  pool: boolean | null;
   marketable_by_brands: string[];
   can_market_on_workspace_brand: boolean;
 };
+
+type PropertyFilters = {
+  q: string;
+  area: string;
+  type: string;
+  priceMin: string;
+  priceMax: string;
+  bedroomsMin: string;
+  bathroomsMin: string;
+  pool: "any" | "true" | "false";
+  areaMin: string;
+  plotMin: string;
+  sort: "newest" | "price_asc" | "price_desc" | "area_desc";
+};
+
+const emptyFilters: PropertyFilters = {
+  q: "", area: "", type: "", priceMin: "", priceMax: "",
+  bedroomsMin: "", bathroomsMin: "", pool: "any", areaMin: "", plotMin: "", sort: "newest",
+};
+
+const suggestedTypes = [
+  "Villa", "Leilighet", "Penthouse", "Bungalow", "Rekkehus",
+  "Ground floor apartment", "Semidetached", "Ground Floor Bungalow",
+  "Quad House", "Top Floor Bungalow", "Studio",
+];
 
 const price = (value: number | null) => value == null
   ? "Pris på forespørsel"
