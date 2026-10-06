@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { WorkspacePropertyCatalogue, type WorkspacePropertyCard } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
@@ -27,7 +27,28 @@ type Contact = {
   created_at?: string | null;
   updated_at?: string | null;
 };
+type CrmSummary = {
+  matchedCount: number;
+  staleCount: number;
+  statusCounts: Record<string, number>;
+};
 type Tab = "today" | "leads" | "growth" | "properties";
+
+const crmStatuses = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "WON", "ON_HOLD", "LOST"] as const;
+const crmStatusLabels: Record<string, string> = {
+  NEW: "Ny", CONTACT: "Kontakt", QUALIFIED: "Kvalifisert", VIEWING: "Visning",
+  NEGOTIATION: "Forhandling", WON: "Vunnet", ON_HOLD: "På vent", LOST: "Tapt", UNSET: "Uten status",
+};
+function crmDate(value?: string | null) {
+  if (!value) return "Ukjent";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Ukjent" : date.toLocaleDateString("nb-NO");
+}
+function crmIsStale(value?: string | null) {
+  if (!value) return true;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) || Date.now() - time > 7 * 86_400_000;
+}
 const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
   { id: "today", label: "I dag", icon: Building2 },
   { id: "leads", label: "Kunder & leads", icon: Users, permitted: ["crm.read", "crm.joint.read", "tasks.joint.read"] },
@@ -45,9 +66,12 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
 
 export default function FocusedWorkspacePage() {
   const params = useParams();
+  const routeSearchParams = useSearchParams();
   const brandKey = String(params.brandKey || "");
-  const [requestedTab, setRequestedTab] = useState<string | null>(null);
-  const [requestedArea, setRequestedArea] = useState<string | null>(null);
+  const requestedTab = routeSearchParams.get("tab");
+  const requestedArea = routeSearchParams.get("area");
+  const requestedFocus = routeSearchParams.get("focus");
+  const requestedTraining = routeSearchParams.get("training");
   const [tab, setTab] = useState<Tab>("today");
   const [permissions, setPermissions] = useState<WorkspacePermission[]>([]);
   const [responsibilities, setResponsibilities] = useState<WorkspaceResponsibilityId[]>([]);
@@ -59,8 +83,13 @@ export default function FocusedWorkspacePage() {
   const [owner, setOwner] = useState(false);
   const [search, setSearch] = useState("");
   const [crmQuery, setCrmQuery] = useState("");
+  const [crmSourceDraft, setCrmSourceDraft] = useState("");
+  const [crmSource, setCrmSource] = useState("");
+  const [crmStatus, setCrmStatus] = useState("");
+  const [crmSort, setCrmSort] = useState("updated_desc");
   const [crmPage, setCrmPage] = useState(1);
   const [crmHasMore, setCrmHasMore] = useState(false);
+  const [crmSummary, setCrmSummary] = useState<CrmSummary | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
@@ -73,19 +102,13 @@ export default function FocusedWorkspacePage() {
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
 
   useEffect(() => {
-    const query = new URLSearchParams(window.location.search);
-    setRequestedTab(query.get("tab"));
-    setRequestedArea(query.get("area"));
-  }, [brandKey]);
-
-  useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
       .then(body => setOwner(body?.user?.role === "OWNER")).catch(() => setOwner(false));
   }, []);
 
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setError(""); setTab("today"); setShowTraining(false); setPermissions([]); setResponsibilities([]); setContacts([]);
+    setLoading(true); setError(""); setTab("today"); setShowTraining(requestedTraining === "1"); setPermissions([]); setResponsibilities([]); setContacts([]);
     fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/capabilities`, {
       cache: "no-store", signal: abort.signal,
     }).then(async res => {
@@ -109,26 +132,44 @@ export default function FocusedWorkspacePage() {
       .catch(cause => { if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "Kunne ikke åpne arbeidsområdet."); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [brandKey, requestedTab]);
+  }, [brandKey, requestedTab, requestedTraining]);
 
   async function loadCrm() {
     if (!permissions.includes("crm.read") && !permissions.includes("crm.joint.read")) return;
     setCrmBusy(true); setCrmError("");
     try {
       const endpoint = brandKey === "zeneco" && !permissions.includes("crm.read") ? "joint-contacts" : "contacts";
-      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/${endpoint}?page=${crmPage}&q=${encodeURIComponent(crmQuery)}`, { cache: "no-store" });
+      const query = new URLSearchParams({
+        page: String(crmPage),
+        q: crmQuery,
+        status: crmStatus,
+        source: crmSource,
+        sort: crmSort,
+      });
+      const result = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/${endpoint}?${query.toString()}`, { cache: "no-store" });
       if (!result.ok) throw new Error(result.status === 403
-        ? "Du har ikke CRM-tilgang i dette arbeidsområdet." : "CRM er ikke tilgjengelig ennå.");
+        ? "Du har ikke CRM-tilgang i dette arbeidsområdet."
+        : result.status === 400 ? "Kontroller CRM-filtrene."
+        : "CRM er ikke tilgjengelig ennå.");
       const body = await result.json();
       const nextContacts = Array.isArray(body.contacts) ? body.contacts : [];
       setContacts(nextContacts);
       setSelectedCustomerId(current =>
         current && nextContacts.some((contact: Contact) => contact.id === current) ? current : "");
       setCrmHasMore(Boolean(body.hasMore));
-    } catch (cause) { setContacts([]); setCrmHasMore(false); setCrmError(cause instanceof Error ? cause.message : "Kunne ikke hente CRM."); }
+      const summary = body.summary && typeof body.summary === "object" ? body.summary : null;
+      setCrmSummary(summary ? {
+        matchedCount: Number(summary.matchedCount || 0),
+        staleCount: Number(summary.staleCount || 0),
+        statusCounts: summary.statusCounts && typeof summary.statusCounts === "object" ? summary.statusCounts : {},
+      } : null);
+    } catch (cause) {
+      setContacts([]); setCrmHasMore(false); setCrmSummary(null);
+      setCrmError(cause instanceof Error ? cause.message : "Kunne ikke hente CRM.");
+    }
     finally { setCrmBusy(false); }
   }
-  useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery]);
+  useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery, crmStatus, crmSource, crmSort]);
   const filtered = contacts;
   const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
   const visibleTabs = tabs.filter(item => !item.permitted || item.permitted.some(permission => permissions.includes(permission)));
