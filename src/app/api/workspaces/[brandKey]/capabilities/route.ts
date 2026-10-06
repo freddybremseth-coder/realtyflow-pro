@@ -6,6 +6,7 @@ import {
 } from "@/lib/workspaces/brand-policy";
 import { roleAllowsWorkspacePermission } from "@/lib/workspaces/require-brand-workspace";
 import { filterAllowedResponsibilities, type WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
+import { loadWorkspaceTeamCoreSnapshot } from "@/lib/workspaces/team-core-snapshot";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -89,13 +90,12 @@ export async function GET(
         verifiedUserId: identity.user.id, verifiedUserEmail: identity.user.email || "", permission,
       }),
     );
-    const { data: responsibilityRow, error: responsibilityError } = await supabase.schema("core")
-      .from("brand_workspace_responsibilities")
-      .select("responsibilities")
-      .eq("brand_id", scope.brand.id)
-      .eq("user_id", identity.user.id)
-      .maybeSingle();
-    if (responsibilityError) return fail(503, "WORKSPACE_UNAVAILABLE");
+    const workspaceTeam = await loadWorkspaceTeamCoreSnapshot(supabase);
+    if (workspaceTeam.error) return fail(503, "WORKSPACE_UNAVAILABLE");
+    const responsibilityRow = workspaceTeam.responsibilities.find(row =>
+      String(row.brand_id || "") === scope.brand.id &&
+      String(row.user_id || "") === identity.user.id
+    );
     responsibilities = filterAllowedResponsibilities(
       brandKey,
       responsibilityRow?.responsibilities || [],
