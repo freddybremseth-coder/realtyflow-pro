@@ -1188,18 +1188,12 @@ export default function InventoryPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    title={`Lag SoMe-post for ${selectedSoMeBrand.name}`}
-                    disabled={generatingSoMe === property.id}
-                    onClick={(e) => { e.stopPropagation(); generateSoMePost(property, selectedSoMeBrand.id); }}
-                    className="text-purple-400 hover:text-purple-300 disabled:opacity-50"
+                    title={`Lag tre SoMe-konsepter for ${selectedSoMeBrand.name}`}
+                    disabled={!["zeneco", "pinosoecolife"].includes(selectedSoMeBrand.id)}
+                    onClick={(e) => { e.stopPropagation(); setSocialStudioProperty(property); }}
+                    className="text-purple-400 hover:text-purple-300 disabled:cursor-not-allowed disabled:opacity-30"
                   >
-                    {generatingSoMe === property.id ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : someSuccess === property.id ? (
-                      <CheckCircle2 size={14} className="text-emerald-400" />
-                    ) : (
-                      <Instagram size={14} />
-                    )}
+                    <Sparkles size={14} />
                   </button>
                   <button
                     title="Lag YouTube-video"
@@ -1681,25 +1675,23 @@ export default function InventoryPage() {
                 <div className="mb-3 text-xs text-red-400">{copyError}</div>
               ) : null}
 
-              {/* SoMe Post Button */}
+              {/* Canonical SoMe Studio */}
               <Button
                 className="w-full mb-3 bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-500 hover:to-orange-400 text-white font-medium"
-                disabled={generatingSoMe === showDetailModal.id}
-                onClick={() => generateSoMePost(showDetailModal, selectedSoMeBrand.id)}
+                disabled={!["zeneco", "pinosoecolife"].includes(selectedSoMeBrand.id)}
+                onClick={() => {
+                  setSocialStudioProperty(showDetailModal);
+                  setShowDetailModal(null);
+                }}
               >
-                {generatingSoMe === showDetailModal.id ? (
-                  <Loader2 size={16} className="mr-2 animate-spin" />
-                ) : someSuccess === showDetailModal.id ? (
-                  <CheckCircle2 size={16} className="mr-2" />
-                ) : (
-                  <Instagram size={16} className="mr-2" />
-                )}
-                {generatingSoMe === showDetailModal.id
-                  ? "Genererer SoMe-innlegg..."
-                  : someSuccess === showDetailModal.id
-                    ? "Opprettet i Content Hub!"
-                    : `Lag SoMe-post for ${selectedSoMeBrand.name}`}
+                <Sparkles size={16} className="mr-2" />
+                Lag SoMe · 3 forslag for {selectedSoMeBrand.name}
               </Button>
+              {!["zeneco", "pinosoecolife"].includes(selectedSoMeBrand.id) && (
+                <p className="-mt-1 mb-3 text-xs text-amber-300">
+                  SoMe Studio er foreløpig aktivert for Zen Eco Homes og Pinoso EcoLife.
+                </p>
+              )}
 
               <div className="flex flex-wrap items-center gap-2">
                 {leadIntelligenceReturnPath && (
