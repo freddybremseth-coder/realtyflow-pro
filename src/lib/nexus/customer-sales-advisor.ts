@@ -156,6 +156,11 @@ function stageGate(input: CustomerSalesAdvisorInput, profileScore: number) {
   const latestInboundText = text(latestInbound?.body_text || latestInbound?.body_html);
   const confirmedCriteria = criteria.filter((item) => item?.customer_confirmed === true).length;
   const approvedCriteria = criteria.filter((item) => String(item?.approval_status || "").toLowerCase() === "approved").length;
+  const replyClass = String(contact.last_reply_classification || "");
+  const purchaseReadiness = String(profile?.purchase_readiness || "").toLowerCase();
+  const activeIntentSignal =
+    ["active_interest", "property_interest", "update_preferences"].includes(replyClass)
+    || ["ready", "active", "soon", "high"].includes(purchaseReadiness);
   const approvedShortlist = shortlists.some((item) => ["approved", "sent", "presented"].includes(String(item?.status || "").toLowerCase()));
   const anyShortlist = shortlists.length > 0;
   const viewingSignal = /visning|viewing|besøk|befaring/i.test(
@@ -174,7 +179,7 @@ function stageGate(input: CustomerSalesAdvisorInput, profileScore: number) {
     ],
     CONTACT: [
       criterionRow("two-way", "Toveis dialog er etablert", Number(dialogue.replyCount || 0) > 0),
-      criterionRow("intent", "Kjøpsintensjon er bekreftet som aktuell", !["follow_up_later", "no_longer_buying", "purchased_elsewhere", "do_not_contact"].includes(String(contact.last_reply_classification || ""))),
+      criterionRow("intent", "Kjøpsintensjon er bekreftet som aktuell", activeIntentSignal, activeIntentSignal ? replyClass || purchaseReadiness : null),
       criterionRow("timing", "Kjøpstidslinje er kjent", Boolean(contact.next_followup || hasTimelineCriterion(criteria))),
     ],
     QUALIFIED: [
