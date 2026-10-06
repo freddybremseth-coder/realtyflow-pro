@@ -78,6 +78,11 @@ test("customer card exposes sent-versus-reply dialogue and takeover button", () 
   assert.match(cardSource, /SVAR/);
   assert.match(cardSource, /STOPPET AV DEG/);
   assert.match(cardSource, /communication-control/);
+  assert.match(cardSource, /Siste dialog/);
+  assert.match(cardSource, /Sist sendt/);
+  assert.match(cardSource, /Siste svar fra kunden/);
+  assert.match(cardSource, /latestSentMessage/);
+  assert.match(cardSource, /latestReplyMessage/);
 });
 
 test("legacy direct SMTP customer send routes also enforce CRM communication control", () => {
