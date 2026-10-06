@@ -30,6 +30,12 @@ test("Studio produces three intentionally different editorial choices and channe
   assert.match(studio, /instagramText/);
 });
 
+test("Guide and magazine hero images are registered as approved brand media", () => {
+  assert.match(route, /registerBrandWebsiteImage/);
+  assert.match(route, /source: "brand_article_og_image"/);
+  assert.match(route, /provider: "brand-website"/);
+});
+
 test("Property studio exposes all seven existing creative styles and registers rendered cards", () => {
   for (const style of ["hero_property", "lifestyle", "fact_card", "advisor", "carousel", "question_hook", "minimal_premium"]) {
     assert.match(studio, new RegExp(style));
