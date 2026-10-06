@@ -741,6 +741,171 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                     </div>
                   </section>
 
+                  <section className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-5">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-300"><Mail size={15} />Kontakt kunden</div>
+                        <h3 className="mt-1 text-xl font-semibold text-white">Skriv og send e-post fra Customer 360</h3>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Velg en ferdig kontaktmail, la AI skrive fra tema og stikkord, eller skriv hele e-posten selv. Ingenting sendes før du trykker Send og bekrefter.</p>
+                      </div>
+                      {!outreachOpen && (
+                        <Button onClick={() => void loadOutreachComposer()} disabled={outreachLoading}>
+                          {outreachLoading ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Mail size={14} className="mr-2" />}
+                          Åpne e-postverktøy
+                        </Button>
+                      )}
+                    </div>
+
+                    {outreachOpen && outreachData && (
+                      <div className="mt-5 space-y-5">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <button
+                            type="button"
+                            onClick={() => setOutreachMode("template")}
+                            className={`rounded-xl border p-4 text-left transition-colors ${outreachMode === "template" ? "border-emerald-400/40 bg-emerald-500/10" : "border-slate-700 bg-slate-950/50 hover:border-slate-600"}`}
+                          >
+                            <div className="font-semibold text-white">1. Standard e-post</div>
+                            <p className="mt-1 text-xs leading-5 text-slate-400">Velg en ferdig mal og tilpass den før sending.</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setOutreachMode("ai")}
+                            className={`rounded-xl border p-4 text-left transition-colors ${outreachMode === "ai" ? "border-violet-400/40 bg-violet-500/10" : "border-slate-700 bg-slate-950/50 hover:border-slate-600"}`}
+                          >
+                            <div className="font-semibold text-white">2. AI fra tema/stikkord</div>
+                            <p className="mt-1 text-xs leading-5 text-slate-400">Beskriv hva du vil oppnå, så lager Nexus et utkast.</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={startManualOutreach}
+                            className={`rounded-xl border p-4 text-left transition-colors ${outreachMode === "manual" ? "border-cyan-400/40 bg-cyan-500/10" : "border-slate-700 bg-slate-950/50 hover:border-slate-600"}`}
+                          >
+                            <div className="font-semibold text-white">3. Skriv selv</div>
+                            <p className="mt-1 text-xs leading-5 text-slate-400">Start med tomt emne og tom e-posttekst.</p>
+                          </button>
+                        </div>
+
+                        <div className="grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
+                          <div className="space-y-4">
+                            {outreachMode === "template" && (
+                              <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Velg standardmail</p>
+                                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                                  {(outreachData.templates || []).map((template: Record<string, any>) => (
+                                    <button
+                                      key={String(template.id)}
+                                      type="button"
+                                      onClick={() => applyOutreachTemplate(template)}
+                                      className={`rounded-lg border p-3 text-left ${outreachTemplateId === template.id ? "border-emerald-400/40 bg-emerald-500/10" : "border-slate-800 bg-slate-950 hover:border-slate-600"}`}
+                                    >
+                                      <strong className="text-sm text-white">{template.label}</strong>
+                                      <p className="mt-1 text-xs leading-5 text-slate-500">{template.description}</p>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {outreachMode === "ai" && (
+                              <div className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">Lag e-post med AI</p>
+                                <label className="mt-3 block text-xs font-medium text-slate-400">Tema / hva vil du oppnå?</label>
+                                <textarea
+                                  value={outreachTheme}
+                                  onChange={(event) => setOutreachTheme(event.target.value)}
+                                  rows={3}
+                                  className="mt-1 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-violet-400"
+                                  placeholder="Eksempel: skape interesse for nybygg i Finestrat uten å virke pågående"
+                                />
+                                <label className="mt-3 block text-xs font-medium text-slate-400">Stikkord / momenter</label>
+                                <textarea
+                                  value={outreachKeywords}
+                                  onChange={(event) => setOutreachKeywords(event.target.value)}
+                                  rows={2}
+                                  className="mt-1 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-violet-400"
+                                  placeholder="Eksempel: havutsikt, 3 soverom, nær strand, rolig tone"
+                                />
+                                <Button className="mt-3" size="sm" onClick={() => void generateOutreachEmail()} disabled={outreachGenerating}>
+                                  {outreachGenerating ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Sparkles size={14} className="mr-2" />}
+                                  Lag e-postutkast
+                                </Button>
+                              </div>
+                            )}
+
+                            {outreachMode === "manual" && (
+                              <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+                                <p className="text-sm text-cyan-100">Skriv e-posten direkte i editoren under. Systemet legger ikke til eller endrer teksten din før sending.</p>
+                              </div>
+                            )}
+
+                            <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+                              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Emne</label>
+                              <input
+                                value={outreachSubject}
+                                onChange={(event) => setOutreachSubject(event.target.value)}
+                                className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+                                placeholder="Emne"
+                              />
+                              <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">E-posttekst</label>
+                              <textarea
+                                value={outreachBody}
+                                onChange={(event) => setOutreachBody(event.target.value)}
+                                rows={12}
+                                className="mt-2 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm leading-6 text-slate-200 outline-none focus:border-emerald-400"
+                                placeholder="Skriv e-posten her..."
+                              />
+                            </div>
+                          </div>
+
+                          <aside className="space-y-4">
+                            <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sendes som</p>
+                              <div className="mt-3 space-y-2 text-sm">
+                                <div><span className="text-slate-500">Fra:</span> <span className="text-slate-200">{outreachData.sender?.name ? `${outreachData.sender.name} <${outreachData.sender.email}>` : outreachData.sender?.email || "Ikke konfigurert"}</span></div>
+                                <div><span className="text-slate-500">Til:</span> <span className="text-slate-200">{outreachData.recipient?.name || data.contact.name} &lt;{outreachData.recipient?.email || data.contact.email}&gt;</span></div>
+                                <div><span className="text-slate-500">Merkevare:</span> <span className="text-slate-200">{outreachData.brand?.name || BRAND_LABELS[data.brandId] || data.brandId}</span></div>
+                              </div>
+                            </div>
+
+                            <div className={`rounded-xl border p-4 ${outreachData.eligibility?.allowed ? "border-emerald-500/25 bg-emerald-500/5" : "border-red-500/30 bg-red-500/10"}`}>
+                              <p className={`text-xs font-semibold uppercase tracking-wide ${outreachData.eligibility?.allowed ? "text-emerald-300" : "text-red-300"}`}>Sendekontroll</p>
+                              {outreachData.eligibility?.allowed ? (
+                                <p className="mt-2 text-sm text-emerald-100">Manuell e-post kan sendes til denne kunden.</p>
+                              ) : (
+                                <p className="mt-2 text-sm leading-5 text-red-100">{outreachData.eligibility?.blockedReason || "Kunden kan ikke kontaktes nå."}</p>
+                              )}
+                              {(outreachData.eligibility?.warnings || []).length > 0 && (
+                                <ul className="mt-3 space-y-2 text-xs leading-5 text-amber-200">
+                                  {outreachData.eligibility.warnings.map((warning: string) => <li key={warning}>• {warning}</li>)}
+                                </ul>
+                              )}
+                            </div>
+
+                            <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Før du sender</p>
+                              <ul className="mt-2 space-y-2 text-xs leading-5 text-slate-400">
+                                <li>• Les gjennom AI- eller standardteksten.</li>
+                                <li>• Kontroller at påstander og boligdetaljer faktisk stemmer.</li>
+                                <li>• Hold e-posten relevant for kundens nåværende situasjon.</li>
+                                <li>• «Send nå» krever en ekstra bekreftelse.</li>
+                              </ul>
+                            </div>
+
+                            <Button
+                              className="w-full"
+                              onClick={() => void sendOutreachEmail()}
+                              disabled={outreachSending || !outreachData.eligibility?.allowed || !outreachSubject.trim() || !outreachBody.trim()}
+                            >
+                              {outreachSending ? <Loader2 size={15} className="mr-2 animate-spin" /> : <Send size={15} className="mr-2" />}
+                              Send e-post nå
+                            </Button>
+                            {outreachMessage && <p className="rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-xs leading-5 text-slate-300">{outreachMessage}</p>}
+                          </aside>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
                   <section className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-5">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div>
