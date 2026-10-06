@@ -68,10 +68,10 @@ export default function FocusedWorkspacePage() {
   const params = useParams();
   const routeSearchParams = useSearchParams();
   const brandKey = String(params.brandKey || "");
-  const requestedTab = routeSearchParams.get("tab");
-  const requestedArea = routeSearchParams.get("area");
-  const requestedFocus = routeSearchParams.get("focus");
-  const requestedTraining = routeSearchParams.get("training");
+  const [requestedTab, setRequestedTab] = useState<string | null>(null);
+  const [requestedArea, setRequestedArea] = useState<string | null>(null);
+  const [requestedFocus, setRequestedFocus] = useState<string | null>(null);
+  const [requestedTraining, setRequestedTraining] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("today");
   const [permissions, setPermissions] = useState<WorkspacePermission[]>([]);
   const [responsibilities, setResponsibilities] = useState<WorkspaceResponsibilityId[]>([]);
@@ -100,6 +100,14 @@ export default function FocusedWorkspacePage() {
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    setRequestedTab(query.get("tab"));
+    setRequestedArea(query.get("area"));
+    setRequestedFocus(query.get("focus"));
+    setRequestedTraining(query.get("training"));
+  }, [brandKey, routeSearchParams]);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
