@@ -241,35 +241,163 @@ type AccountData = {
 
 const MODELS = [
   "Ansattfordel",
-  "Ledelse & team / Management retreat",
-  "Firmabolig / Corporate base",
+  "Ledelse og teamsamlinger",
+  "Firmabolig / fast bedriftsbase",
   "Medlemsfordel",
   "Relokasjon",
   "Kunde-/partnerfordel",
   "Eiendomsinvestering",
-  "Delt Corporate Home",
+  "Delt firmabolig",
 ];
+
+const MODEL_LABELS: Record<string,string> = {
+  "Ledelse & team / Management retreat": "Ledelse og teamsamlinger",
+  "Firmabolig / Bedrift base": "Firmabolig / fast bedriftsbase",
+  "Delt Bedrift Home": "Delt firmabolig",
+  "Management retreat": "Ledelse og teamsamlinger",
+};
 
 const ACCOUNT_ROLES = [
   ["END_CUSTOMER", "Sluttkunde"],
   ["PARTNER", "Partner"],
   ["MEMBER_ORGANIZATION", "Medlemsorganisasjon"],
   ["ADVISOR", "Rådgiver"],
-  ["REFERRAL_PARTNER", "Referral partner"],
+  ["REFERRAL_PARTNER", "Henvisningspartner"],
 ] as const;
 
 const ENTRY_ROLES = [
-  "HR / People",
+  "HR / personal",
   "CEO / daglig leder",
   "CFO / økonomi",
   "Styreleder",
   "Partnerskap / medlemsansvarlig",
   "Innkjøp",
-  "Office / Workplace",
+  "Kontor / arbeidsplass",
   "Eier",
 ];
 
 const STAGES = ["TARGET","RESEARCH","STRATEGY_READY","OUTREACH","ENGAGED","MEETING","BUSINESS_CASE","SHORTLIST","DECISION","NEGOTIATION","WON","LOST"];
+
+const STAGE_LABELS: Record<string,string> = {
+  TARGET: "Målbedrift",
+  RESEARCH: "Kartlegging",
+  STRATEGY_READY: "Strategi klar",
+  OUTREACH: "Kontaktplan",
+  ENGAGED: "Dialog",
+  MEETING: "Møte",
+  BUSINESS_CASE: "Beslutningsgrunnlag",
+  SHORTLIST: "Kortliste",
+  DECISION: "Beslutning",
+  NEGOTIATION: "Forhandling",
+  WON: "Vunnet",
+  LOST: "Tapt",
+};
+
+const PROSPECT_STATUS_LABELS: Record<string,string> = {
+  DISCOVERED: "Oppdaget",
+  RESEARCHED: "Kartlagt",
+  QUALIFIED: "Kvalifisert",
+  CONTACT_READY: "Klar for manuell kontakt",
+  CONTACTED: "Kontaktet",
+  ENGAGED: "I dialog",
+  MEETING: "Møte",
+  BUSINESS_CASE: "Beslutningsgrunnlag",
+  SHORTLIST: "Kortliste",
+  DECISION: "Beslutning",
+  NEGOTIATION: "Forhandling",
+  WON: "Vunnet",
+  LOST: "Tapt",
+  DISQUALIFIED: "Ikke aktuell",
+};
+
+const RELATIONSHIP_LABELS: Record<string,string> = {
+  UNKNOWN: "Ukjent",
+  NOT_CONTACTED: "Ikke kontaktet",
+  CONNECTED: "Koblet",
+  ENGAGED: "I dialog",
+  CHAMPION: "Intern pådriver",
+  BLOCKED: "Blokkert",
+};
+
+const INFLUENCE_LABELS: Record<string,string> = {
+  UNKNOWN: "Ukjent",
+  LOW: "Lav",
+  MEDIUM: "Middels",
+  HIGH: "Høy",
+  DECISION_MAKER: "Beslutningstaker",
+};
+
+const CHANNEL_LABELS: Record<string,string> = {
+  LINKEDIN: "LinkedIn",
+  EMAIL: "E-post",
+  CALL: "Telefon",
+  MEETING: "Møte",
+  OTHER: "Annet",
+};
+
+const ACTIVITY_LABELS: Record<string,string> = {
+  FOLLOW_COMPANY: "Følg selskap",
+  VIEW_PROFILE: "Se profil",
+  CONNECT: "Koble til",
+  PERSONAL_MESSAGE: "Personlig melding",
+  EMAIL_INTRO: "Introduksjons-e-post",
+  EMAIL_FOLLOWUP: "Oppfølgings-e-post",
+  CALL: "Telefon",
+  DISCOVERY_MEETING: "Behovsmøte",
+  SEND_MATERIAL: "Send materiale",
+};
+
+const DIRECTION_LABELS: Record<string,string> = {
+  POSITIVE: "Positiv",
+  NEUTRAL: "Nøytral",
+  NEGATIVE: "Negativ",
+};
+
+const COACH_PHASE_LABELS: Record<string,string> = {
+  DISCOVER_PROBLEM: "Avdekk problem",
+  CONFIRM_PROBLEM: "Bekreft problem",
+  PRESENT_SOLUTION: "Presenter løsning",
+  CONFIRM_SOLUTION: "Bekreft løsning",
+  NEXT_COMMITMENT: "Avtal neste steg",
+};
+
+const CONFIDENCE_LABELS: Record<string,string> = {
+  LOW: "Lav",
+  MEDIUM: "Middels",
+  HIGH: "Høy",
+};
+
+const SOURCE_KIND_LABELS: Record<string,string> = {
+  company_web: "Selskapets nettside",
+  company_pdf: "Selskapsdokument",
+  web: "Offentlig nettkilde",
+  annual_report: "Årsrapport",
+  regulatory: "Regelverkskilde",
+  market: "Markedskilde",
+};
+
+function labelOf(map: Record<string,string>, value?: string | null) {
+  const key = String(value || "").trim();
+  return map[key] || key.replaceAll("_", " ").toLowerCase();
+}
+
+function modelLabel(value?: string | null) {
+  const key = String(value || "").trim();
+  return MODEL_LABELS[key] || key;
+}
+
+function providerLabel(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Ukjent";
+  return raw.split("+").map(part => {
+    if (part === "company_crawl") return "Selskapets egne kilder";
+    if (part === "perplexity") return "Perplexity";
+    if (part === "anthropic") return "Claude";
+    if (part === "openai") return "OpenAI";
+    if (part === "none") return "Ingen ekstern analyse";
+    return part;
+  }).join(" + ");
+}
 
 function localDateTime(value?: string | null) {
   if (!value) return "";
@@ -278,7 +406,7 @@ function localDateTime(value?: string | null) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export default function CorporateAccountWorkspacePage() {
+export default function BedriftAccountWorkspacePage() {
   const params = useParams<{ brandKey: string; prospectId: string }>();
   const brandKey = typeof params?.brandKey === "string" ? params.brandKey : "";
   const prospectId = typeof params?.prospectId === "string" ? params.prospectId : "";
@@ -367,7 +495,7 @@ export default function CorporateAccountWorkspacePage() {
         { cache: "no-store" },
       );
       const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke hente Corporate-kontoen.");
+      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke hente bedriftskontoen.");
       setData(body);
       const saved = body.strategy || {};
       const latestCoach = Array.isArray(body.coachRuns) && body.coachRuns[0]?.output ? body.coachRuns[0].output : null;
@@ -410,7 +538,7 @@ export default function CorporateAccountWorkspacePage() {
         linkedinMotion: String(saved.linkedin_motion || "MANUAL_APPROVAL"),
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Kunne ikke hente Corporate-kontoen.");
+      setError(cause instanceof Error ? cause.message : "Kunne ikke hente bedriftskontoen.");
     } finally {
       setLoading(false);
     }
@@ -450,7 +578,7 @@ export default function CorporateAccountWorkspacePage() {
     }
   }
 
-  async function runCorporateIntelligence() {
+  async function runBedriftIntelligence() {
     setBusy("intelligence"); setError(""); setNotice("");
     try {
       const result = await post({ action: "run_intelligence" });
@@ -459,13 +587,13 @@ export default function CorporateAccountWorkspacePage() {
       const fresh = Number(result?.result?.newCount || 0);
       const warnings = Array.isArray(result?.result?.warnings) ? result.result.warnings.filter(Boolean) : [];
       setNotice(
-        "Corporate Intelligence er oppdatert: " + count + " funn, " + fresh + " nye i RealtyFlow og " + changed + " endrede." +
-        (warnings.length ? " Research-status: DEGRADED – " + warnings[0] : " Research-status: FULL.") +
+        "Bedriftsinnsikten er oppdatert: " + count + " funn, " + fresh + " nye i RealtyFlow og " + changed + " endrede." +
+        (warnings.length ? " Analysestatus: BEGRENSET – " + warnings[0] : " Analysestatus: FULL.") +
         " Ingen kontakt eller pipelinebevegelse er utført.",
       );
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Corporate Intelligence feilet.");
+      setError(cause instanceof Error ? cause.message : "Bedriftsinnsikten feilet.");
     } finally {
       setBusy("");
     }
@@ -535,10 +663,10 @@ export default function CorporateAccountWorkspacePage() {
         isPrimary: titleLower.includes("daglig leder"),
         linkedinFollowing: false,
       });
-      setNotice(`${role.name} er lagt til i Decision Unit fra offentlig rollekilde.`);
+      setNotice(`${role.name} er lagt til i Beslutningsgruppe fra offentlig rollekilde.`);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Kunne ikke legge rollen til i Decision Unit.");
+      setError(cause instanceof Error ? cause.message : "Kunne ikke legge rollen til i beslutningsgruppen.");
     } finally {
       setBusy("");
     }
@@ -573,10 +701,10 @@ export default function CorporateAccountWorkspacePage() {
       });
       setCoachOutput(result.output as SalesCoachOutput);
       setCoachRunId(String(result.coachRun?.id || ""));
-      setNotice("Nexus Sales Coach har analysert kontoen. Ingen melding er sendt.");
+      setNotice("Nexus salgscoach har analysert kontoen. Ingen melding er sendt.");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sales Coach feilet.");
+      setError(cause instanceof Error ? cause.message : "Salgscoachen feilet.");
     } finally {
       setBusy("");
     }
@@ -609,7 +737,7 @@ export default function CorporateAccountWorkspacePage() {
            "Kunne ikke lagre e-postutkastet.");
         throw new Error(message);
       }
-      setNotice("Coach-utkastet er lagret i E-post / Reach. Ingenting er sendt.");
+      setNotice("Utkastet fra salgscoachen er lagret i E-post / Reach. Ingenting er sendt.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke lagre coach-utkastet.");
     } finally {
@@ -619,7 +747,7 @@ export default function CorporateAccountWorkspacePage() {
 
   async function applyCoachRecommendation() {
     if (!coachOutput || !coachRunId) {
-      setError("Kjør Sales Coach først.");
+      setError("Kjør salgscoachen først.");
       return;
     }
     setBusy("coach-apply"); setError(""); setNotice("");
@@ -639,7 +767,7 @@ export default function CorporateAccountWorkspacePage() {
       setNotice(`Coach-funn er godkjent inn i kontostrategien (${result.appliedFields?.length || 0} felt). Ingen ekstern handling er utført.`);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Kunne ikke bruke coach-funn i strategien.");
+      setError(cause instanceof Error ? cause.message : "Kunne ikke bruke funn fra salgscoachen i strategien.");
     } finally {
       setBusy("");
     }
@@ -708,7 +836,7 @@ export default function CorporateAccountWorkspacePage() {
     return <div className="mx-auto max-w-7xl p-6">
       {error
         ? <div className="rounded-2xl border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-200">{error}</div>
-        : <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={16} className="animate-spin"/> Henter Corporate Account Workspace…</div>}
+        : <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={16} className="animate-spin"/> Henter bedriftskonto…</div>}
     </div>;
   }
 
@@ -730,22 +858,22 @@ export default function CorporateAccountWorkspacePage() {
   return <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
     <header className="rounded-3xl border border-slate-800 bg-slate-900/75 p-5 sm:p-7">
       <Link href={`/workspace/${encodeURIComponent(brandKey)}`} className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300">
-        <ArrowLeft size={14}/> Tilbake til workspace
+        <ArrowLeft size={14}/> Tilbake til arbeidsflaten
       </Link>
       <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-cyan-300">
-            <Building2 size={16}/> Corporate Account
+            <Building2 size={16}/> Bedriftskonto
           </div>
           <h1 className="mt-2 text-3xl font-black text-white">{prospect.company_name}</h1>
           <p className="mt-2 text-sm text-slate-400">
             {[prospect.industry, prospect.city, prospect.organization_number ? `Org.nr. ${prospect.organization_number}` : null].filter(Boolean).join(" · ")}
           </p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full bg-cyan-950 px-3 py-1.5 font-semibold text-cyan-200">Fit {prospect.fit_tier} · {prospect.fit_score}/100</span>
-            <span className="rounded-full bg-slate-800 px-3 py-1.5 text-slate-300">{prospect.status}</span>
+            <span className="rounded-full bg-cyan-950 px-3 py-1.5 font-semibold text-cyan-200">Målgruppematch {prospect.fit_tier} · {prospect.fit_score}/100</span>
+            <span className="rounded-full bg-slate-800 px-3 py-1.5 text-slate-300">{labelOf(PROSPECT_STATUS_LABELS, prospect.status)}</span>
             <span className="rounded-full bg-slate-800 px-3 py-1.5 text-slate-300">{strategy.priority}</span>
-            <span className="rounded-full bg-slate-800 px-3 py-1.5 text-slate-300">{strategy.stage}</span>
+            <span className="rounded-full bg-slate-800 px-3 py-1.5 text-slate-300">{labelOf(STAGE_LABELS, strategy.stage)}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -816,15 +944,15 @@ export default function CorporateAccountWorkspacePage() {
     <section className="rounded-2xl border border-violet-900/60 bg-violet-950/15 p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Nexus Corporate Advisor</p>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Nexus bedriftsrådgiver</p>
           <h2 className="mt-2 text-xl font-bold text-white">{data.advisor.headline}</h2>
           <p className="mt-2 text-sm text-slate-300">{data.advisor.nextAction}</p>
         </div>
         <span className="shrink-0 rounded-full border border-violet-800 px-3 py-1.5 text-xs font-black text-violet-300">{data.advisor.priority} · {data.advisor.score}/100</span>
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <div><p className="text-xs font-semibold text-slate-400">Anbefalt modell</p><p className="mt-1 text-sm text-slate-200">{data.advisor.recommendedModels.join(" · ")}</p></div>
-        <div><p className="text-xs font-semibold text-slate-400">Anbefalt inngang</p><p className="mt-1 text-sm text-slate-200">{data.advisor.recommendedEntryRole}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Anbefalt modell</p><p className="mt-1 text-sm text-slate-200">{data.advisor.recommendedModels.map(modelLabel).join(" · ")}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Anbefalt inngang</p><p className="mt-1 text-sm text-slate-200">{modelLabel(data.advisor.recommendedEntryRole)}</p></div>
         <div><p className="text-xs font-semibold text-slate-400">Mangler før neste nivå</p><p className="mt-1 text-sm text-amber-300">{data.advisor.missing.join(" · ") || "Ingen kritiske mangler"}</p></div>
       </div>
       {data.advisor.whyNow.length > 0 && <div className="mt-4 flex flex-wrap gap-2">
@@ -843,14 +971,14 @@ export default function CorporateAccountWorkspacePage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-300">
-            <TrendingUp size={16}/> Corporate Intelligence
+            <TrendingUp size={16}/> Bedriftsinnsikt
           </div>
           <h2 className="mt-2 text-xl font-bold text-white">Hva har endret seg – og hvorfor betyr det noe?</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Dyp research på selskapets nettsider, årsrapporter/PDF-er og offentlig web. Funn er evidens, ikke automatisk pipelinebevegelse eller outreach.</p>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Dybdeanalyse av selskapets nettsider, årsrapporter, PDF-er og offentlige nettkilder. Funn er beslutningsstøtte, ikke automatisk kontakt eller flytting i salgsprosessen.</p>
         </div>
-        <button type="button" onClick={() => void runCorporateIntelligence()} disabled={busy === "intelligence"}
+        <button type="button" onClick={() => void runBedriftIntelligence()} disabled={busy === "intelligence"}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-          <RefreshCw size={15} className={busy === "intelligence" ? "animate-spin" : ""}/>{busy === "intelligence" ? "Research…" : "Kjør dyp research"}
+          <RefreshCw size={15} className={busy === "intelligence" ? "animate-spin" : ""}/>{busy === "intelligence" ? "Analyserer…" : "Kjør dybdeanalyse"}
         </button>
       </div>
 
@@ -858,9 +986,9 @@ export default function CorporateAccountWorkspacePage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${intelligenceDegraded ? "bg-amber-950 text-amber-300" : "bg-emerald-950 text-emerald-300"}`}>
-              {intelligenceDegraded ? "DEGRADED RESEARCH" : "FULL RESEARCH"}
+              {intelligenceDegraded ? "BEGRENSET ANALYSE" : "FULL ANALYSE"}
             </span>
-            <span className="text-xs text-slate-400">Provider: {data.intelligence.latestRun.provider || "ukjent"}</span>
+            <span className="text-xs text-slate-400">Analysekilde: {providerLabel(data.intelligence.latestRun.provider)}</span>
             <span className="text-xs text-slate-500">· {data.intelligence.latestRun.source_count} kilder · {data.intelligence.latestRun.finding_count} funn</span>
           </div>
           <span className="text-[10px] text-slate-600">
@@ -896,9 +1024,9 @@ export default function CorporateAccountWorkspacePage() {
         <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Signalpåvirkning</p>
           <p className="mt-1 text-xs leading-5 text-slate-300">
-            Fit {data.intelligence.summary.deltas.fit >= 0 ? "+" : ""}{data.intelligence.summary.deltas.fit}
-            {" · "}Timing {data.intelligence.summary.deltas.timing >= 0 ? "+" : ""}{data.intelligence.summary.deltas.timing}
-            {" · "}Intent {data.intelligence.summary.deltas.intent >= 0 ? "+" : ""}{data.intelligence.summary.deltas.intent}
+            Målgruppematch {data.intelligence.summary.deltas.fit >= 0 ? "+" : ""}{data.intelligence.summary.deltas.fit}
+            {" · "}Tidspunkt {data.intelligence.summary.deltas.timing >= 0 ? "+" : ""}{data.intelligence.summary.deltas.timing}
+            {" · "}Kjøpssignal {data.intelligence.summary.deltas.intent >= 0 ? "+" : ""}{data.intelligence.summary.deltas.intent}
             {" · "}Kapasitet {data.intelligence.summary.deltas.financialCapacity >= 0 ? "+" : ""}{data.intelligence.summary.deltas.financialCapacity}
           </p>
         </div>
@@ -912,7 +1040,7 @@ export default function CorporateAccountWorkspacePage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.change_status === "NEW" ? "bg-emerald-950 text-emerald-300" : item.change_status === "CHANGED" ? "bg-amber-950 text-amber-300" : "bg-slate-800 text-slate-500"}`}>{item.change_status === "NEW" ? "NYTT FUNN" : item.change_status === "CHANGED" ? "ENDRET" : "UENDRET"}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.direction === "NEGATIVE" ? "bg-rose-950 text-rose-300" : item.direction === "POSITIVE" ? "bg-cyan-950 text-cyan-300" : "bg-slate-800 text-slate-400"}`}>{item.direction}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.direction === "NEGATIVE" ? "bg-rose-950 text-rose-300" : item.direction === "POSITIVE" ? "bg-cyan-950 text-cyan-300" : "bg-slate-800 text-slate-400"}`}>{labelOf(DIRECTION_LABELS, item.direction)}</span>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
                 reviewStatus === "CONFIRMED" ? "bg-emerald-950 text-emerald-300" :
                 reviewStatus === "IGNORED" ? "bg-slate-800 text-slate-400" :
@@ -922,7 +1050,7 @@ export default function CorporateAccountWorkspacePage() {
                 {reviewStatus === "CONFIRMED" ? "BEKREFTET" : reviewStatus === "IGNORED" ? "IGNORERT" : reviewStatus === "OUTDATED" ? "UTDATERT" : "TIL VURDERING"}
               </span>
             </div>
-            <span className="text-[10px] text-slate-600">Relevans {item.relevance} · freshness {item.freshness ?? "—"} · confidence {item.confidence}</span>
+            <span className="text-[10px] text-slate-600">Relevans {item.relevance} · ferskhet {item.freshness ?? "—"} · sikkerhet {item.confidence}</span>
           </div>
           <h3 className="mt-3 text-sm font-bold text-white">{item.title}</h3>
           <p className="mt-2 text-xs leading-5 text-slate-300">{item.summary}</p>
@@ -931,7 +1059,7 @@ export default function CorporateAccountWorkspacePage() {
           </p>}
           {item.why_it_matters && <p className="mt-2 text-xs leading-5 text-emerald-200"><strong>Hvorfor viktig:</strong> {item.why_it_matters}</p>}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[10px] text-slate-600">{item.source_kind.replaceAll("_"," ")}</span>
+            <span className="text-[10px] text-slate-600">{labelOf(SOURCE_KIND_LABELS, item.source_kind)}</span>
             <a href={item.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300">Kilde <ExternalLink size={12}/></a>
           </div>
           <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-800 pt-3">
@@ -957,7 +1085,7 @@ export default function CorporateAccountWorkspacePage() {
             </button>}
           </div>
         </article>})}
-      </div> : <div className="mt-4 rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">Ingen Intelligence-funn ennå. Kjør dyp research for denne kontoen.</div>}
+      </div> : <div className="mt-4 rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">Ingen Intelligence-funn ennå. Kjør dybdeanalyse for denne kontoen.</div>}
 
       {(data.intelligence.market.length > 0 || data.intelligence.regulatory.length > 0) && <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-800 bg-slate-950/35 p-4">
@@ -1008,17 +1136,17 @@ export default function CorporateAccountWorkspacePage() {
             type="button"
             onClick={() => setStrategy(s => ({ ...s, stage }))}
             className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${strategy.stage === stage ? "border-cyan-500 bg-cyan-950 text-cyan-200" : "border-slate-800 bg-slate-950/50 text-slate-500 hover:text-slate-300"}`}
-          >{stage}</button>)}
+          >{labelOf(STAGE_LABELS, stage)}</button>)}
         </div>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {[
-          ["Fit", data.advisor.scores.fit],
-          ["Timing", data.advisor.scores.timing],
-          ["Access", data.advisor.scores.access],
-          ["Intent", data.advisor.scores.intent],
-          ["Account score", data.advisor.scores.overall],
+          ["Målgruppematch", data.advisor.scores.fit],
+          ["Tidspunkt", data.advisor.scores.timing],
+          ["Tilgang", data.advisor.scores.access],
+          ["Kjøpssignal", data.advisor.scores.intent],
+          ["Kontoscore", data.advisor.scores.overall],
         ].map(([label,value]) => <div key={String(label)} className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
           <p className="mt-1 text-xl font-black text-white">{value}<span className="text-xs font-medium text-slate-500">/100</span></p>
@@ -1075,7 +1203,7 @@ export default function CorporateAccountWorkspacePage() {
         <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/30 p-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-300">Kontorolle & salgsmodell</p>
-            <p className="mt-1 text-xs text-slate-500">Referral partner er nå en kontorolle, ikke en salgsmodell.</p>
+            <p className="mt-1 text-xs text-slate-500">Henvisningspartner er en kontorolle, ikke en salgsmodell.</p>
           </div>
           <label className="text-xs text-slate-500">Kontorolle
             <select value={strategy.accountRole} onChange={e => setStrategy(s => ({ ...s, accountRole: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
@@ -1108,12 +1236,12 @@ export default function CorporateAccountWorkspacePage() {
               {ENTRY_ROLES.map(role => <option key={role}>{role}</option>)}
             </select>
           </label>
-          <textarea value={strategy.championHypothesis} onChange={e => setStrategy(s => ({ ...s, championHypothesis: e.target.value }))} rows={2} placeholder="Champion-hypotese: Hvem kan drive saken internt?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <textarea value={strategy.championHypothesis} onChange={e => setStrategy(s => ({ ...s, championHypothesis: e.target.value }))} rows={2} placeholder="Pådriverhypotese: Hvem kan drive saken internt?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
           <textarea value={strategy.entryAngle} onChange={e => setStrategy(s => ({ ...s, entryAngle: e.target.value }))} rows={2} placeholder="Inngangsvinkel: hvorfor akkurat denne rollen?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
-          <textarea value={strategy.firstOffer} onChange={e => setStrategy(s => ({ ...s, firstOffer: e.target.value }))} rows={2} placeholder="Første tilbud: f.eks. Corporate Home Assessment / beslutningsnotat" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+          <textarea value={strategy.firstOffer} onChange={e => setStrategy(s => ({ ...s, firstOffer: e.target.value }))} rows={2} placeholder="Første tilbud: f.eks. bedriftsvurdering / beslutningsnotat" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
           <div className="rounded-lg border border-slate-800 bg-slate-950/55 p-3">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-slate-300">Business case completeness</p>
+              <p className="text-xs font-semibold text-slate-300">Komplett beslutningsgrunnlag</p>
               <span className="text-sm font-black text-cyan-300">{data.advisor.businessCaseCompleteness}%</span>
             </div>
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-cyan-600" style={{ width: `${data.advisor.businessCaseCompleteness}%` }}/></div>
@@ -1124,7 +1252,7 @@ export default function CorporateAccountWorkspacePage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Fasevakt · {data.stageGate.currentStage}</p>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Fasevakt · {labelOf(STAGE_LABELS, data.stageGate.currentStage)}</p>
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${data.stageGate.readyToAdvance ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"}`}>
               {data.stageGate.completionPercent}% · {data.stageGate.readyToAdvance ? "klar" : "ikke klar"}
             </span>
@@ -1135,7 +1263,7 @@ export default function CorporateAccountWorkspacePage() {
               <div><span>{item.label}</span>{item.evidence && <p className="mt-0.5 text-[11px] text-slate-500">{item.evidence}</p>}</div>
             </div>)}
           </div>
-          {data.stageGate.nextStage && <p className="mt-3 text-[11px] text-slate-500">Neste fase: <strong className="text-slate-300">{data.stageGate.nextStage}</strong>. Fasevakt kontrolleres når strategien lagres.</p>}
+          {data.stageGate.nextStage && <p className="mt-3 text-[11px] text-slate-500">Neste fase: <strong className="text-slate-300">{labelOf(STAGE_LABELS, data.stageGate.nextStage)}</strong>. Fasevakt kontrolleres når strategien lagres.</p>}
           {data.strategy?.stage_override_reason && <p className="mt-3 text-[11px] leading-5 text-slate-600">Siste registrerte overstyring: {String(data.strategy.stage_override_reason)}</p>}
           {(!data.stageGate.readyToAdvance || stageSkipRequested) && <label className="mt-3 block text-xs text-slate-500">Overstyr fasevakt
             <textarea value={strategy.stageOverrideReason} onChange={e => setStrategy(s => ({ ...s, stageOverrideReason: e.target.value }))} rows={2} placeholder="Kun ved bevisst overstyring: skriv hvorfor kontoen skal videre før kriteriene er komplette." className="mt-1 w-full rounded-lg border border-amber-900/60 bg-slate-950 px-3 py-2 text-sm text-slate-200"/>
@@ -1144,14 +1272,14 @@ export default function CorporateAccountWorkspacePage() {
         <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4">
           <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">Ansvar & verdi</p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <label className="text-xs text-slate-500">Account owner
+            <label className="text-xs text-slate-500">Kontoansvarlig
               <select value={strategy.accountOwnerEmail} onChange={e => setStrategy(s => ({ ...s, accountOwnerEmail: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
-                {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>{user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}</option>)}
+                {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>{user.displayName} · {user.role === "OWNER" ? "Eier" : "Bedrift"}</option>)}
               </select>
             </label>
             <label className="text-xs text-slate-500">Strategisk ansvarlig
               <select value={strategy.strategicOwnerEmail} onChange={e => setStrategy(s => ({ ...s, strategicOwnerEmail: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
-                {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>{user.displayName} · {user.role === "OWNER" ? "Owner" : "Corporate"}</option>)}
+                {data.assignmentOptions.users.map(user => <option key={user.email} value={user.email}>{user.displayName} · {user.role === "OWNER" ? "Eier" : "Bedrift"}</option>)}
               </select>
             </label>
             <input type="number" min="0" value={strategy.estimatedValueEur} onChange={e => setStrategy(s => ({ ...s, estimatedValueEur: e.target.value }))} placeholder="Estimert verdi €" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
@@ -1165,7 +1293,7 @@ export default function CorporateAccountWorkspacePage() {
               <option value="OFF">LinkedIn: av</option>
             </select>
           </label>
-          <p className="mt-3 text-[11px] leading-5 text-slate-500">Nye kontoer får RealtyFlow Owner som standard. Du kan overstyre til en annen aktiv bruker med Corporate-tilgang.</p>
+          <p className="mt-3 text-[11px] leading-5 text-slate-500">Nye kontoer får RealtyFlow-eier som standard. Du kan overstyre til en annen aktiv bruker med bedriftstilgang.</p>
         </div>
       </div>
     </section>
@@ -1173,10 +1301,10 @@ export default function CorporateAccountWorkspacePage() {
     <section className="rounded-2xl border border-violet-900/60 bg-violet-950/15 p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="flex items-center gap-2"><BrainCircuit size={19} className="text-violet-300"/><h2 className="font-semibold">Nexus AI Sales Coach</h2></div>
+          <div className="flex items-center gap-2"><BrainCircuit size={19} className="text-violet-300"/><h2 className="font-semibold">Nexus AI-salgscoach</h2></div>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Coach på laget for denne kontoen: avdekk problem → få kunden til å bekrefte problemet → presenter relevant løsning → test løsningsaksept → avtal konkret neste steg. Coach lager råd og utkast, men sender ingenting.</p>
         </div>
-        <span className="rounded-full border border-violet-800 bg-violet-950 px-3 py-1 text-[11px] font-semibold text-violet-200">Human approved · no auto-send</span>
+        <span className="rounded-full border border-violet-800 bg-violet-950 px-3 py-1 text-[11px] font-semibold text-violet-200">Menneskelig godkjenning · ingen automatisk sending</span>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
@@ -1184,7 +1312,7 @@ export default function CorporateAccountWorkspacePage() {
           <label className="text-xs text-slate-400">Hva vil du ha hjelp til?
             <select value={coachMode} onChange={e => setCoachMode(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
               <option value="NEXT_STEP">Hva bør jeg gjøre nå?</option>
-              <option value="DISCOVERY">Discovery: spørsmål og problemforståelse</option>
+              <option value="DISCOVERY">Behovsavklaring: spørsmål og problemforståelse</option>
               <option value="EMAIL">Analyser e-post og foreslå svar</option>
               <option value="ARGUMENTS">Argumenter og verdihistorie</option>
               <option value="OBJECTION">Håndter innvending</option>
@@ -1194,28 +1322,28 @@ export default function CorporateAccountWorkspacePage() {
           <textarea value={coachSource} onChange={e => setCoachSource(e.target.value)} rows={8} placeholder="Lim inn kundens e-post, innvending, møtenotat eller annen relevant tekst. La stå tomt for å coache kun på kontoens lagrede data." className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm"/>
           <textarea value={coachContext} onChange={e => setCoachContext(e.target.value)} rows={3} placeholder="Din egen kommentar: Hva er du usikker på? Hva vil du oppnå i neste kontakt?" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
           <button type="button" onClick={() => void runSalesCoach()} disabled={busy === "coach"} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
-            <MessageSquareText size={16}/>{busy === "coach" ? "Coach analyserer…" : "Kjør Sales Coach"}
+            <MessageSquareText size={16}/>{busy === "coach" ? "Salgscoachen analyserer…" : "Kjør salgscoach"}
           </button>
-          {data.coachRuns.length > 0 && <p className="text-[11px] text-slate-500">{data.coachRuns.length} siste coach-kjøringer lagret på kontoen.</p>}
+          {data.coachRuns.length > 0 && <p className="text-[11px] text-slate-500">{data.coachRuns.length} siste kjøringer med salgscoachen lagret på kontoen.</p>}
         </div>
 
         <div className="min-w-0">
-          {!coachOutput ? <div className="rounded-xl border border-dashed border-slate-700 p-6 text-sm text-slate-500">Kjør coachen for å få konto-spesifikke spørsmål, argumenter, akseptsignaler, innvendinger, neste handling og e-postutkast.</div> :
+          {!coachOutput ? <div className="rounded-xl border border-dashed border-slate-700 p-6 text-sm text-slate-500">Kjør salgscoachen for å få kontospesifikke spørsmål, argumenter, akseptsignaler, innvendinger, neste handling og e-postutkast.</div> :
           <div className="space-y-4">
             <div className="rounded-xl border border-violet-800/60 bg-slate-950/55 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">{coachOutput.currentPhase.replaceAll("_"," ")}</p>
-                <span className="text-[11px] text-slate-500">Confidence {coachOutput.confidence}</span>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-300">{labelOf(COACH_PHASE_LABELS, coachOutput.currentPhase)}</p>
+                <span className="text-[11px] text-slate-500">Sikkerhet {labelOf(CONFIDENCE_LABELS, coachOutput.confidence)}</span>
               </div>
               <p className="mt-2 text-sm leading-6 text-slate-200">{coachOutput.summary}</p>
               <p className="mt-3 text-sm font-semibold text-white">Neste beste handling</p>
               <p className="mt-1 text-sm text-cyan-200">{coachOutput.nextBestAction.action}</p>
-              <p className="mt-1 text-xs text-slate-500">{coachOutput.nextBestAction.why} · {coachOutput.nextBestAction.channel}</p>
+              <p className="mt-1 text-xs text-slate-500">{coachOutput.nextBestAction.why} · {labelOf(CHANNEL_LABELS, coachOutput.nextBestAction.channel)}</p>
             </div>
 
             <div className="grid gap-3 lg:grid-cols-2">
               <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
-                <p className="text-xs font-black uppercase text-amber-300">1–2 · Problem & problemaksept</p>
+                <p className="text-xs font-black uppercase text-amber-300">1–2 · Problem og problemaksept</p>
                 <p className="mt-2 text-sm text-slate-200">{coachOutput.problem.hypothesis}</p>
                 <p className="mt-3 text-xs font-semibold text-slate-400">Spørsmål</p>
                 <ul className="mt-2 space-y-2 text-xs leading-5 text-slate-300">{coachOutput.problem.questions.map(q => <li key={q}>• {q}</li>)}</ul>
@@ -1223,7 +1351,7 @@ export default function CorporateAccountWorkspacePage() {
                 <ul className="mt-2 space-y-1 text-xs text-slate-400">{coachOutput.problem.acceptanceSignals.map(q => <li key={q}>• {q}</li>)}</ul>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
-                <p className="text-xs font-black uppercase text-emerald-300">3–4 · Løsning & løsningsaksept</p>
+                <p className="text-xs font-black uppercase text-emerald-300">3–4 · Løsning og løsningsaksept</p>
                 <p className="mt-2 text-sm text-slate-200">{coachOutput.solution.positioning}</p>
                 <p className="mt-3 text-xs font-semibold text-slate-400">Argumenter</p>
                 <ul className="mt-2 space-y-2 text-xs leading-5 text-slate-300">{coachOutput.solution.arguments.map(q => <li key={q}>• {q}</li>)}</ul>
@@ -1259,8 +1387,8 @@ export default function CorporateAccountWorkspacePage() {
                   <ExternalLink size={14}/> Åpne E-post / Reach
                 </Link>
               </div>
-              <p className="mt-3 text-[11px] text-slate-600">Utkastet er ikke sendt. Lagring oppretter bare et utkast mot en server-godkjent Corporate-mottaker. Ingenting sendes uten eksplisitt handling i E-post / Reach.</p>
-              <p className="mt-2 text-[11px] text-violet-300/80">«Godkjenn og bruk» skriver bare coachens hypoteser, akseptmål og neste handling til strategien med audit. Faktisk problem- og løsningsaksept må registreres separat med kundeevidens.</p>
+              <p className="mt-3 text-[11px] text-slate-600">Utkastet er ikke sendt. Lagring oppretter bare et utkast mot en server-godkjent bedriftsmottaker. Ingenting sendes uten eksplisitt handling i E-post / Reach.</p>
+              <p className="mt-2 text-[11px] text-violet-300/80">«Godkjenn og bruk» skriver bare salgscoachens hypoteser, akseptmål og neste handling til strategien med revisjonsspor. Faktisk problem- og løsningsaksept må registreres separat med kundeevidens.</p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -1282,8 +1410,8 @@ export default function CorporateAccountWorkspacePage() {
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="flex items-center gap-2 font-semibold"><Users size={18} className="text-cyan-300"/> Decision Unit</h2>
-            <p className="mt-1 text-xs text-slate-500">Beslutningstakere, påvirkere og mulige champions.</p>
+            <h2 className="flex items-center gap-2 font-semibold"><Users size={18} className="text-cyan-300"/> Beslutningsgruppe</h2>
+            <p className="mt-1 text-xs text-slate-500">Beslutningstakere, påvirkere og mulige interne pådrivere.</p>
           </div>
           <span className="text-xs text-slate-500">{data.contacts.length} personer</span>
         </div>
@@ -1315,7 +1443,7 @@ export default function CorporateAccountWorkspacePage() {
                   onClick={() => void addPublicRole(role)}
                   className="rounded-lg border border-cyan-800 px-3 py-2 text-xs font-semibold text-cyan-200 disabled:border-slate-800 disabled:text-slate-600"
                 >
-                  {exists ? "I Decision Unit" : roleBusy ? "Legger til…" : "Legg til"}
+                  {exists ? "I Beslutningsgruppe" : roleBusy ? "Legger til…" : "Legg til"}
                 </button>
               </div>;
             })}
@@ -1329,9 +1457,9 @@ export default function CorporateAccountWorkspacePage() {
                 <div className="flex items-center gap-2">
                   <strong>{contact.name}</strong>
                   {contact.is_primary && <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Primær</span>}
-                  {contact.relationship_status === "CHAMPION" && <span className="rounded-full bg-emerald-950 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Champion</span>}
+                  {contact.relationship_status === "CHAMPION" && <span className="rounded-full bg-emerald-950 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Intern pådriver</span>}
                 </div>
-                <p className="mt-1 text-xs text-slate-400">{[contact.title, contact.buying_role, contact.influence_level].filter(Boolean).join(" · ")}</p>
+                <p className="mt-1 text-xs text-slate-400">{[contact.title, contact.buying_role, labelOf(INFLUENCE_LABELS, contact.influence_level)].filter(Boolean).join(" · ")}</p>
                 {contact.professional_relevance && <p className="mt-2 text-sm text-slate-300">{contact.professional_relevance}</p>}
                 {contact.professional_topics?.length ? <p className="mt-2 text-xs text-violet-300">Tema: {contact.professional_topics.join(" · ")}</p> : null}
               </div>
@@ -1355,10 +1483,10 @@ export default function CorporateAccountWorkspacePage() {
             <input value={contactForm.linkedinUrl} onChange={e => setContactForm(s => ({ ...s, linkedinUrl: e.target.value }))} placeholder="LinkedIn-URL" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
             <input value={contactForm.sourceUrl} onChange={e => setContactForm(s => ({ ...s, sourceUrl: e.target.value }))} placeholder="Kilde-URL (1881, bedriftsside, LinkedIn …)" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
             <select value={contactForm.relationshipStatus} onChange={e => setContactForm(s => ({ ...s, relationshipStatus: e.target.value }))} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-              {["UNKNOWN","NOT_CONTACTED","CONNECTED","ENGAGED","CHAMPION","BLOCKED"].map(v => <option key={v}>{v}</option>)}
+              {["UNKNOWN","NOT_CONTACTED","CONNECTED","ENGAGED","CHAMPION","BLOCKED"].map(v => <option key={v} value={v}>{labelOf(RELATIONSHIP_LABELS, v)}</option>)}
             </select>
             <select value={contactForm.influenceLevel} onChange={e => setContactForm(s => ({ ...s, influenceLevel: e.target.value }))} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-              {["UNKNOWN","LOW","MEDIUM","HIGH","DECISION_MAKER"].map(v => <option key={v}>{v}</option>)}
+              {["UNKNOWN","LOW","MEDIUM","HIGH","DECISION_MAKER"].map(v => <option key={v} value={v}>{labelOf(INFLUENCE_LABELS, v)}</option>)}
             </select>
             <input value={contactForm.buyingRole} onChange={e => setContactForm(s => ({ ...s, buyingRole: e.target.value }))} placeholder="Kjøpsrolle: HR, CEO, CFO…" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
             <input value={contactForm.professionalTopics} onChange={e => setContactForm(s => ({ ...s, professionalTopics: e.target.value }))} placeholder="Profesjonelle temaer, komma-separert" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
@@ -1385,10 +1513,10 @@ export default function CorporateAccountWorkspacePage() {
             </select>
             <div className="grid grid-cols-2 gap-2">
               <select value={touchpoint.channel} onChange={e => setTouchpoint(s => ({ ...s, channel: e.target.value }))} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                {["LINKEDIN","EMAIL","CALL","MEETING","OTHER"].map(v => <option key={v}>{v}</option>)}
+                {["LINKEDIN","EMAIL","CALL","MEETING","OTHER"].map(v => <option key={v} value={v}>{labelOf(CHANNEL_LABELS, v)}</option>)}
               </select>
               <select value={touchpoint.activityType} onChange={e => setTouchpoint(s => ({ ...s, activityType: e.target.value }))} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                {["FOLLOW_COMPANY","VIEW_PROFILE","CONNECT","PERSONAL_MESSAGE","EMAIL_INTRO","EMAIL_FOLLOWUP","CALL","DISCOVERY_MEETING","SEND_MATERIAL"].map(v => <option key={v}>{v}</option>)}
+                {["FOLLOW_COMPANY","VIEW_PROFILE","CONNECT","PERSONAL_MESSAGE","EMAIL_INTRO","EMAIL_FOLLOWUP","CALL","DISCOVERY_MEETING","SEND_MATERIAL"].map(v => <option key={v} value={v}>{labelOf(ACTIVITY_LABELS, v)}</option>)}
               </select>
             </div>
             <input value={touchpoint.ownerEmail} onChange={e => setTouchpoint(s => ({ ...s, ownerEmail: e.target.value }))} placeholder="Ansvarlig e-post (valgfritt)" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
@@ -1405,7 +1533,7 @@ export default function CorporateAccountWorkspacePage() {
           <div className="mt-3 space-y-2">
             {upcomingTouchpoints.map(item => <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
               <div className="flex items-center justify-between gap-2">
-                <strong className="text-sm">{item.channel} · {item.activity_type}</strong>
+                <strong className="text-sm">{labelOf(CHANNEL_LABELS, item.channel)} · {labelOf(ACTIVITY_LABELS, item.activity_type)}</strong>
                 {item.due_at && <span className="text-[11px] text-slate-500">{new Date(item.due_at).toLocaleString("no-NO")}</span>}
               </div>
               {item.summary && <p className="mt-2 text-xs text-slate-300">{item.summary}</p>}
