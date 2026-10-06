@@ -799,3 +799,114 @@ $$;
 
 revoke all on function public.spanish_admin_snapshot(uuid) from public, anon, authenticated;
 grant execute on function public.spanish_admin_snapshot(uuid) to service_role;
+
+
+create or replace function public.spanish_record_usage(
+  p_user_id uuid,
+  p_meter_key text,
+  p_quantity numeric,
+  p_idempotency_key text,
+  p_dimensions jsonb default '{}'::jsonb
+)
+returns bigint
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  tenant_id_value uuid;
+  module_id_value uuid;
+  event_id_value bigint;
+begin
+  if p_meter_key not in ('ai.text.input_tokens','ai.text.output_tokens','ai.request') then
+    raise exception 'Unsupported Spanish meter';
+  end if;
+  if p_quantity <= 0 then raise exception 'Quantity must be positive'; end if;
+  if nullif(btrim(p_idempotency_key),'') is null then raise exception 'Idempotency key is required'; end if;
+
+  select tm.tenant_id into tenant_id_value
+  from core.tenant_memberships tm
+  join core.tenants t on t.id=tm.tenant_id
+  where tm.user_id=p_user_id
+    and t.metadata ->> 'primary_app'='spanish'
+    and tm.status='active'
+  limit 1;
+
+  if tenant_id_value is null then raise exception 'Spanish tenant not found'; end if;
+  select id into module_id_value from core.modules where slug='language-learning';
+
+  insert into core.tenant_usage_events (
+    tenant_id,module_id,meter_key,quantity,idempotency_key,dimensions,occurred_at
+  ) values (
+    tenant_id_value,module_id_value,p_meter_key,p_quantity,p_idempotency_key,
+    coalesce(p_dimensions,'{}'::jsonb),now()
+  )
+  on conflict (idempotency_key) do update set idempotency_key=excluded.idempotency_key
+  returning id into event_id_value;
+
+  return event_id_value;
+end;
+$$;
+
+revoke all on function public.spanish_record_usage(uuid,text,numeric,text,jsonb) from public,anon,authenticated;
+grant execute on function public.spanish_record_usage(uuid,text,numeric,text,jsonb) to service_role;
+
+create or replace function public.spanish_usage_summary(p_user_id uuid)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  tenant_id_value uuid;
+  period_start_value timestamptz;
+  result jsonb;
+begin
+  select tm.tenant_id into tenant_id_value
+  from core.tenant_memberships tm
+  join core.tenants t on t.id=tm.tenant_id
+  where tm.user_id=p_user_id
+    and t.metadata ->> 'primary_app'='spanish'
+    and tm.status='active'
+  limit 1;
+
+  if tenant_id_value is null then
+    return '{"ai_requests":0,"input_tokens":0,"output_tokens":0,"estimated_cost_usd":0}'::jsonb;
+  end if;
+
+  select coalesce(
+    s.current_period_starts_at,
+    s.trial_ends_at - interval '7 days',
+    date_trunc('month',now())
+  )
+  into period_start_value
+  from core.tenant_subscriptions s
+  join core.apps a on a.id=s.app_id and a.slug='spanish'
+  where s.tenant_id=tenant_id_value
+  limit 1;
+
+  select jsonb_build_object(
+    'period_start',period_start_value,
+    'ai_requests',coalesce(sum(e.quantity) filter (where e.meter_key='ai.request'),0),
+    'input_tokens',coalesce(sum(e.quantity) filter (where e.meter_key='ai.text.input_tokens'),0),
+    'output_tokens',coalesce(sum(e.quantity) filter (where e.meter_key='ai.text.output_tokens'),0),
+    'estimated_cost_usd',coalesce(sum(
+      case
+        when (e.dimensions ->> 'estimated_cost_usd') ~ '^[0-9]+([.][0-9]+)?$'
+          then (e.dimensions ->> 'estimated_cost_usd')::numeric
+        else 0
+      end
+    ),0)
+  )
+  into result
+  from core.tenant_usage_events e
+  where e.tenant_id=tenant_id_value
+    and e.occurred_at >= coalesce(period_start_value,date_trunc('month',now()))
+    and e.meter_key in ('ai.request','ai.text.input_tokens','ai.text.output_tokens');
+
+  return result;
+end;
+$$;
+
+revoke all on function public.spanish_usage_summary(uuid) from public,anon,authenticated;
+grant execute on function public.spanish_usage_summary(uuid) to service_role;
