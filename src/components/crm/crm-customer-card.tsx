@@ -497,6 +497,165 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                     </article>
                   </section>
 
+                  <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
+                    <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">Salgsfase & fasevakt</p>
+                          <h3 className="mt-1 text-lg font-semibold text-white">
+                            {data.salesIntelligence.stageGuidance.current}
+                            {data.salesIntelligence.stageGuidance.next ? <> <ArrowRight size={15} className="mx-1 inline" /> {data.salesIntelligence.stageGuidance.next}</> : null}
+                          </h3>
+                          <p className="mt-1 text-sm text-slate-400">{data.salesIntelligence.stageGuidance.completionPercent}% av fasekriteriene er dokumentert.</p>
+                        </div>
+                        <span className={data.salesIntelligence.stageGuidance.readyToAdvance
+                          ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200"
+                          : "rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200"}>
+                          {data.salesIntelligence.stageGuidance.readyToAdvance ? "Klar for neste fase" : "Mangler evidens"}
+                        </span>
+                      </div>
+                      <div className="mt-4 space-y-2">
+                        {data.salesIntelligence.stageGuidance.criteria.map((criterion) => (
+                          <div key={criterion.id} className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm">
+                            <CheckCircle2 size={16} className={criterion.met ? "mt-0.5 shrink-0 text-emerald-400" : "mt-0.5 shrink-0 text-slate-600"} />
+                            <div>
+                              <div className={criterion.met ? "text-slate-200" : "text-slate-400"}>{criterion.label}</div>
+                              {criterion.evidence && <div className="mt-1 text-xs text-slate-500">{criterion.evidence}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Hva holder salget igjen?</p>
+                      <div className="mt-3 space-y-3">
+                        {data.salesIntelligence.risks.length > 0 ? (
+                          data.salesIntelligence.risks.map((risk) => (
+                            <div key={risk} className="flex gap-2 text-sm leading-5 text-amber-100">
+                              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-400" />{risk}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-emerald-300">Ingen tydelige salgsrisikoer er identifisert nå.</div>
+                        )}
+                      </div>
+                      {data.salesIntelligence.missing.length > 0 && (
+                        <div className="mt-4 border-t border-slate-800 pt-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mangler for neste fase</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {data.salesIntelligence.missing.map((item) => <span key={item} className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-300">{item}</span>)}
+                          </div>
+                        </div>
+                      )}
+                      {data.salesIntelligence.whyNow.length > 0 && (
+                        <div className="mt-4 border-t border-slate-800 pt-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Hvorfor nå</p>
+                          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
+                            {data.salesIntelligence.whyNow.map((item) => <li key={item}>• {item}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </article>
+                  </section>
+
+                  <section className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-5">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-300"><Sparkles size={15} />AI Sales Coach</div>
+                        <h3 className="mt-1 text-xl font-semibold text-white">Hjelp meg å dra salget fremover</h3>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Coachen bruker Buyer Profile, siste kundesvar, pipeline, shortlist og salgsfasen. Den foreslår og skriver utkast, men sender aldri noe.</p>
+                      </div>
+                      {salesCoachMeta?.provider && <span className="text-xs text-slate-500">{salesCoachMeta.provider}{salesCoachMeta.model ? ` · ${salesCoachMeta.model}` : ""}</span>}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {([
+                        ["NEXT_STEP", "Neste steg"],
+                        ["DISCOVERY", "Spørsmål"],
+                        ["OBJECTION", "Innvendinger"],
+                        ["MEETING", "Samtale/møte"],
+                        ["EMAIL", "E-postutkast"],
+                      ] as const).map(([mode, label]) => (
+                        <Button
+                          key={mode}
+                          size="sm"
+                          variant={salesCoachMode === mode && salesCoach ? "default" : "outline"}
+                          onClick={() => void runSalesCoach(mode)}
+                          disabled={salesCoachBusy}
+                        >
+                          {salesCoachBusy && salesCoachMode === mode ? <Loader2 size={14} className="mr-2 animate-spin" /> : mode === "NEXT_STEP" ? <Sparkles size={14} className="mr-2" /> : null}
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+
+                    {!salesCoach && (
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gode neste spørsmål</p>
+                          <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-300">
+                            {data.salesIntelligence.discoveryQuestions.slice(0, 4).map((question) => <li key={question}>• {question}</li>)}
+                          </ul>
+                        </div>
+                        <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Coach-prinsipp</p>
+                          <p className="mt-3 text-sm leading-6 text-slate-300">Reduser én konkret usikkerhet om gangen. Ikke send flere boliger bare for å skape aktivitet. Få kunden til å uttrykke prioritering, reaksjon eller neste forpliktelse med egne ord.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {salesCoach && (
+                      <div className="mt-5 space-y-4">
+                        <div className="rounded-xl border border-violet-500/20 bg-slate-950/50 p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-semibold text-violet-200">{salesCoach.currentPhase}</span>
+                            {salesCoach.confidence && <span className="text-xs text-slate-500">Confidence {salesCoach.confidence}</span>}
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-slate-200">{salesCoach.summary}</p>
+                        </div>
+
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <article className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Neste beste handling</p>
+                            <h4 className="mt-2 font-semibold text-white">{salesCoach.nextBestAction?.action}</h4>
+                            <p className="mt-2 text-sm leading-5 text-slate-400">{salesCoach.nextBestAction?.why}</p>
+                            {salesCoach.nextBestAction?.channel && <span className="mt-3 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-400">{salesCoach.nextBestAction.channel}</span>}
+                          </article>
+                          <article className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Spør kunden</p>
+                            <ul className="mt-2 space-y-2 text-sm leading-5 text-slate-300">
+                              {(salesCoach.customerSituation?.questions || []).slice(0, 4).map((question: string) => <li key={question}>• {question}</li>)}
+                            </ul>
+                          </article>
+                        </div>
+
+                        {(salesCoach.sellerCoach?.do?.length || salesCoach.sellerCoach?.avoid?.length) > 0 && (
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <article className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300">Gjør</p>
+                              <ul className="mt-2 space-y-2 text-sm text-slate-300">{(salesCoach.sellerCoach?.do || []).slice(0, 5).map((item: string) => <li key={item}>• {item}</li>)}</ul>
+                            </article>
+                            <article className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Unngå</p>
+                              <ul className="mt-2 space-y-2 text-sm text-slate-300">{(salesCoach.sellerCoach?.avoid || []).slice(0, 5).map((item: string) => <li key={item}>• {item}</li>)}</ul>
+                            </article>
+                          </div>
+                        )}
+
+                        {salesCoach.emailDraft?.body && (
+                          <article className="rounded-xl border border-slate-700 bg-slate-950/60">
+                            <div className="border-b border-slate-800 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Utkast · sendes ikke automatisk</p>
+                              <div className="mt-1 font-semibold text-white">{salesCoach.emailDraft.subject || "E-postutkast"}</div>
+                            </div>
+                            <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-4 font-sans text-sm leading-6 text-slate-300">{salesCoach.emailDraft.body}</pre>
+                          </article>
+                        )}
+                      </div>
+                    )}
+                  </section>
+
                   <section className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-5">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div>
