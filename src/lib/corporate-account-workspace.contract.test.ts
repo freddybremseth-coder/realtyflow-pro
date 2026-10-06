@@ -42,6 +42,42 @@ const companyProfile = fs.readFileSync(
   "src/lib/corporate-enrichment/company-profile.ts",
   "utf8",
 );
+const growthPanel = fs.readFileSync(
+  "src/components/workspaces/growth-corporate-panel.tsx",
+  "utf8",
+);
+const workspaceAccess = fs.readFileSync(
+  "src/app/(realty)/workspace-access/page.tsx",
+  "utf8",
+);
+const workspaceUsers = fs.readFileSync(
+  "src/app/(realty)/workspace-users/page.tsx",
+  "utf8",
+);
+const moduleCatalog = fs.readFileSync(
+  "src/lib/workspaces/module-catalog.ts",
+  "utf8",
+);
+const outboundEngagementPage = fs.readFileSync(
+  "src/app/(content)/nexus-os/outbound-engagement/page.tsx",
+  "utf8",
+);
+const corporateDashboard = fs.readFileSync(
+  "src/app/(business)/corporate-homes/page.tsx",
+  "utf8",
+);
+const corporatePartnersPage = fs.readFileSync(
+  "src/app/(business)/corporate-homes/partners/page.tsx",
+  "utf8",
+);
+const intelligenceEngine = fs.readFileSync(
+  "src/lib/corporate-intelligence.ts",
+  "utf8",
+);
+const accountAdvisor = fs.readFileSync(
+  "src/lib/nexus/corporate-account-advisor.ts",
+  "utf8",
+);
 
 test("Corporate Account Workspace is permission scoped and never auto-executes outreach", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "corporate\.read"\)/);
@@ -201,4 +237,38 @@ test("Corporate phase gate requires evidence and a human reason for deliberate e
   assert.match(route, /stageOverrideReason\.length < 12/);
   assert.match(page, /Fasevakt/);
   assert.match(page, /Overstyr fasevakt/);
+});
+
+
+test("Corporate user-facing copy stays consistently Norwegian", () => {
+  assert.match(page, /Bedriftskonto/);
+  assert.match(page, /Nexus bedriftsrådgiver/);
+  assert.match(page, /Bedriftsinnsikt/);
+  assert.match(page, /BEGRENSET ANALYSE/);
+  assert.match(page, /FULL ANALYSE/);
+  assert.match(page, /Kontoscore/);
+  assert.match(page, /Komplett beslutningsgrunnlag/);
+  assert.match(page, /Beslutningsgruppe/);
+  assert.match(page, /Nexus AI-salgscoach/);
+  assert.doesNotMatch(page, /DEGRADED RESEARCH|FULL RESEARCH|Provider:|freshness\s|confidence\s|Account score|Decision Unit|Referral partner er nå en kontorolle|Business case completeness|Nexus AI Sales Coach|Henter Corporate Account Workspace/);
+
+  assert.match(growthPanel, /Bedriftskartlegging \/ neste steg/);
+  assert.match(growthPanel, /Bedrift og partnerkanaler/);
+  assert.doesNotMatch(growthPanel, /Corporate research \/ neste steg|Forbered discovery-møte|Decision Pack|Aktiv pipeline|Laster Growth & Corporate/);
+
+  assert.match(workspaceAccess, /Bedrift – se/);
+  assert.match(workspaceAccess, /Bedrift – planlegge/);
+  assert.match(workspaceUsers, /Kartlegge og planlegge neste steg/);
+  assert.match(moduleCatalog, /label: "Bedrift"/);
+  assert.doesNotMatch(outboundEngagementPage, /Corporate buyer|Tier \{row\.fitTier\}/);
+
+  assert.match(corporateDashboard, /B2B-vekst og salgstrakt/);
+  assert.match(corporateDashboard, /Bedriftshenvendelser/);
+  assert.match(corporateDashboard, /Bedriftens innholdsmotor/);
+  assert.doesNotMatch(corporateDashboard, /B2B Growth & Pipeline|Corporate leads|Aktiv pipeline|Corporate Content Engine|Signalresearch|Siste discovery:|partnerdiscovery/);
+  assert.match(corporatePartnersPage, /Sikkerhetsregel:/);
+  assert.doesNotMatch(corporatePartnersPage, /Guardrail:|partnerdiscovery|Åpne dossier/);
+
+  assert.doesNotMatch(intelligenceEngine, /degraded research|webresearch|watch-kjøringen|Employer branding|People-\/|management-retreat/);
+  assert.doesNotMatch(accountAdvisor, /Selskapsresearch|intern champion|videre outreach|tilgjengelig enrichment|offentlig research|kort discovery|active outreach|scrape profiler|inferer private/);
 });
