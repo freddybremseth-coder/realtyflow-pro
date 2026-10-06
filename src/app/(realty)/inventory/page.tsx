@@ -1794,11 +1794,42 @@ REGLER:
               </Button>
               {showDetailModal.marketing_description ? (
                 <div className="mb-3 p-3 rounded-md bg-zinc-900/60 border border-zinc-800">
-                  <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
-                    AI-salgstekst (lagret)
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                      AI-salgstekst (lagret)
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(showDetailModal.marketing_description || "", "ai-selling-copy")}
+                        className="text-xs text-zinc-400 hover:text-white flex items-center gap-1"
+                      >
+                        {copiedField === "ai-selling-copy" ? (
+                          <><CheckCircle2 size={12} className="text-emerald-400" />Kopiert</>
+                        ) : (
+                          <><Copy size={12} />Kopier</>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const stem = safeDownloadStem(showDetailModal.ref || showDetailModal.title || showDetailModal.id);
+                          downloadPlainText(showDetailModal.marketing_description || "", `${stem}-ai-salgstekst.txt`);
+                        }}
+                        className="text-xs text-zinc-400 hover:text-white flex items-center gap-1"
+                      >
+                        <Download size={12} />
+                        Last ned
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-6">
-                    {showDetailModal.marketing_description}
+                  <div className="max-h-64 overflow-y-auto rounded-md bg-black/20 p-3">
+                    <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed break-words select-text">
+                      {showDetailModal.marketing_description}
+                    </p>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-zinc-500">
+                    Hele teksten vises her og kan scrolles, kopieres eller lastes ned.
                   </p>
                 </div>
               ) : null}
@@ -2579,23 +2610,36 @@ function ContentBlock({ title, icon, text, field, copiedField, onCopy, compact }
 }) {
   return (
     <div className={compact ? "border-l-2 border-slate-600 pl-3" : "bg-slate-900/50 rounded-lg border border-slate-700 p-4"}>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           {icon}
-          <h3 className={`text-white font-medium ${compact ? 'text-xs' : 'text-sm'}`}>{title}</h3>
+          <h3 className={`text-white font-medium ${compact ? "text-xs" : "text-sm"}`}>{title}</h3>
         </div>
-        <button
-          onClick={() => onCopy(text, field)}
-          className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
-        >
-          {copiedField === field ? (
-            <><CheckCircle2 size={12} className="text-green-400" />Kopiert!</>
-          ) : (
-            <><Copy size={12} />Kopier</>
-          )}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => onCopy(text, field)}
+            className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+          >
+            {copiedField === field ? (
+              <><CheckCircle2 size={12} className="text-green-400" />Kopiert!</>
+            ) : (
+              <><Copy size={12} />Kopier</>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadPlainText(text, `${safeDownloadStem(field)}.txt`)}
+            className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+          >
+            <Download size={12} />
+            Last ned
+          </button>
+        </div>
       </div>
-      <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{text}</p>
+      <div className={`overflow-y-auto rounded-md ${compact ? "max-h-56 bg-slate-950/25 p-2.5" : "max-h-72 bg-slate-950/20 p-3"}`}>
+        <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed break-words select-text">{text}</p>
+      </div>
     </div>
   );
 }
