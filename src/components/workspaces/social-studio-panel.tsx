@@ -12,7 +12,7 @@ export type WorkspaceSocialPropertySeed = {
   primary_image?: string | null;
 };
 
-type SourceType = "property" | "article" | "topic";
+type SourceType = "property" | "article" | "area" | "topic";
 type Channel = "facebook" | "instagram";
 type Variant = {
   id: "editorial_premium" | "lifestyle_story" | "advisor_insight";
@@ -32,7 +32,47 @@ type GeneratedSource = {
   imageUrl: string | null;
   propertyId: string | null;
   propertyLookup: string | null;
+  contentId?: string | null;
+  areaId?: string | null;
+  companionPropertyId?: string | null;
 };
+
+type EditorialItem = {
+  id: string;
+  kind: "guide" | "magazine" | "article" | "area";
+  sourceType: "article" | "area";
+  title: string;
+  summary: string;
+  url: string;
+  imageUrl: string | null;
+  publishedAt: string | null;
+  updatedAt: string | null;
+  lastSharedAt: string | null;
+  notShared60Days: boolean;
+  score: number;
+  contentId: string | null;
+  areaId: string | null;
+};
+
+type EditorialDiscovery = {
+  recommended: EditorialItem[];
+  newGuides: EditorialItem[];
+  magazine: EditorialItem[];
+  areas: EditorialItem[];
+  notShared60Days: EditorialItem[];
+  pairings: Array<{
+    itemId: string;
+    contentId: string | null;
+    areaId: string | null;
+    sourceType: "article" | "area";
+    title: string;
+    recommendation: string;
+    concept: "advisor_insight";
+    reason: string;
+  }>;
+};
+
+type EditorialCategory = "recommended" | "newGuides" | "magazine" | "areas" | "notShared60Days";
 
 const PROPERTY_STYLES = [
   ["hero_property", "Hero Property"],
@@ -44,11 +84,25 @@ const PROPERTY_STYLES = [
   ["minimal_premium", "Minimal Premium"],
 ] as const;
 
-const sourceOptions: Array<{ id: SourceType; label: string; hint: string; icon: typeof Building2 }> = [
+const sourceOptions: Array<{ id: "property" | "article" | "topic"; label: string; hint: string; icon: typeof Building2 }> = [
   { id: "property", label: "Eiendom", hint: "Tre konsepter fra verifiserte boligfakta", icon: Building2 },
   { id: "article", label: "Guide / magasin", hint: "Hent artikkelen fra brand-nettsiden", icon: BookOpenText },
   { id: "topic", label: "Eget tema", hint: "Beskriv hva du ønsker å fronte", icon: WandSparkles },
 ];
+
+const EDITORIAL_CATEGORIES: Array<{ id: EditorialCategory; label: string }> = [
+  { id: "recommended", label: "Anbefalt å fronte nå" },
+  { id: "newGuides", label: "Nye guider" },
+  { id: "magazine", label: "Magasin" },
+  { id: "areas", label: "Områder" },
+  { id: "notShared60Days", label: "Ikke delt siste 60 dager" },
+];
+
+function formatContentDate(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("nb-NO", { day: "2-digit", month: "short" });
+}
 
 export function WorkspaceSocialStudio({
   brandKey,
@@ -69,6 +123,14 @@ export function WorkspaceSocialStudio({
   const [propertyLookup, setPropertyLookup] = useState("");
   const [propertyLabel, setPropertyLabel] = useState("");
   const [articleUrl, setArticleUrl] = useState("");
+  const [areaLookup, setAreaLookup] = useState("");
+  const [contentId, setContentId] = useState("");
+  const [propertyContext, setPropertyContext] = useState<WorkspaceSocialPropertySeed | null>(null);
+  const [editorial, setEditorial] = useState<EditorialDiscovery | null>(null);
+  const [editorialCategory, setEditorialCategory] = useState<EditorialCategory>("recommended");
+  const [editorialBusy, setEditorialBusy] = useState(false);
+  const [editorialError, setEditorialError] = useState("");
+  const [selectedContent, setSelectedContent] = useState<EditorialItem | null>(null);
   const [topic, setTopic] = useState("");
   const [brief, setBrief] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -85,6 +147,11 @@ export function WorkspaceSocialStudio({
   useEffect(() => {
     if (!initialProperty?.id) return;
     setSourceType("property");
+    setPropertyContext(initialProperty);
+    setEditorial(null);
+    setSelectedContent(null);
+    setContentId("");
+    setAreaLookup("");
     // Prefer the canonical property reference when available. Inventory can contain
     // non-UUID local/import IDs, while the server accepts either UUID or unique ref.
     setPropertyLookup(initialProperty.ref || initialProperty.id);
@@ -101,12 +168,77 @@ export function WorkspaceSocialStudio({
     onInitialPropertyConsumed?.();
   }, [initialProperty?.id]);
 
+  const companionPropertyLookup = propertyContext?.ref || propertyContext?.id || "";
+
   const canGenerate = useMemo(() => {
     if (!canDraft || busy) return false;
     if (sourceType === "property") return propertyLookup.trim().length > 0;
     if (sourceType === "article") return articleUrl.trim().length > 0;
+    if (sourceType === "area") return areaLookup.trim().length > 0;
     return topic.trim().length >= 5;
-  }, [canDraft, busy, sourceType, propertyLookup, articleUrl, topic]);
+  }, [canDraft, busy, sourceType, propertyLookup, articleUrl, areaLookup, topic]);
+
+  const editorialItems = editorial?.[editorialCategory] || [];
+
+  async function loadEditorialContent() {
+    if (editorialBusy) return;
+    setEditorialBusy(true);
+    setEditorialError("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "discover_content",
+          propertyLookup: companionPropertyLookup,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error("Innholdsvelgeren kunne ikke hente forslag akkurat nå.");
+      setEditorial({
+        recommended: Array.isArray(body.recommended) ? body.recommended : [],
+        newGuides: Array.isArray(body.newGuides) ? body.newGuides : [],
+        magazine: Array.isArray(body.magazine) ? body.magazine : [],
+        areas: Array.isArray(body.areas) ? body.areas : [],
+        notShared60Days: Array.isArray(body.notShared60Days) ? body.notShared60Days : [],
+        pairings: Array.isArray(body.pairings) ? body.pairings : [],
+      });
+    } catch (cause) {
+      setEditorialError(cause instanceof Error ? cause.message : "Kunne ikke hente innhold.");
+    } finally {
+      setEditorialBusy(false);
+    }
+  }
+
+  function chooseEditorialItem(item: EditorialItem) {
+    setSelectedContent(item);
+    setContentId(item.contentId || "");
+    setImageUrl(item.imageUrl || "");
+    setVariants([]);
+    setPreviews({});
+    setSource(null);
+    setError("");
+    if (item.sourceType === "area") {
+      setSourceType("area");
+      setAreaLookup(item.areaId || item.id.replace(/^area:/, ""));
+      setArticleUrl("");
+    } else {
+      setSourceType("article");
+      setArticleUrl(item.url);
+      setAreaLookup("");
+    }
+    setNotice(
+      companionPropertyLookup
+        ? "Valgt «" + item.title + "». RealtyFlow kombinerer innholdet med den valgte boligen og lager tre vinkler."
+        : "Valgt «" + item.title + "» fra RealtyFlow.",
+    );
+  }
+
+  useEffect(() => {
+    if (sourceType !== "article" && sourceType !== "area") return;
+    if (editorial || editorialBusy) return;
+    void loadEditorialContent();
+  }, [sourceType, brandKey, companionPropertyLookup]);
 
   async function generate() {
     if (!canGenerate) return;
@@ -124,6 +256,9 @@ export function WorkspaceSocialStudio({
           sourceType,
           propertyLookup: propertyLookup.trim(),
           articleUrl: articleUrl.trim(),
+          areaLookup: areaLookup.trim(),
+          contentId: contentId.trim(),
+          companionPropertyLookup: sourceType === "property" ? "" : companionPropertyLookup,
           topic: topic.trim(),
           brief: brief.trim(),
           imageUrl: imageUrl.trim(),
@@ -137,6 +272,7 @@ export function WorkspaceSocialStudio({
             : code === "PROPERTY_NOT_FOUND" ? "Fant ikke boligen. Bruk referansen eller åpne den fra Eiendommer."
             : code === "ARTICLE_URL_OUTSIDE_BRAND" || code === "ARTICLE_REDIRECT_OUTSIDE_BRAND" ? "Guide/Magasin kan bare hentes fra denne merkevarens eget nettsted."
             : code === "ARTICLE_FETCH_FAILED" ? "Artikkelen kunne ikke hentes fra nettsiden."
+            : code === "AREA_NOT_FOUND" ? "Fant ikke områdeinnholdet i RealtyFlow."
             : "SoMe Studio kunne ikke lage forslagene.",
         );
       }
@@ -145,7 +281,9 @@ export function WorkspaceSocialStudio({
       setSource(body.source as GeneratedSource);
       setVariants(nextVariants);
       setStyles(Object.fromEntries(nextVariants.map((item) => [item.id, item.creativeStyle])));
-      setNotice("Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.");
+      setNotice(body.source?.companionPropertyId
+        ? "Tre konsepter er klare, inkludert koblingen mellom valgt innhold og boligen."
+        : "Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke lage forslag.");
     } finally {
@@ -211,6 +349,9 @@ export function WorkspaceSocialStudio({
             ...variant.tags,
             "concept-" + variant.id.replace(/_/g, "-"),
             "source-" + (source?.type || sourceType),
+            ...(source?.contentId ? ["source-content-" + source.contentId] : []),
+            ...(source?.areaId ? ["source-area-" + source.areaId] : []),
+            ...(source?.companionPropertyId ? ["paired-property"] : []),
             ...(source?.type === "property"
               ? ["style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-")]
               : []),
