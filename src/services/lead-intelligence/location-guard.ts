@@ -10,6 +10,7 @@ const REGION_CATALOG = [
     names: ["costa blanca nord", "costa blanca north", "costa blanca ", "costa blanca"],
     areas: [
       "albir",
+      "alicante",
       "altea",
       "benidorm",
       "benissa",
@@ -39,6 +40,7 @@ const REGION_CATALOG = [
     id: "costa-blanca-south",
     names: ["costa blanca sør", "costa blanca south"],
     areas: [
+      "alicante",
       "campoamor",
       "ciudad quesada",
       "quesada",
@@ -60,6 +62,7 @@ const REGION_CATALOG = [
     id: "costa-blanca-inland",
     names: ["costa blanca innland", "costa blanca inland", "costa blanca south - inland"],
     areas: [
+      "alicante",
       "aspe",
       "biar",
       "elda",
