@@ -63,7 +63,7 @@ export function buildWorkspaceMemberNavigation(workspaces:WorkspaceNavigationSou
         {label:"I dag",href:base,icon:"Target"},
       ];
       if(hasAny(p,["crm.read","crm.joint.read","tasks.joint.read"])) items.push({label:"Kunder & leads",href:`${base}?tab=leads`,icon:"Users"});
-      if(p.includes("customer360.read")) items.push({label:"Customer 360",href:`${base}?tab=leads&customer360=1`,icon:"UserRound"});
+      if(hasAny(p,["crm.read","crm.joint.read"])) items.push({label:"Customer 360",href:`${base}?tab=leads&customer360=1`,icon:"UserRound"});
       if(p.includes("properties.catalog.read")) items.push({label:"Eiendommer",href:`${base}?tab=properties`,icon:"Building2"});
       if(workspace.brandKey==="zeneco"&&p.includes("corporate.read")) items.push({label:"Corporate Homes",href:`${base}?tab=growth&area=corporate`,icon:"Building2"});
       if(p.includes("content.read")) items.push({label:"Nettsideinnhold",href:`${base}?tab=growth&area=content`,icon:"FileText"});
