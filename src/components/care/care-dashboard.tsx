@@ -735,6 +735,13 @@ function CareLeadCard({
 
       {quoteError && <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">{quoteError}</div>}
 
+      {lead.quotePlanId && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs">
+          <span className="text-cyan-100"><strong>Tilbud:</strong> {lead.quotePlanName || "Care-plan"}</span>
+          <span className="font-semibold text-white">{moneyFromCents(lead.quotePriceCents, lead.quoteCurrency || "EUR")}/mnd</span>
+        </div>
+      )}
+
       {lead.nextAction && (
         <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
           <span className="font-semibold text-amber-200">Neste steg:</span> {lead.nextAction}
