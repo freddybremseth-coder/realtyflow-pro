@@ -96,7 +96,7 @@ export default function CorporatePartnersPage() {
         : `${Number(result?.created || 0)} nye partnerbedrifter ble lagt til.`);
       await load();
     } catch (discoverError) {
-      setError(discoverError instanceof Error ? discoverError.message : "Kunne ikke kjøre partnerdiscovery.");
+      setError(discoverError instanceof Error ? discoverError.message : "Kunne ikke kjøre partnerkartlegging.");
     } finally {
       setDiscovering(false);
     }
