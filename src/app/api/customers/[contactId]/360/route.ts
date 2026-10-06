@@ -11,6 +11,7 @@ import {
   type CustomerTimelineEvent,
 } from "@/lib/customer-360";
 import { recommendRevenueAction } from "@/lib/revenue/today";
+import { buildCustomerSalesAdvice } from "@/lib/nexus/customer-sales-advisor";
 import { extractLatestReplyText } from "@/services/email/latest-reply-text";
 
 export const dynamic = "force-dynamic";
@@ -265,6 +266,17 @@ export async function GET(
     buildRevenueTimelineEvents(revenueEvents),
   ]).slice(0, 150);
 
+  const salesIntelligence = buildCustomerSalesAdvice({
+    contact,
+    activeBuyerProfile: activeProfile,
+    criteria: activeCriteria,
+    shortlists: shortlistsWithItems,
+    workItems,
+    communicationDialogue,
+    timeline,
+    now: new Date(),
+  });
+
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     contact,
@@ -285,6 +297,7 @@ export async function GET(
     nurtureEvents,
     linkedEmailMessages,
     communicationDialogue,
+    salesIntelligence,
     communicationCoverage: {
       crmInteractions: crmInteractionEvents.length,
       portalMessages: portalMessages.length,

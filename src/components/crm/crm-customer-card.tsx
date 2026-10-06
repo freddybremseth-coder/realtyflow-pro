@@ -21,6 +21,7 @@ import {
   Pencil,
   Phone,
   RefreshCw,
+  Sparkles,
   Target,
   UserCheck,
   UserRound,
@@ -67,6 +68,36 @@ interface Customer360Payload {
     emailBlocked: boolean;
     blockedReason: string | null;
     messages: Array<Record<string, any>>;
+  };
+  salesIntelligence: {
+    stage: string;
+    priority: "P1" | "P2" | "P3" | "PAUSED";
+    score: number;
+    headline: string;
+    momentum: "HOT" | "WARM" | "COOL" | "PAUSED" | "CLOSED";
+    scores: { profile: number; engagement: number; timing: number; intent: number; overall: number };
+    whyNow: string[];
+    signals: string[];
+    risks: string[];
+    missing: string[];
+    nextBestAction: { action: string; why: string; channel: string };
+    stageGuidance: {
+      current: string;
+      next: string | null;
+      completionPercent: number;
+      readyToAdvance: boolean;
+      criteria: Array<{ id: string; label: string; met: boolean; evidence?: string | null }>;
+    };
+    commitmentLadder: Array<{
+      id: string;
+      label: string;
+      status: "CONFIRMED" | "PARTIAL" | "OPEN" | "NOT_APPLICABLE";
+      evidence: string | null;
+      nextQuestion: string | null;
+    }>;
+    discoveryQuestions: string[];
+    coach: { do: string[]; avoid: string[] };
+    guardrail: string;
   };
   timeline: Array<{
     id: string;
@@ -158,6 +189,14 @@ function priorityClasses(priority?: string) {
   return "border-slate-700 bg-slate-800 text-slate-300";
 }
 
+function momentumClasses(momentum?: string) {
+  if (momentum === "HOT") return "border-red-400/40 bg-red-500/15 text-red-100";
+  if (momentum === "WARM") return "border-amber-400/40 bg-amber-500/15 text-amber-100";
+  if (momentum === "PAUSED") return "border-slate-500/40 bg-slate-500/10 text-slate-200";
+  if (momentum === "CLOSED") return "border-slate-700 bg-slate-900 text-slate-400";
+  return "border-cyan-400/30 bg-cyan-500/10 text-cyan-100";
+}
+
 function timelineIcon(kind: string) {
   if (kind === "portal") return MessageSquare;
   if (kind === "profile") return UserRound;
@@ -208,6 +247,11 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   const [portalLoading, setPortalLoading] = useState(false);
   const [takeoverBusy, setTakeoverBusy] = useState(false);
   const [takeoverMessage, setTakeoverMessage] = useState("");
+  const [salesCoachBusy, setSalesCoachBusy] = useState(false);
+  const [salesCoachMode, setSalesCoachMode] = useState<"NEXT_STEP" | "DISCOVERY" | "EMAIL" | "OBJECTION" | "MEETING">("NEXT_STEP");
+  const [salesCoach, setSalesCoach] = useState<Record<string, any> | null>(null);
+  const [salesCoachMeta, setSalesCoachMeta] = useState<{ provider?: string; model?: string } | null>(null);
+  const [salesCoachSourceText, setSalesCoachSourceText] = useState("");
 
   async function load() {
     setLoading(true);
@@ -227,6 +271,9 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   useEffect(() => {
     setTab("overview");
     setUpdateDefaultTab("update");
+    setSalesCoach(null);
+    setSalesCoachMeta(null);
+    setSalesCoachSourceText("");
     void load();
   }, [contactId]);
 
@@ -257,6 +304,27 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   function openContactDetails() {
     setUpdateDefaultTab("details");
     setTab("update");
+  }
+
+  async function runSalesCoach(mode: "NEXT_STEP" | "DISCOVERY" | "EMAIL" | "OBJECTION" | "MEETING") {
+    setSalesCoachBusy(true);
+    setSalesCoachMode(mode);
+    setError("");
+    try {
+      const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/sales-coach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, sourceText: salesCoachSourceText.trim() || undefined }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre AI Sales Coach.");
+      setSalesCoach(body?.coach || null);
+      setSalesCoachMeta({ provider: body?.provider, model: body?.model });
+    } catch (coachError) {
+      setError(coachError instanceof Error ? coachError.message : "Kunne ikke kjøre AI Sales Coach.");
+    } finally {
+      setSalesCoachBusy(false);
+    }
   }
 
   async function setManualTakeover(action: "TAKE_OVER" | "RELEASE") {
@@ -394,37 +462,253 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
 
               {tab === "overview" && (
                 <div className="space-y-5">
-                  <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+                  <section className="grid gap-4 xl:grid-cols-[1.55fr_.95fr]">
                     <article className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-emerald-300">Neste beste handling</span>
-                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${priorityClasses(data.nextAction?.priority)}`}>{data.nextAction?.priority || "MEDIUM"}</span>
+                        <span className="text-sm font-semibold text-emerald-300">Nexus · neste beste handling</span>
+                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${momentumClasses(data.salesIntelligence.momentum)}`}>{data.salesIntelligence.momentum}</span>
+                        <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-200">{data.salesIntelligence.priority} · {data.salesIntelligence.score}/100</span>
                       </div>
-                      <h3 className="mt-3 text-lg font-semibold text-white">{data.nextAction?.title || "Følg opp kunden"}</h3>
-                      <p className="mt-2 text-sm leading-6 text-slate-200">{data.nextAction?.description || "Åpne kundeoppdatering og registrer neste steg."}</p>
-                      {data.nextAction?.reason && <p className="mt-2 text-xs text-slate-400">Hvorfor: {data.nextAction.reason}</p>}
-                      <p className="mt-1 text-xs text-slate-500">Oppfølging: {dateLabel(data.contact.next_followup)}</p>
+                      <h3 className="mt-3 text-lg font-semibold text-white">{data.salesIntelligence.headline}</h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-200">{data.salesIntelligence.nextBestAction.action}</p>
+                      <p className="mt-2 text-xs text-slate-400">Hvorfor: {data.salesIntelligence.nextBestAction.why}</p>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {actionUsesCustomerUpdateTab(data.nextAction?.primaryHref) ? (
-                          <Button size="sm" onClick={openCustomerUpdate}>{data.nextAction?.primaryLabel || "Registrer oppdatering"}</Button>
-                        ) : data.nextAction?.primaryHref ? (
-                          <Button asChild size="sm"><Link href={data.nextAction.primaryHref}>{data.nextAction.primaryLabel || "Åpne handling"}<ArrowRight size={14} className="ml-1" /></Link></Button>
-                        ) : (
-                          <Button size="sm" onClick={openCustomerUpdate}>Registrer oppdatering</Button>
-                        )}
-                        {data.nextAction?.secondaryHref && (
-                          actionUsesCustomerUpdateTab(data.nextAction.secondaryHref)
-                            ? <Button size="sm" variant="outline" onClick={openCustomerUpdate}>{data.nextAction.secondaryLabel || "Registrer oppdatering"}</Button>
-                            : <Button asChild size="sm" variant="outline"><Link href={data.nextAction.secondaryHref}>{data.nextAction.secondaryLabel || "Åpne"}</Link></Button>
-                        )}
+                        <Button size="sm" onClick={() => void runSalesCoach("NEXT_STEP")} disabled={salesCoachBusy}>
+                          {salesCoachBusy && salesCoachMode === "NEXT_STEP" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Sparkles size={14} className="mr-2" />}
+                          Coach meg på neste steg
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={openCustomerUpdate}>Registrer neste steg</Button>
+                        {data.salesIntelligence.nextBestAction.channel !== "NONE" && <span className="inline-flex items-center rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-400">Anbefalt kanal: {data.salesIntelligence.nextBestAction.channel}</span>}
                       </div>
                     </article>
+
                     <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
-                      <div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-wide text-slate-500">Profilkompletthet</p><strong className="mt-1 block text-3xl text-white">{data.completeness.score}%</strong></div><ClipboardCheck className="text-cyan-300" size={30} /></div>
-                      <div className="mt-4 space-y-2">
-                        {data.completeness.checks.map((check) => <div key={check.id} className="flex items-center gap-2 text-sm"><CheckCircle2 size={15} className={check.complete ? "text-emerald-400" : "text-slate-600"} /><span className={check.complete ? "text-slate-300" : "text-slate-500"}>{check.label}</span></div>)}
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Salgsmodenhet</p>
+                          <strong className="mt-1 block text-3xl text-white">{data.salesIntelligence.scores.overall}%</strong>
+                        </div>
+                        <ClipboardCheck className="text-cyan-300" size={30} />
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          ["Profil", data.salesIntelligence.scores.profile],
+                          ["Engasjement", data.salesIntelligence.scores.engagement],
+                          ["Timing", data.salesIntelligence.scores.timing],
+                          ["Intensjon", data.salesIntelligence.scores.intent],
+                        ].map(([label, value]) => (
+                          <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                            <span className="text-slate-500">{label}</span>
+                            <strong className="mt-1 block text-lg text-white">{Number(value)}%</strong>
+                          </div>
+                        ))}
                       </div>
                     </article>
+                  </section>
+
+                  <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
+                    <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">Salgsfase & fasevakt</p>
+                          <h3 className="mt-1 text-lg font-semibold text-white">
+                            {data.salesIntelligence.stageGuidance.current}
+                            {data.salesIntelligence.stageGuidance.next ? <> <ArrowRight size={15} className="mx-1 inline" /> {data.salesIntelligence.stageGuidance.next}</> : null}
+                          </h3>
+                          <p className="mt-1 text-sm text-slate-400">{data.salesIntelligence.stageGuidance.completionPercent}% av fasekriteriene er dokumentert.</p>
+                        </div>
+                        <span className={data.salesIntelligence.stageGuidance.readyToAdvance
+                          ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200"
+                          : "rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200"}>
+                          {data.salesIntelligence.stageGuidance.readyToAdvance ? "Klar for neste fase" : "Mangler evidens"}
+                        </span>
+                      </div>
+                      <div className="mt-4 space-y-2">
+                        {data.salesIntelligence.stageGuidance.criteria.map((criterion) => (
+                          <div key={criterion.id} className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm">
+                            <CheckCircle2 size={16} className={criterion.met ? "mt-0.5 shrink-0 text-emerald-400" : "mt-0.5 shrink-0 text-slate-600"} />
+                            <div>
+                              <div className={criterion.met ? "text-slate-200" : "text-slate-400"}>{criterion.label}</div>
+                              {criterion.evidence && <div className="mt-1 text-xs text-slate-500">{criterion.evidence}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Hva holder salget igjen?</p>
+                      <div className="mt-3 space-y-3">
+                        {data.salesIntelligence.risks.length > 0 ? (
+                          data.salesIntelligence.risks.map((risk) => (
+                            <div key={risk} className="flex gap-2 text-sm leading-5 text-amber-100">
+                              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-400" />{risk}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-emerald-300">Ingen tydelige salgsrisikoer er identifisert nå.</div>
+                        )}
+                      </div>
+                      {data.salesIntelligence.missing.length > 0 && (
+                        <div className="mt-4 border-t border-slate-800 pt-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mangler for neste fase</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {data.salesIntelligence.missing.map((item) => <span key={item} className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-300">{item}</span>)}
+                          </div>
+                        </div>
+                      )}
+                      {data.salesIntelligence.whyNow.length > 0 && (
+                        <div className="mt-4 border-t border-slate-800 pt-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Hvorfor nå</p>
+                          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
+                            {data.salesIntelligence.whyNow.map((item) => <li key={item}>• {item}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </article>
+                  </section>
+
+                  <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Beslutningsstige</p>
+                        <h3 className="mt-1 text-lg font-semibold text-white">Hva har kunden faktisk bekreftet?</h3>
+                        <p className="mt-1 text-sm text-slate-400">Skiller dokumentert fremdrift fra antakelser. Neste steg bør flytte én åpen linje mot bekreftet.</p>
+                      </div>
+                      <span className="text-xs text-slate-500">Behov → kriterier → alternativer → reaksjon → beslutning → forpliktelse</span>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {data.salesIntelligence.commitmentLadder.map((step) => {
+                        const statusClass = step.status === "CONFIRMED"
+                          ? "border-emerald-500/25 bg-emerald-500/5"
+                          : step.status === "PARTIAL"
+                            ? "border-amber-500/25 bg-amber-500/5"
+                            : step.status === "OPEN"
+                              ? "border-cyan-500/25 bg-cyan-500/5"
+                              : "border-slate-800 bg-slate-950/40";
+                        const statusLabel = step.status === "CONFIRMED" ? "Bekreftet" : step.status === "PARTIAL" ? "Delvis" : step.status === "OPEN" ? "Åpen" : "Ikke aktuell ennå";
+                        return (
+                          <article key={step.id} className={`rounded-xl border p-4 ${statusClass}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <strong className="text-sm text-white">{step.label}</strong>
+                              <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">{statusLabel}</span>
+                            </div>
+                            {step.evidence && <p className="mt-2 text-xs leading-5 text-slate-400">{step.evidence}</p>}
+                            {step.nextQuestion && <p className="mt-3 text-xs leading-5 text-cyan-200"><b>Neste spørsmål:</b> {step.nextQuestion}</p>}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-5">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-300"><Sparkles size={15} />AI Sales Coach</div>
+                        <h3 className="mt-1 text-xl font-semibold text-white">Hjelp meg å dra salget fremover</h3>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Coachen bruker Buyer Profile, siste kundesvar, pipeline, shortlist og salgsfasen. Den foreslår og skriver utkast, men sender aldri noe.</p>
+                      </div>
+                      {salesCoachMeta?.provider && <span className="text-xs text-slate-500">{salesCoachMeta.provider}{salesCoachMeta.model ? ` · ${salesCoachMeta.model}` : ""}</span>}
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor={`sales-coach-source-${contactId}`}>Valgfri kundetekst å analysere</label>
+                      <textarea
+                        id={`sales-coach-source-${contactId}`}
+                        value={salesCoachSourceText}
+                        onChange={(event) => setSalesCoachSourceText(event.target.value)}
+                        rows={4}
+                        className="mt-2 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm leading-6 text-slate-200 outline-none focus:border-violet-400"
+                        placeholder="Lim inn f.eks. en WhatsApp-melding, e-post eller notat fra telefonsamtale. La stå tomt for å bruke siste registrerte kundesvar."
+                      />
+                      <p className="mt-2 text-xs text-slate-500">Teksten brukes bare som analysegrunnlag sammen med Buyer Profile og CRM-historikken. Coachen sender ingenting.</p>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {([
+                        ["NEXT_STEP", "Neste steg"],
+                        ["DISCOVERY", "Spørsmål"],
+                        ["OBJECTION", "Innvendinger"],
+                        ["MEETING", "Samtale/møte"],
+                        ["EMAIL", "E-postutkast"],
+                      ] as const).map(([mode, label]) => (
+                        <Button
+                          key={mode}
+                          size="sm"
+                          variant={salesCoachMode === mode && salesCoach ? "default" : "outline"}
+                          onClick={() => void runSalesCoach(mode)}
+                          disabled={salesCoachBusy}
+                        >
+                          {salesCoachBusy && salesCoachMode === mode ? <Loader2 size={14} className="mr-2 animate-spin" /> : mode === "NEXT_STEP" ? <Sparkles size={14} className="mr-2" /> : null}
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+
+                    {!salesCoach && (
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gode neste spørsmål</p>
+                          <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-300">
+                            {data.salesIntelligence.discoveryQuestions.slice(0, 4).map((question) => <li key={question}>• {question}</li>)}
+                          </ul>
+                        </div>
+                        <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Coach-prinsipp</p>
+                          <p className="mt-3 text-sm leading-6 text-slate-300">Reduser én konkret usikkerhet om gangen. Ikke send flere boliger bare for å skape aktivitet. Få kunden til å uttrykke prioritering, reaksjon eller neste forpliktelse med egne ord.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {salesCoach && (
+                      <div className="mt-5 space-y-4">
+                        <div className="rounded-xl border border-violet-500/20 bg-slate-950/50 p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-semibold text-violet-200">{salesCoach.currentPhase}</span>
+                            {salesCoach.confidence && <span className="text-xs text-slate-500">Confidence {salesCoach.confidence}</span>}
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-slate-200">{salesCoach.summary}</p>
+                        </div>
+
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <article className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Neste beste handling</p>
+                            <h4 className="mt-2 font-semibold text-white">{salesCoach.nextBestAction?.action}</h4>
+                            <p className="mt-2 text-sm leading-5 text-slate-400">{salesCoach.nextBestAction?.why}</p>
+                            {salesCoach.nextBestAction?.channel && <span className="mt-3 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-400">{salesCoach.nextBestAction.channel}</span>}
+                          </article>
+                          <article className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Spør kunden</p>
+                            <ul className="mt-2 space-y-2 text-sm leading-5 text-slate-300">
+                              {(salesCoach.customerSituation?.questions || []).slice(0, 4).map((question: string) => <li key={question}>• {question}</li>)}
+                            </ul>
+                          </article>
+                        </div>
+
+                        {(salesCoach.sellerCoach?.do?.length || salesCoach.sellerCoach?.avoid?.length) > 0 && (
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <article className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300">Gjør</p>
+                              <ul className="mt-2 space-y-2 text-sm text-slate-300">{(salesCoach.sellerCoach?.do || []).slice(0, 5).map((item: string) => <li key={item}>• {item}</li>)}</ul>
+                            </article>
+                            <article className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Unngå</p>
+                              <ul className="mt-2 space-y-2 text-sm text-slate-300">{(salesCoach.sellerCoach?.avoid || []).slice(0, 5).map((item: string) => <li key={item}>• {item}</li>)}</ul>
+                            </article>
+                          </div>
+                        )}
+
+                        {salesCoach.emailDraft?.body && (
+                          <article className="rounded-xl border border-slate-700 bg-slate-950/60">
+                            <div className="border-b border-slate-800 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Utkast · sendes ikke automatisk</p>
+                              <div className="mt-1 font-semibold text-white">{salesCoach.emailDraft.subject || "E-postutkast"}</div>
+                            </div>
+                            <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-4 font-sans text-sm leading-6 text-slate-300">{salesCoach.emailDraft.body}</pre>
+                          </article>
+                        )}
+                      </div>
+                    )}
                   </section>
 
                   <section className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-5">
