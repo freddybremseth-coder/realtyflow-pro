@@ -89,9 +89,10 @@ async function accessContact(
   });
   if (error) return { value: null, response: fail(503, "CUSTOMER360_ACCESS_UNAVAILABLE") };
   if (!boundary) return { value: null, response: fail(403, "CUSTOMER360_ACCESS_DENIED") };
-  const { data: contact, error: contactError } = await access.value.supabase
+  const { data: contactResult, error: contactError } = await access.value.supabase
     .from("contacts").select(CONTACT_COLUMNS).eq("id", contactId).maybeSingle();
   if (contactError) return { value: null, response: fail(503, "CUSTOMER360_UNAVAILABLE") };
+  const contact = contactResult as unknown as Record<string, any> | null;
   if (!contact || contact.brand_id !== brandKey || contact.brand !== brandKey) {
     return { value: null, response: fail(404, "CUSTOMER_NOT_FOUND") };
   }
@@ -317,8 +318,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
   patch.interactions = [...(Array.isArray(current.interactions) ? current.interactions : []), interaction];
   patch.updated_at = at;
 
-  const { data, error } = await access.value.supabase.from("contacts")
+  const { data: updatedResult, error } = await access.value.supabase.from("contacts")
     .update(patch).eq("id", contactId).select(CONTACT_COLUMNS).single();
+  const data = updatedResult as unknown as Record<string, any> | null;
   if (error || !data || data.brand_id !== params.brandKey || data.brand !== params.brandKey) {
     return fail(409, "CUSTOMER360_UPDATE_FAILED");
   }
