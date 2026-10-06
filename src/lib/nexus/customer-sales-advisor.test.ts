@@ -59,6 +59,25 @@ test("on-hold customer is paused regardless of historic engagement", () => {
   assert.match(advice.nextBestAction.action, /Vent|vent/i);
 });
 
+test("contact stage does not advance without positive buying evidence", () => {
+  const advice = buildCustomerSalesAdvice({
+    contact: {
+      id: "c-contact",
+      pipeline_status: "CONTACT",
+      email: "contact@example.com",
+      next_followup: "2026-10-10T10:00:00Z",
+      last_reply_classification: "unclear",
+    },
+    activeBuyerProfile: null,
+    criteria: [{ key: "other", other_key: "timeline", approval_status: "approved", active: true }],
+    communicationDialogue: { sentCount: 1, replyCount: 1, awaitingReply: false, messages: [] },
+    now: new Date("2026-10-06T08:00:00Z"),
+  });
+
+  assert.equal(advice.stageGuidance.readyToAdvance, false);
+  assert.ok(advice.stageGuidance.criteria.some((row) => row.id === "intent" && row.met === false));
+});
+
 test("awaiting reply does not recommend another automated email", () => {
   const advice = buildCustomerSalesAdvice({
     contact: {
