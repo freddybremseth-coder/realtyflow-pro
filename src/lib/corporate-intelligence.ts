@@ -37,20 +37,20 @@ export type CorporateIntelligenceFindingInput = {
 };
 
 const COMPANY_SIGNAL_META: Record<CorporateCompanySignal, any> = {
-  employee_benefit_signal: { title: "Selskapet omtaler ansattgoder", why: "Et etablert språk for ansattgoder gjør Corporate Home lettere å posisjonere som en konkret medarbeiderfordel.", direction: "POSITIVE", relevance: 92, strength: 72, fit: 8, timing: 3, intent: 1, financial: 0 },
-  remote_workforce_signal: { title: "Hybrid eller distribuert arbeidsmodell", why: "En distribuert organisasjon kan ha større behov for samlingsarenaer og tydelige fellesskaps-/People-tiltak.", direction: "POSITIVE", relevance: 82, strength: 62, fit: 5, timing: 4, intent: 1, financial: 0 },
-  retreat_signal: { title: "Selskapet omtaler samlinger, kickoff eller retreat", why: "Dokumentert bruk av samlinger styrker management-retreat og hotellalternativ som mulig inngang.", direction: "POSITIVE", relevance: 96, strength: 82, fit: 7, timing: 8, intent: 3, financial: 0 },
-  existing_cabin_signal: { title: "Eksisterende firmahytte-, reise- eller personalordning", why: "Kunden kjenner allerede kategorien og kan lettere sammenligne dagens ordning med et Corporate Home i Spania.", direction: "POSITIVE", relevance: 98, strength: 88, fit: 10, timing: 7, intent: 4, financial: 0 },
-  hiring_growth_signal: { title: "Rekruttering eller vekst i arbeidsstyrken", why: "Vekst øker ofte behovet for rekruttering, retention, onboarding og kulturbygging.", direction: "POSITIVE", relevance: 86, strength: 72, fit: 5, timing: 8, intent: 1, financial: 2 },
+  employee_benefit_signal: { title: "Selskapet omtaler ansattgoder", why: "Et etablert språk for ansattgoder gjør firmabolig lettere å posisjonere som en konkret medarbeiderfordel.", direction: "POSITIVE", relevance: 92, strength: 72, fit: 8, timing: 3, intent: 1, financial: 0 },
+  remote_workforce_signal: { title: "Hybrid eller distribuert arbeidsmodell", why: "En distribuert organisasjon kan ha større behov for samlingsarenaer og tydelige fellesskaps- og personaltiltak.", direction: "POSITIVE", relevance: 82, strength: 62, fit: 5, timing: 4, intent: 1, financial: 0 },
+  retreat_signal: { title: "Selskapet omtaler samlinger, kickoff eller teamsamlinger", why: "Dokumentert bruk av samlinger styrker ledelses- og teamsamlinger samt hotellalternativ som mulig inngang.", direction: "POSITIVE", relevance: 96, strength: 82, fit: 7, timing: 8, intent: 3, financial: 0 },
+  existing_cabin_signal: { title: "Eksisterende firmahytte-, reise- eller personalordning", why: "Kunden kjenner allerede kategorien og kan lettere sammenligne dagens ordning med en firmabolig i Spania.", direction: "POSITIVE", relevance: 98, strength: 88, fit: 10, timing: 7, intent: 4, financial: 0 },
+  hiring_growth_signal: { title: "Rekruttering eller vekst i arbeidsstyrken", why: "Vekst øker ofte behovet for rekruttering, medarbeiderbevaring, introduksjon av nyansatte og kulturbygging.", direction: "POSITIVE", relevance: 86, strength: 72, fit: 5, timing: 8, intent: 1, financial: 2 },
   international_growth_signal: { title: "Internasjonal ekspansjon eller nye markeder", why: "Internasjonal vekst kan gjøre en fast base, relokasjon eller samlingsarena mer relevant.", direction: "POSITIVE", relevance: 78, strength: 68, fit: 4, timing: 6, intent: 1, financial: 3 },
-  new_office_signal: { title: "Nytt kontor eller ny lokasjon", why: "Ny lokasjon er et ferskt organisatorisk endringssignal og kan gi behov for samlinger, onboarding og kulturarbeid.", direction: "POSITIVE", relevance: 76, strength: 66, fit: 3, timing: 7, intent: 1, financial: 2 },
-  leadership_change_signal: { title: "Endring i ledelsen", why: "Ny leder kan endre prioriteringer. Dette er et timing-signal, men må brukes forsiktig og uten å anta kjøpsvilje.", direction: "NEUTRAL", relevance: 68, strength: 58, fit: 0, timing: 6, intent: 0, financial: 0 },
+  new_office_signal: { title: "Nytt kontor eller ny lokasjon", why: "Ny lokasjon er et ferskt organisatorisk endringssignal og kan gi behov for samlinger, introduksjon av nyansatte og kulturarbeid.", direction: "POSITIVE", relevance: 76, strength: 66, fit: 3, timing: 7, intent: 1, financial: 2 },
+  leadership_change_signal: { title: "Endring i ledelsen", why: "Ny leder kan endre prioriteringer. Dette er et tidssignal, men må brukes forsiktig og uten å anta kjøpsvilje.", direction: "NEUTRAL", relevance: 68, strength: 58, fit: 0, timing: 6, intent: 0, financial: 0 },
   acquisition_signal: { title: "Oppkjøp eller fusjon", why: "Integrasjon etter oppkjøp kan skape behov for samlinger og kulturbygging, samtidig som beslutningsprosessen kan være i endring.", direction: "NEUTRAL", relevance: 74, strength: 72, fit: 2, timing: 5, intent: 0, financial: 2 },
-  financial_strength_signal: { title: "Sterke finansielle resultater eller vekst", why: "Dokumentert økonomisk styrke kan øke sannsynligheten for at et langsiktig Corporate Home-case er finansielt realistisk.", direction: "POSITIVE", relevance: 78, strength: 78, fit: 3, timing: 4, intent: 0, financial: 10 },
-  cost_cutting_signal: { title: "Kostnadskutt eller effektiviseringsprogram", why: "Kostnadsfokus svekker timing for et nytt kapitalintensivt initiativ og tilsier en mer forsiktig eller utsatt salgsbevegelse.", direction: "NEGATIVE", relevance: 92, strength: 82, fit: -2, timing: -12, intent: -4, financial: -8 },
-  restructuring_signal: { title: "Nedbemanning eller restrukturering", why: "Restrukturering er et sterkt negativt timing-signal. Kontoen bør normalt ikke presses med et nytt ansattgode eller eiendomsinitiativ.", direction: "NEGATIVE", relevance: 98, strength: 92, fit: -4, timing: -18, intent: -7, financial: -10 },
+  financial_strength_signal: { title: "Sterke finansielle resultater eller vekst", why: "Dokumentert økonomisk styrke kan øke sannsynligheten for at et langsiktig firmaboligcase er finansielt realistisk.", direction: "POSITIVE", relevance: 78, strength: 78, fit: 3, timing: 4, intent: 0, financial: 10 },
+  cost_cutting_signal: { title: "Kostnadskutt eller effektiviseringsprogram", why: "Kostnadsfokus svekker tidspunktet for et nytt kapitalintensivt initiativ og tilsier en mer forsiktig eller utsatt salgsbevegelse.", direction: "NEGATIVE", relevance: 92, strength: 82, fit: -2, timing: -12, intent: -4, financial: -8 },
+  restructuring_signal: { title: "Nedbemanning eller restrukturering", why: "Restrukturering er et sterkt negativt tidssignal. Kontoen bør normalt ikke presses med et nytt ansattgode eller eiendomsinitiativ.", direction: "NEGATIVE", relevance: 98, strength: 92, fit: -4, timing: -18, intent: -7, financial: -10 },
   member_benefit_signal: { title: "Selskapet eller organisasjonen omtaler medlemsfordeler", why: "Medlemsfordeler støtter medlemsbolig eller kunde-/partnerfordel som primær hypotese.", direction: "POSITIVE", relevance: 94, strength: 76, fit: 9, timing: 4, intent: 2, financial: 0 },
-  culture_employer_brand_signal: { title: "Employer branding, kultur eller medarbeideropplevelse", why: "Et eksplisitt People-/kulturfokus styrker relevansen for ansattfordel og samlingsbruk.", direction: "POSITIVE", relevance: 90, strength: 72, fit: 7, timing: 5, intent: 1, financial: 0 },
+  culture_employer_brand_signal: { title: "Arbeidsgiverprofil, kultur eller medarbeideropplevelse", why: "Et eksplisitt personal- og kulturfokus styrker relevansen for ansattfordel og samlingsbruk.", direction: "POSITIVE", relevance: 90, strength: 72, fit: 7, timing: 5, intent: 1, financial: 0 },
 };
 
 const EXTERNAL_SIGNAL_TYPES = [
@@ -321,7 +321,7 @@ function ownSiteFindings(prospectId: string, signals: Partial<Record<CorporateCo
     const score = ownSignalScore(signal, evidence, meta);
     const yearNote = evidence.event_year ? " (" + evidence.event_year + ")" : "";
     const freshnessNote = score.historical
-      ? " Historisk signal; brukes som kontekst og skal ikke drive dagens timing."
+      ? " Historisk signal; brukes som kontekst og skal ikke styre dagens tidspunkt for videre kontakt."
       : EVENT_SIGNALS.has(signal) && !score.dated
         ? " Dato er ikke bekreftet; brukes som svakt kontekstuelt signal."
         : "";
