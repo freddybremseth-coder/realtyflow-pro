@@ -55,6 +55,8 @@ export async function GET(request: NextRequest) {
     p_period_start: stripeTimestamp(subscription.current_period_start),
     p_period_end: stripeTimestamp(subscription.current_period_end),
     p_cancel_at_period_end: Boolean(subscription.cancel_at_period_end),
+    p_billing_cycle:
+      subscription.items?.data?.[0]?.price?.recurring?.interval === "year" ? "yearly" : "monthly",
   });
 
   if (bindError) {
