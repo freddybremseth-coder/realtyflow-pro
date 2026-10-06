@@ -35,6 +35,8 @@ test("Customer 360 makes sales momentum and stage gate visible before detail wor
   assert.match(cardSource, /Salgsfase & fasevakt/);
   assert.match(cardSource, /Hva holder salget igjen\?/);
   assert.match(cardSource, /Klar for neste fase/);
+  assert.match(cardSource, /Beslutningsstige/);
+  assert.match(cardSource, /Hva har kunden faktisk bekreftet\?/);
 });
 
 test("Customer 360 exposes an on-demand AI Sales Coach without auto-send", () => {
@@ -54,6 +56,8 @@ test("sales advisor includes phase gate, scoring, risks and next action", () => 
   assert.match(advisorSource, /intent:/);
   assert.match(advisorSource, /risks:/);
   assert.match(advisorSource, /nextBestAction/);
+  assert.match(advisorSource, /commitmentLadder/);
+  assert.match(advisorSource, /mangler tydelig kundebekreftelse/);
 });
 
 test("sales coach is consultative and explicitly respects customer communication controls", () => {
