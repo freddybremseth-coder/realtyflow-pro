@@ -567,7 +567,7 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
             {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} initialArea={requestedArea} />}
-            {showNexus && <details open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
+            {showNexus && <details id="workspace-focus-nexus" open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-violet-100">Nexus OS · innsikt</strong>
                 <p className="mt-1 text-sm text-slate-400">Se hva Nexus lærer og prioriterer uten tilgang til runtime, autonomy eller utførelse.</p>
@@ -576,7 +576,7 @@ export default function FocusedWorkspacePage() {
                 <WorkspaceNexusInsightsPanel brandKey={brandKey} />
               </div>
             </details>}
-            {showReels && <details open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+            {showReels && <details id="workspace-focus-reels" open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">Reels Studio</strong>
                 <p className="mt-1 text-sm text-slate-400">Lag og forhåndsvis Reels uten å åpne Re-Master-admin.</p>
@@ -587,7 +587,7 @@ export default function FocusedWorkspacePage() {
                   initialProperty={reelPropertySeed} onInitialPropertyConsumed={() => setReelPropertySeed(null)} />
               </div>
             </details>}
-            {showYoutube && <details open className="rounded-2xl border border-red-900/60 bg-slate-900/70">
+            {showYoutube && <details id="workspace-focus-youtube" open className="rounded-2xl border border-red-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-red-100">YouTube Studio</strong>
                 <p className="mt-1 text-sm text-slate-400">Se Zen-kanalen og publiser ferdig Reel som YouTube Short uten kanaladmin.</p>
@@ -596,7 +596,7 @@ export default function FocusedWorkspacePage() {
                 <WorkspaceYoutubePanel brandKey={brandKey} canPublish={permissions.includes("youtube.publish")} />
               </div>
             </details>}
-            {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
+            {showMarketing && <details id="workspace-focus-social" open={requestedFocus === "social"} className="rounded-2xl border border-slate-800 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg">Content Hub · innlegg og utkast</strong>
                 <p className="mt-1 text-sm text-slate-400">Lag egne Facebook/Instagram-utkast, se tidligere innhold og velg målkanal innenfor denne merkevaren.</p>
