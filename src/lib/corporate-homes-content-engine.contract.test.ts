@@ -32,7 +32,7 @@ test("Corporate Homes content engine is weekly and safe-mode guarded", () => {
 });
 
 test("Corporate Homes dashboard exposes run-now draft generation", () => {
-  assert.match(page, /Corporate Content Engine/);
+  assert.match(page, /Bedriftens innholdsmotor/);
   assert.match(page, /Lag ukens 3 utkast/);
   assert.match(page, /\/api\/corporate-homes\/content\/run/);
   assert.match(page, /Ingenting publiseres eksternt/);
