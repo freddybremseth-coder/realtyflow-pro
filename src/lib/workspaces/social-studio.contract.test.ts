@@ -45,6 +45,12 @@ test("Property studio exposes all seven existing creative styles and registers r
   assert.match(route, /storage_path/);
 });
 
+test("Saved drafts carry concept, source and property style learning tags", () => {
+  assert.match(studio, /"concept-" \+ variant\.id/);
+  assert.match(studio, /"source-" \+ \(source\?\.type \|\| sourceType\)/);
+  assert.match(studio, /"style-" \+ \(styles\[variant\.id\]/);
+});
+
 test("Property template selection has an explicit rendered preview before draft save", () => {
   assert.match(studio, /previewVariant/);
   assert.match(studio, /Forhåndsvis valgt mal/);
