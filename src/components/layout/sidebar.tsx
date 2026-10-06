@@ -186,7 +186,7 @@ function NavigationLink({
   onNavigate: () => void;
 }) {
   const Icon = iconMap[item.icon];
-  const active = isNavigationPathActive(navigationLocation, item.href);
+  const active = isNavigationPathActive(pathname, item.href);
   return (
     <Link
       href={item.href}
