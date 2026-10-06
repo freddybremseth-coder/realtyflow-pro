@@ -65,7 +65,7 @@ test("owner catalogue excludes all private columns and requires explicit public 
   assert.deepEqual(Object.keys(body.properties[0]).sort(), [
     "area_m2", "bathrooms", "bedrooms", "id", "location", "plot_size",
     "price", "primary_image", "property_type", "ref", "title", "town",
-    "source", "marketable_by_brands", "can_market_on_workspace_brand",
+    "source", "pool", "marketable_by_brands", "can_market_on_workspace_brand",
   ].sort());
   assert.equal(body.properties[0].source, "redsp");
   assert.equal(body.properties[0].can_market_on_workspace_brand, true);
@@ -204,6 +204,16 @@ test("workspace member can search shared public catalogue while membership and m
       p_email: "staff@example.test",
       p_offset: 24,
       p_search: "Pinoso id eq hidden",
+      p_area: "",
+      p_property_type: "",
+      p_price_min: null,
+      p_price_max: null,
+      p_bedrooms_min: null,
+      p_bathrooms_min: null,
+      p_pool: null,
+      p_area_min: null,
+      p_plot_min: null,
+      p_sort: "newest",
     });
     assert.equal(calls.some(row => row.method === "from" && row.args[0] === "properties"), false);
 
