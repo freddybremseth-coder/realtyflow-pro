@@ -446,7 +446,7 @@ export function WorkspaceSocialStudio({
 
       {editorialError && <p className="mt-3 rounded-lg border border-amber-800 bg-amber-950/20 p-3 text-xs text-amber-200">{editorialError}</p>}
 
-      {editorial?.pairings?.length > 0 && propertyContext?.id && <div className="mt-4">
+      {editorial && editorial.pairings.length > 0 && propertyContext?.id && <div className="mt-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Foreslåtte kombinasjoner</p>
         <div className="mt-2 grid gap-2 md:grid-cols-2">
           {editorial.pairings.map(pairing => {
