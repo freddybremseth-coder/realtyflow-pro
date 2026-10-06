@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabase();
     if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
-    const { brand_id, subject, body_html, body_text, recipients, pipeline_phase, brand_filter, category, individual_emails } = body;
+    const { brand_id, subject, body_html, body_text, recipients, pipeline_phase, category, individual_emails } = body;
     if (!brand_id || !subject || (!body_html && !body_text)) {
       return NextResponse.json({ error: "brand_id, subject, and body content are required" }, { status: 400 });
     }
@@ -37,24 +37,50 @@ export async function POST(req: NextRequest) {
     }
 
     const smtpConfig = await buildSmtpConfigFromAccount(config, config.display_name || undefined);
-    let emailAddresses: string[] = [];
+    // Newsletter recipients are always brand-local and suppression-safe.
+    // The selected sender brand is also the hard recipient boundary; UI filters
+    // may narrow that set, but they can never widen it to another brand.
+    let query = supabase
+      .from("contacts")
+      .select("email, name, pipeline_status, brand_id, do_not_contact, email_suppressed")
+      .eq("brand_id", brand_id)
+      .eq("do_not_contact", false)
+      .eq("email_suppressed", false);
 
-    if (recipients === "individual" && individual_emails?.length) {
-      emailAddresses = individual_emails;
-    } else {
-      let query = supabase.from("contacts").select("email, name, pipeline_status, brand_id");
-      if (recipients === "pipeline_phase" && pipeline_phase) query = query.eq("pipeline_status", pipeline_phase);
-      if (brand_filter) query = query.eq("brand_id", brand_filter);
-      if (recipients === "category" && category) {
-        // Reserved for category-to-brand expansion.
-      }
-      const { data: contacts, error: contactsError } = await query;
-      if (contactsError) return NextResponse.json({ error: `Feil ved henting av kontakter: ${contactsError.message}` }, { status: 500 });
-      emailAddresses = (contacts || []).map((c) => c.email).filter((email): email is string => !!email && email.includes("@"));
+    if (recipients === "pipeline_phase" && pipeline_phase) {
+      query = query.eq("pipeline_status", pipeline_phase);
+    }
+    const requestedIndividuals = recipients === "individual"
+      ? new Set(
+          (Array.isArray(individual_emails) ? individual_emails : [])
+            .map((value: unknown) => String(value || "").trim().toLowerCase())
+            .filter((value: string) => value.includes("@"))
+            .slice(0, 500),
+        )
+      : null;
+    if (recipients === "individual" && requestedIndividuals?.size === 0) {
+      return NextResponse.json({ error: "Ingen gyldige individuelle mottakere valgt" }, { status: 400 });
+    }
+    if (recipients === "category" && category) {
+      // Reserved for future category support. Brand and suppression boundaries
+      // above still apply before a category filter can be introduced.
     }
 
-    if (emailAddresses.length === 0) return NextResponse.json({ error: "Ingen mottakere funnet med valgt filter" }, { status: 400 });
-    emailAddresses = Array.from(new Set(emailAddresses));
+    const { data: contacts, error: contactsError } = await query;
+    if (contactsError) {
+      return NextResponse.json({ error: `Feil ved henting av kontakter: ${contactsError.message}` }, { status: 500 });
+    }
+
+    const emailAddresses = Array.from(new Set(
+      (contacts || [])
+        .map((contact) => String(contact.email || "").trim().toLowerCase())
+        .filter((email) => email.includes("@"))
+        .filter((email) => !requestedIndividuals || requestedIndividuals.has(email)),
+    ));
+
+    if (emailAddresses.length === 0) {
+      return NextResponse.json({ error: "Ingen tillatte mottakere funnet i valgt merkevare" }, { status: 400 });
+    }
 
     const results: { email: string; success: boolean; error?: string }[] = [];
     let successCount = 0;
