@@ -182,6 +182,14 @@ function priorityClasses(priority?: string) {
   return "border-slate-700 bg-slate-800 text-slate-300";
 }
 
+function momentumClasses(momentum?: string) {
+  if (momentum === "HOT") return "border-red-400/40 bg-red-500/15 text-red-100";
+  if (momentum === "WARM") return "border-amber-400/40 bg-amber-500/15 text-amber-100";
+  if (momentum === "PAUSED") return "border-slate-500/40 bg-slate-500/10 text-slate-200";
+  if (momentum === "CLOSED") return "border-slate-700 bg-slate-900 text-slate-400";
+  return "border-cyan-400/30 bg-cyan-500/10 text-cyan-100";
+}
+
 function timelineIcon(kind: string) {
   if (kind === "portal") return MessageSquare;
   if (kind === "profile") return UserRound;
