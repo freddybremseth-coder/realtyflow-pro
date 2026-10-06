@@ -4,6 +4,7 @@ export type SuppressionCheckResult = {
   blocked: boolean;
   blockedEmails: string[];
   manualTakeoverEmails: string[];
+  hardBlockedEmails: string[];
   error?: string;
 };
 
@@ -18,7 +19,7 @@ export async function checkCrmEmailSuppression(
   values: string[],
 ): Promise<SuppressionCheckResult> {
   const recipients = normalizeRecipientEmails(values);
-  if (!recipients.length) return { blocked: false, blockedEmails: [], manualTakeoverEmails: [] };
+  if (!recipients.length) return { blocked: false, blockedEmails: [], manualTakeoverEmails: [], hardBlockedEmails: [] };
 
   const checks = await Promise.all(recipients.map(async (email) => {
     const [contactResult, inboundOptOutResult] = await Promise.all([
@@ -46,7 +47,7 @@ export async function checkCrmEmailSuppression(
   }));
 
   const failed = checks.find((check) => check.error);
-  if (failed?.error) return { blocked: true, blockedEmails: [], manualTakeoverEmails: [], error: failed.error.message };
+  if (failed?.error) return { blocked: true, blockedEmails: [], manualTakeoverEmails: [], hardBlockedEmails: [], error: failed.error.message };
 
   const blockedEmails = Array.from(new Set(checks.flatMap((check) =>
     check.contactRows.length || check.inboundOptOutRows.length ? [check.email] : []
@@ -54,5 +55,16 @@ export async function checkCrmEmailSuppression(
   const manualTakeoverEmails = Array.from(new Set(checks.flatMap((check) =>
     check.contactRows.some((row: any) => String(row.suppression_reason || "") === "manual_owner_takeover") ? [check.email] : []
   )));
-  return { blocked: blockedEmails.length > 0, blockedEmails, manualTakeoverEmails };
+  const hardBlockedEmails = Array.from(new Set(checks.flatMap((check) => {
+    const hardContactSuppression = check.contactRows.some((row: any) =>
+      row.do_not_contact === true
+      || (
+        row.email_suppressed === true
+        && String(row.suppression_reason || "") !== "manual_owner_takeover"
+      ),
+    );
+    const inboundOptOut = check.inboundOptOutRows.length > 0;
+    return hardContactSuppression || inboundOptOut ? [check.email] : [];
+  })));
+  return { blocked: blockedEmails.length > 0, blockedEmails, manualTakeoverEmails, hardBlockedEmails };
 }
