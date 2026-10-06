@@ -111,12 +111,6 @@ function criterion(criteria: Array<Record<string, any>>, key: string) {
   ) || null;
 }
 
-function criterionValue(item: Record<string, any> | null) {
-  if (!item) return null;
-  const value = item.value;
-  if (value === null || value === undefined) return null;
-  return value;
-}
 
 function hasCriterion(criteria: Array<Record<string, any>>, key: string) {
   return Boolean(criterion(criteria, key));
@@ -155,7 +149,6 @@ function stageGate(input: CustomerSalesAdvisorInput, profileScore: number) {
   const latestInbound = latestMessage(messages, "inbound");
   const latestInboundText = text(latestInbound?.body_text || latestInbound?.body_html);
   const confirmedCriteria = criteria.filter((item) => item?.customer_confirmed === true).length;
-  const approvedCriteria = criteria.filter((item) => String(item?.approval_status || "").toLowerCase() === "approved").length;
   const replyClass = String(contact.last_reply_classification || "");
   const purchaseReadiness = String(profile?.purchase_readiness || "").toLowerCase();
   const activeIntentSignal =
@@ -234,7 +227,6 @@ export function buildCustomerSalesAdvice(input: CustomerSalesAdvisorInput): Cust
   const messages = dialogue.messages || [];
   const stage = inferStage(contact.pipeline_status);
   const latestInbound = latestMessage(messages, "inbound");
-  const latestOutbound = latestMessage(messages, "outbound");
   const latestInboundAt = messageDate(latestInbound) || validDate(contact.last_inbound_reply_at);
   const lastReplyDays = latestInboundAt ? daysSince(latestInboundAt, now) : null;
   const nextFollowup = validDate(contact.next_followup);
