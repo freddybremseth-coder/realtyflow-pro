@@ -753,7 +753,7 @@ export default function WorkspaceUsersPage() {
                     <p className="mt-2 text-[11px] text-slate-500">Kun brand-avgrenset read-only innsikt. Ingen runtime, autonomy, canary, globale regler eller agentiske handlinger.</p>
                   </div>
                   {isZen && <div className="rounded-lg border border-slate-800 p-3">
-                    <strong className="text-sm">Corporate Homes</strong>
+                    <strong className="text-sm">Bedrift</strong>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.corporateRead}
                       onChange={e => updateChoice(brand.brandKey, { corporateRead: e.target.checked, ...(e.target.checked ? {} : { corporatePlan: false }) })}/> Se bedrifter og partnerprospekter</label>
                     <label className="mt-2 flex gap-2 text-xs"><input type="checkbox" checked={choice.corporatePlan}
