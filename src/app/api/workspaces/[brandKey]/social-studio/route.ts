@@ -748,6 +748,16 @@ export async function POST(
       sourceTitle = area.name || area.slug || "Område";
       sourceUrl = definition.website;
       sourceImageUrl = requestedImageUrl || area.photo_url || "";
+      if (!requestedImageUrl && area.photo_url) {
+        sourceImageUrl = await registerBrandWebsiteImage(access.value.supabase, {
+          brandKey: params.brandKey,
+          actorUserId: access.value.verifiedUserId,
+          actorEmail: access.value.verifiedEmail,
+          articleUrl: definition.website,
+          imageUrl: area.photo_url,
+          title: "Område · " + sourceTitle,
+        });
+      }
       sourceText = [
         area.hero_blurb ? "Kort intro: " + area.hero_blurb : "",
         area.description ? "Beskrivelse: " + area.description : "",
