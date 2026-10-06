@@ -133,12 +133,12 @@ test("Corporate Account Strategy v2 separates pipeline, priority, account role a
   assert.match(strategyCoachMigration, /solution_hypothesis/);
   assert.match(strategyCoachMigration, /solution_acceptance_goal/);
   assert.match(strategyCoachMigration, /next_best_action/);
-  assert.match(page, /Account score/);
-  assert.match(page, /Timing/);
-  assert.match(page, /Access/);
-  assert.match(page, /Intent/);
-  assert.match(page, /Referral partner er nå en kontorolle/);
-  assert.match(page, /Business case completeness/);
+  assert.match(page, /Kontoscore/);
+  assert.match(page, /Tidspunkt/);
+  assert.match(page, /Tilgang/);
+  assert.match(page, /Kjøpssignal/);
+  assert.match(page, /Henvisningspartner er en kontorolle/);
+  assert.match(page, /Komplett beslutningsgrunnlag/);
 });
 
 test("Nexus Sales Coach follows problem-to-solution acceptance and never auto-sends", () => {
@@ -154,7 +154,7 @@ test("Nexus Sales Coach follows problem-to-solution acceptance and never auto-se
   assert.match(salesCoach, /CONFIRM_SOLUTION/);
   assert.match(salesCoach, /NEXT_COMMITMENT/);
   assert.match(salesCoach, /Du skal ikke bruke manipulasjon, press, falsk knapphet/);
-  assert.match(page, /Nexus AI Sales Coach/);
+  assert.match(page, /Nexus AI-salgscoach/);
   assert.match(page, /Analyser e-post og foreslå svar/);
   assert.match(page, /Utkastet er ikke sendt/);
 });
