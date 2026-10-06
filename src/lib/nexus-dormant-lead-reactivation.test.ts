@@ -61,15 +61,17 @@ const lifestyleCriteria = [
   },
 ];
 
-test("uses the newest real engagement signal instead of row freshness", () => {
+test("customer engagement ignores our own nurture and AI sends", () => {
   assert.equal(
     lastMeaningfulEngagement({
       ...baseContact,
-      lastContact: "2025-01-01T00:00:00.000Z",
+      lastContact: "2025-03-01T00:00:00.000Z",
+      lastInboundReplyAt: "2025-01-15T00:00:00.000Z",
+      lastAiFollowup: "2025-03-01T00:00:00.000Z",
       latestRevenueEventAt: "2025-02-01T00:00:00.000Z",
       latestNurtureSentAt: "2025-03-01T00:00:00.000Z",
     }),
-    "2025-03-01T00:00:00.000Z",
+    "2025-01-15T00:00:00.000Z",
   );
 });
 
@@ -83,11 +85,27 @@ test("qualified old lead with verified lifestyle evidence becomes hot dormant", 
 
 test("recent engagement blocks dormant reactivation even for a qualified lead", () => {
   const result = assessDormantLead(
-    { ...baseContact, lastContact: "2026-08-15T00:00:00.000Z" },
+    { ...baseContact, lastInboundReplyAt: "2026-08-15T00:00:00.000Z" },
     lifestyleCriteria,
     now,
   );
   assert.equal(result.eligibleForDraft, false);
+});
+
+test("recent outbound touch creates cooldown without counting as customer engagement", () => {
+  const result = assessDormantLead(
+    {
+      ...baseContact,
+      lastInboundReplyAt: "2025-01-01T00:00:00.000Z",
+      lastAiFollowup: "2026-08-20T00:00:00.000Z",
+      lastContact: "2026-08-20T00:00:00.000Z",
+    },
+    lifestyleCriteria,
+    now,
+  );
+  assert.equal(result.lastMeaningfulEngagementAt, "2025-01-01T00:00:00.000Z");
+  assert.equal(result.eligibleForDraft, false);
+  assert.ok(result.reasons.some((reason) => reason.includes("cooldown")));
 });
 
 test("suppressed or invalid contacts never receive a reactivation draft", () => {
