@@ -260,7 +260,7 @@ function CareOnboardingDialog({
   const [postcode, setPostcode] = useState(lead.carePostcode || "");
   const [hasPool, setHasPool] = useState(lead.careHasPool);
   const [hasGarden, setHasGarden] = useState(lead.careHasGarden);
-  const [planId, setPlanId] = useState("");
+  const [planId, setPlanId] = useState(lead.quotePlanId || "");
   const [startsOn, setStartsOn] = useState(todayInputValue());
   const [billingDay, setBillingDay] = useState("1");
   const [saving, setSaving] = useState(false);
@@ -388,10 +388,12 @@ function CareOnboardingDialog({
 
 function CareLeadFollowupDialog({
   lead,
+  plans,
   onClose,
   onSaved,
 }: {
   lead: CareLead;
+  plans: CarePlan[];
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }) {
@@ -399,6 +401,7 @@ function CareLeadFollowupDialog({
   const [stage, setStage] = useState<Exclude<CareSalesStage, "activated">>(initialStage as Exclude<CareSalesStage, "activated">);
   const [followUpOn, setFollowUpOn] = useState(lead.followUpOn || "");
   const [note, setNote] = useState(lead.salesNote || "");
+  const [quotePlanId, setQuotePlanId] = useState(lead.quotePlanId || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const needsFollowUp = stage === "quote_sent" || stage === "waiting_customer";
@@ -412,7 +415,7 @@ function CareLeadFollowupDialog({
       const response = await fetch(`/api/care/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage, followUpOn: followUpOn || null, note }),
+        body: JSON.stringify({ stage, followUpOn: followUpOn || null, note, quotePlanId: needsFollowUp ? quotePlanId : null }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-oppfølgingen.");
@@ -449,6 +452,19 @@ function CareLeadFollowupDialog({
             </select>
           </label>
 
+          {needsFollowUp && (
+            <label className="block space-y-1.5 text-sm text-slate-300">
+              <span>Tilbudt Care-plan <span className="text-amber-300">*</span></span>
+              <select required value={quotePlanId} onChange={(event) => setQuotePlanId(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+                <option value="">Velg plan</option>
+                {plans.filter((plan) => plan.active).map((plan) => (
+                  <option key={plan.id} value={plan.id}>{plan.name} · {plan.visitsPerMonth} besøk/mnd · {moneyFromCents(plan.priceCents, plan.currency)}/mnd</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">Plan og månedspris lagres på leadet som tilbudssnapshot. Ingen e-post sendes her.</p>
+            </label>
+          )}
+
           <label className="block space-y-1.5 text-sm text-slate-300">
             <span>Neste oppfølging {needsFollowUp ? <span className="text-amber-300">*</span> : <span className="text-slate-500">(valgfritt)</span>}</span>
             <input type="date" required={needsFollowUp} value={followUpOn} onChange={(event) => setFollowUpOn(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
@@ -463,7 +479,7 @@ function CareLeadFollowupDialog({
 
           <div className="flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-slate-500">Denne handlingen sender ingen e-post. Den oppdaterer kun intern Care-oppfølging.</p>
-            <Button type="submit" disabled={saving || (needsFollowUp && !followUpOn) || (needsReason && !note.trim())}>
+            <Button type="submit" disabled={saving || (needsFollowUp && (!followUpOn || !quotePlanId)) || (needsReason && !note.trim())}>
               {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Lagrer …</> : "Lagre oppfølging"}
             </Button>
           </div>
@@ -555,6 +571,13 @@ function CareLeadCard({
         )}
       </div>
 
+      {lead.quotePlanId && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs">
+          <span className="text-cyan-100"><strong>Tilbud:</strong> {lead.quotePlanName || "Care-plan"}</span>
+          <span className="font-semibold text-white">{moneyFromCents(lead.quotePriceCents, lead.quoteCurrency || "EUR")}/mnd</span>
+        </div>
+      )}
+
       {lead.nextAction && (
         <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
           <span className="font-semibold text-amber-200">Neste steg:</span> {lead.nextAction}
@@ -638,12 +661,13 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {[
             ["Krever handling", attentionCount, "prioritert kø nå"],
             ["Åpne leads", dashboard.lifecycle.openLeads, "ikke ferdigbehandlet"],
             ["Over 24 t", dashboard.summary.staleOpenLeads, "åpne siden i går"],
             ["Tilbud i løp", dashboard.summary.offersInProgress, "tilbud sendt / venter svar"],
+            ["Tilbuds-MRR", moneyFromCents(dashboard.summary.quotedMonthlyRevenueCents), "månedlig verdi i åpne tilbud"],
             ["Oppfølging nå", dashboard.summary.followUpsDue, "dato i dag eller passert"],
             ["Aktivert", dashboard.lifecycle.contractedLeads, `${dashboard.lifecycle.leadToContractPercent}% av målte leads`],
           ].map(([label, value, detail]) => (
@@ -684,6 +708,7 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
       {followupLead && (
         <CareLeadFollowupDialog
           lead={followupLead}
+          plans={dashboard.plans}
           onClose={() => setFollowupLead(null)}
           onSaved={onReload}
         />
@@ -814,10 +839,11 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
           </div>
           <p className="text-xs text-slate-500">{dashboard.lifecycle.trackedLeads} Care-leads målt · {dashboard.lifecycle.leadToContractPercent}% har aktivert avtale</p>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {[
             ["Nye leads", dashboard.lifecycle.awaitingProperty, "må kvalifiseres"],
             ["Care-eiendom", dashboard.lifecycle.awaitingContract, "venter på avtale"],
+            ["Tilbuds-MRR", moneyFromCents(dashboard.summary.quotedMonthlyRevenueCents), "åpne tilbud per måned"],
             ["Avtale aktivert", dashboard.lifecycle.contractedLeads, "fra Care-leads"],
             ["Kommende besøk", dashboard.summary.upcomingEvents, "kalenderhendelser"],
             ["MRR", moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), String(dashboard.summary.activeContracts) + " aktive avtaler"],
@@ -1062,6 +1088,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       {followupLead && (
         <CareLeadFollowupDialog
           lead={followupLead}
+          plans={dashboard.plans}
           onClose={() => setFollowupLead(null)}
           onSaved={onReload}
         />
