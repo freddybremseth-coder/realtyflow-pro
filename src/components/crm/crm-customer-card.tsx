@@ -300,6 +300,8 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   }, [data?.criteria]);
 
   const openTasks = (data?.workItems || []).filter((item) => OPEN_TASK_STATUSES.has(String(item.status || "TO_DO").toUpperCase()));
+  const latestSentMessage = (data?.communicationDialogue.messages || []).find((message) => String(message.direction || "").toLowerCase() === "outbound") || null;
+  const latestReplyMessage = (data?.communicationDialogue.messages || []).find((message) => String(message.direction || "").toLowerCase() === "inbound") || null;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/75 p-3 md:p-6" onClick={onClose}>
@@ -423,6 +425,78 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                         {data.completeness.checks.map((check) => <div key={check.id} className="flex items-center gap-2 text-sm"><CheckCircle2 size={15} className={check.complete ? "text-emerald-400" : "text-slate-600"} /><span className={check.complete ? "text-slate-300" : "text-slate-500"}>{check.label}</span></div>)}
                       </div>
                     </article>
+                  </section>
+
+                  <section className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-5">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Siste dialog</p>
+                        <h3 className="mt-1 text-lg font-semibold text-white">Hva har vi sendt – og har kunden svart?</h3>
+                        <p className="mt-1 text-sm text-slate-400">
+                          {data.communicationDialogue.awaitingReply
+                            ? "Siste registrerte hendelse er en utsendt e-post. Vi venter på kundesvar."
+                            : data.communicationDialogue.replyCount
+                              ? "Kunden har svart etter siste registrerte utsendelse."
+                              : "Ingen kundesvar er registrert ennå."}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setTab("dialog")}>
+                          <Mail size={15} className="mr-2" />Se hele e-posttråden
+                        </Button>
+                        {!data.communicationDialogue.emailBlocked && (
+                          <Button
+                            size="sm"
+                            onClick={() => void setManualTakeover("TAKE_OVER")}
+                            disabled={takeoverBusy}
+                            className="border border-amber-400/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25"
+                          >
+                            <BotOff size={15} className="mr-2" />Jeg tar over kunden
+                          </Button>
+                        )}
+                        {data.communicationDialogue.manualTakeover && (
+                          <span className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-100">
+                            <UserCheck size={15} className="mr-2" />Du har tatt over · auto e-post stoppet
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                      <article className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-cyan-300">
+                          <ArrowUpRight size={14} />Sist sendt
+                        </div>
+                        {latestSentMessage ? (
+                          <>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <strong className="text-sm text-white">{String(latestSentMessage.subject || "E-post uten emne")}</strong>
+                              <span className="text-xs text-slate-500">{dateLabel(latestSentMessage.received_at || latestSentMessage.created_at)}</span>
+                            </div>
+                            <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-5 text-slate-300">{cleanEmailBody(latestSentMessage) || "Ingen tekstvisning tilgjengelig."}</p>
+                          </>
+                        ) : (
+                          <p className="mt-2 text-sm text-slate-500">Ingen utsendt e-post er registrert på kunden.</p>
+                        )}
+                      </article>
+
+                      <article className={latestReplyMessage ? "rounded-xl border border-violet-500/25 bg-violet-500/5 p-4" : "rounded-xl border border-slate-700 bg-slate-950/60 p-4"}>
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-300">
+                          <ArrowDownLeft size={14} />Siste svar fra kunden
+                        </div>
+                        {latestReplyMessage ? (
+                          <>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <strong className="text-sm text-white">{String(latestReplyMessage.subject || "Svar uten emne")}</strong>
+                              <span className="text-xs text-slate-500">{dateLabel(latestReplyMessage.received_at || latestReplyMessage.created_at)}</span>
+                            </div>
+                            <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-5 text-slate-300">{cleanEmailBody(latestReplyMessage) || "Ingen tekstvisning tilgjengelig."}</p>
+                          </>
+                        ) : (
+                          <p className="mt-2 text-sm text-slate-500">Ingen svar fra kunden er registrert.</p>
+                        )}
+                      </article>
+                    </div>
                   </section>
 
                   <section className="grid gap-4 xl:grid-cols-3">
