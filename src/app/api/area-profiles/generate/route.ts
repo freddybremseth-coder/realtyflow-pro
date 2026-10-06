@@ -39,7 +39,25 @@ Stilen din:
 - Ærlig: nevn både fordeler og ting man bør være klar over
 - Konkrete tall og navn der det finnes (kommune-størrelse, kjøretid, kjente landsbyer/strender)
 
-Output skal være ren JSON uten markdown-fence eller annen forklaring.`;
+Følg outputformatet i brukerprompten nøyaktig. Ikke legg til forklaringer, innledning eller markdown-fence.`;
+
+const AREA_PROFILE_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    hero_blurb: { type: "string" },
+    description: { type: "string" },
+    highlights: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 5,
+      maxItems: 8,
+    },
+    climate: { type: "string" },
+    lifestyle: { type: "string" },
+  },
+  required: ["hero_blurb", "description", "highlights", "climate", "lifestyle"],
+  additionalProperties: false,
+};
 
 interface ExistingProfile {
   description?: string | null;
@@ -147,6 +165,17 @@ function tryParseJson(raw: string): Record<string, unknown> | null {
   }
 }
 
+function isValidAreaProfileJson(raw: string): boolean {
+  const parsed = tryParseJson(raw);
+  return !!parsed &&
+    typeof parsed.hero_blurb === "string" &&
+    typeof parsed.description === "string" &&
+    Array.isArray(parsed.highlights) &&
+    parsed.highlights.length >= 5 &&
+    typeof parsed.climate === "string" &&
+    typeof parsed.lifestyle === "string";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const unauthorized = await requireAdminApi(req);
@@ -158,12 +187,24 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = buildUserPrompt(body);
-    const text = await askClaude(prompt, {
-      systemPrompt: SYSTEM_PROMPT,
-      model: "sonnet",
-      maxTokens: body.mode === "section" ? 700 : 1800,
-      temperature: 0.7,
-    });
+    const text =
+      body.mode === "section"
+        ? await askClaude(prompt, {
+            systemPrompt: SYSTEM_PROMPT,
+            model: "sonnet",
+            maxTokens: 700,
+            temperature: 0.7,
+          })
+        : await askClaude(prompt, {
+            systemPrompt: SYSTEM_PROMPT,
+            model: "sonnet",
+            maxTokens: 2600,
+            temperature: 0.7,
+            responseMimeType: "application/json",
+            responseSchema: AREA_PROFILE_SCHEMA,
+            validateResponse: isValidAreaProfileJson,
+            fallbackOnInvalidResponse: true,
+          });
 
     if (body.mode === "section" && body.section) {
       const cleaned = text
