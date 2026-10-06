@@ -6,6 +6,7 @@ import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue, type WorkspacePropertyCard } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
+import type { WorkspaceSocialPropertySeed } from "@/components/workspaces/social-studio-panel";
 import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
 import { GrowthCorporatePanel } from "@/components/workspaces/growth-corporate-panel";
 import { ZenJointTasks } from "@/components/workspaces/zen-joint-tasks";
@@ -71,6 +72,7 @@ export default function FocusedWorkspacePage() {
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
+  const [socialPropertySeed, setSocialPropertySeed] = useState<WorkspaceSocialPropertySeed | null>(null);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -391,6 +393,13 @@ export default function FocusedWorkspacePage() {
             brandKey={brandKey}
             canCreateMarketing={permissions.includes("marketing.draft")}
             canCreateReel={permissions.includes("reels.create")}
+            onCreateSocial={(property: WorkspacePropertyCard) => {
+              setSocialPropertySeed({
+                id: property.id, ref: property.ref, title: property.title,
+                town: property.town, location: property.location, primary_image: property.primary_image,
+              });
+              setTab("growth");
+            }}
             onCreateReel={(property: WorkspacePropertyCard) => {
               setReelPropertySeed({
                 id: property.id, ref: property.ref, title: property.title,
@@ -431,13 +440,18 @@ export default function FocusedWorkspacePage() {
                 <WorkspaceYoutubePanel brandKey={brandKey} canPublish={permissions.includes("youtube.publish")} />
               </div>
             </details>}
-            {showMarketing && <details className="rounded-2xl border border-slate-800 bg-slate-900/70">
+            {showMarketing && <details open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
-                <strong className="text-lg">Content Hub · innlegg og utkast</strong>
-                <p className="mt-1 text-sm text-slate-400">Lag egne Facebook/Instagram-utkast, se tidligere innhold og velg målkanal innenfor denne merkevaren.</p>
+                <strong className="text-lg text-cyan-100">SoMe Studio · Content Hub</strong>
+                <p className="mt-1 text-sm text-slate-400">Lag tre varierte Facebook/Instagram-konsepter fra eiendom, guide/magasin eller eget tema — og lagre valgte utkast i Content Hub.</p>
               </summary>
               <div className="border-t border-slate-800 p-5">
-                <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />
+                <WorkspaceMarketingPanel
+                  brandKey={brandKey}
+                  canDraft={permissions.includes("marketing.draft")}
+                  initialProperty={socialPropertySeed}
+                  onInitialPropertyConsumed={() => setSocialPropertySeed(null)}
+                />
               </div>
             </details>}
             {permissions.includes("marketing.publish") && <details className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">

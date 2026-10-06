@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, ChevronLeft, ChevronRight, Clapperboard, Facebook, Search } from "lucide-react";
+import { Building2, ChevronLeft, ChevronRight, Clapperboard, Search, Sparkles } from "lucide-react";
 
 export type WorkspacePropertyCard = {
   id: string;
@@ -25,33 +25,17 @@ const price = (value: number | null) => value == null
   ? "Pris på forespørsel"
   : new Intl.NumberFormat("nb-NO", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 
-function socialText(item: WorkspacePropertyCard) {
-  const place = item.town || item.location || "Costa Blanca";
-  const facts = [
-    item.bedrooms != null ? `${item.bedrooms} soverom` : "",
-    item.bathrooms != null ? `${item.bathrooms} bad` : "",
-    item.area_m2 != null ? `${item.area_m2} m² bolig` : "",
-    item.plot_size != null ? `${item.plot_size} m² tomt` : "",
-  ].filter(Boolean).join(" · ");
-  return [
-    `${item.title || item.property_type || "Bolig"} i ${place}`,
-    "",
-    facts,
-    item.price != null ? `Pris: ${price(item.price)}` : "Pris på forespørsel",
-    "",
-    "Ta kontakt for mer informasjon, tilgjengelighet og en vurdering av om boligen passer dine behov.",
-  ].filter((line, index, rows) => line || (index > 0 && rows[index - 1] !== "")).join("\n");
-}
-
 export function WorkspacePropertyCatalogue({
   brandKey,
   canCreateMarketing = false,
   canCreateReel = false,
+  onCreateSocial,
   onCreateReel,
 }: {
   brandKey: string;
   canCreateMarketing?: boolean;
   canCreateReel?: boolean;
+  onCreateSocial?: (property: WorkspacePropertyCard) => void;
   onCreateReel?: (property: WorkspacePropertyCard) => void;
 }) {
   const [term, setTerm] = useState("");
@@ -60,13 +44,11 @@ export function WorkspacePropertyCatalogue({
   const [items, setItems] = useState<WorkspacePropertyCard[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [draftBusy, setDraftBusy] = useState("");
   const [busy, setBusy] = useState(true);
 
   useEffect(() => {
     const abort = new AbortController();
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true); setError("");
     fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/properties?page=${page}&q=${encodeURIComponent(query)}`,
       { cache: "no-store", signal: abort.signal })
       .then(async (res) => {
@@ -90,38 +72,11 @@ export function WorkspacePropertyCatalogue({
     return () => abort.abort();
   }, [brandKey, page, query]);
 
-  async function createFacebookDraft(item: WorkspacePropertyCard) {
-    if (!canCreateMarketing || draftBusy) return;
-    setDraftBusy(item.id);
-    setError(""); setNotice("");
-    try {
-      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/marketing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: item.title || item.property_type || item.ref || "Bolig",
-          description: socialText(item),
-          tags: [item.town || item.location || "", item.property_type || "", item.ref || ""]
-            .map(value => value.trim().toLowerCase()).filter(Boolean),
-          platforms: ["facebook"],
-          imageUrl: item.primary_image || "",
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body?.error?.message || "Facebook-utkastet kunne ikke lagres.");
-      setNotice("Facebook-utkastet er lagret i Content Hub. Ingenting er publisert ennå.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Facebook-utkastet kunne ikke lagres.");
-    } finally {
-      setDraftBusy("");
-    }
-  }
 
   return (
     <section className="space-y-5">
       <div><h2 className="text-xl font-semibold">Eiendommer · felles katalog</h2>
         <p className="mt-1 text-sm text-slate-400">Søk i hele den ordinære offentlige boligkatalogen på tvers av områder. Du kan bruke alle treff til kundematching; innhold og Reels kan bare lages når valgt merkevare faktisk kan markedsføre boligen.</p></div>
-      {notice && <p role="status" className="rounded-xl border border-emerald-800 bg-emerald-950/25 p-4 text-sm text-emerald-200">{notice}</p>}
       <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); setPage(1); setQuery(term.trim()); }}>
         <label className="relative flex-1"><Search className="absolute left-3 top-3 text-slate-500" size={18} />
           <input value={term} maxLength={80} onChange={(event) => setTerm(event.target.value)}
@@ -156,11 +111,11 @@ export function WorkspacePropertyCatalogue({
                 Markedsføres av: {item.marketable_by_brands.join(", ")}
               </span>}
             </div>
-            {canMarketHere && (canCreateMarketing || (canCreateReel && onCreateReel)) && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
-              {canCreateMarketing && <button type="button" disabled={Boolean(draftBusy)}
-                onClick={() => void createFacebookDraft(item)}
-                className="inline-flex items-center gap-2 rounded-lg border border-blue-900 px-3 py-2 text-xs text-blue-200 disabled:opacity-40">
-                <Facebook size={14}/>{draftBusy === item.id ? "Lagrer…" : "Lag Facebook-utkast"}
+            {canMarketHere && ((canCreateMarketing && onCreateSocial) || (canCreateReel && onCreateReel)) && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
+              {canCreateMarketing && onCreateSocial && <button type="button"
+                onClick={() => onCreateSocial(item)}
+                className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 px-3 py-2 text-xs text-cyan-200">
+                <Sparkles size={14}/> Lag SoMe · 3 forslag
               </button>}
               {canCreateReel && onCreateReel && <button type="button" onClick={() => onCreateReel(item)}
                 className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 px-3 py-2 text-xs text-cyan-200">
