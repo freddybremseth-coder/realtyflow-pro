@@ -69,7 +69,7 @@ async function loadContext(contactId: string) {
   const brandId = normalizeCustomerOutreachBrand(contact.brand_id || contact.brand);
   const email = String(contact.email || "").trim().toLowerCase();
 
-  const [{ data: senderRows }, { data: recentMessages }, { data: profiles }] = await Promise.all([
+  const [{ data: senderRows }, inboundMessages, outboundMessages, { data: profiles }] = await Promise.all([
     supabase
       .from("brand_email_configs")
       .select("id,email_address,display_name,is_active")
@@ -81,9 +81,19 @@ async function loadContext(contactId: string) {
       ? supabase
           .from("email_messages")
           .select("id,direction,from_address,to_addresses,subject,body_text,body_html,received_at,created_at")
-          .or(`from_address.ilike.${email},to_addresses.cs.{${email}}`)
+          .eq("direction", "inbound")
+          .ilike("from_address", email)
           .order("received_at", { ascending: false })
-          .limit(20)
+          .limit(10)
+      : Promise.resolve({ data: [] as any[] }),
+    email
+      ? supabase
+          .from("email_messages")
+          .select("id,direction,from_address,to_addresses,subject,body_text,body_html,received_at,created_at")
+          .eq("direction", "outbound")
+          .contains("to_addresses", [email])
+          .order("received_at", { ascending: false })
+          .limit(10)
       : Promise.resolve({ data: [] as any[] }),
     supabase
       .from("buyer_profiles")
@@ -93,7 +103,8 @@ async function loadContext(contactId: string) {
       .limit(5),
   ]);
 
-  const messages = recentMessages || [];
+  const messages = [...(inboundMessages.data || []), ...(outboundMessages.data || [])]
+    .sort((a: any, b: any) => getEmailTime(b) - getEmailTime(a));
   const lastInbound = messages.find((row: any) => String(row.direction || "").toLowerCase() === "inbound") || null;
   const lastOutbound = messages.find((row: any) => String(row.direction || "").toLowerCase() === "outbound") || null;
   const awaitingReply = getEmailTime(lastOutbound) > 0 && getEmailTime(lastOutbound) > getEmailTime(lastInbound);
