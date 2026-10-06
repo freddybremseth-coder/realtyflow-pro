@@ -21,6 +21,7 @@ import {
   Pencil,
   Phone,
   RefreshCw,
+  Sparkles,
   Target,
   UserCheck,
   UserRound,
@@ -67,6 +68,29 @@ interface Customer360Payload {
     emailBlocked: boolean;
     blockedReason: string | null;
     messages: Array<Record<string, any>>;
+  };
+  salesIntelligence: {
+    stage: string;
+    priority: "P1" | "P2" | "P3" | "PAUSED";
+    score: number;
+    headline: string;
+    momentum: "HOT" | "WARM" | "COOL" | "PAUSED" | "CLOSED";
+    scores: { profile: number; engagement: number; timing: number; intent: number; overall: number };
+    whyNow: string[];
+    signals: string[];
+    risks: string[];
+    missing: string[];
+    nextBestAction: { action: string; why: string; channel: string };
+    stageGuidance: {
+      current: string;
+      next: string | null;
+      completionPercent: number;
+      readyToAdvance: boolean;
+      criteria: Array<{ id: string; label: string; met: boolean; evidence?: string | null }>;
+    };
+    discoveryQuestions: string[];
+    coach: { do: string[]; avoid: string[] };
+    guardrail: string;
   };
   timeline: Array<{
     id: string;
@@ -208,6 +232,10 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   const [portalLoading, setPortalLoading] = useState(false);
   const [takeoverBusy, setTakeoverBusy] = useState(false);
   const [takeoverMessage, setTakeoverMessage] = useState("");
+  const [salesCoachBusy, setSalesCoachBusy] = useState(false);
+  const [salesCoachMode, setSalesCoachMode] = useState<"NEXT_STEP" | "DISCOVERY" | "EMAIL" | "OBJECTION" | "MEETING">("NEXT_STEP");
+  const [salesCoach, setSalesCoach] = useState<Record<string, any> | null>(null);
+  const [salesCoachMeta, setSalesCoachMeta] = useState<{ provider?: string; model?: string } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -227,6 +255,8 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   useEffect(() => {
     setTab("overview");
     setUpdateDefaultTab("update");
+    setSalesCoach(null);
+    setSalesCoachMeta(null);
     void load();
   }, [contactId]);
 
@@ -257,6 +287,27 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   function openContactDetails() {
     setUpdateDefaultTab("details");
     setTab("update");
+  }
+
+  async function runSalesCoach(mode: "NEXT_STEP" | "DISCOVERY" | "EMAIL" | "OBJECTION" | "MEETING") {
+    setSalesCoachBusy(true);
+    setSalesCoachMode(mode);
+    setError("");
+    try {
+      const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/sales-coach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre AI Sales Coach.");
+      setSalesCoach(body?.coach || null);
+      setSalesCoachMeta({ provider: body?.provider, model: body?.model });
+    } catch (coachError) {
+      setError(coachError instanceof Error ? coachError.message : "Kunne ikke kjøre AI Sales Coach.");
+    } finally {
+      setSalesCoachBusy(false);
+    }
   }
 
   async function setManualTakeover(action: "TAKE_OVER" | "RELEASE") {
