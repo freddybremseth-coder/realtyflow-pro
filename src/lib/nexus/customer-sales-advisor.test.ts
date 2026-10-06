@@ -33,6 +33,38 @@ test("qualified customer with approved profile advances toward matching", () => 
   assert.match(advice.headline, /MATCHING/);
 });
 
+test("commitment ladder distinguishes confirmed criteria from internal assumptions", () => {
+  const advice = buildCustomerSalesAdvice({
+    contact: {
+      id: "c-ladder",
+      pipeline_status: "QUALIFIED",
+      email: "buyer@example.com",
+      preferred_location: "Altea",
+      next_followup: "2026-10-10T10:00:00Z",
+      last_reply_classification: "active_interest",
+    },
+    activeBuyerProfile: {
+      id: "p-ladder",
+      status: "approved",
+      budget_amount: 500000,
+      summary: "Kunden ønsker bolig nær sjøen.",
+    },
+    criteria: [
+      { key: "location", approval_status: "approved", active: true, customer_confirmed: false },
+      { key: "property_type", approval_status: "approved", active: true, customer_confirmed: false },
+      { key: "bedrooms", approval_status: "approved", active: true, customer_confirmed: false },
+      { key: "other", other_key: "timeline", approval_status: "approved", active: true, customer_confirmed: false },
+    ],
+    communicationDialogue: { sentCount: 2, replyCount: 2, awaitingReply: false, messages: [] },
+    now: new Date("2026-10-06T08:00:00Z"),
+  });
+
+  const criteriaStep = advice.commitmentLadder.find((row) => row.id === "CRITERIA");
+  assert.equal(criteriaStep?.status, "PARTIAL");
+  assert.match(criteriaStep?.evidence || "", /mangler tydelig kundebekreftelse/);
+  assert.equal(advice.commitmentLadder.find((row) => row.id === "COMMITMENT")?.status, "CONFIRMED");
+});
+
 test("on-hold customer is paused regardless of historic engagement", () => {
   const advice = buildCustomerSalesAdvice({
     contact: {
