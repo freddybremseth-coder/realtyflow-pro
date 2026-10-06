@@ -22,6 +22,6 @@ test("Partner dossier UI is draft-first with no send action", () => {
 });
 
 test("Partner queue links each company to its dossier", () => {
-  assert.match(list, /Åpne dossier/);
+  assert.match(list, /Åpne partnerprofil/);
   assert.match(list, /\/corporate-homes\/partners\//);
 });
