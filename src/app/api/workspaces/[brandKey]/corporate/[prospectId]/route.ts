@@ -355,7 +355,7 @@ export async function POST(
         pipelineMoved: false,
       }, { headers: noStore });
     } catch (cause) {
-      return fail(503, "CORPORATE_INTELLIGENCE_FAILED", cause instanceof Error ? cause.message : "Corporate Intelligence feilet.");
+      return fail(503, "CORPORATE_INTELLIGENCE_FAILED", cause instanceof Error ? cause.message : "Bedriftsinnsikten feilet.");
     }
   }
 
