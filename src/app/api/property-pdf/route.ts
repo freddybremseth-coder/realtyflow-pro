@@ -27,6 +27,10 @@ import {
   type PdfAreaProfile,
 } from "@/services/pdf/property-prospect";
 import { findAreaProfileForLocation } from "@/services/pdf/area-lookup";
+import {
+  isSvgLogoSource,
+  svgToReactPdfDataUri,
+} from "@/services/pdf/svg-logo";
 
 export const runtime = "nodejs";
 
@@ -37,13 +41,42 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-/** Resolve a brand logo URL: explicit override → /public/brand-logos/<id>.{png,jpg} → none. */
+async function loadReactPdfSafeSvg(url: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) return undefined;
+
+    const svg = await response.text();
+    if (!/<svg[\s>]/i.test(svg)) return undefined;
+
+    return svgToReactPdfDataUri(svg);
+  } catch (error) {
+    console.warn("[property-pdf] Could not normalize SVG brand logo", error);
+    return undefined;
+  }
+}
+
+/**
+ * Resolve a brand logo for React-PDF.
+ *
+ * Browser SVG assets may contain CSS font fallback stacks that React-PDF treats
+ * as one unregistered font family. Remote SVG logos are therefore fetched and
+ * normalized to the built-in Helvetica family before they reach <Image>.
+ * Raster overrides are passed through unchanged. If SVG normalization fails,
+ * we fall back to a local PNG/JPG or render safely without a logo.
+ */
 async function resolveBrandLogo(
   req: NextRequest,
   brandId: string | undefined,
   override: string | undefined,
 ): Promise<string | undefined> {
-  if (override) return override;
+  if (override) {
+    if (!isSvgLogoSource(override)) return override;
+
+    const normalizedSvg = await loadReactPdfSafeSvg(override);
+    if (normalizedSvg) return normalizedSvg;
+  }
+
   if (!brandId) return undefined;
 
   const candidates = [`${brandId}.png`, `${brandId}.jpg`];
@@ -51,7 +84,7 @@ async function resolveBrandLogo(
   for (const name of candidates) {
     try {
       await fs.access(path.join(dir, name));
-      // Build absolute URL so @react-pdf can fetch it (fonts/images run via http)
+      // Build absolute URL so @react-pdf can fetch it.
       const origin = req.nextUrl.origin;
       return `${origin}/brand-logos/${name}`;
     } catch {
