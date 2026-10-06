@@ -127,7 +127,7 @@ export function WorkspacePropertyCatalogue({
       .then((body) => {
         setItems(Array.isArray(body.properties) ? body.properties : []);
         setHasMore(body.hasMore === true);
-        setMatchedCount(Number.isFinite(Number(body.matchedCount)) ? Number(body.matchedCount) : null);
+        setMatchedCount(body.matchedCount != null && Number.isFinite(Number(body.matchedCount)) ? Number(body.matchedCount) : null);
       })
       .catch((cause) => {
         if (!abort.signal.aborted) {
