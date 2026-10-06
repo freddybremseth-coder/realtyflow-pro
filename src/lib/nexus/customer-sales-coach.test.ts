@@ -28,6 +28,7 @@ function advisor(overrides: Partial<CustomerSalesAdvisorOutput> = {}): CustomerS
       readyToAdvance: false,
       criteria: [],
     },
+    commitmentLadder: [],
     discoveryQuestions: ["Hvilket alternativ er nærmest riktig?"],
     coach: { do: [], avoid: [] },
     guardrail: "Ingen autosend.",
