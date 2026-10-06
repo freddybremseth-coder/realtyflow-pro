@@ -61,6 +61,13 @@ export type CustomerSalesAdvisorOutput = {
     readyToAdvance: boolean;
     criteria: Array<{ id: string; label: string; met: boolean; evidence?: string | null }>;
   };
+  commitmentLadder: Array<{
+    id: "NEED" | "CRITERIA" | "OPTIONS" | "REACTION" | "DECISION" | "COMMITMENT";
+    label: string;
+    status: "CONFIRMED" | "PARTIAL" | "OPEN" | "NOT_APPLICABLE";
+    evidence: string | null;
+    nextQuestion: string | null;
+  }>;
   discoveryQuestions: string[];
   coach: {
     do: string[];
@@ -274,6 +281,76 @@ export function buildCustomerSalesAdvice(input: CustomerSalesAdvisorInput): Cust
   const overall = Math.round(profileScore * 0.25 + engagementScore * 0.25 + timingScore * 0.2 + intentScore * 0.3);
   const gate = stageGate(input, profileScore);
 
+  const customerConfirmedCount = criteria.filter((item) => item?.customer_confirmed === true).length;
+  const approvedCriteriaCount = criteria.filter((item) => String(item?.approval_status || "").toLowerCase() === "approved").length;
+  const hasApprovedShortlist = shortlists.some((item) => ["approved", "sent", "presented"].includes(String(item?.status || "").toLowerCase()));
+  const latestInboundText = text(latestInbound?.body_text || latestInbound?.body_html);
+  const optionReaction = /liker|favoritt|best|aktuell|ikke aktuell|for dyr|for langt|for liten|for stor|passer|alternativ/i.test(
+    latestInboundText + " " + JSON.stringify(contact.interactions || []),
+  );
+  const decisionEvidence = /bud|offer|reserv|forhandling|finans|bank|advokat|jurid|beslut/i.test(
+    latestInboundText + " " + JSON.stringify(contact.interactions || []),
+  );
+
+  const commitmentLadder: CustomerSalesAdvisorOutput["commitmentLadder"] = [
+    {
+      id: "NEED",
+      label: "Behovet er forstått",
+      status: profile?.summary || Number(dialogue.replyCount || 0) > 0 ? "CONFIRMED" : "OPEN",
+      evidence: text(profile?.summary) || (Number(dialogue.replyCount || 0) > 0 ? "Kunden har etablert toveis dialog." : null),
+      nextQuestion: profile?.summary || Number(dialogue.replyCount || 0) > 0 ? null : "Hva er det viktigste du ønsker at boligen skal løse for deg?",
+    },
+    {
+      id: "CRITERIA",
+      label: "Kriteriene er bekreftet",
+      status: customerConfirmedCount > 0
+        ? "CONFIRMED"
+        : approvedCriteriaCount >= 3 && profileScore >= 70
+          ? "PARTIAL"
+          : "OPEN",
+      evidence: customerConfirmedCount > 0
+        ? `${customerConfirmedCount} kriterier er bekreftet av kunden.`
+        : approvedCriteriaCount > 0
+          ? `${approvedCriteriaCount} kriterier er godkjent internt, men mangler tydelig kundebekreftelse.`
+          : null,
+      nextQuestion: customerConfirmedCount > 0 ? null : "Er dette riktig oppsummert, og hva ville du endret først?",
+    },
+    {
+      id: "OPTIONS",
+      label: "Konkrete alternativer er vurdert",
+      status: hasApprovedShortlist ? "CONFIRMED" : shortlists.length > 0 ? "PARTIAL" : "OPEN",
+      evidence: hasApprovedShortlist
+        ? "En kvalitetssikret shortlist finnes."
+        : shortlists.length > 0
+          ? "Shortlist finnes, men er ikke dokumentert som kvalitetssikret/presentert."
+          : null,
+      nextQuestion: hasApprovedShortlist ? null : "Er profilen presis nok til at vi kan velge 3–5 reelle alternativer?",
+    },
+    {
+      id: "REACTION",
+      label: "Kundens reaksjon er dokumentert",
+      status: optionReaction ? "CONFIRMED" : ["NEW", "CONTACT", "QUALIFIED"].includes(stage) ? "NOT_APPLICABLE" : "OPEN",
+      evidence: optionReaction ? "Kundens preferanse/reaksjon finnes i siste dialog eller CRM-historikk." : null,
+      nextQuestion: optionReaction ? null : "Hvilket alternativ er nærmest riktig, og hva er hovedgrunnen?",
+    },
+    {
+      id: "DECISION",
+      label: "Beslutningsforbehold er kjent",
+      status: decisionEvidence ? "CONFIRMED" : ["NEGOTIATION", "RESERVED"].includes(stage) ? "OPEN" : "NOT_APPLICABLE",
+      evidence: decisionEvidence ? "Pris, finansiering, juridikk eller annet beslutningsforbehold er dokumentert." : null,
+      nextQuestion: decisionEvidence ? null : ["NEGOTIATION", "RESERVED"].includes(stage)
+        ? "Hva er det viktigste som fortsatt må avklares før du kan ta en beslutning?"
+        : null,
+    },
+    {
+      id: "COMMITMENT",
+      label: "Neste forpliktende steg er avtalt",
+      status: contact.next_followup ? "CONFIRMED" : ACTIVE_STAGES.has(stage) ? "OPEN" : "NOT_APPLICABLE",
+      evidence: contact.next_followup ? `Neste steg: ${new Date(String(contact.next_followup)).toLocaleDateString("nb-NO")}.` : null,
+      nextQuestion: contact.next_followup ? null : ACTIVE_STAGES.has(stage) ? "Hva er et naturlig neste steg, og når skal det skje?" : null,
+    },
+  ];
+
   const whyNow: string[] = [];
   const signals: string[] = [];
   const risks: string[] = [];
@@ -354,6 +431,7 @@ export function buildCustomerSalesAdvice(input: CustomerSalesAdvisorInput): Cust
     missing: [...new Set(missing)].slice(0, 6),
     nextBestAction,
     stageGuidance: gate,
+    commitmentLadder,
     discoveryQuestions: [...new Set(discoveryQuestions)].slice(0, 5),
     coach: {
       do: [
