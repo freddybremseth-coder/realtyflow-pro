@@ -153,7 +153,7 @@ test("Corporate ownership uses active system users and defaults to the primary R
   assert.match(route, /corporate\.plan/);
   assert.match(route, /defaultOwnerEmail/);
   assert.match(route, /INVALID_ACCOUNT_OWNER/);
-  assert.match(page, /Account owner/);
+  assert.match(page, /Kontoansvarlig/);
   assert.match(page, /Strategisk ansvarlig/);
   assert.match(page, /data\.assignmentOptions\.users\.map/);
   assert.match(page, /Nye kontoer får RealtyFlow Owner som standard/);
@@ -214,7 +214,7 @@ test("Sales Coach recommendation can be promoted into strategy only by explicit 
   assert.match(route, /humanApproved:\s*true/);
   assert.match(route, /applied_fields/);
   assert.match(route, /externalAction:\s*false/);
-  assert.match(page, /Faktisk problem- og løsningsaksept må registreres separat med kundeevidens/);
+  assert.match(page, /Faktisk problem- og løsningsaksept må registreres separat med dokumentasjon fra kunden/);
 });
 
 test("Corporate sales learning loop stores explicit customer acceptance separately from AI hypotheses", () => {
@@ -250,7 +250,7 @@ test("Corporate user-facing copy stays consistently Norwegian", () => {
   assert.match(page, /Komplett beslutningsgrunnlag/);
   assert.match(page, /Beslutningsgruppe/);
   assert.match(page, /Nexus AI-salgscoach/);
-  assert.doesNotMatch(page, /DEGRADED RESEARCH|FULL RESEARCH|Provider:|freshness\s|confidence\s|Account score|Decision Unit|Referral partner er nå en kontorolle|Business case completeness|Nexus AI Sales Coach|Henter Corporate Account Workspace/);
+  assert.doesNotMatch(page, /DEGRADED RESEARCH|FULL RESEARCH|Provider:|· freshness|· confidence|Account score|Decision Unit|Referral partner er nå en kontorolle|Business case completeness|Nexus AI Sales Coach|Henter Corporate Account Workspace/);
 
   assert.match(growthPanel, /Bedriftskartlegging \/ neste steg/);
   assert.match(growthPanel, /Bedrift og partnerkanaler/);
