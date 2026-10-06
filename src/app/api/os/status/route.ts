@@ -185,7 +185,7 @@ export async function GET(request: NextRequest) {
       }))
       .filter((membership: any) => Boolean(membership.brandKey)),
   }));
-  const workspaceBrands = (workspaceBrandsR.error ? [] : (workspaceBrandsR.data ?? [])).map((row: any) => ({
+  const workspaceBrands = (workspaceTeamR.error ? [] : workspaceTeamR.brands).map((row: any) => ({
     brandKey: String(row.brand_key),
     name: String(row.display_name || row.brand_key),
   }));
