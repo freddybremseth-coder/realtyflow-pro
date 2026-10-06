@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import {
+  financeDateOnly,
   financeEventDate,
   financeMoney,
   type BusinessFinancialEventWrite,
@@ -135,6 +136,7 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
   const now = new Date().toISOString();
+  const today = now.slice(0, 10);
   const warnings: string[] = [];
 
   const [contactsRes, publishingRes, saasRes, oliviaResult] = await Promise.all([
@@ -156,7 +158,8 @@ export async function POST(request: NextRequest) {
 
   for (const contact of contactsRes.data || []) {
     const brandId = String(contact.brand_id || "soleada");
-    const status = contact.commission_paid_date ? "paid" : "pending";
+    const commissionPaidDate = financeDateOnly(contact.commission_paid_date);
+    const status = commissionPaidDate && commissionPaidDate <= today ? "paid" : "pending";
     const commission = financeMoney(contact.commission_amount);
     const saleValue = financeMoney(contact.sale_price);
 
@@ -170,9 +173,15 @@ export async function POST(request: NextRequest) {
         status,
         amount: commission,
         currency: "EUR",
-        event_date: financeEventDate(contact.commission_paid_date || contact.updated_at),
+        event_date: financeEventDate(commissionPaidDate || contact.updated_at),
         description: `Commission: ${contact.name || contact.email || "WON contact"}`,
-        metadata: { contact_id: contact.id, sale_price: saleValue, pipeline_status: contact.pipeline_status },
+        metadata: {
+          contact_id: contact.id,
+          sale_price: saleValue,
+          pipeline_status: contact.pipeline_status,
+          commission_paid_date: commissionPaidDate,
+          payment_timing: status === "paid" ? "actual" : commissionPaidDate ? "scheduled" : "unknown",
+        },
         updated_at: now,
       });
     }
