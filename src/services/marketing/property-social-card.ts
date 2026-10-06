@@ -177,9 +177,9 @@ function layoutFilters(
         `drawbox=x=0:y=ih-270:w=iw:h=270:color=black@0.44:t=fill`,
         `drawbox=x=54:y=ih-245:w=150:h=3:color=white@0.82:t=fill`,
         drawText(files.kicker, font, 25, "54", "26", "white@0.92"),
-        drawText(files.headline, font, fontSizeFor(copy.headline, 48, 42, 36), "54", "h-218"),
-        copy.hero ? drawText(files.hero, font, 30, "54", "h-142", "white@0.92") : "",
-        copy.subline ? drawText(files.subline, font, 30, "w-text_w-54", "h-142", "white@0.92") : "",
+        drawText(files.headline, font, fontSizeFor(copy.headline, 48, 42, 36), "54", "h-286"),
+        copy.hero ? drawText(files.hero, font, 30, "54", "h-145", "white@0.92") : "",
+        copy.subline ? drawText(files.subline, font, 30, "w-text_w-54", "h-145", "white@0.92") : "",
         commonCta("54", "h-58", "white@0.78"),
       ];
     case "fact_card":
@@ -189,8 +189,8 @@ function layoutFilters(
         `drawbox=x=54:y=ih-462:w=6:h=285:color=white@0.88:t=fill`,
         drawText(files.kicker, font, 25, "54", "25", "white@0.90"),
         drawText(files.headline, font, fontSizeFor(copy.headline, 52, 46, 38), "86", "h-438"),
-        copy.hero ? drawText(files.hero, font, 64, "86", "h-330") : "",
-        copy.subline ? drawText(files.subline, font, 29, "86", "h-220", "white@0.90") : "",
+        copy.hero ? drawText(files.hero, font, 64, "86", "h-290") : "",
+        copy.subline ? drawText(files.subline, font, 29, "86", "h-180", "white@0.90") : "",
         commonCta("86", "h-66"),
       ];
     case "question_hook":
@@ -210,8 +210,8 @@ function layoutFilters(
         `drawbox=x=0:y=ih-335:w=iw:h=335:color=black@0.48:t=fill`,
         drawText(files.kicker, font, 25, "54", "24", "white@0.92"),
         drawText(files.headline, font, fontSizeFor(copy.headline, 55, 48, 40), "54", "h-300"),
-        copy.hero ? drawText(files.hero, font, 46, "54", "h-200") : "",
-        copy.subline ? drawText(files.subline, font, 26, "54", "h-128", "white@0.88") : "",
+        copy.hero ? drawText(files.hero, font, 46, "54", "h-160") : "",
+        copy.subline ? drawText(files.subline, font, 26, "54", "h-108", "white@0.88") : "",
         commonCta("w-text_w-54", "h-58", "white@0.80"),
       ];
     case "advisor":
@@ -231,9 +231,9 @@ function layoutFilters(
         `drawbox=x=70:y=ih-352:w=190:h=3:color=white@0.80:t=fill`,
         drawText(files.kicker, font, 25, "70", "72", "white@0.92"),
         drawText(files.headline, font, fontSizeFor(copy.headline, 54, 47, 39), "70", "h-320"),
-        copy.hero ? drawText(files.hero, font, 48, "70", "h-220") : "",
-        copy.subline ? drawText(files.subline, font, 25, "70", "h-145", "white@0.88") : "",
-        commonCta("w-text_w-70", "h-78"),
+        copy.hero ? drawText(files.hero, font, 48, "70", "h-170") : "",
+        copy.subline ? drawText(files.subline, font, 25, "70", "h-115", "white@0.88") : "",
+        commonCta("w-text_w-70", "h-62"),
       ];
     case "hero_property":
     default:
@@ -243,8 +243,8 @@ function layoutFilters(
         `drawbox=x=54:y=ih-390:w=6:h=245:color=white@0.90:t=fill`,
         drawText(files.kicker, font, 26, "54", "27", "white@0.92"),
         drawText(files.headline, font, headlineSize, "86", "h-365"),
-        copy.hero ? drawText(files.hero, font, 62, "86", "h-258") : "",
-        copy.subline ? drawText(files.subline, font, 27, "86", "h-164", "white@0.90") : "",
+        copy.hero ? drawText(files.hero, font, 62, "86", "h-205") : "",
+        copy.subline ? drawText(files.subline, font, 27, "86", "h-130", "white@0.90") : "",
         commonCta("86", "h-66"),
       ];
   }
