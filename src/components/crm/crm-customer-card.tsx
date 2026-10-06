@@ -21,6 +21,7 @@ import {
   Pencil,
   Phone,
   RefreshCw,
+  Send,
   Sparkles,
   Target,
   UserCheck,
@@ -252,6 +253,19 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   const [salesCoach, setSalesCoach] = useState<Record<string, any> | null>(null);
   const [salesCoachMeta, setSalesCoachMeta] = useState<{ provider?: string; model?: string } | null>(null);
   const [salesCoachSourceText, setSalesCoachSourceText] = useState("");
+  const [outreachOpen, setOutreachOpen] = useState(false);
+  const [outreachLoading, setOutreachLoading] = useState(false);
+  const [outreachSending, setOutreachSending] = useState(false);
+  const [outreachGenerating, setOutreachGenerating] = useState(false);
+  const [outreachData, setOutreachData] = useState<Record<string, any> | null>(null);
+  const [outreachMode, setOutreachMode] = useState<"template" | "ai" | "manual">("template");
+  const [outreachSource, setOutreachSource] = useState<"template" | "ai" | "manual">("template");
+  const [outreachTemplateId, setOutreachTemplateId] = useState<string>("");
+  const [outreachTheme, setOutreachTheme] = useState("");
+  const [outreachKeywords, setOutreachKeywords] = useState("");
+  const [outreachSubject, setOutreachSubject] = useState("");
+  const [outreachBody, setOutreachBody] = useState("");
+  const [outreachMessage, setOutreachMessage] = useState("");
 
   async function load() {
     setLoading(true);
@@ -274,6 +288,16 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
     setSalesCoach(null);
     setSalesCoachMeta(null);
     setSalesCoachSourceText("");
+    setOutreachOpen(false);
+    setOutreachData(null);
+    setOutreachMode("template");
+    setOutreachSource("template");
+    setOutreachTemplateId("");
+    setOutreachTheme("");
+    setOutreachKeywords("");
+    setOutreachSubject("");
+    setOutreachBody("");
+    setOutreachMessage("");
     void load();
   }, [contactId]);
 
@@ -304,6 +328,122 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
   function openContactDetails() {
     setUpdateDefaultTab("details");
     setTab("update");
+  }
+
+  async function loadOutreachComposer() {
+    setOutreachLoading(true);
+    setOutreachMessage("");
+    setError("");
+    try {
+      const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/outreach`, { cache: "no-store" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke åpne e-postverktøyet.");
+      setOutreachData(body);
+      setOutreachOpen(true);
+      if (!outreachSubject && body?.templates?.[0]) {
+        setOutreachTemplateId(String(body.templates[0].id || ""));
+        setOutreachSubject(String(body.templates[0].subject || ""));
+        setOutreachBody(String(body.templates[0].body || ""));
+        setOutreachSource("template");
+      }
+    } catch (outreachError) {
+      setError(outreachError instanceof Error ? outreachError.message : "Kunne ikke åpne e-postverktøyet.");
+    } finally {
+      setOutreachLoading(false);
+    }
+  }
+
+  function applyOutreachTemplate(template: Record<string, any>) {
+    setOutreachMode("template");
+    setOutreachSource("template");
+    setOutreachTemplateId(String(template.id || ""));
+    setOutreachSubject(String(template.subject || ""));
+    setOutreachBody(String(template.body || ""));
+    setOutreachMessage("");
+  }
+
+  function startManualOutreach() {
+    setOutreachMode("manual");
+    setOutreachSource("manual");
+    setOutreachTemplateId("");
+    setOutreachSubject("");
+    setOutreachBody("");
+    setOutreachMessage("");
+  }
+
+  async function generateOutreachEmail() {
+    if (!outreachTheme.trim()) {
+      setOutreachMessage("Skriv et tema eller hva du ønsker å oppnå med e-posten.");
+      return;
+    }
+    setOutreachGenerating(true);
+    setOutreachMessage("");
+    setError("");
+    try {
+      const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/outreach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "GENERATE",
+          mode: "AI",
+          theme: outreachTheme,
+          keywords: outreachKeywords,
+          tone: "warm",
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lage e-postutkast.");
+      setOutreachMode("ai");
+      setOutreachSource("ai");
+      setOutreachTemplateId("");
+      setOutreachSubject(String(body?.draft?.subject || ""));
+      setOutreachBody(String(body?.draft?.bodyText || ""));
+      setOutreachMessage(body?.provider === "deterministic" ? "Utkast laget med sikker fallback." : "AI-utkast klart. Les gjennom og rediger før sending.");
+    } catch (outreachError) {
+      setError(outreachError instanceof Error ? outreachError.message : "Kunne ikke lage e-postutkast.");
+    } finally {
+      setOutreachGenerating(false);
+    }
+  }
+
+  async function sendOutreachEmail() {
+    if (!outreachData?.eligibility?.allowed) {
+      setOutreachMessage(outreachData?.eligibility?.blockedReason || "Kunden kan ikke kontaktes nå.");
+      return;
+    }
+    if (!outreachSubject.trim() || !outreachBody.trim()) {
+      setOutreachMessage("Emne og e-posttekst må fylles ut før sending.");
+      return;
+    }
+    const recipient = outreachData?.recipient?.email || data?.contact?.email || "kunden";
+    const confirmed = window.confirm(`Send denne e-posten til ${recipient}?\n\nEmne: ${outreachSubject}\n\nE-posten sendes med en gang fra merkevarens konfigurerte e-postkonto.`);
+    if (!confirmed) return;
+
+    setOutreachSending(true);
+    setOutreachMessage("");
+    setError("");
+    try {
+      const response = await fetch(`/api/customers/${encodeURIComponent(contactId)}/outreach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SEND",
+          subject: outreachSubject,
+          bodyText: outreachBody,
+          confirmReviewed: true,
+          source: outreachSource,
+          templateId: outreachTemplateId || undefined,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "E-posten kunne ikke sendes.");
+      setOutreachMessage(`Sendt til ${body?.recipient || recipient} fra ${body?.sender || "merkevarens e-postkonto"}.`);
+      await Promise.all([load(), loadOutreachComposer()]);
+    } catch (outreachError) {
+      setError(outreachError instanceof Error ? outreachError.message : "E-posten kunne ikke sendes.");
+    } finally {
+      setOutreachSending(false);
+    }
   }
 
   async function runSalesCoach(mode: "NEXT_STEP" | "DISCOVERY" | "EMAIL" | "OBJECTION" | "MEETING") {
