@@ -45,6 +45,12 @@ test("Property studio exposes all seven existing creative styles and registers r
   assert.match(route, /storage_path/);
 });
 
+test("Property template selection has an explicit rendered preview before draft save", () => {
+  assert.match(studio, /previewVariant/);
+  assert.match(studio, /Forhåndsvis valgt mal/);
+  assert.match(studio, /aspect-\[4\/5\]/);
+});
+
 test("Property catalogue hands a selected listing into the shared SoMe Studio", () => {
   assert.match(catalogue, /onCreateSocial/);
   assert.match(catalogue, /Lag SoMe/);
