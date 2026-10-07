@@ -6,12 +6,29 @@ export const CORPORATE_DECISION_NOTE_SEQUENCE_ID = "zeneco-corporate-decision-no
 export const CORPORATE_DECISION_NOTE_BOOKING_URL = "https://appointment.chatgenius.pro/zeneco";
 export const CORPORATE_DECISION_NOTE_TEMPLATE_KEY = "_zeneco_corporate_decision_note_template_v1";
 
+export type CorporateMarketHistoryPoint = {
+  label: string;
+  price_per_m2_eur: number;
+};
+
 export type CorporateDecisionNoteTemplate = {
   version: 1;
   report_title: string;
   report_subtitle: string;
   corporate_label: string;
   logo_url: string;
+  strategic_value_intro: string;
+  market_title: string;
+  market_summary: string;
+  market_history: CorporateMarketHistoryPoint[];
+  market_source_label: string;
+  market_source_url: string;
+  market_methodology_note: string;
+  official_market_note: string;
+  official_market_source_label: string;
+  official_market_source_url: string;
+  leadership_decision_title: string;
+  leadership_decision_text: string;
   board_questions: string[];
   recommended_next_steps: string[];
   next_practical_step: string;
@@ -34,6 +51,30 @@ export const DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE: CorporateDecisionNoteTemp
   report_subtitle: "Firmabolig / bedriftshytte i Spania",
   corporate_label: "Corporate Homes",
   logo_url: ZENECO_HEADER_DARK_SVG_URL,
+  strategic_value_intro:
+    "En firmabolig kan ha verdi på flere nivåer samtidig: som ansatt- eller medlemsfordel, som arena for samlinger og relasjoner, og som en eiendel virksomheten selv kontrollerer. Hvilke gevinster som er mest relevante avhenger av hvordan boligen faktisk skal brukes.",
+  market_title: "Markedsutvikling i Alicante-provinsen",
+  market_summary:
+    "Idealistas annonserte prisnivå for Alicante-provinsen har gått fra 1 699 €/m² i 2021 til 2 767 €/m² i september 2026. Det tilsvarer om lag 63 % høyere annonsert kvadratmeterpris over perioden. Historikken er markedsbakgrunn, ikke en prognose for fremtidig verdi.",
+  market_history: [
+    { label: "2021", price_per_m2_eur: 1699 },
+    { label: "2022", price_per_m2_eur: 1842 },
+    { label: "2023", price_per_m2_eur: 2048 },
+    { label: "2024", price_per_m2_eur: 2288 },
+    { label: "2025", price_per_m2_eur: 2618 },
+    { label: "Sep 2026", price_per_m2_eur: 2767 },
+  ],
+  market_source_label: "idealista/data · Alicante-provinsen · september 2026",
+  market_source_url: "https://www.idealista.com/sala-de-prensa/informes-precio-vivienda/venta/comunitat-valenciana/alicante/",
+  market_methodology_note:
+    "Idealista opplyser at prismetodikken ble forbedret fra juli 2026. Tallene er basert på annonserte priser og bør brukes som markedsindikasjon, ikke som takst eller forventet avkastning.",
+  official_market_note:
+    "INE rapporterte 12,2 % årlig prisvekst for spanske boliger i 2. kvartal 2026. Nybygg var opp 7,4 %, mens bruktboliger var opp 12,9 %.",
+  official_market_source_label: "INE · Índice de Precios de Vivienda · 2. kvartal 2026",
+  official_market_source_url: "https://www.ine.es/dyngs/Prensa/IPV2T26.htm",
+  leadership_decision_title: "Beslutningen nå er ikke om dere skal kjøpe",
+  leadership_decision_text:
+    "Neste beslutning er enklere: Er dette interessant nok til at vi skal konkretisere modellen, området, totalrammen og 3–5 relevante boliger? Først da har ledelsen et godt nok grunnlag til å ta stilling til et faktisk kjøp.",
   board_questions: [
     "Hva er hovedformålet: ansattgode, medlemsfordel, ledersamlinger, retreat eller en kombinasjon?",
     "Hvem kan bruke boligen, hvor mange uker skal fordeles og hvilke bookingregler skal gjelde?",
@@ -119,6 +160,19 @@ export type CorporateDecisionNoteReport = {
   corporate_label: string;
   logo_url: string;
   executive_summary: string;
+  strategic_value_intro: string;
+  strategic_benefits: string[];
+  market_title: string;
+  market_summary: string;
+  market_history: CorporateMarketHistoryPoint[];
+  market_source_label: string;
+  market_source_url: string;
+  market_methodology_note: string;
+  official_market_note: string;
+  official_market_source_label: string;
+  official_market_source_url: string;
+  leadership_decision_title: string;
+  leadership_decision_text: string;
   board_questions: string[];
   recommended_next_steps: string[];
   next_practical_step: string;
@@ -167,6 +221,21 @@ function text(value: unknown, max = 500) {
 }
 
 
+function marketHistory(value: unknown, fallback: CorporateMarketHistoryPoint[]) {
+  if (!Array.isArray(value)) return fallback.map((point) => ({ ...point }));
+  const cleaned = value
+    .map((item) => {
+      const row = record(item);
+      const label = text(row.label, 32);
+      const price = Number(row.price_per_m2_eur);
+      if (!label || !Number.isFinite(price) || price <= 0 || price > 100000) return null;
+      return { label, price_per_m2_eur: Math.round(price) };
+    })
+    .filter((item): item is CorporateMarketHistoryPoint => Boolean(item))
+    .slice(0, 12);
+  return cleaned.length >= 2 ? cleaned : fallback.map((point) => ({ ...point }));
+}
+
 function textList(value: unknown, fallback: string[], maxItems = 10, maxLength = 500) {
   if (!Array.isArray(value)) return [...fallback];
   const cleaned = value
@@ -184,6 +253,27 @@ export function normalizeCorporateDecisionNoteTemplate(value: unknown): Corporat
     report_subtitle: text(input.report_subtitle, 220) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.report_subtitle,
     corporate_label: text(input.corporate_label, 120) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.corporate_label,
     logo_url: text(input.logo_url, 1000) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.logo_url,
+    strategic_value_intro:
+      text(input.strategic_value_intro, 1800) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.strategic_value_intro,
+    market_title: text(input.market_title, 180) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.market_title,
+    market_summary: text(input.market_summary, 2200) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.market_summary,
+    market_history: marketHistory(input.market_history, DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.market_history),
+    market_source_label:
+      text(input.market_source_label, 300) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.market_source_label,
+    market_source_url:
+      text(input.market_source_url, 1200) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.market_source_url,
+    market_methodology_note:
+      text(input.market_methodology_note, 1800) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.market_methodology_note,
+    official_market_note:
+      text(input.official_market_note, 1800) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.official_market_note,
+    official_market_source_label:
+      text(input.official_market_source_label, 300) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.official_market_source_label,
+    official_market_source_url:
+      text(input.official_market_source_url, 1200) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.official_market_source_url,
+    leadership_decision_title:
+      text(input.leadership_decision_title, 220) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.leadership_decision_title,
+    leadership_decision_text:
+      text(input.leadership_decision_text, 1800) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.leadership_decision_text,
     board_questions: textList(
       input.board_questions,
       DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.board_questions,
@@ -310,6 +400,45 @@ export function buildCorporateDecisionCalculator(value: unknown): CorporateDecis
   };
 }
 
+function strategicBenefits(input: {
+  model?: string | null;
+  needs?: string | null;
+  organizationType?: string | null;
+  calculator?: CorporateDecisionCalculator | null;
+}) {
+  const haystack = [input.model, input.needs, input.organizationType].filter(Boolean).join(" ").toLowerCase();
+  const benefits: string[] = [];
+
+  const add = (value: string) => {
+    if (!benefits.includes(value) && benefits.length < 5) benefits.push(value);
+  };
+
+  if (/ansatt|employee|personal|hr|rekrutt|retention/.test(haystack)) {
+    add("Et synlig og konkret ansattgode som kan styrke arbeidsgiverprofil, trivsel og tilhørighet.");
+    add("En fordel som kan fordeles gjennom tydelige bookingregler og brukes av flere ansatte gjennom året.");
+  }
+  if (/medlem|forbund|organisasjon|association/.test(haystack)) {
+    add("Et medlems- eller organisasjonsgode som kan oppleves mer konkret enn tradisjonelle fordelsavtaler.");
+    add("En ressurs som kan brukes både av medlemmer og til organisasjonens egne aktiviteter når reglene er tydelige.");
+  }
+  if (/leder|styre|team|samling|retreat|strategi/.test(haystack)) {
+    add("En fast arena for leder-, styre- og teamsamlinger der virksomheten kontrollerer rammer, kapasitet og standard.");
+  }
+  if (/kunde|partner|relasjon|representasjon/.test(haystack)) {
+    add("En mulig relasjonsarena for mindre kunde- og partnersamlinger når bruk, skatt og representasjonsregler er avklart.");
+  }
+
+  if (input.calculator?.business_stay_count) {
+    add(`Samme eiendel kan støtte både ordinær brukerfordel og ${integer(input.calculator.business_stay_count)} planlagte bedriftsopphold per år i modellen.`);
+  }
+
+  add("Virksomheten bygger bruksverdi i en eiendel den selv kontrollerer, fremfor at all overnattingskostnad går til eksterne leverandører.");
+  add("En langsiktig løsning kan gi større forutsigbarhet i standard, tilgjengelighet og lokal oppfølging enn enkeltstående hotell- og leiebookinger.");
+  add("Boligen kan fylle flere formål over tid, så lenge styring, bruk og kostnadsfordeling er tydelig definert.");
+
+  return benefits.slice(0, 5);
+}
+
 export function buildCorporateDecisionNoteReport(input: {
   companyName: string;
   contactName: string;
@@ -334,6 +463,8 @@ export function buildCorporateDecisionNoteReport(input: {
 
   const model = text(input.model, 180) || null;
   const needs = text(input.needs, 3000) || null;
+  const organizationType = text(input.organizationType, 120) || null;
+  const benefits = strategicBenefits({ model, needs, organizationType, calculator });
 
   return {
     version: 1,
@@ -341,7 +472,7 @@ export function buildCorporateDecisionNoteReport(input: {
     company_name: companyName,
     contact_name: contactName,
     contact_role: text(input.contactRole, 160) || null,
-    organization_type: text(input.organizationType, 120) || null,
+    organization_type: organizationType,
     model,
     budget_label: text(input.budgetLabel, 120) || null,
     timeline: text(input.timeline, 120) || null,
@@ -352,6 +483,19 @@ export function buildCorporateDecisionNoteReport(input: {
     corporate_label: template.corporate_label,
     logo_url: template.logo_url,
     executive_summary: executiveSummary,
+    strategic_value_intro: template.strategic_value_intro,
+    strategic_benefits: benefits,
+    market_title: template.market_title,
+    market_summary: template.market_summary,
+    market_history: template.market_history,
+    market_source_label: template.market_source_label,
+    market_source_url: template.market_source_url,
+    market_methodology_note: template.market_methodology_note,
+    official_market_note: template.official_market_note,
+    official_market_source_label: template.official_market_source_label,
+    official_market_source_url: template.official_market_source_url,
+    leadership_decision_title: template.leadership_decision_title,
+    leadership_decision_text: template.leadership_decision_text,
     board_questions: template.board_questions,
     recommended_next_steps: template.recommended_next_steps,
     next_practical_step: template.next_practical_step,
