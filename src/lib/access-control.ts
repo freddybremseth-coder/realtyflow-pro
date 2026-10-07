@@ -146,6 +146,8 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
       return "OWNER_ONLY";
     }
     const workspaceRoute = workspaceParts[4];
+    if (workspaceRoute === "customer360" && ["GET", "PATCH"].includes(method.toUpperCase()))
+      return "AUTHENTICATED";
     if (method.toUpperCase() === "GET" &&
       (["contacts", "properties", "capabilities"].includes(workspaceRoute) ||
       (workspaceRoute === "joint-contacts" && workspaceParts[3] === "zeneco"))) return "AUTHENTICATED";
