@@ -2,6 +2,7 @@ import React from "react";
 import {
   Document,
   Image,
+  Link,
   Page,
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import {
 import {
   DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE,
   type CorporateDecisionNoteReport,
+  type CorporateMarketHistoryPoint,
 } from "@/lib/corporate-decision-note";
 import { isSvgLogoSource, svgToReactPdfDataUri } from "@/services/pdf/svg-logo";
 
@@ -30,19 +32,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     minHeight: 42,
-    marginBottom: 22,
+    marginBottom: 18,
   },
   logo: {
     width: 176,
     height: 42,
     objectFit: "contain",
-    objectPosition: "left center",
   },
   logoFallback: {
     fontSize: 15,
     fontFamily: "Helvetica-Bold",
     color: "#17242a",
-    letterSpacing: 0.4,
   },
   corporateBadge: {
     border: "1 solid #b58b43",
@@ -86,12 +86,15 @@ const styles = StyleSheet.create({
     fontSize: 21,
     fontFamily: "Helvetica-Bold",
     color: "#17242a",
-    marginBottom: 14,
+    marginBottom: 8,
+  },
+  pageIntro: {
+    fontSize: 10,
+    color: "#536268",
+    lineHeight: 1.55,
+    marginBottom: 12,
   },
   section: {
-    marginTop: 14,
-  },
-  sectionKeep: {
     marginTop: 14,
   },
   sectionTitle: {
@@ -110,6 +113,25 @@ const styles = StyleSheet.create({
   summary: {
     fontSize: 10.2,
     lineHeight: 1.55,
+  },
+  leaderConclusion: {
+    marginTop: 12,
+    backgroundColor: "#17242a",
+    borderRadius: 8,
+    padding: 12,
+    color: "#ffffff",
+  },
+  leaderConclusionLabel: {
+    color: "#e4c68f",
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  leaderConclusionText: {
+    fontSize: 9.6,
+    lineHeight: 1.5,
   },
   metaGrid: {
     flexDirection: "row",
@@ -196,6 +218,47 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 1.45,
   },
+  benefitCard: {
+    border: "1 solid #d8dfdc",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    padding: 11,
+    marginBottom: 8,
+  },
+  benefitNumber: {
+    fontSize: 7,
+    color: "#8b6a31",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  benefitText: {
+    fontSize: 9.5,
+    lineHeight: 1.45,
+  },
+  capacityGrid: {
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 11,
+  },
+  capacityCard: {
+    flex: 1,
+    borderRadius: 8,
+    backgroundColor: "#edf3f0",
+    padding: 10,
+    minHeight: 62,
+  },
+  capacityValue: {
+    fontSize: 16,
+    fontFamily: "Helvetica-Bold",
+    color: "#183338",
+  },
+  capacityLabel: {
+    marginTop: 3,
+    fontSize: 7.2,
+    color: "#68747a",
+    lineHeight: 1.3,
+  },
   stayHeader: {
     flexDirection: "row",
     borderBottom: "1 solid #bdc8c4",
@@ -241,6 +304,91 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
     marginBottom: 4,
     color: "#e4c68f",
+  },
+  decisionBox: {
+    backgroundColor: "#edf3f0",
+    border: "1 solid #d4dfda",
+    borderRadius: 9,
+    padding: 14,
+    marginBottom: 13,
+  },
+  decisionTitle: {
+    fontSize: 13,
+    fontFamily: "Helvetica-Bold",
+    color: "#183338",
+    marginBottom: 6,
+  },
+  decisionText: {
+    fontSize: 9.6,
+    lineHeight: 1.55,
+  },
+  marketHero: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 12,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  marketHeroValue: {
+    fontSize: 25,
+    fontFamily: "Helvetica-Bold",
+    color: "#183338",
+  },
+  marketHeroLabel: {
+    fontSize: 8,
+    color: "#68747a",
+    marginBottom: 3,
+  },
+  marketChart: {
+    marginTop: 8,
+    backgroundColor: "#ffffff",
+    border: "1 solid #d8dfdc",
+    borderRadius: 8,
+    padding: 12,
+  },
+  marketBarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 7,
+  },
+  marketBarLabel: {
+    width: 55,
+    fontSize: 7.5,
+    color: "#59666b",
+  },
+  marketBarTrack: {
+    flex: 1,
+    height: 11,
+    borderRadius: 5,
+    backgroundColor: "#edf0ee",
+    overflow: "hidden",
+  },
+  marketBarFill: {
+    height: 11,
+    borderRadius: 5,
+    backgroundColor: "#315e64",
+  },
+  marketBarValue: {
+    width: 70,
+    textAlign: "right",
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+  },
+  sourceBox: {
+    marginTop: 9,
+    padding: 9,
+    borderRadius: 7,
+    backgroundColor: "#ffffff",
+    border: "1 solid #d8dfdc",
+  },
+  sourceLabel: {
+    fontSize: 7.2,
+    color: "#68747a",
+    lineHeight: 1.4,
+  },
+  sourceLink: {
+    color: "#315e64",
+    textDecoration: "none",
   },
   disclaimer: {
     fontSize: 7.6,
@@ -305,14 +453,12 @@ function BulletList({ items }: { items: string[] }) {
 function Header({
   report,
   logoSource,
-  compact = false,
 }: {
   report: CorporateDecisionNoteReport;
   logoSource?: string;
-  compact?: boolean;
 }) {
   return (
-    <View style={[styles.brandRow, compact ? { marginBottom: 15 } : {}]} wrap={false}>
+    <View style={styles.brandRow} wrap={false}>
       {logoSource ? (
         <Image src={logoSource} style={styles.logo} />
       ) : (
@@ -332,6 +478,41 @@ function Footer({ report }: { report: CorporateDecisionNoteReport }) {
   );
 }
 
+function PageHeading({
+  kicker,
+  title,
+  intro,
+}: {
+  kicker: string;
+  title: string;
+  intro?: string;
+}) {
+  return (
+    <View wrap={false}>
+      <Text style={styles.pageKicker}>{kicker}</Text>
+      <Text style={styles.pageTitle}>{title}</Text>
+      {intro ? <Text style={styles.pageIntro}>{intro}</Text> : null}
+    </View>
+  );
+}
+
+function MarketChart({ points }: { points: CorporateMarketHistoryPoint[] }) {
+  const max = Math.max(...points.map((point) => point.price_per_m2_eur), 1);
+  return (
+    <View style={styles.marketChart} wrap={false}>
+      {points.map((point) => (
+        <View style={styles.marketBarRow} key={point.label}>
+          <Text style={styles.marketBarLabel}>{point.label}</Text>
+          <View style={styles.marketBarTrack}>
+            <View style={[styles.marketBarFill, { width: `${Math.max(8, point.price_per_m2_eur / max * 100)}%` }]} />
+          </View>
+          <Text style={styles.marketBarValue}>{number(point.price_per_m2_eur)} €/m²</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function IntroPage({ report, logoSource }: { report: CorporateDecisionNoteReport; logoSource?: string }) {
   const calc = report.calculator;
   return (
@@ -345,6 +526,13 @@ function IntroPage({ report, logoSource }: { report: CorporateDecisionNoteReport
 
       <View style={styles.summaryBox} wrap={false}>
         <Text style={styles.summary}>{report.executive_summary}</Text>
+      </View>
+
+      <View style={styles.leaderConclusion} wrap={false}>
+        <Text style={styles.leaderConclusionLabel}>Ledelsens første spørsmål</Text>
+        <Text style={styles.leaderConclusionText}>
+          Er modellen interessant nok til at virksomheten bør bruke tid på å konkretisere område, boligtype, totalramme og faktisk bruk?
+        </Text>
       </View>
 
       <View style={styles.metaGrid} wrap={false}>
@@ -369,7 +557,7 @@ function IntroPage({ report, logoSource }: { report: CorporateDecisionNoteReport
       </View>
 
       {calc ? (
-        <View style={styles.sectionKeep} wrap={false}>
+        <View style={styles.section} wrap={false}>
           <Text style={styles.sectionTitle}>Tallene i kortform</Text>
           <View style={styles.kpiGrid}>
             <View style={styles.kpi}>
@@ -380,7 +568,7 @@ function IntroPage({ report, logoSource }: { report: CorporateDecisionNoteReport
             <View style={styles.kpi}>
               <Text style={styles.kpiLabel}>Årlig kostnad før verdiendring</Text>
               <Text style={styles.kpiValue}>{eur(calc.annual_cost_before_value_eur)}</Text>
-              <Text style={styles.kpiNote}>Drift + kapitalkostnad + periodiserte kjøpskostnader</Text>
+              <Text style={styles.kpiNote}>Drift + kapital + periodiserte kjøpskostnader</Text>
             </View>
             <View style={styles.kpi}>
               <Text style={styles.kpiLabel}>Alternativ hotellovernatting</Text>
@@ -402,7 +590,61 @@ function IntroPage({ report, logoSource }: { report: CorporateDecisionNoteReport
           </Text>
         </View>
       )}
+      <Footer report={report} />
+    </Page>
+  );
+}
 
+function StrategicValuePage({ report, logoSource }: { report: CorporateDecisionNoteReport; logoSource?: string }) {
+  const calc = report.calculator;
+  return (
+    <Page size="A4" style={styles.page}>
+      <Header report={report} logoSource={logoSource} />
+      <PageHeading
+        kicker="Strategisk virksomhetsverdi"
+        title="Mer enn en feriebolig"
+        intro={report.strategic_value_intro}
+      />
+
+      <View style={styles.section}>
+        {report.strategic_benefits.map((benefit, index) => (
+          <View style={styles.benefitCard} key={index} wrap={false}>
+            <Text style={styles.benefitNumber}>Mulig verdi {index + 1}</Text>
+            <Text style={styles.benefitText}>{benefit}</Text>
+          </View>
+        ))}
+      </View>
+
+      {calc ? (
+        <View style={styles.section} wrap={false}>
+          <Text style={styles.sectionTitle}>Hva investeringen kan representere i bruk</Text>
+          <View style={styles.capacityGrid}>
+            <View style={styles.capacityCard}>
+              <Text style={styles.capacityValue}>{number(calc.users)}</Text>
+              <Text style={styles.capacityLabel}>ansatte / medlemmer med mulig tilgang</Text>
+            </View>
+            <View style={styles.capacityCard}>
+              <Text style={styles.capacityValue}>{number(calc.employee_weeks_per_year)}</Text>
+              <Text style={styles.capacityLabel}>ferie-/medlemsuker i modellen per år</Text>
+            </View>
+            <View style={styles.capacityCard}>
+              <Text style={styles.capacityValue}>{number(calc.business_stay_count)}</Text>
+              <Text style={styles.capacityLabel}>planlagte bedriftsopphold per år</Text>
+            </View>
+            <View style={styles.capacityCard}>
+              <Text style={styles.capacityValue}>{number(calc.participant_nights)}</Text>
+              <Text style={styles.capacityLabel}>personnetter i de planlagte bedriftsoppholdene</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.noteBox} wrap={false}>
+        <Text style={styles.noteTitle}>Verdien må kobles til faktisk bruk.</Text>
+        <Text>
+          En firmabolig blir først et godt bedriftsverktøy når bruksregler, kapasitet, rettferdig fordeling og lokal drift er tydelig definert. Rapporten viser derfor muligheter – ikke en automatisk gevinst.
+        </Text>
+      </View>
       <Footer report={report} />
     </Page>
   );
@@ -413,103 +655,114 @@ function EconomicsPage({ report, logoSource }: { report: CorporateDecisionNoteRe
   if (!calc) return null;
 
   return (
-    <Page size="A4" style={styles.page} wrap>
-      <Header report={report} logoSource={logoSource} compact />
-      <Text style={styles.pageKicker}>Økonomi og bruk</Text>
-      <Text style={styles.pageTitle}>Forutsetningene bak regnestykket</Text>
+    <Page size="A4" style={styles.page}>
+      <Header report={report} logoSource={logoSource} />
+      <PageHeading
+        kicker="Økonomi og bruk"
+        title="Forutsetningene bak regnestykket"
+        intro="Tallene nedenfor er beregnet fra opplysningene som er sendt inn. De skal gjøre modellen sammenlignbar og etterprøvbar før virksomheten går videre til konkrete boliger."
+      />
 
-      <View style={styles.sectionKeep} wrap={false}>
+      <View style={styles.section} wrap={false}>
         <Text style={styles.sectionTitle}>Hvordan årskostnaden er bygget opp</Text>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Årlig drift</Text>
-          <Text style={styles.rowValue}>{eur(calc.annual_operating_eur)}</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Kjøpskostnader ({calc.acquisition_pct} %)</Text>
-          <Text style={styles.rowValue}>{eur(calc.acquisition_cost_eur)}</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Kjøpskostnader fordelt over {calc.holding_years} år</Text>
-          <Text style={styles.rowValue}>{eur(calc.annualized_acquisition_cost_eur)} / år</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Kapitalkostnad ({calc.capital_pct} % av kjøpesum + kjøpskostnader)</Text>
-          <Text style={styles.rowValue}>{eur(calc.annual_capital_cost_eur)} / år</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Samlet årskostnad før verdiendring</Text>
-          <Text style={styles.rowValue}>{eur(calc.annual_cost_before_value_eur)}</Text>
-        </View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Årlig drift</Text><Text style={styles.rowValue}>{eur(calc.annual_operating_eur)}</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Kjøpskostnader ({calc.acquisition_pct} %)</Text><Text style={styles.rowValue}>{eur(calc.acquisition_cost_eur)}</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Kjøpskostnader fordelt over {calc.holding_years} år</Text><Text style={styles.rowValue}>{eur(calc.annualized_acquisition_cost_eur)} / år</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Kapitalkostnad ({calc.capital_pct} % av kjøpesum + kjøpskostnader)</Text><Text style={styles.rowValue}>{eur(calc.annual_capital_cost_eur)} / år</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Samlet årskostnad før verdiendring</Text><Text style={styles.rowValue}>{eur(calc.annual_cost_before_value_eur)}</Text></View>
       </View>
 
-      <View style={styles.sectionKeep} wrap={false}>
+      <View style={styles.section} wrap={false}>
         <Text style={styles.sectionTitle}>Bruk og kapasitet</Text>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Ansatte / medlemmer med tilgang</Text>
-          <Text style={styles.rowValue}>{number(calc.users)}</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Ferie-/medlemsuker per år</Text>
-          <Text style={styles.rowValue}>{number(calc.employee_weeks_per_year)} uker</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Årskostnad sett mot ferie-/medlemsukene alene</Text>
-          <Text style={styles.rowValue}>{eur(calc.cost_per_employee_week_eur)} / uke</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Bedriftsopphold / personnetter</Text>
-          <Text style={styles.rowValue}>{number(calc.business_stay_count)} / {number(calc.participant_nights)}</Text>
-        </View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Ansatte / medlemmer med tilgang</Text><Text style={styles.rowValue}>{number(calc.users)}</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Ferie-/medlemsuker per år</Text><Text style={styles.rowValue}>{number(calc.employee_weeks_per_year)} uker</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Årskostnad mot ferie-/medlemsukene alene</Text><Text style={styles.rowValue}>{eur(calc.cost_per_employee_week_eur)} / uke</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Bedriftsopphold / personnetter</Text><Text style={styles.rowValue}>{number(calc.business_stay_count)} / {number(calc.participant_nights)}</Text></View>
       </View>
 
       {calc.stays.length > 0 && (
-        <View style={styles.section}>
+        <View style={styles.section} wrap={false}>
           <Text style={styles.sectionTitle}>Bedriftsopphold og hotellalternativ</Text>
-          <View style={styles.stayHeader} wrap={false}>
-            <Text style={styles.stayName}>Type</Text>
-            <Text style={styles.staySmall}>Antall</Text>
-            <Text style={styles.staySmall}>Pers.</Text>
-            <Text style={styles.staySmall}>Netter</Text>
-            <Text style={styles.stayCost}>Årskostnad</Text>
+          <View style={styles.stayHeader}>
+            <Text style={styles.stayName}>Type</Text><Text style={styles.staySmall}>Antall</Text><Text style={styles.staySmall}>Pers.</Text><Text style={styles.staySmall}>Netter</Text><Text style={styles.stayCost}>Årskostnad</Text>
           </View>
           {calc.stays.map((stay, index) => (
-            <View style={styles.stayRow} key={index} wrap={false}>
-              <Text style={styles.stayName}>{stay.name}</Text>
-              <Text style={styles.staySmall}>{number(stay.events_per_year)}</Text>
-              <Text style={styles.staySmall}>{number(stay.people)}</Text>
-              <Text style={styles.staySmall}>{number(stay.nights)}</Text>
-              <Text style={styles.stayCost}>{eur(stay.annual_hotel_cost_eur)}</Text>
+            <View style={styles.stayRow} key={index}>
+              <Text style={styles.stayName}>{stay.name}</Text><Text style={styles.staySmall}>{number(stay.events_per_year)}</Text><Text style={styles.staySmall}>{number(stay.people)}</Text><Text style={styles.staySmall}>{number(stay.nights)}</Text><Text style={styles.stayCost}>{eur(stay.annual_hotel_cost_eur)}</Text>
             </View>
           ))}
-          <View style={styles.noteBox} wrap={false}>
+          <View style={styles.noteBox}>
             <Text style={styles.noteTitle}>Hotellbeløpet er ikke automatisk en besparelse.</Text>
-            <Text>
-              Det viser alternativ overnattingskostnad for de konkrete bedriftsoppholdene som er lagt inn. Ferie-/medlemsuker holdes utenfor hotellregnestykket.
-            </Text>
+            <Text>Det viser alternativ overnattingskostnad for de konkrete bedriftsoppholdene som er lagt inn. Ferie-/medlemsuker holdes utenfor hotellregnestykket.</Text>
           </View>
         </View>
       )}
 
-      <View style={styles.sectionKeep} wrap={false}>
+      <View style={styles.section} wrap={false}>
         <Text style={styles.sectionTitle}>Verdiscenario</Text>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Valgt årlig verdiendring</Text>
-          <Text style={styles.rowValue}>{calc.value_pct} %</Text>
+        <View style={styles.row}><Text style={styles.rowLabel}>Valgt årlig verdiendring</Text><Text style={styles.rowValue}>{calc.value_pct} %</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Scenarioverdi etter {calc.holding_years} år</Text><Text style={styles.rowValue}>{eur(calc.estimated_future_value_eur)}</Text></View>
+        <View style={styles.noteBox}><Text style={styles.noteTitle}>Verdiutvikling holdes utenfor hovedkostnaden.</Text><Text>Verdiendringen er et scenario og behandles ikke som kontantinntekt, sikker avkastning eller garantert besparelse.</Text></View>
+      </View>
+      <Footer report={report} />
+    </Page>
+  );
+}
+
+function MarketPage({ report, logoSource }: { report: CorporateDecisionNoteReport; logoSource?: string }) {
+  const points = report.market_history;
+  const first = points[0]?.price_per_m2_eur || 0;
+  const last = points[points.length - 1]?.price_per_m2_eur || 0;
+  const changePct = first > 0 ? ((last / first) - 1) * 100 : 0;
+
+  return (
+    <Page size="A4" style={styles.page}>
+      <Header report={report} logoSource={logoSource} />
+      <PageHeading
+        kicker="Markedskontekst"
+        title={report.market_title}
+        intro={report.market_summary}
+      />
+
+      <View style={styles.marketHero} wrap={false}>
+        <View>
+          <Text style={styles.marketHeroLabel}>Endring i annonsert €/m² fra første til siste datapunkt</Text>
+          <Text style={styles.marketHeroValue}>+{Math.round(changePct)} %</Text>
         </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Beregnet verdiendring første år</Text>
-          <Text style={styles.rowValue}>{eur(calc.scenario_value_change_year_one_eur)}</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Scenarioverdi etter {calc.holding_years} år</Text>
-          <Text style={styles.rowValue}>{eur(calc.estimated_future_value_eur)}</Text>
-        </View>
-        <View style={styles.noteBox}>
-          <Text style={styles.noteTitle}>Verdiutvikling holdes utenfor hovedkostnaden.</Text>
-          <Text>Verdiendringen er et scenario og behandles ikke som kontantinntekt, sikker avkastning eller garantert besparelse.</Text>
+        <View>
+          <Text style={styles.marketHeroLabel}>Siste datapunkt</Text>
+          <Text style={styles.kpiValue}>{number(last)} €/m²</Text>
         </View>
       </View>
 
+      <MarketChart points={points} />
+
+      <View style={styles.noteBox} wrap={false}>
+        <Text style={styles.noteTitle}>Hva dette betyr – og ikke betyr</Text>
+        <Text>{report.market_methodology_note}</Text>
+      </View>
+
+      <View style={styles.section} wrap={false}>
+        <Text style={styles.sectionTitle}>Det nasjonale markedet er fortsatt i vekst</Text>
+        <Text style={styles.pageIntro}>{report.official_market_note}</Text>
+      </View>
+
+      <View style={styles.sourceBox} wrap={false}>
+        <Text style={styles.sourceLabel}>Kilde: {report.market_source_label}</Text>
+        <Link style={styles.sourceLink} src={report.market_source_url}>Åpne markedsserien</Link>
+      </View>
+
+      <View style={styles.sourceBox} wrap={false}>
+        <Text style={styles.sourceLabel}>Kilde: {report.official_market_source_label}</Text>
+        <Link style={styles.sourceLink} src={report.official_market_source_url}>Åpne offisiell prisstatistikk</Link>
+      </View>
+
+      <View style={styles.noteBox} wrap={false}>
+        <Text style={styles.noteTitle}>Riktig bruk i en styresak</Text>
+        <Text>
+          Historisk prisvekst er relevant fordi virksomheten vurderer en langsiktig eiendel. Den bør likevel behandles som kontekst, ikke som hovedargument for kjøpet. Bruksverdi, totaløkonomi, styring og faktisk egnet bolig må stå på egne ben.
+        </Text>
+      </View>
       <Footer report={report} />
     </Page>
   );
@@ -517,26 +770,31 @@ function EconomicsPage({ report, logoSource }: { report: CorporateDecisionNoteRe
 
 function DecisionPage({ report, logoSource }: { report: CorporateDecisionNoteReport; logoSource?: string }) {
   return (
-    <Page size="A4" style={styles.page} wrap>
-      <Header report={report} logoSource={logoSource} compact />
-      <Text style={styles.pageKicker}>Ledelse og neste steg</Text>
-      <Text style={styles.pageTitle}>Fra første vurdering til beslutning</Text>
+    <Page size="A4" style={styles.page}>
+      <Header report={report} logoSource={logoSource} />
+      <PageHeading
+        kicker="Ledelse og neste beslutning"
+        title="Hva bør ledelsen ta stilling til nå?"
+      />
+
+      <View style={styles.decisionBox} wrap={false}>
+        <Text style={styles.decisionTitle}>{report.leadership_decision_title}</Text>
+        <Text style={styles.decisionText}>{report.leadership_decision_text}</Text>
+      </View>
 
       {report.needs && (
-        <View style={styles.sectionKeep} wrap={false}>
+        <View style={styles.section} wrap={false}>
           <Text style={styles.sectionTitle}>Hva dere ønsker å få til</Text>
-          <View style={styles.needBox}>
-            <Text>{report.needs}</Text>
-          </View>
+          <View style={styles.needBox}><Text>{report.needs}</Text></View>
         </View>
       )}
 
-      <View style={styles.sectionKeep} wrap={false}>
+      <View style={styles.section} wrap={false}>
         <Text style={styles.sectionTitle}>Spørsmål styret bør avklare</Text>
         <BulletList items={report.board_questions} />
       </View>
 
-      <View style={styles.sectionKeep} wrap={false}>
+      <View style={styles.section} wrap={false}>
         <Text style={styles.sectionTitle}>Anbefalt vei videre</Text>
         <BulletList items={report.recommended_next_steps} />
         <View style={styles.nextBox}>
@@ -545,23 +803,16 @@ function DecisionPage({ report, logoSource }: { report: CorporateDecisionNoteRep
         </View>
       </View>
 
-      <View style={styles.sectionKeep} wrap={false}>
+      <View style={styles.section} wrap={false}>
         <Text style={styles.sectionTitle}>Forbehold</Text>
         <Text style={styles.disclaimer}>{report.disclaimer}</Text>
       </View>
-
       <Footer report={report} />
     </Page>
   );
 }
 
-function PdfDocument({
-  report,
-  logoSource,
-}: {
-  report: CorporateDecisionNoteReport;
-  logoSource?: string;
-}) {
+function PdfDocument({ report, logoSource }: { report: CorporateDecisionNoteReport; logoSource?: string }) {
   return (
     <Document
       title={`${report.report_title || "Beslutningsgrunnlag"} – ${report.company_name}`}
@@ -569,7 +820,9 @@ function PdfDocument({
       subject="Første beslutningsgrunnlag for firmabolig / bedriftshytte i Spania"
     >
       <IntroPage report={report} logoSource={logoSource} />
+      <StrategicValuePage report={report} logoSource={logoSource} />
       <EconomicsPage report={report} logoSource={logoSource} />
+      <MarketPage report={report} logoSource={logoSource} />
       <DecisionPage report={report} logoSource={logoSource} />
     </Document>
   );

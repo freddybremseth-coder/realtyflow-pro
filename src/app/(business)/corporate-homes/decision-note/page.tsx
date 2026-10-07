@@ -13,12 +13,29 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+type MarketPoint = {
+  label: string;
+  price_per_m2_eur: number;
+};
+
 type Template = {
   version: 1;
   report_title: string;
   report_subtitle: string;
   corporate_label: string;
   logo_url: string;
+  strategic_value_intro: string;
+  market_title: string;
+  market_summary: string;
+  market_history: MarketPoint[];
+  market_source_label: string;
+  market_source_url: string;
+  market_methodology_note: string;
+  official_market_note: string;
+  official_market_source_label: string;
+  official_market_source_url: string;
+  leadership_decision_title: string;
+  leadership_decision_text: string;
   board_questions: string[];
   recommended_next_steps: string[];
   next_practical_step: string;
@@ -77,6 +94,21 @@ function lines(value: string) {
 
 function textLines(value: string[]) {
   return value.join("\n");
+}
+
+function marketLines(value: MarketPoint[]) {
+  return value.map((point) => `${point.label} | ${point.price_per_m2_eur}`).join("\n");
+}
+
+function parseMarketLines(value: string, fallback: MarketPoint[]) {
+  const parsed = value.split("\n").map((line) => {
+    const [rawLabel, rawPrice] = line.split("|");
+    const label = String(rawLabel || "").trim();
+    const price = Number(String(rawPrice || "").trim().replace(/\s/g, "").replace(",", "."));
+    if (!label || !Number.isFinite(price) || price <= 0) return null;
+    return { label, price_per_m2_eur: Math.round(price) };
+  }).filter((point): point is MarketPoint => Boolean(point));
+  return parsed.length >= 2 ? parsed : fallback;
 }
 
 export default function CorporateDecisionNoteEditorPage() {
@@ -373,6 +405,67 @@ export default function CorporateDecisionNoteEditorPage() {
           </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <h2 className="text-xl font-black text-slate-950">Lederverdi & marked</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Dette styrer side 2, 4 og den avsluttende lederbeslutningen i den nye 5-siders rapporten.
+            </p>
+            <div className="mt-5 grid gap-4">
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Intro – strategisk virksomhetsverdi
+                <textarea rows={5} value={template.strategic_value_intro} onChange={(event) => setTemplate({ ...template, strategic_value_intro: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Markedstittel
+                <input value={template.market_title} onChange={(event) => setTemplate({ ...template, market_title: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Markedsoppsummering
+                <textarea rows={5} value={template.market_summary} onChange={(event) => setTemplate({ ...template, market_summary: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Prishistorikk – én linje per punkt: år | €/m²
+                <textarea rows={7} value={marketLines(template.market_history)} onChange={(event) => setTemplate({ ...template, market_history: parseMarketLines(event.target.value, template.market_history) })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-mono text-xs font-normal leading-6" />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Markedskilde
+                  <input value={template.market_source_label} onChange={(event) => setTemplate({ ...template, market_source_label: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Markedskilde URL
+                  <input value={template.market_source_url} onChange={(event) => setTemplate({ ...template, market_source_url: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+              </div>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Metodikk / forbehold for markedsdata
+                <textarea rows={4} value={template.market_methodology_note} onChange={(event) => setTemplate({ ...template, market_methodology_note: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Offisiell markedskontekst
+                <textarea rows={4} value={template.official_market_note} onChange={(event) => setTemplate({ ...template, official_market_note: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Offisiell kilde
+                  <input value={template.official_market_source_label} onChange={(event) => setTemplate({ ...template, official_market_source_label: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Offisiell kilde URL
+                  <input value={template.official_market_source_url} onChange={(event) => setTemplate({ ...template, official_market_source_url: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+              </div>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Lederbeslutning – overskrift
+                <input value={template.leadership_decision_title} onChange={(event) => setTemplate({ ...template, leadership_decision_title: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Lederbeslutning – tekst
+                <textarea rows={5} value={template.leadership_decision_text} onChange={(event) => setTemplate({ ...template, leadership_decision_text: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-center gap-2">
               <Mail size={20} className="text-amber-700" />
               <h2 className="text-xl font-black text-slate-950">E-postmal</h2>
@@ -466,6 +559,23 @@ export default function CorporateDecisionNoteEditorPage() {
             <Kpi label={"Scenarioverdi etter " + sample.holdingYears + " år"} value={euro.format(calculation.futureValue)} note={sample.valuePct + " % årlig verdiendring · scenario"} />
           </div>
 
+          <div className="mt-7 rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="text-xs font-black uppercase tracking-[0.12em] text-amber-700">Strategisk virksomhetsverdi</div>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{template.strategic_value_intro}</p>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="text-xs font-black uppercase tracking-[0.12em] text-amber-700">Markedskontekst</div>
+            <h3 className="mt-2 text-lg font-black text-slate-950">{template.market_title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{template.market_summary}</p>
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-emerald-50 p-5">
+            <div className="text-xs font-black uppercase tracking-[0.12em] text-teal-800">Neste lederbeslutning</div>
+            <h3 className="mt-2 text-lg font-black text-slate-950">{template.leadership_decision_title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{template.leadership_decision_text}</p>
+          </div>
+
           <PreviewList title="Spørsmål styret bør avklare" items={template.board_questions} />
           <PreviewList title="Anbefalt vei videre" items={template.recommended_next_steps} />
 
@@ -480,7 +590,7 @@ export default function CorporateDecisionNoteEditorPage() {
           </div>
 
           <div className="mt-7 border-t border-slate-200 pt-3 text-xs text-slate-400">
-            Live rapportforhåndsvisning. «Åpne test-PDF» bruker samme PDF-renderer som kunden får, og «Forhåndsvis e-post» bruker samme e-postrenderer som utsendelsen.
+            Live sammendrag av 5-siders lederrapport. «Åpne test-PDF» viser hele rapporten med strategisk verdi, økonomi, markedskontekst og lederbeslutning.
           </div>
         </section>
       </div>

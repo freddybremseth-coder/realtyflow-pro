@@ -57,4 +57,7 @@ test("Corporate report editor previews safely and persists presentation copy", (
   assert.match(editor, /Åpne test-PDF/);
   assert.match(editor, /Forhåndsvis e-post/);
   assert.match(editor, /Tallmotoren er låst/);
+  assert.match(editor, /Lederverdi & marked/);
+  assert.match(editor, /Prishistorikk/);
+  assert.match(editor, /Neste lederbeslutning/);
 });
