@@ -1012,6 +1012,7 @@ export async function POST(request: NextRequest) {
       contact_role: contactRole || null,
       user_count: userCount,
       corporate_model: corporateModel || null,
+      corporate_decision_note_request_id: corporateDecisionNoteState?.request_id || null,
       partner_type: isCorporatePartner ? partnerType : null,
       partnership_interest: partnershipInterest || null,
       referral_partner_id: referredByPartner?.id || null,
