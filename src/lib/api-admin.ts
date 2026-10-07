@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdminSession, isAdminEmail } from "@/lib/admin-auth";
+import {
+  verifyAdminSession,
+  verifyWorkspacePreviewSession,
+  WORKSPACE_PREVIEW_COOKIE,
+  isAdminEmail,
+} from "@/lib/admin-auth";
 import {
   accessRequirementForApi,
   hasPermission,
@@ -16,7 +21,12 @@ export interface RequestAccessContext {
   email: string;
   role: AccessRole;
   permissions: AccessPermission[];
-  source: "owner-session" | "role-profile" | "remaster-proxy";
+  source: "owner-session" | "owner-preview" | "role-profile" | "remaster-proxy";
+  preview?: {
+    ownerEmail: string;
+    targetEmail: string;
+    targetDisplayName: string;
+  };
 }
 
 /**
@@ -36,6 +46,23 @@ function remasterProxyContext(request: NextRequest): RequestAccessContext | null
 export async function getRequestAccessContext(request: NextRequest): Promise<RequestAccessContext | null> {
   const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
   if (session?.role === "OWNER" && isAdminEmail(session.email)) {
+    const preview = await verifyWorkspacePreviewSession(
+      request.cookies.get(WORKSPACE_PREVIEW_COOKIE)?.value,
+      session.email,
+    );
+    if (preview) {
+      return {
+        email: preview.targetEmail,
+        role: "WORKSPACE_MEMBER",
+        permissions: permissionsForRole("WORKSPACE_MEMBER"),
+        source: "owner-preview",
+        preview: {
+          ownerEmail: preview.ownerEmail,
+          targetEmail: preview.targetEmail,
+          targetDisplayName: preview.targetDisplayName,
+        },
+      };
+    }
     return { email: session.email, role: "OWNER", permissions: permissionsForRole("OWNER"), source: "owner-session" };
   }
   if (session?.role === "WORKSPACE_MEMBER") {
