@@ -241,7 +241,7 @@ test("SoMe Studio supports a three-image collage visual format with safe fallbac
   assert.match(route, /sourceImageUrls: collageImages/);
   assert.match(route, /style: "collage_3"/);
   assert.match(route, /PROPERTY_COLLAGE_IMAGES_REQUIRED/);
-  assert.match(studio, /type VisualFormat = "single_image" \| "property_card" \| "collage_3"/);
+  assert.match(studio, /type VisualFormat = "single_image" \| "property_card" \| "collage_3" \| "carousel"/);
   assert.match(studio, /3-bilders kollasje/);
   assert.match(studio, /propertyImageCount/);
   assert.match(studio, /visual-/);
@@ -272,7 +272,7 @@ test("SoMe Studio can hand off all three concepts as one package with approved m
 
 test("Topic and editorial drafts persist canonical Content Hub image fields", () => {
   assert.match(marketing, /ai_image_url: imageUrl \|\| null/);
-  assert.match(marketing, /media_urls: imageUrl \? \[imageUrl\] : \[\]/);
+  assert.match(marketing, /media_urls: mediaUrls/);
   assert.match(marketing, /social_package_id: packageId/);
   assert.match(marketing, /ai_generated_image: true/);
   assert.match(marketing, /Mirror approved/);
@@ -282,4 +282,15 @@ test("Content Hub compact draft list keeps thumbnails visible", () => {
   assert.match(contentHubDrafts, /"thumbnail_url", "scheduled_platforms"/);
   assert.match(contentHubDrafts, /thumbnail_url: typeof row\.thumbnail_url === "string"/);
   assert.doesNotMatch(contentHubDrafts, /thumbnail_url: null,\n\s*image_compacted: true/);
+});
+
+
+test("SoMe Studio supports a real three-image Instagram carousel", () => {
+  assert.match(route, /slideIndex/);
+  assert.match(route, /Carousel slide/);
+  assert.match(studio, /Ekte 3-bilders Instagram-karusell/);
+  assert.match(studio, /ensureConceptCarousel/);
+  assert.match(studio, /imageUrls: urls/);
+  assert.match(studio, /mediaUrls: approvedMediaUrls/);
+  assert.match(studio, /Lager 3 bilder/);
 });
