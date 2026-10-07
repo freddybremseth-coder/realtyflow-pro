@@ -35,7 +35,7 @@ function reportFilename(companyName: string) {
   return `beslutningsgrunnlag-${slug.toLowerCase()}.pdf`;
 }
 
-function emailHtml(report: CorporateDecisionNoteReport) {
+function emailHtml(report: CorporateDecisionNoteReport, pdfAttached: boolean) {
   const first = firstName(report.contact_name);
   const summaryItems = decisionNoteSummaryLines(report)
     .map((line) => `<li style="margin:0 0 8px 0">${escapeHtml(line)}</li>`)
@@ -49,7 +49,7 @@ function emailHtml(report: CorporateDecisionNoteReport) {
       <div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#8b6a31;font-weight:700;margin-bottom:10px">Zen Eco Homes · Corporate Homes</div>
       <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:1.1;margin:0 0 18px;color:#17242a">Beslutningsgrunnlag for ${escapeHtml(report.company_name)}</h1>
       <p style="font-size:16px;line-height:1.6;margin:0 0 18px">Hei ${escapeHtml(first)},</p>
-      <p style="font-size:16px;line-height:1.6;margin:0 0 18px">Takk for forespørselen. Jeg har satt opp et første beslutningsgrunnlag med tallene og forutsetningene dere sendte inn. PDF-en ligger vedlagt og kan brukes som arbeidsdokument internt.</p>
+      <p style="font-size:16px;line-height:1.6;margin:0 0 18px">Takk for forespørselen. Jeg har satt opp et første beslutningsgrunnlag med tallene og forutsetningene dere sendte inn. ${pdfAttached ? "PDF-en ligger vedlagt og kan brukes som arbeidsdokument internt." : "Hovedtallene står nedenfor. PDF-vedlegget kunne ikke opprettes automatisk, så saken er samtidig markert for manuell oppfølging hos oss."}</p>
 
       <div style="background:#edf3f0;border-radius:12px;padding:20px;margin:22px 0">
         <div style="font-weight:700;margin-bottom:10px">Kort oppsummert</div>
@@ -72,12 +72,12 @@ function emailHtml(report: CorporateDecisionNoteReport) {
 </html>`;
 }
 
-function emailText(report: CorporateDecisionNoteReport) {
+function emailText(report: CorporateDecisionNoteReport, pdfAttached: boolean) {
   const first = firstName(report.contact_name);
   const summary = decisionNoteSummaryLines(report).map((line) => `– ${line}`).join("\n");
   return `Hei ${first},
 
-Takk for forespørselen. Jeg har satt opp et første beslutningsgrunnlag for ${report.company_name} med tallene og forutsetningene dere sendte inn. PDF-en ligger vedlagt og kan brukes som arbeidsdokument internt.
+Takk for forespørselen. Jeg har satt opp et første beslutningsgrunnlag for ${report.company_name} med tallene og forutsetningene dere sendte inn. ${pdfAttached ? "PDF-en ligger vedlagt og kan brukes som arbeidsdokument internt." : "Hovedtallene står nedenfor. PDF-vedlegget kunne ikke opprettes automatisk, så saken er samtidig markert for manuell oppfølging hos oss."}
 
 Kort oppsummert:
 ${summary}
@@ -184,8 +184,8 @@ export async function sendCorporateDecisionNoteReport(
     brandId: "zeneco",
     to: [input.email],
     subject,
-    bodyText: emailText(input.report),
-    bodyHtml: emailHtml(input.report),
+    bodyText: emailText(input.report, Boolean(pdfBuffer)),
+    bodyHtml: emailHtml(input.report, Boolean(pdfBuffer)),
     attachments: pdfBuffer ? [{
       filename: reportFilename(input.report.company_name),
       content: pdfBuffer,
@@ -211,11 +211,43 @@ export async function sendCorporateDecisionNoteReport(
     contactId: input.contactId,
     stepId: "decision_note",
     subject,
-    bodyPreview: emailText(input.report),
+    bodyPreview: emailText(input.report, Boolean(pdfBuffer)),
     status: send.success ? "sent" : "failed",
     error: deliveryError || pdfError,
     sentAt: send.success ? now : null,
   });
+
+  if (pdfError) {
+    const { data: existingPdfWorkItem } = await supabase
+      .from("work_items")
+      .select("id")
+      .eq("brand_id", "zeneco")
+      .eq("source_type", "corporate_decision_note_pdf_error")
+      .eq("source_id", input.prospectId)
+      .maybeSingle();
+
+    if (!existingPdfWorkItem?.id) {
+      await supabase.from("work_items").insert({
+        title: `PDF må følges opp · ${input.report.company_name}`,
+        description: `Beslutningsgrunnlaget ble sendt som e-post, men PDF-genereringen feilet. Kontakt: ${input.email}`,
+        status: "TO_DO",
+        priority: "HIGH",
+        brand_id: "zeneco",
+        source_type: "corporate_decision_note_pdf_error",
+        source_id: input.prospectId,
+        assigned_agent: "sales",
+        next_action: "Kontroller rapportgrunnlaget, generer PDF manuelt og send den til kunden.",
+        ai_score: 94,
+        metadata: {
+          contact_id: input.contactId,
+          pdf_error: pdfError,
+          corporate_decision_note: true,
+        },
+        created_at: now,
+        updated_at: now,
+      });
+    }
+  }
 
   if (send.success) {
     await supabase
