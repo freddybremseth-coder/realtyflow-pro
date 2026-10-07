@@ -143,13 +143,28 @@ test("SoMe Studio salvages stringified, numbered and channel-separated AI shapes
 });
 
 
-test("SoMe Studio captures raw provider output before RealtyFlow validation", () => {
-  assert.match(route, /Do not validate inside the provider client/);
-  assert.doesNotMatch(route, /validateResponse:\s*validVariantPayload/);
+test("SoMe Studio escalates malformed output across providers and never hard-stops on format alone", () => {
+  assert.match(route, /validateResponse:\s*validVariantPayload/);
+  assert.match(route, /fallbackOnInvalidResponse:\s*true/);
   assert.match(route, /const fallbackRaw = await askClaude/);
   assert.match(route, /const repairedRaw = await askClaude/);
+  assert.match(route, /function buildDeterministicVariantPayload/);
+  assert.match(route, /AI_FORMAT_RECOVERED_LOCALLY/);
+  assert.match(route, /using source-safe local fallback/);
+  assert.match(studio, /tre kildebaserte forslag lokalt/);
 });
 
+
+
+test("Local SoMe recovery stays source-based and still returns the three canonical concepts", () => {
+  assert.match(route, /function fallbackExcerpt/);
+  assert.match(route, /sourceCore = excerpt/);
+  assert.match(route, /id: "editorial_premium"/);
+  assert.match(route, /id: "lifestyle_story"/);
+  assert.match(route, /id: "advisor_insight"/);
+  assert.match(route, /raw = JSON\.stringify\(buildDeterministicVariantPayload\(sourceTitle, sourceText\)\)/);
+  assert.match(route, /generationFallback = true/);
+});
 
 test("Property card rendering falls back to the approved property image and keeps the draft flow open", () => {
   assert.match(route, /property card fallback/);
