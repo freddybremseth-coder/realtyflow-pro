@@ -20,13 +20,22 @@ function normalizedContents(input: unknown) {
 
 function accessIsActive(snapshot: any) {
   const sub = snapshot?.subscription || {};
-  if (sub.access_kind === "lifetime") return true;
-  if (!["active", "grace"].includes(String(sub.access_status || ""))) return false;
-  if (!["active", "trialing", "past_due"].includes(String(sub.status || ""))) return false;
+  const accessKind = String(sub.access_kind || "");
+  const provider = String(sub.provider || "");
+  const status = String(sub.status || "");
+  const accessStatus = String(sub.access_status || "");
 
-  const end = sub.status === "trialing" ? sub.trial_ends_at : sub.current_period_ends_at;
-  if (end && new Date(end).getTime() <= Date.now()) return false;
-  return true;
+  if (accessKind === "lifetime") return true;
+  if (!["active", "grace"].includes(accessStatus)) return false;
+
+  if (provider === "stripe") {
+    if (status === "active" || status === "trialing") return true;
+    return status === "past_due" && accessStatus === "grace";
+  }
+
+  if (!["active", "trialing"].includes(status)) return false;
+  const end = status === "trialing" ? sub.trial_ends_at : sub.current_period_ends_at;
+  return !end || new Date(end).getTime() > Date.now();
 }
 
 function pricesForNow() {
@@ -84,6 +93,9 @@ export async function POST(request: NextRequest) {
 
   if (typeof clientConfig.maxOutputTokens === "number") {
     generationConfig.maxOutputTokens = Math.min(Math.max(clientConfig.maxOutputTokens, 1), 8192);
+  }
+  if (typeof clientConfig.temperature === "number") {
+    generationConfig.temperature = Math.min(Math.max(clientConfig.temperature, 0), 2);
   }
   if (typeof clientConfig.responseMimeType === "string") {
     generationConfig.responseMimeType = clientConfig.responseMimeType;
