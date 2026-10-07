@@ -927,7 +927,9 @@ export async function POST(request: NextRequest) {
     next_action: isCorporatePartner
       ? "Corporate Homes partner: svar personlig og avklar kundetyper, rollefordeling, introduksjonsprosess og behov for samarbeidsavtale."
       : isCorporateDecisionNote
-        ? "Beslutningsgrunnlaget sendes automatisk. Sjekk tallene og kontaktrollen; ved svar eller booking overtar personlig oppfølging og automatikken stopper."
+        ? corporateDecisionNoteDelivery?.success
+          ? "Beslutningsgrunnlaget er sendt automatisk. Sjekk tallene og kontaktrollen; ved svar eller booking overtar personlig oppfølging og automatikken stopper."
+          : "Automatisk levering av beslutningsgrunnlaget ble ikke bekreftet. Sjekk rapportgrunnlaget og send personlig før videre oppfølging."
       : isCorporateHome
         ? "Corporate Homes B2B: svar personlig, identifiser beslutningstaker(e) og avklar antall brukere, formål, budsjett, tidslinje og styre-/ledelsesprosess."
         : isCare
@@ -1058,6 +1060,11 @@ export async function POST(request: NextRequest) {
       `E-post: ${email}`,
       cleanText(body.phone, 80) ? `Telefon: ${cleanText(body.phone, 80)}` : "",
       requestType ? `Skjema: ${requestType}` : "",
+      isCorporateDecisionNote
+        ? `Beslutningsgrunnlag: ${corporateDecisionNoteDelivery?.success
+          ? corporateDecisionNoteDelivery.pdfAttached ? "sendt automatisk med PDF" : "sendt uten PDF – manuell PDF-oppfølging opprettet"
+          : "automatisk levering ikke bekreftet"}`
+        : "",
       preferredArea ? `Område: ${preferredArea}` : "",
       budget ? `Budsjett: ${budget}` : "",
       bedrooms ? `Soverom: ${bedrooms}` : "",
