@@ -3,11 +3,13 @@ import { test } from "node:test";
 import {
   activeNavigationSection,
   buildVisibleNavigation,
+  buildWorkspaceMemberNavigation,
   filterNavigationSections,
   navigationCoverage,
   normalizeNavigationFavorites,
   quickNavigationItems,
   toggleNavigationFavorite,
+  isNavigationPathActive,
 } from "@/lib/navigation";
 import { permissionsForRole } from "@/lib/access-control";
 
@@ -147,4 +149,48 @@ test("keyholding work is split between Sales operations and Finance invoicing", 
   const finance = sections.find((section) => section.id === "finance");
   assert.ok(finance);
   assert.equal(finance.items.some((item) => item.href === "/care/invoices"), true);
+});
+
+
+test("workspace members get a permission-derived brand menu instead of global navigation", () => {
+  const sections = buildWorkspaceMemberNavigation([
+    {
+      brandKey: "zeneco",
+      name: "Zen Eco Homes",
+      permissions: [
+        "crm.joint.read", "tasks.joint.read", "properties.catalog.read",
+        "corporate.read", "content.read", "email.read", "visibility.read",
+        "ads.read", "marketing.read", "reels.read", "youtube.read", "nexus.read",
+        "corporate.plan", "events.plan",
+      ],
+    },
+    {
+      brandKey: "pinosoecolife",
+      name: "Pinoso EcoLife",
+      permissions: ["crm.read", "crm.write", "properties.catalog.read", "content.read", "email.read", "reels.read"],
+    },
+  ]);
+  assert.deepEqual(sections.map(section => section.id), ["workspace:zeneco", "workspace:pinosoecolife"]);
+  const zen = sections[0].items;
+  assert.equal(zen.some(item => item.href === "/workspace/zeneco?tab=leads"), true);
+  assert.equal(zen.some(item => item.href === "/workspace/zeneco?tab=properties"), true);
+  assert.equal(zen.some(item => item.href === "/workspace/zeneco?tab=growth&area=corporate"), true);
+  assert.equal(zen.some(item => item.href === "/workspace/zeneco?tab=growth&focus=youtube"), true);
+  assert.equal(zen.some(item => item.href.includes("/finance")), false);
+
+  const pinoso = sections[1].items;
+  assert.equal(pinoso.some(item => item.href === "/workspace/pinosoecolife?tab=leads"), true);
+  assert.equal(pinoso.some(item => item.href.includes("area=corporate")), false);
+  assert.equal(pinoso.some(item => item.href.includes("focus=youtube")), false);
+
+  const quick = quickNavigationItems("WORKSPACE_MEMBER", sections, []);
+  assert.equal(quick.length > 0, true);
+  assert.equal(quick.every(item => item.href.startsWith("/workspace/")), true);
+});
+
+test("workspace query navigation activates only the selected tool", () => {
+  assert.equal(isNavigationPathActive("/workspace/zeneco?tab=leads", "/workspace/zeneco?tab=leads"), true);
+  assert.equal(isNavigationPathActive("/workspace/zeneco?tab=properties", "/workspace/zeneco?tab=leads"), false);
+  assert.equal(isNavigationPathActive("/workspace/zeneco?tab=growth&area=email", "/workspace/zeneco?tab=growth&area=email"), true);
+  assert.equal(isNavigationPathActive("/workspace/zeneco?tab=growth&area=email", "/workspace/zeneco"), false);
 });
