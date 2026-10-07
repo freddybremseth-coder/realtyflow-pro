@@ -145,6 +145,9 @@ export function WorkspaceSocialStudio({
   const [notice, setNotice] = useState("");
   const [savedPublicationId, setSavedPublicationId] = useState("");
   const [savedDraft, setSavedDraft] = useState<{ id: string; variantId: Variant["id"]; channel: Channel } | null>(null);
+  const [generationFeedback, setGenerationFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<Record<string, { kind: "success" | "error"; text: string }>>({});
+  const [previewFeedback, setPreviewFeedback] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!initialProperty?.id) return;
@@ -168,6 +171,9 @@ export function WorkspaceSocialStudio({
     setError("");
     setSavedPublicationId("");
     setSavedDraft(null);
+    setGenerationFeedback(null);
+    setSaveFeedback({});
+    setPreviewFeedback({});
     setNotice("Boligen er hentet fra Eiendommer. Lag tre forslag når du er klar.");
     onInitialPropertyConsumed?.();
   }, [initialProperty?.id]);
@@ -252,6 +258,9 @@ export function WorkspaceSocialStudio({
     setNotice("");
     setSavedPublicationId("");
     setSavedDraft(null);
+    setGenerationFeedback(null);
+    setSaveFeedback({});
+    setPreviewFeedback({});
     setVariants([]);
     setPreviews({});
     try {
@@ -290,16 +299,22 @@ export function WorkspaceSocialStudio({
       setSource(body.source as GeneratedSource);
       setVariants(nextVariants);
       setStyles(Object.fromEntries(nextVariants.map((item) => [item.id, item.creativeStyle])));
-      setNotice(body.source?.companionPropertyId
-        ? "Tre konsepter er klare, inkludert koblingen mellom valgt innhold og boligen."
-        : "Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.");
+      setGenerationFeedback({
+        kind: "success",
+        text: body.source?.companionPropertyId
+          ? "Tre konsepter er klare, inkludert koblingen mellom valgt innhold og boligen."
+          : "Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.",
+      });
       if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
         window.setTimeout(() => {
           document.getElementById("social-studio-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 80);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Kunne ikke lage forslag.");
+      setGenerationFeedback({
+        kind: "error",
+        text: cause instanceof Error ? cause.message : "Kunne ikke lage forslag.",
+      });
     } finally {
       setBusy(false);
     }
@@ -308,21 +323,36 @@ export function WorkspaceSocialStudio({
   async function previewVariant(variant: Variant) {
     if (source?.type !== "property" || !source.propertyLookup || previewing) return;
     setPreviewing(variant.id);
-    setError("");
+    setPreviewFeedback(current => {
+      const next = { ...current };
+      delete next[variant.id];
+      return next;
+    });
     try {
       const channel: Channel = activePlatforms.has("instagram") ? "instagram" : "facebook";
-      const previewUrl = await renderPropertyImage(variant, channel);
-      if (!previewUrl) throw new Error("Forhåndsvisningen kunne ikke rendres.");
-      setPreviews(current => ({ ...current, [variant.id]: previewUrl }));
+      const preview = await renderPropertyImage(variant, channel);
+      if (!preview.imageUrl) throw new Error("Forhåndsvisningen kunne ikke rendres.");
+      setPreviews(current => ({ ...current, [variant.id]: preview.imageUrl }));
+      if (preview.fallback) {
+        setPreviewFeedback(current => ({
+          ...current,
+          [variant.id]: "Kortmalen kunne ikke rendres akkurat nå. Originalbildet fra eiendommen vises i stedet.",
+        }));
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Forhåndsvisningen kunne ikke rendres.");
+      setPreviewFeedback(current => ({
+        ...current,
+        [variant.id]: cause instanceof Error ? cause.message : "Forhåndsvisningen kunne ikke rendres.",
+      }));
     } finally {
       setPreviewing("");
     }
   }
 
   async function renderPropertyImage(variant: Variant, channel: Channel) {
-    if (source?.type !== "property" || !source.propertyLookup) return source?.imageUrl || imageUrl.trim();
+    if (source?.type !== "property" || !source.propertyLookup) {
+      return { imageUrl: source?.imageUrl || imageUrl.trim(), fallback: false };
+    }
     const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -335,23 +365,31 @@ export function WorkspaceSocialStudio({
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body.imageUrl) throw new Error("Det profesjonelle eiendomskortet kunne ikke rendres.");
-    if (body.fallback === true) {
-      setNotice("Kortmalen kunne ikke rendres akkurat nå. RealtyFlow bruker boligens godkjente originalbilde, så du kan fortsatt lagre utkastet.");
-    }
-    return String(body.imageUrl);
+    return { imageUrl: String(body.imageUrl), fallback: body.fallback === true };
   }
 
   async function saveVariant(variant: Variant, channel: Channel) {
     if (!canDraft || saving) return;
+    const feedbackKey = variant.id + ":" + channel;
     if (!activePlatforms.has(channel)) {
-      setError((channel === "facebook" ? "Facebook" : "Instagram") + " er ikke aktivert for denne merkevaren.");
+      setSaveFeedback(current => ({
+        ...current,
+        [feedbackKey]: {
+          kind: "error",
+          text: (channel === "facebook" ? "Facebook" : "Instagram") + " er ikke aktivert for denne merkevaren.",
+        },
+      }));
       return;
     }
-    setSaving(variant.id + ":" + channel);
-    setError("");
-    setNotice("");
+    setSaving(feedbackKey);
+    setSaveFeedback(current => {
+      const next = { ...current };
+      delete next[feedbackKey];
+      return next;
+    });
     try {
-      const approvedImageUrl = await renderPropertyImage(variant, channel);
+      const renderedImage = await renderPropertyImage(variant, channel);
+      const approvedImageUrl = renderedImage.imageUrl;
       if (channel === "instagram" && !approvedImageUrl) {
         throw new Error("Instagram trenger et godkjent bilde. Legg inn bilde fra brand-media eller bruk en eiendom med bilde.");
       }
@@ -375,6 +413,9 @@ export function WorkspaceSocialStudio({
           ])).slice(0, 20),
           platforms: [channel],
           imageUrl: approvedImageUrl || "",
+          sourcePropertyId: source?.type === "property"
+            ? (source.propertyId || "")
+            : (source?.companionPropertyId || ""),
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -390,10 +431,23 @@ export function WorkspaceSocialStudio({
       const publicationId = typeof body?.publication?.id === "string" ? body.publication.id : "";
       setSavedPublicationId(publicationId);
       if (publicationId) setSavedDraft({ id: publicationId, variantId: variant.id, channel });
-      setNotice((channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub. Ingenting er publisert.");
+      setSaveFeedback(current => ({
+        ...current,
+        [feedbackKey]: {
+          kind: "success",
+          text: (channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub." +
+            (renderedImage.fallback ? " Originalbildet fra eiendommen ble brukt." : ""),
+        },
+      }));
       await onDraftSaved?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Utkastet kunne ikke lagres.");
+      setSaveFeedback(current => ({
+        ...current,
+        [feedbackKey]: {
+          kind: "error",
+          text: cause instanceof Error ? cause.message : "Utkastet kunne ikke lagres.",
+        },
+      }));
     } finally {
       setSaving("");
     }
@@ -577,6 +631,12 @@ export function WorkspaceSocialStudio({
       className="mt-4 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">
       <Sparkles size={16}/>{busy ? "Lager tre konsepter…" : "Lag 3 forskjellige forslag"}
     </button>
+    {generationFeedback && <p role={generationFeedback.kind === "error" ? "alert" : "status"}
+      className={"mt-3 max-w-3xl rounded-lg border p-3 text-sm " + (generationFeedback.kind === "error"
+        ? "border-amber-800 bg-amber-950/30 text-amber-200"
+        : "border-emerald-800 bg-emerald-950/25 text-emerald-200")}>
+      {generationFeedback.text}
+    </p>}
 
     {variants.length === 3 && <div id="social-studio-results" className="mt-6 scroll-mt-24">
       <div className="mb-3 flex items-center justify-between gap-3 xl:hidden">
@@ -613,6 +673,7 @@ export function WorkspaceSocialStudio({
             className="mt-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 disabled:opacity-40">
             {previewing === variant.id ? "Renderer…" : "Forhåndsvis valgt mal"}
           </button>
+          {previewFeedback[variant.id] && <p className="mt-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200">{previewFeedback[variant.id]}</p>}
           {previews[variant.id] && <img src={previews[variant.id]} alt={"Forhåndsvisning av " + variant.label}
             className="mt-3 aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />}
         </label>}
@@ -626,6 +687,12 @@ export function WorkspaceSocialStudio({
               className="mt-3 rounded-lg border border-blue-800 px-3 py-2 text-xs text-blue-200 disabled:opacity-40">
               {saving === variant.id + ":facebook" ? "Lagrer…" : "Lagre Facebook-utkast"}
             </button>
+            {saveFeedback[variant.id + ":facebook"] && <p
+              className={"mt-2 rounded-lg border p-2 text-[11px] " + (saveFeedback[variant.id + ":facebook"].kind === "error"
+                ? "border-amber-900/60 bg-amber-950/20 text-amber-200"
+                : "border-emerald-900/60 bg-emerald-950/20 text-emerald-200")}>
+              {saveFeedback[variant.id + ":facebook"].text}
+            </p>}
             {savedDraft?.variantId === variant.id && savedDraft.channel === "facebook" && <a
               href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id)}
               className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">
@@ -640,6 +707,12 @@ export function WorkspaceSocialStudio({
               className="mt-3 rounded-lg border border-fuchsia-800 px-3 py-2 text-xs text-fuchsia-200 disabled:opacity-40">
               {saving === variant.id + ":instagram" ? "Lagrer…" : "Lagre Instagram-utkast"}
             </button>
+            {saveFeedback[variant.id + ":instagram"] && <p
+              className={"mt-2 rounded-lg border p-2 text-[11px] " + (saveFeedback[variant.id + ":instagram"].kind === "error"
+                ? "border-amber-900/60 bg-amber-950/20 text-amber-200"
+                : "border-emerald-900/60 bg-emerald-950/20 text-emerald-200")}>
+              {saveFeedback[variant.id + ":instagram"].text}
+            </p>}
             {savedDraft?.variantId === variant.id && savedDraft.channel === "instagram" && <a
               href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id)}
               className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">

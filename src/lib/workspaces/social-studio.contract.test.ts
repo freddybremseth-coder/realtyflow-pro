@@ -144,3 +144,21 @@ test("Property card rendering falls back to the approved property image and keep
   assert.match(studio, /Kortmalen kunne ikke rendres akkurat nå/);
   assert.match(studio, /Åpne dette utkastet i Content Hub/);
 });
+
+
+test("SoMe property-image approval targets the exact source property instead of a capped catalogue scan", () => {
+  assert.match(marketing, /sourcePropertyId/);
+  assert.match(marketing, /ownerImageApproved\(access\.value\.supabase, params\.brandKey, imageUrl, sourcePropertyId\)/);
+  assert.match(marketing, /\.eq\("property_id", sourcePropertyId\)/);
+  assert.match(marketing, /\.eq\("brand_id", brandKey\)/);
+  assert.match(marketing, /imageUrl === property\.primary_image/);
+  assert.match(studio, /sourcePropertyId: source\?\.type === "property"/);
+});
+
+test("SoMe action feedback stays next to generate, preview and save controls", () => {
+  assert.match(studio, /generationFeedback/);
+  assert.match(studio, /saveFeedback/);
+  assert.match(studio, /previewFeedback/);
+  assert.match(studio, /Tre forskjellige konsepter er klare/);
+  assert.match(studio, /-utkastet er lagret i Content Hub/);
+});
