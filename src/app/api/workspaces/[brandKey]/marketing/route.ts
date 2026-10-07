@@ -145,6 +145,117 @@ async function ownerImageApproved(
   return !visibilityError && visibility?.property_id === sourcePropertyId;
 }
 
+async function ownerLinkDraftMedia(
+  supabase: any,
+  input: {
+    brandKey: string;
+    publicationId: string;
+    mediaUrls: string[];
+    sourcePropertyId: string;
+    actorEmail: string;
+    contentFeatures: Record<string, unknown>;
+  },
+) {
+  if (!input.mediaUrls.length) return null;
+
+  const { data: organization } = await supabase
+    .from("media_assets")
+    .select("organization_id")
+    .eq("brand_id", input.brandKey)
+    .not("organization_id", "is", null)
+    .is("deleted_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (!organization?.organization_id) return "BRAND_MEDIA_ORGANIZATION_MISSING";
+
+  const now = new Date().toISOString();
+  for (let index = 0; index < input.mediaUrls.length; index += 1) {
+    const mediaUrl = input.mediaUrls[index];
+    let existing = await supabase
+      .from("media_assets")
+      .select("id,metadata_json")
+      .eq("brand_id", input.brandKey)
+      .eq("public_url", mediaUrl)
+      .is("deleted_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (!existing.data?.id) {
+      existing = await supabase
+        .from("media_assets")
+        .select("id,metadata_json")
+        .eq("brand_id", input.brandKey)
+        .eq("thumbnail_url", mediaUrl)
+        .is("deleted_at", null)
+        .limit(1)
+        .maybeSingle();
+    }
+
+    const mediaMetadata = {
+      ...((existing.data?.metadata_json && typeof existing.data.metadata_json === "object")
+        ? existing.data.metadata_json as Record<string, unknown>
+        : {}),
+      ...input.contentFeatures,
+      workspace_social_studio: true,
+      carousel_index: index,
+      role: index === 0 ? "cover" : "detail",
+      source_property_id: input.sourcePropertyId || null,
+      source_url: mediaUrl,
+      actor_email: input.actorEmail,
+    };
+
+    let assetId = existing.data?.id as string | undefined;
+    if (!assetId) {
+      const inserted = await supabase
+        .from("media_assets")
+        .insert({
+          organization_id: organization.organization_id,
+          user_id: null,
+          brand_id: input.brandKey,
+          property_id: input.sourcePropertyId || null,
+          media_type: "image",
+          asset_type: "uploaded_reference",
+          title: "SoMe Studio · draft media " + (index + 1),
+          description: "Godkjent brand-/Inventory-bilde koblet til et SoMe-utkast i Content Hub.",
+          public_url: mediaUrl,
+          signed_url_required: false,
+          provider: input.sourcePropertyId ? "realtyflow-inventory" : "realtyflow-social-studio",
+          ai_generated: false,
+          ai_edited: false,
+          metadata_json: mediaMetadata,
+          tags: ["social-studio", input.brandKey, "content-hub-media"],
+          status: "active",
+          content_hub_publication_id: input.publicationId,
+          exported_to_content_hub_at: now,
+        })
+        .select("id")
+        .single();
+      if (inserted.error || !inserted.data?.id) return "CONTENT_HUB_MEDIA_ASSET_REGISTER_FAILED";
+      assetId = inserted.data.id;
+    } else {
+      const updated = await supabase
+        .from("media_assets")
+        .update({
+          content_hub_publication_id: input.publicationId,
+          exported_to_content_hub_at: now,
+          metadata_json: mediaMetadata,
+        })
+        .eq("id", assetId);
+      if (updated.error) return "CONTENT_HUB_MEDIA_ASSET_LINK_FAILED";
+    }
+
+    const link = await supabase.from("media_asset_links").upsert({
+      organization_id: organization.organization_id,
+      asset_id: assetId,
+      entity_type: "content_hub_draft",
+      entity_id: input.publicationId,
+      relationship_type: "attached_to",
+    }, { onConflict: "asset_id,entity_type,entity_id,relationship_type" });
+    if (link.error) return "CONTENT_HUB_MEDIA_LINK_FAILED";
+  }
+
+  return null;
+}
+
 async function ownerChannelsActive(supabase: any, brandKey: string, platforms: string[]) {
   if (!platforms.length) return true;
   const { data, error } = await supabase
@@ -230,6 +341,14 @@ export async function POST(
     ? body.platforms.map(platform => String(platform).trim().toLowerCase()).filter(Boolean)
     : [];
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  const mediaUrlsInput = body.mediaUrls === undefined
+    ? []
+    : Array.isArray(body.mediaUrls)
+      ? body.mediaUrls.map((url) => typeof url === "string" ? url.trim() : "")
+      : null;
+  const mediaUrls = mediaUrlsInput === null
+    ? []
+    : Array.from(new Set([imageUrl, ...mediaUrlsInput].filter(Boolean)));
   const sourcePropertyId = typeof body.sourcePropertyId === "string" ? body.sourcePropertyId.trim() : "";
   const socialCategory = typeof body.socialCategory === "string" ? body.socialCategory.trim() : "";
   const conceptId = typeof body.conceptId === "string" ? body.conceptId.trim() : "";
@@ -243,6 +362,8 @@ export async function POST(
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
       imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
+      mediaUrlsInput === null || mediaUrls.length > 10 ||
+      mediaUrls.some((url) => url.length > 2000 || !/^https:\/\//i.test(url) || /\s/.test(url)) ||
       (sourcePropertyId && !UUID_RE.test(sourcePropertyId)) ||
       (socialCategory && !SOCIAL_CATEGORY_SET.has(socialCategory)) ||
       (conceptId && !SOCIAL_CONCEPT_SET.has(conceptId)) ||
@@ -257,14 +378,36 @@ export async function POST(
     return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha et brand-godkjent bilde.");
   }
 
+  const contentFeatures: Record<string, unknown> = {
+    workspace_draft: true,
+    workspace_actor_email: access.value.verifiedEmail,
+    ...(socialCategory ? {
+      social_category: socialCategory,
+      is_property_presentation: socialCategory === "property",
+    } : {}),
+    ...(conceptId ? { concept_id: conceptId } : {}),
+    ...(visualFormat ? { visual_format: visualFormat } : {}),
+    ...(sourcePropertyId ? { source_property_id: sourcePropertyId } : {}),
+    ...(sourceContentId ? { source_content_id: sourceContentId } : {}),
+    ...(sourceAreaId ? { source_area_id: sourceAreaId } : {}),
+    ...(strategyPeriodId ? { strategy_period_id: strategyPeriodId } : {}),
+    ...(strategyRecommendationReason ? {
+      strategy_recommendation_reason: strategyRecommendationReason,
+    } : {}),
+    multi_image: mediaUrls.length > 1,
+    media_asset_count: mediaUrls.length,
+  };
+
   let data: any = null;
   if (!access.value.verifiedUserId) {
     if (!(await ownerChannelsActive(access.value.supabase, params.brandKey, platforms))) {
       return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
     }
-    if (imageUrl && !(await ownerImageApproved(access.value.supabase, params.brandKey, imageUrl, sourcePropertyId))) {
-      return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
-        "Bildeadressen er ikke knyttet til en synlig eiendom eller godkjent mediefil for denne merkevaren.");
+    for (const mediaUrl of mediaUrls) {
+      if (!(await ownerImageApproved(access.value.supabase, params.brandKey, mediaUrl, sourcePropertyId))) {
+        return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
+          "Ett eller flere bilder er ikke knyttet til en synlig eiendom eller godkjent mediefil for denne merkevaren.");
+      }
     }
     const { data: publication, error: insertError } = await access.value.supabase
       .from("content_publications")
@@ -275,26 +418,14 @@ export async function POST(
         description,
         tags,
         thumbnail_url: imageUrl || null,
+        ai_image_url: imageUrl || null,
+        media_urls: mediaUrls,
         scheduled_platforms: platforms,
         status: "draft",
         ai_generated: false,
         content_features: {
-          workspace_draft: true,
+          ...contentFeatures,
           owner_draft: true,
-          workspace_actor_email: access.value.verifiedEmail,
-          ...(socialCategory ? {
-            social_category: socialCategory,
-            is_property_presentation: socialCategory === "property",
-          } : {}),
-          ...(conceptId ? { concept_id: conceptId } : {}),
-          ...(visualFormat ? { visual_format: visualFormat } : {}),
-          ...(sourcePropertyId ? { source_property_id: sourcePropertyId } : {}),
-          ...(sourceContentId ? { source_content_id: sourceContentId } : {}),
-          ...(sourceAreaId ? { source_area_id: sourceAreaId } : {}),
-          ...(strategyPeriodId ? { strategy_period_id: strategyPeriodId } : {}),
-          ...(strategyRecommendationReason ? {
-            strategy_recommendation_reason: strategyRecommendationReason,
-          } : {}),
         },
       })
       .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
@@ -330,10 +461,47 @@ export async function POST(
   }
   const publication = safePublication(data?.publication, params.brandKey);
   if (!data?.ok || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+
+  let mediaWarning: string | null = null;
+  let mediaCount = mediaUrls.length;
+  if (!access.value.verifiedUserId) {
+    mediaWarning = await ownerLinkDraftMedia(access.value.supabase, {
+      brandKey: params.brandKey,
+      publicationId: publication.id,
+      mediaUrls,
+      sourcePropertyId,
+      actorEmail: access.value.verifiedEmail,
+      contentFeatures,
+    });
+  } else {
+    const enrichResult = await access.value.supabase.rpc(
+      "workspace_brand_marketing_draft_media_enrich_v1",
+      {
+        p_brand_key: params.brandKey,
+        p_user_id: access.value.verifiedUserId,
+        p_email: access.value.verifiedEmail,
+        p_publication_id: publication.id,
+        p_media_urls: mediaUrls,
+        p_content_features: contentFeatures,
+        p_source_property_id: sourcePropertyId || null,
+      },
+    );
+    if (enrichResult.error) {
+      mediaWarning = "CONTENT_HUB_MEDIA_ENRICH_FAILED";
+    } else if (enrichResult.data?.ok === false) {
+      mediaWarning = String(enrichResult.data?.error || "CONTENT_HUB_MEDIA_ENRICH_FAILED");
+    } else {
+      mediaCount = Number(enrichResult.data?.mediaCount ?? mediaUrls.length);
+      mediaWarning = typeof enrichResult.data?.warning === "string" ? enrichResult.data.warning : null;
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     brand: params.brandKey,
     publication,
     published: false,
+    mediaCount,
+    mediaWarning,
   }, { status: 201, headers: noStore });
 }
