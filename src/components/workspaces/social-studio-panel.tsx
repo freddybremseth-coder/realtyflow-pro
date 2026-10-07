@@ -277,6 +277,8 @@ export function WorkspaceSocialStudio({
             : code === "ARTICLE_URL_OUTSIDE_BRAND" || code === "ARTICLE_REDIRECT_OUTSIDE_BRAND" ? "Guide/Magasin kan bare hentes fra denne merkevarens eget nettsted."
             : code === "ARTICLE_FETCH_FAILED" ? "Artikkelen kunne ikke hentes fra nettsiden."
             : code === "AREA_NOT_FOUND" ? "Fant ikke områdeinnholdet i RealtyFlow."
+            : code === "SOCIAL_STUDIO_AI_INVALID" ? "AI-en svarte i feil format. RealtyFlow prøvde fallback, men fikk fortsatt ikke tre gyldige forslag."
+            : code === "SOCIAL_STUDIO_AI_UNAVAILABLE" ? "AI-tjenesten er midlertidig utilgjengelig. Prøv igjen om et øyeblikk."
             : "SoMe Studio kunne ikke lage forslagene.",
         );
       }
