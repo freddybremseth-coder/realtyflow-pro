@@ -2,13 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SpanishQuickButton } from "@/components/layout/spanish-quick-button";
 import type { AccessRole } from "@/lib/access-control";
 import {
   activeNavigationSection,
   buildVisibleNavigation,
+  buildWorkspaceMemberNavigation,
   filterNavigationSections,
   isNavigationPathActive,
   normalizeNavigationFavorites,
@@ -16,6 +17,7 @@ import {
   toggleNavigationFavorite,
   type NavigationItem,
   type NavigationSectionId,
+  type WorkspaceNavigationSource,
 } from "@/lib/navigation";
 import {
   Activity,
@@ -206,11 +208,13 @@ function NavigationLink({
 
 export function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [simpleMode, setSimpleMode] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [memberWorkspaces, setMemberWorkspaces] = useState<WorkspaceNavigationSource[]>([]);
   const [query, setQuery] = useState("");
   const [openSection, setOpenSection] = useState<NavigationSectionId | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -235,9 +239,48 @@ export function Sidebar() {
     };
   }, [router]);
 
+  useEffect(() => {
+    if (user?.role !== "WORKSPACE_MEMBER") {
+      setMemberWorkspaces([]);
+      return;
+    }
+    let active = true;
+    fetch("/api/workspaces/available", { cache: "no-store" })
+      .then(async response => {
+        if (!response.ok) throw new Error("workspace navigation unavailable");
+        return response.json();
+      })
+      .then(body => {
+        if (!active) return;
+        const rows = Array.isArray(body?.workspaces) ? body.workspaces : [];
+        setMemberWorkspaces(rows.map((row: any) => ({
+          brandKey: String(row?.brandKey || ""),
+          name: String(row?.name || row?.brandKey || ""),
+          permissions: Array.isArray(row?.permissions)
+            ? row.permissions.filter((permission: unknown): permission is string => typeof permission === "string")
+            : [],
+        })));
+      })
+      .catch(() => {
+        if (active) setMemberWorkspaces([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.role, user?.email]);
+
+  const navigationLocation = useMemo(() => {
+    const queryString = searchParams.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }, [pathname, searchParams]);
+
   const fullVisibleSections = useMemo(
-    () => (user ? buildVisibleNavigation(user.role, user.permissions) : []),
-    [user],
+    () => {
+      if (!user) return [];
+      if (user.role === "WORKSPACE_MEMBER") return buildWorkspaceMemberNavigation(memberWorkspaces);
+      return buildVisibleNavigation(user.role, user.permissions);
+    },
+    [user, memberWorkspaces],
   );
   // Presentation only. Advanced routes, APIs and permissions are unchanged;
   // the staff shell uses its own brand-scoped navigation and data guards.
@@ -287,8 +330,8 @@ export function Sidebar() {
   }, [collapsed]);
 
   const activeSection = useMemo(
-    () => activeNavigationSection(pathname, visibleSections),
-    [pathname, visibleSections],
+    () => activeNavigationSection(navigationLocation, visibleSections),
+    [navigationLocation, visibleSections],
   );
 
   useEffect(() => {
@@ -400,7 +443,7 @@ export function Sidebar() {
                 <NavigationLink
                   key={`quick:${item.href}`}
                   item={item}
-                  pathname={pathname}
+                  pathname={navigationLocation}
                   collapsed={collapsed}
                   onNavigate={closeMobile}
                 />
@@ -422,7 +465,7 @@ export function Sidebar() {
             {filteredSections.map((section) => {
               const SectionIcon = iconMap[section.icon];
               const expanded = searching || openSection === section.id;
-              const containsActive = section.items.some((item) => isNavigationPathActive(pathname, item.href));
+              const containsActive = section.items.some((item) => isNavigationPathActive(navigationLocation, item.href));
               return (
                 <section key={section.id}>
                   <button
@@ -446,7 +489,7 @@ export function Sidebar() {
                     <div className={cn("ml-3 mt-1 space-y-0.5 border-l border-slate-800 pl-2", collapsed && "lg:hidden")}>
                       {section.items.map((item) => {
                         const Icon = iconMap[item.icon];
-                        const active = isNavigationPathActive(pathname, item.href);
+                        const active = isNavigationPathActive(navigationLocation, item.href);
                         const favorite = favorites.includes(item.href);
                         return (
                           <div
