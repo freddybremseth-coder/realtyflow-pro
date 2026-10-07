@@ -606,7 +606,7 @@ export default function FocusedWorkspacePage() {
                 />
               </div>
             </details>}
-            {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} initialArea={requestedArea} />}
+            {showGrowthTools && requestedFocus !== "social" && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} initialArea={requestedArea} />}
             {showNexus && <details id="workspace-focus-nexus" open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-violet-100">Nexus OS · innsikt</strong>
