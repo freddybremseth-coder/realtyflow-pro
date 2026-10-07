@@ -18,7 +18,15 @@ import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 export interface MetaGraph {
-  createIgContainer(igUserId: string, p: { imageUrl?: string; videoUrl?: string; caption?: string; mediaType?: string; altText?: string }): Promise<{ id: string }>;
+  createIgContainer(igUserId: string, p: {
+    imageUrl?: string;
+    videoUrl?: string;
+    caption?: string;
+    mediaType?: string;
+    altText?: string;
+    isCarouselItem?: boolean;
+    children?: string[];
+  }): Promise<{ id: string }>;
   getContainerStatus(containerId: string): Promise<{ status: string }>;
   publishIgMedia(igUserId: string, creationId: string): Promise<{ id: string }>;
   createFbPost(pageId: string, p: { message: string; link?: string }): Promise<{ id: string }>;
@@ -54,6 +62,32 @@ function isConfirmedMetaRejection(error: unknown): boolean {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+type IgCarouselContainerState = {
+  type: "carousel";
+  children: string[];
+  parent: string | null;
+};
+
+function parseCarouselContainerState(value: unknown): IgCarouselContainerState | null {
+  if (typeof value !== "string" || !value.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<IgCarouselContainerState>;
+    if (parsed.type !== "carousel" || !Array.isArray(parsed.children)) return null;
+    const children = parsed.children.map(String).filter(Boolean).slice(0, 10);
+    return {
+      type: "carousel",
+      children,
+      parent: typeof parsed.parent === "string" && parsed.parent ? parsed.parent : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function serializeCarouselContainerState(state: IgCarouselContainerState) {
+  return JSON.stringify(state);
+}
+
 export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
   const supabase = cfg.supabase;
   const live = !!cfg.live && metaCredentialsPresent(cfg);
@@ -79,7 +113,14 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
 
   async function publishInstagram(asset: GeneratedAsset, brandId: string, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
     const media = asset.media ?? {};
-    if (!media.imageUrl && !media.videoUrl) throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig image/video URL — publiserer ikke bare caption");
+    const carouselImages = Array.from(new Set(
+      (Array.isArray(media.imageUrls) ? media.imageUrls : [])
+        .filter((url): url is string => typeof url === "string" && /^https:\/\//i.test(url)),
+    )).slice(0, 10);
+    const isCarousel = media.mediaType === "carousel" && carouselImages.length >= 2;
+    if (!media.imageUrl && !media.videoUrl && !isCarousel) {
+      throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig image/video URL — publiserer ikke bare caption");
+    }
 
     // Uavklart publish fra forrige forsøk → avstem, ikke re-publiser blindt.
     if (attempt?.status === "publishing") {
@@ -90,6 +131,124 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       }
       await writeAttempt(key, base, { status: "manual_review" });
       throw new Error("PUBLISH_UNCONFIRMED: publish uavklart, avstemming fant ingen post — manuell sjekk kreves.");
+    }
+
+    if (isCarousel) {
+      let state = parseCarouselContainerState(attempt?.container_id) ?? {
+        type: "carousel" as const,
+        children: [],
+        parent: null,
+      };
+
+      if (!attempt?.container_id) {
+        await writeAttempt(key, base, {
+          status: "reserved",
+          media_type: "carousel",
+          container_id: serializeCarouselContainerState(state),
+        });
+      }
+
+      // Persist every child id immediately. A timeout/retry therefore resumes
+      // from the last known child instead of recreating the whole carousel.
+      while (state.children.length < carouselImages.length) {
+        const imageUrl = carouselImages[state.children.length];
+        const child = await graph.createIgContainer(target, {
+          imageUrl,
+          mediaType: "image",
+          isCarouselItem: true,
+          altText: media.altText,
+        });
+        state = { ...state, children: [...state.children, child.id] };
+        await writeAttempt(key, base, {
+          status: "container_created",
+          media_type: "carousel",
+          container_id: serializeCarouselContainerState(state),
+          error: null,
+        });
+      }
+
+      for (const childId of state.children) {
+        let childReady: "FINISHED" | "PROCESSING";
+        try {
+          childReady = await waitForContainerReady(graph, childId);
+        } catch (err) {
+          await writeAttempt(key, base, {
+            status: "failed",
+            media_type: "carousel",
+            container_id: serializeCarouselContainerState(state),
+            error: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
+        if (childReady !== "FINISHED") {
+          await writeAttempt(key, base, {
+            status: "processing",
+            media_type: "carousel",
+            container_id: serializeCarouselContainerState(state),
+            error: null,
+          });
+          throw new Error("IG_CONTAINER_PROCESSING: carousel child ikke ferdig prosessert — prøv igjen");
+        }
+      }
+
+      if (!state.parent) {
+        const parent = await graph.createIgContainer(target, {
+          children: state.children,
+          mediaType: "CAROUSEL",
+          caption: caption(asset, brandId),
+        });
+        state = { ...state, parent: parent.id };
+        await writeAttempt(key, base, {
+          status: "container_created",
+          media_type: "carousel",
+          container_id: serializeCarouselContainerState(state),
+          error: null,
+        });
+      }
+
+      let parentReady: "FINISHED" | "PROCESSING";
+      try {
+        parentReady = await waitForContainerReady(graph, state.parent);
+      } catch (err) {
+        await writeAttempt(key, base, {
+          status: "failed",
+          media_type: "carousel",
+          container_id: serializeCarouselContainerState(state),
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
+      if (parentReady !== "FINISHED") {
+        await writeAttempt(key, base, {
+          status: "processing",
+          media_type: "carousel",
+          container_id: serializeCarouselContainerState(state),
+          error: null,
+        });
+        throw new Error("IG_CONTAINER_PROCESSING: carousel parent ikke ferdig prosessert — prøv igjen");
+      }
+
+      await writeAttempt(key, base, {
+        status: "publishing",
+        media_type: "carousel",
+        container_id: serializeCarouselContainerState(state),
+        error: null,
+      });
+      try {
+        const pub = await graph.publishIgMedia(target, state.parent);
+        await writeAttempt(key, base, {
+          status: "posted",
+          media_type: "carousel",
+          container_id: serializeCarouselContainerState(state),
+          external_id: pub.id,
+          external_media_id: pub.id,
+          error: null,
+        });
+        return { state: "published", externalId: pub.id };
+      } catch (err) {
+        await writeAttempt(key, base, { error: err instanceof Error ? err.message : String(err) });
+        throw err;
+      }
     }
 
     // Gjenopptak: bruk eksisterende container, opprett aldri på nytt.
@@ -220,7 +379,19 @@ export function makeGraphApi(token: string, apiVersion = "v25.0"): MetaGraph {
     return { id: json.id };
   };
   return {
-    createIgContainer: (ig, p) => post(`/${ig}/media`, { ...(p.imageUrl ? { image_url: p.imageUrl } : {}), ...(p.videoUrl ? { video_url: p.videoUrl, media_type: (p.mediaType ?? "video").toUpperCase() === "REEL" ? "REELS" : "VIDEO" } : {}), caption: p.caption, ...(p.altText ? { alt_text: p.altText } : {}) }),
+    createIgContainer: (ig, p) => post(`/${ig}/media`, p.children?.length
+      ? {
+          media_type: "CAROUSEL",
+          children: p.children.join(","),
+          caption: p.caption,
+        }
+      : {
+          ...(p.imageUrl ? { image_url: p.imageUrl } : {}),
+          ...(p.videoUrl ? { video_url: p.videoUrl, media_type: (p.mediaType ?? "video").toUpperCase() === "REEL" ? "REELS" : "VIDEO" } : {}),
+          ...(p.isCarouselItem ? { is_carousel_item: true } : {}),
+          ...(p.caption ? { caption: p.caption } : {}),
+          ...(p.altText ? { alt_text: p.altText } : {}),
+        }),
     getContainerStatus: async (containerId) => {
       const res = await fetch(`${base}/${containerId}?fields=status_code&access_token=${encodeURIComponent(token)}`);
       const json = (await res.json().catch(() => ({}))) as { status_code?: string; error?: { message?: string } };
