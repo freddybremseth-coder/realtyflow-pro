@@ -82,6 +82,11 @@ export default function FocusedWorkspacePage() {
   const [error, setError] = useState("");
   const [crmError, setCrmError] = useState("");
   const [owner, setOwner] = useState(false);
+  const [ownerPreview, setOwnerPreview] = useState<{
+    targetEmail: string;
+    targetDisplayName: string;
+  } | null>(null);
+  const [previewEnding, setPreviewEnding] = useState(false);
   const [search, setSearch] = useState("");
   const [crmQuery, setCrmQuery] = useState("");
   const [crmSourceDraft, setCrmSourceDraft] = useState("");
@@ -113,7 +118,16 @@ export default function FocusedWorkspacePage() {
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
-      .then(body => setOwner(body?.user?.role === "OWNER")).catch(() => setOwner(false));
+      .then(body => {
+        setOwner(body?.user?.role === "OWNER" || Boolean(body?.preview?.active));
+        setOwnerPreview(body?.preview?.active ? {
+          targetEmail: String(body.preview.targetEmail || ""),
+          targetDisplayName: String(body.preview.targetDisplayName || body.preview.targetEmail || "bruker"),
+        } : null);
+      }).catch(() => {
+        setOwner(false);
+        setOwnerPreview(null);
+      });
   }, []);
 
   useEffect(() => {
@@ -143,6 +157,22 @@ export default function FocusedWorkspacePage() {
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   }, [brandKey, requestedTab, requestedTraining]);
+
+  async function stopOwnerPreview() {
+    if (!ownerPreview || previewEnding) return;
+    setPreviewEnding(true);
+    try {
+      const response = await fetch("/api/workspace-user-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "STOP" }),
+      });
+      if (!response.ok) throw new Error("PREVIEW_STOP_FAILED");
+      window.location.assign(`/workspace/${encodeURIComponent(brandKey)}?tab=growth&focus=social`);
+    } catch {
+      setPreviewEnding(false);
+    }
+  }
 
   async function loadCrm() {
     if (!permissions.includes("crm.read") && !permissions.includes("crm.joint.read")) return;
@@ -256,6 +286,21 @@ export default function FocusedWorkspacePage() {
         </div>
       </nav>}
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-7">
+        {ownerPreview && <div role="status" className="rounded-2xl border border-amber-600/70 bg-amber-950/30 p-4 text-amber-100">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Forhåndsvisning · skrivebeskyttet</p>
+              <p className="mt-1 text-sm">
+                Du ser RealtyFlow som <strong>{ownerPreview.targetDisplayName}</strong>
+                {ownerPreview.targetEmail ? ` · ${ownerPreview.targetEmail}` : ""}. Tilganger og moduler følger denne brukeren, ikke eierrollen din.
+              </p>
+            </div>
+            <button type="button" disabled={previewEnding} onClick={() => void stopOwnerPreview()}
+              className="rounded-lg border border-amber-500/80 bg-amber-900/20 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 disabled:opacity-50">
+              {previewEnding ? "Avslutter…" : "Avslutt forhåndsvisning og åpne som eier"}
+            </button>
+          </div>
+        </div>}
         {loading && <p className="text-slate-400">Kontrollerer tilgang…</p>}
         {error && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950/30 p-4 text-amber-100">
           <LockKeyhole size={18} className="mr-2 inline"/>{error}
