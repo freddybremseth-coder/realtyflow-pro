@@ -16,5 +16,12 @@ export async function GET(request: NextRequest) {
       roleLabel: ACCESS_ROLE_LABELS[context.role],
       permissions: context.permissions,
     },
+    preview: context.preview ? {
+      active: true,
+      ownerEmail: context.preview.ownerEmail,
+      targetEmail: context.preview.targetEmail,
+      targetDisplayName: context.preview.targetDisplayName,
+      readOnly: true,
+    } : null,
   });
 }
