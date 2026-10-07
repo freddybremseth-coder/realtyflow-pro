@@ -329,6 +329,11 @@ export function WorkspaceSocialStudio({
     setPreviews({});
     setSource(null);
     setError("");
+    setSavedPublicationId("");
+    setSavedDraft(null);
+    setPackageFeedback(null);
+    setPackageProgress("");
+    setSavedPackageId("");
     if (item.sourceType === "area") {
       setSourceType("area");
       setAreaLookup(item.areaId || item.id.replace(/^area:/, ""));
@@ -749,7 +754,7 @@ export function WorkspaceSocialStudio({
           Start med en eiendom, en guide/magasinartikkel eller et eget tema. RealtyFlow lager Editorial/Premium, Story/Lifestyle og Advisor/Insight med egne Facebook- og Instagram-versjoner.
         </p>
       </div>
-      <span className="rounded-full border border-cyan-800 px-3 py-1 text-xs text-cyan-200">7 eiendomsmaler</span>
+      <span className="rounded-full border border-cyan-800 px-3 py-1 text-xs text-cyan-200">{sourceType === "property" ? "7 eiendomsmaler" : "3 konsepter · kanaltilpasset"}</span>
     </div>
 
     <div className="mt-5 grid gap-2 sm:grid-cols-5">
@@ -828,6 +833,11 @@ export function WorkspaceSocialStudio({
           setSource(null);
           setError("");
           setNotice("");
+          setSavedPublicationId("");
+          setSavedDraft(null);
+          setPackageFeedback(null);
+          setPackageProgress("");
+          setSavedPackageId("");
           if (id === "article") {
             setSelectedContent(null);
             setContentId("");
@@ -1001,43 +1011,6 @@ export function WorkspaceSocialStudio({
       {generationFeedback.text}
     </p>}
 
-    {variants.length === 3 && <section id="social-package-handoff" className="mt-5 scroll-mt-24 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Neste steg · lagre som utkast</p>
-          <h3 className="mt-1 text-base font-semibold">Lagre alle tre konsepter i Content Hub</h3>
-          <p className="mt-1 max-w-3xl text-xs text-slate-400">
-            RealtyFlow lager egne kanalutkast for Facebook og Instagram. Deretter åpner du Content Hub for å redigere, planlegge eller publisere. Ingenting publiseres nå.
-          </p>
-        </div>
-        <button type="button" onClick={() => void savePackage()} disabled={packageSaving || Boolean(saving)}
-          className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-40">
-          {packageSaving ? "Lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken som utkast"}
-        </button>
-      </div>
-      {packageProgress && <div className="mt-3 rounded-lg border border-cyan-900/70 bg-slate-950/50 p-3">
-        <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
-          {packageProgress}
-        </div>
-      </div>}
-      {packageFeedback && <div role={packageFeedback.kind === "error" ? "alert" : "status"}
-        className={"mt-3 rounded-xl border p-4 " + (packageFeedback.kind === "error"
-          ? "border-amber-800 bg-amber-950/30 text-amber-100"
-          : "border-emerald-700 bg-emerald-950/25 text-emerald-100")}>
-        <p className="text-sm font-semibold">{packageFeedback.kind === "success" ? "SoMe-pakken er klar" : "Pakken trenger oppfølging"}</p>
-        <p className="mt-1 text-xs">{packageFeedback.text}</p>
-        {savedPackageId && <div className="mt-3 flex flex-wrap items-center gap-3">
-          <a
-            href={"/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400">
-            Åpne hele pakken i Content Hub <ExternalLink size={13}/>
-          </a>
-          <span className="text-[11px] text-slate-400">Der ser du alle kanalutkastene samlet og kan publisere eller planlegge dem.</span>
-        </div>}
-      </div>}
-    </section>}
-
     {variants.length === 3 && <div id="social-studio-results" className="mt-6 scroll-mt-24">
       <div className="mb-3 flex items-center justify-between gap-3 xl:hidden">
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">3 forslag klare</p>
@@ -1191,5 +1164,42 @@ export function WorkspaceSocialStudio({
       </article>)}
       </div>
     </div>}
+
+    {variants.length === 3 && <section id="social-package-handoff" className="mt-5 scroll-mt-24 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Neste steg · lagre som utkast</p>
+          <h3 className="mt-1 text-base font-semibold">Lagre alle tre konsepter i Content Hub</h3>
+          <p className="mt-1 max-w-3xl text-xs text-slate-400">
+            RealtyFlow lager egne kanalutkast for Facebook og Instagram. Deretter åpner du Content Hub for å redigere, planlegge eller publisere. Ingenting publiseres nå.
+          </p>
+        </div>
+        <button type="button" onClick={() => void savePackage()} disabled={packageSaving || Boolean(saving)}
+          className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-40">
+          {packageSaving ? "Lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken som utkast"}
+        </button>
+      </div>
+      {packageProgress && <div className="mt-3 rounded-lg border border-cyan-900/70 bg-slate-950/50 p-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
+          {packageProgress}
+        </div>
+      </div>}
+      {packageFeedback && <div role={packageFeedback.kind === "error" ? "alert" : "status"}
+        className={"mt-3 rounded-xl border p-4 " + (packageFeedback.kind === "error"
+          ? "border-amber-800 bg-amber-950/30 text-amber-100"
+          : "border-emerald-700 bg-emerald-950/25 text-emerald-100")}>
+        <p className="text-sm font-semibold">{packageFeedback.kind === "success" ? "SoMe-pakken er klar" : "Pakken trenger oppfølging"}</p>
+        <p className="mt-1 text-xs">{packageFeedback.text}</p>
+        {savedPackageId && <div className="mt-3 flex flex-wrap items-center gap-3">
+          <a
+            href={"/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400">
+            Åpne hele pakken i Content Hub <ExternalLink size={13}/>
+          </a>
+          <span className="text-[11px] text-slate-400">Der ser du alle kanalutkastene samlet og kan publisere eller planlegge dem.</span>
+        </div>}
+      </div>}
+    </section>}
   </section>;
 }
