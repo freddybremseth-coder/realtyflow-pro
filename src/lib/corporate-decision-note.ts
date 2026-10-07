@@ -1,3 +1,5 @@
+import { ZENECO_HEADER_DARK_SVG_URL } from "@/lib/brand-assets";
+
 type JsonRecord = Record<string, unknown>;
 
 export const CORPORATE_DECISION_NOTE_SEQUENCE_ID = "zeneco-corporate-decision-note-v1";
@@ -8,10 +10,21 @@ export type CorporateDecisionNoteTemplate = {
   version: 1;
   report_title: string;
   report_subtitle: string;
+  corporate_label: string;
+  logo_url: string;
   board_questions: string[];
   recommended_next_steps: string[];
   next_practical_step: string;
   disclaimer: string;
+  email_subject_template: string;
+  email_intro: string;
+  email_value_message: string;
+  email_next_step: string;
+  email_reply_prompt: string;
+  email_cta_label: string;
+  signature_name: string;
+  signature_title: string;
+  signature_brand: string;
   updated_at?: string | null;
 };
 
@@ -19,6 +32,8 @@ export const DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE: CorporateDecisionNoteTemp
   version: 1,
   report_title: "Beslutningsgrunnlag",
   report_subtitle: "Firmabolig / bedriftshytte i Spania",
+  corporate_label: "Corporate Homes",
+  logo_url: ZENECO_HEADER_DARK_SVG_URL,
   board_questions: [
     "Hva er hovedformålet: ansattgode, medlemsfordel, ledersamlinger, retreat eller en kombinasjon?",
     "Hvem kan bruke boligen, hvor mange uker skal fordeles og hvilke bookingregler skal gjelde?",
@@ -37,6 +52,19 @@ export const DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE: CorporateDecisionNoteTemp
     "En kort behovsavklaring gjør at vi kan kontrollere tallene, fastsette boligkriterier og lage en kortliste med relevante alternativer i stedet for en generell boligliste.",
   disclaimer:
     "Dette er et planleggings- og beslutningsgrunnlag, ikke investerings-, skatte-, juridisk eller regnskapsråd. Kjøpskostnader, drift, kapitalkostnad, hotellalternativ og verdiutvikling bygger på valgte forutsetninger og må kvalitetssikres før en beslutning.",
+  email_subject_template: "Beslutningsgrunnlag for {{company}} – første vurdering fra Zen Eco Homes",
+  email_intro:
+    "Takk for forespørselen. Jeg har nå satt opp et første beslutningsgrunnlag for {{company}}, basert på tallene og forutsetningene dere sendte inn. PDF-en ligger vedlagt og er laget for å kunne brukes som et internt arbeidsdokument i ledelsen eller styret.",
+  email_value_message:
+    "Det viktigste er ikke bare selve tallene, men hva de betyr i praksis: om modellen passer deres bruk, om investeringsrammen er realistisk, om dette bør tas videre som et konkret prosjekt, og hvilke avklaringer som må på plass før dere eventuelt går videre.",
+  email_next_step:
+    "Tallene gir et godt første bilde, men blir først virkelig beslutningsklare når vi vet hvordan dere faktisk ønsker å bruke boligen. Neste nyttige steg er derfor en kort gjennomgang hvor vi avklarer bruk, område, boligtype, kapasitet og hvilke krav ledelsen eller styret har.",
+  email_reply_prompt:
+    "Du kan også bare svare direkte på denne e-posten med hva dere ønsker justert, hvilke spørsmål styret sitter med, eller om dere vil at jeg skal lage et mer konkret neste steg.",
+  email_cta_label: "Book en kort samtale",
+  signature_name: "Freddy Bremseth",
+  signature_title: "Eiendomsrådgiver",
+  signature_brand: "Zen Eco Homes",
   updated_at: null,
 };
 
@@ -88,11 +116,22 @@ export type CorporateDecisionNoteReport = {
   calculator: CorporateDecisionCalculator | null;
   report_title: string;
   report_subtitle: string;
+  corporate_label: string;
+  logo_url: string;
   executive_summary: string;
   board_questions: string[];
   recommended_next_steps: string[];
   next_practical_step: string;
   disclaimer: string;
+  email_subject_template: string;
+  email_intro: string;
+  email_value_message: string;
+  email_next_step: string;
+  email_reply_prompt: string;
+  email_cta_label: string;
+  signature_name: string;
+  signature_title: string;
+  signature_brand: string;
 };
 
 export type CorporateDecisionNoteState = {
@@ -143,6 +182,8 @@ export function normalizeCorporateDecisionNoteTemplate(value: unknown): Corporat
     version: 1,
     report_title: text(input.report_title, 120) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.report_title,
     report_subtitle: text(input.report_subtitle, 220) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.report_subtitle,
+    corporate_label: text(input.corporate_label, 120) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.corporate_label,
+    logo_url: text(input.logo_url, 1000) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.logo_url,
     board_questions: textList(
       input.board_questions,
       DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.board_questions,
@@ -158,6 +199,20 @@ export function normalizeCorporateDecisionNoteTemplate(value: unknown): Corporat
     next_practical_step:
       text(input.next_practical_step, 1200) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.next_practical_step,
     disclaimer: text(input.disclaimer, 2000) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.disclaimer,
+    email_subject_template:
+      text(input.email_subject_template, 240) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.email_subject_template,
+    email_intro: text(input.email_intro, 2400) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.email_intro,
+    email_value_message:
+      text(input.email_value_message, 2400) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.email_value_message,
+    email_next_step:
+      text(input.email_next_step, 2400) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.email_next_step,
+    email_reply_prompt:
+      text(input.email_reply_prompt, 2400) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.email_reply_prompt,
+    email_cta_label:
+      text(input.email_cta_label, 120) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.email_cta_label,
+    signature_name: text(input.signature_name, 160) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.signature_name,
+    signature_title: text(input.signature_title, 160) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.signature_title,
+    signature_brand: text(input.signature_brand, 160) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.signature_brand,
     updated_at: text(input.updated_at, 80) || null,
   };
 }
@@ -294,11 +349,22 @@ export function buildCorporateDecisionNoteReport(input: {
     calculator,
     report_title: template.report_title,
     report_subtitle: template.report_subtitle,
+    corporate_label: template.corporate_label,
+    logo_url: template.logo_url,
     executive_summary: executiveSummary,
     board_questions: template.board_questions,
     recommended_next_steps: template.recommended_next_steps,
     next_practical_step: template.next_practical_step,
     disclaimer: template.disclaimer,
+    email_subject_template: template.email_subject_template,
+    email_intro: template.email_intro,
+    email_value_message: template.email_value_message,
+    email_next_step: template.email_next_step,
+    email_reply_prompt: template.email_reply_prompt,
+    email_cta_label: template.email_cta_label,
+    signature_name: template.signature_name,
+    signature_title: template.signature_title,
+    signature_brand: template.signature_brand,
   };
 }
 
