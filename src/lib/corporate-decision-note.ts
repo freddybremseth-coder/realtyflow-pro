@@ -54,7 +54,7 @@ export const DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE: CorporateDecisionNoteTemp
     "Dette er et planleggings- og beslutningsgrunnlag, ikke investerings-, skatte-, juridisk eller regnskapsråd. Kjøpskostnader, drift, kapitalkostnad, hotellalternativ og verdiutvikling bygger på valgte forutsetninger og må kvalitetssikres før en beslutning.",
   email_subject_template: "Beslutningsgrunnlag for {{company}} – første vurdering fra Zen Eco Homes",
   email_intro:
-    "Takk for forespørselen. Jeg har nå satt opp et første beslutningsgrunnlag for {{company}}, basert på tallene og forutsetningene dere sendte inn. PDF-en ligger vedlagt og er laget for å kunne brukes som et internt arbeidsdokument i ledelsen eller styret.",
+    "Takk for forespørselen. Jeg har nå satt opp et første beslutningsgrunnlag for {{company}}, basert på tallene og forutsetningene dere sendte inn. {{pdf_status}}",
   email_value_message:
     "Det viktigste er ikke bare selve tallene, men hva de betyr i praksis: om modellen passer deres bruk, om investeringsrammen er realistisk, om dette bør tas videre som et konkret prosjekt, og hvilke avklaringer som må på plass før dere eventuelt går videre.",
   email_next_step:
