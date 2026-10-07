@@ -190,3 +190,21 @@ test("Saved owner drafts persist strategy category and concept metadata", () => 
   assert.match(marketing, /visual_format: visualFormat/);
   assert.match(marketing, /strategy_period_id: strategyPeriodId/);
 });
+
+
+test("SoMe Studio supports a three-image collage visual format with safe fallback", () => {
+  assert.match(route, /action === "render_property_collage"/);
+  assert.match(route, /renderPropertySocialCollage/);
+  assert.match(route, /sourceImageUrls: collageImages/);
+  assert.match(route, /style: "collage_3"/);
+  assert.match(route, /PROPERTY_COLLAGE_IMAGES_REQUIRED/);
+  assert.match(studio, /type VisualFormat = "single_image" \| "property_card" \| "collage_3"/);
+  assert.match(studio, /3-bilders kollasje/);
+  assert.match(studio, /propertyImageCount/);
+  assert.match(studio, /visual-/);
+});
+
+test("Advisor insight defaults to collage only when at least three unique images exist", () => {
+  assert.match(studio, /item\.id === "advisor_insight"/);
+  assert.match(studio, /Number\(body\.source\?\.propertyImageCount \|\| 0\) >= 3/);
+});
