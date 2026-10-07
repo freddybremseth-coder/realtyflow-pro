@@ -422,15 +422,41 @@ test("FACT_NOT_VERIFIED: sensitive fakta uten kilde blokkeres ved execution", as
 // ── MetaPublisher: virkelig IG/FB-livssyklus + ekstern idempotens ────────────
 const igImage: GeneratedAsset = { contentId: "c1", creativeVariantId: "v1", campaignId: "camp1", channel: "instagram", genome: g({}), body: "Hei", cta: "Book", media: { imageUrl: "https://x/i.jpg", mediaType: "image" }, factSources: [], generator: {} };
 const igReel: GeneratedAsset = { ...igImage, media: { videoUrl: "https://x/v.mp4", mediaType: "reel" } };
+const igCarousel: GeneratedAsset = {
+  ...igImage,
+  genome: g({ format: "carousel" }),
+  media: {
+    imageUrl: "https://x/1.jpg",
+    imageUrls: ["https://x/1.jpg", "https://x/2.jpg", "https://x/3.jpg"],
+    mediaType: "carousel",
+  },
+};
 const igNoMedia: GeneratedAsset = { ...igImage, media: undefined };
 const fbText: GeneratedAsset = { ...igImage, channel: "facebook", media: undefined };
 const fbImage: GeneratedAsset = { ...igImage, channel: "facebook", media: { imageUrl: "https://x/i.jpg" } };
 
 function fakeGraph(over: any = {}) {
-  const calls: any = { createIgContainer: 0, getStatus: 0, publishIg: 0, fbPost: 0, fbPhoto: 0 };
+  const calls: any = {
+    createIgContainer: 0,
+    createIgCarouselChild: 0,
+    createIgCarouselContainer: 0,
+    getStatus: 0,
+    publishIg: 0,
+    fbPost: 0,
+    fbPhoto: 0,
+  };
   const statuses: string[] = over.statuses ?? ["FINISHED"];
   const g2: any = {
     createIgContainer: async () => { calls.createIgContainer++; return { id: `container_${calls.createIgContainer}` }; },
+    createIgCarouselChild: async () => {
+      calls.createIgCarouselChild++;
+      return { id: `child_${calls.createIgCarouselChild}` };
+    },
+    createIgCarouselContainer: async (_ig: string, p: any) => {
+      calls.createIgCarouselContainer++;
+      calls.carouselChildren = p.children;
+      return { id: "carousel_parent_1" };
+    },
     getContainerStatus: async () => { calls.getStatus++; return { status: statuses.length > 1 ? statuses.shift()! : statuses[0] }; },
     publishIgMedia: async () => { calls.publishIg++; if (over.publishThrows) throw new Error("timeout-publish"); return { id: "ig_media_1" }; },
     createFbPost: async () => { calls.fbPost++; return { id: "fb_post_1" }; },
@@ -456,6 +482,32 @@ test("IG image: container readiness → media_publish (posted først etter publi
   assert.equal(calls.getStatus, 1);
   assert.equal(calls.publishIg, 1);
   assert.equal(db.tables["marketing_publish_attempts"][0].status, "posted");
+});
+
+test("IG carousel: 3 children → parent CAROUSEL → media_publish", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph();
+  const res = await igPub(db, graph).publish(igCarousel, { idempotencyKey: "k-carousel" });
+  assert.equal(res.externalId, "ig_media_1");
+  assert.equal(calls.createIgCarouselChild, 3);
+  assert.equal(calls.createIgCarouselContainer, 1);
+  assert.deepEqual(calls.carouselChildren, ["child_1", "child_2", "child_3"]);
+  assert.equal(calls.publishIg, 1);
+  const attempt = db.tables["marketing_publish_attempts"][0];
+  assert.equal(attempt.status, "posted");
+  assert.equal(attempt.media_type, "carousel");
+  assert.deepEqual(attempt.container_children, ["child_1", "child_2", "child_3"]);
+});
+
+test("IG carousel retry reuses child containers and parent", async () => {
+  const db = makeDb();
+  const { g: graph, calls } = fakeGraph({ statuses: ["IN_PROGRESS"] });
+  const pub = igPub(db, graph);
+  await assert.rejects(() => pub.publish(igCarousel, { idempotencyKey: "k-carousel-retry" }), /PROCESSING/);
+  const firstChildren = calls.createIgCarouselChild;
+  const firstParents = calls.createIgCarouselContainer;
+  await assert.rejects(() => pub.publish(igCarousel, { idempotencyKey: "k-carousel-retry" }), /PROCESSING/);
+  assert.equal(calls.createIgCarouselChild, firstChildren);
+  assert.equal(calls.createIgCarouselContainer, firstParents);
 });
 
 test("IG Reel: processing → FINISHED → publish i samme robuste kall", async () => {

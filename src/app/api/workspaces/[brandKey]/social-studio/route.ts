@@ -1139,6 +1139,8 @@ async function generateSocialStudioConceptImage(
     hook: string;
     angle: string;
     visualDirection: string;
+    slideIndex?: number;
+    slideRole?: string;
   },
 ) {
   if (!["editorial_premium", "lifestyle_story", "advisor_insight"].includes(input.conceptId)) {
@@ -1156,6 +1158,9 @@ async function generateSocialStudioConceptImage(
     input.hook ? `Hook/idea: ${input.hook}.` : "",
     input.angle ? `Editorial angle: ${input.angle}.` : "",
     input.visualDirection ? `Visual direction: ${input.visualDirection}.` : "",
+    input.slideIndex ? `Carousel slide ${input.slideIndex} of 3.` : "",
+    input.slideRole ? `Slide role: ${input.slideRole}.` : "",
+    input.slideIndex ? "Keep the same visual family across the carousel, but make this slide compositionally distinct from the other slides." : "",
     "Create a credible conceptual image suitable for a Scandinavian real-estate advisory brand in Spain.",
     "Do not invent a specific property, customer, testimonial, price, statistic, legal claim, logo, dashboard or readable text.",
     "No text, letters, watermarks or captions inside the image.",
@@ -1185,6 +1190,8 @@ async function generateSocialStudioConceptImage(
       input.sourceTitle,
       input.hook,
       input.visualDirection,
+      String(input.slideIndex || 0),
+      input.slideRole || "",
     ].join("|"))
     .digest("hex")
     .slice(0, 36);
@@ -1410,6 +1417,9 @@ export async function POST(
       const hook = clean(body.hook, 220);
       const angle = clean(body.angle, 500);
       const visualDirection = clean(body.visualDirection, 700);
+      const slideIndexRaw = Number(body.slideIndex || 0);
+      const slideIndex = Number.isInteger(slideIndexRaw) && slideIndexRaw >= 1 && slideIndexRaw <= 3 ? slideIndexRaw : undefined;
+      const slideRole = clean(body.slideRole, 120);
       if (!sourceTitle || !["article", "area", "topic"].includes(sourceType)) {
         return fail(400, "SOCIAL_STUDIO_MEDIA_REQUEST_INVALID");
       }
@@ -1425,6 +1435,8 @@ export async function POST(
           hook,
           angle,
           visualDirection,
+          slideIndex,
+          slideRole,
         });
         return NextResponse.json({
           ok: true,

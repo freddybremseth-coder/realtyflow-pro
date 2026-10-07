@@ -60,7 +60,14 @@ async function syncCanonicalContentPublication(
     content: [args.asset.headline, args.asset.body, args.asset.cta].filter(Boolean).join("\n\n"),
   });
   const media = (args.asset.media ?? {}) as Record<string, unknown>;
-  const mediaUrls = [media.imageUrl, media.videoUrl].filter((value): value is string => typeof value === "string" && value.length > 0);
+  const carouselUrls = Array.isArray(media.imageUrls)
+    ? media.imageUrls.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+  const mediaUrls = Array.from(new Set([
+    ...carouselUrls,
+    media.imageUrl,
+    media.videoUrl,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0)));
   const genome = (args.asset.genome ?? {}) as Record<string, unknown>;
 
   const row = {

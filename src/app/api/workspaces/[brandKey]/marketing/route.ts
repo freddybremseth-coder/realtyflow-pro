@@ -229,7 +229,15 @@ export async function POST(
   const platforms = Array.isArray(body.platforms)
     ? body.platforms.map(platform => String(platform).trim().toLowerCase()).filter(Boolean)
     : [];
-  const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  const requestedImageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  const requestedMediaUrls = Array.isArray(body.mediaUrls)
+    ? body.mediaUrls.map(value => String(value).trim()).filter(Boolean)
+    : [];
+  const mediaUrls = Array.from(new Set([
+    ...requestedMediaUrls,
+    ...(requestedImageUrl ? [requestedImageUrl] : []),
+  ])).slice(0, 10);
+  const imageUrl = requestedImageUrl || mediaUrls[0] || "";
   const sourcePropertyId = typeof body.sourcePropertyId === "string" ? body.sourcePropertyId.trim() : "";
   const socialCategory = typeof body.socialCategory === "string" ? body.socialCategory.trim() : "";
   const conceptId = typeof body.conceptId === "string" ? body.conceptId.trim() : "";
@@ -245,6 +253,8 @@ export async function POST(
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
       imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
+      requestedMediaUrls.length > 10 || new Set(requestedMediaUrls).size !== requestedMediaUrls.length ||
+      mediaUrls.some(url => url.length > 2000 || !/^https:\/\//i.test(url) || /\s/.test(url)) ||
       (sourcePropertyId && !UUID_RE.test(sourcePropertyId)) ||
       (socialCategory && !SOCIAL_CATEGORY_SET.has(socialCategory)) ||
       (conceptId && !SOCIAL_CONCEPT_SET.has(conceptId)) ||
@@ -258,6 +268,16 @@ export async function POST(
   }
   if (platforms.includes("instagram") && !imageUrl) {
     return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha et brand-godkjent bilde.");
+  }
+
+  if (mediaUrls.length > 1) {
+    const approvals = await Promise.all(
+      mediaUrls.map(url => ownerImageApproved(access.value.supabase, params.brandKey, url, sourcePropertyId)),
+    );
+    if (approvals.some(approved => !approved)) {
+      return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
+        "Ett eller flere karusellbilder er ikke registrert som godkjent brand-media.");
+    }
   }
 
   let data: any = null;
@@ -279,7 +299,7 @@ export async function POST(
         tags,
         thumbnail_url: imageUrl || null,
         ai_image_url: imageUrl || null,
-        media_urls: imageUrl ? [imageUrl] : [],
+        media_urls: mediaUrls,
         scheduled_platforms: platforms,
         status: "draft",
         ai_generated: aiGeneratedImage,
@@ -347,7 +367,7 @@ export async function POST(
       .update({
         thumbnail_url: imageUrl,
         ai_image_url: imageUrl,
-        media_urls: [imageUrl],
+        media_urls: mediaUrls,
         ai_generated: aiGeneratedImage,
       })
       .eq("id", publication.id)

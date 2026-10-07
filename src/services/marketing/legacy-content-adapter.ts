@@ -62,16 +62,29 @@ export async function loadLegacyPublicationCandidate(
   const pub = contentPublishabilityGate(body);
   if (!pub.publishable) throw new Error(`NOT_PUBLISHABLE: ${pub.result} — ${pub.reason}`);
 
-  // Media (kanonisk = ai_image_url). Instagram krever gyldig public HTTPS-URL.
-  const mediaUrl = [input.mediaUrl, row.ai_image_url, row.image_url, ...(Array.isArray(row.media_urls) ? row.media_urls : [])].find(isHttps);
-  if (input.channel === "instagram" && !mediaUrl) {
-    throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig public HTTPS media-URL (ai_image_url mangler).");
+  // Media: Content Hub may carry a real Instagram carousel in media_urls.
+  // Explicit mediaUrl still wins for callers that intentionally force one asset.
+  const canonicalMediaUrls = Array.from(new Set(
+    (Array.isArray(row.media_urls) ? row.media_urls : []).filter(isHttps),
+  )).slice(0, 10);
+  const primaryMediaUrl = [input.mediaUrl, row.ai_image_url, row.image_url, ...canonicalMediaUrls].find(isHttps);
+  const carouselMediaUrls = input.channel === "instagram" && !input.mediaUrl && canonicalMediaUrls.length >= 2
+    ? canonicalMediaUrls
+    : [];
+  if (input.channel === "instagram" && !primaryMediaUrl && carouselMediaUrls.length < 2) {
+    throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig public HTTPS media-URL.");
   }
 
-  return buildCandidate(row, input.channel, mediaUrl, body);
+  return buildCandidate(row, input.channel, primaryMediaUrl, carouselMediaUrls, body);
 }
 
-function buildCandidate(row: any, channel: string, mediaUrl: string | undefined, body: string): ContentCandidate {
+function buildCandidate(
+  row: any,
+  channel: string,
+  mediaUrl: string | undefined,
+  mediaUrls: string[],
+  body: string,
+): ContentCandidate {
   const humanApproved = ["published", "approved"].includes(String(row.status));
   return {
     source: "legacy_content_publication",
@@ -79,7 +92,11 @@ function buildCandidate(row: any, channel: string, mediaUrl: string | undefined,
     brandId: row.brand_id,
     channels: [channel],
     text: body,
-    media: mediaUrl ? { imageUrl: mediaUrl, mediaType: "image" } : null,
+    media: mediaUrls.length >= 2
+      ? { imageUrl: mediaUrls[0], imageUrls: mediaUrls, mediaType: "carousel" }
+      : mediaUrl
+        ? { imageUrl: mediaUrl, mediaType: "image" }
+        : null,
     status: String(row.status),
     humanApproved,
     // Menneske-forfattet, tiltrodd legacy-innhold er sin egen fakta-kilde: tall

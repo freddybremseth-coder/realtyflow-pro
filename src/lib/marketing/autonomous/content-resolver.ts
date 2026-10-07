@@ -52,8 +52,9 @@ export interface ResolverInput {
 
 export interface AssetMedia {
   imageUrl?: string;
+  imageUrls?: string[];
   videoUrl?: string;
-  mediaType?: "image" | "video" | "reel";
+  mediaType?: "image" | "video" | "reel" | "carousel";
   aspectRatio?: string;
   altText?: string;
 }

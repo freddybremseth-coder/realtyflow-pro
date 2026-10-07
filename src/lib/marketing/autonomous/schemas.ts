@@ -145,9 +145,10 @@ export const GeneratedAssetSchema = z.object({
   /** Publiseringsmedia. Instagram krever gyldig image/video URL (fail closed uten). */
   media: z.object({
     imageUrl: z.string().optional(),
+    imageUrls: z.array(z.string().url()).min(2).max(10).optional(),
     videoUrl: z.string().optional(),
     linkUrl: z.string().optional(),
-    mediaType: z.enum(["image", "video", "reel"]).optional(),
+    mediaType: z.enum(["image", "video", "reel", "carousel"]).optional(),
     altText: z.string().optional(),
   }).optional(),
   /** Genererings-metadata (modell, kostnad, eller deterministisk modus). */

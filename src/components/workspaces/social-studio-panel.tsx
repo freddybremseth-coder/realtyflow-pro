@@ -14,7 +14,14 @@ export type WorkspaceSocialPropertySeed = {
 
 type SourceType = "property" | "article" | "area" | "topic";
 type Channel = "facebook" | "instagram";
-type VisualFormat = "single_image" | "property_card" | "collage_3";
+type VisualFormat = "single_image" | "property_card" | "collage_3" | "carousel";
+type PreparedConceptMedia = {
+  imageUrl: string;
+  imageUrls?: string[];
+  fallback: boolean;
+  visualFormat: VisualFormat;
+  warning?: string;
+};
 type Variant = {
   id: "editorial_premium" | "lifestyle_story" | "advisor_insight";
   label: string;
@@ -169,6 +176,7 @@ export function WorkspaceSocialStudio({
   const [styles, setStyles] = useState<Record<string, string>>({});
   const [visualFormats, setVisualFormats] = useState<Record<string, VisualFormat>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [carouselPreviews, setCarouselPreviews] = useState<Record<string, string[]>>({});
   const [previewing, setPreviewing] = useState("");
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState("");
@@ -206,6 +214,7 @@ export function WorkspaceSocialStudio({
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
+    setCarouselPreviews({});
     setSource(null);
     setError("");
     setSavedPublicationId("");
@@ -323,6 +332,7 @@ export function WorkspaceSocialStudio({
     setImageUrl("");
     setVariants([]);
     setPreviews({});
+    setCarouselPreviews({});
     setSource(null);
     setError("");
     if (item.sourceType === "area") {
@@ -361,6 +371,7 @@ export function WorkspaceSocialStudio({
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
+    setCarouselPreviews({});
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
         method: "POST",
@@ -404,7 +415,11 @@ export function WorkspaceSocialStudio({
         body.source?.type === "property" && item.id === "advisor_insight" &&
           Number(body.source?.propertyImageCount || 0) >= 3
           ? "collage_3"
-          : body.source?.type === "property" ? "property_card" : "single_image",
+          : body.source?.type === "property"
+            ? "property_card"
+            : item.id === "advisor_insight" && activePlatforms.has("instagram")
+              ? "carousel"
+              : "single_image",
       ])) as Record<string, VisualFormat>);
       setGenerationFeedback({
         kind: "success",
@@ -462,7 +477,7 @@ export function WorkspaceSocialStudio({
     }
   }
 
-  async function renderPropertyImage(variant: Variant, channel: Channel) {
+  async function renderPropertyImage(variant: Variant, channel: Channel): Promise<PreparedConceptMedia> {
     if (source?.type !== "property" || !source.propertyLookup) {
       return { imageUrl: source?.imageUrl || imageUrl.trim(), fallback: false, visualFormat: "single_image" as VisualFormat };
     }
@@ -498,21 +513,99 @@ export function WorkspaceSocialStudio({
     };
   }
 
-  async function ensureConceptImage(variant: Variant, forceGenerated = false) {
+  async function requestConceptImage(
+    variant: Variant,
+    options: { slideIndex?: number; slideRole?: string } = {},
+  ) {
+    const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "generate_concept_image",
+        conceptId: variant.id,
+        sourceType: source?.type || sourceType,
+        sourceTitle: source?.title || topic || variant.hook,
+        hook: variant.hook,
+        angle: variant.angle,
+        visualDirection: variant.visualDirection,
+        slideIndex: options.slideIndex || 0,
+        slideRole: options.slideRole || "",
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.imageUrl) {
+      const code = body?.error?.code || "";
+      throw new Error(
+        code === "SOCIAL_STUDIO_MEDIA_NOT_READY"
+          ? "Bildejobben er startet, men er ikke ferdig ennå. Prøv igjen om et øyeblikk."
+          : "RealtyFlow klarte ikke å lage konseptbildet akkurat nå.",
+      );
+    }
+    return String(body.imageUrl);
+  }
+
+  async function ensureConceptCarousel(variant: Variant, forceGenerated = false): Promise<PreparedConceptMedia> {
+    if (source?.type === "property") {
+      throw new Error("Ekte Instagram-karusell for eiendom kobles til flere Inventory-bilder i neste eiendomssteg.");
+    }
+
+    const existing = carouselPreviews[variant.id];
+    if (!forceGenerated && Array.isArray(existing) && existing.length >= 3) {
+      return {
+        imageUrl: existing[0],
+        imageUrls: existing.slice(0, 3),
+        fallback: false,
+        visualFormat: "carousel" as VisualFormat,
+      };
+    }
+    if (generatingImage) throw new Error("Et konseptbilde genereres allerede.");
+
+    setGeneratingImage(variant.id + ":carousel");
+    try {
+      const roles = [
+        "hero opener: calm, premium overview that introduces the topic",
+        "context: a distinct supporting scene that expands the idea without repeating slide one",
+        "advisor detail: practical, trustworthy closing visual that supports the advisory angle",
+      ];
+      const urls: string[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        urls.push(await requestConceptImage(variant, {
+          slideIndex: index + 1,
+          slideRole: roles[index],
+        }));
+      }
+      setCarouselPreviews(current => ({ ...current, [variant.id]: urls }));
+      setPreviews(current => ({ ...current, [variant.id]: urls[0] }));
+      return {
+        imageUrl: urls[0],
+        imageUrls: urls,
+        fallback: false,
+        visualFormat: "carousel" as VisualFormat,
+      };
+    } finally {
+      setGeneratingImage("");
+    }
+  }
+
+  async function ensureConceptImage(variant: Variant, forceGenerated = false): Promise<PreparedConceptMedia> {
     if (source?.type === "property") {
       return renderPropertyImage(variant, activePlatforms.has("instagram") ? "instagram" : "facebook");
     }
 
+    if ((visualFormats[variant.id] || "single_image") === "carousel") {
+      return ensureConceptCarousel(variant, forceGenerated);
+    }
+
     const existingPreview = previews[variant.id];
     if (!forceGenerated && existingPreview) {
-      return { imageUrl: existingPreview, fallback: false, visualFormat: "single_image" as VisualFormat };
+      return { imageUrl: existingPreview, imageUrls: [existingPreview], fallback: false, visualFormat: "single_image" as VisualFormat };
     }
 
     if (!forceGenerated && source?.imageUrl) {
       setPreviews(current => current[variant.id]
         ? current
         : ({ ...current, [variant.id]: source.imageUrl as string }));
-      return { imageUrl: source.imageUrl, fallback: false, visualFormat: "single_image" as VisualFormat };
+      return { imageUrl: source.imageUrl, imageUrls: [source.imageUrl], fallback: false, visualFormat: "single_image" as VisualFormat };
     }
 
     if (generatingImage) {
@@ -521,31 +614,9 @@ export function WorkspaceSocialStudio({
 
     setGeneratingImage(variant.id);
     try {
-      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "generate_concept_image",
-          conceptId: variant.id,
-          sourceType: source?.type || sourceType,
-          sourceTitle: source?.title || topic || variant.hook,
-          hook: variant.hook,
-          angle: variant.angle,
-          visualDirection: variant.visualDirection,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body.imageUrl) {
-        const code = body?.error?.code || "";
-        throw new Error(
-          code === "SOCIAL_STUDIO_MEDIA_NOT_READY"
-            ? "Bildejobben er startet, men er ikke ferdig ennå. Trykk igjen om et øyeblikk."
-            : "RealtyFlow klarte ikke å lage konseptbildet akkurat nå.",
-        );
-      }
-      const nextImage = String(body.imageUrl);
+      const nextImage = await requestConceptImage(variant);
       setPreviews(current => ({ ...current, [variant.id]: nextImage }));
-      return { imageUrl: nextImage, fallback: false, visualFormat: "single_image" as VisualFormat };
+      return { imageUrl: nextImage, imageUrls: [nextImage], fallback: false, visualFormat: "single_image" as VisualFormat };
     } finally {
       setGeneratingImage("");
     }
@@ -556,7 +627,7 @@ export function WorkspaceSocialStudio({
     channel: Channel,
     options: {
       packageId?: string;
-      preparedImage?: { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat };
+      preparedImage?: PreparedConceptMedia;
     } = {},
   ) {
     if (!activePlatforms.has(channel)) {
@@ -565,6 +636,9 @@ export function WorkspaceSocialStudio({
 
     const renderedImage = options.preparedImage || await ensureConceptImage(variant);
     const approvedImageUrl = renderedImage.imageUrl || "";
+    const approvedMediaUrls = channel === "instagram" && renderedImage.visualFormat === "carousel"
+      ? Array.from(new Set(renderedImage.imageUrls || [])).slice(0, 10)
+      : approvedImageUrl ? [approvedImageUrl] : [];
     if (channel === "instagram" && !approvedImageUrl) {
       throw new Error("Instagram trenger et godkjent bilde. RealtyFlow forsøkte å lage et, men fikk ikke et ferdig resultat.");
     }
@@ -593,10 +667,11 @@ export function WorkspaceSocialStudio({
                 "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
                 "visual-" + (visualFormats[variant.id] || "property_card").replace(/_/g, "-"),
               ]
-            : ["visual-single-image"]),
+            : ["visual-" + (renderedImage.visualFormat || "single_image").replace(/_/g, "-")]),
         ])).slice(0, 20),
         platforms: [channel],
         imageUrl: approvedImageUrl,
+        mediaUrls: approvedMediaUrls,
         sourcePropertyId: source?.type === "property"
           ? (source.propertyId || "")
           : (source?.companionPropertyId || ""),
@@ -608,7 +683,7 @@ export function WorkspaceSocialStudio({
         strategyPeriodId: strategy?.strategyPeriodId || "",
         strategyRecommendationReason: strategy?.recommendationReason || "",
         packageId: options.packageId || "",
-        aiGeneratedImage: source?.type !== "property" && Boolean(previews[variant.id]),
+        aiGeneratedImage: source?.type !== "property" && Boolean(previews[variant.id] || carouselPreviews[variant.id]?.length),
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -678,7 +753,7 @@ export function WorkspaceSocialStudio({
     const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 
     try {
-      const prepared = new Map<string, { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }>();
+      const prepared = new Map<string, PreparedConceptMedia>();
       const mediaResults = await Promise.all(variants.map(async variant => {
         const image = await ensureConceptImage(variant);
         return [variant.id, image] as const;
@@ -1044,15 +1119,39 @@ export function WorkspaceSocialStudio({
         </div>}
 
         {source?.type !== "property" && <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+          <label className="mb-3 block text-xs text-slate-300">Instagram-format
+            <select value={visualFormats[variant.id] || "single_image"}
+              onChange={(event) => {
+                setVisualFormats(current => ({ ...current, [variant.id]: event.target.value as VisualFormat }));
+                setPreviews(current => {
+                  const next = { ...current };
+                  delete next[variant.id];
+                  return next;
+                });
+                setCarouselPreviews(current => {
+                  const next = { ...current };
+                  delete next[variant.id];
+                  return next;
+                });
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+              <option value="single_image">Enkeltbilde</option>
+              <option value="carousel">Ekte 3-bilders Instagram-karusell</option>
+            </select>
+          </label>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold text-slate-200">Konseptbilde</p>
               <p className="mt-0.5 text-[11px] text-slate-500">
-                {previews[variant.id]
-                  ? "Brand-godkjent bilde klart for Content Hub."
-                  : source?.imageUrl
-                    ? "Kildebildet følger utkastet. Du kan lage et alternativt AI-bilde."
-                    : "Ingen kildebilde finnes. RealtyFlow lager et brand-godkjent bilde før lagring."}
+                {(visualFormats[variant.id] || "single_image") === "carousel"
+                  ? carouselPreviews[variant.id]?.length >= 3
+                    ? "Tre separate, brand-godkjente bilder er klare for en ekte Instagram-karusell."
+                    : "RealtyFlow lager tre separate 4:5-bilder og publiserer dem som én Instagram-karusell."
+                  : previews[variant.id]
+                    ? "Brand-godkjent bilde klart for Content Hub."
+                    : source?.imageUrl
+                      ? "Kildebildet følger utkastet. Du kan lage et alternativt AI-bilde."
+                      : "Ingen kildebilde finnes. RealtyFlow lager et brand-godkjent bilde før lagring."}
               </p>
             </div>
             <button type="button" disabled={Boolean(generatingImage) || packageSaving}
@@ -1063,17 +1162,28 @@ export function WorkspaceSocialStudio({
                 }));
               })}
               className="rounded-lg border border-cyan-800 px-3 py-2 text-xs text-cyan-200 disabled:opacity-40">
-              {generatingImage === variant.id
-                ? "Lager bilde…"
-                : previews[variant.id] || source?.imageUrl
-                  ? "Lag alternativt AI-bilde"
-                  : "Lag konseptbilde"}
+              {generatingImage === variant.id + ":carousel"
+                ? "Lager 3 bilder…"
+                : generatingImage === variant.id
+                  ? "Lager bilde…"
+                  : (visualFormats[variant.id] || "single_image") === "carousel"
+                    ? carouselPreviews[variant.id]?.length >= 3 ? "Lag ny 3-bilders karusell" : "Lag 3-bilders karusell"
+                    : previews[variant.id] || source?.imageUrl
+                      ? "Lag alternativt AI-bilde"
+                      : "Lag konseptbilde"}
             </button>
           </div>
-          {(previews[variant.id] || source?.imageUrl) && <img
-            src={previews[variant.id] || source?.imageUrl || ""}
-            alt={"Konseptbilde for " + variant.label}
-            className="mt-3 aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />}
+          {(visualFormats[variant.id] || "single_image") === "carousel" && carouselPreviews[variant.id]?.length >= 3
+            ? <div className="mt-3 grid grid-cols-3 gap-2">
+                {carouselPreviews[variant.id].slice(0, 3).map((url, index) => <img key={url}
+                  src={url}
+                  alt={"Karusellbilde " + (index + 1) + " for " + variant.label}
+                  className="aspect-[4/5] w-full rounded-lg border border-slate-700 object-cover" />)}
+              </div>
+            : (previews[variant.id] || source?.imageUrl) && <img
+                src={previews[variant.id] || source?.imageUrl || ""}
+                alt={"Konseptbilde for " + variant.label}
+                className="mt-3 aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />}
           {previewFeedback[variant.id] && <p className="mt-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200">{previewFeedback[variant.id]}</p>}
         </div>}
 

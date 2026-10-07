@@ -579,7 +579,10 @@ export async function createCampaignDraft(
     const approvedReusable = sourceHumanApproved
       && PREAPPROVED_REUSABLE_SOURCES.has(sourceType)
       && reuseMode === "reuse_exact"
-      && !!creative.asset.media?.imageUrl;
+      && (
+        !!creative.asset.media?.imageUrl
+        || (Array.isArray(creative.asset.media?.imageUrls) && creative.asset.media.imageUrls.length >= 2)
+      );
     const preapprovedFormat = !!(
       autonomy.controlledAuto
       && autonomy.preapprovedChannels.has(String(brief.channel).toLowerCase())
@@ -614,7 +617,14 @@ export async function createCampaignDraft(
 function assetFromCandidate(brief: any, brand: any, chosen: any): CreativeResult {
   return {
     asset: {
-      contentId: brief.contentId, creativeVariantId: `${brief.contentId}_v1`, campaignId: brief.campaignId, channel: brief.channel, genome: brief.genome,
+      contentId: brief.contentId,
+      creativeVariantId: `${brief.contentId}_v1`,
+      campaignId: brief.campaignId,
+      channel: brief.channel,
+      genome: {
+        ...brief.genome,
+        format: routeContentFormat(chosen.media) ?? brief.genome.format,
+      },
       headline: undefined, body: chosen.text ?? "", cta: brand.preferredCta, media: chosen.media ?? undefined,
       factSources: chosen.factSources ?? [], generator: {},
     },
