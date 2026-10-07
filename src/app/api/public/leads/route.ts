@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isLikelyBot } from "@/lib/spam";
@@ -15,6 +15,11 @@ import {
   rescoreCorporateProspect,
 } from "@/lib/corporate-prospects";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
+import {
+  buildCorporateDecisionNoteReport,
+  type CorporateDecisionNoteState,
+} from "@/lib/corporate-decision-note";
+import { sendCorporateDecisionNoteReport } from "@/services/corporate/decision-note-delivery";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -263,6 +268,8 @@ export async function POST(request: NextRequest) {
   const contactRole = cleanText(body.contact_role || body.contactRole, 160);
   const userCount = positiveInteger(body.user_count || body.userCount);
   const corporateModel = cleanText(body.corporate_model || body.corporateModel, 180);
+  const corporateNeeds = cleanText(body.corporate_needs || body.corporateNeeds, 3000);
+  const calculatorContext = body.calculator_context || body.calculatorContext || null;
   const partnerType = normalizePartnerType(body.partner_type || body.partnerType);
   const partnershipInterest = cleanText(body.partnership_interest || body.partnershipInterest, 240);
   const referralPartnerId = cleanText(body.referral_partner_id || body.referralPartnerId, 80);
@@ -316,9 +323,12 @@ export async function POST(request: NextRequest) {
   );
   const isCorporateHome = brandId === "zeneco" && !isCare && !isCorporatePartner && !isCorporateEventRegistration && (
     requestType === "corporate-home" ||
+    requestType === "corporate-home-decision-note" ||
     source.toLowerCase().includes("corporate-homes") ||
+    source.toLowerCase().includes("corporate-decision-note") ||
     pageUrl.toLowerCase().includes("/bedriftshytte-spania")
   );
+  const isCorporateDecisionNote = isCorporateHome && requestType === "corporate-home-decision-note";
 
   if (isCorporateEventRegistration && (!eventId || !eventName)) {
     return NextResponse.json({ error: "event_id and event_name are required for Corporate event registration" }, { status: 400 });
@@ -374,6 +384,28 @@ export async function POST(request: NextRequest) {
   ].filter(Boolean).join("\n");
 
   const now = new Date().toISOString();
+  const corporateDecisionNoteState: CorporateDecisionNoteState | null =
+    isCorporateDecisionNote && organizationName
+      ? {
+          version: 1,
+          request_id: submissionId || randomUUID(),
+          requested_at: now,
+          report: buildCorporateDecisionNoteReport({
+            companyName: organizationName,
+            contactName: name,
+            contactRole,
+            organizationType,
+            model: corporateModel,
+            budgetLabel: budget,
+            timeline,
+            needs: corporateNeeds,
+            calculatorContext,
+            now: new Date(now),
+          }),
+          delivery: { status: "pending", sent_at: null, message_id: null, last_attempt_at: null, error: null },
+          followup: {},
+        }
+      : null;
   const { data: existing } = await supabase
     .from("contacts")
     .select("id,notes,interactions,pipeline_status,pipeline_value,property_interest,next_followup,source,brand_id,brand")
@@ -508,6 +540,7 @@ export async function POST(request: NextRequest) {
       contact_role: contactRole || null,
       user_count: userCount,
       corporate_model: corporateModel || null,
+      corporate_decision_note_request_id: corporateDecisionNoteState?.request_id || null,
       partner_type: isCorporatePartner ? partnerType : null,
       partnership_interest: partnershipInterest || null,
       referral_partner_id: referredByPartner?.id || null,
@@ -543,6 +576,9 @@ export async function POST(request: NextRequest) {
       ? existing?.next_followup || null
       : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     interactions: [incomingInteraction, ...existingInteractions],
+    ...(isCorporateHome || isCorporatePartner
+      ? { nurture_status: "paused", nurture_sequence: null }
+      : {}),
     updated_at: now,
   };
 
@@ -603,6 +639,9 @@ export async function POST(request: NextRequest) {
             content: utmContent || null,
           }),
           corporate_assessment: { ...existingAssessment, ...assessment },
+          ...(corporateDecisionNoteState
+            ? { corporate_decision_note: corporateDecisionNoteState }
+            : {}),
         };
         const mergedProspect = {
           ...existingProspect,
@@ -660,6 +699,9 @@ export async function POST(request: NextRequest) {
               content: utmContent || null,
             }),
             corporate_assessment: assessment,
+            ...(corporateDecisionNoteState
+              ? { corporate_decision_note: corporateDecisionNoteState }
+              : {}),
           },
           notes: "Inbound Corporate Home Assessment request from zenecohomes.com.",
           next_action: "Følg opp personlig og bruk innsendt assessment til discovery og boligmatch.",
@@ -681,6 +723,34 @@ export async function POST(request: NextRequest) {
           corporateProspect = createdProspect;
         }
       }
+    }
+  }
+
+  let corporateDecisionNoteDelivery: {
+    success: boolean;
+    messageId: string | null;
+    pdfAttached: boolean;
+    error: string | null;
+    pdfError: string | null;
+  } | null = null;
+
+  if (isCorporateDecisionNote && corporateProspect?.id && corporateDecisionNoteState) {
+    try {
+      corporateDecisionNoteDelivery = await sendCorporateDecisionNoteReport(supabase, {
+        prospectId: String(corporateProspect.id),
+        contactId: String(data.id),
+        email,
+        report: corporateDecisionNoteState.report,
+      });
+    } catch (error) {
+      console.error("[public-leads] corporate decision note delivery failed", error);
+      corporateDecisionNoteDelivery = {
+        success: false,
+        messageId: null,
+        pdfAttached: false,
+        error: error instanceof Error ? error.message : "Decision note delivery failed",
+        pdfError: null,
+      };
     }
   }
 
@@ -838,6 +908,8 @@ export async function POST(request: NextRequest) {
     assigned_agent: "sales",
     next_action: isCorporatePartner
       ? "Corporate Homes partner: svar personlig og avklar kundetyper, rollefordeling, introduksjonsprosess og behov for samarbeidsavtale."
+      : isCorporateDecisionNote
+        ? "Beslutningsgrunnlaget sendes automatisk. Sjekk tallene og kontaktrollen; ved svar eller booking overtar personlig oppfølging og automatikken stopper."
       : isCorporateHome
         ? "Corporate Homes B2B: svar personlig, identifiser beslutningstaker(e) og avklar antall brukere, formål, budsjett, tidslinje og styre-/ledelsesprosess."
         : isCare
@@ -876,6 +948,7 @@ export async function POST(request: NextRequest) {
       contact_role: contactRole || null,
       user_count: userCount,
       corporate_model: corporateModel || null,
+      corporate_decision_note_request_id: corporateDecisionNoteState?.request_id || null,
       partner_type: isCorporatePartner ? partnerType : null,
       partnership_interest: partnershipInterest || null,
       referral_partner_id: referredByPartner?.id || null,
@@ -990,15 +1063,17 @@ export async function POST(request: NextRequest) {
     const portalLink = optInToken
       ? `${publicBaseUrl()}/api/public/portal-opt-in?token=${encodeURIComponent(optInToken)}`
       : undefined;
-    const receipt = leadReceiptCopy({ name, preferredArea, budget, portalLink });
-    sendBrandEmail(supabase, {
-      brandId: "zeneco",
-      to: [email],
-      subject: receipt.subject,
-      bodyText: receipt.bodyText,
-      bodyHtml: receipt.bodyHtml,
-      allowSuppressed: true,
-    }).catch((error) => console.warn("[public-leads] customer receipt email failed", error));
+    if (!isCorporateDecisionNote) {
+      const receipt = leadReceiptCopy({ name, preferredArea, budget, portalLink });
+      sendBrandEmail(supabase, {
+        brandId: "zeneco",
+        to: [email],
+        subject: receipt.subject,
+        bodyText: receipt.bodyText,
+        bodyHtml: receipt.bodyHtml,
+        allowSuppressed: true,
+      }).catch((error) => console.warn("[public-leads] customer receipt email failed", error));
+    }
   }
 
   return NextResponse.json({
@@ -1010,6 +1085,12 @@ export async function POST(request: NextRequest) {
       : null,
     corporateProspect: corporateProspect
       ? { id: corporateProspect.id, status: corporateProspect.status, fitTier: corporateProspect.fit_tier }
+      : null,
+    corporateDecisionNote: corporateDecisionNoteState
+      ? {
+          requestId: corporateDecisionNoteState.request_id,
+          delivery: corporateDecisionNoteDelivery,
+        }
       : null,
     corporatePartner: corporatePartner
       ? { id: corporatePartner.id, status: corporatePartner.status, fitTier: corporatePartner.fit_tier }
