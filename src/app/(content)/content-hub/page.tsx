@@ -786,16 +786,30 @@ export default function ContentHubPage() {
         "images",
         brandId ? { brandId } : {},
       );
-      const bankRes = await fetch("/api/neural-beat/image-bank?owner=all&limit=24");
-      const bankData = await bankRes.json().catch(() => ({ images: [] }));
-      const bankImages: DraftItem[] = (bankData.images || [])
-        .filter((img: { url?: string; kind?: string }) => img.url && ["product", "variant", "image", "thumbnail"].includes(img.kind || ""))
+      const bankRequests = brandId
+        ? [
+            fetch("/api/neural-beat/image-bank?owner=" + encodeURIComponent(brandId) + "&limit=24"),
+            fetch("/api/neural-beat/image-bank?owner=all&limit=24"),
+          ]
+        : [fetch("/api/neural-beat/image-bank?owner=all&limit=24")];
+      const bankResponses = await Promise.all(bankRequests);
+      const bankPayloads = await Promise.all(bankResponses.map((response) =>
+        response.json().catch(() => ({ images: [] }))));
+      const seenBankUrls = new Set<string>();
+      const orderedBankRows = bankPayloads.flatMap((payload) => payload.images || [])
+        .filter((img: { url?: string; kind?: string }) => {
+          if (!img.url || !["product", "variant", "image", "thumbnail"].includes(img.kind || "")) return false;
+          if (seenBankUrls.has(img.url)) return false;
+          seenBankUrls.add(img.url);
+          return true;
+        });
+      const bankImages: DraftItem[] = orderedBankRows
         .map((img: { id: string; url: string; thumbnail_url?: string | null; name?: string | null; kind: string; tags?: string[] | null; created_at: string }) => ({
           id: `bank-${img.id}`,
           brand_id: brandId || "image-bank",
           content_type: img.kind,
           title: img.name || (img.kind === "product" ? "Produktbilde" : "Bildearkiv"),
-          description: "Lagret bilde fra Bilde Studio / produktarkiv",
+          description: "Lagret brand-bilde / mediebibliotek",
           tags: img.tags || [],
           ai_generated: img.kind === "variant",
           ai_image_url: img.url,
@@ -2433,7 +2447,7 @@ export default function ContentHubPage() {
                                     className="text-xs justify-start bg-green-600 hover:bg-green-700"
                                     onClick={() => openPublishModal(draft)}
                                   >
-                                    <Send size={12} className="mr-1" /> Publiser
+                                    <Send size={12} className="mr-1" /> {isSocialStudioDraft ? "Publiser / planlegg" : "Publiser"}
                                   </Button>
                                   <Button
                                     size="sm"
@@ -2597,7 +2611,7 @@ export default function ContentHubPage() {
                 </div>
 
                 <div className="border-t border-zinc-700 pt-3">
-                  <p className="text-xs text-zinc-500 mb-3">Eller velg fra arkivet:</p>
+                  <p className="text-xs text-zinc-500 mb-3">Eller velg fra arkivet. Bilder for denne merkevaren vises først:</p>
                 </div>
 
                 {loadingImages ? (
