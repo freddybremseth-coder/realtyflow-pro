@@ -763,6 +763,53 @@ function validVariantPayload(raw: string) {
   return normalizeVariantPayload(raw) !== null;
 }
 
+function fallbackExcerpt(sourceText: string) {
+  const compact = clean(sourceText, 1_200).replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  if (compact.length <= 620) return compact;
+  const clipped = compact.slice(0, 620);
+  const sentenceEnd = Math.max(clipped.lastIndexOf(". "), clipped.lastIndexOf("! "), clipped.lastIndexOf("? "));
+  return (sentenceEnd >= 220 ? clipped.slice(0, sentenceEnd + 1) : clipped.replace(/\s+\S*$/, "") + "…").trim();
+}
+
+function buildDeterministicVariantPayload(sourceTitle: string, sourceText: string) {
+  const title = clean(sourceTitle, 180) || "Tema fra kilden";
+  const excerpt = fallbackExcerpt(sourceText);
+  const sourceCore = excerpt || "Se hele kilden for den komplette gjennomgangen.";
+
+  return {
+    variants: [
+      {
+        id: "editorial_premium",
+        hook: title,
+        angle: "En kort, redaksjonell inngang som løfter frem hovedtemaet uten å legge til nye fakta.",
+        visualDirection: "Bruk kildebildet rent og rolig, med lite eller ingen tekst over bildet.",
+        facebookText: title + "\n\n" + sourceCore,
+        instagramText: title + "\n\n" + sourceCore,
+        tags: [],
+      },
+      {
+        id: "lifestyle_story",
+        hook: "Hva betyr dette i praksis?",
+        angle: "En mer menneskelig inngang til samme tema, fortsatt bare basert på innholdet i kilden.",
+        visualDirection: "Bruk et naturlig bilde fra kilden og la motivet bære historien.",
+        facebookText: "Et tema som er verdt å se nærmere på: " + title + ".\n\n" + sourceCore,
+        instagramText: "Et tema som er verdt å se nærmere på: " + title + ".\n\n" + sourceCore,
+        tags: [],
+      },
+      {
+        id: "advisor_insight",
+        hook: "Dette bør du ha med i vurderingen",
+        angle: "En rådgivende inngang som peker leseren tilbake til den dokumenterte kilden.",
+        visualDirection: "Hold uttrykket faglig og enkelt med kildebildet som hovedmotiv.",
+        facebookText: "Når du vurderer bolig i Spania, er dette et tema det er nyttig å forstå: " + title + ".\n\n" + sourceCore,
+        instagramText: "Når du vurderer bolig i Spania, er dette et tema det er nyttig å forstå: " + title + ".\n\n" + sourceCore,
+        tags: [],
+      },
+    ],
+  };
+}
+
 function parseVariants(raw: string, sourceUrl: string, sourceType: string) {
   const normalized = normalizeVariantPayload(raw);
   if (!normalized) throw new Error("SOCIAL_STUDIO_AI_INVALID");
@@ -1552,6 +1599,7 @@ export async function POST(
     let raw = "";
     let structuredError: unknown = null;
     let fallbackError: unknown = null;
+    let generationFallback = false;
 
     const preferCandidate = (current: string, candidate: string) => {
       if (!candidate.trim()) return current;
@@ -1570,16 +1618,18 @@ export async function POST(
       return candidateScore > currentScore ? candidate : current;
     };
 
-    // Do not validate inside the provider client. We need the raw model response
-    // even when its JSON shape differs from our canonical contract, so RealtyFlow
-    // can normalize it safely afterwards.
+    // Prefer a provider that can satisfy the canonical three-variant contract.
+    // If one provider returns malformed/truncated JSON, askClaude may continue to
+    // the next configured provider before the route-level repair and local fallback.
     try {
       raw = await askClaude(prompt, {
         systemPrompt,
         model: "sonnet",
-        maxTokens: 3_200,
+        maxTokens: 4_000,
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA as any,
+        validateResponse: validVariantPayload,
+        fallbackOnInvalidResponse: true,
       });
     } catch (error) {
       structuredError = error;
@@ -1590,7 +1640,7 @@ export async function POST(
         const fallbackRaw = await askClaude(prompt, {
           systemPrompt: systemPrompt + "\nHvis native JSON-schema ikke er tilgjengelig, returner fortsatt kun ett JSON-objekt med de tre konseptene. Ikke legg til forklaring før eller etter.",
           model: "sonnet",
-          maxTokens: 3_200,
+          maxTokens: 4_000,
         });
         raw = preferCandidate(raw, fallbackRaw);
       } catch (error) {
@@ -1616,7 +1666,7 @@ export async function POST(
 
         const repairedRaw = await askClaude(repairPrompt, {
           model: "haiku",
-          maxTokens: 3_200,
+          maxTokens: 4_000,
           temperature: 0.2,
           responseMimeType: "application/json",
           responseSchema: RESPONSE_SCHEMA as any,
@@ -1633,7 +1683,7 @@ export async function POST(
 
       const value = parseAiJsonValue(raw);
       const rows = variantRowsFromValue(value);
-      console.warn("[social-studio] AI output could not be normalized", {
+      console.warn("[social-studio] AI output could not be normalized; using source-safe local fallback", {
         rootType: Array.isArray(value) ? "array" : value && typeof value === "object" ? "object" : typeof value,
         rootKeys: aiRecord(value) ? Object.keys(aiRecord(value)!).slice(0, 12) : [],
         rowCount: rows.length,
@@ -1643,7 +1693,8 @@ export async function POST(
         structuredCallFailed: Boolean(structuredError),
         fallbackCallFailed: Boolean(fallbackError),
       });
-      throw new Error("SOCIAL_STUDIO_AI_INVALID");
+      raw = JSON.stringify(buildDeterministicVariantPayload(sourceTitle, sourceText));
+      generationFallback = true;
     }
     const variants = parseVariants(raw, sourceUrl, sourceType);
 
@@ -1665,6 +1716,10 @@ export async function POST(
       },
       socialCategory,
       variants,
+      generation: {
+        fallback: generationFallback,
+        reason: generationFallback ? "AI_FORMAT_RECOVERED_LOCALLY" : null,
+      },
       propertyStyles: PROPERTY_CREATIVE_STYLES,
     }, { headers: noStore });
   } catch (error) {
