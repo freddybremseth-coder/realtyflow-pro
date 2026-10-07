@@ -75,6 +75,25 @@ test("happy path: legacy content_publication → kandidat (source legacy_content
   assert.equal(c.humanApproved, true);
 });
 
+test("Content Hub media_urls med flere bilder blir ekte Instagram-karusell", async () => {
+  const candidate = await loadLegacyPublicationCandidate(db({
+    ...base,
+    ai_image_url: "https://cdn/zen/1.jpg",
+    media_urls: [
+      "https://cdn/zen/1.jpg",
+      "https://cdn/zen/2.jpg",
+      "https://cdn/zen/3.jpg",
+    ],
+  }), { publicationId: "pub1", brandId: "zeneco", channel: "instagram" });
+  assert.equal(candidate.media?.mediaType, "carousel");
+  assert.deepEqual(candidate.media?.imageUrls, [
+    "https://cdn/zen/1.jpg",
+    "https://cdn/zen/2.jpg",
+    "https://cdn/zen/3.jpg",
+  ]);
+  assert.equal(candidate.media?.imageUrl, "https://cdn/zen/1.jpg");
+});
+
 test("BRAND_MISMATCH: rad tilhører annet brand", async () => {
   await assert.rejects(() => loadLegacyPublicationCandidate(db({ ...base, brand_id: "soleada" }), { publicationId: "pub1", brandId: "zeneco", channel: "instagram" }), /BRAND_MISMATCH/);
 });
