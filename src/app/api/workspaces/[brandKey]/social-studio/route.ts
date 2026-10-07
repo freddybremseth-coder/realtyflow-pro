@@ -1022,31 +1022,63 @@ export async function POST(
       if (!property.primary_image || !/^https:\/\//i.test(property.primary_image)) {
         return fail(409, "PROPERTY_IMAGE_REQUIRED");
       }
-      const card = await renderPropertySocialCard(
-        access.value.supabase as unknown as PropertyCardSupabase,
-        {
-          brandId: params.brandKey,
-          brandName: definition.name,
+      try {
+        const card = await renderPropertySocialCard(
+          access.value.supabase as unknown as PropertyCardSupabase,
+          {
+            brandId: params.brandKey,
+            brandName: definition.name,
+            propertyId: property.id,
+            propertyRef: property.ref,
+            sourceImageUrl: property.primary_image,
+            creativeStyle: creativeStyle as PropertyCreativeStyle,
+            factSources: factSources(property),
+            channel: channel as "facebook" | "instagram",
+          },
+        );
+        const imageUrl = await registerRenderedAsset(access.value.supabase, {
+          brandKey: params.brandKey,
           propertyId: property.id,
-          propertyRef: property.ref,
+          actorUserId: access.value.verifiedUserId,
+          actorEmail: access.value.verifiedEmail,
+          storagePath: card.storagePath,
+          imageUrl: card.imageUrl,
+          style: creativeStyle,
+          channel,
           sourceImageUrl: property.primary_image,
-          creativeStyle: creativeStyle as PropertyCreativeStyle,
-          factSources: factSources(property),
-          channel: channel as "facebook" | "instagram",
-        },
-      );
-      const imageUrl = await registerRenderedAsset(access.value.supabase, {
-        brandKey: params.brandKey,
-        propertyId: property.id,
-        actorUserId: access.value.verifiedUserId,
-        actorEmail: access.value.verifiedEmail,
-        storagePath: card.storagePath,
-        imageUrl: card.imageUrl,
-        style: creativeStyle,
-        channel,
-        sourceImageUrl: property.primary_image,
-      });
-      return NextResponse.json({ ok: true, imageUrl, creativeStyle, channel }, { headers: noStore });
+        });
+        return NextResponse.json({
+          ok: true,
+          imageUrl,
+          creativeStyle,
+          channel,
+          rendered: true,
+          fallback: false,
+        }, { headers: noStore });
+      } catch (renderError) {
+        const warning = renderError instanceof Error
+          ? renderError.message.split(":")[0].slice(0, 100)
+          : "PROPERTY_CARD_RENDER_FAILED";
+        console.warn("[social-studio] property card fallback", {
+          brandKey: params.brandKey,
+          propertyId: property.id,
+          creativeStyle,
+          channel,
+          warning,
+        });
+        // A professional card is an enhancement, not a publishing gate.
+        // The canonical property image is already brand-visible and can safely
+        // keep the draft workflow moving when server-side rendering is unavailable.
+        return NextResponse.json({
+          ok: true,
+          imageUrl: property.primary_image,
+          creativeStyle,
+          channel,
+          rendered: false,
+          fallback: true,
+          warning,
+        }, { headers: noStore });
+      }
     }
 
     if (action !== "generate") return fail(400, "UNKNOWN_ACTION");

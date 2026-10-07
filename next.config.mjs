@@ -2,6 +2,11 @@ import { withWorkflow } from "workflow/next";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingIncludes: {
+    "/api/workspaces/*/social-studio": [
+      "./node_modules/ffmpeg-static/**",
+    ],
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: '50mb',
