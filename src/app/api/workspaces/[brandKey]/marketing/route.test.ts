@@ -38,6 +38,16 @@ function fakeDatabase() {
           error: null,
         });
       }
+      if (name === "workspace_brand_marketing_draft_media_enrich_v1") {
+        return Promise.resolve({
+          data: {
+            ok: true,
+            mediaCount: Array.isArray(args?.p_media_urls) ? args?.p_media_urls.length : 0,
+            publicationId: args?.p_publication_id,
+          },
+          error: null,
+        });
+      }
       if (name === "workspace_brand_marketing_draft_create_v2") {
         if (args?.p_image_url === "https://cdn.example.test/unapproved.jpg") {
           return Promise.resolve({ data: { ok: false, error: "IMAGE_NOT_APPROVED_FOR_BRAND" }, error: null });
@@ -159,6 +169,13 @@ test("marketing draft write is brand-fixed and cannot publish", async () => {
     tags: ["Pinoso", "Villa"],
     platforms: ["facebook", "instagram"],
     imageUrl: "https://cdn.example.test/pinoso.jpg",
+    mediaUrls: [
+      "https://cdn.example.test/pinoso.jpg",
+      "https://cdn.example.test/pinoso-detail.jpg",
+    ],
+    socialCategory: "property",
+    conceptId: "advisor_insight",
+    visualFormat: "carousel",
     status: "published",
     brand_id: "zeneco",
   }) as any, { params: { brandKey: "pinosoecolife" } });
@@ -174,6 +191,18 @@ test("marketing draft write is brand-fixed and cannot publish", async () => {
   assert.deepEqual(draftArgs.p_platforms, ["facebook", "instagram"]);
   assert.equal(draftArgs.p_image_url, "https://cdn.example.test/pinoso.jpg");
   assert.equal(JSON.stringify(draftArgs).includes("zeneco"), false);
+  const enrichCall = calls.find(call => call.method === "rpc" &&
+    call.args[0] === "workspace_brand_marketing_draft_media_enrich_v1");
+  assert.ok(enrichCall);
+  const enrichArgs = enrichCall?.args[1] as any;
+  assert.deepEqual(enrichArgs.p_media_urls, [
+    "https://cdn.example.test/pinoso.jpg",
+    "https://cdn.example.test/pinoso-detail.jpg",
+  ]);
+  assert.equal(enrichArgs.p_content_features.social_category, "property");
+  assert.equal(enrichArgs.p_content_features.concept_id, "advisor_insight");
+  assert.equal(enrichArgs.p_content_features.visual_format, "carousel");
+  assert.equal(enrichArgs.p_content_features.multi_image, true);
 });
 
 test("marketing draft requires explicit draft permission and active brand channel", async () => {
