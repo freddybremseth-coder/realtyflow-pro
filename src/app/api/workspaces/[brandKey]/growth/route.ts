@@ -40,24 +40,182 @@ async function growthReadAccess(request: NextRequest, brandKey: string) {
   return { value: null, response: fail(403, "ACCESS_DENIED") };
 }
 
+function ownerCorporateRow(row: any) {
+  return {
+    id: row.id,
+    companyName: row.company_name,
+    organizationType: row.organization_type,
+    countryCode: row.country_code,
+    city: row.city,
+    industry: row.industry,
+    employeeCount: row.employee_count,
+    memberCount: row.member_count,
+    websiteUrl: row.website_url,
+    linkedinCompanyUrl: row.linkedin_company_url,
+    status: row.status,
+    fitScore: row.fit_score,
+    fitTier: row.fit_tier,
+    fitReasons: row.fit_reasons,
+    evidenceGaps: row.evidence_gaps,
+    decisionRoles: row.decision_roles,
+    sourceUrl: row.source_url,
+    nextAction: row.next_action,
+    nextFollowup: row.next_followup,
+    updatedAt: row.updated_at,
+  };
+}
+
+function ownerPartnerRow(row: any) {
+  return {
+    id: row.id,
+    companyName: row.company_name,
+    partnerType: row.partner_type,
+    countryCode: row.country_code,
+    city: row.city,
+    industry: row.industry,
+    employeeCount: row.employee_count,
+    websiteUrl: row.website_url,
+    status: row.status,
+    fitScore: row.fit_score,
+    fitTier: row.fit_tier,
+    fitReasons: row.fit_reasons,
+    evidenceGaps: row.evidence_gaps,
+    referralAngle: row.referral_angle,
+    sourceUrl: row.source_url,
+    nextAction: row.next_action,
+    nextFollowup: row.next_followup,
+    updatedAt: row.updated_at,
+  };
+}
+
+function countTop(rows: any[], key: "source" | "path") {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const value = String(row?.[key] || "").trim();
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([value, arrivals]) => ({ [key]: value, arrivals }))
+    .sort((a: any, b: any) => b.arrivals - a.arrivals || String(a[key]).localeCompare(String(b[key])))
+    .slice(0, 20);
+}
+
+async function ownerGrowthSnapshot(supabase: any, brandKey: string) {
+  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const corporateProspects = brandKey === "zeneco"
+    ? supabase.from("corporate_prospects")
+        .select("id,company_name,organization_type,country_code,city,industry,employee_count,member_count,website_url,linkedin_company_url,status,fit_score,fit_tier,fit_reasons,evidence_gaps,decision_roles,source_url,next_action,next_followup,updated_at")
+        .eq("brand_id", "zeneco").order("fit_score", { ascending: false }).order("updated_at", { ascending: false }).limit(100)
+    : Promise.resolve({ data: [], error: null });
+  const corporatePartners = brandKey === "zeneco"
+    ? supabase.from("corporate_partner_prospects")
+        .select("id,company_name,partner_type,country_code,city,industry,employee_count,website_url,status,fit_score,fit_tier,fit_reasons,evidence_gaps,referral_angle,source_url,next_action,next_followup,updated_at")
+        .eq("brand_id", "zeneco").order("fit_score", { ascending: false }).order("updated_at", { ascending: false }).limit(100)
+    : Promise.resolve({ data: [], error: null });
+
+  const [prospectsR, partnersR, discoveryR, seoWorkR, adsR, plannedR, seoLogR] = await Promise.all([
+    corporateProspects,
+    corporatePartners,
+    supabase.from("search_discovery_events")
+      .select("source,path,occurred_at").eq("brand_id", brandKey).gte("occurred_at", since30).limit(5000),
+    supabase.from("work_items")
+      .select("id,title,description,status,priority,due_date,next_action,updated_at")
+      .eq("brand_id", brandKey).eq("assigned_agent", "seo").in("status", ["TO_DO","IN_PROGRESS","REVIEW"])
+      .order("updated_at", { ascending: false }).limit(60),
+    supabase.from("ad_campaigns")
+      .select("id,name,product_name,target_markets,audience_segments,funnel_stage,offer,status,total_creatives,estimated_cost_usd,growth_goal,created_at,updated_at")
+      .eq("brand_id", brandKey).order("updated_at", { ascending: false }).limit(50),
+    supabase.from("work_items")
+      .select("id,title,description,status,priority,due_date,next_action,source_id,metadata,updated_at")
+      .eq("brand_id", brandKey).contains("metadata", { workspace_growth: true })
+      .order("updated_at", { ascending: false }).limit(100),
+    supabase.from("automation_logs")
+      .select("created_at,details").eq("action", "seo_gsc_live_read").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+
+  const failed = [prospectsR, partnersR, discoveryR, seoWorkR, adsR, plannedR, seoLogR].find((result: any) => result?.error);
+  if (failed?.error) throw new Error(failed.error.message || "OWNER_GROWTH_SNAPSHOT_FAILED");
+
+  const details = seoLogR.data?.details && typeof seoLogR.data.details === "object" ? seoLogR.data.details : {};
+  const gsc = Array.isArray((details as any).google_search_console)
+    ? (details as any).google_search_console.find((item: any) => String(item?.brandId || "") === brandKey)
+    : null;
+  const diagnostics = Array.isArray((details as any).diagnostics)
+    ? (details as any).diagnostics.filter((item: any) => String(item?.brandId || "") === brandKey).map((item: any) => ({
+        kind: item?.kind, title: item?.title, category: item?.category,
+        finding: item?.finding, evidence: item?.evidence, nextStep: item?.nextStep,
+      }))
+    : [];
+
+  return {
+    permissions: {
+      corporateRead: brandKey === "zeneco",
+      corporatePlan: brandKey === "zeneco",
+      visibilityRead: true,
+      visibilityPlan: true,
+      adsRead: true,
+      adsDraft: true,
+      eventsPlan: true,
+    },
+    corporate: brandKey === "zeneco" ? {
+      prospects: (prospectsR.data || []).map(ownerCorporateRow),
+      partners: (partnersR.data || []).map(ownerPartnerRow),
+    } : null,
+    visibility: {
+      searchDiscovery: countTop(discoveryR.data || [], "source"),
+      topPaths: countTop(discoveryR.data || [], "path"),
+      seoWork: (seoWorkR.data || []).map((row: any) => ({
+        id: row.id, title: row.title, description: row.description, status: row.status,
+        priority: row.priority, dueDate: row.due_date, nextAction: row.next_action, updatedAt: row.updated_at,
+      })),
+      seoSam: {
+        collectedAt: seoLogR.data?.created_at || null,
+        gsc: gsc ? { status: gsc.status, error: gsc.error, result: gsc.result } : null,
+        diagnostics,
+      },
+    },
+    ads: (adsR.data || []).map((row: any) => ({
+      id: row.id, name: row.name, productName: row.product_name,
+      targetMarkets: row.target_markets, audienceSegments: row.audience_segments,
+      funnelStage: row.funnel_stage, offer: row.offer, status: row.status,
+      totalCreatives: row.total_creatives, estimatedCostUsd: row.estimated_cost_usd,
+      growthGoal: row.growth_goal, createdAt: row.created_at, updatedAt: row.updated_at,
+    })),
+    plannedWork: (plannedR.data || []).map((row: any) => ({
+      id: row.id, kind: row.metadata?.workspace_kind || "", title: row.title,
+      description: row.description, status: row.status, priority: row.priority,
+      dueDate: row.due_date, nextAction: row.next_action, sourceId: row.source_id, updatedAt: row.updated_at,
+    })),
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { brandKey: string } },
 ) {
   const access = await growthReadAccess(request, params.brandKey);
   if (!access.value) return access.response;
-  if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
 
-  const { data, error } = await access.value.supabase.rpc("workspace_brand_growth_snapshot", {
-    p_brand_key: params.brandKey,
-    p_user_id: access.value.verifiedUserId,
-    p_email: access.value.verifiedEmail,
-  });
-  if (error || !data || typeof data !== "object" || Array.isArray(data)) {
-    return fail(503, "GROWTH_WORKSPACE_UNAVAILABLE");
+  let payload: Record<string, any>;
+  if (access.value.role === "OWNER") {
+    try {
+      payload = await ownerGrowthSnapshot(access.value.supabase, params.brandKey);
+    } catch {
+      return fail(503, "GROWTH_WORKSPACE_UNAVAILABLE");
+    }
+  } else {
+    if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
+    const { data, error } = await access.value.supabase.rpc("workspace_brand_growth_snapshot", {
+      p_brand_key: params.brandKey,
+      p_user_id: access.value.verifiedUserId,
+      p_email: access.value.verifiedEmail,
+    });
+    if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+      return fail(503, "GROWTH_WORKSPACE_UNAVAILABLE");
+    }
+    payload = data as Record<string, any>;
   }
-
-  let payload = data as Record<string, any>;
   if (params.brandKey === "zeneco" && payload.corporate && typeof payload.corporate === "object") {
     const prospects = Array.isArray(payload.corporate.prospects) ? payload.corporate.prospects : [];
     const partners = Array.isArray(payload.corporate.partners) ? payload.corporate.partners : [];
