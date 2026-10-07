@@ -2,6 +2,7 @@ import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 import {
   buildSocialStrategySnapshot,
+  inferSocialCategory,
   socialCategoryForSource,
   type SocialCategory,
 } from "@/lib/workspaces/social-strategy";
@@ -153,7 +154,14 @@ export async function loadAutopilotEditorialSource(
     const title = clean(row.title, 220) || slug;
     const sourceId = "website:" + row.id;
     if (usedIds.has(sourceId)) continue;
-    const socialCategory = socialCategoryForSource({ sourceType: "article", contentKind: kind });
+    const inferredCategory = inferSocialCategory({
+      title,
+      description: [summary, body].filter(Boolean).join(" "),
+      tags: rowTags,
+    });
+    const socialCategory = inferredCategory === "unknown"
+      ? socialCategoryForSource({ sourceType: "article", contentKind: kind })
+      : inferredCategory;
 
     candidates.push({
       sourceType: "website_content",
