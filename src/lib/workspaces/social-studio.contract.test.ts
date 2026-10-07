@@ -10,6 +10,7 @@ const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/wor
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx"), "utf8");
 const marketing = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[brandKey]/marketing/route.ts"), "utf8");
 const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/property-social-card.ts"), "utf8");
+const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/route.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -253,4 +254,32 @@ test("SoMe Studio supports a three-image collage visual format with safe fallbac
 test("Advisor insight defaults to collage only when at least three unique images exist", () => {
   assert.match(studio, /item\.id === "advisor_insight"/);
   assert.match(studio, /Number\(body\.source\?\.propertyImageCount \|\| 0\) >= 3/);
+});
+
+
+test("SoMe Studio can hand off all three concepts as one package with approved media", () => {
+  assert.match(route, /action === "generate_concept_image"/);
+  assert.match(route, /generateSocialStudioConceptImage/);
+  assert.match(route, /createMediaPromptPlan/);
+  assert.match(route, /createMediaJob/);
+  assert.match(route, /social-studio-concept:/);
+  assert.match(studio, /Lagre hele SoMe-pakken/);
+  assert.match(studio, /savePackage/);
+  assert.match(studio, /3 konsepter ×/);
+  assert.match(studio, /package-/);
+  assert.match(studio, /Lag alternativt AI-bilde/);
+});
+
+test("Topic and editorial drafts persist canonical Content Hub image fields", () => {
+  assert.match(marketing, /ai_image_url: imageUrl \|\| null/);
+  assert.match(marketing, /media_urls: imageUrl \? \[imageUrl\] : \[\]/);
+  assert.match(marketing, /social_package_id: packageId/);
+  assert.match(marketing, /ai_generated_image: true/);
+  assert.match(marketing, /Mirror approved/);
+});
+
+test("Content Hub compact draft list keeps thumbnails visible", () => {
+  assert.match(contentHubDrafts, /"thumbnail_url", "scheduled_platforms"/);
+  assert.match(contentHubDrafts, /thumbnail_url: typeof row\.thumbnail_url === "string"/);
+  assert.doesNotMatch(contentHubDrafts, /thumbnail_url: null,\n\s*image_compacted: true/);
 });
