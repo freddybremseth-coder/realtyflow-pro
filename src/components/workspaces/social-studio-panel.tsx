@@ -250,6 +250,13 @@ export function WorkspaceSocialStudio({
 
   function applyStrategyRecommendation() {
     if (!strategy) return;
+    setVariants([]);
+    setSource(null);
+    setSavedPublicationId("");
+    setSavedDraft(null);
+    setPackageFeedback(null);
+    setPackageProgress("");
+    setSavedPackageId("");
     const category = strategy.recommendedCategory;
     if (category === "property") {
       setSourceType("property");
