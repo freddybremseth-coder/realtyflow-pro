@@ -126,3 +126,11 @@ test("SoMe Studio normalizes common AI response shapes before rejecting output",
   assert.match(route, /AI-SVAR SOM SKAL NORMALISERES/);
   assert.match(route, /AI output could not be normalized/);
 });
+
+
+test("SoMe Studio captures raw provider output before RealtyFlow validation", () => {
+  assert.match(route, /Do not validate inside the provider client/);
+  assert.doesNotMatch(route, /validateResponse:\s*validVariantPayload/);
+  assert.match(route, /const fallbackRaw = await askClaude/);
+  assert.match(route, /const repairedRaw = await askClaude/);
+});
