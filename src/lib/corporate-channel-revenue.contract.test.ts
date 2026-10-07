@@ -15,7 +15,7 @@ test("Corporate channel results use confirmed Revenue OS outcomes", () => {
 
   assert.match(page, /Faktisk visning/);
   assert.match(page, /Faktisk tilbud/);
-  assert.match(page, /Lead → visning/);
+  assert.match(page, /Henvendelse → visning/);
   assert.match(page, /bekreftede Revenue OS-events/);
 });
 
@@ -73,7 +73,7 @@ test("Corporate event registration and attendance stay outside sales qualificati
   assert.match(overview, /"google", "linkedin", "meta", "event", "outbound"/);
 
   assert.match(page, /Påmelding og oppmøte er ikke salgskvalifisering/);
-  assert.match(page, /holder registrering og oppmøte utenfor Corporate lead- og pipeline-tallene/);
+  assert.match(page, /holder registrering og oppmøte utenfor bedrifts- og salgstrakttallene/);
 });
 
 

@@ -65,7 +65,7 @@ test("Corporate Account Workspace exposes manual deep research and source links 
   assert.match(workspaceApi, /externalAction: false/);
   assert.match(workspaceApi, /outreachStarted: false/);
   assert.match(workspaceApi, /pipelineMoved: false/);
-  assert.match(workspacePage, /Corporate Intelligence/);
+  assert.match(workspacePage, /Bedriftsinnsikt/);
   assert.match(workspacePage, /Kjør dyp research/);
   assert.match(workspacePage, /Markedswatch/);
   assert.match(workspacePage, /Regelverkswatch/);
@@ -84,7 +84,7 @@ test("Own-site event signals are temporally weighted instead of treated as autom
   assert.match(engine, /event_year/);
   assert.match(engine, /freshness: age === 0 \? 92/);
   assert.match(engine, /Historisk signal; brukes som kontekst/);
-  assert.match(engine, /Ekstern webresearch leverte ikke data/);
+  assert.match(engine, /Ekstern nettanalyse leverte ikke data/);
 });
 
 

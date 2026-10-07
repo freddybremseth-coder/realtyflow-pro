@@ -20,7 +20,7 @@ async function logRun(
 ) {
   await supabase.from("automation_logs").insert({
     action,
-    agent_name: "Zen Corporate Intelligence",
+    agent_name: "Zen bedriftsinnsikt",
     status,
     details,
     created_at: new Date().toISOString(),
@@ -86,7 +86,7 @@ export async function runCorporateIntelligenceAccountBatch(
       } catch (cause) {
         warnings.push(
           String(row.company_name) + ": " +
-          (cause instanceof Error ? cause.message : "Corporate Intelligence feilet."),
+          (cause instanceof Error ? cause.message : "Bedriftsinnsikten feilet."),
         );
       }
     }
@@ -108,7 +108,7 @@ export async function runCorporateIntelligenceAccountBatch(
     await logRun(supabase, "corporate_intelligence_accounts", "success", output);
     return output;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Corporate Intelligence account batch failed";
+    const message = error instanceof Error ? error.message : "Batchkjøring for bedriftsinnsikt feilet";
     await logRun(supabase, "corporate_intelligence_accounts", "error", { error: message });
     throw error;
   }
@@ -144,7 +144,7 @@ export async function runCorporateIntelligenceWatch(
     await logRun(supabase, "corporate_intelligence_watch", "success", output);
     return output;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Corporate Intelligence watch failed";
+    const message = error instanceof Error ? error.message : "Overvåking for bedriftsinnsikt feilet";
     await logRun(supabase, "corporate_intelligence_watch", "error", { error: message });
     throw error;
   }

@@ -136,7 +136,7 @@ function inferModels(input: CorporateAdvisorInput) {
     models.push("Medlemsfordel", "Kunde-/partnerfordel");
   }
   if (/hr|recruit|consult|technology|it|finance|bank|account|professional|rådgiv/i.test(industry)) {
-    models.push("Ansattfordel", "Management retreat");
+    models.push("Ansattfordel", "Ledelse og teamsamlinger");
   }
   if (employees >= 40) models.push("Firmabolig");
   if (!models.length) models.push("Firmabolig", "Ansattfordel");
@@ -146,7 +146,7 @@ function inferModels(input: CorporateAdvisorInput) {
 
 function inferEntryRole(models: string[], input: CorporateAdvisorInput) {
   if (models.some(model => /medlem|partner/i.test(model))) return "Partnerskap / medlemsansvarlig";
-  if (models.some(model => /ansatt|retreat|firmabolig/i.test(model))) return "HR / People";
+  if (models.some(model => /ansatt|retreat|firmabolig/i.test(model))) return "HR / personal";
   if (Number(input.prospect.employee_count || 0) < 30) return "CEO / eier";
   return "HR / People";
 }
@@ -191,7 +191,7 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
     .filter(t => Number.isFinite(Date.parse(text(t.due_at))))
     .sort((a,b) => Date.parse(text(a.due_at)) - Date.parse(text(b.due_at)))[0];
 
-  if (signalResearch) { score += 8; timingScore += 15; whyNow.push("Selskapsresearch er dokumentert."); }
+  if (signalResearch) { score += 8; timingScore += 15; whyNow.push("Selskapskartlegging er dokumentert."); }
   else missing.push("Dokumenterte kjøps-/behovssignaler");
 
   if (strategy?.objective && strategy?.entry_angle) { score += 10; timingScore += 10; whyNow.push("Kontostrategi og inngang er definert."); }
@@ -204,7 +204,7 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   if (verified.length) { score += 6; accessScore += 20; }
   else if (!companyChannel) missing.push("Verifisert kontaktkanal");
 
-  if (champion) { score += 10; accessScore += 25; intentScore += 10; whyNow.push("Kontoen har en mulig intern champion."); }
+  if (champion) { score += 10; accessScore += 25; intentScore += 10; whyNow.push("Kontoen har en mulig intern pådriver."); }
 
   if (planned.length) { score += 5; timingScore += 10; }
   if (overdue.length) { score += 8; whyNow.push(`${overdue.length} planlagt aktivitet er forfalt.`); }
@@ -216,10 +216,10 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   if (materialChanges > 0) {
     timingScore += Math.max(-15, Math.min(15, Number(intelligence.deltas?.timing || 0)));
     intentScore += Math.max(-10, Math.min(10, Number(intelligence.deltas?.intent || 0)));
-    whyNow.push(materialChanges + " nytt/endrede Intelligence-signal" + (materialChanges === 1 ? "" : "er") + " bør vurderes.");
+    whyNow.push(materialChanges + " nytt/endret innsiktssignal" + (materialChanges === 1 ? "" : "er") + " bør vurderes.");
   }
   if (negativeSignals > 0) {
-    whyNow.push(negativeSignals + " negativt Intelligence-signal" + (negativeSignals === 1 ? "" : "er") + " krever forsiktig timing.");
+    whyNow.push(negativeSignals + " negativt innsiktssignal" + (negativeSignals === 1 ? "" : "er") + " krever forsiktig tidspunkt for videre kontakt.");
   }
 
     const stage = text(strategy?.stage) || text(input.prospect.status) || "TARGET";
@@ -245,19 +245,19 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   if (strategy?.next_best_action) {
     nextAction = text(strategy.next_best_action);
   } else if (topNegativeChange) {
-    nextAction = "Gjennomgå nytt negativt signal før videre outreach: " + text(topNegativeChange.title) + ". Avklar om timing eller prioritet skal endres.";
+    nextAction = "Gjennomgå nytt negativt signal før videre kontakt: " + text(topNegativeChange.title) + ". Avklar om tidspunkt eller prioritet skal endres.";
   } else if (!strategy?.objective || !strategy?.entry_angle) {
     nextAction = `Definer mål og inngang for ${input.prospect.company_name}; anbefalt start er ${primaryModel} mot ${entryRole}.`;
   } else if (!decisionMaker) {
     nextAction = provider1881
-      ? `Bruk tilgjengelig enrichment og offentlig research til å identifisere riktig ${entryRole}-kontakt.`
-      : `Berik kontoen og identifiser riktig ${entryRole}-kontakt før første personlige outreach.`;
+      ? `Bruk tilgjengelig databerikelse og offentlig kartlegging til å identifisere riktig ${entryRole}-kontakt.`
+      : `Berik kontoen og identifiser riktig ${entryRole}-kontakt før første personlige kontakt.`;
   } else if (!verified.length && !companyChannel) {
     nextAction = "Verifiser jobbkontakt eller offisiell selskapskanal før første e-post.";
   } else if (overdue.length) {
     nextAction = `Utfør forfalt ${text(overdue[0].channel).toLowerCase()}-aktivitet og loggfør utfallet.`;
   } else if (!planned.length) {
-    nextAction = "Lag en koordinert LinkedIn + e-post-plan med menneskelig godkjenning før første kontakt.";
+    nextAction = "Lag en koordinert LinkedIn- og e-postplan med menneskelig godkjenning før første kontakt.";
   } else if (nextPlanned) {
     nextAction = `Neste planlagte steg er ${text(nextPlanned.channel)}: ${text(nextPlanned.activity_type).replaceAll("_"," ").toLowerCase()}.`;
   } else {
@@ -272,7 +272,7 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
   ];
 
   if (["ENGAGED","MEETING","BUSINESS_CASE"].includes(stage.toUpperCase())) {
-    channelSequence.splice(3, 0, { order: 4, channel: "MEETING", action: "Styr mot en kort discovery med behov, beslutningsprosess og business case." });
+    channelSequence.splice(3, 0, { order: 4, channel: "MEETING", action: "Styr mot en kort behovsavklaring med behov, beslutningsprosess og beslutningsgrunnlag." });
     channelSequence.forEach((step, index) => { step.order = index + 1; });
   }
 
@@ -280,7 +280,7 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
     ? `${input.prospect.company_name} bør bearbeides aktivt nå`
     : priority === "P2"
       ? `${input.prospect.company_name} er en lovende konto som trenger ett tydelig neste steg`
-      : `${input.prospect.company_name} bør modnes før aktiv outreach`;
+      : `${input.prospect.company_name} bør modnes før aktiv kontakt`;
 
   const stageCriteria: Record<string, { exitCriteria: string[]; next: string | null }> = {
     TARGET: { exitCriteria: ["Kontoen er innenfor målgruppen", "En første relevanshypotese er formulert"], next: "RESEARCH" },
@@ -288,7 +288,7 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
     STRATEGY_READY: { exitCriteria: ["Primær hypotese og budskap er definert", "Neste handling er konkret"], next: "OUTREACH" },
     OUTREACH: { exitCriteria: ["Menneskelig godkjent kontakt er gjennomført", "Utfallet er loggført"], next: "ENGAGED" },
     ENGAGED: { exitCriteria: ["Reell toveis dialog er etablert", "Kunden har bekreftet eller korrigert et behov"], next: "MEETING" },
-    MEETING: { exitCriteria: ["Discovery er gjennomført", "Problem, beslutningsprosess og neste steg er dokumentert"], next: "BUSINESS_CASE" },
+    MEETING: { exitCriteria: ["Behovsavklaring er gjennomført", "Problem, beslutningsprosess og neste steg er dokumentert"], next: "BUSINESS_CASE" },
     BUSINESS_CASE: { exitCriteria: ["Brukere, økonomi og hovedkrav er kjent", "Åpne rådgiverpunkter er synlige"], next: "SHORTLIST" },
     SHORTLIST: { exitCriteria: ["Område/boligkriterier er godkjent", "Konkrete alternativer er vurdert"], next: "DECISION" },
     DECISION: { exitCriteria: ["Kunden behandler et konkret internt beslutningscase", "Beslutningstakere og forbehold er kjent"], next: "NEGOTIATION" },
@@ -324,7 +324,7 @@ export function buildCorporateAccountAdvice(input: CorporateAdvisorInput): Corpo
     missing: [...new Set(missing)].slice(0, 5),
     nextAction,
     channelSequence,
-    guardrail: "LinkedIn og e-post skal være menneskelig godkjent. Ikke scrape profiler eller inferer private/sensitive interesser.",
+    guardrail: "LinkedIn og e-post skal være menneskelig godkjent. Ikke hent profiler automatisk eller utled private eller sensitive interesser.",
     accountRole,
     primaryModel,
     secondaryModel,

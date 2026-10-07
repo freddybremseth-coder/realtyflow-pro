@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(await runCorporateIntelligenceWatch(supabase, { trigger: "cron" }));
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Corporate Intelligence watch failed" },
+      { error: error instanceof Error ? error.message : "Overvåking for bedriftsinnsikt feilet" },
       { status: 500 },
     );
   }

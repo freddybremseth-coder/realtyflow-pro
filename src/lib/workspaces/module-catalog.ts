@@ -66,8 +66,8 @@ export const WORKSPACE_PROGRAM_CATALOG: WorkspaceProgramDefinition[] = [
   },
   {
     id: "corporate",
-    label: "Corporate Homes",
-    description: "Bedrifts- og partnerprospekter, research og planlagte neste steg for Zen Eco Homes.",
+    label: "Bedrift",
+    description: "Bedrifts- og partnerprospekter, kartlegging og planlagte neste steg for Zen Eco Homes.",
     status: "ready",
     brandScope: "zeneco-only",
     readPermissions: ["corporate.read"],

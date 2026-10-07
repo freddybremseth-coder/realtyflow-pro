@@ -205,7 +205,7 @@ export async function runCorporateSalesCoach(input: CorporateSalesCoachInput) {
   const fallback = buildSalesCoachFallback(input);
   if (!isNexusAIConfigured()) return { output: fallback, provider: "deterministic", model: "fallback" };
 
-  const systemPrompt = `Du er Nexus Sales Coach i RealtyFlow for Zen Corporate Homes. Du trener selgeren i konsultativ, etisk B2B-salg.
+  const systemPrompt = `Du er Nexus salgscoach i RealtyFlow for Zen Corporate Homes. Du trener selgeren i konsultativ, etisk B2B-salg.
 Arbeidsmodellen er:
 1) DISCOVER_PROBLEM: avdekk faktisk problem, konsekvens og hvem som påvirkes.
 2) CONFIRM_PROBLEM: oppsummer og få kunden til å bekrefte/korrigere problemet.
@@ -257,7 +257,7 @@ Alle tekster skal være på norsk.`;
     const parsed = JSON.parse(cleanJson(result.text));
     return { output: normalizeOutput(parsed, fallback), provider: result.provider, model: result.model };
   } catch (error) {
-    console.warn("[Corporate Sales Coach] AI failed, using deterministic fallback", error);
+    console.warn("[Corporate Sales Coach] AI-analyse feilet, bruker deterministisk reserve", error);
     return { output: fallback, provider: "deterministic", model: "fallback" };
   }
 }

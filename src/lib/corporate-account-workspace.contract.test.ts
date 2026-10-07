@@ -42,6 +42,42 @@ const companyProfile = fs.readFileSync(
   "src/lib/corporate-enrichment/company-profile.ts",
   "utf8",
 );
+const growthPanel = fs.readFileSync(
+  "src/components/workspaces/growth-corporate-panel.tsx",
+  "utf8",
+);
+const workspaceAccess = fs.readFileSync(
+  "src/app/(realty)/workspace-access/page.tsx",
+  "utf8",
+);
+const workspaceUsers = fs.readFileSync(
+  "src/app/(realty)/workspace-users/page.tsx",
+  "utf8",
+);
+const moduleCatalog = fs.readFileSync(
+  "src/lib/workspaces/module-catalog.ts",
+  "utf8",
+);
+const outboundEngagementPage = fs.readFileSync(
+  "src/app/(content)/nexus-os/outbound-engagement/page.tsx",
+  "utf8",
+);
+const corporateDashboard = fs.readFileSync(
+  "src/app/(business)/corporate-homes/page.tsx",
+  "utf8",
+);
+const corporatePartnersPage = fs.readFileSync(
+  "src/app/(business)/corporate-homes/partners/page.tsx",
+  "utf8",
+);
+const intelligenceEngine = fs.readFileSync(
+  "src/lib/corporate-intelligence.ts",
+  "utf8",
+);
+const accountAdvisor = fs.readFileSync(
+  "src/lib/nexus/corporate-account-advisor.ts",
+  "utf8",
+);
 
 test("Corporate Account Workspace is permission scoped and never auto-executes outreach", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "corporate\.read"\)/);
@@ -117,7 +153,7 @@ test("Corporate ownership uses active system users and defaults to the primary R
   assert.match(route, /corporate\.plan/);
   assert.match(route, /defaultOwnerEmail/);
   assert.match(route, /INVALID_ACCOUNT_OWNER/);
-  assert.match(page, /Account owner/);
+  assert.match(page, /Kontoansvarlig/);
   assert.match(page, /Strategisk ansvarlig/);
   assert.match(page, /data\.assignmentOptions\.users\.map/);
   assert.match(page, /Nye kontoer får RealtyFlow Owner som standard/);
@@ -133,12 +169,12 @@ test("Corporate Account Strategy v2 separates pipeline, priority, account role a
   assert.match(strategyCoachMigration, /solution_hypothesis/);
   assert.match(strategyCoachMigration, /solution_acceptance_goal/);
   assert.match(strategyCoachMigration, /next_best_action/);
-  assert.match(page, /Account score/);
-  assert.match(page, /Timing/);
-  assert.match(page, /Access/);
-  assert.match(page, /Intent/);
-  assert.match(page, /Referral partner er nå en kontorolle/);
-  assert.match(page, /Business case completeness/);
+  assert.match(page, /Kontoscore/);
+  assert.match(page, /Tidspunkt/);
+  assert.match(page, /Tilgang/);
+  assert.match(page, /Kjøpssignal/);
+  assert.match(page, /Henvisningspartner er en kontorolle/);
+  assert.match(page, /Komplett beslutningsgrunnlag/);
 });
 
 test("Nexus Sales Coach follows problem-to-solution acceptance and never auto-sends", () => {
@@ -154,7 +190,7 @@ test("Nexus Sales Coach follows problem-to-solution acceptance and never auto-se
   assert.match(salesCoach, /CONFIRM_SOLUTION/);
   assert.match(salesCoach, /NEXT_COMMITMENT/);
   assert.match(salesCoach, /Du skal ikke bruke manipulasjon, press, falsk knapphet/);
-  assert.match(page, /Nexus AI Sales Coach/);
+  assert.match(page, /Nexus AI-salgscoach/);
   assert.match(page, /Analyser e-post og foreslå svar/);
   assert.match(page, /Utkastet er ikke sendt/);
 });
@@ -178,7 +214,7 @@ test("Sales Coach recommendation can be promoted into strategy only by explicit 
   assert.match(route, /humanApproved:\s*true/);
   assert.match(route, /applied_fields/);
   assert.match(route, /externalAction:\s*false/);
-  assert.match(page, /Faktisk problem- og løsningsaksept må registreres separat med kundeevidens/);
+  assert.match(page, /Faktisk problem- og løsningsaksept må registreres separat med dokumentasjon fra kunden/);
 });
 
 test("Corporate sales learning loop stores explicit customer acceptance separately from AI hypotheses", () => {
@@ -201,4 +237,38 @@ test("Corporate phase gate requires evidence and a human reason for deliberate e
   assert.match(route, /stageOverrideReason\.length < 12/);
   assert.match(page, /Fasevakt/);
   assert.match(page, /Overstyr fasevakt/);
+});
+
+
+test("Corporate user-facing copy stays consistently Norwegian", () => {
+  assert.match(page, /Bedriftskonto/);
+  assert.match(page, /Nexus bedriftsrådgiver/);
+  assert.match(page, /Bedriftsinnsikt/);
+  assert.match(page, /BEGRENSET ANALYSE/);
+  assert.match(page, /FULL ANALYSE/);
+  assert.match(page, /Kontoscore/);
+  assert.match(page, /Komplett beslutningsgrunnlag/);
+  assert.match(page, /Beslutningsgruppe/);
+  assert.match(page, /Nexus AI-salgscoach/);
+  assert.doesNotMatch(page, /DEGRADED RESEARCH|FULL RESEARCH|Provider:|· freshness|· confidence|Account score|Decision Unit|Referral partner er nå en kontorolle|Business case completeness|Nexus AI Sales Coach|Henter Corporate Account Workspace/);
+
+  assert.match(growthPanel, /Bedriftskartlegging \/ neste steg/);
+  assert.match(growthPanel, /Bedrift og partnerkanaler/);
+  assert.doesNotMatch(growthPanel, /Corporate research \/ neste steg|Forbered discovery-møte|Decision Pack|Aktiv pipeline|Laster Growth & Corporate/);
+
+  assert.match(workspaceAccess, /Bedrift – se/);
+  assert.match(workspaceAccess, /Bedrift – planlegge/);
+  assert.match(workspaceUsers, /Kartlegge og planlegge neste steg/);
+  assert.match(moduleCatalog, /label: "Bedrift"/);
+  assert.doesNotMatch(outboundEngagementPage, /Corporate buyer|Tier \{row\.fitTier\}/);
+
+  assert.match(corporateDashboard, /B2B-vekst og salgstrakt/);
+  assert.match(corporateDashboard, /Bedriftshenvendelser/);
+  assert.match(corporateDashboard, /Bedriftens innholdsmotor/);
+  assert.doesNotMatch(corporateDashboard, /B2B Growth & Pipeline|Corporate leads|Aktiv pipeline|Corporate Content Engine|Signalresearch|Siste discovery:|partnerdiscovery/);
+  assert.match(corporatePartnersPage, /Sikkerhetsregel:/);
+  assert.doesNotMatch(corporatePartnersPage, /Guardrail:|partnerdiscovery|Åpne dossier/);
+
+  assert.doesNotMatch(intelligenceEngine, /degraded research|webresearch|watch-kjøringen|Employer branding|People-\/|management-retreat/);
+  assert.doesNotMatch(accountAdvisor, /Selskapsresearch|intern champion|videre outreach|tilgjengelig enrichment|offentlig research|kort discovery|active outreach|scrape profiler|inferer private/);
 });

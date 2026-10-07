@@ -173,8 +173,8 @@ export default function OutboundEngagementPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Building2 size={17} className="text-slate-500" />
                   <h3 className="font-black text-slate-950">{row.companyName}</h3>
-                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">{row.source === "corporate_partner" ? "Partner" : "Corporate buyer"}</span>
-                  <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700">Tier {row.fitTier} · {row.fitScore}</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">{row.source === "corporate_partner" ? "Partner" : "Bedriftskunde"}</span>
+                  <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700">Nivå {row.fitTier} · {row.fitScore}</span>
                   <span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-black text-cyan-700">{stageLabels[row.stage] || row.stage}</span>
                 </div>
                 {row.fitReasons.length > 0 && <div className="mt-2 text-sm text-slate-600">{row.fitReasons.slice(0,3).join(" · ")}</div>}

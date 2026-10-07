@@ -89,14 +89,14 @@ export default function CorporatePartnersPage() {
         body: JSON.stringify({}),
       });
       const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre partnerdiscovery.");
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke kjøre partnerkartlegging.");
       const result = body?.result || {};
       setNotice(result?.reason === "target_reached"
         ? "Målet på 100 partnerbedrifter er nådd."
         : `${Number(result?.created || 0)} nye partnerbedrifter ble lagt til.`);
       await load();
     } catch (discoverError) {
-      setError(discoverError instanceof Error ? discoverError.message : "Kunne ikke kjøre partnerdiscovery.");
+      setError(discoverError instanceof Error ? discoverError.message : "Kunne ikke kjøre partnerkartlegging.");
     } finally {
       setDiscovering(false);
     }
@@ -108,7 +108,7 @@ export default function CorporatePartnersPage() {
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <Link href="/corporate-homes" className="inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
-              <ArrowLeft size={13} /> Corporate Homes
+              <ArrowLeft size={13} /> Zen Corporate Homes
             </Link>
             <div className="mt-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.13em] text-teal-800">
               <Handshake size={18} /> Partnerkanal
@@ -166,7 +166,7 @@ export default function CorporatePartnersPage() {
                 </div>
               </div>
               <span className={`rounded-full px-2.5 py-1 text-xs font-black ${partner.fit_tier === "A" ? "bg-emerald-100 text-emerald-900" : partner.fit_tier === "B" ? "bg-cyan-100 text-cyan-900" : "bg-slate-100 text-slate-700"}`}>
-                {partner.fit_tier} · {partner.fit_score}
+                {partner.fit_tier}-match · {partner.fit_score}
               </span>
             </div>
 
@@ -179,7 +179,7 @@ export default function CorporatePartnersPage() {
 
             <div className="mt-auto flex flex-wrap gap-3 pt-5">
               <Link href={"/corporate-homes/partners/" + encodeURIComponent(partner.id)} className="inline-flex items-center gap-1 text-xs font-black text-teal-800 hover:underline">
-                Åpne dossier <ArrowRight size={12} />
+                Åpne partnerprofil <ArrowRight size={12} />
               </Link>
               {partner.domain && (
                 <a href={partner.domain} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-black text-cyan-800 hover:underline">
@@ -203,7 +203,7 @@ export default function CorporatePartnersPage() {
       )}
 
       <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-        <strong>Guardrail:</strong> denne køen inneholder ingen personnavn, personlige e-postadresser eller telefonnumre.
+        <strong>Sikkerhetsregel:</strong> denne køen inneholder ingen personnavn, personlige e-postadresser eller telefonnumre.
         Kontaktpersoner skal først identifiseres eller berikes etter eksplisitt godkjenning.
       </section>
     </div>
