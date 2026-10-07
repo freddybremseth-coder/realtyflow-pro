@@ -42,6 +42,7 @@ test("owner navigation is organized around four work apps plus home and platform
 
   assert.equal(sections.find((section) => section.id === "sales")?.items[0]?.href, "/sales");
   assert.equal(sections.find((section) => section.id === "marketing")?.items[0]?.href, "/marketing");
+  assert.equal(sections.find((section) => section.id === "marketing")?.items[1]?.href, "/workspace/zeneco?tab=growth&focus=social");
   assert.equal(sections.find((section) => section.id === "content")?.items[0]?.href, "/content");
   assert.equal(sections.find((section) => section.id === "finance")?.items[0]?.href, "/finance");
   assert.equal(sections.find((section) => section.id === "platform")?.items[0]?.href, "/operations");
@@ -85,6 +86,7 @@ test("active section follows the four-app information architecture", () => {
   assert.equal(activeNavigationSection("/customers/abc", sections), "sales");
   assert.equal(activeNavigationSection("/sales/corporate-homes", sections), "sales");
   assert.equal(activeNavigationSection("/corporate-homes", sections), "marketing");
+  assert.equal(activeNavigationSection("/workspace/zeneco?tab=growth&focus=social", sections), "marketing");
   assert.equal(activeNavigationSection("/closing/deal-1", sections), "sales");
   assert.equal(activeNavigationSection("/care/reports", sections), "sales");
   assert.equal(activeNavigationSection("/inventory/property-360", sections), "sales");
@@ -111,6 +113,10 @@ test("menu search still finds canonical daily surfaces", () => {
   const social = filterNavigationSections(sections, "Instagram");
   assert.equal(social.length, 1);
   assert.deepEqual(social[0]?.items.map((item) => item.href), ["/social-automation"]);
+
+  const studio = filterNavigationSections(sections, "SoMe Studio");
+  assert.equal(studio.length, 1);
+  assert.deepEqual(studio[0]?.items.map((item) => item.href), ["/workspace/zeneco?tab=growth&focus=social"]);
 });
 
 test("favorites remain limited and deduplicated", () => {
@@ -128,11 +134,11 @@ test("owner quick links expose the platform model directly", () => {
   const quick = quickNavigationItems("OWNER", sections, []);
   assert.deepEqual(quick.map((item) => item.href), [
     "/workspaces",
+    "/workspace/zeneco?tab=growth&focus=social",
     "/sales",
     "/marketing",
     "/content",
     "/finance",
-    "/operations",
   ]);
 });
 
@@ -176,6 +182,7 @@ test("workspace members get a permission-derived brand menu instead of global na
   assert.equal(zen.some(item => item.href === "/workspace/zeneco?tab=properties"), true);
   assert.equal(zen.some(item => item.href === "/workspace/zeneco?tab=growth&area=corporate"), true);
   assert.equal(zen.some(item => item.href === "/workspace/zeneco?tab=growth&focus=youtube"), true);
+  assert.equal(zen.some(item => item.label === "SoMe Studio" && item.href === "/workspace/zeneco?tab=growth&focus=social"), true);
   assert.equal(zen.some(item => item.href.includes("/finance")), false);
 
   const pinoso = sections[1].items;
