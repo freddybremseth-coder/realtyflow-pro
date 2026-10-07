@@ -266,7 +266,7 @@ test("SoMe Studio can hand off all three concepts as one package with approved m
   assert.match(route, /social-studio-concept:/);
   assert.match(studio, /Lagre hele SoMe-pakken/);
   assert.match(studio, /savePackage/);
-  assert.match(studio, /3 konsepter ×/);
+  assert.match(studio, /kanalutkast er lagret i Content Hub/);
   assert.match(studio, /package-/);
   assert.match(studio, /Lag alternativt AI-bilde/);
 });
