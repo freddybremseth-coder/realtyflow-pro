@@ -7,6 +7,7 @@ import {
   Eye,
   FileText,
   Loader2,
+  Mail,
   RefreshCw,
   Save,
   ShieldCheck,
@@ -16,10 +17,21 @@ type Template = {
   version: 1;
   report_title: string;
   report_subtitle: string;
+  corporate_label: string;
+  logo_url: string;
   board_questions: string[];
   recommended_next_steps: string[];
   next_practical_step: string;
   disclaimer: string;
+  email_subject_template: string;
+  email_intro: string;
+  email_value_message: string;
+  email_next_step: string;
+  email_reply_prompt: string;
+  email_cta_label: string;
+  signature_name: string;
+  signature_title: string;
+  signature_brand: string;
   updated_at?: string | null;
 };
 
@@ -74,6 +86,7 @@ export default function CorporateDecisionNoteEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [emailPreviewing, setEmailPreviewing] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -165,6 +178,39 @@ export default function CorporateDecisionNoteEditorPage() {
     }
   }
 
+  async function openEmailPreview() {
+    if (!template) return;
+    setEmailPreviewing(true);
+    setNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/corporate-homes/decision-note-template/preview-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template, sample }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lage e-postforhåndsvisning.");
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${String(body?.subject || "E-postforhåndsvisning")}</title></head><body style="margin:0">${String(body?.bodyHtml || "")}</body></html>`;
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const popup = window.open(url, "_blank", "noopener,noreferrer");
+      if (!popup) {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setNotice("E-postforhåndsvisning åpnet. Ingen e-post ble sendt og ingen kunde ble opprettet.");
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "Kunne ikke lage e-postforhåndsvisning.");
+    } finally {
+      setEmailPreviewing(false);
+    }
+  }
+
   if (loading || !template) {
     return (
       <div className="mx-auto max-w-6xl p-6">
@@ -214,6 +260,15 @@ export default function CorporateDecisionNoteEditorPage() {
             </button>
             <button
               type="button"
+              onClick={() => void openEmailPreview()}
+              disabled={emailPreviewing}
+              className="inline-flex items-center gap-2 rounded-xl border border-amber-600 px-4 py-2.5 text-sm font-bold text-amber-900 disabled:opacity-60"
+            >
+              {emailPreviewing ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+              Forhåndsvis e-post
+            </button>
+            <button
+              type="button"
               onClick={() => void save()}
               disabled={saving}
               className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
@@ -236,20 +291,39 @@ export default function CorporateDecisionNoteEditorPage() {
               <div>
                 <h2 className="text-xl font-black text-slate-950">Hva kan endres?</h2>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
-                  Tittel, undertittel, styrespørsmål, anbefalte neste steg, praktisk CTA og forbehold. Kjøpskostnad,
-                  kapitalkostnad, drift, hotellalternativ og verdiscenario beregnes fortsatt av RealtyFlow.
+                  Rapporttekst, ZenEcoHomes-logo, Corporate Homes-identitet, e-posttekst, CTA og signatur kan endres her.
+                  Kjøpskostnad, kapitalkostnad, drift, hotellalternativ og verdiscenario beregnes fortsatt av RealtyFlow og kan ikke endres i malen.
                 </p>
               </div>
             </div>
 
             <div className="mt-5 grid gap-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Corporate-navn
+                  <input
+                    value={template.corporate_label}
+                    onChange={(event) => setTemplate({ ...template, corporate_label: event.target.value })}
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Rapporttittel
+                  <input
+                    value={template.report_title}
+                    onChange={(event) => setTemplate({ ...template, report_title: event.target.value })}
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal"
+                  />
+                </label>
+              </div>
               <label className="grid gap-1.5 text-sm font-bold text-slate-800">
-                Rapporttittel
+                ZenEcoHomes-logo URL
                 <input
-                  value={template.report_title}
-                  onChange={(event) => setTemplate({ ...template, report_title: event.target.value })}
+                  value={template.logo_url}
+                  onChange={(event) => setTemplate({ ...template, logo_url: event.target.value })}
                   className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal"
                 />
+                <span className="text-xs font-normal text-slate-500">Bruker den kanoniske ZenEcoHomes-logoen som standard. Kan overstyres ved behov.</span>
               </label>
               <label className="grid gap-1.5 text-sm font-bold text-slate-800">
                 Undertittel
@@ -299,6 +373,56 @@ export default function CorporateDecisionNoteEditorPage() {
           </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-center gap-2">
+              <Mail size={20} className="text-amber-700" />
+              <h2 className="text-xl font-black text-slate-950">E-postmal</h2>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Disse tekstene brukes i den første e-posten som sendes sammen med PDF-en. Du kan bruke <code className="rounded bg-slate-100 px-1 py-0.5">{"{{company}}"}</code>, <code className="rounded bg-slate-100 px-1 py-0.5">{"{{first_name}}"}</code> og <code className="rounded bg-slate-100 px-1 py-0.5">{"{{pdf_status}}"}</code>.
+            </p>
+            <div className="mt-5 grid gap-4">
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Emnefelt
+                <input value={template.email_subject_template} onChange={(event) => setTemplate({ ...template, email_subject_template: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Innledning
+                <textarea rows={5} value={template.email_intro} onChange={(event) => setTemplate({ ...template, email_intro: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Hva vurderingen skal hjelpe med
+                <textarea rows={5} value={template.email_value_message} onChange={(event) => setTemplate({ ...template, email_value_message: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Neste steg
+                <textarea rows={5} value={template.email_next_step} onChange={(event) => setTemplate({ ...template, email_next_step: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                Svar-oppfordring
+                <textarea rows={4} value={template.email_reply_prompt} onChange={(event) => setTemplate({ ...template, email_reply_prompt: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal leading-6" />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Tekst på bookingknapp
+                  <input value={template.email_cta_label} onChange={(event) => setTemplate({ ...template, email_cta_label: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Signatur – navn
+                  <input value={template.signature_name} onChange={(event) => setTemplate({ ...template, signature_name: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Signatur – tittel
+                  <input value={template.signature_title} onChange={(event) => setTemplate({ ...template, signature_title: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+                <label className="grid gap-1.5 text-sm font-bold text-slate-800">
+                  Signatur – merkevare
+                  <input value={template.signature_brand} onChange={(event) => setTemplate({ ...template, signature_brand: event.target.value })} className="rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="text-xl font-black text-slate-950">Testdata</h2>
             <p className="mt-1 text-sm text-slate-500">Endre tallene for å se et annet eksempel. Testen oppretter ingen CRM-kontakt.</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -317,7 +441,11 @@ export default function CorporateDecisionNoteEditorPage() {
         </div>
 
         <section className="rounded-3xl border border-slate-200 bg-[#fbfaf7] p-5 shadow-sm sm:p-7">
-          <div className="text-xs font-black uppercase tracking-[0.15em] text-amber-700">Zen Eco Homes · Corporate Homes</div>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <img src={template.logo_url} alt="Zen Eco Homes" className="max-h-12 max-w-[220px] object-contain object-left" />
+            <span className="rounded-full border border-amber-600 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-amber-800">{template.corporate_label}</span>
+          </div>
+          <div className="mt-6 text-xs font-black uppercase tracking-[0.15em] text-amber-700">Første beslutningsgrunnlag</div>
           <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">{template.report_title}</h2>
           <p className="mt-1 text-sm text-slate-500">{sample.companyName} · {template.report_subtitle} · test</p>
 
@@ -352,7 +480,7 @@ export default function CorporateDecisionNoteEditorPage() {
           </div>
 
           <div className="mt-7 border-t border-slate-200 pt-3 text-xs text-slate-400">
-            Live forhåndsvisning. «Åpne test-PDF» bruker den samme PDF-rendereren som kunderapporten.
+            Live rapportforhåndsvisning. «Åpne test-PDF» bruker samme PDF-renderer som kunden får, og «Forhåndsvis e-post» bruker samme e-postrenderer som utsendelsen.
           </div>
         </section>
       </div>
