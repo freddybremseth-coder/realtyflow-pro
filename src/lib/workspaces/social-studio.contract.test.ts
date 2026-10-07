@@ -108,7 +108,7 @@ test("Owner can use the same canonical marketing draft flow as workspace members
 
 
 test("SoMe Studio tolerates wrapped JSON and retries without native schema before failing", () => {
-  assert.match(route, /function parseAiJsonObject/);
+  assert.match(route, /function parseAiJsonValue/);
   assert.match(route, /validVariantPayload/);
   assert.match(route, /structuredError/);
   assert.match(route, /native JSON-schema ikke er tilgjengelig/);
