@@ -221,3 +221,22 @@ export async function loadAutopilotEditorialSource(
     strategyReason: strategy?.recommendationReason ?? null,
   };
 }
+
+
+export function autopilotEditorialMasterIdea(
+  source: AutopilotEditorialSource,
+  input: { conceptLabel: string; channel: "instagram" | "facebook"; learningGuidance?: string },
+) {
+  const channelRule = input.channel === "instagram"
+    ? "Instagram: ikke skriv URL, 'lenke i bio' eller en uklickbar nettadresse i captionen. Bruk en naturlig lagre-, dele- eller DM-CTA."
+    : "Facebook: bruk den verifiserte kildelenken når det er naturlig og gjør innlegget klikkbart.";
+  return [
+    `Lag et ${input.conceptLabel}-innlegg for ${source.title}.`,
+    `Kildetype: ${source.kind}. Sosial kategori: ${source.socialCategory}.`,
+    `Verifisert kilde: ${source.sourceUrl}.`,
+    "Bruk bare fakta som følger med som factSources. Ikke utled markedstrender, priser, popularitet, juridiske forhold eller resultater som ikke står i kilden.",
+    "Skriv kanalnative copy, ikke en kopi av artikkelens tittel/metatekst.",
+    channelRule,
+    input.learningGuidance || "",
+  ].filter(Boolean).join("\n");
+}
