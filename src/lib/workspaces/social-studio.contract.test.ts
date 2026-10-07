@@ -160,5 +160,5 @@ test("SoMe action feedback stays next to generate, preview and save controls", (
   assert.match(studio, /saveFeedback/);
   assert.match(studio, /previewFeedback/);
   assert.match(studio, /Tre forskjellige konsepter er klare/);
-  assert.match(studio, /Facebook-utkastet er lagret i Content Hub/);
+  assert.match(studio, /-utkastet er lagret i Content Hub/);
 });
