@@ -1,12 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  CORPORATE_DECISION_NOTE_BOOKING_URL,
   CORPORATE_DECISION_NOTE_SEQUENCE_ID,
-  decisionNoteSummaryLines,
-  firstName,
   type CorporateDecisionNoteReport,
   type CorporateDecisionNoteState,
 } from "@/lib/corporate-decision-note";
+import {
+  corporateDecisionEmailHtml,
+  corporateDecisionEmailSubject,
+  corporateDecisionEmailText,
+} from "@/lib/corporate-decision-email";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
 import { renderCorporateDecisionNotePdf } from "@/services/pdf/corporate-decision-note";
 
@@ -14,15 +16,6 @@ type JsonRecord = Record<string, any>;
 
 function object(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function escapeHtml(value: string) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
 
 function reportFilename(companyName: string) {
@@ -33,69 +26,6 @@ function reportFilename(companyName: string) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "virksomhet";
   return `beslutningsgrunnlag-${slug.toLowerCase()}.pdf`;
-}
-
-function emailHtml(report: CorporateDecisionNoteReport, pdfAttached: boolean) {
-  const first = firstName(report.contact_name);
-  const summaryItems = decisionNoteSummaryLines(report)
-    .map((line) => `<li style="margin:0 0 8px 0">${escapeHtml(line)}</li>`)
-    .join("");
-
-  return `<!doctype html>
-<html lang="no">
-<body style="margin:0;background:#f6f4ef;font-family:Arial,Helvetica,sans-serif;color:#17242a">
-  <div style="max-width:680px;margin:0 auto;padding:32px 18px">
-    <div style="background:#ffffff;border-radius:18px;padding:32px;border:1px solid #e0e3df">
-      <div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#8b6a31;font-weight:700;margin-bottom:10px">Zen Eco Homes · Corporate Homes</div>
-      <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:1.1;margin:0 0 18px;color:#17242a">Beslutningsgrunnlag for ${escapeHtml(report.company_name)}</h1>
-      <p style="font-size:16px;line-height:1.6;margin:0 0 18px">Hei ${escapeHtml(first)},</p>
-      <p style="font-size:16px;line-height:1.6;margin:0 0 18px">Takk for forespørselen. Jeg har satt opp et første beslutningsgrunnlag med tallene og forutsetningene dere sendte inn. ${pdfAttached ? "PDF-en ligger vedlagt og kan brukes som arbeidsdokument internt." : "Hovedtallene står nedenfor. PDF-vedlegget kunne ikke opprettes automatisk, så saken er samtidig markert for manuell oppfølging hos oss."}</p>
-
-      <div style="background:#edf3f0;border-radius:12px;padding:20px;margin:22px 0">
-        <div style="font-weight:700;margin-bottom:10px">Kort oppsummert</div>
-        <ul style="padding-left:20px;margin:0;font-size:15px;line-height:1.5">${summaryItems}</ul>
-      </div>
-
-      <p style="font-size:15px;line-height:1.6;margin:0 0 12px"><strong>Viktig:</strong> hotellalternativet er ikke behandlet som en automatisk besparelse, og verdiutviklingen er et scenario – ikke en prognose.</p>
-      <p style="font-size:15px;line-height:1.6;margin:0 0 18px">Neste nyttige steg er å kontrollere forutsetningene sammen og avklare område, boligtype og styrets krav. Da kan vi gå fra en generell modell til en kortliste med 3–5 boliger som faktisk passer.</p>
-
-      <div style="margin:24px 0">
-        <a href="${CORPORATE_DECISION_NOTE_BOOKING_URL}" style="display:inline-block;background:#17242a;color:#ffffff;text-decoration:none;font-weight:700;padding:13px 18px;border-radius:8px">Book en kort samtale</a>
-      </div>
-
-      <p style="font-size:15px;line-height:1.6;margin:0 0 18px">Dere kan også bare svare på denne e-posten med hva dere ønsker å endre i tallene eller hva styret trenger for å kunne ta stilling.</p>
-      <p style="font-size:15px;line-height:1.6;margin:0">Vennlig hilsen<br><strong>Freddy Bremseth</strong><br>Zen Eco Homes</p>
-    </div>
-    <p style="font-size:12px;line-height:1.5;color:#788287;margin:14px 8px 0">Beslutningsgrunnlaget er et planleggingsverktøy og ikke investerings-, skatte-, juridisk eller regnskapsråd.</p>
-  </div>
-</body>
-</html>`;
-}
-
-function emailText(report: CorporateDecisionNoteReport, pdfAttached: boolean) {
-  const first = firstName(report.contact_name);
-  const summary = decisionNoteSummaryLines(report).map((line) => `– ${line}`).join("\n");
-  return `Hei ${first},
-
-Takk for forespørselen. Jeg har satt opp et første beslutningsgrunnlag for ${report.company_name} med tallene og forutsetningene dere sendte inn. ${pdfAttached ? "PDF-en ligger vedlagt og kan brukes som arbeidsdokument internt." : "Hovedtallene står nedenfor. PDF-vedlegget kunne ikke opprettes automatisk, så saken er samtidig markert for manuell oppfølging hos oss."}
-
-Kort oppsummert:
-${summary}
-
-Viktig: hotellalternativet er ikke behandlet som en automatisk besparelse, og verdiutviklingen er et scenario – ikke en prognose.
-
-Neste nyttige steg er å kontrollere forutsetningene sammen og avklare område, boligtype og styrets krav. Da kan vi gå fra en generell modell til en kortliste med 3–5 boliger som faktisk passer.
-
-Book en kort samtale:
-${CORPORATE_DECISION_NOTE_BOOKING_URL}
-
-Dere kan også bare svare på denne e-posten med hva dere ønsker å endre i tallene eller hva styret trenger for å kunne ta stilling.
-
-Vennlig hilsen
-Freddy Bremseth
-Zen Eco Homes
-
-Beslutningsgrunnlaget er et planleggingsverktøy og ikke investerings-, skatte-, juridisk eller regnskapsråd.`;
 }
 
 async function updateDecisionNoteEvidence(
@@ -169,7 +99,6 @@ export async function sendCorporateDecisionNoteReport(
   },
 ) {
   const now = new Date().toISOString();
-  const subject = `Beslutningsgrunnlag for ${input.report.company_name} – Zen Eco Homes`;
 
   let pdfBuffer: Buffer | null = null;
   let pdfError: string | null = null;
@@ -180,12 +109,17 @@ export async function sendCorporateDecisionNoteReport(
     console.error("[corporate-decision-note] PDF generation failed", pdfError);
   }
 
+  const pdfAttached = Boolean(pdfBuffer);
+  const subject = corporateDecisionEmailSubject(input.report, pdfAttached);
+  const bodyText = corporateDecisionEmailText(input.report, pdfAttached);
+  const bodyHtml = corporateDecisionEmailHtml(input.report, pdfAttached);
+
   const send = await sendBrandEmail(supabase, {
     brandId: "zeneco",
     to: [input.email],
     subject,
-    bodyText: emailText(input.report, Boolean(pdfBuffer)),
-    bodyHtml: emailHtml(input.report, Boolean(pdfBuffer)),
+    bodyText,
+    bodyHtml,
     attachments: pdfBuffer ? [{
       filename: reportFilename(input.report.company_name),
       content: pdfBuffer,
@@ -211,7 +145,7 @@ export async function sendCorporateDecisionNoteReport(
     contactId: input.contactId,
     stepId: "decision_note",
     subject,
-    bodyPreview: emailText(input.report, Boolean(pdfBuffer)),
+    bodyPreview: bodyText,
     status: send.success ? "sent" : "failed",
     error: deliveryError || pdfError,
     sentAt: send.success ? now : null,
