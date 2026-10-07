@@ -246,10 +246,10 @@ export function socialCategoryForSource(input: {
   contentKind?: string | null;
   explicitCategory?: string | null;
 }): SocialCategory {
-  const explicit = text(input.explicitCategory);
-  if ((SOCIAL_CATEGORIES as readonly string[]).includes(explicit)) return explicit as SocialCategory;
   if (input.sourceType === "property") return "property";
   if (input.sourceType === "area") return "area_lifestyle";
+  const explicit = text(input.explicitCategory);
+  if ((SOCIAL_CATEGORIES as readonly string[]).includes(explicit)) return explicit as SocialCategory;
   if (input.sourceType === "article") {
     const kind = text(input.contentKind);
     if (kind === "area") return "area_lifestyle";
