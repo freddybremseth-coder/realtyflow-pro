@@ -751,22 +751,24 @@ export async function POST(request: NextRequest) {
         error: null,
         pdfError: null,
       };
-    } else try {
-      corporateDecisionNoteDelivery = await sendCorporateDecisionNoteReport(supabase, {
-        prospectId: String(corporateProspect.id),
-        contactId: String(data.id),
-        email,
-        report: corporateDecisionNoteState.report,
-      });
-    } catch (error) {
-      console.error("[public-leads] corporate decision note delivery failed", error);
-      corporateDecisionNoteDelivery = {
-        success: false,
-        messageId: null,
-        pdfAttached: false,
-        error: error instanceof Error ? error.message : "Decision note delivery failed",
-        pdfError: null,
-      };
+    } else {
+      try {
+        corporateDecisionNoteDelivery = await sendCorporateDecisionNoteReport(supabase, {
+          prospectId: String(corporateProspect.id),
+          contactId: String(data.id),
+          email,
+          report: corporateDecisionNoteState.report,
+        });
+      } catch (error) {
+        console.error("[public-leads] corporate decision note delivery failed", error);
+        corporateDecisionNoteDelivery = {
+          success: false,
+          messageId: null,
+          pdfAttached: false,
+          error: error instanceof Error ? error.message : "Decision note delivery failed",
+          pdfError: null,
+        };
+      }
     }
   }
 
