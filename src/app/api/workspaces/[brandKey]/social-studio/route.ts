@@ -334,7 +334,7 @@ async function discoverPublicWebsitePages(brandKey: string, website: string) {
 async function loadMarketableProperty(supabase: any, brandKey: string, lookup: string) {
   if (!lookup || lookup.length > 100) throw new Error("PROPERTY_LOOKUP_INVALID");
   let query = supabase.from("properties")
-    .select("id,ref,title,town,location,price,bedrooms,bathrooms,area_m2,plot_size,property_type,primary_image,show_on_website,website_visible,status")
+    .select("id,ref,title,town,location,price,bedrooms,bathrooms,area_m2,plot_size,property_type,primary_image,images,gallery,show_on_website,website_visible,status")
     .eq("show_on_website", true)
     .eq("website_visible", true)
     .eq("status", "TILGJENGELIG");
@@ -351,6 +351,24 @@ async function loadMarketableProperty(supabase: any, brandKey: string, lookup: s
     .maybeSingle();
   if (visibilityError || !visibility?.property_id) throw new Error("PROPERTY_NOT_MARKETABLE_FOR_BRAND");
   return property;
+}
+
+function propertyMediaUrls(property: any) {
+  return Array.from(new Set([
+    typeof property.primary_image === "string" ? property.primary_image.trim() : "",
+    ...(Array.isArray(property.images) ? property.images : []),
+    ...(Array.isArray(property.gallery) ? property.gallery : []),
+  ].map((value) => typeof value === "string" ? value.trim() : "")
+    .filter((value) => /^https:\/\//i.test(value))));
+}
+
+function variantPropertyImages(property: any) {
+  const urls = propertyMediaUrls(property);
+  if (!urls.length) return {} as Record<string, string>;
+  return Object.fromEntries(VARIANT_BLUEPRINTS.map((variant, index) => [
+    variant.id,
+    urls[index] || urls[index % urls.length] || urls[0],
+  ]));
 }
 
 function propertyFacts(property: any) {
@@ -1041,7 +1059,12 @@ export async function POST(
       }
 
       const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
-      if (!property.primary_image || !/^https:\/\//i.test(property.primary_image)) {
+      const requestedSourceImageUrl = clean(body.sourceImageUrl, 2_000);
+      const propertyImages = propertyMediaUrls(property);
+      const selectedSourceImageUrl = requestedSourceImageUrl && propertyImages.includes(requestedSourceImageUrl)
+        ? requestedSourceImageUrl
+        : property.primary_image;
+      if (!selectedSourceImageUrl || !/^https:\/\//i.test(selectedSourceImageUrl)) {
         return fail(409, "PROPERTY_IMAGE_REQUIRED");
       }
       try {
@@ -1052,7 +1075,7 @@ export async function POST(
             brandName: definition.name,
             propertyId: property.id,
             propertyRef: property.ref,
-            sourceImageUrl: property.primary_image,
+            sourceImageUrl: selectedSourceImageUrl,
             creativeStyle: creativeStyle as PropertyCreativeStyle,
             factSources: factSources(property),
             channel: channel as "facebook" | "instagram",
@@ -1067,7 +1090,7 @@ export async function POST(
           imageUrl: card.imageUrl,
           style: creativeStyle,
           channel,
-          sourceImageUrl: property.primary_image,
+          sourceImageUrl: selectedSourceImageUrl,
         });
         return NextResponse.json({
           ok: true,
@@ -1093,7 +1116,7 @@ export async function POST(
         // keep the draft workflow moving when server-side rendering is unavailable.
         return NextResponse.json({
           ok: true,
-          imageUrl: property.primary_image,
+          imageUrl: selectedSourceImageUrl,
           creativeStyle,
           channel,
           rendered: false,
@@ -1122,6 +1145,7 @@ export async function POST(
     let areaId: string | null = null;
     let companionPropertyId: string | null = null;
     let companionFacts = "";
+    let variantImages: Record<string, string> = {};
     const requestedCategory = clean(body.socialCategory, 40);
     const contentKind = clean(body.contentKind, 40);
 
@@ -1136,6 +1160,7 @@ export async function POST(
         ? definition.website.replace(/\/$/, "") + "/eiendommer/" + encodeURIComponent(property.ref)
         : definition.website;
       sourceImageUrl = property.primary_image || sourceImageUrl;
+      variantImages = variantPropertyImages(property);
       sourceText = facts.join("\n");
       propertyId = property.id;
       propertyLookup = property.id;
@@ -1339,6 +1364,7 @@ export async function POST(
         areaId,
         companionPropertyId,
         socialCategory,
+        variantImages,
       },
       socialCategory,
       variants,
