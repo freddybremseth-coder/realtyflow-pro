@@ -14,7 +14,7 @@ export type WorkspaceSocialPropertySeed = {
 
 type SourceType = "property" | "article" | "area" | "topic";
 type Channel = "facebook" | "instagram";
-type VisualFormat = "single_image" | "property_card" | "collage_3";
+type VisualFormat = "single_image" | "property_card" | "collage_3" | "carousel";
 type Variant = {
   id: "editorial_premium" | "lifestyle_story" | "advisor_insight";
   label: string;
@@ -38,6 +38,7 @@ type GeneratedSource = {
   companionPropertyId?: string | null;
   socialCategory?: SocialCategory;
   variantImages?: Record<string, string>;
+  propertyImageUrls?: string[];
   propertyImageCount?: number;
 };
 
@@ -398,7 +399,7 @@ export function WorkspaceSocialStudio({
         item.id,
         body.source?.type === "property" && item.id === "advisor_insight" &&
           Number(body.source?.propertyImageCount || 0) >= 3
-          ? "collage_3"
+          ? "carousel"
           : body.source?.type === "property" ? "property_card" : "single_image",
       ])) as Record<string, VisualFormat>);
       setGenerationFeedback({
@@ -465,7 +466,20 @@ export function WorkspaceSocialStudio({
     const visualFormat = visualFormats[variant.id] || "property_card";
     const selectedSourceImage = source.variantImages?.[variant.id] || source.imageUrl || "";
     if (visualFormat === "single_image") {
-      return { imageUrl: selectedSourceImage, fallback: false, visualFormat };
+      return { imageUrl: selectedSourceImage, imageUrls: [] as string[], fallback: false, visualFormat };
+    }
+    if (visualFormat === "carousel") {
+      const images = Array.from(new Set(source.propertyImageUrls || [])).filter(Boolean).slice(0, 10);
+      if (images.length < 3) {
+        return { imageUrl: selectedSourceImage, imageUrls: [] as string[], fallback: true, warning: "PROPERTY_CAROUSEL_IMAGES_REQUIRED", visualFormat: "single_image" as VisualFormat };
+      }
+      return {
+        imageUrl: images[0],
+        imageUrls: images,
+        fallback: false,
+        warning: "",
+        visualFormat,
+      };
     }
 
     const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
@@ -487,6 +501,7 @@ export function WorkspaceSocialStudio({
     }
     return {
       imageUrl: String(body.imageUrl),
+      imageUrls: [] as string[],
       fallback: body.fallback === true,
       warning: typeof body.warning === "string" ? body.warning : "",
       visualFormat: body.fallback === true ? "single_image" as VisualFormat : visualFormat,
@@ -542,6 +557,9 @@ export function WorkspaceSocialStudio({
           ])).slice(0, 20),
           platforms: [channel],
           imageUrl: approvedImageUrl || "",
+          imageUrls: channel === "instagram" && renderedImage.visualFormat === "carousel"
+            ? renderedImage.imageUrls
+            : [],
           sourcePropertyId: source?.type === "property"
             ? (source.propertyId || "")
             : (source?.companionPropertyId || ""),
@@ -851,6 +869,7 @@ export function WorkspaceSocialStudio({
               <option value="single_image">Enkeltbilde</option>
               <option value="property_card">Profesjonelt eiendomskort</option>
               <option value="collage_3" disabled={(source?.propertyImageCount || 0) < 3}>3-bilders kollasje{(source?.propertyImageCount || 0) < 3 ? " · trenger 3 bilder" : ""}</option>
+              <option value="carousel" disabled={(source?.propertyImageCount || 0) < 3}>Instagram-karusell · 3+ separate bilder{(source?.propertyImageCount || 0) < 3 ? " · trenger 3 bilder" : ""}</option>
             </select>
           </label>
 
