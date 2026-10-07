@@ -102,6 +102,60 @@ test("Decision report accepts a saved presentation template without changing cal
   assert.equal(report.calculator?.annual_cost_before_value_eur, 37560);
 });
 
+test("Leadership report adapts strategic benefits to the selected use case", () => {
+  const report = buildCorporateDecisionNoteReport({
+    companyName: "Eksempel AS",
+    contactName: "Kari",
+    model: "Ansattbolig / bedriftshytte",
+    needs: "Boligen skal brukes som ansattgode, til ledersamlinger og enkelte kundesamlinger.",
+    calculatorContext: {
+      propertyPrice: 650000,
+      users: 80,
+      employeeWeeks: 18,
+      annualOperating: 16000,
+      acquisitionPct: 12,
+      capitalPct: 4,
+      valuePct: 3,
+      holdingYears: 10,
+      stays: [
+        { name: "Ledersamling", eventsPerYear: 2, people: 8, nights: 4, pricePerPersonNight: 180 },
+      ],
+    },
+  });
+
+  assert.ok(report.strategic_benefits.some((item) => /ansattgode|arbeidsgiverprofil/i.test(item)));
+  assert.ok(report.strategic_benefits.some((item) => /leder|styre|team/i.test(item)));
+  assert.ok(report.strategic_benefits.some((item) => /kunde|partner/i.test(item)));
+  assert.ok(report.strategic_benefits.length <= 5);
+});
+
+test("Leadership report carries editable market history and decision framing", () => {
+  const template = normalizeCorporateDecisionNoteTemplate({
+    market_title: "Testmarked",
+    market_history: [
+      { label: "2021", price_per_m2_eur: 1000 },
+      { label: "2026", price_per_m2_eur: 1500 },
+    ],
+    market_summary: "Testoppsummering.",
+    leadership_decision_title: "Testbeslutning",
+    leadership_decision_text: "Test beslutningstekst.",
+  });
+
+  const report = buildCorporateDecisionNoteReport({
+    companyName: "Eksempel AS",
+    contactName: "Kari",
+    template,
+  });
+
+  assert.equal(report.market_title, "Testmarked");
+  assert.deepEqual(report.market_history, [
+    { label: "2021", price_per_m2_eur: 1000 },
+    { label: "2026", price_per_m2_eur: 1500 },
+  ]);
+  assert.equal(report.leadership_decision_title, "Testbeslutning");
+  assert.match(report.leadership_decision_text, /Test beslutningstekst/);
+});
+
 test("Decision-note follow-up stops on reply, booking, suppression or sales progression", () => {
   const reportSentAt = "2026-10-07T09:00:00.000Z";
 
