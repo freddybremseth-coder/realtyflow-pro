@@ -30,6 +30,8 @@ const baseColumns = [
   "tags",
   "ai_generated",
   "ai_image_url",
+  "media_urls",
+  "content_features",
   "status",
   "created_at",
   "scheduled_at",
@@ -45,6 +47,9 @@ function compactListRow(row: Record<string, unknown>) {
     ...row,
     ai_image_url: null,
     thumbnail_url: null,
+    media_count: Array.isArray(row.media_urls) ? row.media_urls.length : 0,
+    media_urls: [],
+    content_features: row.content_features && typeof row.content_features === "object" ? row.content_features : {},
     image_compacted: true,
   };
 }
@@ -142,6 +147,9 @@ export async function GET(request: NextRequest) {
           ...row,
           thumbnail_url: null,
           ai_image_url: null,
+          media_count: Array.isArray(row.media_urls) ? row.media_urls.length : 0,
+          media_urls: [],
+          content_features: row.content_features && typeof row.content_features === "object" ? row.content_features : {},
           scheduled_platforms: [],
         })) ?? null;
         error = minimal.error as { message: string } | null;
