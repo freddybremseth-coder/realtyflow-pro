@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 const noStore = { "Cache-Control": "private, no-store" };
 const PAGE_SIZE = 50;
-const SAFE_CONTACT_COLUMNS = "id,name,email,phone,brand_id,brand,pipeline_status,source,updated_at";
+const SAFE_CONTACT_COLUMNS = "id,name,email,phone,brand_id,brand,pipeline_status,source,created_at,updated_at";
 const CONTACT_UUID = /^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 
 function safeContactRow(row: unknown, brandKey: string) {
@@ -21,6 +21,7 @@ function safeContactRow(row: unknown, brandKey: string) {
     brand_id: brandKey, brand: brandKey,
     pipeline_status: typeof item.pipeline_status === "string" ? item.pipeline_status : null,
     source: typeof item.source === "string" ? item.source : null,
+    created_at: typeof item.created_at === "string" ? item.created_at : null,
     updated_at: typeof item.updated_at === "string" ? item.updated_at : null,
   };
 }
@@ -37,7 +38,16 @@ export async function GET(
   const { searchParams } = new URL(request.url);
   const page = Number(searchParams.get("page") || "1");
   const raw = searchParams.get("q") || "";
-  if (!Number.isSafeInteger(page) || page < 1 || page > 1000 || raw.length > 80) {
+  const status = String(searchParams.get("status") || "").trim().toUpperCase();
+  const sourceRaw = String(searchParams.get("source") || "").trim();
+  const sort = String(searchParams.get("sort") || "updated_desc").trim();
+  const allowedStatuses = ["", "NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "WON", "ON_HOLD", "LOST"];
+  if (
+    !Number.isSafeInteger(page) || page < 1 || page > 1000 ||
+    raw.length > 80 || sourceRaw.length > 80 ||
+    !allowedStatuses.includes(status) ||
+    !["updated_desc", "updated_asc", "created_desc", "name_asc"].includes(sort)
+  ) {
     return NextResponse.json({ ok: false, error: { code: "INVALID_SEARCH" } }, {
       status: 400, headers: noStore,
     });
@@ -48,6 +58,7 @@ export async function GET(
   // Keep the dot in a normal email address while stripping syntax-like dots
   // from general text searches. Parentheses and commas are always removed.
   const safeTerm = term.includes("@") ? term : term.replace(/[.,()]/g, " ").trim();
+  const safeSource = sourceRaw.replace(/[^\p{L}\p{N}\s._-]/gu, " ").replace(/\s+/g, " ").trim();
   if (access.value.verifiedUserId) {
     const { data, error } = await access.value.supabase.rpc("workspace_brand_contacts", {
       p_brand_key: brandKey,
@@ -55,6 +66,9 @@ export async function GET(
       p_email: access.value.verifiedEmail,
       p_offset: (page - 1) * PAGE_SIZE,
       p_search: safeTerm,
+      p_status: status,
+      p_source: safeSource,
+      p_sort: sort,
     });
     if (error || !data || !Array.isArray(data.contacts) || typeof data.hasMore !== "boolean") {
       return NextResponse.json({ ok: false, error: { code: "CRM_UNAVAILABLE" } }, {
@@ -66,6 +80,7 @@ export async function GET(
     return NextResponse.json({
       ok: true, brand: brandKey, contacts: visible,
       page, pageSize: PAGE_SIZE, hasMore: data.hasMore,
+      summary: data.summary && typeof data.summary === "object" ? data.summary : null,
     }, { headers: noStore });
   }
 
@@ -75,8 +90,13 @@ export async function GET(
   if (safeTerm) {
     query = query.or(`name.ilike.%${safeTerm}%,email.ilike.%${safeTerm}%,phone.ilike.%${safeTerm}%`);
   }
-  const { data, error } = await query.order("updated_at", { ascending: false })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  if (status) query = query.eq("pipeline_status", status);
+  if (safeSource) query = query.ilike("source", `%${safeSource}%`);
+  if (sort === "name_asc") query = query.order("name", { ascending: true });
+  else if (sort === "created_desc") query = query.order("created_at", { ascending: false });
+  else if (sort === "updated_asc") query = query.order("updated_at", { ascending: true });
+  else query = query.order("updated_at", { ascending: false });
+  const { data, error } = await query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   if (error) return NextResponse.json({ ok: false, error: { code: "CRM_UNAVAILABLE" } }, {
     status: 503, headers: noStore,
   });
@@ -89,6 +109,7 @@ export async function GET(
   return NextResponse.json({
     ok: true, brand: brandKey, contacts: visible,
     page, pageSize: PAGE_SIZE, hasMore: rows.length > PAGE_SIZE,
+    summary: null,
   }, { headers: noStore });
 }
 
