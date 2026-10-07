@@ -4,6 +4,7 @@ import {
   buildCorporateDecisionCalculator,
   buildCorporateDecisionNoteReport,
   corporateDecisionStopReason,
+  normalizeCorporateDecisionNoteTemplate,
 } from "@/lib/corporate-decision-note";
 
 test("Corporate decision calculator recalculates trusted server totals", () => {
@@ -66,6 +67,39 @@ test("Decision report keeps scenario and hotel alternative framed as assumptions
   assert.match(report.disclaimer, /ikke investerings-/i);
   assert.equal(report.company_name, "Eksempel AS");
   assert.equal(report.calculator?.value_pct, 5);
+});
+
+test("Decision report accepts a saved presentation template without changing calculator math", () => {
+  const template = normalizeCorporateDecisionNoteTemplate({
+    report_title: "Styregrunnlag",
+    report_subtitle: "Firmabolig på Costa Blanca",
+    board_questions: ["Hvem beslutter investeringen?"],
+    recommended_next_steps: ["Avklar styremøte og beslutningsdato."],
+    next_practical_step: "Book en 20-minutters avklaring.",
+    disclaimer: "Testforbehold.",
+  });
+  const report = buildCorporateDecisionNoteReport({
+    companyName: "Eksempel AS",
+    contactName: "Kari",
+    calculatorContext: {
+      propertyPrice: 450000,
+      users: 50,
+      employeeWeeks: 30,
+      annualOperating: 12000,
+      acquisitionPct: 12,
+      capitalPct: 4,
+      valuePct: 3,
+      holdingYears: 10,
+      stays: [],
+    },
+    template,
+  });
+
+  assert.equal(report.report_title, "Styregrunnlag");
+  assert.equal(report.report_subtitle, "Firmabolig på Costa Blanca");
+  assert.deepEqual(report.board_questions, ["Hvem beslutter investeringen?"]);
+  assert.equal(report.next_practical_step, "Book en 20-minutters avklaring.");
+  assert.equal(report.calculator?.annual_cost_before_value_eur, 37560);
 });
 
 test("Decision-note follow-up stops on reply, booking, suppression or sales progression", () => {

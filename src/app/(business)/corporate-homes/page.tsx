@@ -9,6 +9,7 @@ import {
   CalendarClock,
   CircleDollarSign,
   ExternalLink,
+  FileText,
   Handshake,
   Loader2,
   RefreshCw,
@@ -498,6 +499,12 @@ export default function CorporateHomesGrowthPage() {
               className="inline-flex items-center gap-2 rounded-xl bg-teal-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700"
             >
               Prospektmotor <Target size={15} />
+            </Link>
+            <Link
+              href="/corporate-homes/decision-note"
+              className="inline-flex items-center gap-2 rounded-xl border border-teal-700 px-4 py-2.5 text-sm font-bold text-teal-900 hover:bg-teal-50"
+            >
+              Beslutningsgrunnlag <FileText size={15} />
             </Link>
             <a
               href={CORPORATE_HOMES_LANDING_URL}

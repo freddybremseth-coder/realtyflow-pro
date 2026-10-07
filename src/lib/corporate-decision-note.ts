@@ -2,6 +2,43 @@ type JsonRecord = Record<string, unknown>;
 
 export const CORPORATE_DECISION_NOTE_SEQUENCE_ID = "zeneco-corporate-decision-note-v1";
 export const CORPORATE_DECISION_NOTE_BOOKING_URL = "https://appointment.chatgenius.pro/zeneco";
+export const CORPORATE_DECISION_NOTE_TEMPLATE_KEY = "_zeneco_corporate_decision_note_template_v1";
+
+export type CorporateDecisionNoteTemplate = {
+  version: 1;
+  report_title: string;
+  report_subtitle: string;
+  board_questions: string[];
+  recommended_next_steps: string[];
+  next_practical_step: string;
+  disclaimer: string;
+  updated_at?: string | null;
+};
+
+export const DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE: CorporateDecisionNoteTemplate = {
+  version: 1,
+  report_title: "Beslutningsgrunnlag",
+  report_subtitle: "Firmabolig / bedriftshytte i Spania",
+  board_questions: [
+    "Hva er hovedformålet: ansattgode, medlemsfordel, ledersamlinger, retreat eller en kombinasjon?",
+    "Hvem kan bruke boligen, hvor mange uker skal fordeles og hvilke bookingregler skal gjelde?",
+    "Hva er investeringsrammen, og hvordan skal kjøp, finansiering, drift og løpende kostnader håndteres?",
+    "Hvem eier beslutningen internt, og hvem må godkjenne økonomi, skatt, juridisk struktur og regnskapsføring?",
+    "Hvordan skal lokal drift, nøkkelhold, renhold, vedlikehold, forsikring og årlig kontroll organiseres?",
+  ],
+  recommended_next_steps: [
+    "Kort behovsavklaring med Zen Eco Homes for å kontrollere forutsetningene og justere tallene.",
+    "Fastsett krav til område, boligtype, kapasitet, standard, bruk og maksimal totalramme.",
+    "Lag en kortliste med 3–5 boliger som faktisk passer den vedtatte modellen.",
+    "Kvalitetssikre skatt, juridisk struktur og regnskapsmessig behandling med kvalifiserte norske/spanske rådgivere.",
+    "Oppdater beslutningsgrunnlaget med boligspesifikke kostnader før styre-/lederbeslutning og eventuell visning.",
+  ],
+  next_practical_step:
+    "En kort behovsavklaring gjør at vi kan kontrollere tallene, fastsette boligkriterier og lage en kortliste med relevante alternativer i stedet for en generell boligliste.",
+  disclaimer:
+    "Dette er et planleggings- og beslutningsgrunnlag, ikke investerings-, skatte-, juridisk eller regnskapsråd. Kjøpskostnader, drift, kapitalkostnad, hotellalternativ og verdiutvikling bygger på valgte forutsetninger og må kvalitetssikres før en beslutning.",
+  updated_at: null,
+};
 
 export type CorporateDecisionStay = {
   name: string;
@@ -49,9 +86,12 @@ export type CorporateDecisionNoteReport = {
   timeline: string | null;
   needs: string | null;
   calculator: CorporateDecisionCalculator | null;
+  report_title: string;
+  report_subtitle: string;
   executive_summary: string;
   board_questions: string[];
   recommended_next_steps: string[];
+  next_practical_step: string;
   disclaimer: string;
 };
 
@@ -85,6 +125,41 @@ function record(value: unknown): JsonRecord {
 
 function text(value: unknown, max = 500) {
   return String(value ?? "").trim().slice(0, max);
+}
+
+
+function textList(value: unknown, fallback: string[], maxItems = 10, maxLength = 500) {
+  if (!Array.isArray(value)) return [...fallback];
+  const cleaned = value
+    .map((item) => text(item, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+  return cleaned.length ? cleaned : [...fallback];
+}
+
+export function normalizeCorporateDecisionNoteTemplate(value: unknown): CorporateDecisionNoteTemplate {
+  const input = record(value);
+  return {
+    version: 1,
+    report_title: text(input.report_title, 120) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.report_title,
+    report_subtitle: text(input.report_subtitle, 220) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.report_subtitle,
+    board_questions: textList(
+      input.board_questions,
+      DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.board_questions,
+      10,
+      600,
+    ),
+    recommended_next_steps: textList(
+      input.recommended_next_steps,
+      DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.recommended_next_steps,
+      10,
+      600,
+    ),
+    next_practical_step:
+      text(input.next_practical_step, 1200) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.next_practical_step,
+    disclaimer: text(input.disclaimer, 2000) || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE.disclaimer,
+    updated_at: text(input.updated_at, 80) || null,
+  };
 }
 
 function numberInRange(value: unknown, min: number, max: number, fallback: number) {
@@ -190,11 +265,13 @@ export function buildCorporateDecisionNoteReport(input: {
   timeline?: string | null;
   needs?: string | null;
   calculatorContext?: unknown;
+  template?: CorporateDecisionNoteTemplate | null;
   now?: Date;
 }): CorporateDecisionNoteReport {
   const companyName = text(input.companyName, 240) || "Virksomheten";
   const contactName = text(input.contactName, 160);
   const calculator = buildCorporateDecisionCalculator(input.calculatorContext);
+  const template = normalizeCorporateDecisionNoteTemplate(input.template || DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE);
 
   const executiveSummary = calculator
     ? `Med de valgte forutsetningene er kjøpesummen ${money(calculator.property_price_eur)} og beregnet årlig kostnad før verdiendring ${money(calculator.annual_cost_before_value_eur)}. De konkrete bedriftsoppholdene som er lagt inn tilsvarer ${money(calculator.hotel_alternative_annual_eur)} i alternativ hotellovernatting per år. Hotellbeløpet er ikke behandlet som en automatisk besparelse, og verdiutviklingen er et scenario – ikke en prognose.`
@@ -215,23 +292,13 @@ export function buildCorporateDecisionNoteReport(input: {
     timeline: text(input.timeline, 120) || null,
     needs,
     calculator,
+    report_title: template.report_title,
+    report_subtitle: template.report_subtitle,
     executive_summary: executiveSummary,
-    board_questions: [
-      "Hva er hovedformålet: ansattgode, medlemsfordel, ledersamlinger, retreat eller en kombinasjon?",
-      "Hvem kan bruke boligen, hvor mange uker skal fordeles og hvilke bookingregler skal gjelde?",
-      "Hva er investeringsrammen, og hvordan skal kjøp, finansiering, drift og løpende kostnader håndteres?",
-      "Hvem eier beslutningen internt, og hvem må godkjenne økonomi, skatt, juridisk struktur og regnskapsføring?",
-      "Hvordan skal lokal drift, nøkkelhold, renhold, vedlikehold, forsikring og årlig kontroll organiseres?",
-    ],
-    recommended_next_steps: [
-      "Kort behovsavklaring med Zen Eco Homes for å kontrollere forutsetningene og justere tallene.",
-      "Fastsett krav til område, boligtype, kapasitet, standard, bruk og maksimal totalramme.",
-      "Lag en kortliste med 3–5 boliger som faktisk passer den vedtatte modellen.",
-      "Kvalitetssikre skatt, juridisk struktur og regnskapsmessig behandling med kvalifiserte norske/spanske rådgivere.",
-      "Oppdater beslutningsgrunnlaget med boligspesifikke kostnader før styre-/lederbeslutning og eventuell visning.",
-    ],
-    disclaimer:
-      "Dette er et planleggings- og beslutningsgrunnlag, ikke investerings-, skatte-, juridisk eller regnskapsråd. Kjøpskostnader, drift, kapitalkostnad, hotellalternativ og verdiutvikling bygger på valgte forutsetninger og må kvalitetssikres før en beslutning.",
+    board_questions: template.board_questions,
+    recommended_next_steps: template.recommended_next_steps,
+    next_practical_step: template.next_practical_step,
+    disclaimer: template.disclaimer,
   };
 }
 

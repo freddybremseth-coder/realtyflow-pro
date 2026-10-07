@@ -16,7 +16,10 @@ import {
 } from "@/lib/corporate-prospects";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
 import {
+  CORPORATE_DECISION_NOTE_TEMPLATE_KEY,
+  DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE,
   buildCorporateDecisionNoteReport,
+  normalizeCorporateDecisionNoteTemplate,
   type CorporateDecisionNoteState,
 } from "@/lib/corporate-decision-note";
 import { sendCorporateDecisionNoteReport } from "@/services/corporate/decision-note-delivery";
@@ -384,6 +387,23 @@ export async function POST(request: NextRequest) {
   ].filter(Boolean).join("\n");
 
   const now = new Date().toISOString();
+  let corporateDecisionTemplate = DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE;
+  if (isCorporateDecisionNote) {
+    const { data: templateRow, error: templateError } = await supabase
+      .from("brand_settings")
+      .select("settings,updated_at")
+      .eq("brand_id", CORPORATE_DECISION_NOTE_TEMPLATE_KEY)
+      .maybeSingle();
+    if (templateError) {
+      console.warn("[public-leads] corporate decision-note template lookup failed", templateError.message);
+    } else {
+      corporateDecisionTemplate = normalizeCorporateDecisionNoteTemplate({
+        ...(templateRow?.settings && typeof templateRow.settings === "object" ? templateRow.settings : {}),
+        updated_at: templateRow?.updated_at || null,
+      });
+    }
+  }
+
   let corporateDecisionNoteState: CorporateDecisionNoteState | null =
     isCorporateDecisionNote && organizationName
       ? {
@@ -400,6 +420,7 @@ export async function POST(request: NextRequest) {
             timeline,
             needs: corporateNeeds,
             calculatorContext,
+            template: corporateDecisionTemplate,
             now: new Date(now),
           }),
           delivery: { status: "pending", sent_at: null, message_id: null, last_attempt_at: null, error: null },

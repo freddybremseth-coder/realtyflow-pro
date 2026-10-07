@@ -219,9 +219,9 @@ function PdfDocument({ report }: { report: CorporateDecisionNoteReport }) {
     >
       <Page size="A4" style={styles.page}>
         <Text style={styles.eyebrow}>Zen Eco Homes · Corporate Homes</Text>
-        <Text style={styles.title}>Beslutningsgrunnlag</Text>
+        <Text style={styles.title}>{report.report_title || "Beslutningsgrunnlag"}</Text>
         <Text style={styles.subtitle}>
-          {report.company_name} · Firmabolig / bedriftshytte i Spania · {date(report.generated_at)}
+          {report.company_name} · {report.report_subtitle || "Firmabolig / bedriftshytte i Spania"} · {date(report.generated_at)}
         </Text>
 
         <View style={styles.summaryBox}>
@@ -399,7 +399,7 @@ function PdfDocument({ report }: { report: CorporateDecisionNoteReport }) {
           <View style={styles.noteBox}>
             <Text style={styles.noteTitle}>Neste praktiske steg</Text>
             <Text>
-              En kort behovsavklaring gjør at vi kan kontrollere tallene, fastsette boligkriterier og lage en kortliste med relevante alternativer i stedet for en generell boligliste.
+              {report.next_practical_step || "En kort behovsavklaring gjør at vi kan kontrollere tallene, fastsette boligkriterier og lage en kortliste med relevante alternativer i stedet for en generell boligliste."}
             </Text>
           </View>
         </View>
