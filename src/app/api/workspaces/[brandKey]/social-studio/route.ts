@@ -1235,6 +1235,7 @@ export async function POST(
     let companionPropertyId: string | null = null;
     let companionFacts = "";
     let variantImages: Record<string, string> = {};
+    let propertyImageCount = 0;
     const requestedCategory = clean(body.socialCategory, 40);
     const contentKind = clean(body.contentKind, 40);
 
@@ -1250,6 +1251,7 @@ export async function POST(
         : definition.website;
       sourceImageUrl = property.primary_image || sourceImageUrl;
       variantImages = variantPropertyImages(property);
+      propertyImageCount = propertyMediaUrls(property).length;
       sourceText = facts.join("\n");
       propertyId = property.id;
       propertyLookup = property.id;
@@ -1454,6 +1456,7 @@ export async function POST(
         companionPropertyId,
         socialCategory,
         variantImages,
+        propertyImageCount,
       },
       socialCategory,
       variants,
