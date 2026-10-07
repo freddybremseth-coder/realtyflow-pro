@@ -513,6 +513,12 @@ export function WorkspaceSocialStudio({
     try {
       const renderedImage = await renderPropertyImage(variant, channel);
       const approvedImageUrl = renderedImage.imageUrl;
+      const orderedMediaUrls = source?.type === "property"
+        ? Array.from(new Set([
+            approvedImageUrl,
+            ...Object.values(source.variantImages || {}),
+          ].filter((url): url is string => typeof url === "string" && Boolean(url)))).slice(0, 10)
+        : approvedImageUrl ? [approvedImageUrl] : [];
       if (channel === "instagram" && !approvedImageUrl) {
         throw new Error("Instagram trenger et godkjent bilde. Legg inn bilde fra brand-media eller bruk en eiendom med bilde.");
       }
@@ -540,6 +546,7 @@ export function WorkspaceSocialStudio({
           ])).slice(0, 20),
           platforms: [channel],
           imageUrl: approvedImageUrl || "",
+          mediaUrls: orderedMediaUrls,
           sourcePropertyId: source?.type === "property"
             ? (source.propertyId || "")
             : (source?.companionPropertyId || ""),
@@ -570,6 +577,8 @@ export function WorkspaceSocialStudio({
         [feedbackKey]: {
           kind: "success",
           text: (channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub." +
+            (Number(body.mediaCount || 0) > 1 ? " " + Number(body.mediaCount) + " bilder er koblet til utkastet." : "") +
+            (body.mediaWarning ? " Bildene er lagret, men media-linkingen trenger kontroll." : "") +
             (renderedImage.fallback ? " Originalbildet fra eiendommen ble brukt." : ""),
         },
       }));
