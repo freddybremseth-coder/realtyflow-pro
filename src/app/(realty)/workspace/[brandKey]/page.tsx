@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
+import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
 import { useParams } from "next/navigation";
 import { WorkspacePropertyCatalogue, type WorkspacePropertyCard } from "@/components/workspaces/property-catalogue";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
@@ -246,6 +246,15 @@ export default function FocusedWorkspacePage() {
                 <h3 className="mt-3 text-lg font-semibold">Følg opp kunder og leads</h3>
                 <p className="mt-1 text-sm text-slate-400">Åpne én kunde og jobb med kontakt, oppgaver, boligforslag og neste steg samlet.</p>
               </button>}
+              {showMarketing && <button onClick={() => {
+                setRequestedArea("social-studio");
+                setTab("growth");
+                window.setTimeout(() => document.getElementById("workspace-some-studio")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+              }} className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5 text-left hover:border-cyan-500">
+                <Megaphone size={25} className="text-cyan-300"/>
+                <h3 className="mt-3 text-lg font-semibold">SoMe Studio</h3>
+                <p className="mt-1 text-sm text-slate-400">Lag tre forskjellige Facebook/Instagram-konsepter fra bolig, guide/magasin eller eget tema.</p>
+              </button>}
               {showGrowth && <button onClick={() => setTab("growth")} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left hover:border-cyan-500">
                 <TrendingUp size={25} className="text-cyan-400"/>
                 <h3 className="mt-3 text-lg font-semibold">{brandKey === "zeneco" && permissions.includes("corporate.read") ? "Jobb med Corporate og vekst" : "Skap mer synlighet og leads"}</h3>
@@ -410,6 +419,20 @@ export default function FocusedWorkspacePage() {
           />}
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
+            {showMarketing && <details id="workspace-some-studio" open className="scroll-mt-24 rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+              <summary className="cursor-pointer list-none p-5">
+                <strong className="text-lg text-cyan-100">SoMe Studio · Content Hub</strong>
+                <p className="mt-1 text-sm text-slate-400">Lag tre varierte Facebook/Instagram-konsepter fra eiendom, guide/magasin eller eget tema — og lagre valgte utkast i Content Hub.</p>
+              </summary>
+              <div className="border-t border-slate-800 p-4 sm:p-5">
+                <WorkspaceMarketingPanel
+                  brandKey={brandKey}
+                  canDraft={permissions.includes("marketing.draft")}
+                  initialProperty={socialPropertySeed}
+                  onInitialPropertyConsumed={() => setSocialPropertySeed(null)}
+                />
+              </div>
+            </details>}
             {showGrowthTools && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} initialArea={requestedArea} />}
             {showNexus && <details open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
@@ -440,20 +463,7 @@ export default function FocusedWorkspacePage() {
                 <WorkspaceYoutubePanel brandKey={brandKey} canPublish={permissions.includes("youtube.publish")} />
               </div>
             </details>}
-            {showMarketing && <details open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
-              <summary className="cursor-pointer list-none p-5">
-                <strong className="text-lg text-cyan-100">SoMe Studio · Content Hub</strong>
-                <p className="mt-1 text-sm text-slate-400">Lag tre varierte Facebook/Instagram-konsepter fra eiendom, guide/magasin eller eget tema — og lagre valgte utkast i Content Hub.</p>
-              </summary>
-              <div className="border-t border-slate-800 p-5">
-                <WorkspaceMarketingPanel
-                  brandKey={brandKey}
-                  canDraft={permissions.includes("marketing.draft")}
-                  initialProperty={socialPropertySeed}
-                  onInitialPropertyConsumed={() => setSocialPropertySeed(null)}
-                />
-              </div>
-            </details>}
+            
             {permissions.includes("marketing.publish") && <details className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">Publiser til sosiale medier</strong>

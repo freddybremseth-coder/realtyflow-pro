@@ -456,6 +456,15 @@ export default function ContentHubPage() {
   const [editingDraft, setEditingDraft] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [focusedDraftId, setFocusedDraftId] = useState("");
+
+  useEffect(() => {
+    const requestedDraft = new URLSearchParams(window.location.search).get("draft") || "";
+    if (!requestedDraft) return;
+    setFocusedDraftId(requestedDraft);
+    setActiveContentTab("utkast");
+    setDraftStatusFilter("all");
+  }, []);
 
   // Publish modal state
   const [publishDraft, setPublishDraft] = useState<DraftItem | null>(null);
@@ -1905,6 +1914,16 @@ export default function ContentHubPage() {
     });
   }, [draftStatusFilter, drafts]);
 
+  useEffect(() => {
+    if (!focusedDraftId || !drafts.some((draft) => draft.id === focusedDraftId)) return;
+    setActiveContentTab("utkast");
+    setDraftStatusFilter("all");
+    const timer = window.setTimeout(() => {
+      document.getElementById("content-draft-" + focusedDraftId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusedDraftId, drafts]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -2140,7 +2159,10 @@ export default function ContentHubPage() {
                   const brand = BRANDS.find((b) => b.id === draft.brand_id);
                   const isEditing = editingDraft === draft.id;
                   return (
-                    <Card key={draft.id} className="border-zinc-800">
+                    <Card id={"content-draft-" + draft.id} key={draft.id}
+                      className={focusedDraftId === draft.id
+                        ? "border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg shadow-cyan-950/30"
+                        : "border-zinc-800"}>
                       <CardContent className="p-4">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                           <div className="flex-1 min-w-0">

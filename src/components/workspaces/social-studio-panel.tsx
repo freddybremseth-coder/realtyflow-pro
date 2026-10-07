@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpenText, Building2, Facebook, Instagram, Sparkles, WandSparkles } from "lucide-react";
+import { BookOpenText, Building2, ExternalLink, Facebook, Instagram, Sparkles, WandSparkles } from "lucide-react";
 
 export type WorkspaceSocialPropertySeed = {
   id: string;
@@ -143,6 +143,7 @@ export function WorkspaceSocialStudio({
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [savedPublicationId, setSavedPublicationId] = useState("");
 
   useEffect(() => {
     if (!initialProperty?.id) return;
@@ -164,6 +165,7 @@ export function WorkspaceSocialStudio({
     setPreviews({});
     setSource(null);
     setError("");
+    setSavedPublicationId("");
     setNotice("Boligen er hentet fra Eiendommer. Lag tre forslag når du er klar.");
     onInitialPropertyConsumed?.();
   }, [initialProperty?.id]);
@@ -246,6 +248,7 @@ export function WorkspaceSocialStudio({
     setBusy(true);
     setError("");
     setNotice("");
+    setSavedPublicationId("");
     setVariants([]);
     setPreviews({});
     try {
@@ -285,6 +288,11 @@ export function WorkspaceSocialStudio({
       setNotice(body.source?.companionPropertyId
         ? "Tre konsepter er klare, inkludert koblingen mellom valgt innhold og boligen."
         : "Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.");
+      if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+        window.setTimeout(() => {
+          document.getElementById("social-studio-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke lage forslag.");
     } finally {
@@ -371,6 +379,8 @@ export function WorkspaceSocialStudio({
             : "Utkastet kunne ikke lagres i Content Hub.",
         );
       }
+      const publicationId = typeof body?.publication?.id === "string" ? body.publication.id : "";
+      setSavedPublicationId(publicationId);
       setNotice((channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub. Ingenting er publisert.");
       await onDraftSaved?.();
     } catch (cause) {
@@ -393,7 +403,13 @@ export function WorkspaceSocialStudio({
     </div>
 
     {error && <p role="alert" className="mt-4 rounded-xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">{error}</p>}
-    {notice && <p role="status" className="mt-4 rounded-xl border border-emerald-800 bg-emerald-950/25 p-3 text-sm text-emerald-200">{notice}</p>}
+    {notice && <div role="status" className="mt-4 rounded-xl border border-emerald-800 bg-emerald-950/25 p-3 text-sm text-emerald-200">
+      <p>{notice}</p>
+      {savedPublicationId && <a href={"/content-hub?draft=" + encodeURIComponent(savedPublicationId)}
+        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-700 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-950/40">
+        Åpne i Content Hub <ExternalLink size={14}/>
+      </a>}
+    </div>}
 
     <div className="mt-5 grid gap-3 md:grid-cols-3">
       {sourceOptions.map(({ id, label, hint, icon: Icon }) => <button type="button" key={id}
@@ -553,8 +569,13 @@ export function WorkspaceSocialStudio({
       <Sparkles size={16}/>{busy ? "Lager tre konsepter…" : "Lag 3 forskjellige forslag"}
     </button>
 
-    {variants.length === 3 && <div className="mt-6 grid gap-4 xl:grid-cols-3">
-      {variants.map((variant) => <article key={variant.id} className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4">
+    {variants.length === 3 && <div id="social-studio-results" className="mt-6 scroll-mt-24">
+      <div className="mb-3 flex items-center justify-between gap-3 xl:hidden">
+        <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">3 forslag klare</p>
+        <p className="text-xs text-slate-500">Sveip sidelengs →</p>
+      </div>
+      <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 xl:grid xl:grid-cols-3 xl:overflow-visible xl:pb-0">
+      {variants.map((variant) => <article key={variant.id} className="min-w-[88%] snap-center rounded-2xl border border-slate-700 bg-slate-900/80 p-4 sm:min-w-[72%] xl:min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">{variant.label}</p>
@@ -611,6 +632,7 @@ export function WorkspaceSocialStudio({
           {variant.tags.map((tag) => <span key={tag} className="rounded-full border border-slate-700 px-2 py-1 text-[10px] text-slate-400">#{tag}</span>)}
         </div>}
       </article>)}
+      </div>
     </div>}
   </section>;
 }
