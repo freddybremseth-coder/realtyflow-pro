@@ -761,7 +761,13 @@ export function WorkspaceSocialStudio({
           Start med en eiendom, en guide/magasinartikkel eller et eget tema. RealtyFlow lager Editorial/Premium, Story/Lifestyle og Advisor/Insight med egne Facebook- og Instagram-versjoner.
         </p>
       </div>
-      <span className="rounded-full border border-cyan-800 px-3 py-1 text-xs text-cyan-200">{sourceType === "property" ? "7 eiendomsmaler" : "3 konsepter · kanaltilpasset"}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-300 hover:border-cyan-700 hover:text-cyan-200">
+          Se lagrede utkast <ExternalLink size={12}/>
+        </a>
+        <span className="rounded-full border border-cyan-800 px-3 py-1 text-xs text-cyan-200">{sourceType === "property" ? "7 eiendomsmaler" : "3 konsepter · kanaltilpasset"}</span>
+      </div>
     </div>
 
     <div className="mt-5 grid gap-2 sm:grid-cols-5">
