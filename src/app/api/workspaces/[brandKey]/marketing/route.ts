@@ -230,6 +230,9 @@ export async function POST(
     ? body.platforms.map(platform => String(platform).trim().toLowerCase()).filter(Boolean)
     : [];
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  const imageUrls = Array.isArray(body.imageUrls)
+    ? Array.from(new Set(body.imageUrls.map((value) => String(value).trim()).filter(Boolean))).slice(0, 10)
+    : [];
   const sourcePropertyId = typeof body.sourcePropertyId === "string" ? body.sourcePropertyId.trim() : "";
   const socialCategory = typeof body.socialCategory === "string" ? body.socialCategory.trim() : "";
   const conceptId = typeof body.conceptId === "string" ? body.conceptId.trim() : "";
@@ -243,6 +246,9 @@ export async function POST(
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
       imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
+      imageUrls.some((url) => url.length > 2000 || !/^https:\/\//i.test(url) || /\s/.test(url)) ||
+      (visualFormat === "carousel" && imageUrls.length < 3) ||
+      (visualFormat === "carousel" && !platforms.includes("instagram")) ||
       (sourcePropertyId && !UUID_RE.test(sourcePropertyId)) ||
       (socialCategory && !SOCIAL_CATEGORY_SET.has(socialCategory)) ||
       (conceptId && !SOCIAL_CONCEPT_SET.has(conceptId)) ||
@@ -253,18 +259,43 @@ export async function POST(
       platforms.some(platform => !ALLOWED_DRAFT_PLATFORMS.has(platform))) {
     return fail(400, "INVALID_DRAFT");
   }
-  if (platforms.includes("instagram") && !imageUrl) {
+  const orderedImages = imageUrls.length
+    ? imageUrls
+    : imageUrl ? [imageUrl] : [];
+  if (platforms.includes("instagram") && !orderedImages.length) {
     return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha et brand-godkjent bilde.");
   }
+
+  for (const candidate of orderedImages) {
+    if (!(await ownerImageApproved(access.value.supabase, params.brandKey, candidate, sourcePropertyId))) {
+      return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
+        "Ett eller flere bilder er ikke knyttet til den valgte eiendommen eller godkjent brand-media.");
+    }
+  }
+
+  const featurePatch = {
+    workspace_draft: true,
+    workspace_actor_email: access.value.verifiedEmail,
+    ...(socialCategory ? {
+      social_category: socialCategory,
+      is_property_presentation: socialCategory === "property",
+    } : {}),
+    ...(conceptId ? { concept_id: conceptId } : {}),
+    ...(visualFormat ? { visual_format: visualFormat } : {}),
+    ...(sourcePropertyId ? { source_property_id: sourcePropertyId } : {}),
+    ...(sourceContentId ? { source_content_id: sourceContentId } : {}),
+    ...(sourceAreaId ? { source_area_id: sourceAreaId } : {}),
+    ...(strategyPeriodId ? { strategy_period_id: strategyPeriodId } : {}),
+    ...(strategyRecommendationReason ? {
+      strategy_recommendation_reason: strategyRecommendationReason,
+    } : {}),
+    ...(orderedImages.length > 1 ? { carousel_count: orderedImages.length } : {}),
+  };
 
   let data: any = null;
   if (!access.value.verifiedUserId) {
     if (!(await ownerChannelsActive(access.value.supabase, params.brandKey, platforms))) {
       return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
-    }
-    if (imageUrl && !(await ownerImageApproved(access.value.supabase, params.brandKey, imageUrl, sourcePropertyId))) {
-      return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
-        "Bildeadressen er ikke knyttet til en synlig eiendom eller godkjent mediefil for denne merkevaren.");
     }
     const { data: publication, error: insertError } = await access.value.supabase
       .from("content_publications")
@@ -274,27 +305,14 @@ export async function POST(
         title: title || null,
         description,
         tags,
-        thumbnail_url: imageUrl || null,
+        thumbnail_url: orderedImages[0] || imageUrl || null,
+        media_urls: orderedImages,
         scheduled_platforms: platforms,
         status: "draft",
         ai_generated: false,
         content_features: {
-          workspace_draft: true,
+          ...featurePatch,
           owner_draft: true,
-          workspace_actor_email: access.value.verifiedEmail,
-          ...(socialCategory ? {
-            social_category: socialCategory,
-            is_property_presentation: socialCategory === "property",
-          } : {}),
-          ...(conceptId ? { concept_id: conceptId } : {}),
-          ...(visualFormat ? { visual_format: visualFormat } : {}),
-          ...(sourcePropertyId ? { source_property_id: sourcePropertyId } : {}),
-          ...(sourceContentId ? { source_content_id: sourceContentId } : {}),
-          ...(sourceAreaId ? { source_area_id: sourceAreaId } : {}),
-          ...(strategyPeriodId ? { strategy_period_id: strategyPeriodId } : {}),
-          ...(strategyRecommendationReason ? {
-            strategy_recommendation_reason: strategyRecommendationReason,
-          } : {}),
         },
       })
       .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
@@ -317,6 +335,28 @@ export async function POST(
     );
     if (result.error) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
     data = result.data;
+    const createdId = typeof data?.publication?.id === "string" ? data.publication.id : "";
+    if (data?.ok && createdId) {
+      const { data: existingRow } = await access.value.supabase
+        .from("content_publications")
+        .select("content_features")
+        .eq("id", createdId)
+        .eq("brand_id", params.brandKey)
+        .maybeSingle();
+      const existingFeatures = existingRow?.content_features && typeof existingRow.content_features === "object"
+        ? existingRow.content_features
+        : {};
+      const { error: enrichError } = await access.value.supabase
+        .from("content_publications")
+        .update({
+          media_urls: orderedImages,
+          thumbnail_url: orderedImages[0] || imageUrl || null,
+          content_features: { ...existingFeatures, ...featurePatch },
+        })
+        .eq("id", createdId)
+        .eq("brand_id", params.brandKey);
+      if (enrichError) return fail(503, "MARKETING_DRAFT_MEDIA_ATTACH_FAILED");
+    }
   }
   if (data?.ok === false && data?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND") {
     return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
