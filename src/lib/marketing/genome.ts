@@ -58,6 +58,10 @@ export const ContentGenomeSchema = z.object({
   propertyType: slug.optional(),
   priceBand: slug.optional(),
   creativeStyle: slug.optional(),
+  /** Social Studio / Autopilot dimensions used for mix, creative and learning. */
+  socialCategory: slug.optional(),
+  conceptId: slug.optional(),
+  visualFormat: slug.optional(),
   campaign: slug.optional(),
   /** Faktiske publiseringsforhold, backfilles fra posted-at i metrics enrichment. */
   publishHour: slug.optional(),
