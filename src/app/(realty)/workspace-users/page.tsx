@@ -458,6 +458,25 @@ export default function WorkspaceUsersPage() {
     } finally { setBusy(false); }
   }
 
+  async function previewUser(user: WorkspaceUser) {
+    if (busy || user.status !== "active" || user.expired ||
+        user.memberships.filter(row => row.status === "active").length === 0) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/workspace-user-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "START", targetEmail: user.email }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(apiError(body, "Kunne ikke starte forhåndsvisning."));
+      window.location.assign(body.homePath || "/workspace");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kunne ikke starte forhåndsvisning.");
+      setBusy(false);
+    }
+  }
+
   async function resetPassword() {
     if (!selectedUser || !password) return;
     if (!strongPassword(password)) {
@@ -575,11 +594,22 @@ export default function WorkspaceUsersPage() {
           <div>
             <h2 className="text-xl font-semibold">{selectedUser ? `Rediger ${selectedUser.displayName}` : "Opprett bruker"}</h2>
             <p className="text-xs text-slate-400">Brukernavn kan brukes ved innlogging. E-post beholdes som sikker identitet og for passordgjenoppretting.</p>
+            {selectedUser && <p className="mt-1 text-[11px] text-amber-300/80">
+              «Forhåndsvis som bruker» bruker lagrede rettigheter. Lagre endringer først hvis du nettopp har justert oppsettet.
+            </p>}
           </div>
-          {selectedUser && selectedUser.status === "active" && <button onClick={() => void disableUser()} disabled={busy}
-            className="rounded-lg border border-rose-800 px-3 py-2 text-sm text-rose-300 disabled:opacity-50">
-            Deaktiver bruker
-          </button>}
+          {selectedUser && <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => void previewUser(selectedUser)}
+              disabled={busy || selectedUser.status !== "active" || selectedUser.expired ||
+                selectedUser.memberships.filter(row => row.status === "active").length === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-600 px-3 py-2 text-sm font-semibold text-amber-200 disabled:opacity-40">
+              <Eye size={16}/> Forhåndsvis som bruker
+            </button>
+            {selectedUser.status === "active" && <button onClick={() => void disableUser()} disabled={busy}
+              className="rounded-lg border border-rose-800 px-3 py-2 text-sm text-rose-300 disabled:opacity-50">
+              Deaktiver bruker
+            </button>}
+          </div>}
         </div>
 
         <section className="rounded-xl border border-slate-700 bg-slate-950/40 p-4">
