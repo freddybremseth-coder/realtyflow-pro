@@ -31,6 +31,10 @@ export function roleAllowsWorkspacePermission(role: AccessRole, _permission: Wor
   return role === "WORKSPACE_MEMBER";
 }
 
+export function previewAllowsWorkspaceMethod(method: string) {
+  return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+
 export async function requireBrandWorkspace(
   request: NextRequest,
   brandKey: string,
@@ -39,6 +43,11 @@ export async function requireBrandWorkspace(
   if (!isCanonicalBrandKey(brandKey)) return reject(404, "WORKSPACE_NOT_FOUND");
   const context = await getRequestAccessContext(request);
   if (!context) return reject(401, "AUTH_REQUIRED");
+  // Owner preview mirrors the selected employee's current scope but is deliberately
+  // read-only so setup verification cannot send, publish or mutate customer data.
+  if (context.source === "owner-preview" && !previewAllowsWorkspaceMethod(request.method)) {
+    return reject(403, "OWNER_PREVIEW_READ_ONLY");
+  }
   // Owner-only migration proxy cannot act as a human workspace session.
   if (context.source === "remaster-proxy") return reject(403, "ACCESS_DENIED");
   if (!roleAllowsWorkspacePermission(context.role, permission)) return reject(403, "ACCESS_DENIED");
