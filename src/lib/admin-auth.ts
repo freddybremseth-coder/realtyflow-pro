@@ -70,3 +70,56 @@ export async function verifyAdminSession(token?: string) {
     return null;
   }
 }
+
+
+export const WORKSPACE_PREVIEW_COOKIE = "realtyflow_owner_preview";
+
+export async function createWorkspacePreviewSession(
+  ownerEmail: string,
+  targetEmail: string,
+  targetDisplayName: string,
+) {
+  const secret = process.env.REALTYFLOW_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error("Missing REALTYFLOW_SESSION_SECRET");
+  const owner = ownerEmail.trim().toLowerCase();
+  const target = targetEmail.trim().toLowerCase();
+  const displayName = targetDisplayName.trim().slice(0, 120);
+  if (!isAdminEmail(owner) || !target || !target.includes("@") || !displayName) {
+    throw new Error("Invalid workspace preview identity");
+  }
+  const payload = base64UrlEncode(JSON.stringify({
+    kind: "workspace-preview-v1",
+    ownerEmail: owner,
+    targetEmail: target,
+    targetDisplayName: displayName,
+    exp: Date.now() + 1000 * 60 * 60,
+  }));
+  const signature = await hmac(payload, secret);
+  return `${payload}.${signature}`;
+}
+
+export async function verifyWorkspacePreviewSession(token: string | undefined, ownerEmail: string) {
+  const secret = process.env.REALTYFLOW_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!token || !secret) return null;
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature || signature !== await hmac(payload, secret)) return null;
+  try {
+    const data = JSON.parse(base64UrlDecode(payload)) as {
+      kind?: string;
+      ownerEmail?: string;
+      targetEmail?: string;
+      targetDisplayName?: string;
+      exp?: number;
+    };
+    const owner = ownerEmail.trim().toLowerCase();
+    const target = String(data.targetEmail || "").trim().toLowerCase();
+    const displayName = String(data.targetDisplayName || "").trim();
+    if (data.kind !== "workspace-preview-v1" ||
+        !data.exp || data.exp < Date.now() ||
+        data.ownerEmail !== owner || !isAdminEmail(owner) ||
+        !target || !target.includes("@") || !displayName) return null;
+    return { ownerEmail: owner, targetEmail: target, targetDisplayName: displayName, exp: data.exp };
+  } catch {
+    return null;
+  }
+}
