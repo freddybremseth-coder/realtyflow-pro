@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Clapperboard, Banknote, LockKeyhole, Megaphone, Settings, Users } from "lucide-react";
+import { ArrowRight, Building2, Clapperboard, Banknote, LockKeyhole, Megaphone, Settings, Users } from "lucide-react";
 import { REALTYFLOW_APPS, appVisibleForRole } from "@/lib/platform-apps";
 import type { AccessRole } from "@/lib/access-control";
 
@@ -45,6 +45,29 @@ export default function WorkspacesPage() {
         </p>
       </header>
 
+      {user.role === "OWNER" && (
+        <section className="rounded-2xl border border-cyan-700/70 bg-slate-900/90 p-5 shadow-lg shadow-cyan-950/10">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-400">ZenEco · hurtigstart</p>
+              <h2 className="mt-2 text-2xl font-bold">SoMe Studio</h2>
+              <p className="mt-2 text-sm text-slate-400">Lag Facebook- og Instagram-konsepter direkte fra bolig, guide, magasin eller eget tema. Dette er den primære inngangen til ZenEco-innhold for sosiale medier.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/workspace/zeneco?tab=growth&focus=social" className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-cyan-300">
+                <Megaphone size={17}/> Åpne SoMe Studio <ArrowRight size={16}/>
+              </Link>
+              <Link href="/workspace/zeneco?tab=properties" className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-cyan-600 hover:bg-slate-800">
+                <Building2 size={17}/> Eiendommer
+              </Link>
+              <Link href="/workspace/zeneco?tab=leads" className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-cyan-600 hover:bg-slate-800">
+                <Users size={17}/> Kunder & leads
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         {visibleApps.map((app) => {
           const Icon = iconMap[app.icon];
@@ -61,10 +84,19 @@ export default function WorkspacesPage() {
 
       {user.role === "OWNER" && (
         <>
-          <div className="rounded-2xl border border-cyan-800/70 bg-slate-900/80 p-5">
-            <h2 className="text-xl font-semibold">Pinoso EcoLife · fokusert arbeidsflate</h2>
-            <p className="mt-2 text-sm text-slate-400">Brand-workspaces beholdes som et eget lag under plattformen. De bruker samme Shared Core, men viser bare merkevaren og modulene brukeren har tilgang til.</p>
-            <Link href="/workspace/pinosoecolife" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 hover:underline">Åpne forhåndsvisning <ArrowRight size={16}/></Link>
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
+            <h2 className="text-xl font-semibold">Merkevarearbeidsflater</h2>
+            <p className="mt-2 text-sm text-slate-400">Gå rett inn i den komplette arbeidsflaten når du vil jobbe samlet med én merkevare.</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Link href="/workspace/zeneco" className="group rounded-xl border border-slate-700 p-4 hover:border-cyan-600 hover:bg-slate-800/70">
+                <div className="flex items-center gap-2 font-semibold"><Building2 size={17} className="text-cyan-400"/> ZenEco Homes</div>
+                <span className="mt-2 inline-flex items-center gap-1 text-sm text-cyan-300">Åpne workspace <ArrowRight size={14}/></span>
+              </Link>
+              <Link href="/workspace/pinosoecolife" className="group rounded-xl border border-slate-700 p-4 hover:border-cyan-600 hover:bg-slate-800/70">
+                <div className="flex items-center gap-2 font-semibold"><Building2 size={17} className="text-cyan-400"/> Pinoso EcoLife</div>
+                <span className="mt-2 inline-flex items-center gap-1 text-sm text-cyan-300">Åpne workspace <ArrowRight size={14}/></span>
+              </Link>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
