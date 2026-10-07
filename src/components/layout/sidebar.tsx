@@ -152,6 +152,14 @@ type CurrentUser = {
   permissions: string[];
 };
 
+type OwnerPreview = {
+  active: true;
+  ownerEmail: string;
+  targetEmail: string;
+  targetDisplayName: string;
+  readOnly: true;
+};
+
 type NavigationPreferences = {
   version: number;
   favorites: string[];
@@ -214,6 +222,7 @@ export function Sidebar() {
   const [simpleMode, setSimpleMode] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [preview, setPreview] = useState<OwnerPreview | null>(null);
   const [memberWorkspaces, setMemberWorkspaces] = useState<WorkspaceNavigationSource[]>([]);
   const [query, setQuery] = useState("");
   const [openSection, setOpenSection] = useState<NavigationSectionId | null>(null);
@@ -231,7 +240,9 @@ export function Sidebar() {
         return response.json();
       })
       .then((body) => {
-        if (active && body?.user) setUser(body.user);
+        if (!active) return;
+        if (body?.user) setUser(body.user);
+        setPreview(body?.preview?.active ? body.preview : null);
       })
       .catch(() => undefined);
     return () => {
@@ -348,6 +359,16 @@ export function Sidebar() {
   );
   const searching = Boolean(query.trim());
 
+  const stopPreview = async () => {
+    const response = await fetch("/api/workspace-user-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "STOP" }),
+    });
+    if (!response.ok) return;
+    window.location.assign("/workspace-users");
+  };
+
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
@@ -396,6 +417,20 @@ export function Sidebar() {
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
+
+      {preview && (
+        <div className={cn("px-3 pt-3", collapsed && "lg:hidden")}>
+          <div className="rounded-xl border border-amber-600/70 bg-amber-950/30 p-3 text-xs text-amber-100">
+            <p className="font-semibold">Forhåndsvisning · skrivebeskyttet</p>
+            <p className="mt-1 truncate text-amber-200">{preview.targetDisplayName}</p>
+            <p className="truncate text-[11px] text-amber-300/80">{preview.targetEmail}</p>
+            <button type="button" onClick={() => void stopPreview()}
+              className="mt-3 w-full rounded-lg border border-amber-500/70 px-3 py-2 font-semibold hover:bg-amber-900/40">
+              Avslutt forhåndsvisning
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className={cn("px-3 pb-2 pt-3", collapsed && "lg:hidden")}>
         <label className="relative block">
@@ -546,14 +581,14 @@ export function Sidebar() {
               <p className="truncate font-medium text-slate-300">{user.email}</p>
               <p className="text-slate-500">{user.roleLabel}</p>
             </div>
-            <button
+            {!preview && <button
               onClick={() => router.push("/account/password")}
               className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"
               title="Endre passord"
               aria-label="Endre passord"
             >
               <KeyRound size={14} />
-            </button>
+            </button>}
             <button
               onClick={logout}
               className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"
