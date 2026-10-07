@@ -4,6 +4,10 @@ import { askClaude } from "@/services/ai/claude-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 import {
+  buildSocialStrategySnapshot,
+  socialCategoryForSource,
+} from "@/lib/workspaces/social-strategy";
+import {
   PROPERTY_CREATIVE_STYLES,
   type PropertyCreativeStyle,
 } from "@/lib/marketing/creative-style";
@@ -330,7 +334,7 @@ async function discoverPublicWebsitePages(brandKey: string, website: string) {
 async function loadMarketableProperty(supabase: any, brandKey: string, lookup: string) {
   if (!lookup || lookup.length > 100) throw new Error("PROPERTY_LOOKUP_INVALID");
   let query = supabase.from("properties")
-    .select("id,ref,title,town,location,price,bedrooms,bathrooms,area_m2,plot_size,property_type,primary_image,show_on_website,website_visible,status")
+    .select("id,ref,title,town,location,price,bedrooms,bathrooms,area_m2,plot_size,property_type,primary_image,images,gallery,show_on_website,website_visible,status")
     .eq("show_on_website", true)
     .eq("website_visible", true)
     .eq("status", "TILGJENGELIG");
@@ -347,6 +351,24 @@ async function loadMarketableProperty(supabase: any, brandKey: string, lookup: s
     .maybeSingle();
   if (visibilityError || !visibility?.property_id) throw new Error("PROPERTY_NOT_MARKETABLE_FOR_BRAND");
   return property;
+}
+
+function propertyMediaUrls(property: any) {
+  return Array.from(new Set([
+    typeof property.primary_image === "string" ? property.primary_image.trim() : "",
+    ...(Array.isArray(property.images) ? property.images : []),
+    ...(Array.isArray(property.gallery) ? property.gallery : []),
+  ].map((value) => typeof value === "string" ? value.trim() : "")
+    .filter((value) => /^https:\/\//i.test(value))));
+}
+
+function variantPropertyImages(property: any) {
+  const urls = propertyMediaUrls(property);
+  if (!urls.length) return {} as Record<string, string>;
+  return Object.fromEntries(VARIANT_BLUEPRINTS.map((variant, index) => [
+    variant.id,
+    urls[index] || urls[index % urls.length] || urls[0],
+  ]));
 }
 
 function propertyFacts(property: any) {
@@ -982,6 +1004,24 @@ export async function POST(
   const action = clean(body.action, 40);
 
   try {
+    if (action === "strategy_snapshot") {
+      const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: publications, error: strategyError } = await access.value.supabase
+        .from("content_publications")
+        .select("id,title,description,tags,content_features,published_at,created_at")
+        .eq("brand_id", params.brandKey)
+        .in("content_type", ["social", "social_post", "image_post", "marketing_post", "post"])
+        .eq("status", "published")
+        .gte("published_at", since)
+        .order("published_at", { ascending: false, nullsFirst: false })
+        .limit(30);
+      if (strategyError) return fail(503, "SOCIAL_STRATEGY_SNAPSHOT_FAILED");
+      return NextResponse.json({
+        ok: true,
+        snapshot: buildSocialStrategySnapshot(publications || [], params.brandKey),
+      }, { headers: noStore });
+    }
+
     if (action === "discover_content") {
       let property: any | null = null;
       const propertyLookup = clean(body.propertyLookup, 100);
@@ -1019,7 +1059,12 @@ export async function POST(
       }
 
       const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
-      if (!property.primary_image || !/^https:\/\//i.test(property.primary_image)) {
+      const requestedSourceImageUrl = clean(body.sourceImageUrl, 2_000);
+      const propertyImages = propertyMediaUrls(property);
+      const selectedSourceImageUrl = requestedSourceImageUrl && propertyImages.includes(requestedSourceImageUrl)
+        ? requestedSourceImageUrl
+        : property.primary_image;
+      if (!selectedSourceImageUrl || !/^https:\/\//i.test(selectedSourceImageUrl)) {
         return fail(409, "PROPERTY_IMAGE_REQUIRED");
       }
       try {
@@ -1030,7 +1075,7 @@ export async function POST(
             brandName: definition.name,
             propertyId: property.id,
             propertyRef: property.ref,
-            sourceImageUrl: property.primary_image,
+            sourceImageUrl: selectedSourceImageUrl,
             creativeStyle: creativeStyle as PropertyCreativeStyle,
             factSources: factSources(property),
             channel: channel as "facebook" | "instagram",
@@ -1045,7 +1090,7 @@ export async function POST(
           imageUrl: card.imageUrl,
           style: creativeStyle,
           channel,
-          sourceImageUrl: property.primary_image,
+          sourceImageUrl: selectedSourceImageUrl,
         });
         return NextResponse.json({
           ok: true,
@@ -1071,7 +1116,7 @@ export async function POST(
         // keep the draft workflow moving when server-side rendering is unavailable.
         return NextResponse.json({
           ok: true,
-          imageUrl: property.primary_image,
+          imageUrl: selectedSourceImageUrl,
           creativeStyle,
           channel,
           rendered: false,
@@ -1100,6 +1145,9 @@ export async function POST(
     let areaId: string | null = null;
     let companionPropertyId: string | null = null;
     let companionFacts = "";
+    let variantImages: Record<string, string> = {};
+    const requestedCategory = clean(body.socialCategory, 40);
+    const contentKind = clean(body.contentKind, 40);
 
     if (sourceType === "property") {
       const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
@@ -1112,6 +1160,7 @@ export async function POST(
         ? definition.website.replace(/\/$/, "") + "/eiendommer/" + encodeURIComponent(property.ref)
         : definition.website;
       sourceImageUrl = property.primary_image || sourceImageUrl;
+      variantImages = variantPropertyImages(property);
       sourceText = facts.join("\n");
       propertyId = property.id;
       propertyLookup = property.id;
@@ -1187,6 +1236,12 @@ export async function POST(
         companionFacts,
       ].join("\n");
     }
+
+    const socialCategory = socialCategoryForSource({
+      sourceType,
+      contentKind,
+      explicitCategory: requestedCategory,
+    });
 
     const systemPrompt = [
       "Du er senior redaktør for sosiale medier for " + definition.name + ".",
@@ -1308,7 +1363,10 @@ export async function POST(
         contentId,
         areaId,
         companionPropertyId,
+        socialCategory,
+        variantImages,
       },
+      socialCategory,
       variants,
       propertyStyles: PROPERTY_CREATIVE_STYLES,
     }, { headers: noStore });
@@ -1320,7 +1378,8 @@ export async function POST(
       "ARTICLE_TOO_LARGE", "PROPERTY_LOOKUP_INVALID", "PROPERTY_NOT_FOUND",
       "PROPERTY_NOT_MARKETABLE_FOR_BRAND", "AREA_LOOKUP_INVALID", "AREA_NOT_FOUND",
       "SOCIAL_STUDIO_CONTENT_DISCOVERY_FAILED", "SOCIAL_STUDIO_AI_INVALID",
-      "SOCIAL_STUDIO_AI_UNAVAILABLE", "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
+      "SOCIAL_STUDIO_AI_UNAVAILABLE", "SOCIAL_STRATEGY_SNAPSHOT_FAILED",
+      "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
       "PROPERTY_CARD_FFMPEG_MISSING",
     ];
     console.error("[social-studio]", {

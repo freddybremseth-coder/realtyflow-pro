@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
+import { SOCIAL_CATEGORIES } from "@/lib/workspaces/social-strategy";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -9,6 +10,9 @@ const ALLOWED_DRAFT_PLATFORMS = new Set([
   "facebook","instagram","linkedin","youtube","tiktok","pinterest",
 ]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SOCIAL_CATEGORY_SET = new Set<string>(SOCIAL_CATEGORIES);
+const SOCIAL_CONCEPT_SET = new Set(["editorial_premium","lifestyle_story","advisor_insight"]);
+const SOCIAL_VISUAL_FORMAT_SET = new Set(["single_image","property_card","collage_3","carousel"]);
 
 function fail(status: number, code: string, message?: string) {
   return NextResponse.json(
@@ -227,10 +231,22 @@ export async function POST(
     : [];
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
   const sourcePropertyId = typeof body.sourcePropertyId === "string" ? body.sourcePropertyId.trim() : "";
+  const socialCategory = typeof body.socialCategory === "string" ? body.socialCategory.trim() : "";
+  const conceptId = typeof body.conceptId === "string" ? body.conceptId.trim() : "";
+  const visualFormat = typeof body.visualFormat === "string" ? body.visualFormat.trim() : "";
+  const sourceContentId = typeof body.sourceContentId === "string" ? body.sourceContentId.trim().slice(0, 100) : "";
+  const sourceAreaId = typeof body.sourceAreaId === "string" ? body.sourceAreaId.trim().slice(0, 100) : "";
+  const strategyPeriodId = typeof body.strategyPeriodId === "string" ? body.strategyPeriodId.trim().slice(0, 100) : "";
+  const strategyRecommendationReason = typeof body.strategyRecommendationReason === "string"
+    ? body.strategyRecommendationReason.trim().slice(0, 500)
+    : "";
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
       imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
       (sourcePropertyId && !UUID_RE.test(sourcePropertyId)) ||
+      (socialCategory && !SOCIAL_CATEGORY_SET.has(socialCategory)) ||
+      (conceptId && !SOCIAL_CONCEPT_SET.has(conceptId)) ||
+      (visualFormat && !SOCIAL_VISUAL_FORMAT_SET.has(visualFormat)) ||
       tags.length > 20 || new Set(tags).size !== tags.length ||
       tags.some(tag => tag.length > 60) ||
       platforms.length > 6 || new Set(platforms).size !== platforms.length ||
@@ -266,7 +282,19 @@ export async function POST(
           workspace_draft: true,
           owner_draft: true,
           workspace_actor_email: access.value.verifiedEmail,
+          ...(socialCategory ? {
+            social_category: socialCategory,
+            is_property_presentation: socialCategory === "property",
+          } : {}),
+          ...(conceptId ? { concept_id: conceptId } : {}),
+          ...(visualFormat ? { visual_format: visualFormat } : {}),
           ...(sourcePropertyId ? { source_property_id: sourcePropertyId } : {}),
+          ...(sourceContentId ? { source_content_id: sourceContentId } : {}),
+          ...(sourceAreaId ? { source_area_id: sourceAreaId } : {}),
+          ...(strategyPeriodId ? { strategy_period_id: strategyPeriodId } : {}),
+          ...(strategyRecommendationReason ? {
+            strategy_recommendation_reason: strategyRecommendationReason,
+          } : {}),
         },
       })
       .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
