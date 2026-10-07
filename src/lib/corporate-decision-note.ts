@@ -368,7 +368,7 @@ export function corporateDecisionStopReason(input: {
   if (meetingAfter(input.interactions, input.reportSentAt)) return "meeting_booked";
 
   const status = String(input.pipelineStatus || "").toUpperCase();
-  if (["QUALIFIED", "MEETING", "OPPORTUNITY", "WON", "LOST", "ON_HOLD"].includes(status)) {
+  if (["QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "MEETING", "OPPORTUNITY", "WON", "LOST", "ON_HOLD"].includes(status)) {
     return `pipeline_${status.toLowerCase()}`;
   }
   return null;
