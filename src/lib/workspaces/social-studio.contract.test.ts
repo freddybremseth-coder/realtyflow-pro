@@ -174,7 +174,7 @@ test("Property card rendering falls back to the approved property image and keep
   assert.match(route, /rendered: false/);
   assert.match(route, /fallback: true/);
   assert.match(studio, /Kortmalen kunne ikke rendres akkurat nå/);
-  assert.match(studio, /Åpne dette utkastet i Content Hub/);
+  assert.match(studio, /Åpne utkastet og gå videre/);
 });
 
 
