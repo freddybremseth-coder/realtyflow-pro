@@ -172,6 +172,9 @@ export function WorkspaceSocialStudio({
   const [previewing, setPreviewing] = useState("");
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState("");
+  const [generatingImage, setGeneratingImage] = useState("");
+  const [packageSaving, setPackageSaving] = useState(false);
+  const [packageFeedback, setPackageFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [savedPublicationId, setSavedPublicationId] = useState("");
@@ -210,6 +213,7 @@ export function WorkspaceSocialStudio({
     setGenerationFeedback(null);
     setSaveFeedback({});
     setPreviewFeedback({});
+    setPackageFeedback(null);
     setNotice("Boligen er hentet fra Eiendommer. Lag tre forslag når du er klar.");
     onInitialPropertyConsumed?.();
   }, [initialProperty?.id]);
@@ -353,6 +357,7 @@ export function WorkspaceSocialStudio({
     setGenerationFeedback(null);
     setSaveFeedback({});
     setPreviewFeedback({});
+    setPackageFeedback(null);
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
@@ -407,7 +412,7 @@ export function WorkspaceSocialStudio({
           ? "AI-formatet kunne ikke brukes direkte. RealtyFlow laget tre kildebaserte forslag lokalt, uten å legge til nye fakta. Les gjennom før du lagrer."
           : body.source?.companionPropertyId
             ? "Tre konsepter er klare, inkludert koblingen mellom valgt innhold og boligen."
-            : "Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.",
+            : "Tre forskjellige konsepter er klare. Lagre hele SoMe-pakken, eller finjuster enkeltkonsepter før du lagrer.",
       });
       if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
         window.setTimeout(() => {
@@ -493,19 +498,141 @@ export function WorkspaceSocialStudio({
     };
   }
 
-  async function saveVariant(variant: Variant, channel: Channel) {
-    if (!canDraft || saving) return;
-    const feedbackKey = variant.id + ":" + channel;
-    if (!activePlatforms.has(channel)) {
-      setSaveFeedback(current => ({
-        ...current,
-        [feedbackKey]: {
-          kind: "error",
-          text: (channel === "facebook" ? "Facebook" : "Instagram") + " er ikke aktivert for denne merkevaren.",
-        },
-      }));
-      return;
+  async function ensureConceptImage(variant: Variant, forceGenerated = false) {
+    if (source?.type === "property") {
+      return renderPropertyImage(variant, activePlatforms.has("instagram") ? "instagram" : "facebook");
     }
+
+    const existingPreview = previews[variant.id];
+    if (!forceGenerated && existingPreview) {
+      return { imageUrl: existingPreview, fallback: false, visualFormat: "single_image" as VisualFormat };
+    }
+
+    if (!forceGenerated && source?.imageUrl) {
+      setPreviews(current => current[variant.id]
+        ? current
+        : ({ ...current, [variant.id]: source.imageUrl as string }));
+      return { imageUrl: source.imageUrl, fallback: false, visualFormat: "single_image" as VisualFormat };
+    }
+
+    if (generatingImage) {
+      throw new Error("Et konseptbilde genereres allerede.");
+    }
+
+    setGeneratingImage(variant.id);
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate_concept_image",
+          conceptId: variant.id,
+          sourceType: source?.type || sourceType,
+          sourceTitle: source?.title || topic || variant.hook,
+          hook: variant.hook,
+          angle: variant.angle,
+          visualDirection: variant.visualDirection,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.imageUrl) {
+        const code = body?.error?.code || "";
+        throw new Error(
+          code === "SOCIAL_STUDIO_MEDIA_NOT_READY"
+            ? "Bildejobben er startet, men er ikke ferdig ennå. Trykk igjen om et øyeblikk."
+            : "RealtyFlow klarte ikke å lage konseptbildet akkurat nå.",
+        );
+      }
+      const nextImage = String(body.imageUrl);
+      setPreviews(current => ({ ...current, [variant.id]: nextImage }));
+      return { imageUrl: nextImage, fallback: false, visualFormat: "single_image" as VisualFormat };
+    } finally {
+      setGeneratingImage("");
+    }
+  }
+
+  async function persistVariantDraft(
+    variant: Variant,
+    channel: Channel,
+    options: {
+      packageId?: string;
+      preparedImage?: { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat };
+    } = {},
+  ) {
+    if (!activePlatforms.has(channel)) {
+      throw new Error((channel === "facebook" ? "Facebook" : "Instagram") + " er ikke aktivert for denne merkevaren.");
+    }
+
+    const renderedImage = options.preparedImage || await ensureConceptImage(variant);
+    const approvedImageUrl = renderedImage.imageUrl || "";
+    if (channel === "instagram" && !approvedImageUrl) {
+      throw new Error("Instagram trenger et godkjent bilde. RealtyFlow forsøkte å lage et, men fikk ikke et ferdig resultat.");
+    }
+
+    const text = channel === "facebook" ? variant.facebookText : variant.instagramText;
+    const packageTag = options.packageId ? "package-" + options.packageId : "";
+    const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/marketing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: ((channel === "facebook" ? "Facebook" : "Instagram") + " · " + variant.label + " · " +
+          (source?.title || variant.hook || "SoMe-utkast")).slice(0, 200),
+        description: text,
+        tags: Array.from(new Set([
+          channel,
+          ...(packageTag ? [packageTag] : []),
+          ...variant.tags,
+          ...(source?.socialCategory ? ["social-category-" + source.socialCategory.replace(/_/g, "-")] : []),
+          "concept-" + variant.id.replace(/_/g, "-"),
+          "source-" + (source?.type || sourceType),
+          ...(source?.contentId ? ["source-content-" + source.contentId] : []),
+          ...(source?.areaId ? ["source-area-" + source.areaId] : []),
+          ...(source?.companionPropertyId ? ["paired-property"] : []),
+          ...(source?.type === "property"
+            ? [
+                "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
+                "visual-" + (visualFormats[variant.id] || "property_card").replace(/_/g, "-"),
+              ]
+            : ["visual-single-image"]),
+        ])).slice(0, 20),
+        platforms: [channel],
+        imageUrl: approvedImageUrl,
+        sourcePropertyId: source?.type === "property"
+          ? (source.propertyId || "")
+          : (source?.companionPropertyId || ""),
+        socialCategory: source?.socialCategory || "",
+        conceptId: variant.id,
+        visualFormat: renderedImage.visualFormat || "single_image",
+        sourceContentId: source?.contentId || "",
+        sourceAreaId: source?.areaId || "",
+        strategyPeriodId: strategy?.strategyPeriodId || "",
+        strategyRecommendationReason: strategy?.recommendationReason || "",
+        packageId: options.packageId || "",
+        aiGeneratedImage: source?.type !== "property" && Boolean(previews[variant.id]),
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const code = body?.error?.code || "";
+      throw new Error(
+        code === "IMAGE_NOT_APPROVED_FOR_BRAND" ? "Bildet er ikke registrert som godkjent brand-media."
+          : code === "INSTAGRAM_IMAGE_REQUIRED" ? "Instagram krever et godkjent bilde."
+          : code === "CHANNEL_NOT_ACTIVE_FOR_BRAND" ? "Kanalen er ikke aktivert for denne merkevaren."
+          : "Utkastet kunne ikke lagres i Content Hub.",
+      );
+    }
+    const publicationId = typeof body?.publication?.id === "string" ? body.publication.id : "";
+    if (!publicationId) throw new Error("Content Hub returnerte ikke et utkast-ID.");
+    return {
+      id: publicationId,
+      fallback: renderedImage.fallback === true,
+      imageUrl: approvedImageUrl,
+    };
+  }
+
+  async function saveVariant(variant: Variant, channel: Channel) {
+    if (!canDraft || saving || packageSaving) return;
+    const feedbackKey = variant.id + ":" + channel;
     setSaving(feedbackKey);
     setSaveFeedback(current => {
       const next = { ...current };
@@ -513,66 +640,15 @@ export function WorkspaceSocialStudio({
       return next;
     });
     try {
-      const renderedImage = await renderPropertyImage(variant, channel);
-      const approvedImageUrl = renderedImage.imageUrl;
-      if (channel === "instagram" && !approvedImageUrl) {
-        throw new Error("Instagram trenger et godkjent bilde. Legg inn bilde fra brand-media eller bruk en eiendom med bilde.");
-      }
-      const text = channel === "facebook" ? variant.facebookText : variant.instagramText;
-      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/marketing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: (source?.title || variant.hook || variant.label).slice(0, 200),
-          description: text,
-          tags: Array.from(new Set([
-            ...variant.tags,
-            ...(source?.socialCategory ? ["social-category-" + source.socialCategory.replace(/_/g, "-")] : []),
-            "concept-" + variant.id.replace(/_/g, "-"),
-            "source-" + (source?.type || sourceType),
-            ...(source?.contentId ? ["source-content-" + source.contentId] : []),
-            ...(source?.areaId ? ["source-area-" + source.areaId] : []),
-            ...(source?.companionPropertyId ? ["paired-property"] : []),
-            ...(source?.type === "property"
-              ? [
-                  "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
-                  "visual-" + (visualFormats[variant.id] || "property_card").replace(/_/g, "-"),
-                ]
-              : []),
-          ])).slice(0, 20),
-          platforms: [channel],
-          imageUrl: approvedImageUrl || "",
-          sourcePropertyId: source?.type === "property"
-            ? (source.propertyId || "")
-            : (source?.companionPropertyId || ""),
-          socialCategory: source?.socialCategory || "",
-          conceptId: variant.id,
-          visualFormat: renderedImage.visualFormat || "single_image",
-          sourceContentId: source?.contentId || "",
-          sourceAreaId: source?.areaId || "",
-          strategyPeriodId: strategy?.strategyPeriodId || "",
-          strategyRecommendationReason: strategy?.recommendationReason || "",
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const code = body?.error?.code || "";
-        throw new Error(
-          code === "IMAGE_NOT_APPROVED_FOR_BRAND" ? "Bildet er ikke registrert som godkjent brand-media. Velg en eiendom eller et bilde som finnes i RealtyFlow."
-            : code === "INSTAGRAM_IMAGE_REQUIRED" ? "Instagram krever et godkjent bilde."
-            : code === "CHANNEL_NOT_ACTIVE_FOR_BRAND" ? "Kanalen er ikke aktivert for denne merkevaren."
-            : "Utkastet kunne ikke lagres i Content Hub.",
-        );
-      }
-      const publicationId = typeof body?.publication?.id === "string" ? body.publication.id : "";
-      setSavedPublicationId(publicationId);
-      if (publicationId) setSavedDraft({ id: publicationId, variantId: variant.id, channel });
+      const saved = await persistVariantDraft(variant, channel);
+      setSavedPublicationId(saved.id);
+      setSavedDraft({ id: saved.id, variantId: variant.id, channel });
       setSaveFeedback(current => ({
         ...current,
         [feedbackKey]: {
           kind: "success",
           text: (channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub." +
-            (renderedImage.fallback ? " Originalbildet fra eiendommen ble brukt." : ""),
+            (saved.fallback ? " Originalbildet fra eiendommen ble brukt." : ""),
         },
       }));
       await onDraftSaved?.();
@@ -586,6 +662,57 @@ export function WorkspaceSocialStudio({
       }));
     } finally {
       setSaving("");
+    }
+  }
+
+  async function savePackage() {
+    if (!canDraft || packageSaving || variants.length !== 3) return;
+    const channels = (["facebook", "instagram"] as Channel[]).filter(channel => activePlatforms.has(channel));
+    if (!channels.length) {
+      setPackageFeedback({ kind: "error", text: "Ingen aktive Facebook/Instagram-kanaler er tilgjengelige for denne merkevaren." });
+      return;
+    }
+
+    setPackageSaving(true);
+    setPackageFeedback(null);
+    const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+
+    try {
+      const prepared = new Map<string, { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }>();
+      const mediaResults = await Promise.all(variants.map(async variant => {
+        const image = await ensureConceptImage(variant);
+        return [variant.id, image] as const;
+      }));
+      mediaResults.forEach(([id, image]) => prepared.set(id, image));
+
+      const publicationIds: string[] = [];
+      for (const variant of variants) {
+        const image = prepared.get(variant.id);
+        if (!image) throw new Error("Mangler ferdig bilde for " + variant.label + ".");
+        for (const channel of channels) {
+          const saved = await persistVariantDraft(variant, channel, {
+            packageId,
+            preparedImage: image,
+          });
+          publicationIds.push(saved.id);
+        }
+      }
+
+      if (publicationIds[0]) {
+        setSavedPublicationId(publicationIds[0]);
+      }
+      setPackageFeedback({
+        kind: "success",
+        text: `SoMe-pakken er lagret: 3 konsepter × ${channels.length} aktive kanaler = ${publicationIds.length} kanalutkast. Bilder følger utkastene.`,
+      });
+      await onDraftSaved?.();
+    } catch (cause) {
+      setPackageFeedback({
+        kind: "error",
+        text: cause instanceof Error ? cause.message : "SoMe-pakken kunne ikke lagres.",
+      });
+    } finally {
+      setPackageSaving(false);
     }
   }
 
@@ -818,6 +945,33 @@ export function WorkspaceSocialStudio({
       {generationFeedback.text}
     </p>}
 
+    {variants.length === 3 && <section className="mt-5 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Samlet handoff til Content Hub</p>
+          <h3 className="mt-1 text-base font-semibold">Lagre alle tre konsepter som én SoMe-pakke</h3>
+          <p className="mt-1 max-w-3xl text-xs text-slate-400">
+            RealtyFlow sørger for bilde per konsept og oppretter egne kanalutkast, slik at Facebook- og Instagram-teksten ikke blandes.
+          </p>
+        </div>
+        <button type="button" onClick={() => void savePackage()} disabled={packageSaving || Boolean(saving)}
+          className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-40">
+          {packageSaving ? "Lager og lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken"}
+        </button>
+      </div>
+      {packageFeedback && <p role={packageFeedback.kind === "error" ? "alert" : "status"}
+        className={"mt-3 rounded-lg border p-3 text-xs " + (packageFeedback.kind === "error"
+          ? "border-amber-800 bg-amber-950/30 text-amber-200"
+          : "border-emerald-800 bg-emerald-950/25 text-emerald-200")}>
+        {packageFeedback.text}
+        {packageFeedback.kind === "success" && savedPublicationId && <a
+          href={"/content-hub?draft=" + encodeURIComponent(savedPublicationId)}
+          className="ml-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2">
+          Åpne Content Hub <ExternalLink size={12}/>
+        </a>}
+      </p>}
+    </section>}
+
     {variants.length === 3 && <div id="social-studio-results" className="mt-6 scroll-mt-24">
       <div className="mb-3 flex items-center justify-between gap-3 xl:hidden">
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">3 forslag klare</p>
@@ -887,6 +1041,40 @@ export function WorkspaceSocialStudio({
               Eget bilde valgt for dette konseptet · velg format og forhåndsvis ferdig uttrykk
             </p>}
           </div>}
+        </div>}
+
+        {source?.type !== "property" && <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold text-slate-200">Konseptbilde</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {previews[variant.id]
+                  ? "Brand-godkjent bilde klart for Content Hub."
+                  : source?.imageUrl
+                    ? "Kildebildet følger utkastet. Du kan lage et alternativt AI-bilde."
+                    : "Ingen kildebilde finnes. RealtyFlow lager et brand-godkjent bilde før lagring."}
+              </p>
+            </div>
+            <button type="button" disabled={Boolean(generatingImage) || packageSaving}
+              onClick={() => void ensureConceptImage(variant, true).catch(cause => {
+                setPreviewFeedback(current => ({
+                  ...current,
+                  [variant.id]: cause instanceof Error ? cause.message : "Kunne ikke lage konseptbilde.",
+                }));
+              })}
+              className="rounded-lg border border-cyan-800 px-3 py-2 text-xs text-cyan-200 disabled:opacity-40">
+              {generatingImage === variant.id
+                ? "Lager bilde…"
+                : previews[variant.id] || source?.imageUrl
+                  ? "Lag alternativt AI-bilde"
+                  : "Lag konseptbilde"}
+            </button>
+          </div>
+          {(previews[variant.id] || source?.imageUrl) && <img
+            src={previews[variant.id] || source?.imageUrl || ""}
+            alt={"Konseptbilde for " + variant.label}
+            className="mt-3 aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />}
+          {previewFeedback[variant.id] && <p className="mt-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200">{previewFeedback[variant.id]}</p>}
         </div>}
 
         <div className="mt-4 space-y-3">

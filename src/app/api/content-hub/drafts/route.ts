@@ -37,14 +37,14 @@ const baseColumns = [
 
 const fullSelect = [...baseColumns, "thumbnail_url", "scheduled_platforms"].join(", ");
 const listBaseColumns = baseColumns.filter((column) => column !== "ai_image_url");
-const listSelect = [...listBaseColumns, "scheduled_platforms"].join(", ");
+const listSelect = [...listBaseColumns, "thumbnail_url", "scheduled_platforms"].join(", ");
 const listMinimalSelect = listBaseColumns.join(", ");
 
 function compactListRow(row: Record<string, unknown>) {
   return {
     ...row,
     ai_image_url: null,
-    thumbnail_url: null,
+    thumbnail_url: typeof row.thumbnail_url === "string" ? row.thumbnail_url : null,
     image_compacted: true,
   };
 }

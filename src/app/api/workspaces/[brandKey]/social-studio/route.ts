@@ -1,6 +1,9 @@
+import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { askClaude } from "@/services/ai/claude-client";
+import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media/job-service";
+import { createMediaPromptPlan } from "@/services/media/prompt-director";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 import {
@@ -1111,6 +1114,126 @@ async function brandMediaOrganizationId(supabase: any, brandKey: string) {
   return organization.organization_id as string;
 }
 
+function completedSocialStudioAsset(job: Record<string, any>) {
+  if (String(job.status || "") !== "completed") return null;
+  const assets = Array.isArray(job.result_assets_json) ? job.result_assets_json : [];
+  const asset = assets.find((item: any) =>
+    typeof item?.public_url === "string" && /^https:\/\//i.test(item.public_url));
+  if (!asset) return null;
+  return {
+    imageUrl: String(asset.public_url),
+    assetId: asset.id ? String(asset.id) : null,
+  };
+}
+
+async function generateSocialStudioConceptImage(
+  supabase: any,
+  input: {
+    brandKey: string;
+    brandName: string;
+    actorUserId: string | null;
+    actorEmail: string;
+    conceptId: string;
+    sourceType: string;
+    sourceTitle: string;
+    hook: string;
+    angle: string;
+    visualDirection: string;
+  },
+) {
+  if (!["editorial_premium", "lifestyle_story", "advisor_insight"].includes(input.conceptId)) {
+    throw new Error("SOCIAL_STUDIO_CONCEPT_INVALID");
+  }
+  if (input.sourceType === "property") {
+    throw new Error("SOCIAL_STUDIO_PROPERTY_MEDIA_MUST_USE_INVENTORY");
+  }
+
+  const organizationId = await brandMediaOrganizationId(supabase, input.brandKey);
+  const request = [
+    `Create a professional social-media visual for ${input.brandName}.`,
+    `Topic: ${input.sourceTitle}.`,
+    `Concept: ${input.conceptId}.`,
+    input.hook ? `Hook/idea: ${input.hook}.` : "",
+    input.angle ? `Editorial angle: ${input.angle}.` : "",
+    input.visualDirection ? `Visual direction: ${input.visualDirection}.` : "",
+    "Create a credible conceptual image suitable for a Scandinavian real-estate advisory brand in Spain.",
+    "Do not invent a specific property, customer, testimonial, price, statistic, legal claim, logo, dashboard or readable text.",
+    "No text, letters, watermarks or captions inside the image.",
+  ].filter(Boolean).join(" ");
+
+  const plan = createMediaPromptPlan({
+    request,
+    mode: "professional",
+    mediaType: "image",
+    useCase: "social_post",
+    platform: "instagram",
+    brandId: input.brandKey,
+    audience: "Scandinavian home buyers considering Spain",
+    style: input.visualDirection || "premium, calm, editorial, credible, Mediterranean natural light",
+    aspectRatio: "4:5",
+    qualityTier: "balanced",
+    sourceImageUrls: [],
+    allowText: false,
+  });
+
+  const digest = crypto
+    .createHash("sha256")
+    .update([
+      input.brandKey,
+      input.conceptId,
+      input.sourceType,
+      input.sourceTitle,
+      input.hook,
+      input.visualDirection,
+    ].join("|"))
+    .digest("hex")
+    .slice(0, 36);
+
+  const result = await createMediaJob(supabase, {
+    organizationId,
+    userId: input.actorUserId,
+    actorEmail: input.actorEmail,
+    body: {
+      plan,
+      brandId: input.brandKey,
+      sourceImageUrls: [],
+      idempotencyKey: `social-studio-concept:${input.brandKey}:${digest}`,
+      autoExportToContentHub: false,
+    },
+  });
+
+  let job = result.job as Record<string, any>;
+  const status = String(job.status || "");
+  if (result.existing && ["failed", "expired", "cancelled"].includes(status)) {
+    job = await retryMediaJob(supabase, {
+      organizationId,
+      actorEmail: input.actorEmail,
+      jobId: String(job.id),
+    }) as Record<string, any>;
+  }
+  if (["submitted", "processing"].includes(String(job.status || ""))) {
+    job = await refreshMediaJob(supabase, {
+      organizationId,
+      actorEmail: input.actorEmail,
+      jobId: String(job.id),
+      autoExportToContentHub: false,
+    }) as Record<string, any>;
+  }
+
+  const asset = completedSocialStudioAsset(job);
+  if (!asset) {
+    const detail = job.error_message ? ": " + String(job.error_message).slice(0, 240) : "";
+    throw new Error("SOCIAL_STUDIO_MEDIA_NOT_READY:" + String(job.status || "unknown") + detail);
+  }
+
+  return {
+    ...asset,
+    jobId: String(job.id),
+    provider: job.provider ? String(job.provider) : null,
+    existing: result.existing,
+  };
+}
+
 async function registerBrandWebsiteImage(
   supabase: any,
   input: {
@@ -1278,6 +1401,55 @@ export async function POST(
         } : null,
         ...discovery,
       }, { headers: noStore });
+    }
+
+    if (action === "generate_concept_image") {
+      const conceptId = clean(body.conceptId, 40);
+      const sourceType = clean(body.sourceType, 20);
+      const sourceTitle = clean(body.sourceTitle, 220);
+      const hook = clean(body.hook, 220);
+      const angle = clean(body.angle, 500);
+      const visualDirection = clean(body.visualDirection, 700);
+      if (!sourceTitle || !["article", "area", "topic"].includes(sourceType)) {
+        return fail(400, "SOCIAL_STUDIO_MEDIA_REQUEST_INVALID");
+      }
+      try {
+        const generated = await generateSocialStudioConceptImage(access.value.supabase, {
+          brandKey: params.brandKey,
+          brandName: definition.name,
+          actorUserId: access.value.verifiedUserId,
+          actorEmail: access.value.verifiedEmail,
+          conceptId,
+          sourceType,
+          sourceTitle,
+          hook,
+          angle,
+          visualDirection,
+        });
+        return NextResponse.json({
+          ok: true,
+          imageUrl: generated.imageUrl,
+          assetId: generated.assetId,
+          jobId: generated.jobId,
+          provider: generated.provider,
+          existing: generated.existing,
+        }, { headers: noStore });
+      } catch (mediaError) {
+        const message = mediaError instanceof Error ? mediaError.message : "SOCIAL_STUDIO_MEDIA_FAILED";
+        console.warn("[social-studio] concept media generation failed", {
+          brandKey: params.brandKey,
+          conceptId,
+          sourceType,
+          message: message.slice(0, 300),
+        });
+        return fail(
+          message.startsWith("SOCIAL_STUDIO_MEDIA_NOT_READY") ? 409 : 503,
+          message.startsWith("SOCIAL_STUDIO_MEDIA_NOT_READY")
+            ? "SOCIAL_STUDIO_MEDIA_NOT_READY"
+            : "SOCIAL_STUDIO_MEDIA_FAILED",
+          message,
+        );
+      }
     }
 
     if (action === "render_property_collage") {
