@@ -329,3 +329,17 @@ test("SoMe review comes before package save and new recommendations clear stale 
   assert.match(studio, /function applyStrategyRecommendation\(\)[\s\S]*setPackageFeedback\(null\)/);
   assert.match(studio, /sourceType === "property" \? "7 eiendomsmaler" : "3 konsepter · kanaltilpasset"/);
 });
+
+
+test("SoMe workspace separates creation from Content Hub and keeps saved drafts easy to find", () => {
+  assert.doesNotMatch(workspace, /SoMe Studio · Content Hub/);
+  assert.match(workspace, /Når du lagrer, finner du utkastene i Content Hub/);
+  assert.match(studio, /Se lagrede utkast/);
+  assert.match(studio, /href=\{"\/content-hub\?from=social-studio&brand="/);
+});
+
+test("Content Hub prioritizes brand media and exposes planning from SoMe drafts", () => {
+  assert.match(contentHubPage, /image-bank\?owner=" \+ encodeURIComponent\(brandId\)/);
+  assert.match(contentHubPage, /Bilder for denne merkevaren vises først/);
+  assert.match(contentHubPage, /isSocialStudioDraft \? "Publiser \/ planlegg" : "Publiser"/);
+});
