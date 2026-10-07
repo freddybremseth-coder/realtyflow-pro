@@ -19,6 +19,7 @@ const LABEL_OVERRIDES: Record<string,string> = {
 const WORKSPACES_NAV_ITEM: NavigationItem = { label: "Arbeidsområder", href: "/workspaces", icon: "PanelsTopLeft" };
 const SALES_APP_NAV_ITEM: NavigationItem = { label: "Sales", href: "/sales", icon: "Users" };
 const MARKETING_APP_NAV_ITEM: NavigationItem = { label: "Marketing", href: "/marketing", icon: "Megaphone" };
+const ZENECO_SOME_STUDIO_NAV_ITEM: NavigationItem = { label: "SoMe Studio · ZenEco", href: "/workspace/zeneco?tab=growth&focus=social", icon: "Megaphone" };
 const CONTENT_APP_NAV_ITEM: NavigationItem = { label: "Content", href: "/content", icon: "Clapperboard" };
 const FINANCE_APP_NAV_ITEM: NavigationItem = { label: "Finance", href: "/finance", icon: "Banknote" };
 const OPERATIONS_APP_NAV_ITEM: NavigationItem = { label: "Platform / Operations", href: "/operations", icon: "Settings" };
@@ -31,14 +32,14 @@ const NEXUS_INBOX_NAV_ITEM: NavigationItem = { label: "Innboks", href: "/nexus-o
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id:"workspace", label:"Hjem", icon:"PanelsTopLeft", hrefs:["/workspaces","/nexus-os/today","/nexus-os/focus","/personal-intelligence","/nexus-os/inbox","/nexus-os/communications","/approvals","/","/today"] },
   { id:"sales", label:"Sales", icon:"Users", hrefs:["/sales","/customers","/sales/corporate-homes","/lead-intelligence","/execution","/automation/nurture","/recovery","/calendar","/booking-admin","/closing","/closing-pack","/after-sales","/communications","/inventory","/inventory/property-360","/scanner","/tomtebase","/areas","/valuation","/document-hub","/care","/care/customers","/care/reports","/care/keys","/service-revenue"] },
-  { id:"marketing", label:"Marketing", icon:"Megaphone", hrefs:["/marketing","/growth-hub","/corporate-homes","/social-automation","/nexus-os/brand-brain","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
+  { id:"marketing", label:"Marketing", icon:"Megaphone", hrefs:["/marketing","/workspace/zeneco?tab=growth&focus=social","/growth-hub","/corporate-homes","/social-automation","/nexus-os/brand-brain","/email","/marketing-readiness","/ad-campaigns","/analytics","/reports","/attribution","/reach","/marketing-tasks"] },
   { id:"content", label:"Content", icon:"Clapperboard", hrefs:["/content","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/publishing","/publishing/forfatterstudio","/book-growth","/youtube-studio","/remaster-freddy"] },
   { id:"finance", label:"Finance", icon:"Banknote", hrefs:["/finance","/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/revenue-data-health","/care/invoices","/dona-anna","/mondeo"] },
   { id:"platform", label:"Platform / Operations", icon:"Settings", hrefs:["/operations","/business-hub","/platform","/demosites","/saas","/revenue-engine","/team-workload","/nexus-os/account-launch","/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/nexus-os/outbound-engagement","/automation","/agents","/data-health","/workspace-users","/access-control","/audit-log"] },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
-  OWNER:["/workspaces","/sales","/marketing","/content","/finance","/operations"],
+  OWNER:["/workspaces","/workspace/zeneco?tab=growth&focus=social","/sales","/marketing","/content","/finance"],
   SALES:["/sales","/today","/customers","/communications","/execution","/lead-intelligence"],
   CLOSING:["/sales","/today","/closing","/closing-pack","/execution","/customers"],
   FINANCE:["/finance","/billing","/revenue-command","/monthly-close","/commissions","/forecast"],
@@ -48,7 +49,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
   WORKSPACE_MEMBER:[],
 };
 
-function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM,SALES_APP_NAV_ITEM,MARKETING_APP_NAV_ITEM,CONTENT_APP_NAV_ITEM,FINANCE_APP_NAV_ITEM,OPERATIONS_APP_NAV_ITEM]; }
+function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM,SALES_APP_NAV_ITEM,MARKETING_APP_NAV_ITEM,ZENECO_SOME_STUDIO_NAV_ITEM,CONTENT_APP_NAV_ITEM,FINANCE_APP_NAV_ITEM,OPERATIONS_APP_NAV_ITEM]; }
 function canSeeItem(role:AccessRole,permissions:string[],href:string){ if(role==="OWNER"&&OWNER_HIDDEN_HREFS.has(href)) return false; if(REVENUE_READ_PAGES.has(href)) return permissions.includes("revenue.read"); return canSeeNavHref(role,href); }
 export function buildVisibleNavigation(role:AccessRole,permissions:string[]):NavigationSection[]{ const itemByHref=new Map(sourceItems().map(item=>[item.href,{...item,label:LABEL_OVERRIDES[item.href]||item.label}])); return GROUPS.map(group=>({id:group.id,label:group.label,icon:group.icon,items:group.hrefs.map(href=>itemByHref.get(href)).filter((item):item is NavigationItem=>Boolean(item)).filter(item=>canSeeItem(role,permissions,item.href))})).filter(section=>section.items.length>0); }
 
@@ -71,7 +72,7 @@ export function buildWorkspaceMemberNavigation(workspaces:WorkspaceNavigationSou
       if(p.includes("visibility.read")) items.push({label:"SEO · GEO · AEO",href:`${base}?tab=growth&area=visibility`,icon:"Search"});
       if(p.includes("ads.read")) items.push({label:"Annonser",href:`${base}?tab=growth&area=ads`,icon:"Megaphone"});
       if(hasAny(p,["corporate.plan","visibility.plan","ads.draft","events.plan"])) items.push({label:"Arbeidsplan",href:`${base}?tab=growth&area=plan`,icon:"ClipboardList"});
-      if(p.includes("marketing.read")) items.push({label:"SoMe & Content Hub",href:`${base}?tab=growth&focus=social`,icon:"Megaphone"});
+      if(p.includes("marketing.read")) items.push({label:"SoMe Studio",href:`${base}?tab=growth&focus=social`,icon:"Megaphone"});
       if(p.includes("reels.read")) items.push({label:"Reels Studio",href:`${base}?tab=growth&focus=reels`,icon:"Clapperboard"});
       if(p.includes("youtube.read")) items.push({label:"YouTube Studio",href:`${base}?tab=growth&focus=youtube`,icon:"Clapperboard"});
       if(p.includes("nexus.read")) items.push({label:"Nexus-innsikt",href:`${base}?tab=growth&focus=nexus`,icon:"Sparkles"});
