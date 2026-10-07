@@ -36,6 +36,7 @@ type GeneratedSource = {
   areaId?: string | null;
   companionPropertyId?: string | null;
   socialCategory?: SocialCategory;
+  variantImages?: Record<string, string>;
 };
 
 type SocialCategory =
@@ -448,6 +449,7 @@ export function WorkspaceSocialStudio({
       body: JSON.stringify({
         action: "render_property_card",
         propertyLookup: source.propertyLookup,
+        sourceImageUrl: source.variantImages?.[variant.id] || source.imageUrl || "",
         creativeStyle: styles[variant.id] || variant.creativeStyle,
         channel,
       }),
@@ -817,8 +819,13 @@ export function WorkspaceSocialStudio({
             {previewing === variant.id ? "Renderer…" : "Forhåndsvis valgt mal"}
           </button>
           {previewFeedback[variant.id] && <p className="mt-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200">{previewFeedback[variant.id]}</p>}
-          {previews[variant.id] && <img src={previews[variant.id]} alt={"Forhåndsvisning av " + variant.label}
-            className="mt-3 aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />}
+          {(previews[variant.id] || source?.variantImages?.[variant.id]) && <div className="mt-3">
+            <img src={previews[variant.id] || source?.variantImages?.[variant.id]} alt={"Forhåndsvisning av " + variant.label}
+              className="aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />
+            {!previews[variant.id] && source?.variantImages?.[variant.id] && <p className="mt-1 text-[10px] text-slate-500">
+              Eget bilde valgt for dette konseptet · render malen for ferdig uttrykk
+            </p>}
+          </div>}
         </label>}
 
         <div className="mt-4 space-y-3">
