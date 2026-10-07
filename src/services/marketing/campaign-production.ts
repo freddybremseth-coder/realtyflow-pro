@@ -29,6 +29,8 @@ import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 import { buildContentUtm, withUtm } from "@/lib/marketing/attribution";
 import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 import { selectPropertyCreativeStyle } from "@/lib/marketing/creative-style";
+import { socialConceptById } from "@/lib/marketing/social-concepts";
+import type { SocialCategory } from "@/lib/workspaces/social-strategy";
 import { renderPropertySocialCard, type PropertyCardSupabase } from "@/services/marketing/property-social-card";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
@@ -221,7 +223,16 @@ export interface CreateCampaignDraftInput {
   legacyPublicationId?: string;
   channel?: "instagram" | "facebook";
   mediaUrl?: string;
-  mediaType?: "image" | "video" | "reel";
+  mediaType?: "image" | "video" | "reel" | "carousel";
+  /** Ordered source images for a real multi-image post. */
+  mediaUrls?: string[];
+  /** Verified source facts (article/guide/area) given to the creative generator. */
+  sourceFacts?: Array<{ claim: string; source: string }>;
+  /** Stable source identity used for cooldown and attribution. */
+  sourceId?: string;
+  socialCategory?: SocialCategory;
+  conceptId?: "editorial_premium" | "lifestyle_story" | "advisor_insight";
+  visualFormat?: "single_image" | "property_card" | "collage_3" | "carousel";
   useInventoryProperty?: boolean;
   propertyId?: string;
   /** Manual-review recovery only: bypass AI prose and compose only from whitelisted Inventory facts. */
@@ -357,7 +368,12 @@ export async function createCampaignDraft(
   if (input.deterministicInventoryCopy && !inventoryProperty) {
     throw new Error("DETERMINISTIC_INVENTORY_FALLBACK_REQUIRES_PROPERTY");
   }
-  const effectiveMediaUrl = inventoryProperty?.primaryImage ?? input.mediaUrl;
+  const sourceMediaUrls = Array.from(new Set((input.mediaUrls || []).filter((url) => /^https:\/\//i.test(url)))).slice(0, 10);
+  const inventoryMediaUrls = inventoryProperty
+    ? [inventoryProperty.primaryImage, ...inventoryProperty.gallery].filter((url, index, all) => /^https:\/\//i.test(url) && all.indexOf(url) === index).slice(0, 10)
+    : [];
+  const effectiveMediaUrls = inventoryMediaUrls.length ? inventoryMediaUrls : sourceMediaUrls;
+  const effectiveMediaUrl = inventoryProperty?.primaryImage ?? input.mediaUrl ?? effectiveMediaUrls[0];
   const effectiveFocus = input.focus || inventoryProperty?.location || undefined;
   const locationInstruction = inventoryProperty
     ? inventoryProperty.locationSpecificity === "specific"
@@ -391,7 +407,10 @@ export async function createCampaignDraft(
 
   const campaignId = `camp_${run.marketingRunId}`;
   const fav = plan.favoredDimensions;
-  const routedFormat = routeContentFormat(effectiveMediaUrl);
+  const conceptProfile = input.conceptId ? socialConceptById(input.conceptId) : null;
+  const routedFormat = input.visualFormat === "carousel" && effectiveMediaUrls.length >= 2
+    ? "carousel"
+    : routeContentFormat(effectiveMediaUrl);
   const learnedRecipe = parseContentRecipe(fav.recipe);
   const targetChannel = input.channel ?? channels[0] ?? "instagram";
   const recipeApplicable = channels.length === 1
@@ -412,14 +431,18 @@ export async function createCampaignDraft(
     brandId: input.brandId,
     channel: targetChannel,
     format: routedFormat ?? "post",
-    hookType: (recipeApplicable?.hookType as any) ?? (fav.hookType as any) ?? "price_first",
-    ctaType: (recipeApplicable?.ctaType as any) ?? (fav.ctaType as any) ?? "book_viewing",
-    goal: mapGoal(input.goal.kind),
+    hookType: (conceptProfile?.hookType as any) ?? (recipeApplicable?.hookType as any) ?? (fav.hookType as any) ?? "price_first",
+    ctaType: (conceptProfile?.ctaType as any) ?? (recipeApplicable?.ctaType as any) ?? (fav.ctaType as any) ?? "book_viewing",
+    goal: (conceptProfile?.goal as any) ?? mapGoal(input.goal.kind),
     contentPillar: (recipeApplicable?.contentPillar as any) ?? (fav.contentPillar as any),
     topic: input.topic ?? (recipeApplicable?.topic as any) ?? (fav.topic as any),
     area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_") ?? (recipeApplicable?.area as any) ?? (fav.area as any),
     propertyType: inventoryProperty?.propertyType ?? (recipeApplicable?.propertyType as any) ?? (fav.propertyType as any),
-    creativeStyle: (recipeApplicable?.creativeStyle as any) ?? creativeStyle ?? (fav.creativeStyle as any),
+    creativeStyle: (input.visualFormat === "carousel" ? "carousel" : conceptProfile?.creativeStyle as any)
+      ?? (recipeApplicable?.creativeStyle as any) ?? creativeStyle ?? (fav.creativeStyle as any),
+    ...(input.socialCategory ? { socialCategory: input.socialCategory } : {}),
+    ...(input.conceptId ? { conceptId: input.conceptId } : {}),
+    ...(input.visualFormat ? { visualFormat: input.visualFormat } : {}),
   };
   const campaign: CampaignPlan = { campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit", goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea };
   const briefs = atomizeCampaign(campaign, {
@@ -457,7 +480,7 @@ export async function createCampaignDraft(
   for (const brief of briefs) {
     let creative: CreativeResult;
     let sourceType = "generated";
-    let sourceId: string | null = null;
+    let sourceId: string | null = input.sourceId ?? null;
     let reuseMode: string | null = null;
     let sourceHumanApproved = false;
     try {
@@ -472,13 +495,28 @@ export async function createCampaignDraft(
         creative = input.deterministicInventoryCopy
           ? makeDeterministicInventoryCreative(brief, inventoryProperty)
           : await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
-        creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
+        const propertyCarousel = input.visualFormat === "carousel" && inventoryMediaUrls.length >= 2;
+        creative = {
+          ...creative,
+          asset: {
+            ...creative.asset,
+            media: propertyCarousel
+              ? {
+                  imageUrl: inventoryMediaUrls[0],
+                  imageUrls: inventoryMediaUrls.slice(0, 10),
+                  mediaType: "carousel",
+                  altText: [inventoryProperty.title, inventoryProperty.location].filter(Boolean).join(" · "),
+                }
+              : { imageUrl: inventoryProperty.primaryImage, mediaType: "image" },
+          },
+        };
 
         const resolvedCreativeStyle = creative.asset.genome.creativeStyle;
         const storageReady = Boolean((supabase as any)?.storage?.from);
         if (
           storageReady
           && resolvedCreativeStyle
+          && input.visualFormat !== "carousel"
           && (brief.channel === "facebook" || brief.channel === "instagram")
           && /^https:\/\//i.test(inventoryProperty.primaryImage)
         ) {
@@ -516,6 +554,39 @@ export async function createCampaignDraft(
         sourceType = "generated";
         sourceId = `property:${inventoryProperty.id}`;
         reuseMode = input.deterministicInventoryCopy ? "inventory_deterministic_fallback" : "inventory_grounded";
+      } else if ((input.sourceFacts?.length || input.sourceId) && !input.legacyPublicationId) {
+        creative = await generator.generate({
+          brief,
+          brand,
+          recommendation,
+          facts: input.sourceFacts ?? [],
+        });
+        const carouselUrls = effectiveMediaUrls.length ? effectiveMediaUrls : (effectiveMediaUrl ? [effectiveMediaUrl] : []);
+        if (brief.channel === "instagram" && input.visualFormat === "carousel" && carouselUrls.length >= 2) {
+          creative = {
+            ...creative,
+            asset: {
+              ...creative.asset,
+              media: {
+                imageUrl: carouselUrls[0],
+                imageUrls: carouselUrls.slice(0, 10),
+                mediaType: "carousel",
+              },
+            },
+          };
+        } else if (effectiveMediaUrl && /^https:\/\//i.test(effectiveMediaUrl)) {
+          const mediaType = input.mediaType === "video" || input.mediaType === "reel" ? input.mediaType : "image";
+          creative = {
+            ...creative,
+            asset: {
+              ...creative.asset,
+              media: mediaType === "image"
+                ? { imageUrl: effectiveMediaUrl, mediaType }
+                : { videoUrl: effectiveMediaUrl, mediaType },
+            },
+          };
+        }
+        reuseMode = "source_grounded";
       } else {
         let decision = null;
         try {
@@ -534,11 +605,20 @@ export async function createCampaignDraft(
           sourceHumanApproved = !!decision.chosen.humanApproved;
         } else {
           creative = await generator.generate({ brief, brand, recommendation });
-          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) {
-            const mediaType = input.mediaType ?? "image";
-            creative = { ...creative, asset: { ...creative.asset, media: mediaType === "image"
-              ? { imageUrl: input.mediaUrl, mediaType }
-              : { videoUrl: input.mediaUrl, mediaType } } };
+          if (effectiveMediaUrl && /^https:\/\//i.test(effectiveMediaUrl)) {
+            const carouselUrls = effectiveMediaUrls.length ? effectiveMediaUrls : [effectiveMediaUrl];
+            const mediaType = input.mediaType ?? (input.visualFormat === "carousel" && carouselUrls.length >= 2 ? "carousel" : "image");
+            creative = {
+              ...creative,
+              asset: {
+                ...creative.asset,
+                media: mediaType === "carousel"
+                  ? { imageUrl: carouselUrls[0], imageUrls: carouselUrls.slice(0, 10), mediaType }
+                  : mediaType === "image"
+                    ? { imageUrl: effectiveMediaUrl, mediaType }
+                    : { videoUrl: effectiveMediaUrl, mediaType },
+              },
+            };
           }
         }
       }
