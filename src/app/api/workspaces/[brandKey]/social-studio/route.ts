@@ -379,52 +379,191 @@ function safeTags(value: unknown) {
   return Array.from(new Set(value.map((item) => clean(item, 60).replace(/^#+/, "").toLowerCase()).filter(Boolean))).slice(0, 8);
 }
 
-function parseAiJsonObject(raw: string): Record<string, unknown> | null {
+function parseAiJsonValue(raw: string): unknown {
   const stripped = raw
     .replace(/^\uFEFF/, "")
     .replace(/^\s*\`\`\`(?:json)?\s*/i, "")
     .replace(/\s*\`\`\`\s*$/i, "")
     .trim();
+
   try {
-    const value = JSON.parse(stripped);
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? value as Record<string, unknown>
-      : null;
+    return JSON.parse(stripped);
   } catch {
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      const value = JSON.parse(match[0]);
-      return value && typeof value === "object" && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : null;
-    } catch {
-      return null;
+    for (const pattern of [/\{[\s\S]*\}/, /\[[\s\S]*\]/]) {
+      const match = stripped.match(pattern);
+      if (!match) continue;
+      try {
+        return JSON.parse(match[0]);
+      } catch {}
+    }
+    return null;
+  }
+}
+
+function aiRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function firstAiString(row: Record<string, unknown>, keys: string[], max = 4_200) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return clean(value, max);
+  }
+  return "";
+}
+
+function socialChannelText(row: Record<string, unknown>, channel: "facebook" | "instagram") {
+  const directKeys = channel === "facebook"
+    ? ["facebookText", "facebook_text", "facebookCaption", "facebook_caption", "facebook", "fbText", "fb_text", "fbCaption", "fb_caption"]
+    : ["instagramText", "instagram_text", "instagramCaption", "instagram_caption", "instagram", "igText", "ig_text", "igCaption", "ig_caption"];
+
+  const direct = firstAiString(row, directKeys);
+  if (direct) return direct;
+
+  const directChannel = aiRecord(row[channel]);
+  if (directChannel) {
+    const nested = firstAiString(directChannel, ["text", "caption", "body", "copy", "content", "post"]);
+    if (nested) return nested;
+  }
+
+  for (const containerKey of ["platforms", "channels", "texts", "captions", "social", "copyByChannel", "channelCopy"]) {
+    const container = aiRecord(row[containerKey]);
+    if (!container) continue;
+    const channelValue = container[channel];
+    if (typeof channelValue === "string" && channelValue.trim()) return clean(channelValue, 4_200);
+    const channelRecord = aiRecord(channelValue);
+    if (channelRecord) {
+      const nested = firstAiString(channelRecord, ["text", "caption", "body", "copy", "content", "post"]);
+      if (nested) return nested;
     }
   }
+
+  return "";
+}
+
+function safeAiTags(value: unknown) {
+  if (Array.isArray(value)) return safeTags(value);
+  if (typeof value !== "string") return [];
+  const hashtags = Array.from(value.matchAll(/#([\p{L}\p{N}_-]+)/gu)).map((match) => match[1]);
+  const source = hashtags.length ? hashtags : value.split(/[,;|\n]+/);
+  return safeTags(source);
+}
+
+function normalizedVariantId(row: Record<string, unknown>) {
+  const raw = firstAiString(row, ["id", "variant", "concept", "type", "style", "name"], 120)
+    .toLowerCase()
+    .replace(/[^a-z0-9æøå]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (!raw) return "";
+  if (raw === "editorial_premium" || (raw.includes("editorial") && raw.includes("premium"))) return "editorial_premium";
+  if (raw === "lifestyle_story" || raw.includes("lifestyle") || (raw.includes("story") && !raw.includes("advisor"))) return "lifestyle_story";
+  if (raw === "advisor_insight" || raw.includes("advisor") || raw.includes("insight") || raw.includes("rådgiver")) return "advisor_insight";
+  return "";
+}
+
+function variantRowsFromValue(value: unknown, depth = 0): Array<Record<string, unknown>> {
+  if (depth > 2) return [];
+
+  if (Array.isArray(value)) {
+    return value.map(aiRecord).filter((row): row is Record<string, unknown> => Boolean(row));
+  }
+
+  const record = aiRecord(value);
+  if (!record) return [];
+
+  for (const key of ["variants", "concepts", "suggestions", "ideas", "posts", "alternatives", "options", "results"]) {
+    const rows = variantRowsFromValue(record[key], depth + 1);
+    if (rows.length >= 3) return rows;
+  }
+
+  for (const key of ["data", "result", "output", "response"]) {
+    const rows = variantRowsFromValue(record[key], depth + 1);
+    if (rows.length >= 3) return rows;
+  }
+
+  const keyed = VARIANT_BLUEPRINTS
+    .map((blueprint) => aiRecord(record[blueprint.id]))
+    .filter((row): row is Record<string, unknown> => Boolean(row));
+  if (keyed.length === 3) return keyed;
+
+  const numbered = Object.entries(record)
+    .filter(([key, value]) =>
+      /^(?:variant|concept|idea|post|suggestion)[ _-]?\d+$/i.test(key) && Boolean(aiRecord(value)))
+    .map(([, value]) => aiRecord(value)!)
+    .slice(0, 3);
+  if (numbered.length === 3) return numbered;
+
+  return [];
+}
+
+function normalizeVariantPayload(raw: string) {
+  const rows = variantRowsFromValue(parseAiJsonValue(raw));
+  if (rows.length < 3) return null;
+
+  const assigned = new Map<string, Record<string, unknown>>();
+  const remaining: Array<Record<string, unknown>> = [];
+
+  for (const row of rows) {
+    const id = normalizedVariantId(row);
+    if (id && !assigned.has(id)) assigned.set(id, row);
+    else remaining.push(row);
+  }
+
+  for (const blueprint of VARIANT_BLUEPRINTS) {
+    if (assigned.has(blueprint.id)) continue;
+    const row = remaining.shift();
+    if (row) assigned.set(blueprint.id, row);
+  }
+
+  const variants = VARIANT_BLUEPRINTS.map((blueprint) => {
+    const row = assigned.get(blueprint.id);
+    if (!row) return null;
+
+    let facebookText = socialChannelText(row, "facebook");
+    let instagramText = socialChannelText(row, "instagram");
+    const genericText = firstAiString(row, ["text", "caption", "body", "copy", "content", "postText", "post_text"]);
+
+    if (!facebookText) facebookText = genericText || instagramText;
+    if (!instagramText) instagramText = genericText || facebookText;
+    if (!facebookText || !instagramText) return null;
+
+    return {
+      id: blueprint.id,
+      hook: firstAiString(row, ["hook", "headline", "title", "opening", "lead"], 220),
+      angle: firstAiString(row, ["angle", "approach", "strategy", "rationale", "positioning"], 500),
+      visualDirection: firstAiString(row, ["visualDirection", "visual_direction", "visual", "creativeDirection", "creative_direction", "imageDirection", "image_direction"], 500),
+      facebookText,
+      instagramText,
+      tags: safeAiTags(row.tags ?? row.hashtags ?? row.hashTags),
+    };
+  });
+
+  return variants.every(Boolean)
+    ? { variants: variants as Array<{
+        id: typeof VARIANT_BLUEPRINTS[number]["id"];
+        hook: string;
+        angle: string;
+        visualDirection: string;
+        facebookText: string;
+        instagramText: string;
+        tags: string[];
+      }> }
+    : null;
 }
 
 function validVariantPayload(raw: string) {
-  const parsed = parseAiJsonObject(raw);
-  const variants = parsed?.variants;
-  if (!Array.isArray(variants) || variants.length !== 3) return false;
-  const expected = new Set(VARIANT_BLUEPRINTS.map((item) => item.id));
-  return variants.every((row) => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) return false;
-    const record = row as Record<string, unknown>;
-    return expected.has(String(record.id) as typeof VARIANT_BLUEPRINTS[number]["id"])
-      && typeof record.facebookText === "string"
-      && typeof record.instagramText === "string";
-  });
+  return normalizeVariantPayload(raw) !== null;
 }
 
 function parseVariants(raw: string, sourceUrl: string) {
-  const parsed = parseAiJsonObject(raw) as { variants?: Array<Record<string, unknown>> } | null;
-  if (!parsed || !Array.isArray(parsed.variants) || parsed.variants.length !== 3) {
-    throw new Error("SOCIAL_STUDIO_AI_INVALID");
-  }
+  const normalized = normalizeVariantPayload(raw);
+  if (!normalized) throw new Error("SOCIAL_STUDIO_AI_INVALID");
+
   return VARIANT_BLUEPRINTS.map((blueprint, index) => {
-    const source = parsed.variants!.find((row) => row.id === blueprint.id) || parsed.variants![index] || {};
+    const source = normalized.variants.find((row) => row.id === blueprint.id) || normalized.variants[index];
     return {
       id: blueprint.id,
       label: blueprint.label,
@@ -438,7 +577,6 @@ function parseVariants(raw: string, sourceUrl: string) {
     };
   });
 }
-
 
 type EditorialItem = {
   id: string;
@@ -1084,7 +1222,42 @@ export async function POST(
       }
     }
 
-    if (!validVariantPayload(raw)) throw new Error("SOCIAL_STUDIO_AI_INVALID");
+    if (!validVariantPayload(raw)) {
+      try {
+        const repairPrompt = [
+          "Gjør bare om strukturen i AI-svaret nedenfor. Ikke finn på nye fakta.",
+          "Returner nøyaktig tre konsepter som JSON med roten {\"variants\":[...]}.",
+          "Konseptene skal være i denne rekkefølgen: editorial_premium, lifestyle_story, advisor_insight.",
+          "Hvert konsept skal ha: id, hook, angle, visualDirection, facebookText, instagramText, tags.",
+          "Hvis én kanaltekst mangler, tilpass den eksisterende teksten kort til den manglende kanalen.",
+          "Returner kun JSON, ingen markdown eller forklaring.",
+          "",
+          "AI-SVAR SOM SKAL NORMALISERES:",
+          raw.slice(0, 14_000),
+        ].join("\n");
+
+        raw = await askClaude(repairPrompt, {
+          model: "haiku",
+          maxTokens: 3_200,
+          validateResponse: validVariantPayload,
+          fallbackOnInvalidResponse: true,
+        });
+      } catch {}
+    }
+
+    if (!validVariantPayload(raw)) {
+      const value = parseAiJsonValue(raw);
+      const rows = variantRowsFromValue(value);
+      console.warn("[social-studio] AI output could not be normalized", {
+        rootType: Array.isArray(value) ? "array" : value && typeof value === "object" ? "object" : typeof value,
+        rootKeys: aiRecord(value) ? Object.keys(aiRecord(value)!).slice(0, 12) : [],
+        rowCount: rows.length,
+        rowKeys: rows.slice(0, 3).map((row) => Object.keys(row).slice(0, 12)),
+        rowIds: rows.slice(0, 3).map((row) => firstAiString(row, ["id", "variant", "concept", "type", "style", "name"], 120)),
+        rawLength: raw.length,
+      });
+      throw new Error("SOCIAL_STUDIO_AI_INVALID");
+    }
     const variants = parseVariants(raw, sourceUrl);
 
     return NextResponse.json({

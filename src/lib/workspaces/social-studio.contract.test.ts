@@ -108,10 +108,21 @@ test("Owner can use the same canonical marketing draft flow as workspace members
 
 
 test("SoMe Studio tolerates wrapped JSON and retries without native schema before failing", () => {
-  assert.match(route, /function parseAiJsonObject/);
+  assert.match(route, /function parseAiJsonValue/);
   assert.match(route, /validVariantPayload/);
   assert.match(route, /structuredError/);
   assert.match(route, /native JSON-schema ikke er tilgjengelig/);
   assert.match(route, /SOCIAL_STUDIO_AI_UNAVAILABLE/);
   assert.match(studio, /AI-tjenesten er midlertidig utilgjengelig/);
+});
+
+
+test("SoMe Studio normalizes common AI response shapes before rejecting output", () => {
+  assert.match(route, /function normalizeVariantPayload/);
+  assert.match(route, /concepts/);
+  assert.match(route, /suggestions/);
+  assert.match(route, /facebook_text/);
+  assert.match(route, /instagram_caption/);
+  assert.match(route, /AI-SVAR SOM SKAL NORMALISERES/);
+  assert.match(route, /AI output could not be normalized/);
 });
