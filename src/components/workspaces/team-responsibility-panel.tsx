@@ -20,15 +20,15 @@ const statusMeta: Record<WorkspaceResponsibilityCoverageStatus, {
   className: string;
 }> = {
   owned: {
-    label: "Én ansvarlig",
+    label: "Én operativ ansvarlig",
     className: "border-emerald-800 bg-emerald-950/25 text-emerald-300",
   },
   shared: {
-    label: "Delt ansvar",
+    label: "Delt operativt ansvar",
     className: "border-amber-800 bg-amber-950/25 text-amber-300",
   },
   unassigned: {
-    label: "Mangler ansvarlig",
+    label: "Ingen operativ ansvarlig",
     className: "border-rose-800 bg-rose-950/25 text-rose-300",
   },
   "no-capability": {
@@ -88,10 +88,10 @@ export function WorkspaceTeamResponsibilityPanel({
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-400">Team · ansvarskart</p>
-        <h2 className="mt-1 text-xl font-semibold">Hvem eier hva?</h2>
+        <h2 className="mt-1 text-xl font-semibold">Hvem gjør hva?</h2>
         <p className="mt-2 max-w-3xl text-sm text-slate-400">
-          Ansvar er et prioriteringslag, ikke tilgang. RealtyFlow viser hvor teamet har én tydelig eier,
-          hvor ansvar er delt, og hvor et arbeidsområde mangler ansvarlig eller nødvendig modulrettighet.
+          Dette er intern arbeidsfordeling, ikke overordnet eierskap eller ledelsesansvar. Du som OWNER har
+          fortsatt det overordnede ansvaret. Her viser RealtyFlow hvem som utfører og følger opp hvert område operativt.
         </p>
       </div>
       <select
@@ -104,21 +104,29 @@ export function WorkspaceTeamResponsibilityPanel({
       </select>
     </div>
 
+    <div className="mt-4 rounded-xl border border-cyan-900/60 bg-cyan-950/15 p-4 text-sm text-cyan-100">
+      <strong>Overordnet ansvar: Du som OWNER.</strong>
+      <p className="mt-1 text-xs leading-5 text-slate-400">
+        Personene under får bare delegert operativt ansvar for oppfølging og utførelse. De overtar ikke eierskap,
+        ledelsesansvar eller sluttansvar for merkevaren.
+      </p>
+    </div>
+
     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
         <span className="text-[11px] uppercase tracking-wide text-slate-500">Aktive team-brands</span>
         <strong className="mt-1 block text-xl text-slate-100">{summary.activeBrands}</strong>
       </div>
       <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/15 p-3">
-        <span className="text-[11px] uppercase tracking-wide text-emerald-500">Tydelig eier</span>
+        <span className="text-[11px] uppercase tracking-wide text-emerald-500">Tydelig operativt ansvar</span>
         <strong className="mt-1 block text-xl text-emerald-200">{summary.owned}</strong>
       </div>
       <div className="rounded-xl border border-amber-900/60 bg-amber-950/15 p-3">
-        <span className="text-[11px] uppercase tracking-wide text-amber-500">Delt ansvar</span>
+        <span className="text-[11px] uppercase tracking-wide text-amber-500">Delt operativt ansvar</span>
         <strong className="mt-1 block text-xl text-amber-200">{summary.shared}</strong>
       </div>
       <div className="rounded-xl border border-rose-900/60 bg-rose-950/15 p-3">
-        <span className="text-[11px] uppercase tracking-wide text-rose-500">Mangler ansvarlig</span>
+        <span className="text-[11px] uppercase tracking-wide text-rose-500">Ingen operativ ansvarlig</span>
         <strong className="mt-1 block text-xl text-rose-200">{summary.unassigned}</strong>
       </div>
       <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
@@ -130,9 +138,9 @@ export function WorkspaceTeamResponsibilityPanel({
     {(summary.unassigned > 0 || summary.shared > 0) && <div className="mt-4 flex gap-3 rounded-xl border border-amber-900/60 bg-amber-950/15 p-4 text-sm text-amber-100">
       <AlertTriangle size={18} className="mt-0.5 shrink-0"/>
       <p>
-        <strong>Kontroller ansvarsfordelingen.</strong> «Mangler ansvarlig» betyr at noen allerede har
-        nødvendig tilgang, men ingen er satt som eier. «Delt ansvar» kan være riktig, men bør være bevisst
-        slik at oppfølging ikke faller mellom to personer.
+        <strong>Kontroller den operative arbeidsfordelingen.</strong> «Ingen operativ ansvarlig» betyr at noen allerede har
+        nødvendig tilgang, men ingen er satt til å følge opp området. «Delt operativt ansvar» kan være riktig, men bør være bevisst
+        slik at oppfølging ikke faller mellom to personer. Dette endrer aldri OWNER sitt overordnede ansvar.
       </p>
     </div>}
 
@@ -144,8 +152,8 @@ export function WorkspaceTeamResponsibilityPanel({
             <p className="mt-1 text-xs text-slate-500">{brand.activeMemberCount} aktive workspace-brukere</p>
           </div>
           <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-wide">
-            {brand.unassignedCount > 0 && <span className="rounded-full border border-rose-800 px-2 py-1 text-rose-300">{brand.unassignedCount} uten eier</span>}
-            {brand.sharedCount > 0 && <span className="rounded-full border border-amber-800 px-2 py-1 text-amber-300">{brand.sharedCount} delt</span>}
+            {brand.unassignedCount > 0 && <span className="rounded-full border border-rose-800 px-2 py-1 text-rose-300">{brand.unassignedCount} uten operativ ansvarlig</span>}
+            {brand.sharedCount > 0 && <span className="rounded-full border border-amber-800 px-2 py-1 text-amber-300">{brand.sharedCount} delt operativt</span>}
             {brand.unassignedCount === 0 && brand.sharedCount === 0 && brand.activeMemberCount > 0 &&
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-800 px-2 py-1 text-emerald-300"><CheckCircle2 size={11}/> ryddig</span>}
           </div>
@@ -192,7 +200,7 @@ export function WorkspaceTeamResponsibilityPanel({
                     });
                     const top = recommendations[0];
                     return <div className="mt-3 space-y-3">
-                      <p className="text-[11px] text-rose-300">Tilgang finnes, men ingen er satt som ansvarlig.</p>
+                      <p className="text-[11px] text-rose-300">Tilgang finnes, men ingen er satt som operativ ansvarlig.</p>
                       {top && <div className="rounded-lg border border-cyan-900/70 bg-cyan-950/20 p-3">
                         <div className="flex items-start gap-2">
                           <Sparkles size={14} className="mt-0.5 shrink-0 text-cyan-300"/>
