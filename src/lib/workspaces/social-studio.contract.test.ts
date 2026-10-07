@@ -105,3 +105,13 @@ test("Owner can use the same canonical marketing draft flow as workspace members
   assert.match(marketing, /owner_draft: true/);
   assert.doesNotMatch(marketing, /if \(!access\.value\.verifiedUserId\) return fail\(403, "STAFF_ONLY"\)/);
 });
+
+
+test("SoMe Studio tolerates wrapped JSON and retries without native schema before failing", () => {
+  assert.match(route, /function parseAiJsonObject/);
+  assert.match(route, /validVariantPayload/);
+  assert.match(route, /structuredError/);
+  assert.match(route, /native JSON-schema ikke er tilgjengelig/);
+  assert.match(route, /SOCIAL_STUDIO_AI_UNAVAILABLE/);
+  assert.match(studio, /AI-tjenesten er midlertidig utilgjengelig/);
+});
