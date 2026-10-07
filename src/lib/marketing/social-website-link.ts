@@ -8,9 +8,8 @@ const BRAND_ALIASES: Record<string, string> = {
   remaster: "remasterfreddy",
 };
 
-const SOCIAL_CHANNELS = new Set([
+const WEBSITE_LINK_CHANNELS = new Set([
   "facebook",
-  "instagram",
   "linkedin",
   "youtube",
   "tiktok",
@@ -40,8 +39,20 @@ export function canonicalBrandWebsite(brandId: string): string | null {
   return website.startsWith("https://") ? website : null;
 }
 
+export function instagramCaptionWithoutLinks(content: string) {
+  return String(content || "")
+    .split(/\r?\n/)
+    .filter((line) => !/\b(?:lenke|link)\s+i\s+(?:bio|profil(?:en)?)\b/i.test(line))
+    .map((line) => line.replace(/https?:\/\/[^\s<>"']+/gi, "").replace(/\s+([,.;!?])/g, "$1").trim())
+    .map((line) => line.replace(/:\s*$/, ""))
+    .filter(Boolean)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function socialChannelRequiresWebsite(channel: string) {
-  return SOCIAL_CHANNELS.has(String(channel || "").trim().toLowerCase());
+  return WEBSITE_LINK_CHANNELS.has(String(channel || "").trim().toLowerCase());
 }
 
 export function contentHasBrandWebsite(content: string, website: string) {
@@ -56,19 +67,21 @@ export function contentHasBrandWebsite(content: string, website: string) {
 }
 
 /**
- * Every public social post for a configured brand must contain an owned-site
- * URL. A deep link on the same host satisfies the rule; otherwise the canonical
- * brand homepage is appended. Brands without a configured owned website are
- * left unchanged; owned/public RealtyFlow brands are configured in the canonical
- * registries and are therefore always enriched.
+ * Link policy is channel-native:
+ * - Facebook/LinkedIn/etc. get an owned-site URL when missing.
+ * - Organic Instagram captions stay URL-free; raw links and "link in bio"
+ *   language are stripped because they are not useful as clickable caption CTAs.
+ * Brands without a configured owned website are otherwise left unchanged.
  */
 export function ensureBrandWebsiteLink(input: {
   brandId: string;
   channel: string;
   content: string;
 }): string {
+  const channel = String(input.channel || "").trim().toLowerCase();
   const content = String(input.content || "").trim();
-  if (!socialChannelRequiresWebsite(input.channel)) return content;
+  if (channel === "instagram") return instagramCaptionWithoutLinks(content);
+  if (!socialChannelRequiresWebsite(channel)) return content;
 
   const website = canonicalBrandWebsite(input.brandId);
   if (!website) return content;
