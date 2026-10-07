@@ -684,7 +684,7 @@ function variantRowsFromValue(value: unknown, depth = 0): Array<Record<string, u
       const id = normalizedVariantId({ name: key });
       return id ? { ...row, id: firstAiString(row, ["id"], 120) || id } : null;
     })
-    .filter((row): row is Record<string, unknown> => Boolean(row));
+    .filter((row): row is Record<string, unknown> & { id: string } => Boolean(row));
   if (keyed.length >= 3) return keyed.slice(0, 3);
 
   const exactKeyed = VARIANT_BLUEPRINTS
