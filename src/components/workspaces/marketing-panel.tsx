@@ -185,10 +185,17 @@ export function WorkspaceMarketingPanel({
       onDraftSaved={load}
     />}
 
-    {canDraft && <form onSubmit={event => { event.preventDefault(); void createDraft(); }}
-      className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-      <h2 className="flex items-center gap-2 text-xl font-semibold"><FilePlus2 size={19}/> Manuelt innholdsutkast</h2>
-      <p className="mt-1 text-xs text-slate-400">Bruk dette når du vil skrive innholdet selv. SoMe Studio over lager tre redaksjonelle forslag og er standardflyten for eiendom, guide/magasin og egne temaer.</p>
+    {canDraft && <details className="group rounded-2xl border border-slate-800 bg-slate-900/70">
+      <summary className="cursor-pointer list-none p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-lg font-semibold sm:text-xl"><FilePlus2 size={19}/> Manuelt innholdsutkast</h2>
+          <span className="text-xs font-semibold text-cyan-300 group-open:hidden">Åpne</span>
+          <span className="hidden text-xs font-semibold text-slate-400 group-open:inline">Lukk</span>
+        </div>
+        <p className="mt-1 text-xs text-slate-400">Valgfritt. Bruk dette når du vil skrive selv; SoMe Studio er standardflyten.</p>
+      </summary>
+      <form onSubmit={event => { event.preventDefault(); void createDraft(); }}
+        className="border-t border-slate-800 p-4 sm:p-5">
       <div className="mt-4 grid gap-3">
         <label className="text-xs text-slate-300">Tittel
           <input value={title} onChange={event => setTitle(event.target.value)} maxLength={200}
@@ -230,12 +237,18 @@ export function WorkspaceMarketingPanel({
         className="mt-4 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
         {busy ? "Lagrer…" : "Lagre utkast"}
       </button>
-    </form>}
+      </form>
+    </details>}
 
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-      <h2 className="text-xl font-semibold">Nylig innhold</h2>
-      <p className="mt-1 text-xs text-slate-400">Maks 60 siste poster/utkast for denne merkevaren. Ingen andre brands vises.</p>
-      <div className="mt-4 space-y-3">
+    <details className="group rounded-2xl border border-slate-800 bg-slate-900/70">
+      <summary className="cursor-pointer list-none p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold sm:text-xl">Nylig innhold</h2>
+          <span className="text-xs text-slate-400">{data?.publications.length || 0} poster · <span className="text-cyan-300 group-open:hidden">vis</span><span className="hidden group-open:inline">skjul</span></span>
+        </div>
+        <p className="mt-1 text-xs text-slate-400">Siste poster og utkast for denne merkevaren.</p>
+      </summary>
+      <div className="space-y-3 border-t border-slate-800 p-4 sm:p-5">
         {(data?.publications || []).map(item => <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -251,6 +264,6 @@ export function WorkspaceMarketingPanel({
         </article>)}
         {!data?.publications.length && <p className="text-sm text-slate-500">Ingen markedsføringsinnhold funnet for merkevaren.</p>}
       </div>
-    </div>
+    </details>
   </section>;
 }
