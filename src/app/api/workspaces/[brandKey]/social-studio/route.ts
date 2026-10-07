@@ -40,6 +40,8 @@ const RESPONSE_SCHEMA = {
   properties: {
     variants: {
       type: "array",
+      minItems: 3,
+      maxItems: 3,
       items: {
         type: "object",
         additionalProperties: false,
@@ -397,6 +399,57 @@ function ensureLink(text: string, url: string) {
   return compact + "\n\n" + url;
 }
 
+function instagramCaptionWithoutLinks(text: string) {
+  return clean(text, 4_500)
+    .split(/\n+/)
+    .filter((line) => !/lenke i bio/i.test(line))
+    .join("\n")
+    .replace(/https?:\/\/[^\s)\]}>]+/gi, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function instagramEngagementCta(
+  conceptId: typeof VARIANT_BLUEPRINTS[number]["id"],
+  sourceType: string,
+) {
+  if (conceptId === "editorial_premium") {
+    return sourceType === "property"
+      ? "Lagre posten hvis du vil sammenligne denne boligen med andre senere."
+      : "Lagre posten til senere hvis dette er relevant for boligplanene dine.";
+  }
+
+  if (conceptId === "lifestyle_story") {
+    return sourceType === "article"
+      ? "Kjenner du noen som også ville hatt nytte av dette? Del posten med dem."
+      : "Hvem ville du tatt med deg hit?";
+  }
+
+  return sourceType === "area"
+    ? "Lurer du på hvilket område som passer best for deg? Send oss en melding, så hjelper vi deg."
+    : sourceType === "property"
+      ? "Vil du vite om denne boligen kan passe kriteriene dine? Send oss en melding, så hjelper vi deg å vurdere den."
+      : "Har du spørsmål om dette? Send oss en melding, så hjelper vi deg.";
+}
+
+function ensureInstagramEngagement(
+  text: string,
+  conceptId: typeof VARIANT_BLUEPRINTS[number]["id"],
+  sourceType: string,
+) {
+  const caption = instagramCaptionWithoutLinks(text);
+  const hasExpectedCta = conceptId === "editorial_premium"
+    ? /\b(lagre|save)\b/i.test(caption)
+    : conceptId === "lifestyle_story"
+      ? /\b(hvem|tagg|del|dele|ta med|send (?:denne|posten) til)\b/i.test(caption)
+      : /\b(send oss en melding|skriv til oss|send en melding|dm oss|melding)\b/i.test(caption);
+
+  if (hasExpectedCta) return caption;
+  return [caption, instagramEngagementCta(conceptId, sourceType)].filter(Boolean).join("\n\n");
+}
+
 function safeTags(value: unknown) {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.map((item) => clean(item, 60).replace(/^#+/, "").toLowerCase()).filter(Boolean))).slice(0, 8);
@@ -481,45 +534,174 @@ function normalizedVariantId(row: Record<string, unknown>) {
     .replace(/^_+|_+$/g, "");
 
   if (!raw) return "";
-  if (raw === "editorial_premium" || (raw.includes("editorial") && raw.includes("premium"))) return "editorial_premium";
-  if (raw === "lifestyle_story" || raw.includes("lifestyle") || (raw.includes("story") && !raw.includes("advisor"))) return "lifestyle_story";
-  if (raw === "advisor_insight" || raw.includes("advisor") || raw.includes("insight") || raw.includes("rådgiver")) return "advisor_insight";
+  if (
+    raw === "editorial_premium"
+    || (raw.includes("editorial") && raw.includes("premium"))
+    || raw.includes("premium")
+    || raw.includes("eksklusiv")
+  ) return "editorial_premium";
+  if (
+    raw === "lifestyle_story"
+    || raw.includes("lifestyle")
+    || raw.includes("livsstil")
+    || raw.includes("historie")
+    || (raw.includes("story") && !raw.includes("advisor"))
+  ) return "lifestyle_story";
+  if (
+    raw === "advisor_insight"
+    || raw.includes("advisor")
+    || raw.includes("insight")
+    || raw.includes("innsikt")
+    || raw.includes("rådgiver")
+    || raw.includes("expert")
+    || raw.includes("ekspert")
+  ) return "advisor_insight";
   return "";
 }
 
+function rowFromLooseValue(value: unknown): Record<string, unknown> | null {
+  const record = aiRecord(value);
+  if (record) return record;
+
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = parseAiJsonValue(value);
+  const parsedRecord = aiRecord(parsed);
+  if (parsedRecord) return parsedRecord;
+
+  return { text: clean(value, 4_200) };
+}
+
+function channelArray(
+  record: Record<string, unknown>,
+  keys: string[],
+): unknown[] {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+
+    if (typeof value === "string" && value.trim()) {
+      const parsed = parseAiJsonValue(value);
+      if (Array.isArray(parsed)) return parsed;
+    }
+
+    const nested = aiRecord(value);
+    if (nested) {
+      const numbered = Object.entries(nested)
+        .filter(([entryKey]) => /^\d+$/.test(entryKey) || /^(?:post|variant|concept|idea)[ _-]?\d+$/i.test(entryKey))
+        .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+        .map(([, entryValue]) => entryValue);
+      if (numbered.length) return numbered;
+    }
+  }
+  return [];
+}
+
+function looseChannelText(value: unknown, channel: "facebook" | "instagram") {
+  if (typeof value === "string") return clean(value, 4_200);
+  const record = aiRecord(value);
+  if (!record) return "";
+  return socialChannelText(record, channel)
+    || firstAiString(record, ["text", "caption", "body", "copy", "content", "post"], 4_200);
+}
+
+function channelSeparatedVariantRows(record: Record<string, unknown>) {
+  const facebook = channelArray(record, [
+    "facebook", "facebookPosts", "facebook_posts", "facebookVariants", "facebook_variants", "fb", "fbPosts", "fb_posts",
+  ]);
+  const instagram = channelArray(record, [
+    "instagram", "instagramPosts", "instagram_posts", "instagramVariants", "instagram_variants", "ig", "igPosts", "ig_posts",
+  ]);
+
+  if (Math.max(facebook.length, instagram.length) < 3) return [];
+
+  return VARIANT_BLUEPRINTS.map((blueprint, index) => {
+    const fbRecord = aiRecord(facebook[index]) || {};
+    const igRecord = aiRecord(instagram[index]) || {};
+    return {
+      ...fbRecord,
+      ...igRecord,
+      id: firstAiString({ ...fbRecord, ...igRecord }, ["id", "variant", "concept", "type", "style", "name"], 120) || blueprint.id,
+      facebookText: looseChannelText(facebook[index], "facebook"),
+      instagramText: looseChannelText(instagram[index], "instagram"),
+    };
+  });
+}
+
 function variantRowsFromValue(value: unknown, depth = 0): Array<Record<string, unknown>> {
-  if (depth > 2) return [];
+  if (depth > 5) return [];
+
+  if (typeof value === "string") {
+    const parsed = parseAiJsonValue(value);
+    if (parsed !== null) return variantRowsFromValue(parsed, depth + 1);
+    const row = rowFromLooseValue(value);
+    return row ? [row] : [];
+  }
 
   if (Array.isArray(value)) {
-    return value.map(aiRecord).filter((row): row is Record<string, unknown> => Boolean(row));
+    const rows: Array<Record<string, unknown>> = [];
+    for (const item of value) {
+      const record = aiRecord(item);
+      if (record) {
+        rows.push(record);
+        continue;
+      }
+
+      if (typeof item === "string" && item.trim()) {
+        const parsed = parseAiJsonValue(item);
+        if (parsed !== null) {
+          const nested = variantRowsFromValue(parsed, depth + 1);
+          if (nested.length) {
+            rows.push(...nested);
+            continue;
+          }
+        }
+        rows.push({ text: clean(item, 4_200) });
+      }
+    }
+    return rows;
   }
 
   const record = aiRecord(value);
   if (!record) return [];
 
-  for (const key of ["variants", "concepts", "suggestions", "ideas", "posts", "alternatives", "options", "results"]) {
+  const separated = channelSeparatedVariantRows(record);
+  if (separated.length >= 3) return separated;
+
+  const collected: Array<Record<string, unknown>> = [];
+  for (const key of [
+    "variants", "concepts", "suggestions", "ideas", "posts", "alternatives", "options", "results",
+    "data", "result", "output", "response", "payload", "content", "message",
+  ]) {
     const rows = variantRowsFromValue(record[key], depth + 1);
-    if (rows.length >= 3) return rows;
+    if (rows.length) collected.push(...rows);
+    if (collected.length >= 3) return collected;
   }
 
-  for (const key of ["data", "result", "output", "response"]) {
-    const rows = variantRowsFromValue(record[key], depth + 1);
-    if (rows.length >= 3) return rows;
-  }
+  const keyed = Object.entries(record)
+    .map(([key, value]) => {
+      const row = aiRecord(value);
+      if (!row) return null;
+      const id = normalizedVariantId({ name: key });
+      return id ? { ...row, id: firstAiString(row, ["id"], 120) || id } : null;
+    })
+    .filter((row): row is Record<string, unknown> & { id: string } => Boolean(row));
+  if (keyed.length >= 3) return keyed.slice(0, 3);
 
-  const keyed = VARIANT_BLUEPRINTS
+  const exactKeyed = VARIANT_BLUEPRINTS
     .map((blueprint) => aiRecord(record[blueprint.id]))
     .filter((row): row is Record<string, unknown> => Boolean(row));
-  if (keyed.length === 3) return keyed;
+  if (exactKeyed.length === 3) return exactKeyed;
 
   const numbered = Object.entries(record)
-    .filter(([key, value]) =>
-      /^(?:variant|concept|idea|post|suggestion)[ _-]?\d+$/i.test(key) && Boolean(aiRecord(value)))
-    .map(([, value]) => aiRecord(value)!)
+    .filter(([key, nestedValue]) =>
+      (/^\d+$/.test(key) || /^(?:variant|concept|idea|post|suggestion)[ _-]?\d+$/i.test(key))
+      && Boolean(rowFromLooseValue(nestedValue)))
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([, nestedValue]) => rowFromLooseValue(nestedValue)!)
     .slice(0, 3);
   if (numbered.length === 3) return numbered;
 
-  return [];
+  return collected;
 }
 
 function normalizeVariantPayload(raw: string) {
@@ -581,7 +763,7 @@ function validVariantPayload(raw: string) {
   return normalizeVariantPayload(raw) !== null;
 }
 
-function parseVariants(raw: string, sourceUrl: string) {
+function parseVariants(raw: string, sourceUrl: string, sourceType: string) {
   const normalized = normalizeVariantPayload(raw);
   if (!normalized) throw new Error("SOCIAL_STUDIO_AI_INVALID");
 
@@ -595,7 +777,7 @@ function parseVariants(raw: string, sourceUrl: string) {
       angle: clean(source.angle, 500),
       visualDirection: clean(source.visualDirection, 500),
       facebookText: ensureLink(clean(source.facebookText, 4_200), sourceUrl),
-      instagramText: ensureLink(clean(source.instagramText, 4_200), sourceUrl),
+      instagramText: ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType),
       tags: safeTags(source.tags),
     };
   });
@@ -1342,8 +1524,10 @@ export async function POST(
       "Merkevaren er rådgiver/formidler. Ikke skriv at boligen er vår med mindre kilden uttrykkelig dokumenterer eierskap.",
       companionPropertyId ? "Når KONTEKSTBOLIG finnes, kan du koble kilden til den konkrete boligen. Hold generelle guide-/områdefakta og boligfakta tydelig adskilt, og ikke finn på en sammenheng som ikke følger av kildene." : "",
       "Editorial/Premium skal være stram, eksklusiv og tilbakeholden. Story/Lifestyle skal fortelle en konkret liten historie uten å dikte fakta. Advisor/Insight skal vise vurdering og kompetanse og gjerne si hvem innholdet passer for.",
-      "Facebook: mer forklarende og samtalepreget, normalt 70–150 ord. Instagram: mer visuelt og kompakt, normalt 50–110 ord og maks fem relevante hashtags.",
-      "Bruk aldri 'lenke i bio'. Når KILDE-URL finnes skal hele URL-en stå naturlig mot slutten av begge kanaltekstene.",
+      "Facebook: mer forklarende og samtalepreget, normalt 70–150 ord. Når KILDE-URL finnes kan hele URL-en stå naturlig mot slutten av Facebook-teksten.",
+      "Instagram: mer visuelt og kompakt, normalt 50–110 ord og maks fem relevante hashtags. Organiske Instagram-caption skal IKKE inneholde URL eller 'lenke i bio', fordi lenker i caption ikke er en god klikkbar handlingsvei.",
+      "Instagram-engasjement skal variere mellom konseptene og tilpasses innholdet: Editorial/Premium bør normalt invitere til å lagre posten; Story/Lifestyle bør stille et sosialt eller relasjonelt spørsmål som 'Hvem ville du tatt med deg hit?' eller invitere til deling; Advisor/Insight bør invitere til melding når leseren ønsker konkret hjelp, for eksempel områdevalg eller vurdering av bolig.",
+      "Ikke bruk samme CTA i alle tre Instagram-konseptene. CTA-en skal føles naturlig for kilden og ikke være masete.",
       "Unngå klisjeer som 'drømmebolig', 'paradis', 'unik mulighet' og 'fantastisk' med mindre kilden faktisk underbygger det.",
       "Skriv på norsk bokmål. Returner bare strukturert JSON i skjemaet.",
     ].join("\n");
@@ -1369,6 +1553,23 @@ export async function POST(
     let structuredError: unknown = null;
     let fallbackError: unknown = null;
 
+    const preferCandidate = (current: string, candidate: string) => {
+      if (!candidate.trim()) return current;
+      if (validVariantPayload(candidate)) return candidate;
+      if (validVariantPayload(current)) return current;
+
+      const currentRows = variantRowsFromValue(parseAiJsonValue(current));
+      const candidateRows = variantRowsFromValue(parseAiJsonValue(candidate));
+      const currentChannelCount = currentRows.slice(0, 3)
+        .reduce((sum, row) => sum + Number(Boolean(socialChannelText(row, "facebook"))) + Number(Boolean(socialChannelText(row, "instagram"))), 0);
+      const candidateChannelCount = candidateRows.slice(0, 3)
+        .reduce((sum, row) => sum + Number(Boolean(socialChannelText(row, "facebook"))) + Number(Boolean(socialChannelText(row, "instagram"))), 0);
+
+      const currentScore = currentRows.length * 10 + currentChannelCount;
+      const candidateScore = candidateRows.length * 10 + candidateChannelCount;
+      return candidateScore > currentScore ? candidate : current;
+    };
+
     // Do not validate inside the provider client. We need the raw model response
     // even when its JSON shape differs from our canonical contract, so RealtyFlow
     // can normalize it safely afterwards.
@@ -1391,7 +1592,7 @@ export async function POST(
           model: "sonnet",
           maxTokens: 3_200,
         });
-        if (fallbackRaw.trim()) raw = fallbackRaw;
+        raw = preferCandidate(raw, fallbackRaw);
       } catch (error) {
         fallbackError = error;
       }
@@ -1406,6 +1607,7 @@ export async function POST(
           "Konseptene skal være i denne rekkefølgen: editorial_premium, lifestyle_story, advisor_insight.",
           "Hvert konsept skal ha: id, hook, angle, visualDirection, facebookText, instagramText, tags.",
           "Hvis én kanaltekst mangler, kan du tilpasse den eksisterende teksten til den manglende kanalen uten å legge til nye fakta.",
+          "InstagramText skal ikke inneholde URL eller 'lenke i bio'. Behold eller lag en naturlig engasjements-CTA uten nye fakta.",
           "Returner kun JSON, ingen markdown eller forklaring.",
           "",
           "AI-SVAR SOM SKAL NORMALISERES:",
@@ -1415,8 +1617,11 @@ export async function POST(
         const repairedRaw = await askClaude(repairPrompt, {
           model: "haiku",
           maxTokens: 3_200,
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA as any,
         });
-        if (repairedRaw.trim()) raw = repairedRaw;
+        raw = preferCandidate(raw, repairedRaw);
       } catch {}
     }
 
@@ -1440,7 +1645,7 @@ export async function POST(
       });
       throw new Error("SOCIAL_STUDIO_AI_INVALID");
     }
-    const variants = parseVariants(raw, sourceUrl);
+    const variants = parseVariants(raw, sourceUrl, sourceType);
 
     return NextResponse.json({
       ok: true,

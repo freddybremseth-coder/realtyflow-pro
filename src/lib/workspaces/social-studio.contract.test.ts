@@ -128,6 +128,20 @@ test("SoMe Studio normalizes common AI response shapes before rejecting output",
   assert.match(route, /AI output could not be normalized/);
 });
 
+test("SoMe Studio structured schema requires exactly three variants", () => {
+  assert.match(route, /minItems:\s*3/);
+  assert.match(route, /maxItems:\s*3/);
+});
+
+test("SoMe Studio salvages stringified, numbered and channel-separated AI shapes", () => {
+  assert.match(route, /function rowFromLooseValue/);
+  assert.match(route, /function channelSeparatedVariantRows/);
+  assert.match(route, /facebookPosts/);
+  assert.match(route, /instagramPosts/);
+  assert.match(route, /depth > 5/);
+  assert.match(route, /preferCandidate/);
+});
+
 
 test("SoMe Studio captures raw provider output before RealtyFlow validation", () => {
   assert.match(route, /Do not validate inside the provider client/);
@@ -192,6 +206,18 @@ test("Saved owner drafts persist strategy category and concept metadata", () => 
   assert.match(marketing, /strategy_period_id: strategyPeriodId/);
 });
 
+
+test("SoMe Studio keeps Instagram captions link-free and varies engagement CTAs", () => {
+  assert.match(route, /function instagramCaptionWithoutLinks/);
+  assert.match(route, /replace\(\/https\?:\\\/\\\/\[\^\\s/);
+  assert.match(route, /function instagramEngagementCta/);
+  assert.match(route, /Lagre posten/);
+  assert.match(route, /Hvem ville du tatt med deg hit/);
+  assert.match(route, /Send oss en melding/);
+  assert.match(route, /Instagram-engasjement skal variere mellom konseptene/);
+  assert.match(route, /facebookText: ensureLink/);
+  assert.match(route, /instagramText: ensureInstagramEngagement/);
+});
 
 test("SoMe Studio supports a three-image collage visual format with safe fallback", () => {
   assert.match(route, /action === "render_property_collage"/);
