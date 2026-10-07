@@ -9,6 +9,7 @@ const catalogue = fs.readFileSync(path.join(process.cwd(), "src/components/works
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx"), "utf8");
 const marketing = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[brandKey]/marketing/route.ts"), "utf8");
+const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/property-social-card.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -202,6 +203,10 @@ test("SoMe Studio supports a three-image collage visual format with safe fallbac
   assert.match(studio, /3-bilders kollasje/);
   assert.match(studio, /propertyImageCount/);
   assert.match(studio, /visual-/);
+  assert.match(propertyRenderer, /renderPropertySocialCollage/);
+  assert.match(propertyRenderer, /scale=710:1350/);
+  assert.match(propertyRenderer, /scale=362:671/);
+  assert.match(propertyRenderer, /xstack=inputs=3/);
 });
 
 test("Advisor insight defaults to collage only when at least three unique images exist", () => {
