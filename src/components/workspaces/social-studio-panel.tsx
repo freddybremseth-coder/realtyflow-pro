@@ -720,6 +720,11 @@ export function WorkspaceSocialStudio({
         kind: "success",
         text: `Ferdig. ${publicationIds.length} kanalutkast er lagret i Content Hub. Ingenting er publisert ennå.`,
       });
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          document.getElementById("social-package-handoff")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 80);
+      }
       await onDraftSaved?.();
     } catch (cause) {
       if (publicationIds.length > 0) setSavedPackageId(packageId);
@@ -755,7 +760,7 @@ export function WorkspaceSocialStudio({
         ["4", "Lagre som utkast"],
         ["5", "Publiser / planlegg"],
       ].map(([number, label], index) => {
-        const currentStep = savedPackageId ? 5 : variants.length === 3 ? 3 : busy ? 2 : 1;
+        const currentStep = packageFeedback?.kind === "success" ? 5 : packageSaving ? 4 : variants.length === 3 ? 3 : busy ? 2 : 1;
         const step = index + 1;
         const active = step === currentStep;
         const done = step < currentStep;
@@ -996,7 +1001,7 @@ export function WorkspaceSocialStudio({
       {generationFeedback.text}
     </p>}
 
-    {variants.length === 3 && <section className="mt-5 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
+    {variants.length === 3 && <section id="social-package-handoff" className="mt-5 scroll-mt-24 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Neste steg · lagre som utkast</p>
