@@ -42,6 +42,10 @@ function contactInteractions(row: any) {
   return Array.isArray(row?.interactions) ? row.interactions : [];
 }
 
+function isCorporateHomeRequestType(value: unknown) {
+  return ["corporate-home", "corporate-home-decision-note"].includes(String(value || ""));
+}
+
 function isCorporateEventRegistrationOnly(row: any) {
   const interactions = contactInteractions(row);
   const registered = interactions.some((item: any) => {
@@ -50,7 +54,7 @@ function isCorporateEventRegistrationOnly(row: any) {
   });
   const corporateSalesSignal = interactions.some((item: any) => {
     const metadata = interactionMetadata(item);
-    return metadata.request_type === "corporate-home";
+    return isCorporateHomeRequestType(metadata.request_type);
   });
   return registered &&
     !corporateSalesSignal &&
@@ -60,7 +64,7 @@ function isCorporateEventRegistrationOnly(row: any) {
 function isEventSourcedAssessment(row: any) {
   return contactInteractions(row).some((item: any) => {
     const metadata = interactionMetadata(item);
-    if (metadata.request_type !== "corporate-home") return false;
+    if (!isCorporateHomeRequestType(metadata.request_type)) return false;
     const signal = `${metadata.utm_source || ""} ${metadata.utm_medium || ""} ${metadata.utm_campaign || ""} ${metadata.utm_content || ""}`.toLowerCase();
     return /webinar|event|seminar/.test(signal);
   });
@@ -338,7 +342,7 @@ export async function GET(request: NextRequest) {
   const corporateWorkItems = (workItems || []).filter((item: any) => {
     if (ids.has(String(item.source_id || ""))) return true;
     const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
-    return metadata.segment === "corporate_homes" || metadata.request_type === "corporate-home";
+    return metadata.segment === "corporate_homes" || isCorporateHomeRequestType(metadata.request_type);
   });
 
   const now = Date.now();

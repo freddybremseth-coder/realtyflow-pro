@@ -265,6 +265,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/corporate-decision-note-followup",
+      "schedule": "15 7 * * *"
+    },
+    {
       "path": "/api/cron/demosites-followup",
       "schedule": "0 8 * * *"
     },
