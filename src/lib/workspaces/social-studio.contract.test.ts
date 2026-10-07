@@ -9,6 +9,7 @@ const catalogue = fs.readFileSync(path.join(process.cwd(), "src/components/works
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx"), "utf8");
 const marketing = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[brandKey]/marketing/route.ts"), "utf8");
+const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/property-social-card.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -189,4 +190,26 @@ test("Saved owner drafts persist strategy category and concept metadata", () => 
   assert.match(marketing, /concept_id: conceptId/);
   assert.match(marketing, /visual_format: visualFormat/);
   assert.match(marketing, /strategy_period_id: strategyPeriodId/);
+});
+
+
+test("SoMe Studio supports a three-image collage visual format with safe fallback", () => {
+  assert.match(route, /action === "render_property_collage"/);
+  assert.match(route, /renderPropertySocialCollage/);
+  assert.match(route, /sourceImageUrls: collageImages/);
+  assert.match(route, /style: "collage_3"/);
+  assert.match(route, /PROPERTY_COLLAGE_IMAGES_REQUIRED/);
+  assert.match(studio, /type VisualFormat = "single_image" \| "property_card" \| "collage_3"/);
+  assert.match(studio, /3-bilders kollasje/);
+  assert.match(studio, /propertyImageCount/);
+  assert.match(studio, /visual-/);
+  assert.match(propertyRenderer, /renderPropertySocialCollage/);
+  assert.match(propertyRenderer, /scale=710:1350/);
+  assert.match(propertyRenderer, /scale=362:671/);
+  assert.match(propertyRenderer, /xstack=inputs=3/);
+});
+
+test("Advisor insight defaults to collage only when at least three unique images exist", () => {
+  assert.match(studio, /item\.id === "advisor_insight"/);
+  assert.match(studio, /Number\(body\.source\?\.propertyImageCount \|\| 0\) >= 3/);
 });

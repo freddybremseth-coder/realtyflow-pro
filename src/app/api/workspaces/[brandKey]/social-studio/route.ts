@@ -13,6 +13,7 @@ import {
 } from "@/lib/marketing/creative-style";
 import {
   renderPropertySocialCard,
+  renderPropertySocialCollage,
   type PropertyCardSupabase,
 } from "@/services/marketing/property-social-card";
 
@@ -941,6 +942,7 @@ async function registerRenderedAsset(
     style: string;
     channel: string;
     sourceImageUrl: string;
+    sourceImageUrls?: string[];
   },
 ) {
   const { data: existing } = await supabase.from("media_assets")
@@ -978,6 +980,7 @@ async function registerRenderedAsset(
       creative_style: input.style,
       channel: input.channel,
       source_image_url: input.sourceImageUrl,
+      source_image_urls: input.sourceImageUrls || [input.sourceImageUrl],
       actor_email: input.actorEmail,
     },
     tags: ["social-studio", input.brandKey, input.style, input.channel],
@@ -1046,6 +1049,92 @@ export async function POST(
         } : null,
         ...discovery,
       }, { headers: noStore });
+    }
+
+    if (action === "render_property_collage") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const propertyLookup = clean(body.propertyLookup, 100);
+      const channel = clean(body.channel, 20);
+      if (!["facebook", "instagram"].includes(channel)) {
+        return fail(400, "INVALID_PROPERTY_COLLAGE_REQUEST");
+      }
+
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
+      const propertyImages = propertyMediaUrls(property);
+      const requestedHero = clean(body.sourceImageUrl, 2_000);
+      const hero = requestedHero && propertyImages.includes(requestedHero)
+        ? requestedHero
+        : propertyImages[0] || "";
+      const collageImages = [
+        hero,
+        ...propertyImages.filter((url) => url !== hero),
+      ].filter(Boolean).slice(0, 3);
+
+      if (collageImages.length < 3) {
+        return NextResponse.json({
+          ok: true,
+          imageUrl: hero || property.primary_image || null,
+          visualFormat: "collage_3",
+          channel,
+          rendered: false,
+          fallback: true,
+          warning: "PROPERTY_COLLAGE_IMAGES_REQUIRED",
+        }, { headers: noStore });
+      }
+
+      try {
+        const collage = await renderPropertySocialCollage(
+          access.value.supabase as unknown as PropertyCardSupabase,
+          {
+            brandId: params.brandKey,
+            brandName: definition.name,
+            propertyId: property.id,
+            sourceImageUrls: collageImages,
+            channel: channel as "facebook" | "instagram",
+          },
+        );
+        const imageUrl = await registerRenderedAsset(access.value.supabase, {
+          brandKey: params.brandKey,
+          propertyId: property.id,
+          actorUserId: access.value.verifiedUserId,
+          actorEmail: access.value.verifiedEmail,
+          storagePath: collage.storagePath,
+          imageUrl: collage.imageUrl,
+          style: "collage_3",
+          channel,
+          sourceImageUrl: collageImages[0],
+          sourceImageUrls: collageImages,
+        });
+        return NextResponse.json({
+          ok: true,
+          imageUrl,
+          visualFormat: "collage_3",
+          channel,
+          rendered: true,
+          fallback: false,
+          sourceImageUrls: collageImages,
+        }, { headers: noStore });
+      } catch (renderError) {
+        const warning = renderError instanceof Error
+          ? renderError.message.split(":")[0].slice(0, 100)
+          : "PROPERTY_COLLAGE_RENDER_FAILED";
+        console.warn("[social-studio] property collage fallback", {
+          brandKey: params.brandKey,
+          propertyId: property.id,
+          channel,
+          warning,
+        });
+        return NextResponse.json({
+          ok: true,
+          imageUrl: hero || property.primary_image || null,
+          visualFormat: "collage_3",
+          channel,
+          rendered: false,
+          fallback: true,
+          warning,
+        }, { headers: noStore });
+      }
     }
 
     if (action === "render_property_card") {
@@ -1146,6 +1235,7 @@ export async function POST(
     let companionPropertyId: string | null = null;
     let companionFacts = "";
     let variantImages: Record<string, string> = {};
+    let propertyImageCount = 0;
     const requestedCategory = clean(body.socialCategory, 40);
     const contentKind = clean(body.contentKind, 40);
 
@@ -1161,6 +1251,7 @@ export async function POST(
         : definition.website;
       sourceImageUrl = property.primary_image || sourceImageUrl;
       variantImages = variantPropertyImages(property);
+      propertyImageCount = propertyMediaUrls(property).length;
       sourceText = facts.join("\n");
       propertyId = property.id;
       propertyLookup = property.id;
@@ -1365,6 +1456,7 @@ export async function POST(
         companionPropertyId,
         socialCategory,
         variantImages,
+        propertyImageCount,
       },
       socialCategory,
       variants,
@@ -1380,7 +1472,8 @@ export async function POST(
       "SOCIAL_STUDIO_CONTENT_DISCOVERY_FAILED", "SOCIAL_STUDIO_AI_INVALID",
       "SOCIAL_STUDIO_AI_UNAVAILABLE", "SOCIAL_STRATEGY_SNAPSHOT_FAILED",
       "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
-      "PROPERTY_CARD_FFMPEG_MISSING",
+      "PROPERTY_CARD_FFMPEG_MISSING", "PROPERTY_COLLAGE_FFMPEG_MISSING",
+      "PROPERTY_COLLAGE_IMAGES_REQUIRED",
     ];
     console.error("[social-studio]", {
       brandKey: params.brandKey,

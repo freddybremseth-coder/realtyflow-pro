@@ -14,6 +14,7 @@ export type WorkspaceSocialPropertySeed = {
 
 type SourceType = "property" | "article" | "area" | "topic";
 type Channel = "facebook" | "instagram";
+type VisualFormat = "single_image" | "property_card" | "collage_3";
 type Variant = {
   id: "editorial_premium" | "lifestyle_story" | "advisor_insight";
   label: string;
@@ -37,6 +38,7 @@ type GeneratedSource = {
   companionPropertyId?: string | null;
   socialCategory?: SocialCategory;
   variantImages?: Record<string, string>;
+  propertyImageCount?: number;
 };
 
 type SocialCategory =
@@ -165,6 +167,7 @@ export function WorkspaceSocialStudio({
   const [source, setSource] = useState<GeneratedSource | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [styles, setStyles] = useState<Record<string, string>>({});
+  const [visualFormats, setVisualFormats] = useState<Record<string, VisualFormat>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [previewing, setPreviewing] = useState("");
   const [busy, setBusy] = useState(false);
@@ -198,6 +201,7 @@ export function WorkspaceSocialStudio({
       initialProperty.ref ? "Ref " + initialProperty.ref : "",
     ].filter(Boolean).join(" · "));
     setVariants([]);
+    setVisualFormats({});
     setPreviews({});
     setSource(null);
     setError("");
@@ -350,6 +354,7 @@ export function WorkspaceSocialStudio({
     setSaveFeedback({});
     setPreviewFeedback({});
     setVariants([]);
+    setVisualFormats({});
     setPreviews({});
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
@@ -389,6 +394,13 @@ export function WorkspaceSocialStudio({
       setSource(body.source as GeneratedSource);
       setVariants(nextVariants);
       setStyles(Object.fromEntries(nextVariants.map((item) => [item.id, item.creativeStyle])));
+      setVisualFormats(Object.fromEntries(nextVariants.map((item) => [
+        item.id,
+        body.source?.type === "property" && item.id === "advisor_insight" &&
+          Number(body.source?.propertyImageCount || 0) >= 3
+          ? "collage_3"
+          : body.source?.type === "property" ? "property_card" : "single_image",
+      ])) as Record<string, VisualFormat>);
       setGenerationFeedback({
         kind: "success",
         text: body.source?.companionPropertyId
@@ -426,7 +438,11 @@ export function WorkspaceSocialStudio({
       if (preview.fallback) {
         setPreviewFeedback(current => ({
           ...current,
-          [variant.id]: "Kortmalen kunne ikke rendres akkurat nå. Originalbildet fra eiendommen vises i stedet.",
+          [variant.id]: preview.warning === "PROPERTY_COLLAGE_IMAGES_REQUIRED"
+            ? "Kollasje krever minst tre unike boligbilder. RealtyFlow viser enkeltbildet i stedet."
+            : preview.visualFormat === "single_image" && (visualFormats[variant.id] || "property_card") === "collage_3"
+              ? "Kollasjen kunne ikke rendres akkurat nå. RealtyFlow viser enkeltbildet i stedet."
+              : "Kortmalen kunne ikke rendres akkurat nå. Originalbildet fra eiendommen vises i stedet.",
         }));
       }
     } catch (cause) {
@@ -441,22 +457,38 @@ export function WorkspaceSocialStudio({
 
   async function renderPropertyImage(variant: Variant, channel: Channel) {
     if (source?.type !== "property" || !source.propertyLookup) {
-      return { imageUrl: source?.imageUrl || imageUrl.trim(), fallback: false };
+      return { imageUrl: source?.imageUrl || imageUrl.trim(), fallback: false, visualFormat: "single_image" as VisualFormat };
     }
+
+    const visualFormat = visualFormats[variant.id] || "property_card";
+    const selectedSourceImage = source.variantImages?.[variant.id] || source.imageUrl || "";
+    if (visualFormat === "single_image") {
+      return { imageUrl: selectedSourceImage, fallback: false, visualFormat };
+    }
+
     const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action: "render_property_card",
+        action: visualFormat === "collage_3" ? "render_property_collage" : "render_property_card",
         propertyLookup: source.propertyLookup,
-        sourceImageUrl: source.variantImages?.[variant.id] || source.imageUrl || "",
+        sourceImageUrl: selectedSourceImage,
         creativeStyle: styles[variant.id] || variant.creativeStyle,
         channel,
       }),
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body.imageUrl) throw new Error("Det profesjonelle eiendomskortet kunne ikke rendres.");
-    return { imageUrl: String(body.imageUrl), fallback: body.fallback === true };
+    if (!response.ok || !body.imageUrl) {
+      throw new Error(visualFormat === "collage_3"
+        ? "3-bilders kollasjen kunne ikke rendres."
+        : "Det profesjonelle eiendomskortet kunne ikke rendres.");
+    }
+    return {
+      imageUrl: String(body.imageUrl),
+      fallback: body.fallback === true,
+      warning: typeof body.warning === "string" ? body.warning : "",
+      visualFormat: body.fallback === true ? "single_image" as VisualFormat : visualFormat,
+    };
   }
 
   async function saveVariant(variant: Variant, channel: Channel) {
@@ -500,7 +532,10 @@ export function WorkspaceSocialStudio({
             ...(source?.areaId ? ["source-area-" + source.areaId] : []),
             ...(source?.companionPropertyId ? ["paired-property"] : []),
             ...(source?.type === "property"
-              ? ["style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-")]
+              ? [
+                  "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
+                  "visual-" + (visualFormats[variant.id] || "property_card").replace(/_/g, "-"),
+                ]
               : []),
           ])).slice(0, 20),
           platforms: [channel],
@@ -510,9 +545,7 @@ export function WorkspaceSocialStudio({
             : (source?.companionPropertyId || ""),
           socialCategory: source?.socialCategory || "",
           conceptId: variant.id,
-          visualFormat: source?.type === "property"
-            ? (renderedImage.fallback ? "single_image" : "property_card")
-            : "single_image",
+          visualFormat: renderedImage.visualFormat || "single_image",
           sourceContentId: source?.contentId || "",
           sourceAreaId: source?.areaId || "",
           strategyPeriodId: strategy?.strategyPeriodId || "",
@@ -801,32 +834,58 @@ export function WorkspaceSocialStudio({
           <span className="font-semibold text-slate-200">Visuell retning:</span> {variant.visualDirection}
         </p>
 
-        {source?.type === "property" && <label className="mt-3 block text-xs text-slate-300">Eiendomsmal
-          <select value={styles[variant.id] || variant.creativeStyle}
-            onChange={(event) => {
-              setStyles(current => ({ ...current, [variant.id]: event.target.value }));
-              setPreviews(current => {
-                const next = { ...current };
-                delete next[variant.id];
-                return next;
-              });
-            }}
-            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-            {PROPERTY_STYLES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-          </select>
+        {source?.type === "property" && <div className="mt-3 space-y-3">
+          <label className="block text-xs text-slate-300">Visuelt format
+            <select value={visualFormats[variant.id] || "property_card"}
+              onChange={(event) => {
+                setVisualFormats(current => ({ ...current, [variant.id]: event.target.value as VisualFormat }));
+                setPreviews(current => {
+                  const next = { ...current };
+                  delete next[variant.id];
+                  return next;
+                });
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+              <option value="single_image">Enkeltbilde</option>
+              <option value="property_card">Profesjonelt eiendomskort</option>
+              <option value="collage_3" disabled={(source?.propertyImageCount || 0) < 3}>3-bilders kollasje{(source?.propertyImageCount || 0) < 3 ? " · trenger 3 bilder" : ""}</option>
+            </select>
+          </label>
+
+          {(visualFormats[variant.id] || "property_card") === "property_card" && <label className="block text-xs text-slate-300">Eiendomsmal
+            <select value={styles[variant.id] || variant.creativeStyle}
+              onChange={(event) => {
+                setStyles(current => ({ ...current, [variant.id]: event.target.value }));
+                setPreviews(current => {
+                  const next = { ...current };
+                  delete next[variant.id];
+                  return next;
+                });
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+              {PROPERTY_STYLES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>}
+
           <button type="button" onClick={() => void previewVariant(variant)} disabled={Boolean(previewing)}
-            className="mt-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 disabled:opacity-40">
-            {previewing === variant.id ? "Renderer…" : "Forhåndsvis valgt mal"}
+            className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 disabled:opacity-40">
+            {previewing === variant.id
+              ? "Renderer…"
+              : (visualFormats[variant.id] || "property_card") === "collage_3"
+                ? "Forhåndsvis kollasje"
+                : (visualFormats[variant.id] || "property_card") === "single_image"
+                  ? "Vis valgt bilde"
+                  : "Forhåndsvis valgt mal"}
           </button>
-          {previewFeedback[variant.id] && <p className="mt-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200">{previewFeedback[variant.id]}</p>}
-          {(previews[variant.id] || source?.variantImages?.[variant.id]) && <div className="mt-3">
+          {previewFeedback[variant.id] && <p className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200">{previewFeedback[variant.id]}</p>}
+          {(previews[variant.id] || source?.variantImages?.[variant.id]) && <div>
             <img src={previews[variant.id] || source?.variantImages?.[variant.id]} alt={"Forhåndsvisning av " + variant.label}
               className="aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />
             {!previews[variant.id] && source?.variantImages?.[variant.id] && <p className="mt-1 text-[10px] text-slate-500">
-              Eget bilde valgt for dette konseptet · render malen for ferdig uttrykk
+              Eget bilde valgt for dette konseptet · velg format og forhåndsvis ferdig uttrykk
             </p>}
           </div>}
-        </label>}
+        </div>}
 
         <div className="mt-4 space-y-3">
           <div className="rounded-xl border border-blue-900/60 bg-blue-950/15 p-3">

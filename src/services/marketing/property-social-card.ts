@@ -37,6 +37,16 @@ export interface PropertySocialCardResult {
   rendered: boolean;
 }
 
+export interface PropertySocialCollageInput {
+  brandId: string;
+  brandName: string;
+  propertyId: string;
+  sourceImageUrls: string[];
+  channel: "facebook" | "instagram";
+}
+
+export const PROPERTY_SOCIAL_COLLAGE_VERSION = "psc-collage-1.0";
+
 const WIDTH = 1080;
 const HEIGHT = 1350;
 export const PROPERTY_SOCIAL_CARD_VERSION = "psc-2.0";
@@ -313,6 +323,81 @@ export async function renderPropertySocialCard(
       cacheControl: "31536000",
     });
     if (error) throw new Error(`PROPERTY_CARD_UPLOAD_FAILED: ${error.message || "unknown"}`);
+
+    const imageUrl = bucket.getPublicUrl(storagePath).data.publicUrl;
+    return { imageUrl, storagePath, rendered: true };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+
+export async function renderPropertySocialCollage(
+  supabase: PropertyCardSupabase,
+  input: PropertySocialCollageInput,
+): Promise<PropertySocialCardResult> {
+  if (!ffmpegPath) throw new Error("PROPERTY_COLLAGE_FFMPEG_MISSING");
+  try {
+    await fs.access(ffmpegPath);
+  } catch {
+    throw new Error("PROPERTY_COLLAGE_FFMPEG_MISSING");
+  }
+
+  const urls = Array.from(new Set(
+    input.sourceImageUrls
+      .map((value) => String(value || "").trim())
+      .filter((value) => /^https:\/\//i.test(value)),
+  )).slice(0, 3);
+  if (urls.length < 3) throw new Error("PROPERTY_COLLAGE_IMAGES_REQUIRED");
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rf-property-collage-"));
+  const sourcePaths = urls.map((_, index) => path.join(dir, "source-" + index));
+  const outputPath = path.join(dir, "collage.jpg");
+
+  try {
+    await Promise.all(urls.map((url, index) => download(url, sourcePaths[index])));
+
+    const filter = [
+      "[0:v]scale=710:1350:force_original_aspect_ratio=increase:flags=lanczos,crop=710:1350[hero]",
+      "[1:v]scale=362:671:force_original_aspect_ratio=increase:flags=lanczos,crop=362:671[top]",
+      "[2:v]scale=362:671:force_original_aspect_ratio=increase:flags=lanczos,crop=362:671[bottom]",
+      "[hero][top][bottom]xstack=inputs=3:layout=0_0|718_0|718_679:fill=0x0b1220[out]",
+    ].join(";");
+
+    await run(ffmpegPath, [
+      "-y",
+      "-i", sourcePaths[0],
+      "-i", sourcePaths[1],
+      "-i", sourcePaths[2],
+      "-filter_complex", filter,
+      "-map", "[out]",
+      "-frames:v", "1",
+      "-q:v", "2",
+      outputPath,
+    ]);
+
+    const buffer = await fs.readFile(outputPath);
+    const digest = crypto.createHash("sha256")
+      .update([
+        PROPERTY_SOCIAL_COLLAGE_VERSION,
+        input.brandId,
+        input.propertyId,
+        input.channel,
+        ...urls,
+      ].join("|"))
+      .digest("hex")
+      .slice(0, 24);
+
+    const storagePath =
+      "property-social/" + input.brandId + "/" + input.propertyId + "/" +
+      input.channel + "-collage-3-" + digest + ".jpg";
+    const bucket = supabase.storage.from("content-images");
+    const { error } = await bucket.upload(storagePath, buffer, {
+      contentType: "image/jpeg",
+      upsert: true,
+      cacheControl: "31536000",
+    });
+    if (error) throw new Error("PROPERTY_COLLAGE_UPLOAD_FAILED: " + (error.message || "unknown"));
 
     const imageUrl = bucket.getPublicUrl(storagePath).data.publicUrl;
     return { imageUrl, storagePath, rendered: true };
