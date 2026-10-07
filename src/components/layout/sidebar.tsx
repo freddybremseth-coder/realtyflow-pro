@@ -296,7 +296,8 @@ export function Sidebar() {
   // Presentation only. Advanced routes, APIs and permissions are unchanged;
   // the staff shell uses its own brand-scoped navigation and data guards.
   const simpleOwnerHrefs = new Set([
-    "/workspaces", "/sales", "/marketing", "/content", "/finance", "/operations",
+    "/workspaces", "/workspace/zeneco?tab=growth&focus=social",
+    "/sales", "/marketing", "/content", "/finance", "/operations",
     "/nexus-os/today",
   ]);
   const visibleSections = useMemo(() => (
