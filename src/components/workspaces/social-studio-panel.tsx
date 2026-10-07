@@ -405,7 +405,7 @@ export function WorkspaceSocialStudio({
     {error && <p role="alert" className="mt-4 rounded-xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">{error}</p>}
     {notice && <div role="status" className="mt-4 rounded-xl border border-emerald-800 bg-emerald-950/25 p-3 text-sm text-emerald-200">
       <p>{notice}</p>
-      {savedPublicationId && <a href="/content-hub"
+      {savedPublicationId && <a href={"/content-hub?draft=" + encodeURIComponent(savedPublicationId)}
         className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-700 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-950/40">
         Åpne i Content Hub <ExternalLink size={14}/>
       </a>}
