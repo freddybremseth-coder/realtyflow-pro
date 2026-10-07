@@ -639,8 +639,8 @@ export default function FocusedWorkspacePage() {
           <section className="space-y-5">
             {showMarketing && <details id="workspace-focus-social" open={requestedFocus === "social" || Boolean(socialPropertySeed)} className="scroll-mt-24 rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
-                <strong className="text-lg text-cyan-100">SoMe Studio · Content Hub</strong>
-                <p className="mt-1 text-sm text-slate-400">Lag tre varierte Facebook/Instagram-konsepter fra eiendom, guide/magasin eller eget tema — og lagre valgte utkast i Content Hub.</p>
+                <strong className="text-lg text-cyan-100">SoMe Studio</strong>
+                <p className="mt-1 text-sm text-slate-400">Lag og vurder tre Facebook/Instagram-konsepter. Når du lagrer, finner du utkastene i Content Hub for redigering, planlegging og publisering.</p>
               </summary>
               <div className="border-t border-slate-800 p-4 sm:p-5">
                 <WorkspaceMarketingPanel
