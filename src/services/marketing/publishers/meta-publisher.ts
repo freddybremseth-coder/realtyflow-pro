@@ -19,6 +19,8 @@ import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
 
 export interface MetaGraph {
   createIgContainer(igUserId: string, p: { imageUrl?: string; videoUrl?: string; caption?: string; mediaType?: string; altText?: string }): Promise<{ id: string }>;
+  createIgCarouselChild(igUserId: string, imageUrl: string): Promise<{ id: string }>;
+  createIgCarouselContainer(igUserId: string, p: { children: string[]; caption?: string }): Promise<{ id: string }>;
   getContainerStatus(containerId: string): Promise<{ status: string }>;
   publishIgMedia(igUserId: string, creationId: string): Promise<{ id: string }>;
   createFbPost(pageId: string, p: { message: string; link?: string }): Promise<{ id: string }>;
@@ -79,7 +81,18 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
 
   async function publishInstagram(asset: GeneratedAsset, brandId: string, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
     const media = asset.media ?? {};
-    if (!media.imageUrl && !media.videoUrl) throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig image/video URL — publiserer ikke bare caption");
+    const carouselUrls = Array.from(new Set(
+      Array.isArray(media.imageUrls)
+        ? media.imageUrls.filter((url): url is string => typeof url === "string" && /^https:\/\//i.test(url))
+        : [],
+    )).slice(0, 10);
+    const isCarousel = media.mediaType === "carousel" || carouselUrls.length >= 2;
+    if (isCarousel && carouselUrls.length < 2) {
+      throw new Error("IG_CAROUSEL_MEDIA_INVALID: Instagram-karusell krever minst to gyldige bilder.");
+    }
+    if (!isCarousel && !media.imageUrl && !media.videoUrl) {
+      throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig image/video URL — publiserer ikke bare caption");
+    }
 
     // Uavklart publish fra forrige forsøk → avstem, ikke re-publiser blindt.
     if (attempt?.status === "publishing") {
@@ -92,18 +105,83 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       throw new Error("PUBLISH_UNCONFIRMED: publish uavklart, avstemming fant ingen post — manuell sjekk kreves.");
     }
 
-    // Gjenopptak: bruk eksisterende container, opprett aldri på nytt.
     let containerId: string | undefined = attempt?.container_id;
-    if (!containerId) {
+
+    if (isCarousel) {
+      let childIds: string[] = Array.isArray(attempt?.container_children)
+        ? attempt.container_children.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+        : [];
+
+      // Child-containere opprettes én gang og persisteres før parent opprettes.
+      if (childIds.length !== carouselUrls.length) {
+        await writeAttempt(key, base, { status: "reserved", media_type: "carousel" });
+        childIds = [];
+        for (const imageUrl of carouselUrls) {
+          const child = await graph.createIgCarouselChild(target, imageUrl);
+          childIds.push(child.id);
+        }
+        await writeAttempt(key, base, {
+          status: "container_created",
+          media_type: "carousel",
+          container_children: childIds,
+          error: null,
+        });
+      }
+
+      // Alle children må være ferdig prosessert før parent/publish.
+      for (const childId of childIds) {
+        let childReady: "FINISHED" | "PROCESSING";
+        try {
+          childReady = await waitForContainerReady(graph, childId);
+        } catch (err) {
+          await writeAttempt(key, base, {
+            status: "failed",
+            media_type: "carousel",
+            container_children: childIds,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
+        if (childReady !== "FINISHED") {
+          await writeAttempt(key, base, {
+            status: "processing",
+            media_type: "carousel",
+            container_children: childIds,
+            error: null,
+          });
+          throw new Error("IG_CONTAINER_PROCESSING: carousel-child ikke ferdig prosessert — prøv igjen.");
+        }
+      }
+
+      if (!containerId) {
+        const parent = await graph.createIgCarouselContainer(target, {
+          children: childIds,
+          caption: caption(asset, brandId),
+        });
+        containerId = parent.id;
+        await writeAttempt(key, base, {
+          status: "container_created",
+          media_type: "carousel",
+          container_id: containerId,
+          container_children: childIds,
+          error: null,
+        });
+      }
+    } else if (!containerId) {
       await writeAttempt(key, base, { status: "reserved" });
-      const c = await graph.createIgContainer(target, { imageUrl: media.imageUrl, videoUrl: media.videoUrl, caption: caption(asset, brandId), mediaType: media.mediaType, altText: media.altText });
-      containerId = c.id;
+      const created = await graph.createIgContainer(target, {
+        imageUrl: media.imageUrl,
+        videoUrl: media.videoUrl,
+        caption: caption(asset, brandId),
+        mediaType: media.mediaType,
+        altText: media.altText,
+      });
+      containerId = created.id;
       await writeAttempt(key, base, { status: "container_created", container_id: containerId, error: null });
     }
 
-    // Meta kan prosessere OGSÅ bilde-containere asynkront. Derfor må alle IG-
-    // containere være FINISHED før media_publish. Dette lukker sporadiske 400-feil
-    // der et bilde ble forsøkt publisert umiddelbart etter /media.
+    if (!containerId) throw new Error("IG_CONTAINER_MISSING");
+
     let ready: "FINISHED" | "PROCESSING";
     try {
       ready = await waitForContainerReady(graph, containerId);
@@ -221,6 +299,8 @@ export function makeGraphApi(token: string, apiVersion = "v25.0"): MetaGraph {
   };
   return {
     createIgContainer: (ig, p) => post(`/${ig}/media`, { ...(p.imageUrl ? { image_url: p.imageUrl } : {}), ...(p.videoUrl ? { video_url: p.videoUrl, media_type: (p.mediaType ?? "video").toUpperCase() === "REEL" ? "REELS" : "VIDEO" } : {}), caption: p.caption, ...(p.altText ? { alt_text: p.altText } : {}) }),
+    createIgCarouselChild: (ig, imageUrl) => post(`/${ig}/media`, { image_url: imageUrl, is_carousel_item: true }),
+    createIgCarouselContainer: (ig, p) => post(`/${ig}/media`, { media_type: "CAROUSEL", children: p.children, caption: p.caption }),
     getContainerStatus: async (containerId) => {
       const res = await fetch(`${base}/${containerId}?fields=status_code&access_token=${encodeURIComponent(token)}`);
       const json = (await res.json().catch(() => ({}))) as { status_code?: string; error?: { message?: string } };
