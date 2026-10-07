@@ -4,6 +4,7 @@ import test from "node:test";
 
 const publicLead = fs.readFileSync("src/app/api/public/leads/route.ts", "utf8");
 const followup = fs.readFileSync("src/services/corporate/decision-note-followup.ts", "utf8");
+const policy = fs.readFileSync("src/lib/corporate-decision-note.ts", "utf8");
 const delivery = fs.readFileSync("src/services/corporate/decision-note-delivery.ts", "utf8");
 const cron = fs.readFileSync("src/app/api/cron/corporate-decision-note-followup/route.ts", "utf8");
 const vercel = fs.readFileSync("vercel.json", "utf8");
@@ -20,7 +21,7 @@ test("Public Corporate decision-note request creates report and does not send ge
 
 test("Corporate decision-note automation has explicit safety boundaries", () => {
   assert.match(followup, /last_inbound_reply_at/);
-  assert.match(followup, /meeting_booked/);
+  assert.match(policy, /meeting_booked/);
   assert.match(followup, /waiting_until/);
   assert.match(followup, /email_suppressed_or_manual_takeover/);
   assert.match(followup, /corporate_decision_note_no_reply/);
