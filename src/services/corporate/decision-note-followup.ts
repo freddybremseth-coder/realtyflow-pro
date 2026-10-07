@@ -61,6 +61,36 @@ function stepAlreadySent(state: CorporateDecisionNoteState, stepId: "day_2" | "d
   return Boolean(state.followup?.[key]);
 }
 
+function nextSequenceStep(state: CorporateDecisionNoteState, ageDays: number) {
+  if (stepAlreadySent(state, "day_10")) return null;
+
+  if (stepAlreadySent(state, "day_5")) {
+    return ageDays >= 10
+      ? CORPORATE_DECISION_FOLLOWUP_STEPS.find((step) => step.id === "day_10") || null
+      : null;
+  }
+
+  if (stepAlreadySent(state, "day_2")) {
+    if (ageDays >= 10) {
+      return CORPORATE_DECISION_FOLLOWUP_STEPS.find((step) => step.id === "day_10") || null;
+    }
+    return ageDays >= 5
+      ? CORPORATE_DECISION_FOLLOWUP_STEPS.find((step) => step.id === "day_5") || null
+      : null;
+  }
+
+  if (ageDays >= 10) {
+    return CORPORATE_DECISION_FOLLOWUP_STEPS.find((step) => step.id === "day_10") || null;
+  }
+  if (ageDays >= 5) {
+    return CORPORATE_DECISION_FOLLOWUP_STEPS.find((step) => step.id === "day_5") || null;
+  }
+  if (ageDays >= 2) {
+    return CORPORATE_DECISION_FOLLOWUP_STEPS.find((step) => step.id === "day_2") || null;
+  }
+  return null;
+}
+
 function nextDueDate(sentAt: string, currentStep: "day_2" | "day_5" | "day_10") {
   const index = CORPORATE_DECISION_FOLLOWUP_STEPS.findIndex((step) => step.id === currentStep);
   const next = CORPORATE_DECISION_FOLLOWUP_STEPS[index + 1];
@@ -164,9 +194,7 @@ export async function runCorporateDecisionNoteFollowups(
     }
 
     const ageDays = daysBetween(sentAt, now);
-    const step = CORPORATE_DECISION_FOLLOWUP_STEPS.find(
-      (item) => ageDays >= item.dueDays && !stepAlreadySent(state, item.id),
-    );
+    const step = nextSequenceStep(state, ageDays);
     if (!step) {
       result.skipped += 1;
       continue;
