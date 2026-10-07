@@ -2,12 +2,16 @@ import { withWorkflow } from "workflow/next";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  productionBrowserSourceMaps: false,
   outputFileTracingIncludes: {
     "/api/workspaces/*/social-studio": [
       "./node_modules/ffmpeg-static/**",
     ],
   },
   experimental: {
+    // withWorkflow installs a custom webpack hook. Force Next's build worker
+    // back on so the large RealtyFlow graph is compiled in a lower-memory worker.
+    webpackBuildWorker: true,
     serverActions: {
       bodySizeLimit: '50mb',
     },
@@ -28,4 +32,10 @@ const nextConfig = {
   },
 }
 
-export default withWorkflow(nextConfig);
+export default withWorkflow(nextConfig, {
+  // Workflow bundles default to source maps; omitting them lowers build peak
+  // memory without changing runtime behavior.
+  workflows: {
+    sourcemap: false,
+  },
+});
