@@ -8,6 +8,7 @@ const studio = fs.readFileSync(path.join(process.cwd(), "src/components/workspac
 const catalogue = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/property-catalogue.tsx"), "utf8");
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx"), "utf8");
+const marketing = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[brandKey]/marketing/route.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -73,4 +74,34 @@ test("Owner Inventory opens the canonical SoMe Studio instead of the legacy one-
   assert.doesNotMatch(inventory, /generateSoMePost/);
   assert.doesNotMatch(inventory, /Lag SoMe-post for/);
   assert.match(studio, /setPropertyLookup\(initialProperty\.ref \|\| initialProperty\.id\)/);
+});
+
+
+test("Editorial picker discovers live brand content and editorial categories without cross-domain crawling", () => {
+  assert.match(route, /action === "discover_content"/);
+  assert.match(route, /discoverPublicWebsitePages/);
+  assert.match(route, /\/sitemap\.xml/);
+  assert.match(route, /allowedBrandUrl\(brandKey/);
+  assert.match(route, /area_profiles/);
+  assert.match(route, /notShared60Days/);
+  for (const label of ["Anbefalt å fronte nå", "Nye guider", "Magasin", "Områder", "Ikke delt siste 60 dager"]) {
+    assert.match(studio, new RegExp(label));
+  }
+});
+
+test("Editorial picker can pair a selected property with guide or area content", () => {
+  assert.match(route, /companionPropertyLookup/);
+  assert.match(route, /KONTEKSTBOLIG SOM KAN KOBLES TIL KILDEN/);
+  assert.match(route, /concept: "advisor_insight"/);
+  assert.match(studio, /Foreslåtte kombinasjoner/);
+  assert.match(studio, /Anbefalt vinkel: Advisor \/ Insight/);
+  assert.match(studio, /paired-property/);
+});
+
+test("Owner can use the same canonical marketing draft flow as workspace members", () => {
+  assert.match(marketing, /ownerMarketingSnapshot/);
+  assert.match(marketing, /ownerImageApproved/);
+  assert.match(marketing, /ownerChannelsActive/);
+  assert.match(marketing, /owner_draft: true/);
+  assert.doesNotMatch(marketing, /if \(!access\.value\.verifiedUserId\) return fail\(403, "STAFF_ONLY"\)/);
 });
