@@ -570,21 +570,32 @@ export default function WorkspaceUsersPage() {
         </div>
         {loading && <p className="mt-4 text-sm text-slate-400">Laster…</p>}
         <div className="mt-4 space-y-2">
-          {snapshot?.users.map(user => <button key={user.userId} onClick={() => editUser(user)}
-            className={`w-full rounded-xl border p-3 text-left ${selectedUserId === user.userId
-              ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50"}`}>
-            <span className="flex items-center justify-between gap-2">
-              <span className="font-medium">{user.displayName}</span>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${user.accountKind === "external" ? "border-violet-700 text-violet-300" : "border-slate-700 text-slate-400"}`}>
-                {user.accountKind === "external" ? "Ekstern" : "Intern"}
-              </span>
-            </span>
-            <span className="block text-xs text-slate-400">@{user.username} · {user.email}</span>
-            {user.organization && <span className="block text-xs text-slate-500">{user.organization}</span>}
-            <span className={`mt-1 inline-block text-xs ${user.expired || user.status !== "active" ? "text-amber-300" : "text-emerald-300"}`}>
-              {user.expired ? "Tilgang utløpt" : user.status === "active" ? "Aktiv" : "Deaktivert"} · {user.memberships.filter(m => m.status === "active").length} merkevarer
-            </span>
-          </button>)}
+          {snapshot?.users.map(user => {
+            const canPreview = user.status === "active" && !user.expired &&
+              user.memberships.filter(m => m.status === "active").length > 0;
+            return <div key={user.userId}
+              className={`rounded-xl border p-3 ${selectedUserId === user.userId
+                ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50"}`}>
+              <button type="button" onClick={() => editUser(user)} className="w-full text-left">
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{user.displayName}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${user.accountKind === "external" ? "border-violet-700 text-violet-300" : "border-slate-700 text-slate-400"}`}>
+                    {user.accountKind === "external" ? "Ekstern" : "Intern"}
+                  </span>
+                </span>
+                <span className="block text-xs text-slate-400">@{user.username} · {user.email}</span>
+                {user.organization && <span className="block text-xs text-slate-500">{user.organization}</span>}
+                <span className={`mt-1 inline-block text-xs ${user.expired || user.status !== "active" ? "text-amber-300" : "text-emerald-300"}`}>
+                  {user.expired ? "Tilgang utløpt" : user.status === "active" ? "Aktiv" : "Deaktivert"} · {user.memberships.filter(m => m.status === "active").length} merkevarer
+                </span>
+              </button>
+              <button type="button" onClick={() => void previewUser(user)}
+                disabled={busy || !canPreview}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-amber-700/80 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-950/30 disabled:opacity-40">
+                <Eye size={14}/> Forhåndsvis som bruker
+              </button>
+            </div>;
+          })}
           {!loading && snapshot?.users.length === 0 && <p className="text-sm text-slate-500">Ingen workspace-brukere er opprettet ennå.</p>}
         </div>
       </aside>
