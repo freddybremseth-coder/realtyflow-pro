@@ -35,8 +35,6 @@ const RESPONSE_SCHEMA = {
   properties: {
     variants: {
       type: "array",
-      minItems: 3,
-      maxItems: 3,
       items: {
         type: "object",
         additionalProperties: false,
@@ -381,9 +379,50 @@ function safeTags(value: unknown) {
   return Array.from(new Set(value.map((item) => clean(item, 60).replace(/^#+/, "").toLowerCase()).filter(Boolean))).slice(0, 8);
 }
 
+function parseAiJsonObject(raw: string): Record<string, unknown> | null {
+  const stripped = raw
+    .replace(/^\uFEFF/, "")
+    .replace(/^\s*\`\`\`(?:json)?\s*/i, "")
+    .replace(/\s*\`\`\`\s*$/i, "")
+    .trim();
+  try {
+    const value = JSON.parse(stripped);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+  } catch {
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      const value = JSON.parse(match[0]);
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function validVariantPayload(raw: string) {
+  const parsed = parseAiJsonObject(raw);
+  const variants = parsed?.variants;
+  if (!Array.isArray(variants) || variants.length !== 3) return false;
+  const expected = new Set(VARIANT_BLUEPRINTS.map((item) => item.id));
+  return variants.every((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return false;
+    const record = row as Record<string, unknown>;
+    return expected.has(String(record.id) as typeof VARIANT_BLUEPRINTS[number]["id"])
+      && typeof record.facebookText === "string"
+      && typeof record.instagramText === "string";
+  });
+}
+
 function parseVariants(raw: string, sourceUrl: string) {
-  const parsed = JSON.parse(raw) as { variants?: Array<Record<string, unknown>> };
-  if (!Array.isArray(parsed.variants) || parsed.variants.length !== 3) throw new Error("SOCIAL_STUDIO_AI_INVALID");
+  const parsed = parseAiJsonObject(raw) as { variants?: Array<Record<string, unknown>> } | null;
+  if (!parsed || !Array.isArray(parsed.variants) || parsed.variants.length !== 3) {
+    throw new Error("SOCIAL_STUDIO_AI_INVALID");
+  }
   return VARIANT_BLUEPRINTS.map((blueprint, index) => {
     const source = parsed.variants!.find((row) => row.id === blueprint.id) || parsed.variants![index] || {};
     return {
@@ -1010,22 +1049,42 @@ export async function POST(
       "For hver variant: hook, angle, visualDirection, facebookText, instagramText og tags.",
     ].filter(Boolean).join("\n");
 
-    const raw = await askClaude(prompt, {
-      systemPrompt,
-      model: "sonnet",
-      maxTokens: 3_200,
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA as any,
-      validateResponse: (value) => {
-        try {
-          const parsed = JSON.parse(value);
-          return Array.isArray(parsed?.variants) && parsed.variants.length === 3;
-        } catch {
-          return false;
+    let raw = "";
+    let structuredError: unknown = null;
+    try {
+      raw = await askClaude(prompt, {
+        systemPrompt,
+        model: "sonnet",
+        maxTokens: 3_200,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA as any,
+        validateResponse: validVariantPayload,
+        fallbackOnInvalidResponse: true,
+      });
+    } catch (error) {
+      structuredError = error;
+    }
+
+    if (!validVariantPayload(raw)) {
+      try {
+        raw = await askClaude(prompt, {
+          systemPrompt: systemPrompt + "\nHvis native JSON-schema ikke er tilgjengelig, returner fortsatt KUN ett gyldig JSON-objekt uten markdown eller forklaring.",
+          model: "sonnet",
+          maxTokens: 3_200,
+          validateResponse: validVariantPayload,
+          fallbackOnInvalidResponse: true,
+        });
+      } catch (fallbackError) {
+        const first = structuredError instanceof Error ? structuredError.message : "";
+        const second = fallbackError instanceof Error ? fallbackError.message : "";
+        if (/Alle AI-tjenester utilgjengelige|API-nøkkel|kreditt|rate limit|Anthropic/i.test(first + " " + second)) {
+          throw new Error("SOCIAL_STUDIO_AI_UNAVAILABLE");
         }
-      },
-      fallbackOnInvalidResponse: true,
-    });
+        throw fallbackError;
+      }
+    }
+
+    if (!validVariantPayload(raw)) throw new Error("SOCIAL_STUDIO_AI_INVALID");
     const variants = parseVariants(raw, sourceUrl);
 
     return NextResponse.json({
@@ -1052,10 +1111,21 @@ export async function POST(
       "ARTICLE_TOO_LARGE", "PROPERTY_LOOKUP_INVALID", "PROPERTY_NOT_FOUND",
       "PROPERTY_NOT_MARKETABLE_FOR_BRAND", "AREA_LOOKUP_INVALID", "AREA_NOT_FOUND",
       "SOCIAL_STUDIO_CONTENT_DISCOVERY_FAILED", "SOCIAL_STUDIO_AI_INVALID",
-      "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
+      "SOCIAL_STUDIO_AI_UNAVAILABLE", "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
       "PROPERTY_CARD_FFMPEG_MISSING",
     ];
-    const status = known.some((code) => message.startsWith(code)) ? 409 : 500;
-    return fail(status, message.split(":")[0], status === 500 ? "SoMe Studio kunne ikke fullføre oppgaven." : undefined);
+    console.error("[social-studio]", {
+      brandKey: params.brandKey,
+      action,
+      code: message.split(":")[0],
+    });
+    const status = message.startsWith("SOCIAL_STUDIO_AI_UNAVAILABLE")
+      ? 503
+      : known.some((code) => message.startsWith(code)) ? 409 : 500;
+    return fail(
+      status,
+      message.split(":")[0],
+      status === 500 ? "SoMe Studio kunne ikke fullføre oppgaven." : undefined,
+    );
   }
 }
