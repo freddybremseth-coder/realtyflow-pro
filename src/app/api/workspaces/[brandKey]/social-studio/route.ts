@@ -1189,6 +1189,11 @@ export async function POST(
 
     let raw = "";
     let structuredError: unknown = null;
+    let fallbackError: unknown = null;
+
+    // Do not validate inside the provider client. We need the raw model response
+    // even when its JSON shape differs from our canonical contract, so RealtyFlow
+    // can normalize it safely afterwards.
     try {
       raw = await askClaude(prompt, {
         systemPrompt,
@@ -1196,8 +1201,6 @@ export async function POST(
         maxTokens: 3_200,
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA as any,
-        validateResponse: validVariantPayload,
-        fallbackOnInvalidResponse: true,
       });
     } catch (error) {
       structuredError = error;
@@ -1205,47 +1208,46 @@ export async function POST(
 
     if (!validVariantPayload(raw)) {
       try {
-        raw = await askClaude(prompt, {
-          systemPrompt: systemPrompt + "\nHvis native JSON-schema ikke er tilgjengelig, returner fortsatt KUN ett gyldig JSON-objekt uten markdown eller forklaring.",
+        const fallbackRaw = await askClaude(prompt, {
+          systemPrompt: systemPrompt + "\nHvis native JSON-schema ikke er tilgjengelig, returner fortsatt kun ett JSON-objekt med de tre konseptene. Ikke legg til forklaring før eller etter.",
           model: "sonnet",
           maxTokens: 3_200,
-          validateResponse: validVariantPayload,
-          fallbackOnInvalidResponse: true,
         });
-      } catch (fallbackError) {
-        const first = structuredError instanceof Error ? structuredError.message : "";
-        const second = fallbackError instanceof Error ? fallbackError.message : "";
-        if (/Alle AI-tjenester utilgjengelige|API-nøkkel|kreditt|rate limit|Anthropic/i.test(first + " " + second)) {
-          throw new Error("SOCIAL_STUDIO_AI_UNAVAILABLE");
-        }
-        throw fallbackError;
+        if (fallbackRaw.trim()) raw = fallbackRaw;
+      } catch (error) {
+        fallbackError = error;
       }
     }
 
-    if (!validVariantPayload(raw)) {
+    if (!validVariantPayload(raw) && raw.trim()) {
       try {
         const repairPrompt = [
-          "Gjør bare om strukturen i AI-svaret nedenfor. Ikke finn på nye fakta.",
+          "Normaliser bare strukturen i AI-svaret nedenfor. Ikke finn på nye boligfakta eller påstander.",
+          "Behold betydningen og teksten som allerede finnes.",
           "Returner nøyaktig tre konsepter som JSON med roten {\"variants\":[...]}.",
           "Konseptene skal være i denne rekkefølgen: editorial_premium, lifestyle_story, advisor_insight.",
           "Hvert konsept skal ha: id, hook, angle, visualDirection, facebookText, instagramText, tags.",
-          "Hvis én kanaltekst mangler, tilpass den eksisterende teksten kort til den manglende kanalen.",
+          "Hvis én kanaltekst mangler, kan du tilpasse den eksisterende teksten til den manglende kanalen uten å legge til nye fakta.",
           "Returner kun JSON, ingen markdown eller forklaring.",
           "",
           "AI-SVAR SOM SKAL NORMALISERES:",
           raw.slice(0, 14_000),
         ].join("\n");
 
-        raw = await askClaude(repairPrompt, {
+        const repairedRaw = await askClaude(repairPrompt, {
           model: "haiku",
           maxTokens: 3_200,
-          validateResponse: validVariantPayload,
-          fallbackOnInvalidResponse: true,
         });
+        if (repairedRaw.trim()) raw = repairedRaw;
       } catch {}
     }
 
     if (!validVariantPayload(raw)) {
+      const first = structuredError instanceof Error ? structuredError.message : "";
+      const second = fallbackError instanceof Error ? fallbackError.message : "";
+      const providerUnavailable = !raw.trim() && /Alle AI-tjenester utilgjengelige|API-nøkkel|kreditt|rate limit|Anthropic|OpenAI|Gemini/i.test(first + " " + second);
+      if (providerUnavailable) throw new Error("SOCIAL_STUDIO_AI_UNAVAILABLE");
+
       const value = parseAiJsonValue(raw);
       const rows = variantRowsFromValue(value);
       console.warn("[social-studio] AI output could not be normalized", {
@@ -1255,6 +1257,8 @@ export async function POST(
         rowKeys: rows.slice(0, 3).map((row) => Object.keys(row).slice(0, 12)),
         rowIds: rows.slice(0, 3).map((row) => firstAiString(row, ["id", "variant", "concept", "type", "style", "name"], 120)),
         rawLength: raw.length,
+        structuredCallFailed: Boolean(structuredError),
+        fallbackCallFailed: Boolean(fallbackError),
       });
       throw new Error("SOCIAL_STUDIO_AI_INVALID");
     }
