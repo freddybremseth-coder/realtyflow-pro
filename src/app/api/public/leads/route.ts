@@ -384,7 +384,7 @@ export async function POST(request: NextRequest) {
   ].filter(Boolean).join("\n");
 
   const now = new Date().toISOString();
-  const corporateDecisionNoteState: CorporateDecisionNoteState | null =
+  let corporateDecisionNoteState: CorporateDecisionNoteState | null =
     isCorporateDecisionNote && organizationName
       ? {
           version: 1,
@@ -627,6 +627,14 @@ export async function POST(request: NextRequest) {
       if (existingProspect) {
         const existingEvidence = objectValue(existingProspect.evidence);
         const existingAssessment = objectValue(existingEvidence.corporate_assessment);
+        const existingDecisionNote = objectValue(existingEvidence.corporate_decision_note);
+        if (
+          corporateDecisionNoteState
+          && existingDecisionNote.request_id
+          && existingDecisionNote.request_id === corporateDecisionNoteState.request_id
+        ) {
+          corporateDecisionNoteState = existingDecisionNote as CorporateDecisionNoteState;
+        }
         const mergedEvidence = {
           ...existingEvidence,
           inbound_request: true,
@@ -735,7 +743,15 @@ export async function POST(request: NextRequest) {
   } | null = null;
 
   if (isCorporateDecisionNote && corporateProspect?.id && corporateDecisionNoteState) {
-    try {
+    if (corporateDecisionNoteState.delivery?.status === "sent") {
+      corporateDecisionNoteDelivery = {
+        success: true,
+        messageId: corporateDecisionNoteState.delivery?.message_id || null,
+        pdfAttached: true,
+        error: null,
+        pdfError: null,
+      };
+    } else try {
       corporateDecisionNoteDelivery = await sendCorporateDecisionNoteReport(supabase, {
         prospectId: String(corporateProspect.id),
         contactId: String(data.id),
