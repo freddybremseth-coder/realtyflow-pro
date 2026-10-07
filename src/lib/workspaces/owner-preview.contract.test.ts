@@ -6,6 +6,7 @@ const previewRoute = fs.readFileSync("src/app/api/workspace-user-preview/route.t
 const apiAdmin = fs.readFileSync("src/lib/api-admin.ts", "utf8");
 const brandAccess = fs.readFileSync("src/lib/workspaces/require-brand-workspace.ts", "utf8");
 const sidebar = fs.readFileSync("src/components/layout/sidebar.tsx", "utf8");
+const workspace = fs.readFileSync("src/app/(realty)/workspace/[brandKey]/page.tsx", "utf8");
 const users = fs.readFileSync("src/app/(realty)/workspace-users/page.tsx", "utf8");
 const logout = fs.readFileSync("src/app/api/auth/logout/route.ts", "utf8");
 
@@ -26,4 +27,7 @@ test("owner preview mirrors the member UI but cannot mutate workspace data", () 
   assert.match(sidebar, /Avslutt forhåndsvisning/);
   assert.match(users, /Forhåndsvis som bruker/);
   assert.match(logout, /realtyflow_owner_preview/);
+  assert.match(workspace, /Forhåndsvisning · skrivebeskyttet/);
+  assert.match(workspace, /Avslutt forhåndsvisning og åpne som eier/);
+  assert.match(workspace, /workspace-user-preview/);
 });
