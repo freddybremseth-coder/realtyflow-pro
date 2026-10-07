@@ -60,7 +60,14 @@ async function syncCanonicalContentPublication(
     content: [args.asset.headline, args.asset.body, args.asset.cta].filter(Boolean).join("\n\n"),
   });
   const media = (args.asset.media ?? {}) as Record<string, unknown>;
-  const mediaUrls = [media.imageUrl, media.videoUrl].filter((value): value is string => typeof value === "string" && value.length > 0);
+  const orderedImages = Array.isArray(media.imageUrls)
+    ? media.imageUrls.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+  const mediaUrls = Array.from(new Set([
+    ...orderedImages,
+    media.imageUrl,
+    media.videoUrl,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0)));
   const genome = (args.asset.genome ?? {}) as Record<string, unknown>;
 
   const row = {
@@ -87,6 +94,10 @@ async function syncCanonicalContentPublication(
       creativeVariantId: args.asset.creativeVariantId ?? null,
       sourceType: args.pub.source_type ?? null,
       sourceId: args.pub.source_id ?? null,
+      social_category: typeof genome.socialCategory === "string" ? genome.socialCategory : null,
+      concept_id: typeof genome.conceptId === "string" ? genome.conceptId : null,
+      visual_format: typeof genome.visualFormat === "string" ? genome.visualFormat : null,
+      is_property_presentation: genome.socialCategory === "property",
       genome,
     },
     performance_goal: typeof genome.goal === "string" ? genome.goal : null,
