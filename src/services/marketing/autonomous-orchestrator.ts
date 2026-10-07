@@ -272,7 +272,7 @@ export async function dispatchGeneratedAsset(
   // 3f) CHANNEL-MEDIA-FITNESS (P0): Instagram kan ikke publisere caption alene.
   // Stopp FØR draft/live persisteres, slik at en manglende bilde-/videoressurs
   // aldri ser ut som en publiseringsklar provider-jobb i Growth OS.
-  if (asset.channel === "instagram" && !asset.media?.imageUrl && !asset.media?.videoUrl) {
+  if (asset.channel === "instagram" && !asset.media?.imageUrl && !asset.media?.videoUrl && !asset.media?.imageUrls?.length) {
     const reason = "MEDIA_ASSET_MISSING: Instagram krever et verifisert bilde eller en video før publisering.";
     trace.push({ step: "media-gate", actor: "quality", summary: reason });
     await persist({ state: "paused", asset_hash: null, quality_score: quality.score, autonomy_mode: "blocked", approval_id: null });
