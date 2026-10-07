@@ -276,6 +276,33 @@ function parseTagsInput(value: string) {
     .slice(0, 20);
 }
 
+function socialPackageTag(tags?: string[]) {
+  return (tags || []).find((tag) => tag.startsWith("package-")) || "";
+}
+
+function socialConceptLabel(tags?: string[]) {
+  const concept = (tags || []).find((tag) => tag.startsWith("concept-"))?.slice("concept-".length) || "";
+  if (concept === "editorial-premium") return "Editorial / Premium";
+  if (concept === "lifestyle-story") return "Story / Lifestyle";
+  if (concept === "advisor-insight") return "Advisor / Insight";
+  return "";
+}
+
+function isInternalSocialTag(tag: string) {
+  const value = tag.toLowerCase();
+  return value === "facebook" || value === "instagram" || value === "paired-property"
+    || ["package-", "concept-", "source-", "source-content-", "source-area-", "social-category-", "style-", "visual-"]
+      .some((prefix) => value.startsWith(prefix));
+}
+
+function friendlyPlatformName(platform: string) {
+  if (platform === "facebook") return "Facebook";
+  if (platform === "instagram") return "Instagram";
+  if (platform === "linkedin") return "LinkedIn";
+  if (platform === "website") return "Nettside";
+  return platform;
+}
+
 function imageStyleToApiStyle(style: string) {
   const lower = style.toLowerCase();
   if (lower.includes("illustrasjon")) return "illustration";
@@ -457,11 +484,21 @@ export default function ContentHubPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [focusedDraftId, setFocusedDraftId] = useState("");
+  const [focusedPackageId, setFocusedPackageId] = useState("");
+  const [contentOrigin, setContentOrigin] = useState("");
+  const [originBrand, setOriginBrand] = useState("");
 
   useEffect(() => {
-    const requestedDraft = new URLSearchParams(window.location.search).get("draft") || "";
-    if (!requestedDraft) return;
+    const params = new URLSearchParams(window.location.search);
+    const requestedDraft = params.get("draft") || "";
+    const requestedPackage = params.get("package") || "";
+    const requestedOrigin = params.get("from") || "";
+    const requestedBrand = params.get("brand") || "";
+    if (!requestedDraft && !requestedPackage) return;
     setFocusedDraftId(requestedDraft);
+    setFocusedPackageId(requestedPackage);
+    setContentOrigin(requestedOrigin);
+    setOriginBrand(requestedBrand);
     setActiveContentTab("utkast");
     setDraftStatusFilter("all");
   }, []);
@@ -1903,18 +1940,56 @@ export default function ContentHubPage() {
     published: drafts.filter((draft) => draft.status === "published").length,
     failed: drafts.filter((draft) => draft.status === "failed").length,
   }), [drafts]);
+  const focusedPackageTag = focusedPackageId ? "package-" + focusedPackageId : "";
+  const packageDrafts = useMemo(() => focusedPackageTag
+    ? drafts.filter((draft) => (draft.tags || []).includes(focusedPackageTag))
+    : [], [drafts, focusedPackageTag]);
+  const packageConceptCount = useMemo(() => new Set(
+    packageDrafts
+      .map((draft) => (draft.tags || []).find((tag) => tag.startsWith("concept-")) || "")
+      .filter(Boolean),
+  ).size, [packageDrafts]);
+  const packagePlatforms = useMemo(() => Array.from(new Set(
+    packageDrafts.flatMap((draft) => draft.scheduled_platforms || [])
+      .filter(Boolean),
+  )), [packageDrafts]);
+
   const visibleDrafts = useMemo(() => {
-    const rows = draftStatusFilter === "all"
+    const statusRows = draftStatusFilter === "all"
       ? drafts
       : drafts.filter((draft) => draft.status === draftStatusFilter);
+    const rows = focusedPackageTag
+      ? statusRows.filter((draft) => (draft.tags || []).includes(focusedPackageTag))
+      : statusRows;
     return [...rows].sort((a, b) => {
       const aDate = new Date(getDraftDateValue(a)).getTime();
       const bDate = new Date(getDraftDateValue(b)).getTime();
       return (Number.isNaN(bDate) ? 0 : bDate) - (Number.isNaN(aDate) ? 0 : aDate);
     });
-  }, [draftStatusFilter, drafts]);
+  }, [draftStatusFilter, drafts, focusedPackageTag]);
+
+  const clearPackageFocus = useCallback(() => {
+    setFocusedPackageId("");
+    setContentOrigin("");
+    setOriginBrand("");
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("package");
+      url.searchParams.delete("from");
+      url.searchParams.delete("brand");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  }, []);
 
   useEffect(() => {
+    if (focusedPackageId && packageDrafts.length > 0) {
+      setActiveContentTab("utkast");
+      setDraftStatusFilter("all");
+      const timer = window.setTimeout(() => {
+        document.getElementById("content-hub-package")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+      return () => window.clearTimeout(timer);
+    }
     if (!focusedDraftId || !drafts.some((draft) => draft.id === focusedDraftId)) return;
     setActiveContentTab("utkast");
     setDraftStatusFilter("all");
@@ -1922,7 +1997,7 @@ export default function ContentHubPage() {
       document.getElementById("content-draft-" + focusedDraftId)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [focusedDraftId, drafts]);
+  }, [focusedDraftId, focusedPackageId, packageDrafts, drafts]);
 
   return (
     <div className="space-y-6">
@@ -1947,6 +2022,43 @@ export default function ContentHubPage() {
           <Badge variant="default">{BRANDS.length} merkevarer</Badge>
         </div>
       </div>
+
+      {focusedPackageId && <Card id="content-hub-package" className="border-emerald-700/70 bg-emerald-950/20">
+        <CardContent className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Fra SoMe Studio · steg 5</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">SoMe-pakken er lagret i Content Hub</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                {draftsLoading && packageDrafts.length === 0
+                  ? "Henter kanalutkastene…"
+                  : packageDrafts.length > 0
+                    ? `Du ser nå bare denne pakken: ${packageDrafts.length} kanalutkast fra ${packageConceptCount || 3} konsepter. Hvert kort er en egen Facebook- eller Instagram-versjon.`
+                    : "Fant ikke utkastene i pakken ennå. Oppdater siden, eller vis hele Content Hub."}
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Neste steg: les gjennom, juster bilde eller tekst ved behov, og velg <strong className="text-slate-200">Publiser</strong> eller planlegg tidspunkt. Ingenting er publisert automatisk.
+              </p>
+              {packagePlatforms.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
+                {packagePlatforms.map((platform) => <Badge key={platform} variant="outline" className="border-emerald-800 text-emerald-200">
+                  {friendlyPlatformName(platform)}
+                </Badge>)}
+              </div>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={clearPackageFocus}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-500">
+                Vis alle utkast
+              </button>
+              {contentOrigin === "social-studio" && originBrand && <a
+                href={"/workspace/" + encodeURIComponent(originBrand) + "?tab=growth&focus=social"}
+                className="inline-flex items-center gap-2 rounded-lg border border-cyan-700 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-950/30">
+                Tilbake til SoMe Studio <ChevronRight size={13}/>
+              </a>}
+            </div>
+          </div>
+        </CardContent>
+      </Card>}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -2158,10 +2270,18 @@ export default function ContentHubPage() {
                 {visibleDrafts.map((draft) => {
                   const brand = BRANDS.find((b) => b.id === draft.brand_id);
                   const isEditing = editingDraft === draft.id;
+                  const conceptLabel = socialConceptLabel(draft.tags);
+                  const isSocialStudioDraft = Boolean(socialPackageTag(draft.tags) || conceptLabel);
+                  const displayTags = (draft.tags || []).filter((tag) => !isInternalSocialTag(tag));
+                  const channelLabels = Array.from(new Set(
+                    (draft.scheduled_platforms || [])
+                      .filter((platform) => ["facebook", "instagram", "linkedin"].includes(platform)),
+                  ));
+                  const isPackageDraft = Boolean(focusedPackageTag && (draft.tags || []).includes(focusedPackageTag));
                   return (
                     <Card id={"content-draft-" + draft.id} key={draft.id}
-                      className={focusedDraftId === draft.id
-                        ? "border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg shadow-cyan-950/30"
+                      className={focusedDraftId === draft.id || isPackageDraft
+                        ? "border-cyan-400/80 ring-1 ring-cyan-400/20 shadow-lg shadow-cyan-950/20"
                         : "border-zinc-800"}>
                       <CardContent className="p-4">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -2176,6 +2296,11 @@ export default function ContentHubPage() {
                                 </Badge>
                               )}
                               {statusBadge(draft.status)}
+                              {isSocialStudioDraft && <Badge className="bg-cyan-500/15 text-cyan-200 text-xs">SoMe Studio</Badge>}
+                              {conceptLabel && <Badge variant="outline" className="text-xs border-slate-700 text-slate-300">{conceptLabel}</Badge>}
+                              {channelLabels.map((platform) => <Badge key={platform} variant="outline" className="text-xs border-slate-700 text-slate-300">
+                                {friendlyPlatformName(platform)}
+                              </Badge>)}
                               <span className="text-xs text-zinc-500 ml-auto">
                                 {new Date(draft.created_at).toLocaleDateString("nb-NO")}
                               </span>
@@ -2207,10 +2332,10 @@ export default function ContentHubPage() {
                             ) : (
                               <>
                                 <h4 className="font-medium text-sm mb-1 truncate">{draft.title || "Uten tittel"}</h4>
-                                {draft.ai_image_url && (
+                                {(draft.thumbnail_url || draft.ai_image_url) && (
                                   <div className="rounded-lg overflow-hidden mb-2 bg-zinc-800 max-h-48">
                                     <img
-                                      src={draft.thumbnail_url || draft.ai_image_url}
+                                      src={draft.thumbnail_url || draft.ai_image_url || ""}
                                       alt={draft.title || "AI-generert bilde"}
                                       loading="lazy"
                                       decoding="async"
@@ -2221,9 +2346,9 @@ export default function ContentHubPage() {
                                 <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
                                   {draft.description || "Ingen beskrivelse"}
                                 </p>
-                                {draft.tags && draft.tags.length > 0 && (
+                                {displayTags.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-2">
-                                    {draft.tags.slice(0, 5).map((tag) => (
+                                    {displayTags.slice(0, 5).map((tag) => (
                                       <span key={tag} className="text-xs bg-zinc-800 px-2 py-0.5 rounded">
                                         #{tag}
                                       </span>
@@ -2259,7 +2384,7 @@ export default function ContentHubPage() {
                                       fetchAvailableImages(draft.brand_id);
                                     }}
                                   >
-                                    <Image size={12} className="mr-1" /> {draft.ai_image_url ? "Bytt bilde" : "Velg bilde"}
+                                    <Image size={12} className="mr-1" /> {(draft.thumbnail_url || draft.ai_image_url) ? "Bytt bilde" : "Velg bilde"}
                                   </Button>
                                   <Button
                                     size="sm"
