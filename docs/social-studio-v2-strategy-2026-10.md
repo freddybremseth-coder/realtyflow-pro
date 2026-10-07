@@ -21,14 +21,16 @@ Strategy period: 90 days, then review using engagement, saves, profile visits, w
 
 Hard rule:
 - Pure property presentations: maximum 20% of published feed posts during the rolling strategy window.
+- 20% is a ceiling, not a quota. During the trust-building period, the working target is normally 15–20%.
+- Default cadence guard: after one pure property feed post, recommend at least four non-property feed posts before the next pure property presentation. Manual campaign override remains possible.
 
 Recommended target mix:
-- 20% property / selected listings
-- 30% area + lifestyle
+- 15–20% property / selected listings
+- 25% area + lifestyle
 - 20% guides + buyer competence
 - 15% market insight + advisor analysis
 - 10% people / advisor / behind the scenes
-- 5% proof / process / client journey / FAQ
+- 10–15% proof / process / client journey / FAQ
 
 The 20% property number is a strategic cap for the trust-building period, not a universal social-platform algorithm rule.
 
@@ -40,6 +42,7 @@ Recommended implementation:
 - categories: `property`, `area_lifestyle`, `guide_competence`, `market_insight`, `people_advisor`, `proof_process`
 - use a rolling last-30-published-post window, with a 90-day strategy override
 - if property share is >=20%, property is no longer shown as the primary recommended next post
+- if the most recent feed post was a pure property presentation, the next four recommendations should prefer non-property categories
 - property creation remains available manually; the system should guide, not silently block
 - recommendation card should explain: “Property share is already 20% in the current mix. Recommended next: area/lifestyle or guide.”
 
