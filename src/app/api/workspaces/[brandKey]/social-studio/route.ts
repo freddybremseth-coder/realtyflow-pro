@@ -1563,6 +1563,9 @@ export async function POST(
         const repairedRaw = await askClaude(repairPrompt, {
           model: "haiku",
           maxTokens: 3_200,
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA as any,
         });
         raw = preferCandidate(raw, repairedRaw);
       } catch {}
