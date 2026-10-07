@@ -11,6 +11,7 @@ const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inv
 const marketing = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[brandKey]/marketing/route.ts"), "utf8");
 const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/property-social-card.ts"), "utf8");
 const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/route.ts"), "utf8");
+const contentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/content-hub/page.tsx"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -173,7 +174,7 @@ test("Property card rendering falls back to the approved property image and keep
   assert.match(route, /rendered: false/);
   assert.match(route, /fallback: true/);
   assert.match(studio, /Kortmalen kunne ikke rendres akkurat nå/);
-  assert.match(studio, /Åpne dette utkastet i Content Hub/);
+  assert.match(studio, /Åpne utkastet og gå videre/);
 });
 
 
@@ -265,7 +266,7 @@ test("SoMe Studio can hand off all three concepts as one package with approved m
   assert.match(route, /social-studio-concept:/);
   assert.match(studio, /Lagre hele SoMe-pakken/);
   assert.match(studio, /savePackage/);
-  assert.match(studio, /3 konsepter ×/);
+  assert.match(studio, /kanalutkast er lagret i Content Hub/);
   assert.match(studio, /package-/);
   assert.match(studio, /Lag alternativt AI-bilde/);
 });
@@ -282,4 +283,63 @@ test("Content Hub compact draft list keeps thumbnails visible", () => {
   assert.match(contentHubDrafts, /"thumbnail_url", "scheduled_platforms"/);
   assert.match(contentHubDrafts, /thumbnail_url: typeof row\.thumbnail_url === "string"/);
   assert.doesNotMatch(contentHubDrafts, /thumbnail_url: null,\n\s*image_compacted: true/);
+});
+
+
+test("SoMe Studio explains the full draft-to-publish workflow", () => {
+  for (const label of ["Velg kilde", "Lag 3 forslag", "Se tekst og bilder", "Lagre som utkast", "Publiser / planlegg"]) {
+    assert.match(studio, new RegExp(label.replace(/[\/]/g, "\\/")));
+  }
+  assert.match(studio, /Content Hub er stedet der SoMe-utkast lagres/);
+  assert.match(studio, /SoMe Studio publiserer ikke automatisk/);
+  assert.match(studio, /Lagre hele SoMe-pakken som utkast/);
+  assert.match(studio, /packageProgress/);
+});
+
+test("SoMe package handoff opens the whole package instead of one arbitrary draft", () => {
+  assert.match(studio, /savedPackageId/);
+  assert.match(studio, /content-hub\?package=/);
+  assert.match(studio, /from=social-studio&brand=/);
+  assert.match(studio, /Åpne hele pakken i Content Hub/);
+  assert.match(contentHubPage, /focusedPackageId/);
+  assert.match(contentHubPage, /packageDrafts/);
+  assert.match(contentHubPage, /Du ser nå bare denne pakken/);
+  assert.match(contentHubPage, /Ingenting er publisert automatisk/);
+  assert.match(contentHubPage, /Tilbake til SoMe Studio/);
+});
+
+test("Content Hub renders compact thumbnails and hides technical SoMe tags", () => {
+  assert.match(contentHubPage, /draft\.thumbnail_url \|\| draft\.ai_image_url/);
+  assert.match(contentHubPage, /isInternalSocialTag/);
+  assert.match(contentHubPage, /SoMe Studio/);
+  assert.match(contentHubPage, /socialConceptLabel/);
+  assert.match(contentHubPage, /friendlyPlatformName/);
+});
+
+test("Individual SoMe saves clearly say they go to Content Hub and are not published", () => {
+  assert.match(studio, /Lagre Facebook i Content Hub/);
+  assert.match(studio, /Lagre Instagram i Content Hub/);
+  assert.match(studio, /Ingenting er publisert ennå/);
+  assert.match(studio, /Åpne utkastet og gå videre/);
+});
+
+
+test("SoMe review comes before package save and new recommendations clear stale handoff state", () => {
+  assert.ok(studio.indexOf('id="social-studio-results"') < studio.indexOf('id="social-package-handoff"'));
+  assert.match(studio, /function applyStrategyRecommendation\(\)[\s\S]*setPackageFeedback\(null\)/);
+  assert.match(studio, /sourceType === "property" \? "7 eiendomsmaler" : "3 konsepter · kanaltilpasset"/);
+});
+
+
+test("SoMe workspace separates creation from Content Hub and keeps saved drafts easy to find", () => {
+  assert.doesNotMatch(workspace, /SoMe Studio · Content Hub/);
+  assert.match(workspace, /Når du lagrer, finner du utkastene i Content Hub/);
+  assert.match(studio, /Se lagrede utkast/);
+  assert.match(studio, /href=\{"\/content-hub\?from=social-studio&brand="/);
+});
+
+test("Content Hub prioritizes brand media and exposes planning from SoMe drafts", () => {
+  assert.match(contentHubPage, /image-bank\?owner=" \+ encodeURIComponent\(brandId\)/);
+  assert.match(contentHubPage, /Bilder for denne merkevaren vises først/);
+  assert.match(contentHubPage, /isSocialStudioDraft \? "Publiser \/ planlegg" : "Publiser"/);
 });

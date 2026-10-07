@@ -175,6 +175,8 @@ export function WorkspaceSocialStudio({
   const [generatingImage, setGeneratingImage] = useState("");
   const [packageSaving, setPackageSaving] = useState(false);
   const [packageFeedback, setPackageFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [packageProgress, setPackageProgress] = useState("");
+  const [savedPackageId, setSavedPackageId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [savedPublicationId, setSavedPublicationId] = useState("");
@@ -214,6 +216,8 @@ export function WorkspaceSocialStudio({
     setSaveFeedback({});
     setPreviewFeedback({});
     setPackageFeedback(null);
+    setPackageProgress("");
+    setSavedPackageId("");
     setNotice("Boligen er hentet fra Eiendommer. Lag tre forslag når du er klar.");
     onInitialPropertyConsumed?.();
   }, [initialProperty?.id]);
@@ -246,6 +250,13 @@ export function WorkspaceSocialStudio({
 
   function applyStrategyRecommendation() {
     if (!strategy) return;
+    setVariants([]);
+    setSource(null);
+    setSavedPublicationId("");
+    setSavedDraft(null);
+    setPackageFeedback(null);
+    setPackageProgress("");
+    setSavedPackageId("");
     const category = strategy.recommendedCategory;
     if (category === "property") {
       setSourceType("property");
@@ -325,6 +336,11 @@ export function WorkspaceSocialStudio({
     setPreviews({});
     setSource(null);
     setError("");
+    setSavedPublicationId("");
+    setSavedDraft(null);
+    setPackageFeedback(null);
+    setPackageProgress("");
+    setSavedPackageId("");
     if (item.sourceType === "area") {
       setSourceType("area");
       setAreaLookup(item.areaId || item.id.replace(/^area:/, ""));
@@ -358,6 +374,8 @@ export function WorkspaceSocialStudio({
     setSaveFeedback({});
     setPreviewFeedback({});
     setPackageFeedback(null);
+    setPackageProgress("");
+    setSavedPackageId("");
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
@@ -647,7 +665,7 @@ export function WorkspaceSocialStudio({
         ...current,
         [feedbackKey]: {
           kind: "success",
-          text: (channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub." +
+          text: (channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub. Ingenting er publisert ennå." +
             (saved.fallback ? " Originalbildet fra eiendommen ble brukt." : ""),
         },
       }));
@@ -675,7 +693,10 @@ export function WorkspaceSocialStudio({
 
     setPackageSaving(true);
     setPackageFeedback(null);
+    setPackageProgress("1 av 2 · Klargjør bilder for de tre konseptene…");
+    setSavedPackageId("");
     const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    const publicationIds: string[] = [];
 
     try {
       const prepared = new Map<string, { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }>();
@@ -685,7 +706,9 @@ export function WorkspaceSocialStudio({
       }));
       mediaResults.forEach(([id, image]) => prepared.set(id, image));
 
-      const publicationIds: string[] = [];
+      const totalDrafts = variants.length * channels.length;
+      let savedCount = 0;
+      setPackageProgress("2 av 2 · Lagrer 0 av " + totalDrafts + " kanalutkast i Content Hub…");
       for (const variant of variants) {
         const image = prepared.get(variant.id);
         if (!image) throw new Error("Mangler ferdig bilde for " + variant.label + ".");
@@ -695,23 +718,36 @@ export function WorkspaceSocialStudio({
             preparedImage: image,
           });
           publicationIds.push(saved.id);
+          savedCount += 1;
+          if (savedCount === 1) setSavedPackageId(packageId);
+          setPackageProgress("2 av 2 · Lagrer " + savedCount + " av " + totalDrafts + " kanalutkast i Content Hub…");
         }
       }
 
       if (publicationIds[0]) {
         setSavedPublicationId(publicationIds[0]);
+        setSavedPackageId(packageId);
       }
       setPackageFeedback({
         kind: "success",
-        text: `SoMe-pakken er lagret: 3 konsepter × ${channels.length} aktive kanaler = ${publicationIds.length} kanalutkast. Bilder følger utkastene.`,
+        text: `Ferdig. ${publicationIds.length} kanalutkast er lagret i Content Hub. Ingenting er publisert ennå.`,
       });
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          document.getElementById("social-package-handoff")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 80);
+      }
       await onDraftSaved?.();
     } catch (cause) {
+      if (publicationIds.length > 0) setSavedPackageId(packageId);
       setPackageFeedback({
         kind: "error",
-        text: cause instanceof Error ? cause.message : "SoMe-pakken kunne ikke lagres.",
+        text: publicationIds.length > 0
+          ? `${publicationIds.length} utkast ble lagret før en feil oppstod. Åpne pakken i Content Hub for å se hva som er klart.`
+          : (cause instanceof Error ? cause.message : "SoMe-pakken kunne ikke lagres."),
       });
     } finally {
+      setPackageProgress("");
       setPackageSaving(false);
     }
   }
@@ -725,8 +761,41 @@ export function WorkspaceSocialStudio({
           Start med en eiendom, en guide/magasinartikkel eller et eget tema. RealtyFlow lager Editorial/Premium, Story/Lifestyle og Advisor/Insight med egne Facebook- og Instagram-versjoner.
         </p>
       </div>
-      <span className="rounded-full border border-cyan-800 px-3 py-1 text-xs text-cyan-200">7 eiendomsmaler</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-300 hover:border-cyan-700 hover:text-cyan-200">
+          Se lagrede utkast <ExternalLink size={12}/>
+        </a>
+        <span className="rounded-full border border-cyan-800 px-3 py-1 text-xs text-cyan-200">{sourceType === "property" ? "7 eiendomsmaler" : "3 konsepter · kanaltilpasset"}</span>
+      </div>
     </div>
+
+    <div className="mt-5 grid gap-2 sm:grid-cols-5">
+      {[
+        ["1", "Velg kilde"],
+        ["2", "Lag 3 forslag"],
+        ["3", "Se tekst og bilder"],
+        ["4", "Lagre som utkast"],
+        ["5", "Publiser / planlegg"],
+      ].map(([number, label], index) => {
+        const currentStep = packageFeedback?.kind === "success" ? 5 : packageSaving ? 4 : variants.length === 3 ? 3 : busy ? 2 : 1;
+        const step = index + 1;
+        const active = step === currentStep;
+        const done = step < currentStep;
+        return <div key={number}
+          className={"rounded-xl border px-3 py-2 " + (active
+            ? "border-cyan-500 bg-cyan-950/40"
+            : done ? "border-emerald-900/60 bg-emerald-950/15" : "border-slate-800 bg-slate-950/30")}>
+          <div className={"text-[10px] font-bold uppercase tracking-wider " + (active ? "text-cyan-300" : done ? "text-emerald-300" : "text-slate-600")}>
+            Steg {number}
+          </div>
+          <div className={"mt-0.5 text-xs font-medium " + (active || done ? "text-slate-200" : "text-slate-500")}>{label}</div>
+        </div>;
+      })}
+    </div>
+    <p className="mt-2 text-[11px] text-slate-500">
+      Content Hub er stedet der SoMe-utkast lagres, redigeres, planlegges og publiseres. SoMe Studio publiserer ikke automatisk.
+    </p>
 
     {strategy?.strategyEnabled && <section className="mt-5 rounded-2xl border border-emerald-900/60 bg-emerald-950/10 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -763,9 +832,9 @@ export function WorkspaceSocialStudio({
     {error && <p role="alert" className="mt-4 rounded-xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">{error}</p>}
     {notice && <div role="status" className="mt-4 rounded-xl border border-emerald-800 bg-emerald-950/25 p-3 text-sm text-emerald-200">
       <p>{notice}</p>
-      {savedPublicationId && <a href={"/content-hub?draft=" + encodeURIComponent(savedPublicationId)}
+      {savedPublicationId && <a href={"/content-hub?draft=" + encodeURIComponent(savedPublicationId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
         className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-700 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-950/40">
-        Åpne i Content Hub <ExternalLink size={14}/>
+        Åpne lagret utkast i Content Hub <ExternalLink size={14}/>
       </a>}
     </div>}
 
@@ -777,6 +846,11 @@ export function WorkspaceSocialStudio({
           setSource(null);
           setError("");
           setNotice("");
+          setSavedPublicationId("");
+          setSavedDraft(null);
+          setPackageFeedback(null);
+          setPackageProgress("");
+          setSavedPackageId("");
           if (id === "article") {
             setSelectedContent(null);
             setContentId("");
@@ -922,11 +996,16 @@ export function WorkspaceSocialStudio({
             placeholder="F.eks. Hva bør en norsk kjøper vite før han velger Finestrat som helårsbolig?"/>
         </label>
       </>}
-      {sourceType !== "property" && sourceType !== "area" && <label className="text-xs text-slate-300">Bildeadresse <span className="text-slate-500">(valgfritt)</span>
-        <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} maxLength={2000}
-          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="https://…"/>
-        <span className="mt-1 block text-[11px] text-slate-500">Instagram krever at bildet allerede er godkjent brand-media i RealtyFlow.</span>
-      </label>}
+      {sourceType !== "property" && sourceType !== "area" && <details className="rounded-lg border border-slate-800 bg-slate-950/30 p-3">
+        <summary className="cursor-pointer text-xs font-medium text-slate-300">Har du allerede et bestemt bilde? <span className="text-slate-500">(avansert, valgfritt)</span></summary>
+        <label className="mt-3 block text-xs text-slate-300">Bildeadresse
+          <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} maxLength={2000}
+            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="https://…"/>
+        </label>
+        <span className="mt-2 block text-[11px] text-slate-500">
+          Du trenger normalt ikke fylle inn dette. RealtyFlow bruker kildebildet når det finnes, eller lager et godkjent konseptbilde automatisk.
+        </span>
+      </details>}
       <label className="text-xs text-slate-300">Hva vil du vektlegge? <span className="text-slate-500">(valgfritt)</span>
         <textarea value={brief} onChange={(event) => setBrief(event.target.value)} maxLength={1500} rows={2}
           className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
@@ -944,33 +1023,6 @@ export function WorkspaceSocialStudio({
         : "border-emerald-800 bg-emerald-950/25 text-emerald-200")}>
       {generationFeedback.text}
     </p>}
-
-    {variants.length === 3 && <section className="mt-5 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Samlet handoff til Content Hub</p>
-          <h3 className="mt-1 text-base font-semibold">Lagre alle tre konsepter som én SoMe-pakke</h3>
-          <p className="mt-1 max-w-3xl text-xs text-slate-400">
-            RealtyFlow sørger for bilde per konsept og oppretter egne kanalutkast, slik at Facebook- og Instagram-teksten ikke blandes.
-          </p>
-        </div>
-        <button type="button" onClick={() => void savePackage()} disabled={packageSaving || Boolean(saving)}
-          className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-40">
-          {packageSaving ? "Lager og lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken"}
-        </button>
-      </div>
-      {packageFeedback && <p role={packageFeedback.kind === "error" ? "alert" : "status"}
-        className={"mt-3 rounded-lg border p-3 text-xs " + (packageFeedback.kind === "error"
-          ? "border-amber-800 bg-amber-950/30 text-amber-200"
-          : "border-emerald-800 bg-emerald-950/25 text-emerald-200")}>
-        {packageFeedback.text}
-        {packageFeedback.kind === "success" && savedPublicationId && <a
-          href={"/content-hub?draft=" + encodeURIComponent(savedPublicationId)}
-          className="ml-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2">
-          Åpne Content Hub <ExternalLink size={12}/>
-        </a>}
-      </p>}
-    </section>}
 
     {variants.length === 3 && <div id="social-studio-results" className="mt-6 scroll-mt-24">
       <div className="mb-3 flex items-center justify-between gap-3 xl:hidden">
@@ -1084,7 +1136,7 @@ export function WorkspaceSocialStudio({
             <button type="button" disabled={Boolean(saving) || !activePlatforms.has("facebook")}
               onClick={() => void saveVariant(variant, "facebook")}
               className="mt-3 rounded-lg border border-blue-800 px-3 py-2 text-xs text-blue-200 disabled:opacity-40">
-              {saving === variant.id + ":facebook" ? "Lagrer…" : "Lagre Facebook-utkast"}
+              {saving === variant.id + ":facebook" ? "Lagrer…" : "Lagre Facebook i Content Hub"}
             </button>
             {saveFeedback[variant.id + ":facebook"] && <p
               className={"mt-2 rounded-lg border p-2 text-[11px] " + (saveFeedback[variant.id + ":facebook"].kind === "error"
@@ -1093,9 +1145,9 @@ export function WorkspaceSocialStudio({
               {saveFeedback[variant.id + ":facebook"].text}
             </p>}
             {savedDraft?.variantId === variant.id && savedDraft.channel === "facebook" && <a
-              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id)}
+              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
               className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">
-              Åpne dette utkastet i Content Hub <ExternalLink size={13}/>
+              Åpne utkastet og gå videre <ExternalLink size={13}/>
             </a>}
           </div>
           <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/10 p-3">
@@ -1104,7 +1156,7 @@ export function WorkspaceSocialStudio({
             <button type="button" disabled={Boolean(saving) || !activePlatforms.has("instagram")}
               onClick={() => void saveVariant(variant, "instagram")}
               className="mt-3 rounded-lg border border-fuchsia-800 px-3 py-2 text-xs text-fuchsia-200 disabled:opacity-40">
-              {saving === variant.id + ":instagram" ? "Lagrer…" : "Lagre Instagram-utkast"}
+              {saving === variant.id + ":instagram" ? "Lagrer…" : "Lagre Instagram i Content Hub"}
             </button>
             {saveFeedback[variant.id + ":instagram"] && <p
               className={"mt-2 rounded-lg border p-2 text-[11px] " + (saveFeedback[variant.id + ":instagram"].kind === "error"
@@ -1113,9 +1165,9 @@ export function WorkspaceSocialStudio({
               {saveFeedback[variant.id + ":instagram"].text}
             </p>}
             {savedDraft?.variantId === variant.id && savedDraft.channel === "instagram" && <a
-              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id)}
+              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
               className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">
-              Åpne dette utkastet i Content Hub <ExternalLink size={13}/>
+              Åpne utkastet og gå videre <ExternalLink size={13}/>
             </a>}
           </div>
         </div>
@@ -1125,5 +1177,42 @@ export function WorkspaceSocialStudio({
       </article>)}
       </div>
     </div>}
+
+    {variants.length === 3 && <section id="social-package-handoff" className="mt-5 scroll-mt-24 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Neste steg · lagre som utkast</p>
+          <h3 className="mt-1 text-base font-semibold">Lagre alle tre konsepter i Content Hub</h3>
+          <p className="mt-1 max-w-3xl text-xs text-slate-400">
+            RealtyFlow lager egne kanalutkast for Facebook og Instagram. Deretter åpner du Content Hub for å redigere, planlegge eller publisere. Ingenting publiseres nå.
+          </p>
+        </div>
+        <button type="button" onClick={() => void savePackage()} disabled={packageSaving || Boolean(saving)}
+          className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-40">
+          {packageSaving ? "Lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken som utkast"}
+        </button>
+      </div>
+      {packageProgress && <div className="mt-3 rounded-lg border border-cyan-900/70 bg-slate-950/50 p-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
+          {packageProgress}
+        </div>
+      </div>}
+      {packageFeedback && <div role={packageFeedback.kind === "error" ? "alert" : "status"}
+        className={"mt-3 rounded-xl border p-4 " + (packageFeedback.kind === "error"
+          ? "border-amber-800 bg-amber-950/30 text-amber-100"
+          : "border-emerald-700 bg-emerald-950/25 text-emerald-100")}>
+        <p className="text-sm font-semibold">{packageFeedback.kind === "success" ? "SoMe-pakken er klar" : "Pakken trenger oppfølging"}</p>
+        <p className="mt-1 text-xs">{packageFeedback.text}</p>
+        {savedPackageId && <div className="mt-3 flex flex-wrap items-center gap-3">
+          <a
+            href={"/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400">
+            Åpne hele pakken i Content Hub <ExternalLink size={13}/>
+          </a>
+          <span className="text-[11px] text-slate-400">Der ser du alle kanalutkastene samlet og kan publisere eller planlegge dem.</span>
+        </div>}
+      </div>}
+    </section>}
   </section>;
 }
