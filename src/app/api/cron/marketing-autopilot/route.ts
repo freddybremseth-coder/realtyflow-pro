@@ -25,6 +25,14 @@ import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { createCampaignDraft, getServiceSupabase } from "@/services/marketing/campaign-production";
 import { generateAutopilotInstagramImage } from "@/services/marketing/autopilot-media";
 import { enqueueNextBestMarketingAction } from "@/services/marketing/next-action-executor";
+import {
+  autopilotEditorialMasterIdea,
+  loadAutopilotEditorialSource,
+} from "@/services/marketing/social-autopilot-source";
+import {
+  resolveAutopilotPostsPerWeek,
+  selectAutopilotSocialConcept,
+} from "@/lib/marketing/social-concepts";
 import { pinosoAutopilotIdea } from "@/lib/marketing/pinoso-marketing-skills";
 import {
   loadRemasterPromotionSource,
@@ -225,9 +233,11 @@ export async function GET(request: NextRequest) {
         : undefined;
       const outcomeAllocation = allocateChannelProduction(100, channels, brandRecommendation);
       const outcomeQuotaActive = outcomeAllocation.some((item) => item.outcomeTier !== "none");
-      const weeklyProductionCounts = outcomeQuotaActive
-        ? await loadWeeklyProductionCounts(supabase, brandId, channels)
-        : null;
+      const weeklyProductionCounts = await loadWeeklyProductionCounts(supabase, brandId, channels);
+      const weeklyTarget = resolveAutopilotPostsPerWeek({
+        metadata: (plan.metadata ?? {}) as Record<string, unknown>,
+        postingStrategy: (plan.posting_strategy ?? {}) as Record<string, unknown>,
+      });
       const orderedChannels = outcomeQuotaActive
         ? channels.slice().sort((a, b) =>
             (outcomeAllocation.find((item) => item.channel === b)?.count ?? 0)
@@ -242,6 +252,22 @@ export async function GET(request: NextRequest) {
         const requestedPublicationMode = systemNextActionRun && forcedRunForChannel
           ? nextActionPublicationMode({ configuredChannels: preapprovedChannels, targetChannel: channel })
           : null;
+        if (!forcedRunForChannel && !weeklyProductionCounts) {
+          results.push({ brandId, channel, skipped: true, reason: "weekly_production_history_unavailable" });
+          continue;
+        }
+        const weeklyCount = weeklyProductionCounts?.[channel] ?? 0;
+        if (!forcedRunForChannel && weeklyCount >= weeklyTarget) {
+          results.push({
+            brandId,
+            channel,
+            skipped: true,
+            reason: "adaptive_weekly_target_reached",
+            weeklyCount,
+            weeklyTarget,
+          });
+          continue;
+        }
         if (
           !forcedRunForChannel
           && outcomeQuotaActive
@@ -279,7 +305,20 @@ export async function GET(request: NextRequest) {
           const remasterSource = isRemasterCreator
             ? await loadRemasterPromotionSource(supabase, channel, { cooldownDays: 14 })
             : null;
-          const seoTopicSource = !isRemasterCreator
+          const editorialPlan = !isRemasterCreator
+            ? await loadAutopilotEditorialSource(supabase as any, {
+                brandId,
+                channel,
+                cooldownDays: 14,
+              }).catch((error) => {
+                console.warn("[Marketing Autopilot] editorial source lookup failed:", error instanceof Error ? error.message : error);
+                return { source: null, recommendedCategory: null, strategyReason: null };
+              })
+            : { source: null, recommendedCategory: null, strategyReason: null };
+          const useInventoryProperty = role === "real_estate"
+            && (!editorialPlan.source || editorialPlan.recommendedCategory === "property");
+          const editorialSource = useInventoryProperty ? null : editorialPlan.source;
+          const seoTopicSource = !isRemasterCreator && !editorialSource && !useInventoryProperty
             ? await loadSEOTopicSource(supabase, brandId, channel)
             : null;
           if (isRemasterCreator && !remasterSource) {
@@ -287,21 +326,46 @@ export async function GET(request: NextRequest) {
             continue;
           }
 
+          const socialCategory = useInventoryProperty
+            ? "property"
+            : editorialSource?.socialCategory ?? editorialPlan.recommendedCategory ?? "market_insight";
+          const concept = selectAutopilotSocialConcept({
+            weeklyCount,
+            channel,
+            socialCategory,
+            mediaCount: editorialSource?.imageUrls.length ?? 0,
+          });
           const runIdentity = forcedRunForChannel ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
           const masterIdea = remasterSource
             ? remasterPromotionMasterIdea(remasterSource, guidance)
-            : seoTopicSource
-              ? seoTopicMasterIdea(seoTopicSource, guidance)
-              : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
-          let mediaUrl = remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined;
-          const mediaType = remasterSource ? remasterPromotionMediaType(remasterSource) : undefined;
+            : editorialSource
+              ? autopilotEditorialMasterIdea(editorialSource, {
+                  conceptLabel: concept.label,
+                  channel,
+                  learningGuidance: [
+                    editorialPlan.strategyReason ? `Strategihensyn: ${editorialPlan.strategyReason}` : "",
+                    guidance,
+                  ].filter(Boolean).join(" "),
+                })
+              : seoTopicSource
+                ? seoTopicMasterIdea(seoTopicSource, guidance)
+                : ideaForBrand(plan, guidance, dayIndex, localDate, channel);
+          let mediaUrl = remasterSource
+            ? remasterPromotionMediaUrl(remasterSource)
+            : editorialSource?.imageUrls[0];
+          let mediaUrls = editorialSource?.imageUrls ?? [];
+          const mediaType = remasterSource
+            ? remasterPromotionMediaType(remasterSource)
+            : concept.visualFormat === "carousel" && mediaUrls.length >= 3
+              ? "carousel" as const
+              : mediaUrl ? "image" as const : undefined;
           let generatedMedia: Record<string, unknown> | null = null;
 
           // Instagram cannot publish text-only content. SaaS brands historically
           // reached this point with mode=live but media=null, leaving hundreds of
           // dead drafts. Use RealtyFlow's existing Media Studio before campaign
           // generation so the normal claim/quality/publisher gates still apply.
-          if (!mediaUrl && channel === "instagram" && role === "saas_b2b") {
+          if (!mediaUrl && channel === "instagram" && !useInventoryProperty) {
             const brandContext = await loadBrandContext(supabase as any, brandId).catch(() => null);
             const contentKey = runIdentity?.marketingRunId ?? `manual:${runRequest?.id ?? localDate}:${brandId}:${channel}`;
             try {
@@ -313,6 +377,7 @@ export async function GET(request: NextRequest) {
                 visualDirection: brandContext?.visualDirection,
               });
               mediaUrl = media.imageUrl;
+              mediaUrls = [media.imageUrl];
               generatedMedia = {
                 generated: true,
                 jobId: media.jobId,
@@ -335,14 +400,22 @@ export async function GET(request: NextRequest) {
           const baseInput = {
             brandId,
             channel,
-            useInventoryProperty: role === "real_estate" && !seoTopicSource,
+            useInventoryProperty,
             masterIdea,
             mediaUrl,
+            mediaUrls,
             mediaType,
+            sourceFacts: editorialSource?.facts,
+            sourceId: editorialSource?.sourceId,
+            socialCategory,
+            conceptId: concept.id,
+            visualFormat: useInventoryProperty ? undefined : concept.visualFormat,
             topic: seoTopicSource ? String(seoTopicSource.payload.genome_topic) : undefined,
-            requiredCtaUrl: seoTopicSource?.source_url,
+            requiredCtaUrl: channel === "facebook"
+              ? (editorialSource?.sourceUrl ?? seoTopicSource?.source_url)
+              : undefined,
             goal: { kind: role === "real_estate" ? "qualified_leads" as const : "awareness" as const, target: 10, horizonDays: 30 },
-            publishingCapacityPerWeek: 4,
+            publishingCapacityPerWeek: weeklyTarget,
             reuseCooldownDays: 14,
             requirePublicationHistory: true,
           };
@@ -415,6 +488,16 @@ export async function GET(request: NextRequest) {
             learnedHour,
             targetHour,
             recommendation: recommendation?.favor ?? {},
+            weeklyCount,
+            weeklyTarget,
+            socialCategory,
+            concept: {
+              id: concept.id,
+              label: concept.label,
+              creativeStyle: concept.creativeStyle,
+              visualFormat: concept.visualFormat,
+              goal: concept.goal,
+            },
             generatedMedia,
             recovery,
             failureState,
@@ -426,6 +509,18 @@ export async function GET(request: NextRequest) {
               youtubeUrl: remasterSource.payload?.youtube_url ?? remasterSource.source_url,
               sourceMarked,
               sourceMarkError,
+            } : editorialSource ? {
+              sourceId: editorialSource.sourceId,
+              sourceType: editorialSource.sourceType,
+              contentId: editorialSource.contentId,
+              areaId: editorialSource.areaId,
+              kind: editorialSource.kind,
+              title: editorialSource.title,
+              canonicalUrl: editorialSource.sourceUrl,
+              socialCategory: editorialSource.socialCategory,
+              imageCount: editorialSource.imageUrls.length,
+              sourceMarked: false,
+              sourceMarkError: null,
             } : seoTopicSource ? {
               sourceQueueId: seoTopicSource.id,
               sourceType: "seo_topic",
