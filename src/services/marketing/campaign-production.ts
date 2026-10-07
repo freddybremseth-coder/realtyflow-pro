@@ -374,6 +374,14 @@ export async function createCampaignDraft(
     : [];
   const effectiveMediaUrls = inventoryMediaUrls.length ? inventoryMediaUrls : sourceMediaUrls;
   const effectiveMediaUrl = inventoryProperty?.primaryImage ?? input.mediaUrl ?? effectiveMediaUrls[0];
+  const inferredVisualFormat = (() => {
+    if (input.visualFormat) return input.visualFormat;
+    if (!input.conceptId) return undefined;
+    const canCarousel = input.channel === "instagram" && effectiveMediaUrls.length >= 3;
+    if (input.conceptId === "advisor_insight") return canCarousel ? "carousel" : (inventoryProperty ? "property_card" : "single_image");
+    if (input.conceptId === "editorial_premium" && inventoryProperty) return "property_card";
+    return "single_image";
+  })();
   const effectiveFocus = input.focus || inventoryProperty?.location || undefined;
   const locationInstruction = inventoryProperty
     ? inventoryProperty.locationSpecificity === "specific"
@@ -408,7 +416,7 @@ export async function createCampaignDraft(
   const campaignId = `camp_${run.marketingRunId}`;
   const fav = plan.favoredDimensions;
   const conceptProfile = input.conceptId ? socialConceptById(input.conceptId) : null;
-  const routedFormat = input.visualFormat === "carousel" && effectiveMediaUrls.length >= 2
+  const routedFormat = inferredVisualFormat === "carousel" && effectiveMediaUrls.length >= 2
     ? "carousel"
     : routeContentFormat(effectiveMediaUrl);
   const learnedRecipe = parseContentRecipe(fav.recipe);
@@ -438,11 +446,11 @@ export async function createCampaignDraft(
     topic: input.topic ?? (recipeApplicable?.topic as any) ?? (fav.topic as any),
     area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_") ?? (recipeApplicable?.area as any) ?? (fav.area as any),
     propertyType: inventoryProperty?.propertyType ?? (recipeApplicable?.propertyType as any) ?? (fav.propertyType as any),
-    creativeStyle: (input.visualFormat === "carousel" ? "carousel" : conceptProfile?.creativeStyle as any)
+    creativeStyle: (inferredVisualFormat === "carousel" ? "carousel" : conceptProfile?.creativeStyle as any)
       ?? (recipeApplicable?.creativeStyle as any) ?? creativeStyle ?? (fav.creativeStyle as any),
     ...(input.socialCategory ? { socialCategory: input.socialCategory } : {}),
     ...(input.conceptId ? { conceptId: input.conceptId } : {}),
-    ...(input.visualFormat ? { visualFormat: input.visualFormat } : {}),
+    ...(inferredVisualFormat ? { visualFormat: inferredVisualFormat } : {}),
   };
   const campaign: CampaignPlan = { campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit", goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea };
   const briefs = atomizeCampaign(campaign, {
@@ -495,7 +503,7 @@ export async function createCampaignDraft(
         creative = input.deterministicInventoryCopy
           ? makeDeterministicInventoryCreative(brief, inventoryProperty)
           : await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
-        const propertyCarousel = input.visualFormat === "carousel" && inventoryMediaUrls.length >= 2;
+        const propertyCarousel = inferredVisualFormat === "carousel" && inventoryMediaUrls.length >= 2;
         creative = {
           ...creative,
           asset: {
@@ -516,7 +524,7 @@ export async function createCampaignDraft(
         if (
           storageReady
           && resolvedCreativeStyle
-          && input.visualFormat !== "carousel"
+          && inferredVisualFormat !== "carousel"
           && (brief.channel === "facebook" || brief.channel === "instagram")
           && /^https:\/\//i.test(inventoryProperty.primaryImage)
         ) {
@@ -562,7 +570,7 @@ export async function createCampaignDraft(
           facts: input.sourceFacts ?? [],
         });
         const carouselUrls = effectiveMediaUrls.length ? effectiveMediaUrls : (effectiveMediaUrl ? [effectiveMediaUrl] : []);
-        if (brief.channel === "instagram" && input.visualFormat === "carousel" && carouselUrls.length >= 2) {
+        if (brief.channel === "instagram" && inferredVisualFormat === "carousel" && carouselUrls.length >= 2) {
           creative = {
             ...creative,
             asset: {
@@ -607,7 +615,7 @@ export async function createCampaignDraft(
           creative = await generator.generate({ brief, brand, recommendation });
           if (effectiveMediaUrl && /^https:\/\//i.test(effectiveMediaUrl)) {
             const carouselUrls = effectiveMediaUrls.length ? effectiveMediaUrls : [effectiveMediaUrl];
-            const mediaType = input.mediaType ?? (input.visualFormat === "carousel" && carouselUrls.length >= 2 ? "carousel" : "image");
+            const mediaType = input.mediaType ?? (inferredVisualFormat === "carousel" && carouselUrls.length >= 2 ? "carousel" : "image");
             creative = {
               ...creative,
               asset: {
