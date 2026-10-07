@@ -15,6 +15,13 @@ export type WorkspaceSocialPropertySeed = {
 type SourceType = "property" | "article" | "area" | "topic";
 type Channel = "facebook" | "instagram";
 type VisualFormat = "single_image" | "property_card" | "collage_3" | "carousel";
+type PreparedConceptMedia = {
+  imageUrl: string;
+  imageUrls?: string[];
+  fallback: boolean;
+  visualFormat: VisualFormat;
+  warning?: string;
+};
 type Variant = {
   id: "editorial_premium" | "lifestyle_story" | "advisor_insight";
   label: string;
@@ -470,7 +477,7 @@ export function WorkspaceSocialStudio({
     }
   }
 
-  async function renderPropertyImage(variant: Variant, channel: Channel) {
+  async function renderPropertyImage(variant: Variant, channel: Channel): Promise<PreparedConceptMedia> {
     if (source?.type !== "property" || !source.propertyLookup) {
       return { imageUrl: source?.imageUrl || imageUrl.trim(), fallback: false, visualFormat: "single_image" as VisualFormat };
     }
@@ -537,7 +544,7 @@ export function WorkspaceSocialStudio({
     return String(body.imageUrl);
   }
 
-  async function ensureConceptCarousel(variant: Variant, forceGenerated = false) {
+  async function ensureConceptCarousel(variant: Variant, forceGenerated = false): Promise<PreparedConceptMedia> {
     if (source?.type === "property") {
       throw new Error("Ekte Instagram-karusell for eiendom kobles til flere Inventory-bilder i neste eiendomssteg.");
     }
@@ -580,7 +587,7 @@ export function WorkspaceSocialStudio({
     }
   }
 
-  async function ensureConceptImage(variant: Variant, forceGenerated = false) {
+  async function ensureConceptImage(variant: Variant, forceGenerated = false): Promise<PreparedConceptMedia> {
     if (source?.type === "property") {
       return renderPropertyImage(variant, activePlatforms.has("instagram") ? "instagram" : "facebook");
     }
@@ -620,7 +627,7 @@ export function WorkspaceSocialStudio({
     channel: Channel,
     options: {
       packageId?: string;
-      preparedImage?: { imageUrl: string; imageUrls?: string[]; fallback?: boolean; visualFormat?: VisualFormat };
+      preparedImage?: PreparedConceptMedia;
     } = {},
   ) {
     if (!activePlatforms.has(channel)) {
@@ -746,7 +753,7 @@ export function WorkspaceSocialStudio({
     const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 
     try {
-      const prepared = new Map<string, { imageUrl: string; imageUrls?: string[]; fallback?: boolean; visualFormat?: VisualFormat }>();
+      const prepared = new Map<string, PreparedConceptMedia>();
       const mediaResults = await Promise.all(variants.map(async variant => {
         const image = await ensureConceptImage(variant);
         return [variant.id, image] as const;
