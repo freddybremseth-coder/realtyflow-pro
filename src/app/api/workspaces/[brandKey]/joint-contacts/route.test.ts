@@ -92,6 +92,9 @@ test("staff query uses verified Auth UUID and session email, never URL parameter
     p_email: "staff@example.test",
     p_offset: 50,
     p_search: "Ada,other.brand",
+    p_status: "",
+    p_source: "",
+    p_sort: "updated_desc",
   });
   const body = await response.json();
   assert.equal(body.brand, "zeneco");
