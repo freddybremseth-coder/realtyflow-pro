@@ -35,7 +35,7 @@ const baseColumns = [
   "scheduled_at",
 ];
 
-const fullSelect = [...baseColumns, "thumbnail_url", "scheduled_platforms"].join(", ");
+const fullSelect = [...baseColumns, "thumbnail_url", "media_urls", "scheduled_platforms"].join(", ");
 const listBaseColumns = baseColumns.filter((column) => column !== "ai_image_url");
 const listSelect = [...listBaseColumns, "scheduled_platforms"].join(", ");
 const listMinimalSelect = listBaseColumns.join(", ");
