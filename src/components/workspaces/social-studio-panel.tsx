@@ -38,6 +38,7 @@ type GeneratedSource = {
   companionPropertyId?: string | null;
   socialCategory?: SocialCategory;
   variantImages?: Record<string, string>;
+  propertyImageCount?: number;
 };
 
 type SocialCategory =
@@ -396,7 +397,7 @@ export function WorkspaceSocialStudio({
       setVisualFormats(Object.fromEntries(nextVariants.map((item) => [
         item.id,
         body.source?.type === "property" && item.id === "advisor_insight" &&
-          Object.keys(body.source?.variantImages || {}).length >= 3
+          Number(body.source?.propertyImageCount || 0) >= 3
           ? "collage_3"
           : body.source?.type === "property" ? "property_card" : "single_image",
       ])) as Record<string, VisualFormat>);
@@ -437,7 +438,11 @@ export function WorkspaceSocialStudio({
       if (preview.fallback) {
         setPreviewFeedback(current => ({
           ...current,
-          [variant.id]: "Kortmalen kunne ikke rendres akkurat nå. Originalbildet fra eiendommen vises i stedet.",
+          [variant.id]: preview.warning === "PROPERTY_COLLAGE_IMAGES_REQUIRED"
+            ? "Kollasje krever minst tre unike boligbilder. RealtyFlow viser enkeltbildet i stedet."
+            : preview.visualFormat === "single_image" && (visualFormats[variant.id] || "property_card") === "collage_3"
+              ? "Kollasjen kunne ikke rendres akkurat nå. RealtyFlow viser enkeltbildet i stedet."
+              : "Kortmalen kunne ikke rendres akkurat nå. Originalbildet fra eiendommen vises i stedet.",
         }));
       }
     } catch (cause) {
@@ -481,6 +486,7 @@ export function WorkspaceSocialStudio({
     return {
       imageUrl: String(body.imageUrl),
       fallback: body.fallback === true,
+      warning: typeof body.warning === "string" ? body.warning : "",
       visualFormat: body.fallback === true ? "single_image" as VisualFormat : visualFormat,
     };
   }
@@ -526,7 +532,10 @@ export function WorkspaceSocialStudio({
             ...(source?.areaId ? ["source-area-" + source.areaId] : []),
             ...(source?.companionPropertyId ? ["paired-property"] : []),
             ...(source?.type === "property"
-              ? ["style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-")]
+              ? [
+                  "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
+                  "visual-" + (visualFormats[variant.id] || "property_card").replace(/_/g, "-"),
+                ]
               : []),
           ])).slice(0, 20),
           platforms: [channel],
@@ -839,7 +848,7 @@ export function WorkspaceSocialStudio({
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
               <option value="single_image">Enkeltbilde</option>
               <option value="property_card">Profesjonelt eiendomskort</option>
-              <option value="collage_3">3-bilders kollasje</option>
+              <option value="collage_3" disabled={(source?.propertyImageCount || 0) < 3}>3-bilders kollasje{(source?.propertyImageCount || 0) < 3 ? " · trenger 3 bilder" : ""}</option>
             </select>
           </label>
 
