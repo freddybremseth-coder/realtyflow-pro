@@ -4,6 +4,10 @@ import { askClaude } from "@/services/ai/claude-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 import {
+  buildSocialStrategySnapshot,
+  socialCategoryForSource,
+} from "@/lib/workspaces/social-strategy";
+import {
   PROPERTY_CREATIVE_STYLES,
   type PropertyCreativeStyle,
 } from "@/lib/marketing/creative-style";
@@ -982,6 +986,24 @@ export async function POST(
   const action = clean(body.action, 40);
 
   try {
+    if (action === "strategy_snapshot") {
+      const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: publications, error: strategyError } = await access.value.supabase
+        .from("content_publications")
+        .select("id,title,description,tags,content_features,published_at,created_at")
+        .eq("brand_id", params.brandKey)
+        .in("content_type", ["social", "social_post", "image_post", "marketing_post", "post"])
+        .eq("status", "published")
+        .gte("published_at", since)
+        .order("published_at", { ascending: false, nullsFirst: false })
+        .limit(30);
+      if (strategyError) return fail(503, "SOCIAL_STRATEGY_SNAPSHOT_FAILED");
+      return NextResponse.json({
+        ok: true,
+        snapshot: buildSocialStrategySnapshot(publications || [], params.brandKey),
+      }, { headers: noStore });
+    }
+
     if (action === "discover_content") {
       let property: any | null = null;
       const propertyLookup = clean(body.propertyLookup, 100);
@@ -1100,6 +1122,8 @@ export async function POST(
     let areaId: string | null = null;
     let companionPropertyId: string | null = null;
     let companionFacts = "";
+    const requestedCategory = clean(body.socialCategory, 40);
+    const contentKind = clean(body.contentKind, 40);
 
     if (sourceType === "property") {
       const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
@@ -1187,6 +1211,12 @@ export async function POST(
         companionFacts,
       ].join("\n");
     }
+
+    const socialCategory = socialCategoryForSource({
+      sourceType,
+      contentKind,
+      explicitCategory: requestedCategory,
+    });
 
     const systemPrompt = [
       "Du er senior redaktør for sosiale medier for " + definition.name + ".",
@@ -1308,7 +1338,9 @@ export async function POST(
         contentId,
         areaId,
         companionPropertyId,
+        socialCategory,
       },
+      socialCategory,
       variants,
       propertyStyles: PROPERTY_CREATIVE_STYLES,
     }, { headers: noStore });
@@ -1320,7 +1352,8 @@ export async function POST(
       "ARTICLE_TOO_LARGE", "PROPERTY_LOOKUP_INVALID", "PROPERTY_NOT_FOUND",
       "PROPERTY_NOT_MARKETABLE_FOR_BRAND", "AREA_LOOKUP_INVALID", "AREA_NOT_FOUND",
       "SOCIAL_STUDIO_CONTENT_DISCOVERY_FAILED", "SOCIAL_STUDIO_AI_INVALID",
-      "SOCIAL_STUDIO_AI_UNAVAILABLE", "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
+      "SOCIAL_STUDIO_AI_UNAVAILABLE", "SOCIAL_STRATEGY_SNAPSHOT_FAILED",
+      "BRAND_MEDIA_ORGANIZATION_MISSING", "SOCIAL_STUDIO_ARTICLE_MEDIA_REGISTER_FAILED",
       "PROPERTY_CARD_FFMPEG_MISSING",
     ];
     console.error("[social-studio]", {
