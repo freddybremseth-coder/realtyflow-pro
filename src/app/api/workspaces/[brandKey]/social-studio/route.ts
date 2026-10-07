@@ -1464,6 +1464,7 @@ export async function POST(
     let companionPropertyId: string | null = null;
     let companionFacts = "";
     let variantImages: Record<string, string> = {};
+    let propertyImageUrls: string[] = [];
     let propertyImageCount = 0;
     const requestedCategory = clean(body.socialCategory, 40);
     const contentKind = clean(body.contentKind, 40);
@@ -1479,8 +1480,9 @@ export async function POST(
         ? definition.website.replace(/\/$/, "") + "/eiendommer/" + encodeURIComponent(property.ref)
         : definition.website;
       sourceImageUrl = property.primary_image || sourceImageUrl;
+      propertyImageUrls = propertyMediaUrls(property).slice(0, 10);
       variantImages = variantPropertyImages(property);
-      propertyImageCount = propertyMediaUrls(property).length;
+      propertyImageCount = propertyImageUrls.length;
       sourceText = facts.join("\n");
       propertyId = property.id;
       propertyLookup = property.id;
@@ -1548,6 +1550,8 @@ export async function POST(
       );
       companionPropertyId = companion.id;
       companionFacts = propertyFacts(companion).join("\n");
+      propertyImageUrls = propertyMediaUrls(companion).slice(0, 10);
+      propertyImageCount = propertyImageUrls.length;
       if (!sourceImageUrl && companion.primary_image) sourceImageUrl = companion.primary_image;
       sourceText = [
         sourceText,
@@ -1712,6 +1716,7 @@ export async function POST(
         companionPropertyId,
         socialCategory,
         variantImages,
+        propertyImageUrls,
         propertyImageCount,
       },
       socialCategory,
