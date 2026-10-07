@@ -403,9 +403,11 @@ export function WorkspaceSocialStudio({
       ])) as Record<string, VisualFormat>);
       setGenerationFeedback({
         kind: "success",
-        text: body.source?.companionPropertyId
-          ? "Tre konsepter er klare, inkludert koblingen mellom valgt innhold og boligen."
-          : "Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.",
+        text: body.generation?.fallback === true
+          ? "AI-formatet kunne ikke brukes direkte. RealtyFlow laget tre kildebaserte forslag lokalt, uten å legge til nye fakta. Les gjennom før du lagrer."
+          : body.source?.companionPropertyId
+            ? "Tre konsepter er klare, inkludert koblingen mellom valgt innhold og boligen."
+            : "Tre forskjellige konsepter er klare. Velg kanal og eventuelt en annen eiendomsmal før du lagrer.",
       });
       if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
         window.setTimeout(() => {
