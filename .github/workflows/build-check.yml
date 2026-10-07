@@ -17,7 +17,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -26,6 +26,5 @@ jobs:
       - name: Build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
-        # GitHub's type-validation phase exceeds the package script's 4 GB heap.
-        # Keep the larger heap local to CI so production/Vercel stays unchanged.
-        run: node --max-old-space-size=5120 node_modules/next/dist/bin/next build
+        # Mirror the production build exactly so CI catches Vercel build failures.
+        run: npm run build
