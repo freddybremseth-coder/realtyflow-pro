@@ -144,6 +144,7 @@ export function WorkspaceSocialStudio({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [savedPublicationId, setSavedPublicationId] = useState("");
+  const [savedDraft, setSavedDraft] = useState<{ id: string; variantId: Variant["id"]; channel: Channel } | null>(null);
 
   useEffect(() => {
     if (!initialProperty?.id) return;
@@ -166,6 +167,7 @@ export function WorkspaceSocialStudio({
     setSource(null);
     setError("");
     setSavedPublicationId("");
+    setSavedDraft(null);
     setNotice("Boligen er hentet fra Eiendommer. Lag tre forslag når du er klar.");
     onInitialPropertyConsumed?.();
   }, [initialProperty?.id]);
@@ -249,6 +251,7 @@ export function WorkspaceSocialStudio({
     setError("");
     setNotice("");
     setSavedPublicationId("");
+    setSavedDraft(null);
     setVariants([]);
     setPreviews({});
     try {
@@ -332,6 +335,9 @@ export function WorkspaceSocialStudio({
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body.imageUrl) throw new Error("Det profesjonelle eiendomskortet kunne ikke rendres.");
+    if (body.fallback === true) {
+      setNotice("Kortmalen kunne ikke rendres akkurat nå. RealtyFlow bruker boligens godkjente originalbilde, så du kan fortsatt lagre utkastet.");
+    }
     return String(body.imageUrl);
   }
 
@@ -383,6 +389,7 @@ export function WorkspaceSocialStudio({
       }
       const publicationId = typeof body?.publication?.id === "string" ? body.publication.id : "";
       setSavedPublicationId(publicationId);
+      if (publicationId) setSavedDraft({ id: publicationId, variantId: variant.id, channel });
       setNotice((channel === "facebook" ? "Facebook" : "Instagram") + "-utkastet er lagret i Content Hub. Ingenting er publisert.");
       await onDraftSaved?.();
     } catch (cause) {
@@ -619,6 +626,11 @@ export function WorkspaceSocialStudio({
               className="mt-3 rounded-lg border border-blue-800 px-3 py-2 text-xs text-blue-200 disabled:opacity-40">
               {saving === variant.id + ":facebook" ? "Lagrer…" : "Lagre Facebook-utkast"}
             </button>
+            {savedDraft?.variantId === variant.id && savedDraft.channel === "facebook" && <a
+              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id)}
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">
+              Åpne dette utkastet i Content Hub <ExternalLink size={13}/>
+            </a>}
           </div>
           <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/10 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-fuchsia-200"><Instagram size={14}/> Instagram</div>
@@ -628,6 +640,11 @@ export function WorkspaceSocialStudio({
               className="mt-3 rounded-lg border border-fuchsia-800 px-3 py-2 text-xs text-fuchsia-200 disabled:opacity-40">
               {saving === variant.id + ":instagram" ? "Lagrer…" : "Lagre Instagram-utkast"}
             </button>
+            {savedDraft?.variantId === variant.id && savedDraft.channel === "instagram" && <a
+              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id)}
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">
+              Åpne dette utkastet i Content Hub <ExternalLink size={13}/>
+            </a>}
           </div>
         </div>
         {variant.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">
