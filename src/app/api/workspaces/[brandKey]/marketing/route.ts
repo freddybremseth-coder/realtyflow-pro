@@ -56,6 +56,75 @@ function safeWrite(request: NextRequest) {
     request.headers.get("sec-fetch-site") !== "cross-site";
 }
 
+async function ownerMarketingSnapshot(supabase: any, brandKey: string) {
+  const [{ data: publicationRows, error: publicationError }, { data: channelRows, error: channelError }] =
+    await Promise.all([
+      supabase
+        .from("content_publications")
+        .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
+        .eq("brand_id", brandKey)
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .limit(60),
+      supabase
+        .from("social_channels")
+        .select("platform,display_name,is_active")
+        .eq("brand_id", brandKey)
+        .eq("is_active", true),
+    ]);
+  if (publicationError || channelError) return null;
+  return {
+    publications: publicationRows || [],
+    channels: channelRows || [],
+  };
+}
+
+async function ownerImageApproved(supabase: any, brandKey: string, imageUrl: string) {
+  if (!imageUrl) return true;
+
+  const { data: mediaRows } = await supabase
+    .from("media_assets")
+    .select("id,public_url,thumbnail_url")
+    .eq("brand_id", brandKey)
+    .is("deleted_at", null)
+    .eq("signed_url_required", false)
+    .limit(500);
+  if ((mediaRows || []).some((row: any) => imageUrl === row.public_url || imageUrl === row.thumbnail_url)) return true;
+
+  const { data: visibility, error: visibilityError } = await supabase
+    .from("property_brand_visibility")
+    .select("property_id")
+    .eq("brand_id", brandKey)
+    .eq("visible", true)
+    .limit(500);
+  if (visibilityError || !visibility?.length) return false;
+
+  const ids = visibility.map((row: any) => row.property_id).filter(Boolean);
+  if (!ids.length) return false;
+  const { data: properties } = await supabase
+    .from("properties")
+    .select("id,primary_image,images,gallery,show_on_website,website_visible")
+    .in("id", ids)
+    .eq("show_on_website", true)
+    .eq("website_visible", true);
+  return (properties || []).some((property: any) =>
+    imageUrl === property.primary_image ||
+    (Array.isArray(property.images) && property.images.includes(imageUrl)) ||
+    (Array.isArray(property.gallery) && property.gallery.includes(imageUrl)),
+  );
+}
+
+async function ownerChannelsActive(supabase: any, brandKey: string, platforms: string[]) {
+  if (!platforms.length) return true;
+  const { data, error } = await supabase
+    .from("social_channels")
+    .select("platform")
+    .eq("brand_id", brandKey)
+    .eq("is_active", true)
+    .in("platform", platforms);
+  if (error) return false;
+  return new Set((data || []).map((row: any) => row.platform)).size === new Set(platforms).size;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { brandKey: string } },
@@ -63,17 +132,23 @@ export async function GET(
   const access = await requireBrandWorkspace(request, params.brandKey, "marketing.read");
   if (!access.value) return access.response;
 
-  if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
-  const { data: snapshot, error: snapshotError } = await access.value.supabase.rpc(
-    "workspace_brand_marketing_snapshot",
-    {
-      p_brand_key: params.brandKey,
-      p_user_id: access.value.verifiedUserId,
-      p_email: access.value.verifiedEmail,
-    },
-  );
-  if (snapshotError || !snapshot || !Array.isArray(snapshot.publications) || !Array.isArray(snapshot.channels)) {
-    return fail(503, "MARKETING_UNAVAILABLE");
+  let snapshot: any = null;
+  if (!access.value.verifiedUserId) {
+    snapshot = await ownerMarketingSnapshot(access.value.supabase, params.brandKey);
+    if (!snapshot) return fail(503, "MARKETING_UNAVAILABLE");
+  } else {
+    const { data, error: snapshotError } = await access.value.supabase.rpc(
+      "workspace_brand_marketing_snapshot",
+      {
+        p_brand_key: params.brandKey,
+        p_user_id: access.value.verifiedUserId,
+        p_email: access.value.verifiedEmail,
+      },
+    );
+    if (snapshotError || !data || !Array.isArray(data.publications) || !Array.isArray(data.channels)) {
+      return fail(503, "MARKETING_UNAVAILABLE");
+    }
+    snapshot = data;
   }
 
   const publications = snapshot.publications.flatMap((row: unknown) => {
@@ -136,21 +211,54 @@ export async function POST(
     return fail(400, "INSTAGRAM_IMAGE_REQUIRED", "Instagram-utkast må ha et brand-godkjent bilde.");
   }
 
-  if (!access.value.verifiedUserId) return fail(403, "STAFF_ONLY");
-  const { data, error } = await access.value.supabase.rpc(
-    "workspace_brand_marketing_draft_create_v2",
-    {
-      p_brand_key: params.brandKey,
-      p_user_id: access.value.verifiedUserId,
-      p_email: access.value.verifiedEmail,
-      p_title: title,
-      p_description: description,
-      p_tags: tags,
-      p_platforms: platforms,
-      p_image_url: imageUrl || null,
-    },
-  );
-  if (error) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+  let data: any = null;
+  if (!access.value.verifiedUserId) {
+    if (!(await ownerChannelsActive(access.value.supabase, params.brandKey, platforms))) {
+      return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
+    }
+    if (imageUrl && !(await ownerImageApproved(access.value.supabase, params.brandKey, imageUrl))) {
+      return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
+        "Bildeadressen er ikke knyttet til en synlig eiendom eller godkjent mediefil for denne merkevaren.");
+    }
+    const { data: publication, error: insertError } = await access.value.supabase
+      .from("content_publications")
+      .insert({
+        brand_id: params.brandKey,
+        content_type: "social",
+        title: title || null,
+        description,
+        tags,
+        thumbnail_url: imageUrl || null,
+        scheduled_platforms: platforms,
+        status: "draft",
+        ai_generated: false,
+        content_features: {
+          workspace_draft: true,
+          owner_draft: true,
+          workspace_actor_email: access.value.verifiedEmail,
+        },
+      })
+      .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
+      .single();
+    if (insertError || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+    data = { ok: true, publication };
+  } else {
+    const result = await access.value.supabase.rpc(
+      "workspace_brand_marketing_draft_create_v2",
+      {
+        p_brand_key: params.brandKey,
+        p_user_id: access.value.verifiedUserId,
+        p_email: access.value.verifiedEmail,
+        p_title: title,
+        p_description: description,
+        p_tags: tags,
+        p_platforms: platforms,
+        p_image_url: imageUrl || null,
+      },
+    );
+    if (result.error) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+    data = result.data;
+  }
   if (data?.ok === false && data?.error === "CHANNEL_NOT_ACTIVE_FOR_BRAND") {
     return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
   }
