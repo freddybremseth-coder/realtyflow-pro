@@ -322,3 +322,10 @@ test("Individual SoMe saves clearly say they go to Content Hub and are not publi
   assert.match(studio, /Ingenting er publisert ennå/);
   assert.match(studio, /Åpne utkastet og gå videre/);
 });
+
+
+test("SoMe review comes before package save and new recommendations clear stale handoff state", () => {
+  assert.ok(studio.indexOf('id="social-studio-results"') < studio.indexOf('id="social-package-handoff"'));
+  assert.match(studio, /function applyStrategyRecommendation\(\)[\s\S]*setPackageFeedback\(null\)/);
+  assert.match(studio, /sourceType === "property" \? "7 eiendomsmaler" : "3 konsepter · kanaltilpasset"/);
+});
