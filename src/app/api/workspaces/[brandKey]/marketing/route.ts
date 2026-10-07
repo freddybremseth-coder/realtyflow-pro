@@ -8,6 +8,7 @@ const noStore = { "Cache-Control": "private, no-store" };
 const ALLOWED_DRAFT_PLATFORMS = new Set([
   "facebook","instagram","linkedin","youtube","tiktok","pinterest",
 ]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function fail(status: number, code: string, message?: string) {
   return NextResponse.json(
@@ -78,39 +79,66 @@ async function ownerMarketingSnapshot(supabase: any, brandKey: string) {
   };
 }
 
-async function ownerImageApproved(supabase: any, brandKey: string, imageUrl: string) {
+async function ownerImageApproved(
+  supabase: any,
+  brandKey: string,
+  imageUrl: string,
+  sourcePropertyId?: string,
+) {
   if (!imageUrl) return true;
 
-  const { data: mediaRows } = await supabase
-    .from("media_assets")
-    .select("id,public_url,thumbnail_url")
-    .eq("brand_id", brandKey)
-    .is("deleted_at", null)
-    .eq("signed_url_required", false)
-    .limit(500);
-  if ((mediaRows || []).some((row: any) => imageUrl === row.public_url || imageUrl === row.thumbnail_url)) return true;
+  const [{ data: publicAsset }, { data: thumbnailAsset }] = await Promise.all([
+    supabase
+      .from("media_assets")
+      .select("id")
+      .eq("brand_id", brandKey)
+      .eq("public_url", imageUrl)
+      .is("deleted_at", null)
+      .eq("signed_url_required", false)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("media_assets")
+      .select("id")
+      .eq("brand_id", brandKey)
+      .eq("thumbnail_url", imageUrl)
+      .is("deleted_at", null)
+      .eq("signed_url_required", false)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (publicAsset?.id || thumbnailAsset?.id) return true;
+
+  // Property-origin images are checked against the exact property that the
+  // SoMe draft came from. Do not scan an arbitrary capped brand catalogue.
+  if (!sourcePropertyId || !UUID_RE.test(sourcePropertyId)) return false;
+
+  const { data: property, error: propertyError } = await supabase
+    .from("properties")
+    .select("id,primary_image,images,gallery,show_on_website,website_visible,status")
+    .eq("id", sourcePropertyId)
+    .eq("show_on_website", true)
+    .eq("website_visible", true)
+    .limit(1)
+    .maybeSingle();
+  if (propertyError || !property?.id) return false;
+
+  const imageBelongsToProperty =
+    imageUrl === property.primary_image ||
+    (Array.isArray(property.images) && property.images.includes(imageUrl)) ||
+    (Array.isArray(property.gallery) && property.gallery.includes(imageUrl));
+  if (!imageBelongsToProperty) return false;
 
   const { data: visibility, error: visibilityError } = await supabase
     .from("property_brand_visibility")
     .select("property_id")
+    .eq("property_id", sourcePropertyId)
     .eq("brand_id", brandKey)
     .eq("visible", true)
-    .limit(500);
-  if (visibilityError || !visibility?.length) return false;
+    .limit(1)
+    .maybeSingle();
 
-  const ids = visibility.map((row: any) => row.property_id).filter(Boolean);
-  if (!ids.length) return false;
-  const { data: properties } = await supabase
-    .from("properties")
-    .select("id,primary_image,images,gallery,show_on_website,website_visible")
-    .in("id", ids)
-    .eq("show_on_website", true)
-    .eq("website_visible", true);
-  return (properties || []).some((property: any) =>
-    imageUrl === property.primary_image ||
-    (Array.isArray(property.images) && property.images.includes(imageUrl)) ||
-    (Array.isArray(property.gallery) && property.gallery.includes(imageUrl)),
-  );
+  return !visibilityError && visibility?.property_id === sourcePropertyId;
 }
 
 async function ownerChannelsActive(supabase: any, brandKey: string, platforms: string[]) {
@@ -198,9 +226,11 @@ export async function POST(
     ? body.platforms.map(platform => String(platform).trim().toLowerCase()).filter(Boolean)
     : [];
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  const sourcePropertyId = typeof body.sourcePropertyId === "string" ? body.sourcePropertyId.trim() : "";
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
       imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
+      (sourcePropertyId && !UUID_RE.test(sourcePropertyId)) ||
       tags.length > 20 || new Set(tags).size !== tags.length ||
       tags.some(tag => tag.length > 60) ||
       platforms.length > 6 || new Set(platforms).size !== platforms.length ||
@@ -216,7 +246,7 @@ export async function POST(
     if (!(await ownerChannelsActive(access.value.supabase, params.brandKey, platforms))) {
       return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
     }
-    if (imageUrl && !(await ownerImageApproved(access.value.supabase, params.brandKey, imageUrl))) {
+    if (imageUrl && !(await ownerImageApproved(access.value.supabase, params.brandKey, imageUrl, sourcePropertyId))) {
       return fail(409, "IMAGE_NOT_APPROVED_FOR_BRAND",
         "Bildeadressen er ikke knyttet til en synlig eiendom eller godkjent mediefil for denne merkevaren.");
     }
@@ -236,6 +266,7 @@ export async function POST(
           workspace_draft: true,
           owner_draft: true,
           workspace_actor_email: access.value.verifiedEmail,
+          ...(sourcePropertyId ? { source_property_id: sourcePropertyId } : {}),
         },
       })
       .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
