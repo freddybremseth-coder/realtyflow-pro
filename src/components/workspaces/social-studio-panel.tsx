@@ -35,6 +35,34 @@ type GeneratedSource = {
   contentId?: string | null;
   areaId?: string | null;
   companionPropertyId?: string | null;
+  socialCategory?: SocialCategory;
+  variantImages?: Record<string, string>;
+};
+
+type SocialCategory =
+  | "property"
+  | "area_lifestyle"
+  | "guide_competence"
+  | "market_insight"
+  | "people_advisor"
+  | "proof_process";
+
+type StrategySnapshot = {
+  strategyEnabled: boolean;
+  strategyPeriodId: string | null;
+  windowPosts: number;
+  classifiedPosts: number;
+  propertyPosts: number;
+  propertyShare: number;
+  propertyCeiling: number | null;
+  postsSinceLastProperty: number | null;
+  minNonPropertyBetweenProperty: number | null;
+  recommendedCategory: SocialCategory;
+  recommendationReason: string;
+  propertyRecommendationAllowed: boolean;
+  counts: Record<string, number>;
+  shares: Record<string, number>;
+  targetShares: Record<string, number>;
 };
 
 type EditorialItem = {
@@ -148,6 +176,10 @@ export function WorkspaceSocialStudio({
   const [generationFeedback, setGenerationFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<Record<string, { kind: "success" | "error"; text: string }>>({});
   const [previewFeedback, setPreviewFeedback] = useState<Record<string, string>>({});
+  const [strategy, setStrategy] = useState<StrategySnapshot | null>(null);
+  const [strategyBusy, setStrategyBusy] = useState(false);
+  const [strategyError, setStrategyError] = useState("");
+  const [topicCategory, setTopicCategory] = useState<SocialCategory>("market_insight");
 
   useEffect(() => {
     if (!initialProperty?.id) return;
@@ -179,6 +211,62 @@ export function WorkspaceSocialStudio({
   }, [initialProperty?.id]);
 
   const companionPropertyLookup = propertyContext?.ref || propertyContext?.id || "";
+
+  async function loadStrategy() {
+    if (strategyBusy) return;
+    setStrategyBusy(true);
+    setStrategyError("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "strategy_snapshot" }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.snapshot) throw new Error("Strategimiksen kunne ikke hentes.");
+      setStrategy(body.snapshot as StrategySnapshot);
+    } catch (cause) {
+      setStrategyError(cause instanceof Error ? cause.message : "Strategimiksen kunne ikke hentes.");
+    } finally {
+      setStrategyBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadStrategy();
+  }, [brandKey]);
+
+  function applyStrategyRecommendation() {
+    if (!strategy) return;
+    const category = strategy.recommendedCategory;
+    if (category === "property") {
+      setSourceType("property");
+      return;
+    }
+    if (category === "area_lifestyle") {
+      setSourceType("article");
+      setEditorialCategory("areas");
+      if (!editorial && !editorialBusy) void loadEditorialContent();
+      return;
+    }
+    if (category === "guide_competence") {
+      setSourceType("article");
+      setEditorialCategory("newGuides");
+      if (!editorial && !editorialBusy) void loadEditorialContent();
+      return;
+    }
+    setSourceType("topic");
+    setTopicCategory(category);
+  }
+
+  function strategyCategoryLabel(category: SocialCategory) {
+    if (category === "property") return "Bolig";
+    if (category === "area_lifestyle") return "Område / livsstil";
+    if (category === "guide_competence") return "Guide / kjøpskompetanse";
+    if (category === "market_insight") return "Markedsinnsikt";
+    if (category === "people_advisor") return "Mennesker / rådgivning";
+    return "Prosess / kundereise";
+  }
 
   const canGenerate = useMemo(() => {
     if (!canDraft || busy) return false;
@@ -278,6 +366,8 @@ export function WorkspaceSocialStudio({
           topic: topic.trim(),
           brief: brief.trim(),
           imageUrl: imageUrl.trim(),
+          contentKind: selectedContent?.kind || "",
+          socialCategory: sourceType === "topic" ? topicCategory : "",
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -359,6 +449,7 @@ export function WorkspaceSocialStudio({
       body: JSON.stringify({
         action: "render_property_card",
         propertyLookup: source.propertyLookup,
+        sourceImageUrl: source.variantImages?.[variant.id] || source.imageUrl || "",
         creativeStyle: styles[variant.id] || variant.creativeStyle,
         channel,
       }),
@@ -402,6 +493,7 @@ export function WorkspaceSocialStudio({
           description: text,
           tags: Array.from(new Set([
             ...variant.tags,
+            ...(source?.socialCategory ? ["social-category-" + source.socialCategory.replace(/_/g, "-")] : []),
             "concept-" + variant.id.replace(/_/g, "-"),
             "source-" + (source?.type || sourceType),
             ...(source?.contentId ? ["source-content-" + source.contentId] : []),
@@ -416,6 +508,15 @@ export function WorkspaceSocialStudio({
           sourcePropertyId: source?.type === "property"
             ? (source.propertyId || "")
             : (source?.companionPropertyId || ""),
+          socialCategory: source?.socialCategory || "",
+          conceptId: variant.id,
+          visualFormat: source?.type === "property"
+            ? (renderedImage.fallback ? "single_image" : "property_card")
+            : "single_image",
+          sourceContentId: source?.contentId || "",
+          sourceAreaId: source?.areaId || "",
+          strategyPeriodId: strategy?.strategyPeriodId || "",
+          strategyRecommendationReason: strategy?.recommendationReason || "",
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -464,6 +565,38 @@ export function WorkspaceSocialStudio({
       </div>
       <span className="rounded-full border border-cyan-800 px-3 py-1 text-xs text-cyan-200">7 eiendomsmaler</span>
     </div>
+
+    {strategy?.strategyEnabled && <section className="mt-5 rounded-2xl border border-emerald-900/60 bg-emerald-950/10 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Anbefalt neste · 90-dagers strategi</p>
+          <h3 className="mt-1 text-lg font-semibold">{strategyCategoryLabel(strategy.recommendedCategory)}</h3>
+          <p className="mt-1 max-w-3xl text-sm text-slate-300">{strategy.recommendationReason}</p>
+        </div>
+        <button type="button" onClick={applyStrategyRecommendation}
+          className="rounded-lg border border-emerald-700 bg-emerald-950/30 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-950/50">
+          Bruk anbefalingen
+        </button>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-950/45 p-3">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500">Rene boligposter</div>
+          <div className="mt-1 text-xl font-semibold">{Math.round(strategy.propertyShare * 100)} %</div>
+          <div className="text-[11px] text-slate-500">Tak: {Math.round((strategy.propertyCeiling || 0.2) * 100)} %</div>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-950/45 p-3">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500">Analysert feed</div>
+          <div className="mt-1 text-xl font-semibold">{strategy.windowPosts}</div>
+          <div className="text-[11px] text-slate-500">publiserte poster siste 90 dager, maks 30</div>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-950/45 p-3">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500">Siden siste boligpost</div>
+          <div className="mt-1 text-xl font-semibold">{strategy.postsSinceLastProperty ?? "–"}</div>
+          <div className="text-[11px] text-slate-500">mål: minst 4 ikke-boligposter</div>
+        </div>
+      </div>
+    </section>}
+    {strategyError && <p className="mt-3 text-xs text-amber-300">{strategyError}</p>}
 
     {error && <p role="alert" className="mt-4 rounded-xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">{error}</p>}
     {notice && <div role="status" className="mt-4 rounded-xl border border-emerald-800 bg-emerald-950/25 p-3 text-sm text-emerald-200">
@@ -610,11 +743,23 @@ export function WorkspaceSocialStudio({
         <p className="mt-1 text-sm font-semibold text-slate-100">{selectedContent?.title || "Område fra RealtyFlow"}</p>
         <p className="mt-1 text-xs text-slate-400">Områdeprofilen brukes direkte som faktakilde. Ingen nettside-URL trenger å limes inn.</p>
       </div>}
-      {sourceType === "topic" && <label className="text-xs text-slate-300">Tema
-        <textarea value={topic} onChange={(event) => setTopic(event.target.value)} maxLength={1200} rows={3}
-          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-          placeholder="F.eks. Hva bør en norsk kjøper vite før han velger Finestrat som helårsbolig?"/>
-      </label>}
+      {sourceType === "topic" && <>
+        <label className="text-xs text-slate-300">Innholdstype
+          <select value={topicCategory} onChange={(event) => setTopicCategory(event.target.value as SocialCategory)}
+            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+            <option value="market_insight">Markedsinnsikt</option>
+            <option value="people_advisor">Mennesker / rådgivning</option>
+            <option value="proof_process">Prosess / kundereise / FAQ</option>
+            <option value="guide_competence">Guide / kjøpskompetanse</option>
+            <option value="area_lifestyle">Område / livsstil</option>
+          </select>
+        </label>
+        <label className="text-xs text-slate-300">Tema
+          <textarea value={topic} onChange={(event) => setTopic(event.target.value)} maxLength={1200} rows={3}
+            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+            placeholder="F.eks. Hva bør en norsk kjøper vite før han velger Finestrat som helårsbolig?"/>
+        </label>
+      </>}
       {sourceType !== "property" && sourceType !== "area" && <label className="text-xs text-slate-300">Bildeadresse <span className="text-slate-500">(valgfritt)</span>
         <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} maxLength={2000}
           className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="https://…"/>
@@ -674,8 +819,13 @@ export function WorkspaceSocialStudio({
             {previewing === variant.id ? "Renderer…" : "Forhåndsvis valgt mal"}
           </button>
           {previewFeedback[variant.id] && <p className="mt-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200">{previewFeedback[variant.id]}</p>}
-          {previews[variant.id] && <img src={previews[variant.id]} alt={"Forhåndsvisning av " + variant.label}
-            className="mt-3 aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />}
+          {(previews[variant.id] || source?.variantImages?.[variant.id]) && <div className="mt-3">
+            <img src={previews[variant.id] || source?.variantImages?.[variant.id]} alt={"Forhåndsvisning av " + variant.label}
+              className="aspect-[4/5] w-full rounded-xl border border-slate-700 object-cover" />
+            {!previews[variant.id] && source?.variantImages?.[variant.id] && <p className="mt-1 text-[10px] text-slate-500">
+              Eget bilde valgt for dette konseptet · render malen for ferdig uttrykk
+            </p>}
+          </div>}
         </label>}
 
         <div className="mt-4 space-y-3">
