@@ -162,3 +162,31 @@ test("SoMe action feedback stays next to generate, preview and save controls", (
   assert.match(studio, /Tre forskjellige konsepter er klare/);
   assert.match(studio, /-utkastet er lagret i Content Hub/);
 });
+
+
+test("SoMe Studio exposes ZenEco content-mix strategy and recommendation guidance", () => {
+  assert.match(route, /action === "strategy_snapshot"/);
+  assert.match(route, /buildSocialStrategySnapshot/);
+  assert.match(route, /content_features,published_at,created_at/);
+  assert.match(studio, /Anbefalt neste · 90-dagers strategi/);
+  assert.match(studio, /Rene boligposter/);
+  assert.match(studio, /Bruk anbefalingen/);
+  assert.match(studio, /social-category-/);
+});
+
+test("SoMe Studio assigns different property gallery images to the three concepts", () => {
+  assert.match(route, /function propertyMediaUrls/);
+  assert.match(route, /function variantPropertyImages/);
+  assert.match(route, /variantImages = variantPropertyImages\(property\)/);
+  assert.match(route, /sourceImageUrl: selectedSourceImageUrl/);
+  assert.match(studio, /source\.variantImages\?\.\[variant\.id\]/);
+  assert.match(studio, /Eget bilde valgt for dette konseptet/);
+});
+
+test("Saved owner drafts persist strategy category and concept metadata", () => {
+  assert.match(marketing, /social_category: socialCategory/);
+  assert.match(marketing, /is_property_presentation: socialCategory === "property"/);
+  assert.match(marketing, /concept_id: conceptId/);
+  assert.match(marketing, /visual_format: visualFormat/);
+  assert.match(marketing, /strategy_period_id: strategyPeriodId/);
+});
