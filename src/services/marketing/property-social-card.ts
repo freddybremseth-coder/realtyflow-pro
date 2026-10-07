@@ -100,9 +100,22 @@ function run(binary: string, args: string[]) {
 }
 
 async function download(url: string, destination: string) {
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(15_000),
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; RealtyFlow/1.0; +https://flow.chatgenius.pro)",
+      "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    },
+  });
   if (!response.ok) throw new Error(`PROPERTY_CARD_IMAGE_DOWNLOAD_FAILED: ${response.status}`);
-  await fs.writeFile(destination, Buffer.from(await response.arrayBuffer()));
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType && !contentType.toLowerCase().startsWith("image/")) {
+    throw new Error(`PROPERTY_CARD_IMAGE_CONTENT_TYPE_INVALID: ${contentType.slice(0, 80)}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length) throw new Error("PROPERTY_CARD_IMAGE_EMPTY");
+  await fs.writeFile(destination, buffer);
 }
 
 function fontFile() {
@@ -255,6 +268,11 @@ export async function renderPropertySocialCard(
   input: PropertySocialCardInput,
 ): Promise<PropertySocialCardResult> {
   if (!ffmpegPath) throw new Error("PROPERTY_CARD_FFMPEG_MISSING");
+  try {
+    await fs.access(ffmpegPath);
+  } catch {
+    throw new Error("PROPERTY_CARD_FFMPEG_MISSING");
+  }
   if (!/^https:\/\//i.test(input.sourceImageUrl)) throw new Error("PROPERTY_CARD_SOURCE_IMAGE_INVALID");
 
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rf-property-card-"));
