@@ -22,13 +22,25 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
   const url = new URL(request.url);
   const page = Number(url.searchParams.get("page") || "1");
   const search = (url.searchParams.get("q") || "").trim();
-  if (!Number.isSafeInteger(page) || page < 1 || page > 1000 || search.length > 80)
-    return fail(400, "INVALID_SEARCH");
+  const status = String(url.searchParams.get("status") || "").trim().toUpperCase();
+  const sourceRaw = String(url.searchParams.get("source") || "").trim();
+  const sort = String(url.searchParams.get("sort") || "updated_desc").trim();
+  const allowedStatuses = ["", "NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "WON", "ON_HOLD", "LOST"];
+  if (
+    !Number.isSafeInteger(page) || page < 1 || page > 1000 ||
+    search.length > 80 || sourceRaw.length > 80 ||
+    !allowedStatuses.includes(status) ||
+    !["updated_desc", "updated_asc", "created_desc", "name_asc"].includes(sort)
+  ) return fail(400, "INVALID_SEARCH");
+  const source = sourceRaw.replace(/[^\p{L}\p{N}\s._-]/gu, " ").replace(/\s+/g, " ").trim();
   const { data, error } = await access.value.supabase.rpc("workspace_zeneco_joint_contacts", {
     p_user_id: access.value.verifiedUserId,
     p_email: access.value.verifiedEmail,
     p_offset: (page - 1) * 50,
     p_search: search,
+    p_status: status,
+    p_source: source,
+    p_sort: sort,
   });
   if (error || !data || !Array.isArray(data.contacts) || typeof data.hasMore !== "boolean")
     return fail(503, "JOINT_CRM_UNAVAILABLE");
@@ -43,11 +55,13 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
     phone: typeof row.phone === "string" ? row.phone : null,
     pipeline_status: typeof row.pipeline_status === "string" ? row.pipeline_status : null,
     source: typeof row.source === "string" ? row.source : null,
+    created_at: typeof row.created_at === "string" ? row.created_at : null,
     updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
   }));
   return NextResponse.json({
     ok: true, brand: "zeneco", contacts: visible,
     page, pageSize: 50, hasMore: data.hasMore,
+    summary: data.summary && typeof data.summary === "object" ? data.summary : null,
   }, { headers: noStore });
 }
 
