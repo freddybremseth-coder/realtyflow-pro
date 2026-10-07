@@ -207,6 +207,18 @@ test("Saved owner drafts persist strategy category and concept metadata", () => 
 });
 
 
+test("SoMe Studio keeps Instagram captions link-free and varies engagement CTAs", () => {
+  assert.match(route, /function instagramCaptionWithoutLinks/);
+  assert.match(route, /replace\(\/https\?:\\\/\\\/\[\^\\s/);
+  assert.match(route, /function instagramEngagementCta/);
+  assert.match(route, /Lagre posten/);
+  assert.match(route, /Hvem ville du tatt med deg hit/);
+  assert.match(route, /Send oss en melding/);
+  assert.match(route, /Instagram-engasjement skal variere mellom konseptene/);
+  assert.match(route, /facebookText: ensureLink/);
+  assert.match(route, /instagramText: ensureInstagramEngagement/);
+});
+
 test("SoMe Studio supports a three-image collage visual format with safe fallback", () => {
   assert.match(route, /action === "render_property_collage"/);
   assert.match(route, /renderPropertySocialCollage/);
