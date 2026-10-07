@@ -240,6 +240,8 @@ export async function POST(
   const strategyRecommendationReason = typeof body.strategyRecommendationReason === "string"
     ? body.strategyRecommendationReason.trim().slice(0, 500)
     : "";
+  const packageId = typeof body.packageId === "string" ? body.packageId.trim().slice(0, 100) : "";
+  const aiGeneratedImage = body.aiGeneratedImage === true;
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
       imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
@@ -247,6 +249,7 @@ export async function POST(
       (socialCategory && !SOCIAL_CATEGORY_SET.has(socialCategory)) ||
       (conceptId && !SOCIAL_CONCEPT_SET.has(conceptId)) ||
       (visualFormat && !SOCIAL_VISUAL_FORMAT_SET.has(visualFormat)) ||
+      (packageId && !/^[a-z0-9-]+$/i.test(packageId)) ||
       tags.length > 20 || new Set(tags).size !== tags.length ||
       tags.some(tag => tag.length > 60) ||
       platforms.length > 6 || new Set(platforms).size !== platforms.length ||
@@ -275,9 +278,11 @@ export async function POST(
         description,
         tags,
         thumbnail_url: imageUrl || null,
+        ai_image_url: imageUrl || null,
+        media_urls: imageUrl ? [imageUrl] : [],
         scheduled_platforms: platforms,
         status: "draft",
-        ai_generated: false,
+        ai_generated: aiGeneratedImage,
         content_features: {
           workspace_draft: true,
           owner_draft: true,
@@ -295,6 +300,8 @@ export async function POST(
           ...(strategyRecommendationReason ? {
             strategy_recommendation_reason: strategyRecommendationReason,
           } : {}),
+          ...(packageId ? { social_package_id: packageId } : {}),
+          ...(aiGeneratedImage ? { ai_generated_image: true } : {}),
         },
       })
       .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
@@ -330,6 +337,23 @@ export async function POST(
   }
   const publication = safePublication(data?.publication, params.brandKey);
   if (!data?.ok || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+
+  // The workspace RPC historically stored only thumbnail_url. Mirror approved
+  // media into the canonical Content Hub image fields so list cards, publishing
+  // and later media selection all see the same asset.
+  if (imageUrl) {
+    await access.value.supabase
+      .from("content_publications")
+      .update({
+        thumbnail_url: imageUrl,
+        ai_image_url: imageUrl,
+        media_urls: [imageUrl],
+        ai_generated: aiGeneratedImage,
+      })
+      .eq("id", publication.id)
+      .eq("brand_id", params.brandKey);
+  }
+
   return NextResponse.json({
     ok: true,
     brand: params.brandKey,
