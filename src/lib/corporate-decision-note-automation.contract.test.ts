@@ -11,6 +11,7 @@ const vercel = fs.readFileSync("vercel.json", "utf8");
 const overview = fs.readFileSync("src/app/api/corporate-homes/overview/route.ts", "utf8");
 const templateApi = fs.readFileSync("src/app/api/corporate-homes/decision-note-template/route.ts", "utf8");
 const previewApi = fs.readFileSync("src/app/api/corporate-homes/decision-note-template/preview/route.ts", "utf8");
+const emailPreviewApi = fs.readFileSync("src/app/api/corporate-homes/decision-note-template/preview-email/route.ts", "utf8");
 const editor = fs.readFileSync("src/app/(business)/corporate-homes/decision-note/page.tsx", "utf8");
 
 test("Public Corporate decision-note request creates report and does not send generic receipt", () => {
@@ -51,6 +52,9 @@ test("Corporate report editor previews safely and persists presentation copy", (
   assert.match(templateApi, /CORPORATE_DECISION_NOTE_TEMPLATE_KEY/);
   assert.match(previewApi, /renderCorporateDecisionNotePdf/);
   assert.doesNotMatch(previewApi, /sendBrandEmail|contacts.*insert|corporate_prospects.*insert/);
+  assert.match(emailPreviewApi, /corporateDecisionEmailHtml/);
+  assert.doesNotMatch(emailPreviewApi, /sendBrandEmail|contacts.*insert|corporate_prospects.*insert/);
   assert.match(editor, /Åpne test-PDF/);
+  assert.match(editor, /Forhåndsvis e-post/);
   assert.match(editor, /Tallmotoren er låst/);
 });
