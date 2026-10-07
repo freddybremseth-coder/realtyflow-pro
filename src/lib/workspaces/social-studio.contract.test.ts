@@ -138,7 +138,7 @@ test("SoMe Studio captures raw provider output before RealtyFlow validation", ()
 
 test("Property card rendering falls back to the approved property image and keeps the draft flow open", () => {
   assert.match(route, /property card fallback/);
-  assert.match(route, /imageUrl: property\.primary_image/);
+  assert.match(route, /imageUrl: selectedSourceImageUrl/);
   assert.match(route, /rendered: false/);
   assert.match(route, /fallback: true/);
   assert.match(studio, /Kortmalen kunne ikke rendres akkurat nå/);
