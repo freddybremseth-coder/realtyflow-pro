@@ -343,3 +343,14 @@ test("Content Hub prioritizes brand media and exposes planning from SoMe drafts"
   assert.match(contentHubPage, /Bilder for denne merkevaren vises først/);
   assert.match(contentHubPage, /isSocialStudioDraft \? "Publiser \/ planlegg" : "Publiser"/);
 });
+
+
+test("Content Hub opens saved SoMe drafts scoped to the originating brand", () => {
+  assert.match(contentHubPage, /requestedOrigin === "social-studio" && requestedBrand/);
+  assert.match(contentHubPage, /socialStudioBrandFocus/);
+  assert.match(contentHubPage, /normalizeBrand\(draft\.brand_id\) === normalizeBrand\(socialStudioBrandFocus\)/);
+  assert.match(contentHubPage, /SoMe-utkast · \{focusedBrandLabel\}/);
+  assert.match(contentHubPage, /Vis alle merkevarer/);
+  assert.match(contentHubPage, /Lag nytt SoMe-innlegg/);
+  assert.match(contentHubPage, /Ingen utkast for denne merkevaren i valgt status/);
+});
