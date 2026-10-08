@@ -770,6 +770,14 @@ export function WorkspaceSocialStudio({
       </div>
     </div>
 
+    {savedPackageId && packageFeedback?.kind === "success" && <div role="status" aria-live="polite" className="mt-5 rounded-2xl border-2 border-emerald-400 bg-emerald-950/60 p-5">
+      <p className="text-lg font-bold text-white">Forslagene er lagret – klar for neste steg</p>
+      <p className="mt-2 text-sm text-emerald-100">Ingenting er publisert. Gå til Content Hub, velg ønsket utkast, kontroller bilde og tekst og velg «Publiser / planlegg».</p>
+      <a href={"/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+        className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300">
+        Gå til Content Hub og publiser / planlegg <ExternalLink size={16}/>
+      </a>
+    </div>}
     <div className="mt-5 grid gap-2 sm:grid-cols-5">
       {[
         ["1", "Velg kilde"],
