@@ -494,13 +494,14 @@ export default function ContentHubPage() {
     const requestedPackage = params.get("package") || "";
     const requestedOrigin = params.get("from") || "";
     const requestedBrand = params.get("brand") || "";
-    if (!requestedDraft && !requestedPackage) return;
     setFocusedDraftId(requestedDraft);
     setFocusedPackageId(requestedPackage);
     setContentOrigin(requestedOrigin);
     setOriginBrand(requestedBrand);
-    setActiveContentTab("utkast");
-    setDraftStatusFilter("all");
+    if (requestedDraft || requestedPackage || (requestedOrigin === "social-studio" && requestedBrand)) {
+      setActiveContentTab("utkast");
+      setDraftStatusFilter("all");
+    }
   }, []);
 
   // Publish modal state
@@ -1967,6 +1968,17 @@ export default function ContentHubPage() {
     packageDrafts.flatMap((draft) => draft.scheduled_platforms || [])
       .filter(Boolean),
   )), [packageDrafts]);
+  const socialStudioBrandFocus = contentOrigin === "social-studio" && originBrand && !focusedPackageId && !focusedDraftId
+    ? originBrand
+    : "";
+  const focusedBrandDrafts = useMemo(() => socialStudioBrandFocus
+    ? drafts.filter((draft) => normalizeBrand(draft.brand_id) === normalizeBrand(socialStudioBrandFocus))
+    : [], [drafts, normalizeBrand, socialStudioBrandFocus]);
+  const focusedBrandLabel = useMemo(() => {
+    if (!socialStudioBrandFocus) return "";
+    const brand = BRANDS.find((item) => normalizeBrand(item.id) === normalizeBrand(socialStudioBrandFocus));
+    return brand?.name || socialStudioBrandFocus;
+  }, [normalizeBrand, socialStudioBrandFocus]);
 
   const visibleDrafts = useMemo(() => {
     const statusRows = draftStatusFilter === "all"
@@ -1974,13 +1986,15 @@ export default function ContentHubPage() {
       : drafts.filter((draft) => draft.status === draftStatusFilter);
     const rows = focusedPackageTag
       ? statusRows.filter((draft) => (draft.tags || []).includes(focusedPackageTag))
-      : statusRows;
+      : socialStudioBrandFocus
+        ? statusRows.filter((draft) => normalizeBrand(draft.brand_id) === normalizeBrand(socialStudioBrandFocus))
+        : statusRows;
     return [...rows].sort((a, b) => {
       const aDate = new Date(getDraftDateValue(a)).getTime();
       const bDate = new Date(getDraftDateValue(b)).getTime();
       return (Number.isNaN(bDate) ? 0 : bDate) - (Number.isNaN(aDate) ? 0 : aDate);
     });
-  }, [draftStatusFilter, drafts, focusedPackageTag]);
+  }, [draftStatusFilter, drafts, focusedPackageTag, normalizeBrand, socialStudioBrandFocus]);
 
   const clearPackageFocus = useCallback(() => {
     setFocusedPackageId("");
@@ -1989,6 +2003,17 @@ export default function ContentHubPage() {
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("package");
+      url.searchParams.delete("from");
+      url.searchParams.delete("brand");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  }, []);
+
+  const clearBrandFocus = useCallback(() => {
+    setContentOrigin("");
+    setOriginBrand("");
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
       url.searchParams.delete("from");
       url.searchParams.delete("brand");
       window.history.replaceState({}, "", url.pathname + url.search);
@@ -2089,6 +2114,33 @@ export default function ContentHubPage() {
               className="inline-flex items-center gap-2 rounded-lg border border-cyan-700 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-950/30">
               Tilbake til SoMe Studio <ChevronRight size={13}/>
             </a>}
+          </div>
+        </CardContent>
+      </Card>}
+
+      {socialStudioBrandFocus && <Card className="border-cyan-700/70 bg-cyan-950/20">
+        <CardContent className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Fra SoMe Studio · lagrede utkast</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">SoMe-utkast · {focusedBrandLabel}</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Du ser nå bare utkast for denne merkevaren. {focusedBrandDrafts.length} aktive utkast er tilgjengelige i Content Hub.
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Åpne et kort for å redigere, bytte bilde, publisere eller planlegge. Ingenting publiseres automatisk.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={clearBrandFocus}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-500">
+                Vis alle merkevarer
+              </button>
+              <a href={"/workspace/" + encodeURIComponent(socialStudioBrandFocus) + "?tab=growth&focus=social"}
+                className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-500">
+                Lag nytt SoMe-innlegg <ChevronRight size={13}/>
+              </a>
+            </div>
           </div>
         </CardContent>
       </Card>}
@@ -2294,7 +2346,9 @@ export default function ContentHubPage() {
                   <Inbox size={48} className="text-zinc-600 mb-4" />
                   <h4 className="text-lg font-medium mb-2">Ingen innhold i dette filteret</h4>
                   <p className="text-sm text-zinc-400 max-w-md">
-                    Bytt filter eller opprett nytt innhold fra Content Studio, eiendomskit eller fanen Publiser.
+                    {socialStudioBrandFocus
+                      ? "Ingen utkast for denne merkevaren i valgt status. Bytt filter eller lag et nytt innlegg i SoMe Studio."
+                      : "Bytt filter eller opprett nytt innhold fra Content Studio, eiendomskit eller fanen Publiser."}
                   </p>
                 </CardContent>
               </Card>
