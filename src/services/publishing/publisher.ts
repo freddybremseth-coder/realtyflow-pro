@@ -105,8 +105,16 @@ export async function publishToFacebook(
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || JSON.stringify(err));
+    const payload = await res.json().catch(() => ({}));
+    const meta = payload?.error || {};
+    const code = typeof meta.code === "number" ? meta.code : undefined;
+    const subcode = typeof meta.error_subcode === "number" ? meta.error_subcode : undefined;
+    const trace = typeof meta.fbtrace_id === "string" ? meta.fbtrace_id : "";
+    const detail = typeof meta.error_user_msg === "string" ? meta.error_user_msg : "";
+    const message = typeof meta.message === "string" ? meta.message : "Facebook avviste publiseringen.";
+    // Do not log requests or tokens. Keep actionable Meta diagnostics for support.
+    console.error("[Publish Facebook] Meta rejected request", { status: res.status, code, subcode, trace, endpoint: imageUrl ? "photos" : "feed" });
+    throw new Error([message, detail && detail !== message ? detail : "", code !== undefined ? "Meta-kode " + code : "", subcode !== undefined ? "underkode " + subcode : "", trace ? "sporings-ID " + trace : ""].filter(Boolean).join(" · "));
   }
 
   const { id: postId } = await res.json();
