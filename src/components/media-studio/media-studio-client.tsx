@@ -516,6 +516,12 @@ export function MediaStudioClient() {
           </h1>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge variant={statusVariant(openArt?.status || "unknown")}>OpenArt: {openArt?.status || "unknown"}</Badge>
+            {openArt?.status !== "available" && (
+              <a href="/api/oauth/openart?return_to=%2Fmedia-studio"
+                className="inline-flex items-center rounded-lg border border-fuchsia-500 bg-fuchsia-950/40 px-3 py-1.5 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-900/60">
+                Koble til OpenArt på nytt →
+              </a>
+            )}
             <Badge variant={statusVariant(gemini?.status || "unknown")}>Gemini: {gemini?.status || "unknown"}</Badge>
             <Badge variant={statusVariant(openai?.status || "unknown")}>OpenAI Voice: {openai?.status || "unknown"}</Badge>
             {typeof openArt?.account?.credits === "number" && <Badge variant="outline">{Math.round(Number(openArt.account.credits))} OpenArt-kreditter</Badge>}
