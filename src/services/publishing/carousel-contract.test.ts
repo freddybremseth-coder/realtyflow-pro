@@ -31,3 +31,9 @@ test("scheduler and cron both refuse unsupported carousel scheduling", () => {
   assert.match(cron, /post\.visual_format === "carousel"/);
   assert.match(cron, /CAROUSEL_SCHEDULING_NOT_READY/);
 });
+
+test("concurrent claim losers cannot overwrite active carousel status", () => {
+  assert.match(publisher, /if \(!carouselUrls\.length \|\| carouselClaimed\)/);
+  assert.match(publisher, /if \(carouselClaimed\) update = update\.eq\("status", "processing"\)/);
+  assert.match(publisher, /if \(claimError \|\| !claimed\) throw new Error/);
+});
