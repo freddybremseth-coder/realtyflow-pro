@@ -72,10 +72,11 @@ export async function POST(req: NextRequest) {
     if (publicationError || !publication) {
       return NextResponse.json({ error: "Kunne ikke kontrollere utkastets bildeformat." }, { status: 409 });
     }
-    if (publication.visual_format === "carousel") {
+    if (publication.visual_format === "carousel" &&
+        (platforms.length !== 1 || platforms[0] !== "instagram")) {
       return NextResponse.json({
-        error: "CAROUSEL_PUBLISH_NOT_READY",
-        message: "Karusellen er trygt lagret som utkast, men flerbildepublisering er ikke aktivert ennå. Ingen bilder er publisert.",
+        error: "CAROUSEL_INSTAGRAM_ONLY",
+        message: "Karusellpublisering er foreløpig kun støttet for Instagram. Ingen bilder er publisert.",
       }, { status: 409 });
     }
 
