@@ -2839,7 +2839,7 @@ export default function ContentHubPage() {
           {/* Publish Modal */}
           {publishDraft && (
             <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => !publishing && setPublishDraft(null)}>
-              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 space-y-4" role="dialog" aria-modal="true" aria-label="Publiser innhold" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Publiser innhold</h3>
                   {!publishing && (
