@@ -160,6 +160,7 @@ async function getValidAccessToken(): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
+      resource: OPENART_MCP_URL,
       refresh_token: refreshToken,
       client_id: row.oauth_client_id,
     }),
