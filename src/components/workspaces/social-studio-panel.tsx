@@ -568,6 +568,9 @@ export function WorkspaceSocialStudio({
           nextImage = String(body.imageUrl);
           break;
         }
+        if (body?.error?.code === "SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED") {
+          throw new Error("Gemini har nådd API-kvoten for bildegenerering. Vent til kvoten er tilgjengelig eller kontroller fakturering og grenser hos Gemini. Ikke trykk igjen nå – det vil ikke hjelpe. Tekstforslagene dine er fortsatt tilgjengelige.");
+        }
         if (body?.error?.code !== "SOCIAL_STUDIO_MEDIA_NOT_READY") {
           throw new Error("Bildet kunne ikke genereres. Prøv igjen senere, eller velg et eksisterende godkjent merkevarebilde.");
         }
