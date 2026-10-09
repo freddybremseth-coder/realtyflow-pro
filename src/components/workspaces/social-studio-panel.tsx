@@ -707,6 +707,54 @@ export function WorkspaceSocialStudio({
     }
   }
 
+  async function saveInstagramCarousel() {
+    if (!canDraft || packageSaving || variants.length !== 3 || !activePlatforms.has("instagram")) return;
+    setPackageSaving(true);
+    setPackageFeedback(null);
+    setSavedPublicationId("");
+    setPackageProgress("Lager tre karusellbilder fra de tre konseptene…");
+    let draftId = "";
+    try {
+      const images = await Promise.all(variants.map(async variant => {
+        const result = await ensureConceptImage(variant);
+        if (!result.imageUrl || !/^https:\/\//i.test(result.imageUrl)) {
+          throw new Error("Karusellen trenger tre ferdige, lagrede HTTPS-bilder.");
+        }
+        return result;
+      }));
+      setPackageProgress("Lagrer Instagram-karusell i Content Hub…");
+      const saved = await persistVariantDraft(variants[0], "instagram", { preparedImage: images[0] });
+      draftId = saved.id;
+      // POST preserves the first image as the cover when inserting the first additional slide.
+      const endpoint = "/api/content-hub/drafts/" + encodeURIComponent(draftId) + "/media";
+      for (const item of images.slice(1)) {
+        const response = await fetch(endpoint, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_url: item.imageUrl, source_kind: "openart" }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Kunne ikke legge til karusellbildet.");
+      }
+      setSavedPublicationId(draftId);
+      setSavedDraft({ id: draftId, variantId: variants[0].id, channel: "instagram" });
+      setPackageFeedback({
+        kind: "success",
+        text: "Instagram-karusellen med tre bilder er lagret som utkast. Kontroller rekkefølge og tekst i Content Hub før publisering.",
+      });
+      await onDraftSaved?.();
+    } catch (cause) {
+      if (draftId) setSavedPublicationId(draftId);
+      setPackageFeedback({
+        kind: "error",
+        text: (cause instanceof Error ? cause.message : "Kunne ikke lage karusell.") +
+          (draftId ? " Utkastet er beholdt i Content Hub for videre redigering." : ""),
+      });
+    } finally {
+      setPackageProgress("");
+      setPackageSaving(false);
+    }
+  }
+
   async function savePackage() {
     if (!canDraft || packageSaving || variants.length !== 3) return;
     const channels = (["facebook", "instagram"] as Channel[]).filter(channel => activePlatforms.has(channel));
@@ -1210,6 +1258,15 @@ export function WorkspaceSocialStudio({
       </div>
     </div>}
 
+    {variants.length === 3 && activePlatforms.has("instagram") && <div className="mt-5 rounded-xl border border-fuchsia-700/60 bg-fuchsia-950/20 p-4">
+      <h3 className="text-sm font-semibold text-fuchsia-100">Nyhet: Instagram-karusell fra tre konsepter</h3>
+      <p className="mt-2 text-xs text-slate-300">Bruk de tre ulike konseptbildene som en sveipbar bildeserie. Første konsept blir forside, og rekkefølgen kan endres i Content Hub. Lagres bare som utkast.</p>
+      <button type="button" disabled={packageSaving || Boolean(saving)}
+        onClick={() => void saveInstagramCarousel()}
+        className="mt-3 rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-semibold text-white hover:bg-fuchsia-600 disabled:opacity-40">
+        {packageSaving ? "Klargjør karusell…" : "Lag 3-bilders Instagram-karusell"}
+      </button>
+    </div>}
     {variants.length === 3 && <section id="social-package-handoff" className="mt-5 scroll-mt-24 rounded-2xl border border-cyan-800/70 bg-cyan-950/20 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
