@@ -204,10 +204,10 @@ function providerRecommendation(mediaType: MediaType, operation: string, quality
     };
   }
   return {
-    provider: "gemini",
-    displayName: "Gemini",
-    reason: "Rask, rimelig bildegenerering uten avansert video- eller referansebehov.",
-    estimatedCostTier: "low",
+    provider: "openart",
+    displayName: "OpenArt",
+    reason: "OpenArt prioriteres for bildegenerering når kontoen er tilkoblet og har kapasitet; øvrige leverandører er reserve.",
+    estimatedCostTier: "medium",
   };
 }
 
