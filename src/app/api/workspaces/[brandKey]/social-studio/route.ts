@@ -5,6 +5,7 @@ import { askClaude } from "@/services/ai/claude-client";
 import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media/job-service";
 import { createMediaPromptPlan } from "@/services/media/prompt-director";
 import { getProviderCapabilities, supportsCapability } from "@/services/media/capabilities";
+import { isOpenArtConnected } from "@/services/integrations/openart-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 import {
@@ -1210,6 +1211,23 @@ async function generateSocialStudioConceptImage(
     }
   }
 
+  // Do not silently fall back to Gemini when the owner has authorized OpenArt
+  // but its API capability check is temporarily failing. Gemini image quota
+  // is exhausted, and retrying it only produces misleading failures.
+  const openArtAuthorized = await isOpenArtConnected();
+  if (openArtAuthorized) {
+    const currentCapabilities = await getProviderCapabilities(supabase, organizationId, { refreshOpenArt: true });
+    const openArtCapabilities = currentCapabilities.find(item => item.provider === "openart");
+    if (!openArtCapabilities || !supportsCapability(openArtCapabilities, "image", "text_to_image")) {
+      throw new Error(
+        "SOCIAL_STUDIO_OPENART_UNAVAILABLE:" +
+        (openArtCapabilities?.errorMessage || "OpenArt har ikke bekreftet API-tilgang eller bildegenerering.")
+      );
+    }
+    // Preserve provider choice through idempotent requests from this point.
+    jobKey = originalKey + ":openart-v1";
+  }
+
   const result = await createMediaJob(supabase, {
     organizationId,
     userId: input.actorUserId,
@@ -1476,7 +1494,9 @@ export async function POST(
             ? "SOCIAL_STUDIO_MEDIA_NOT_READY"
             : message.startsWith("SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED")
               ? "SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED"
-              : "SOCIAL_STUDIO_MEDIA_FAILED",
+              : message.startsWith("SOCIAL_STUDIO_OPENART_UNAVAILABLE")
+                ? "SOCIAL_STUDIO_OPENART_UNAVAILABLE"
+                : "SOCIAL_STUDIO_MEDIA_FAILED",
           message,
         );
       }
