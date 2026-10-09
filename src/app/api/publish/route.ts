@@ -58,6 +58,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // A carousel must never be silently downgraded to its first image.
+    // Until the Instagram multi-container publisher is implemented, fail closed.
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRole) {
+      return NextResponse.json({ error: "Publiseringskontroll er utilgjengelig." }, { status: 503 });
+    }
+    const supabase = createClient(supabaseUrl, serviceRole);
+    const { data: publication, error: publicationError } = await supabase.from("content_publications")
+      .select("visual_format").eq("id", draft_id).eq("brand_id", brand_id).maybeSingle();
+    if (publicationError || !publication) {
+      return NextResponse.json({ error: "Kunne ikke kontrollere utkastets bildeformat." }, { status: 409 });
+    }
+    if (publication.visual_format === "carousel") {
+      return NextResponse.json({
+        error: "CAROUSEL_PUBLISH_NOT_READY",
+        message: "Karusellen er trygt lagret som utkast, men flerbildepublisering er ikke aktivert ennå. Ingen bilder er publisert.",
+      }, { status: 409 });
+    }
+
     console.log(
       `[Publish API] draft=${draft_id}, platforms=${platforms.join(",")}, brand=${brand_id}, ` +
         `pinned=${social_channel_ids ? Object.keys(social_channel_ids).join(",") : "none"}, ` +
