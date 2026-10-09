@@ -670,7 +670,7 @@ export async function executePublishForDraft(
     .from("content_publications")
     .update({
       // Never release an ambiguously failed carousel for automatic retry.
-      status: anySuccess ? "published" : carouselUrls.length ? "publishing" : "failed",
+      status: anySuccess ? "published" : carouselUrls.length ? "processing" : "failed",
       published_at: anySuccess ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
       publish_attempts: 1,
