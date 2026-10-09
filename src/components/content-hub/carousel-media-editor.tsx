@@ -97,7 +97,7 @@ export function CarouselMediaEditor({ draftId, onChanged, libraryImages, loadLib
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {items.map((item, index) => <div key={item.id} className="rounded-md border border-zinc-700 p-1">
-          <img className="aspect-[4/5] w-full rounded object-cover" src={item.thumbnail_url || item.source_url}
+          <img className="h-40 w-full rounded object-cover sm:h-52" src={item.thumbnail_url || item.source_url}
             alt={`Bilde ${index+1} i karusellen`} />
           <p className="my-1 text-xs">{index + 1}. {index === 0 ? "Forside" : "Slide"}</p>
           <div className="flex flex-wrap gap-1">
