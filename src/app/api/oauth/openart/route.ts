@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", OPENART_SCOPE);
+  authUrl.searchParams.set("resource", "https://mcp.openart.ai/mcp");
   authUrl.searchParams.set("state", stateNonce);
   authUrl.searchParams.set("code_challenge", codeChallenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
