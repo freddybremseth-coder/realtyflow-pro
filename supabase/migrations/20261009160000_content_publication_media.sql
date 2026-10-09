@@ -151,4 +151,3 @@ $$;
 revoke all on function public.append_content_publication_media(uuid,text,text,text,text) from public;
 revoke all on function public.append_content_publication_media(uuid,text,text,text,text) from anon, authenticated;
 grant execute on function public.append_content_publication_media(uuid,text,text,text,text) to service_role;
-
