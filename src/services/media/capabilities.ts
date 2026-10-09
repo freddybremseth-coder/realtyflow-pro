@@ -181,6 +181,11 @@ export async function getProviderCapabilities(
 
 export function supportsCapability(capabilities: ProviderCapabilities, mediaType: string, operation: string) {
   if (capabilities.status !== "available") return false;
+  // A confirmed empty OpenArt balance cannot be used for paid generation.
+  // Unknown balance is not treated as zero.
+  if (capabilities.provider === "openart" &&
+      typeof capabilities.account?.credits === "number" &&
+      capabilities.account.credits <= 0) return false;
   if (mediaType === "image") {
     if (operation === "image_to_image") return capabilities.image.imageToImage;
     return capabilities.image.textToImage;
