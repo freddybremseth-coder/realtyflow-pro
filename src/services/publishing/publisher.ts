@@ -585,18 +585,7 @@ export async function executePublishForDraft(
     return { results: platforms.map((platform) => ({ platform, success: false, error: reason })), anySuccess: false };
   }
 
-  // Atomic claim prevents concurrent/double-click publication. Once claimed,
-  // any uncertain Meta outcome stays locked for manual reconciliation.
-  if (carouselUrls.length) {
-    const { data: claimed, error: claimError } = await supabase.rpc(
-      "claim_content_carousel_publish", { p_publication_id: draftId },
-    );
-    if (claimError || !claimed) {
-      return { results: [{ platform: "instagram", success: false,
-        error: "Karusellen publiseres allerede, eller må kontrolleres før nytt forsøk." }],
-        anySuccess: false };
-    }
-  }
+  let carouselClaimed = false;
 
   // Upload base64 image once for all platforms.
   let publicImageUrl: string | undefined;
@@ -638,6 +627,15 @@ export async function executePublishForDraft(
             storedToken: resolved.accessToken, channelId: resolved.channelId,
             legacyAccountId: resolved.legacyAccountId,
           });
+          // Claim only after a valid channel/token is resolved. A Meta timeout
+          // after claiming must not unlock this draft for blind re-publishing.
+          const { data: claimed, error: claimError } = await supabase.rpc(
+            "claim_content_carousel_publish", { p_publication_id: draftId },
+          );
+          if (claimError || !claimed) throw new Error(
+            "Karusellen behandles allerede eller må kontrolleres før et nytt forsøk.",
+          );
+          carouselClaimed = true;
           return publishInstagramCarousel(resolved.externalId, upgraded.token, finalContent, carouselUrls);
         }
         return publishOne(platform, resolved, finalContent, publicImageUrl);
@@ -670,7 +668,7 @@ export async function executePublishForDraft(
     .from("content_publications")
     .update({
       // Never release an ambiguously failed carousel for automatic retry.
-      status: anySuccess ? "published" : carouselUrls.length ? "processing" : "failed",
+      status: anySuccess ? "published" : carouselClaimed ? "processing" : "failed",
       published_at: anySuccess ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
       publish_attempts: 1,
