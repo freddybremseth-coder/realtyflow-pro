@@ -1261,7 +1261,7 @@ export function WorkspaceSocialStudio({
 
     {variants.length === 3 && activePlatforms.has("instagram") && <div className="mt-5 rounded-xl border border-fuchsia-700/60 bg-fuchsia-950/20 p-4">
       <h3 className="text-sm font-semibold text-fuchsia-100">Nyhet: Instagram-karusell fra tre konsepter</h3>
-      <p className="mt-2 text-xs text-slate-300">Bruk de tre ulike konseptbildene som en sveipbar bildeserie. Første konsept blir forside, og rekkefølgen kan endres i Content Hub. Lagres bare som utkast.</p>
+      <p className="mt-2 text-xs text-slate-300">Du trenger ikke velge «Lag alternativt AI-bilde» først. Denne knappen lager eller bruker bildene fra de tre konseptene og lagrer dem samlet i ett Instagram-utkast. Deretter åpner du Content Hub → Innhold → Utkast → «Rediger bilder / lag karusell» for å bytte, legge til eller sortere bilder. Ingenting publiseres automatisk.</p>
       <button type="button" disabled={packageSaving || Boolean(saving)}
         onClick={() => void saveInstagramCarousel()}
         className="mt-3 rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-semibold text-white hover:bg-fuchsia-600 disabled:opacity-40">
@@ -1282,6 +1282,7 @@ export function WorkspaceSocialStudio({
           {packageSaving ? "Lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken som utkast"}
         </button>
       </div>
+      {savedPublicationId && <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fuchsia-500 px-4 py-2 text-sm font-semibold text-fuchsia-100 hover:bg-fuchsia-950/50">Åpne utkastet i Content Hub → Innhold → Utkast <ExternalLink size={14}/></a>}
       {packageProgress && <div className="mt-3 rounded-lg border border-cyan-900/70 bg-slate-950/50 p-3">
         <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
