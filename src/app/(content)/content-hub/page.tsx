@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { OpenArtToggle } from "@/components/ui/openart-toggle";
+import { CarouselMediaEditor } from "@/components/content-hub/carousel-media-editor";
 import {
   Target, Calendar, BarChart3, Sparkles, Youtube,
   Camera, Globe, Link, Send, Plus, Image, Video, FileText,
@@ -2430,6 +2431,7 @@ export default function ContentHubPage() {
                                     />
                                   </div>
                                 )}
+                                <CarouselMediaEditor draftId={draft.id} />
                                 <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
                                   {draft.description || "Ingen beskrivelse"}
                                 </p>
