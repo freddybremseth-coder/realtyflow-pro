@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "authorization_code",
+        resource: "https://mcp.openart.ai/mcp",
         code,
         redirect_uri: buildRedirectUri("openart", req.nextUrl.origin),
         client_id: clientId,
