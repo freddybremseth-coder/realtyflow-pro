@@ -12,6 +12,7 @@ const marketing = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspac
 const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/property-social-card.ts"), "utf8");
 const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/route.ts"), "utf8");
 const contentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/content-hub/page.tsx"), "utf8");
+const globalsCss = fs.readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -353,4 +354,21 @@ test("Content Hub opens saved SoMe drafts scoped to the originating brand", () =
   assert.match(contentHubPage, /Vis alle merkevarer/);
   assert.match(contentHubPage, /Lag nytt SoMe-innlegg/);
   assert.match(contentHubPage, /Ingen utkast for denne merkevaren i valgt status/);
+});
+
+
+test("SoMe Studio and Content Hub protect human names from awkward line splitting", () => {
+  assert.match(studio, /protectHumanText\(variant\.facebookText\)/);
+  assert.match(studio, /protectHumanText\(variant\.instagramText\)/);
+  assert.match(studio, /rf-human-name/);
+  assert.match(studio, /rf-human-text/);
+  assert.match(contentHubPage, /protectHumanText\(draft\.description/);
+  assert.match(contentHubPage, /protectHumanText\(draft\.title/);
+  assert.match(contentHubPage, /rf-human-name/);
+  assert.match(globalsCss, /\.rf-human-text\s*\{/);
+  assert.match(globalsCss, /word-break:\s*normal/);
+  assert.match(globalsCss, /overflow-wrap:\s*normal/);
+  assert.match(globalsCss, /hyphens:\s*none/);
+  assert.match(globalsCss, /\.rf-human-name\s*\{/);
+  assert.match(globalsCss, /white-space:\s*nowrap/);
 });
