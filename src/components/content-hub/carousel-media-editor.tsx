@@ -89,11 +89,11 @@ export function CarouselMediaEditor({ draftId, onChanged, libraryImages, loadLib
 
   return <div className="mt-2">
     <button type="button" className="rounded-md border border-zinc-600 px-2 py-1 text-xs text-zinc-100 hover:bg-zinc-800" onClick={show}>
-      {open ? "Lukk bildeserie" : "Bilder / karusell"}
+      {open ? "Lukk bilderedigering" : "Rediger bilder / lag karusell (2–10 bilder)"}
     </button>
     {open && <div className="mt-2 rounded-lg border border-zinc-700 p-3" aria-label="Rediger bildeserie">
       <p className="mb-2 text-xs text-zinc-300">
-        Bildene vises i publiseringsrekkefølge. Første bilde er cover. Maksimalt ti bilder.
+        Legg til minst ett bilde til for å lage en Instagram-karusell. Første bilde er forsiden; bruk pilene for å endre rekkefølge. Maksimalt ti bilder.
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {items.map((item, index) => <div key={item.id} className="rounded-md border border-zinc-700 p-1">
@@ -110,7 +110,8 @@ export function CarouselMediaEditor({ draftId, onChanged, libraryImages, loadLib
           </div>
         </div>)}
       </div>
-      <label htmlFor={`new-carousel-image-${draftId}`} className="mt-3 block text-xs text-zinc-300">Legg til bilde fra mediebibliotek (HTTPS-adresse)</label>
+      {items.length === 1 && <p className="mt-3 text-xs text-cyan-200">Dette utkastet har foreløpig bare ett bilde. Velg «Velg fra mediebibliotek» nedenfor for å legge til flere. «Bytt bilde» på utkastkortet erstatter bare hovedbildet.</p>}
+      <label htmlFor={`new-carousel-image-${draftId}`} className="mt-3 block text-xs text-zinc-300">Alternativt: lim inn offentlig HTTPS-lenke til et bilde</label>
       <div className="mt-1 flex gap-2">
         <input id={`new-carousel-image-${draftId}`} type="url" value={url}
           onChange={event => setUrl(event.target.value)} placeholder="https://..."
