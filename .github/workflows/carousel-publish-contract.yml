@@ -1,5 +1,8 @@
 name: Carousel publish contract
 on:
+  push:
+    branches:
+      - feat/social-carousel-media-mvp
   pull_request:
     paths:
       - 'src/services/publishing/**'
