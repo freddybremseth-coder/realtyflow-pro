@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     const now = new Date().toISOString();
     const { data: duePosts, error } = await supabase
       .from("content_publications")
-      .select("id, brand_id, title, description, content_type, ai_image_url, scheduled_at, scheduled_platforms, publish_attempts")
+      .select("id, brand_id, title, description, content_type, ai_image_url, scheduled_at, scheduled_platforms, publish_attempts, visual_format")
       .eq("status", "scheduled")
       .lte("scheduled_at", now)
       .order("scheduled_at", { ascending: true })
@@ -108,6 +108,16 @@ export async function GET(request: NextRequest) {
 
     // 3. Publish each due post
     for (const post of duePosts) {
+      if (post.visual_format === "carousel") {
+        // Explicitly stop: the cron adapter is not yet validated for multi-image media.
+        await supabase.from("content_publications").update({
+          status: "failed",
+          last_publish_error: "CAROUSEL_SCHEDULING_NOT_READY: krever kontroll før planlagt publisering",
+          updated_at: new Date().toISOString(),
+        }).eq("id", post.id).eq("status", "scheduled");
+        console.warn("[Auto-Publish Cron] Skipped unsupported carousel:", post.id);
+        continue;
+      }
       const platforms = Array.isArray(post.scheduled_platforms) ? post.scheduled_platforms.map(String) : [];
       const socialPlatforms = platforms.filter((platform: string) => platform !== "website");
       const includesWebsite = platforms.includes("website");
