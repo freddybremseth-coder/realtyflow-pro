@@ -716,13 +716,25 @@ export function WorkspaceSocialStudio({
     setPackageProgress("Lager tre karusellbilder fra de tre konseptene…");
     let draftId = "";
     try {
-      const images = await Promise.all(variants.map(async variant => {
-        const result = await ensureConceptImage(variant);
+      // Do not silently reuse the same editorial/source image for all slides.
+      // Generate sequentially so each concept can have its own image job.
+      const images: Array<{ imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }> = [];
+      const seen = new Set<string>();
+      for (const variant of variants) {
+        let result = await ensureConceptImage(variant);
+        if (seen.has(result.imageUrl) && source?.type !== "property") {
+          setPackageProgress("Lager eget bilde for " + variant.label + " (unngår duplikat) …");
+          result = await ensureConceptImage(variant, true);
+        }
         if (!result.imageUrl || !/^https:\/\//i.test(result.imageUrl)) {
           throw new Error("Karusellen trenger tre ferdige, lagrede HTTPS-bilder.");
         }
-        return result;
-      }));
+        if (seen.has(result.imageUrl)) {
+          throw new Error("To konsepter har samme bilde. Velg eller generer forskjellige bilder før du lager karusell.");
+        }
+        seen.add(result.imageUrl);
+        images.push(result);
+      }
       setPackageProgress("Lagrer Instagram-karusell i Content Hub…");
       const saved = await persistVariantDraft(variants[0], "instagram", { preparedImage: images[0] });
       draftId = saved.id;
