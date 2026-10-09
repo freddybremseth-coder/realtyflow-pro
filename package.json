@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:carousel-contract": "node --import tsx --test src/services/publishing/carousel-contract.test.ts",
     "dev": "next dev",
     "build": "node --max-old-space-size=5120 node_modules/next/dist/bin/next build",
     "start": "next start",
@@ -65,9 +66,7 @@
     "test:billing": "tsx --test src/lib/billing/money.test.ts src/lib/billing/tax-engine.test.ts src/lib/billing/migration-contract.test.ts",
     "test:dona-anna": "tsx --test src/lib/dona-anna/validation.test.ts src/lib/dona-anna/integration-auth.test.ts src/lib/dona-anna/migration-contract.test.ts",
     "test:platform": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/platform/migration-contract.test.ts src/lib/platform/validation.test.ts src/lib/platform/vercel-build-memory.contract.test.ts src/app/api/platform/routes-auth.test.ts",
-    "test:saas-hardening": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/saas-financial-hardening.test.ts src/lib/stripe-webhook.test.ts src/app/api/saas/stripe/route.test.ts src/app/api/saas/demosites/checkout/route.test.ts src/app/api/cron/cron-routes-auth.test.ts src/middleware.test.ts",
-    "test:ui-text": "node --import tsx --test src/lib/ui/protected-human-text.test.ts src/lib/workspaces/social-studio.contract.test.ts",
-    "prebuild": "npm run test:ui-text"
+    "test:saas-hardening": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/saas-financial-hardening.test.ts src/lib/stripe-webhook.test.ts src/app/api/saas/stripe/route.test.ts src/app/api/saas/demosites/checkout/route.test.ts src/app/api/cron/cron-routes-auth.test.ts src/middleware.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

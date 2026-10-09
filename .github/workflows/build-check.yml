@@ -2,7 +2,7 @@ name: Build Check
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/social-carousel-media-mvp]
   pull_request:
     branches: [main]
 

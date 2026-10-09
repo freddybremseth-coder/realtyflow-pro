@@ -45,6 +45,63 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+/**
+ * Instagram Graph API carousel: create each child, wait until all are ready,
+ * then create and publish a single parent container. Never retry media_publish
+ * after a potentially ambiguous network failure without manual verification.
+ */
+export async function publishInstagramCarousel(
+  igAccountId: string, accessToken: string, caption: string, imageUrls: string[],
+): Promise<PublishResult> {
+  if (imageUrls.length < 2 || imageUrls.length > 10 ||
+      imageUrls.some(url => !/^https:\/\/[^\s]+$/i.test(url))) {
+    return { platform: "instagram", success: false, error: "Karusell krever 2–10 gyldige HTTPS-bilder." };
+  }
+  const graph = `https://graph.facebook.com/v25.0/${encodeURIComponent(igAccountId)}`;
+  async function post(path: string, fields: Record<string,string>): Promise<string> {
+    const res = await fetch(`${graph}/${path}`, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ ...fields, access_token: accessToken }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.id) throw new Error(json.error?.message || `Meta avviste ${path} (${res.status}).`);
+    return String(json.id);
+  }
+  async function waitReady(id: string) {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const response = await fetch(
+        `https://graph.facebook.com/v25.0/${encodeURIComponent(id)}?fields=status_code,status&access_token=${encodeURIComponent(accessToken)}`,
+        { signal: AbortSignal.timeout(15000), cache: "no-store" },
+      );
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error?.message || "Meta kunne ikke kontrollere karusellen.");
+      if (result.status_code === "FINISHED") return;
+      if (result.status_code === "ERROR" || result.status_code === "EXPIRED") {
+        throw new Error("Meta kunne ikke klargjøre ett av karusellbildene.");
+      }
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    throw new Error("Meta brukte for lang tid på å behandle karusellen. Prøv ikke på nytt uten statuskontroll.");
+  }
+  const children: string[] = [];
+  for (const imageUrl of imageUrls) {
+    const normalized = imageUrl.includes("images.weserv.nl")
+      ? imageUrl
+      : `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl.replace(/^https?:\/\//, ""))}&w=1080&h=1350&fit=cover&output=jpg`;
+    const id = await post("media", { image_url: normalized, is_carousel_item: "true" });
+    await waitReady(id);
+    children.push(id);
+  }
+  const parentId = await post("media", {
+    media_type: "CAROUSEL", children: children.join(","), caption,
+  });
+  await waitReady(parentId);
+  // The call below is non-idempotent; never automatically replay it on timeout.
+  const id = await post("media_publish", { creation_id: parentId });
+  return { platform: "instagram", success: true, postId: id };
+}
+
 // ─── Helper: Upload base64 image to Supabase Storage ──────────────
 export async function uploadBase64ToStorage(base64DataUrl: string): Promise<string | null> {
   try {
@@ -482,6 +539,20 @@ export async function executePublishForDraft(
 }> {
   const { draftId, platforms, content, brandId, imageUrl, socialChannelIds } = params;
   const supabase = getSupabase();
+  const { data: publication, error: publicationError } = await supabase
+    .from("content_publications").select("visual_format").eq("id", draftId).eq("brand_id", brandId).maybeSingle();
+  if (publicationError || !publication) throw new Error("Kunne ikke verifisere publiseringsutkastet.");
+  let carouselUrls: string[] = [];
+  if (publication.visual_format === "carousel") {
+    if (platforms.length !== 1 || platforms[0] !== "instagram")
+      return { results: platforms.map(platform => ({ platform, success: false, error: "Karuseller støttes foreløpig kun for Instagram." })), anySuccess: false };
+    const { data: entries, error: mediaError } = await supabase.from("content_publication_media")
+      .select("source_url,processing_status").eq("publication_id",draftId).order("position");
+    if (mediaError || !entries || entries.length < 2 || entries.length > 10 ||
+        entries.some(e => e.processing_status !== "ready" || !/^https:\/\//.test(e.source_url)))
+      return { results: [{ platform: "instagram", success: false, error: "Karusellen har ugyldige eller uferdige bilder." }], anySuccess: false };
+    carouselUrls = entries.map(e => e.source_url);
+  }
 
   let finalContent: string;
   try {
@@ -512,6 +583,8 @@ export async function executePublishForDraft(
       .eq("id", draftId);
     return { results: platforms.map((platform) => ({ platform, success: false, error: reason })), anySuccess: false };
   }
+
+  let carouselClaimed = false;
 
   // Upload base64 image once for all platforms.
   let publicImageUrl: string | undefined;
@@ -547,7 +620,25 @@ export async function executePublishForDraft(
       platform,
       brandId,
       pinnedId,
-      async (resolved) => publishOne(platform, resolved, finalContent, publicImageUrl),
+      async (resolved) => {
+        if (carouselUrls.length && platform === "instagram") {
+          const upgraded = await resolveInstagramToken({
+            storedToken: resolved.accessToken, channelId: resolved.channelId,
+            legacyAccountId: resolved.legacyAccountId,
+          });
+          // Claim only after a valid channel/token is resolved. A Meta timeout
+          // after claiming must not unlock this draft for blind re-publishing.
+          const { data: claimed, error: claimError } = await supabase.rpc(
+            "claim_content_carousel_publish", { p_publication_id: draftId },
+          );
+          if (claimError || !claimed) throw new Error(
+            "Karusellen behandles allerede eller må kontrolleres før et nytt forsøk.",
+          );
+          carouselClaimed = true;
+          return publishInstagramCarousel(resolved.externalId, upgraded.token, finalContent, carouselUrls);
+        }
+        return publishOne(platform, resolved, finalContent, publicImageUrl);
+      },
     );
 
     if ("ambiguity" in outcome) {
@@ -572,21 +663,25 @@ export async function executePublishForDraft(
 
   const anySuccess = results.some((r) => r.success);
 
-  await supabase
-    .from("content_publications")
-    .update({
-      status: anySuccess ? "published" : "failed",
-      published_at: anySuccess ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-      publish_attempts: 1,
-      last_publish_error: anySuccess
-        ? null
-        : results
-            .map((r) => r.error)
-            .filter(Boolean)
-            .join("; "),
-    })
-    .eq("id", draftId);
+  // A losing concurrent request must not reset the status of the request
+  // that successfully claimed the draft. In particular, do not set "failed"
+  // when another worker has already entered "processing".
+  if (!carouselUrls.length || carouselClaimed) {
+    let update = supabase
+      .from("content_publications")
+      .update({
+        status: anySuccess ? "published" : carouselClaimed ? "processing" : "failed",
+        published_at: anySuccess ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+        publish_attempts: 1,
+        last_publish_error: anySuccess
+          ? null
+          : results.map(r => r.error).filter(Boolean).join("; "),
+      })
+      .eq("id", draftId);
+    if (carouselClaimed) update = update.eq("status", "processing");
+    await update;
+  }
 
   return { results, anySuccess, ambiguities: ambiguities.length ? ambiguities : undefined };
 }

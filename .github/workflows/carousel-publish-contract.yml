@@ -1,0 +1,26 @@
+name: Carousel publish contract
+on:
+  push:
+    branches:
+      - feat/social-carousel-media-mvp
+  pull_request:
+    paths:
+      - 'src/services/publishing/**'
+      - 'src/app/api/schedule/**'
+      - 'src/app/api/cron/auto-publish/**'
+      - 'supabase/migrations/2026100916*.sql'
+      - 'package.json'
+      - '.github/workflows/carousel-publish-contract.yml'
+  workflow_dispatch:
+jobs:
+  carousel-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:carousel-contract

@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { OpenArtToggle } from "@/components/ui/openart-toggle";
+import { protectHumanText } from "@/lib/ui/protected-human-text";
+import { CarouselMediaEditor } from "@/components/content-hub/carousel-media-editor";
+import { CarouselPublishPreview } from "@/components/content-hub/carousel-publish-preview";
 import {
   Target, Calendar, BarChart3, Sparkles, Youtube,
   Camera, Globe, Link, Send, Plus, Image, Video, FileText,
@@ -18,7 +21,6 @@ import {
 import { BRANDS } from "@/lib/constants";
 import { SendToForfatterstudio } from "@/components/publishing/send-to-forfatterstudio";
 import { prepareImageForUpload } from "@/lib/client/image-files";
-import { protectHumanText } from "@/lib/ui/protected-human-text";
 import ContentCalendar from "@/components/ContentCalendar"
 
 // --- Types ---
@@ -507,6 +509,8 @@ export default function ContentHubPage() {
 
   // Publish modal state
   const [publishDraft, setPublishDraft] = useState<DraftItem | null>(null);
+  const [carouselPreviewStatus, setCarouselPreviewStatus] = useState<{ready:boolean;carousel:boolean}>({ready:false,carousel:false});
+  const handleCarouselPreviewStatus = useCallback((ready:boolean,carousel:boolean)=>setCarouselPreviewStatus({ready,carousel}),[]);
   const [publishPlatforms, setPublishPlatforms] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [hydratingDraftId, setHydratingDraftId] = useState<string | null>(null);
@@ -2081,7 +2085,7 @@ export default function ContentHubPage() {
               </p>
               {packagePlatforms.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
                 {packagePlatforms.map((platform) => <Badge key={platform} variant="outline" className="border-emerald-800 text-emerald-200">
-                  <span className="rf-human-name">{friendlyPlatformName(platform)}</span>
+                  {friendlyPlatformName(platform)}
                 </Badge>)}
               </div>}
             </div>
@@ -2419,7 +2423,7 @@ export default function ContentHubPage() {
                               </div>
                             ) : (
                               <>
-                                <h4 className="rf-human-text font-medium text-sm mb-1 truncate">{protectHumanText(draft.title || "Uten tittel")}</h4>
+                                <h4 className="rf-human-name rf-human-text font-medium text-sm mb-1 truncate">{protectHumanText(draft.title || "Uten tittel")}</h4>
                                 {(draft.thumbnail_url || draft.ai_image_url) && (
                                   <div className="rounded-lg overflow-hidden mb-2 bg-zinc-800 max-h-48">
                                     <img
@@ -2431,6 +2435,10 @@ export default function ContentHubPage() {
                                     />
                                   </div>
                                 )}
+                                <CarouselMediaEditor draftId={draft.id}
+                                  libraryImages={availableImages}
+                                  loadLibrary={() => fetchAvailableImages(draft.brand_id)}
+                                />
                                 <p className="rf-human-text text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
                                   {protectHumanText(draft.description || "Ingen beskrivelse")}
                                 </p>
@@ -2832,7 +2840,7 @@ export default function ContentHubPage() {
           {/* Publish Modal */}
           {publishDraft && (
             <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => !publishing && setPublishDraft(null)}>
-              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 space-y-4" role="dialog" aria-modal="true" aria-label="Publiser innhold" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Publiser innhold</h3>
                   {!publishing && (
@@ -2852,6 +2860,12 @@ export default function ContentHubPage() {
                     </p>
                   )}
                 </div>
+
+                <CarouselPublishPreview draftId={publishDraft.id} onStatus={handleCarouselPreviewStatus} />
+                {carouselPreviewStatus.carousel && <p className="text-xs text-fuchsia-300">Instagram-karusell · publiseres som én bildeserie. Velg kun Instagram.</p>}
+                {carouselPreviewStatus.carousel && scheduleMode === "schedule" && <p role="alert" className="text-xs text-amber-300">Planlagte karuseller aktiveres når bakgrunnspubliseringen støtter flere bilder. Velg «Publiser nå» etter kontroll.</p>}
+                {carouselPreviewStatus.carousel && publishPlatforms.some(platform=>platform!=="instagram") &&
+                  <p role="alert" className="text-xs text-amber-300">Karuseller kan foreløpig bare publiseres til Instagram.</p>}
 
                 {/* Platform selection */}
                 <div>
@@ -3065,7 +3079,7 @@ export default function ContentHubPage() {
                       <Button
                         className={`flex-1 ${scheduleMode === "schedule" ? "bg-purple-600 hover:bg-purple-700" : "bg-green-600 hover:bg-green-700"}`}
                         onClick={executePublish}
-                        disabled={publishing || hydratingDraftId === publishDraft.id || publishPlatforms.length === 0 || (scheduleMode === "schedule" && !scheduledAt)}
+                        disabled={publishing || hydratingDraftId === publishDraft.id || publishPlatforms.length === 0 || !carouselPreviewStatus.ready || (carouselPreviewStatus.carousel && (scheduleMode === "schedule" || publishPlatforms.length !== 1 || publishPlatforms[0] !== "instagram")) || (scheduleMode === "schedule" && !scheduledAt)}
                       >
                         {hydratingDraftId === publishDraft.id ? (
                           <><Loader2 size={14} className="animate-spin mr-2" /> Henter fullversjon...</>
