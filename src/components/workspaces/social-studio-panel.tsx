@@ -568,6 +568,9 @@ export function WorkspaceSocialStudio({
           nextImage = String(body.imageUrl);
           break;
         }
+        if (body?.error?.code === "SOCIAL_STUDIO_OPENART_UNAVAILABLE") {
+          throw new Error("OpenArt-kontoen er autorisert, men API-et svarer ikke med gyldig tilgang til bildegenerering. Gemini er ikke forsøkt fordi bildekoten er tom. Åpne AI Media Studio for å kontrollere OpenArt-status.");
+        }
         if (body?.error?.code === "SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED") {
           throw new Error("Gemini har nådd API-kvoten for bildegenerering. Vent til kvoten er tilgjengelig eller kontroller fakturering og grenser hos Gemini. Ikke trykk igjen nå – det vil ikke hjelpe. Tekstforslagene dine er fortsatt tilgjengelige.");
         }
