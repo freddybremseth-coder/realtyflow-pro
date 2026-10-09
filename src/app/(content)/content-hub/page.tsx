@@ -2431,7 +2431,10 @@ export default function ContentHubPage() {
                                     />
                                   </div>
                                 )}
-                                <CarouselMediaEditor draftId={draft.id} />
+                                <CarouselMediaEditor draftId={draft.id}
+                                  libraryImages={availableImages}
+                                  loadLibrary={() => fetchAvailableImages(draft.brand_id)}
+                                />
                                 <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
                                   {draft.description || "Ingen beskrivelse"}
                                 </p>
