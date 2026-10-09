@@ -1222,8 +1222,15 @@ async function generateSocialStudioConceptImage(
 
   const asset = completedSocialStudioAsset(job);
   if (!asset) {
-    const detail = job.error_message ? ": " + String(job.error_message).slice(0, 240) : "";
-    throw new Error("SOCIAL_STUDIO_MEDIA_NOT_READY:" + String(job.status || "unknown") + detail);
+    const status = String(job.status || "unknown");
+    const detail = String(job.error_message || "");
+    if (["failed", "expired", "cancelled"].includes(status)) {
+      if (/quota|rate.limit|resource.exhausted|billing/i.test(detail)) {
+        throw new Error("SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED");
+      }
+      throw new Error("SOCIAL_STUDIO_MEDIA_FAILED:" + status);
+    }
+    throw new Error("SOCIAL_STUDIO_MEDIA_NOT_READY:" + status);
   }
 
   return {
@@ -1443,10 +1450,12 @@ export async function POST(
           message: message.slice(0, 300),
         });
         return fail(
-          message.startsWith("SOCIAL_STUDIO_MEDIA_NOT_READY") ? 409 : 503,
+          message.startsWith("SOCIAL_STUDIO_MEDIA_NOT_READY") ? 409 : message.startsWith("SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED") ? 429 : 503,
           message.startsWith("SOCIAL_STUDIO_MEDIA_NOT_READY")
             ? "SOCIAL_STUDIO_MEDIA_NOT_READY"
-            : "SOCIAL_STUDIO_MEDIA_FAILED",
+            : message.startsWith("SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED")
+              ? "SOCIAL_STUDIO_MEDIA_QUOTA_EXCEEDED"
+              : "SOCIAL_STUDIO_MEDIA_FAILED",
           message,
         );
       }
