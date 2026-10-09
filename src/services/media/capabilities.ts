@@ -169,7 +169,9 @@ export async function getProviderCapabilities(
     ? null
     : await getCachedProviderCapabilities(supabase, organizationId, "openart");
 
-  const stale = !openart || Date.now() - Date.parse(openart.updatedAt) > 60 * 60 * 1000;
+  // A cached not_connected result must not hide a newly completed OAuth flow.
+  // Recheck the actual connection after authorization instead of trusting the hourly cache.
+  const stale = !openart || openart.status !== "available" || Date.now() - Date.parse(openart.updatedAt) > 60 * 60 * 1000;
   if (options.refreshOpenArt || stale) {
     openart = await refreshOpenArtCapabilities();
     await saveProviderCapabilities(supabase, organizationId, openart).catch(() => undefined);
