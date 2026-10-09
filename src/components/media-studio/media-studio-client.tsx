@@ -252,6 +252,36 @@ export function MediaStudioClient() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [openArtAuthNotice, setOpenArtAuthNotice] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get("openart");
+    if (!oauth) return;
+    const message = params.get("openart_message");
+    setOpenArtAuthNotice(
+      oauth === "connected"
+        ? "OpenArt-godkjenningen er mottatt. Oppdaterer leverandørstatus…"
+        : message || "OpenArt ble ikke koblet til. Kontroller tilkoblingen før du lager bilder."
+    );
+    // The capability cache must be refreshed after OAuth to avoid stale not_connected status.
+    void fetch("/api/media/openart/refresh-capabilities", { method: "POST" })
+      .then(async response => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error("Kunne ikke oppdatere OpenArt-status.");
+        const status = payload?.capabilities?.status;
+        setOpenArtAuthNotice(status === "available"
+          ? "OpenArt er tilkoblet, og API-tilgangen er bekreftet."
+          : "OpenArt-innloggingen er lagret, men API-tilgangen fungerer ikke ennå: " +
+            (payload?.capabilities?.errorMessage || status || "ukjent feil"));
+        setCapabilities(current => [
+          ...current.filter(provider => provider.provider !== "openart"),
+          payload.capabilities,
+        ]);
+      })
+      .catch(err => setOpenArtAuthNotice(err instanceof Error ? err.message : "Statuskontrollen feilet."));
+    window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+  }, []);
 
   const [requestText, setRequestText] = useState("Lag et eksklusivt bilde av en moderne villa i Altea Hills ved solnedgang, til LinkedIn, rettet mot skandinaviske boligkjøpere.");
   const [mode, setMode] = useState<"simple" | "guided" | "professional">("simple");
@@ -514,6 +544,7 @@ export function MediaStudioClient() {
             <Clapperboard className="text-primary-400" size={28} />
             AI Media Studio
           </h1>
+          {openArtAuthNotice && <p role="status" className="mt-3 max-w-3xl rounded-lg border border-fuchsia-700/60 bg-fuchsia-950/20 p-3 text-sm text-fuchsia-100">{openArtAuthNotice}</p>}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge variant={statusVariant(openArt?.status || "unknown")}>OpenArt: {openArt?.status || "unknown"}</Badge>
             {openArt?.status !== "available" && (
