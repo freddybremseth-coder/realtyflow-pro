@@ -69,3 +69,37 @@ alter table public.content_publication_media
 revoke all on function public.reorder_content_publication_media(uuid,uuid[]) from public;
 revoke all on function public.reorder_content_publication_media(uuid,uuid[]) from anon, authenticated;
 grant execute on function public.reorder_content_publication_media(uuid,uuid[]) to service_role;
+
+-- Remove one item and compact positions in a single transaction.
+create or replace function public.remove_content_publication_media(
+  p_publication_id uuid, p_media_id uuid
+) returns void language plpgsql security invoker set search_path = public as $$
+declare
+  v_index integer;
+  v_remaining integer;
+begin
+  perform 1 from public.content_publications
+    where id=p_publication_id and status <> 'published' for update;
+  if not found then raise exception 'Publication missing or published'; end if;
+  delete from public.content_publication_media
+    where publication_id=p_publication_id and id=p_media_id
+    returning position into v_index;
+  if v_index is null then raise exception 'Media item missing'; end if;
+  update public.content_publication_media
+    set position = position - 1
+    where publication_id=p_publication_id and position > v_index;
+  select count(*) into v_remaining from public.content_publication_media
+    where publication_id=p_publication_id;
+  update public.content_publications set
+    visual_format=case when v_remaining >= 2 then 'carousel' else 'single_image' end,
+    media_revision=media_revision + 1,
+    ai_image_url=(select source_url from public.content_publication_media
+      where publication_id=p_publication_id order by position limit 1),
+    thumbnail_url=(select coalesce(thumbnail_url,source_url) from public.content_publication_media
+      where publication_id=p_publication_id order by position limit 1)
+  where id=p_publication_id;
+end;
+$$;
+revoke all on function public.remove_content_publication_media(uuid,uuid) from public;
+revoke all on function public.remove_content_publication_media(uuid,uuid) from anon, authenticated;
+grant execute on function public.remove_content_publication_media(uuid,uuid) to service_role;
