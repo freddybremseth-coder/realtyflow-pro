@@ -68,33 +68,21 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const auth = await authorized(request, context);
     if (auth.denied) return auth.denied;
-    if (auth.draft!.status === "published") return error("Publiserte innlegg kan ikke endres.", 409);
+    if (!["draft","failed"].includes(auth.draft!.status)) return error("Publiserte innlegg kan ikke endres.", 409);
     const body = await request.json().catch(() => null);
     if (!validUrl(body?.source_url)) return error("Krever gyldig HTTPS-bildeadresse.");
     if (body.thumbnail_url && !validUrl(body.thumbnail_url)) return error("Ugyldig miniatyradresse.");
     if (body.source_kind && !KINDS.has(body.source_kind)) return error("Ugyldig bildekilde.");
-    const rows = await media(auth.supabase!, auth.id!);
-    if (rows.length >= 10) return error("Maksimalt ti bilder per innlegg.", 409);
-    // Preserve pre-existing cover when adding the first extra slide.
-    if (!rows.length && validUrl(auth.draft!.ai_image_url)) {
-      const { error: legacyError } = await auth.supabase!.from("content_publication_media").insert({
-        publication_id: auth.id, position: 0, source_url: auth.draft!.ai_image_url,
-        thumbnail_url: auth.draft!.thumbnail_url || null, source_kind: "library"
-      });
-      if (legacyError) return error("Kunne ikke beholde originalbildet.", 409);
-    }
-    const existing = await media(auth.supabase!, auth.id!);
-    if (existing.length >= 10) return error("Maksimalt ti bilder per innlegg.", 409);
-    const { error: insertError } = await auth.supabase!.from("content_publication_media").insert({
-      publication_id: auth.id, position: existing.length, source_url: body.source_url,
-      thumbnail_url: body.thumbnail_url || null, source_kind: body.source_kind || "library",
-      alt_text: String(body.alt_text || "").slice(0, 500),
+    // One transaction preserves the legacy cover, appends the next image and
+    // updates the publication. Concurrent requests serialize on the draft row.
+    const { error: appendError } = await auth.supabase!.rpc("append_content_publication_media", {
+      p_publication_id: auth.id,
+      p_source_url: body.source_url,
+      p_thumbnail_url: body.thumbnail_url || null,
+      p_source_kind: body.source_kind || "library",
+      p_alt_text: String(body.alt_text || "").slice(0, 500),
     });
-    if (insertError) return error("Kunne ikke legge til bildet.", 409);
-    await auth.supabase!.from("content_publications").update({
-      visual_format: existing.length >= 1 ? "carousel" : "single_image",
-      media_revision: (auth.draft!.media_revision || 0) + 1,
-    }).eq("id", auth.id);
+    if (appendError) return error("Kunne ikke legge til bildet. Kontroller at utkastet er redigerbart og har plass.", 409);
     return NextResponse.json({ ok: true, items: await media(auth.supabase!, auth.id!) }, { headers });
   } catch { return error("Kunne ikke lagre bildet.", 500); }
 }
@@ -103,7 +91,7 @@ export async function PATCH(request: NextRequest, context: Context) {
   try {
     const auth = await authorized(request, context);
     if (auth.denied) return auth.denied;
-    if (auth.draft!.status === "published") return error("Publiserte innlegg kan ikke endres.", 409);
+    if (!["draft","failed"].includes(auth.draft!.status)) return error("Publiserte innlegg kan ikke endres.", 409);
     const body = await request.json().catch(() => null);
     const ids: unknown[] = body?.ordered_ids;
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 10 ||
