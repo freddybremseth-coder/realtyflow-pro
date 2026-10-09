@@ -4,6 +4,7 @@ import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace"
 import { askClaude } from "@/services/ai/claude-client";
 import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media/job-service";
 import { createMediaPromptPlan } from "@/services/media/prompt-director";
+import { getProviderCapabilities, supportsCapability } from "@/services/media/capabilities";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 import {
@@ -1189,6 +1190,26 @@ async function generateSocialStudioConceptImage(
     .digest("hex")
     .slice(0, 36);
 
+  // Old concept idempotency keys can retain failed Gemini jobs forever.
+  // Once OpenArt is connected, create one separate OpenArt-keyed job rather
+  // than re-submitting the exhausted Gemini provider on every click.
+  const originalKey = `social-studio-concept:${input.brandKey}:${digest}`;
+  let jobKey = originalKey;
+  const { data: earlierJob } = await supabase.from("media_generation_jobs")
+    .select("status,provider,error_message")
+    .eq("organization_id", organizationId)
+    .eq("idempotency_key", originalKey)
+    .maybeSingle();
+  if (earlierJob?.provider === "gemini" &&
+      ["failed", "expired", "cancelled"].includes(String(earlierJob.status)) &&
+      /quota|rate.limit|resource.exhausted|billing/i.test(String(earlierJob.error_message || ""))) {
+    const capabilities = await getProviderCapabilities(supabase, organizationId);
+    const openart = capabilities.find(item => item.provider === "openart");
+    if (openart && supportsCapability(openart, "image", "text_to_image")) {
+      jobKey = originalKey + ":openart-v1";
+    }
+  }
+
   const result = await createMediaJob(supabase, {
     organizationId,
     userId: input.actorUserId,
@@ -1197,7 +1218,7 @@ async function generateSocialStudioConceptImage(
       plan,
       brandId: input.brandKey,
       sourceImageUrls: [],
-      idempotencyKey: `social-studio-concept:${input.brandKey}:${digest}`,
+      idempotencyKey: jobKey,
       autoExportToContentHub: false,
     },
   });
