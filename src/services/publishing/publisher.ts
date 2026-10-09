@@ -585,6 +585,19 @@ export async function executePublishForDraft(
     return { results: platforms.map((platform) => ({ platform, success: false, error: reason })), anySuccess: false };
   }
 
+  // Atomic claim prevents concurrent/double-click publication. Once claimed,
+  // any uncertain Meta outcome stays locked for manual reconciliation.
+  if (carouselUrls.length) {
+    const { data: claimed, error: claimError } = await supabase.rpc(
+      "claim_content_carousel_publish", { p_publication_id: draftId },
+    );
+    if (claimError || !claimed) {
+      return { results: [{ platform: "instagram", success: false,
+        error: "Karusellen publiseres allerede, eller må kontrolleres før nytt forsøk." }],
+        anySuccess: false };
+    }
+  }
+
   // Upload base64 image once for all platforms.
   let publicImageUrl: string | undefined;
   if (imageUrl) {
@@ -656,7 +669,8 @@ export async function executePublishForDraft(
   await supabase
     .from("content_publications")
     .update({
-      status: anySuccess ? "published" : "failed",
+      // Never release an ambiguously failed carousel for automatic retry.
+      status: anySuccess ? "published" : carouselUrls.length ? "publishing" : "failed",
       published_at: anySuccess ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
       publish_attempts: 1,
