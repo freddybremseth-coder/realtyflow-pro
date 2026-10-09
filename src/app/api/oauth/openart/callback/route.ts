@@ -75,16 +75,21 @@ export async function GET(req: NextRequest) {
       expiresInSeconds: tokens.expires_in || 3600,
     });
 
-    // Best effort — a failure here must not break the connect flow.
+    // OAuth success does not necessarily mean OpenArt MCP accepts this token.
+    // Verify access before declaring the integration operational.
+    let verificationError = "";
     try {
       const account = await getOpenArtAccount();
       if (account.email) await saveOpenArtConnection({ account_email: account.email });
     } catch (err) {
-      console.warn("[OpenArt OAuth] Could not fetch account info:", err);
+      verificationError = err instanceof Error ? err.message : "OpenArt MCP verification failed";
+      console.warn("[OpenArt OAuth] MCP token verification failed:", verificationError);
     }
 
     const url = new URL(returnTo, req.nextUrl.origin);
-    url.searchParams.set("openart", "connected");
+    url.searchParams.set("openart", verificationError ? "verification_failed" : "connected");
+    if (verificationError) url.searchParams.set("openart_message",
+      "OpenArt godkjente innloggingen, men API-et avviste tilgangstokenet. Tilkoblingen er ennå ikke operativ.");
     return NextResponse.redirect(url.toString());
   } catch (err) {
     console.error("[OpenArt OAuth] Callback error:", err);
