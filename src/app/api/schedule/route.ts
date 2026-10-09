@@ -52,6 +52,16 @@ export async function POST(req: NextRequest) {
     // STATUS-OVERGANGS-GUARD (P0): en rad kan ikke gå til "scheduled" hvis body
     // ikke er publishable (intern/meta-tekst, placeholder eller tom). Fail closed.
     const { data: draftRow } = await supabase.from("content_publications").select("*").eq("id", draft_id).maybeSingle();
+    if (!draftRow) {
+      return NextResponse.json({ error: "Utkastet finnes ikke." }, { status: 404 });
+    }
+    // Server-side restriction: UI controls alone cannot protect cron publishing.
+    if (draftRow.visual_format === "carousel") {
+      return NextResponse.json({
+        error: "CAROUSEL_SCHEDULING_NOT_READY",
+        message: "Planlegging av karuseller aktiveres når bakgrunnspublisering er verifisert.",
+      }, { status: 409 });
+    }
     if (draftRow) {
       const draftBody = draftRow.description ?? draftRow.content ?? draftRow.body ?? draftRow.ai_description ?? "";
       const guard = assertPublishableForStatus({ content: draftBody, targetStatus: "scheduled", platform: platforms[0] });
