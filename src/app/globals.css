@@ -200,3 +200,22 @@ body {
     max-width: none;
   }
 }
+
+
+/* Human-facing text wrapping guard
+ * Keep names and normal words intact in compact UI cards.
+ * Technical strings should use their existing break-all/break-words utilities.
+ */
+.rf-human-text {
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+  text-wrap: pretty;
+}
+
+.rf-human-name {
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  hyphens: none;
+}
