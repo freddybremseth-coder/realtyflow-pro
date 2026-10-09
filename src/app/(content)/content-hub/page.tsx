@@ -2435,10 +2435,6 @@ export default function ContentHubPage() {
                                     />
                                   </div>
                                 )}
-                                <CarouselMediaEditor draftId={draft.id}
-                                  libraryImages={availableImages}
-                                  loadLibrary={() => fetchAvailableImages(draft.brand_id)}
-                                />
                                 <p className="rf-human-text text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
                                   {protectHumanText(draft.description || "Ingen beskrivelse")}
                                 </p>
@@ -2452,6 +2448,14 @@ export default function ContentHubPage() {
                                   </div>
                                 )}
                               </>
+                            )}
+                            {draft.status === "draft" && (
+                              <div className="mt-3">
+                                <CarouselMediaEditor draftId={draft.id}
+                                  libraryImages={availableImages}
+                                  loadLibrary={() => fetchAvailableImages(draft.brand_id)}
+                                />
+                              </div>
                             )}
                           </div>
 
