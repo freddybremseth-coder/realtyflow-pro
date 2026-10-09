@@ -1113,13 +1113,13 @@ export function WorkspaceSocialStudio({
       {variants.map((variant) => <article key={variant.id} className="min-w-[88%] snap-center rounded-2xl border border-slate-700 bg-slate-900/80 p-4 sm:min-w-[72%] xl:min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">{variant.label}</p>
-            <h3 className="mt-1 text-lg font-semibold">{variant.hook || variant.label}</h3>
+            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">{protectHumanText(variant.label)}</p>
+            <h3 className="mt-1 text-lg font-semibold">{protectHumanText(variant.hook || variant.label)}</h3>
           </div>
         </div>
-        <p className="mt-2 text-xs text-slate-400">{variant.angle}</p>
+        <p className="mt-2 text-xs text-slate-400">{protectHumanText(variant.angle)}</p>
         <p className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
-          <span className="font-semibold text-slate-200">Visuell retning:</span> {variant.visualDirection}
+          <span className="font-semibold text-slate-200">Visuell retning:</span> {protectHumanText(variant.visualDirection)}
         </p>
 
         {source?.type === "property" && <div className="mt-3 space-y-3">
@@ -1212,7 +1212,7 @@ export function WorkspaceSocialStudio({
         <div className="mt-4 space-y-3">
           <div className="rounded-xl border border-blue-900/60 bg-blue-950/15 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-blue-200"><Facebook size={14}/> Facebook</div>
-            <p className="mt-2 whitespace-pre-line text-sm text-slate-300">{variant.facebookText}</p>
+            <p className="mt-2 whitespace-pre-line text-sm text-slate-300">{protectHumanText(variant.facebookText)}</p>
             <button type="button" disabled={Boolean(saving) || !activePlatforms.has("facebook")}
               onClick={() => void saveVariant(variant, "facebook")}
               className="mt-3 rounded-lg border border-blue-800 px-3 py-2 text-xs text-blue-200 disabled:opacity-40">
@@ -1232,7 +1232,7 @@ export function WorkspaceSocialStudio({
           </div>
           <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/10 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-fuchsia-200"><Instagram size={14}/> Instagram</div>
-            <p className="mt-2 whitespace-pre-line text-sm text-slate-300">{variant.instagramText}</p>
+            <p className="mt-2 whitespace-pre-line text-sm text-slate-300">{protectHumanText(variant.instagramText)}</p>
             <button type="button" disabled={Boolean(saving) || !activePlatforms.has("instagram")}
               onClick={() => void saveVariant(variant, "instagram")}
               className="mt-3 rounded-lg border border-fuchsia-800 px-3 py-2 text-xs text-fuchsia-200 disabled:opacity-40">
