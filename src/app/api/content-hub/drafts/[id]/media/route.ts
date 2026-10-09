@@ -114,17 +114,11 @@ export async function PATCH(request: NextRequest, context: Context) {
       return error("Bildelisten er endret. Last inn på nytt.", 409);
     const changed = rows.some((row,index) => row.id !== ids[index]);
     if (changed) {
-      // Use negative positions temporarily to avoid violating the unique position constraint.
-      for (let i = 0; i < ids.length; i++) {
-        const { error: e } = await auth.supabase!.from("content_publication_media")
-          .update({ position: -i-1 }).eq("id", ids[i]).eq("publication_id", auth.id);
-        if (e) return error("Kunne ikke endre bilderekkefølge.", 409);
-      }
-      for (let i = 0; i < ids.length; i++) {
-        const { error: e } = await auth.supabase!.from("content_publication_media")
-          .update({ position: i }).eq("id", ids[i]).eq("publication_id", auth.id);
-        if (e) return error("Kunne ikke fullføre bilderekkefølgen.", 409);
-      }
+      const { error: reorderError } = await auth.supabase!.rpc("reorder_content_publication_media", {
+        p_publication_id: auth.id,
+        p_media_ids: ids,
+      });
+      if (reorderError) return error("Kunne ikke endre bilderekkefølge. Last inn siden og prøv igjen.", 409);
     }
     return NextResponse.json({ ok: true, items: await media(auth.supabase!, auth.id!) }, { headers });
   } catch { return error("Kunne ikke endre bilderekkefølge.", 500); }
