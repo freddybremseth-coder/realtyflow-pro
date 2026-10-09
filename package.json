@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:carousel-contract": "node --import tsx --test src/services/publishing/carousel-contract.test.ts",
     "dev": "next dev",
     "build": "node --max-old-space-size=5120 node_modules/next/dist/bin/next build",
     "start": "next start",
