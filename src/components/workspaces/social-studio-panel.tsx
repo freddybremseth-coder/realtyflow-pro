@@ -1,4 +1,5 @@
 "use client";
+import { protectHumanText } from "@/lib/ui/protected-human-text";
 
 import { useEffect, useMemo, useState } from "react";
 import { BookOpenText, Building2, ExternalLink, Facebook, Instagram, Sparkles, WandSparkles } from "lucide-react";
