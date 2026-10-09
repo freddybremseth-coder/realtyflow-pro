@@ -18,6 +18,7 @@ import {
 import { BRANDS } from "@/lib/constants";
 import { SendToForfatterstudio } from "@/components/publishing/send-to-forfatterstudio";
 import { prepareImageForUpload } from "@/lib/client/image-files";
+import { protectHumanText } from "@/lib/ui/protected-human-text";
 import ContentCalendar from "@/components/ContentCalendar"
 
 // --- Types ---
@@ -2080,7 +2081,7 @@ export default function ContentHubPage() {
               </p>
               {packagePlatforms.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
                 {packagePlatforms.map((platform) => <Badge key={platform} variant="outline" className="border-emerald-800 text-emerald-200">
-                  {friendlyPlatformName(platform)}
+                  <span className="rf-human-name">{friendlyPlatformName(platform)}</span>
                 </Badge>)}
               </div>}
             </div>
@@ -2418,7 +2419,7 @@ export default function ContentHubPage() {
                               </div>
                             ) : (
                               <>
-                                <h4 className="font-medium text-sm mb-1 truncate">{draft.title || "Uten tittel"}</h4>
+                                <h4 className="rf-human-text font-medium text-sm mb-1 truncate">{protectHumanText(draft.title || "Uten tittel")}</h4>
                                 {(draft.thumbnail_url || draft.ai_image_url) && (
                                   <div className="rounded-lg overflow-hidden mb-2 bg-zinc-800 max-h-48">
                                     <img
@@ -2430,8 +2431,8 @@ export default function ContentHubPage() {
                                     />
                                   </div>
                                 )}
-                                <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
-                                  {draft.description || "Ingen beskrivelse"}
+                                <p className="rf-human-text text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
+                                  {protectHumanText(draft.description || "Ingen beskrivelse")}
                                 </p>
                                 {displayTags.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-2">
