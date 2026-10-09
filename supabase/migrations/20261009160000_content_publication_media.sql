@@ -38,7 +38,8 @@ begin
   if array_length(p_media_ids,1) is null or array_length(p_media_ids,1) > 10 then
     raise exception 'Invalid media count';
   end if;
-  perform 1 from public.content_publications where id = p_publication_id for update;
+  perform 1 from public.content_publications where id = p_publication_id and status in ('draft','failed') for update;
+  if not found then raise exception 'Draft missing or not editable'; end if;
   select count(*) into v_count from public.content_publication_media
     where publication_id = p_publication_id;
   if v_count <> array_length(p_media_ids,1)
@@ -83,7 +84,7 @@ declare
   v_remaining integer;
 begin
   perform 1 from public.content_publications
-    where id=p_publication_id and status <> 'published' for update;
+    where id=p_publication_id and status in ('draft','failed') for update;
   if not found then raise exception 'Publication missing or published'; end if;
   delete from public.content_publication_media
     where publication_id=p_publication_id and id=p_media_id
@@ -111,3 +112,42 @@ $$;
 revoke all on function public.remove_content_publication_media(uuid,uuid) from public;
 revoke all on function public.remove_content_publication_media(uuid,uuid) from anon, authenticated;
 grant execute on function public.remove_content_publication_media(uuid,uuid) to service_role;
+
+-- Atomic append: legacy cover, new slide, format and revision commit together.
+create or replace function public.append_content_publication_media(
+  p_publication_id uuid, p_source_url text, p_thumbnail_url text,
+  p_source_kind text, p_alt_text text
+) returns void language plpgsql security invoker set search_path = public as $$
+declare
+  v_draft public.content_publications%rowtype;
+  v_count integer;
+begin
+  select * into v_draft from public.content_publications
+    where id = p_publication_id and status in ('draft','failed')
+    for update;
+  if not found then raise exception 'Draft missing or not editable'; end if;
+  select count(*) into v_count from public.content_publication_media
+    where publication_id = p_publication_id;
+  if v_count = 0 and nullif(v_draft.ai_image_url,'') is not null then
+    insert into public.content_publication_media
+      (publication_id,position,source_url,thumbnail_url,source_kind)
+      values (p_publication_id,0,v_draft.ai_image_url,v_draft.thumbnail_url,'library');
+    v_count := 1;
+  end if;
+  if v_count >= 10 then raise exception 'Carousel maximum is 10 images'; end if;
+  insert into public.content_publication_media
+    (publication_id,position,source_url,thumbnail_url,source_kind,alt_text)
+    values (p_publication_id,v_count,p_source_url,p_thumbnail_url,p_source_kind,p_alt_text);
+  update public.content_publications set
+    visual_format=case when v_count >= 1 then 'carousel' else 'single_image' end,
+    media_revision=media_revision+1,
+    ai_image_url=(select source_url from public.content_publication_media
+      where publication_id=p_publication_id order by position limit 1),
+    thumbnail_url=(select coalesce(thumbnail_url,source_url) from public.content_publication_media
+      where publication_id=p_publication_id order by position limit 1)
+  where id=p_publication_id;
+end;
+$$;
+revoke all on function public.append_content_publication_media(uuid,text,text,text,text) from public;
+revoke all on function public.append_content_publication_media(uuid,text,text,text,text) from anon, authenticated;
+grant execute on function public.append_content_publication_media(uuid,text,text,text,text) to service_role;
