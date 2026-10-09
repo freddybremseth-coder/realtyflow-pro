@@ -2439,7 +2439,7 @@ export default function ContentHubPage() {
                                   libraryImages={availableImages}
                                   loadLibrary={() => fetchAvailableImages(draft.brand_id)}
                                 />
-                                <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
+                                <p className="rf-human-text text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
                                   {protectHumanText(draft.description || "Ingen beskrivelse")}
                                 </p>
                                 {displayTags.length > 0 && (
