@@ -2862,6 +2862,7 @@ export default function ContentHubPage() {
 
                 <CarouselPublishPreview draftId={publishDraft.id} onStatus={handleCarouselPreviewStatus} />
                 {carouselPreviewStatus.carousel && <p className="text-xs text-fuchsia-300">Instagram-karusell · publiseres som én bildeserie. Velg kun Instagram.</p>}
+                {carouselPreviewStatus.carousel && scheduleMode === "schedule" && <p role="alert" className="text-xs text-amber-300">Planlagte karuseller aktiveres når bakgrunnspubliseringen støtter flere bilder. Velg «Publiser nå» etter kontroll.</p>}
                 {carouselPreviewStatus.carousel && publishPlatforms.some(platform=>platform!=="instagram") &&
                   <p role="alert" className="text-xs text-amber-300">Karuseller kan foreløpig bare publiseres til Instagram.</p>}
 
@@ -3077,7 +3078,7 @@ export default function ContentHubPage() {
                       <Button
                         className={`flex-1 ${scheduleMode === "schedule" ? "bg-purple-600 hover:bg-purple-700" : "bg-green-600 hover:bg-green-700"}`}
                         onClick={executePublish}
-                        disabled={publishing || hydratingDraftId === publishDraft.id || publishPlatforms.length === 0 || !carouselPreviewStatus.ready || (carouselPreviewStatus.carousel && (publishPlatforms.length !== 1 || publishPlatforms[0] !== "instagram")) || (scheduleMode === "schedule" && !scheduledAt)}
+                        disabled={publishing || hydratingDraftId === publishDraft.id || publishPlatforms.length === 0 || !carouselPreviewStatus.ready || (carouselPreviewStatus.carousel && (scheduleMode === "schedule" || publishPlatforms.length !== 1 || publishPlatforms[0] !== "instagram")) || (scheduleMode === "schedule" && !scheduledAt)}
                       >
                         {hydratingDraftId === publishDraft.id ? (
                           <><Loader2 size={14} className="animate-spin mr-2" /> Henter fullversjon...</>
