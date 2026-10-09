@@ -2423,7 +2423,7 @@ export default function ContentHubPage() {
                               </div>
                             ) : (
                               <>
-                                <h4 className="rf-human-text font-medium text-sm mb-1 truncate">{protectHumanText(draft.title || "Uten tittel")}</h4>
+                                <h4 className="rf-human-name rf-human-text font-medium text-sm mb-1 truncate">{protectHumanText(draft.title || "Uten tittel")}</h4>
                                 {(draft.thumbnail_url || draft.ai_image_url) && (
                                   <div className="rounded-lg overflow-hidden mb-2 bg-zinc-800 max-h-48">
                                     <img
