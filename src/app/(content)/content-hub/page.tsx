@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { OpenArtToggle } from "@/components/ui/openart-toggle";
+import { protectHumanText } from "@/lib/ui/protected-human-text";
 import { CarouselMediaEditor } from "@/components/content-hub/carousel-media-editor";
 import { CarouselPublishPreview } from "@/components/content-hub/carousel-publish-preview";
 import {
@@ -2422,7 +2423,7 @@ export default function ContentHubPage() {
                               </div>
                             ) : (
                               <>
-                                <h4 className="font-medium text-sm mb-1 truncate">{draft.title || "Uten tittel"}</h4>
+                                <h4 className="rf-human-text font-medium text-sm mb-1 truncate">{protectHumanText(draft.title || "Uten tittel")}</h4>
                                 {(draft.thumbnail_url || draft.ai_image_url) && (
                                   <div className="rounded-lg overflow-hidden mb-2 bg-zinc-800 max-h-48">
                                     <img
@@ -2439,7 +2440,7 @@ export default function ContentHubPage() {
                                   loadLibrary={() => fetchAvailableImages(draft.brand_id)}
                                 />
                                 <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
-                                  {draft.description || "Ingen beskrivelse"}
+                                  {protectHumanText(draft.description || "Ingen beskrivelse")}
                                 </p>
                                 {displayTags.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-2">
