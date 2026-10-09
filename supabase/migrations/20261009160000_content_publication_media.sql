@@ -9,7 +9,7 @@ alter table public.content_publications
 create table if not exists public.content_publication_media (
   id uuid primary key default gen_random_uuid(),
   publication_id uuid not null references public.content_publications(id) on delete cascade,
-  position integer not null check (position >= -10 and position < 10),
+  position integer not null check (position >= 0 and position < 10),
   media_type text not null default 'image' check (media_type = 'image'),
   source_url text not null check (length(source_url) > 0),
   thumbnail_url text,
@@ -26,3 +26,46 @@ create index if not exists content_publication_media_publication_idx
  on public.content_publication_media(publication_id,position);
 alter table public.content_publication_media enable row level security;
 -- No public grants/policies: access only via existing authenticated server API.
+
+-- Atomic reordering: either all positions change, or none do.
+create or replace function public.reorder_content_publication_media(
+  p_publication_id uuid, p_media_ids uuid[]
+) returns void language plpgsql security invoker set search_path = public as $$
+declare
+  v_count integer;
+  v_index integer;
+begin
+  if array_length(p_media_ids,1) is null or array_length(p_media_ids,1) > 10 then
+    raise exception 'Invalid media count';
+  end if;
+  perform 1 from public.content_publications where id = p_publication_id for update;
+  select count(*) into v_count from public.content_publication_media
+    where publication_id = p_publication_id;
+  if v_count <> array_length(p_media_ids,1)
+      or (select count(distinct x) from unnest(p_media_ids) x) <> v_count
+      or (select count(*) from public.content_publication_media
+            where publication_id = p_publication_id and id = any(p_media_ids)) <> v_count then
+    raise exception 'Media sequence is stale';
+  end if;
+  -- Delete+reinsert is unnecessary; assign temporary negative slots inside one transaction.
+  -- The signed staging range is allowed by the check constraint below.
+  for v_index in 1..v_count loop
+    update public.content_publication_media set position = -v_index
+      where publication_id = p_publication_id and id = p_media_ids[v_index];
+  end loop;
+  for v_index in 1..v_count loop
+    update public.content_publication_media set position = v_index - 1
+      where publication_id = p_publication_id and id = p_media_ids[v_index];
+  end loop;
+  update public.content_publications
+    set media_revision = media_revision + 1
+    where id = p_publication_id;
+end;
+$$;
+alter table public.content_publication_media
+  drop constraint if exists content_publication_media_position_check;
+alter table public.content_publication_media
+  add constraint content_publication_media_position_check check (position >= -10 and position < 10);
+revoke all on function public.reorder_content_publication_media(uuid,uuid[]) from public;
+revoke all on function public.reorder_content_publication_media(uuid,uuid[]) from anon, authenticated;
+grant execute on function public.reorder_content_publication_media(uuid,uuid[]) to service_role;
