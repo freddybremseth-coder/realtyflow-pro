@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { OpenArtToggle } from "@/components/ui/openart-toggle";
 import { CarouselMediaEditor } from "@/components/content-hub/carousel-media-editor";
+import { CarouselPublishPreview } from "@/components/content-hub/carousel-publish-preview";
 import {
   Target, Calendar, BarChart3, Sparkles, Youtube,
   Camera, Globe, Link, Send, Plus, Image, Video, FileText,
@@ -507,6 +508,8 @@ export default function ContentHubPage() {
 
   // Publish modal state
   const [publishDraft, setPublishDraft] = useState<DraftItem | null>(null);
+  const [carouselPreviewStatus, setCarouselPreviewStatus] = useState<{ready:boolean;carousel:boolean}>({ready:false,carousel:false});
+  const handleCarouselPreviewStatus = useCallback((ready:boolean,carousel:boolean)=>setCarouselPreviewStatus({ready,carousel}),[]);
   const [publishPlatforms, setPublishPlatforms] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [hydratingDraftId, setHydratingDraftId] = useState<string | null>(null);
@@ -2857,6 +2860,11 @@ export default function ContentHubPage() {
                   )}
                 </div>
 
+                <CarouselPublishPreview draftId={publishDraft.id} onStatus={handleCarouselPreviewStatus} />
+                {carouselPreviewStatus.carousel && <p className="text-xs text-fuchsia-300">Instagram-karusell · publiseres som én bildeserie. Velg kun Instagram.</p>}
+                {carouselPreviewStatus.carousel && publishPlatforms.some(platform=>platform!=="instagram") &&
+                  <p role="alert" className="text-xs text-amber-300">Karuseller kan foreløpig bare publiseres til Instagram.</p>}
+
                 {/* Platform selection */}
                 <div>
                   <p className="text-sm font-medium mb-2">Velg plattformer:</p>
@@ -3069,7 +3077,7 @@ export default function ContentHubPage() {
                       <Button
                         className={`flex-1 ${scheduleMode === "schedule" ? "bg-purple-600 hover:bg-purple-700" : "bg-green-600 hover:bg-green-700"}`}
                         onClick={executePublish}
-                        disabled={publishing || hydratingDraftId === publishDraft.id || publishPlatforms.length === 0 || (scheduleMode === "schedule" && !scheduledAt)}
+                        disabled={publishing || hydratingDraftId === publishDraft.id || publishPlatforms.length === 0 || !carouselPreviewStatus.ready || (carouselPreviewStatus.carousel && (publishPlatforms.length !== 1 || publishPlatforms[0] !== "instagram")) || (scheduleMode === "schedule" && !scheduledAt)}
                       >
                         {hydratingDraftId === publishDraft.id ? (
                           <><Loader2 size={14} className="animate-spin mr-2" /> Henter fullversjon...</>
