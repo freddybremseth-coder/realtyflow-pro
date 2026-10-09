@@ -9,7 +9,7 @@ alter table public.content_publications
 create table if not exists public.content_publication_media (
   id uuid primary key default gen_random_uuid(),
   publication_id uuid not null references public.content_publications(id) on delete cascade,
-  position integer not null check (position >= 0 and position < 10),
+  position integer not null check (position >= -10 and position < 10),
   media_type text not null default 'image' check (media_type = 'image'),
   source_url text not null check (length(source_url) > 0),
   thumbnail_url text,
