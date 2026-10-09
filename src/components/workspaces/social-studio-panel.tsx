@@ -539,29 +539,47 @@ export function WorkspaceSocialStudio({
 
     setGeneratingImage(variant.id);
     try {
-      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "generate_concept_image",
-          conceptId: variant.id,
-          sourceType: source?.type || sourceType,
-          sourceTitle: source?.title || topic || variant.hook,
-          hook: variant.hook,
-          angle: variant.angle,
-          visualDirection: variant.visualDirection,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body.imageUrl) {
-        const code = body?.error?.code || "";
-        throw new Error(
-          code === "SOCIAL_STUDIO_MEDIA_NOT_READY"
-            ? "Bildejobben er startet, men er ikke ferdig ennå. Trykk igjen om et øyeblikk."
-            : "RealtyFlow klarte ikke å lage konseptbildet akkurat nå.",
-        );
+      // Media jobs are asynchronous. Keep checking the same idempotent job rather
+      // than asking the user to click again (or failing package preparation).
+      let nextImage = "";
+      for (let attempt = 0; attempt < 18; attempt += 1) {
+        if (attempt > 0) {
+          setPreviewFeedback(current => ({
+            ...current,
+            [variant.id]: "Bildebehandling pågår. Sjekker automatisk status (" + (attempt + 1) + "/18). Du trenger ikke trykke igjen.",
+          }));
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "generate_concept_image",
+            conceptId: variant.id,
+            sourceType: source?.type || sourceType,
+            sourceTitle: source?.title || topic || variant.hook,
+            hook: variant.hook,
+            angle: variant.angle,
+            visualDirection: variant.visualDirection,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (response.ok && body.imageUrl) {
+          nextImage = String(body.imageUrl);
+          break;
+        }
+        if (body?.error?.code !== "SOCIAL_STUDIO_MEDIA_NOT_READY") {
+          throw new Error("Bildet kunne ikke genereres. Prøv igjen senere, eller velg et eksisterende godkjent merkevarebilde.");
+        }
       }
-      const nextImage = String(body.imageUrl);
+      if (!nextImage) {
+        throw new Error("Bildejobben er fortsatt ikke ferdig etter omtrent 90 sekunder. Den kan ha stoppet hos bildeleverandøren. Prøv igjen senere, eller velg et eksisterende godkjent bilde.");
+      }
+      setPreviewFeedback(current => {
+        const next = { ...current };
+        delete next[variant.id];
+        return next;
+      });
       setPreviews(current => ({ ...current, [variant.id]: nextImage }));
       return { imageUrl: nextImage, fallback: false, visualFormat: "single_image" as VisualFormat };
     } finally {
