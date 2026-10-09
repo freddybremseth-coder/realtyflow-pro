@@ -664,22 +664,25 @@ export async function executePublishForDraft(
 
   const anySuccess = results.some((r) => r.success);
 
-  await supabase
-    .from("content_publications")
-    .update({
-      // Never release an ambiguously failed carousel for automatic retry.
-      status: anySuccess ? "published" : carouselClaimed ? "processing" : "failed",
-      published_at: anySuccess ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-      publish_attempts: 1,
-      last_publish_error: anySuccess
-        ? null
-        : results
-            .map((r) => r.error)
-            .filter(Boolean)
-            .join("; "),
-    })
-    .eq("id", draftId);
+  // A losing concurrent request must not reset the status of the request
+  // that successfully claimed the draft. In particular, do not set "failed"
+  // when another worker has already entered "processing".
+  if (!carouselUrls.length || carouselClaimed) {
+    let update = supabase
+      .from("content_publications")
+      .update({
+        status: anySuccess ? "published" : carouselClaimed ? "processing" : "failed",
+        published_at: anySuccess ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+        publish_attempts: 1,
+        last_publish_error: anySuccess
+          ? null
+          : results.map(r => r.error).filter(Boolean).join("; "),
+      })
+      .eq("id", draftId);
+    if (carouselClaimed) update = update.eq("status", "processing");
+    await update;
+  }
 
   return { results, anySuccess, ambiguities: ambiguities.length ? ambiguities : undefined };
 }
