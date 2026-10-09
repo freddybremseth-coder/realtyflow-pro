@@ -99,8 +99,7 @@ export async function publishInstagramCarousel(
   await waitReady(parentId);
   // The call below is non-idempotent; never automatically replay it on timeout.
   const id = await post("media_publish", { creation_id: parentId });
-  return { platform: "instagram", success: true, postId: id,
-    postUrl: `https://www.instagram.com/p/${id}/` };
+  return { platform: "instagram", success: true, postId: id };
 }
 
 // ─── Helper: Upload base64 image to Supabase Storage ──────────────
