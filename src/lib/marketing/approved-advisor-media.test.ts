@@ -85,3 +85,11 @@ test("an approved advisor provides verified provenance for publish-time tagging"
     allowed: true, advisorFound: true,
   });
 });
+
+test("Approval cannot be substituted using a different asset ID or a deleted media record", async () => {
+  const db = fakeSupabase([asset], [job]);
+  assert.equal(await advisorCompositeHasManualApproval(db, imageUrl, brandId, propertyId, "a-001"), true);
+  assert.equal(await advisorCompositeHasManualApproval(db, imageUrl, brandId, propertyId, "a-different"), false);
+  const vanished = fakeSupabase([], []);
+  assert.equal(await advisorCompositeHasManualApproval(vanished, imageUrl, brandId, propertyId, "a-001"), false);
+});
