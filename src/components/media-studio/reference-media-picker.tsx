@@ -12,12 +12,14 @@ interface ReferenceAsset {
   thumbnail_url?: string | null;
   provider?: string | null;
   created_at: string;
+  metadata_json?: { purpose?: string } | null;
 }
 
 interface ReferenceMediaPickerProps {
   value: string;
   onChange: (url: string) => void;
   brandId?: string;
+  purpose?: "media_reference" | "advisor_portrait";
   title?: string;
   description?: string;
 }
@@ -43,6 +45,7 @@ export function ReferenceMediaPicker({
   value,
   onChange,
   brandId,
+  purpose = "media_reference",
   title = "Referansebilde",
   description = "Last opp et bilde eller velg et eksisterende bilde fra Media Library.",
 }: ReferenceMediaPickerProps) {
@@ -58,13 +61,14 @@ export function ReferenceMediaPicker({
       const result = await readJson<{ assets: ReferenceAsset[] }>(
         "/api/media/assets?limit=120&mediaType=image" + (brandId ? "&brandId=" + encodeURIComponent(brandId) : ""),
       );
-      setAssets((result.assets || []).filter((asset) => Boolean(asset.public_url)));
+      setAssets((result.assets || []).filter((asset) => Boolean(asset.public_url) &&
+        (purpose !== "advisor_portrait" || asset.metadata_json?.purpose === "advisor_portrait")));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Kunne ikke laste Media Library.");
     } finally {
       setLoading(false);
     }
-  }, [brandId]);
+  }, [brandId, purpose]);
 
   useEffect(() => {
     void loadImages();
@@ -83,6 +87,7 @@ export function ReferenceMediaPicker({
       const form = new FormData();
       form.set("file", file);
       if (brandId) form.set("brandId", brandId);
+      if (purpose === "advisor_portrait") form.set("referencePurpose", "advisor_portrait");
       form.set("title", file.name.replace(/\.[^.]+$/, ""));
       const result = await readJson<{ asset: ReferenceAsset }>("/api/media/assets/upload", {
         method: "POST",
@@ -142,7 +147,7 @@ export function ReferenceMediaPicker({
               ))}
             </select>
           </div>
-          <div>
+          {purpose !== "advisor_portrait" && <div>
             <label className="mb-1 block text-xs text-slate-400">Eller lim inn bilde-URL</label>
             <input
               value={value}
@@ -150,7 +155,9 @@ export function ReferenceMediaPicker({
               placeholder="https://..."
               className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-primary-400"
             />
-          </div>
+          </div>}
+          {purpose === "advisor_portrait" && !loading && assets.length === 0 &&
+            <p className="text-xs text-amber-200">Ingen rådgiverportretter er registrert for denne merkevaren. Last opp et godkjent bilde for å fortsette.</p>}
         </div>
 
         <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
