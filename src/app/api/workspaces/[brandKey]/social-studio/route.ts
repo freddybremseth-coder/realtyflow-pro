@@ -1494,11 +1494,13 @@ export async function POST(
       const identityAssetUrl = clean(body.identityAssetUrl, 2000);
       const outfit = clean(body.outfit, 40);
       const pose = clean(body.pose, 40);
+      const placement = clean(body.placement, 40);
       const variantId = clean(body.variantId, 40);
       const channel = clean(body.channel, 20);
       const outfits = ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"];
       if (!propertyMediaUrls(property).includes(sourceImageUrl) ||
           !outfits.includes(outfit) || !["relaxed", "presenting", "standing"].includes(pose) ||
+          !["auto", "left", "right", "center"].includes(placement) ||
           !["editorial_premium", "lifestyle_story", "advisor_insight"].includes(variantId) ||
           !["facebook", "instagram"].includes(channel)) {
         return fail(400, "ADVISOR_COMPOSITE_INPUT_INVALID");
@@ -1530,6 +1532,8 @@ export async function POST(
           pose === "standing" ? "Pose: standing comfortably without hiding important property details." :
           "Pose: relaxed elegant posture, one hand casually in pocket if appropriate.",
         "Keep advisor to a secondary portion of image. Do not change the property's original view or invent building elements.",
+        "Use the actual floor or terrace ground plane. No floating people or impossible balcony placements.",
+        "Advisor placement preference: " + placement + ". Respect physically plausible perspective above all.",
         "No text, logos, watermarks, additional persons or invented rooms.",
       ].join(" ");
       const plan = createMediaPromptPlan({
@@ -1545,7 +1549,7 @@ export async function POST(
         allowText: false,
       });
       const digest = crypto.createHash("sha256").update([
-        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, variantId, channel, "v1",
+        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, "v2",
       ].join("|")).digest("hex").slice(0, 32);
       try {
         const result = await createMediaJob(access.value.supabase, {
