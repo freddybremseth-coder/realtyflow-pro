@@ -21,11 +21,12 @@ export async function advisorCompositeApprovalStatus(
   if (lookups.some(result => result.error)) return { allowed: false, advisorFound: false };
   const assets = [...(lookups[0].data || []), ...(lookups[1].data || [])];
   if (!assets.length) return { allowed: !expectedAssetId, advisorFound: false };
-  if (expectedAssetId && !assets.some(asset => asset.id === expectedAssetId)) {
-    return { allowed: false, advisorFound: false };
-  }
+  const applicableAssets = expectedAssetId
+    ? assets.filter(asset => asset.id === expectedAssetId)
+    : assets;
+  if (!applicableAssets.length) return { allowed: false, advisorFound: false };
   let advisorFound = false;
-  for (const asset of assets) {
+  for (const asset of applicableAssets) {
     if (!asset.job_id) continue;
     const { data: job, error } = await supabase.from("media_generation_jobs")
       .select("id,idempotency_key,status,brand_id,property_id")
