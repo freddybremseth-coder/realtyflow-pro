@@ -160,6 +160,7 @@ export function WorkspaceSocialStudio({
   const [advisorPlacement, setAdvisorPlacement] = useState("auto");
   const [advisorWorking, setAdvisorWorking] = useState("");
   const advisorRequestEpoch = useRef(0);
+  const generationRequestEpoch = useRef(0);
   const advisorCandidatesEpoch = useRef(0);
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
@@ -584,6 +585,7 @@ export function WorkspaceSocialStudio({
 
   async function generate() {
     if (!canGenerate) return;
+    const generationEpoch = ++generationRequestEpoch.current;
     advisorRequestEpoch.current += 1;
     setAdvisorWorking("");
     setAdvisorReview({});
@@ -623,6 +625,7 @@ export function WorkspaceSocialStudio({
         }),
       });
       const body = await response.json().catch(() => ({}));
+      if (generationEpoch !== generationRequestEpoch.current) return;
       if (!response.ok) {
         const code = body?.error?.code || "";
         throw new Error(
@@ -662,12 +665,13 @@ export function WorkspaceSocialStudio({
         }, 80);
       }
     } catch (cause) {
+      if (generationEpoch !== generationRequestEpoch.current) return;
       setGenerationFeedback({
         kind: "error",
         text: cause instanceof Error ? cause.message : "Kunne ikke lage forslag.",
       });
     } finally {
-      setBusy(false);
+      if (generationEpoch === generationRequestEpoch.current) setBusy(false);
     }
   }
 
@@ -1286,7 +1290,7 @@ export function WorkspaceSocialStudio({
       {sourceType === "property" && <>
         {propertyLabel && <p className="rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">{propertyLabel}</p>}
         <label className="text-xs text-slate-300">Boligreferanse eller RealtyFlow-ID
-          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); setAdvisorCandidatePropertyId(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
+          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); generationRequestEpoch.current += 1; advisorRequestEpoch.current += 1; setBusy(false); setSource(null); setVariants([]); setGenerationFeedback(null); setSavedDraft(null); setSavedPublicationId(""); setPreviews({}); setAdvisorReview({}); setAdvisorCandidatePropertyId(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
             maxLength={100} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="F.eks. N9950"/>
         </label>
