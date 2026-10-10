@@ -395,6 +395,7 @@ export function WorkspaceSocialStudio({
     const requestEpoch = advisorRequestEpoch.current;
     setAdvisorError("");
     setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
     try {
       let completedImage = "";
@@ -415,7 +416,7 @@ export function WorkspaceSocialStudio({
         if (body.imageUrl) { completedImage = String(body.imageUrl); break; }
         if (["failed", "cancelled", "expired"].includes(String(body.status))) throw new Error(body.warning || "Bildegenereringen feilet.");
       }
-      if (!completedImage) throw new Error("Bildebehandlingen tar lengre tid. Prøv igjen senere.");
+      if (!completedImage) throw new Error("Bildebehandlingen er fortsatt ikke ferdig. Jobben er lagret; forsøk igjen senere. Ingen bilder er godkjent eller publisert.");
       if (requestEpoch !== advisorRequestEpoch.current) return; // inputs changed while job was running
       setAdvisorStaged(current => ({ ...current, [variant.id]: completedImage }));
       setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
