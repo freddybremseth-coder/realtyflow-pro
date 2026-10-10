@@ -59,7 +59,9 @@ export function ReferenceMediaPicker({
     setLoading(true);
     try {
       const result = await readJson<{ assets: ReferenceAsset[] }>(
-        "/api/media/assets?limit=120&mediaType=image" + (brandId ? "&brandId=" + encodeURIComponent(brandId) : ""),
+        "/api/media/assets?limit=120&mediaType=image" +
+        (brandId ? "&brandId=" + encodeURIComponent(brandId) : "") +
+        (purpose === "advisor_portrait" ? "&referencePurpose=advisor_portrait" : ""),
       );
       setAssets((result.assets || []).filter((asset) => Boolean(asset.public_url) &&
         (purpose !== "advisor_portrait" || asset.metadata_json?.purpose === "advisor_portrait")));
