@@ -465,3 +465,9 @@ test("Advisor portraits are filtered in the media API before the library limit",
   assert.match(mediaLibraryRoute, /metadata_json->>purpose/);
   assert.match(mediaLibraryRoute, /"advisor_portrait", "media_reference"/);
 });
+
+test("Advisor image generation requires same resolved property as generated SoMe proposals", () => {
+  assert.match(studio, /source\.propertyId !== advisorCandidatePropertyId/);
+  assert.match(studio, /setAdvisorCandidatePropertyId\(typeof body\.propertyId === "string"/);
+  assert.match(studio, /advisorRequestEpoch\.current \+= 1/);
+});
