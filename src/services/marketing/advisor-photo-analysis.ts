@@ -1,3 +1,6 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
+
 /**
  * Opt-in, single-photo visual suitability check for advisor composites.
  * The photo is supplied only after the authenticated user explicitly requests analysis.
@@ -27,8 +30,35 @@ function publicPhotoUrl(value: string) {
   return url;
 }
 
+function isPublicAddress(address: string) {
+  if (isIP(address) === 4) {
+    const [a, b, c] = address.split(".").map(Number);
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)))) return false;
+    if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return false;
+    if (a === 203 && b === 0 && c === 113) return false;
+    return true;
+  }
+  if (isIP(address) === 6) {
+    // Only globally routable IPv6 unicast; disallow mapped, loopback and ULA/link-local.
+    return /^[23][0-9a-f]*:/i.test(address) && !address.includes(".");
+  }
+  return false;
+}
+
+async function assertPublicDns(hostname: string) {
+  const resolved = await lookup(hostname, { all: true });
+  if (!resolved.length || resolved.some(item => !isPublicAddress(item.address))) {
+    throw new Error("ADVISOR_PHOTO_URL_UNSAFE");
+  }
+}
+
 async function readBoundedPhoto(photoUrl: string) {
   const url = publicPhotoUrl(photoUrl);
+  await assertPublicDns(url.hostname);
   const response = await fetch(url, {
     redirect: "error",
     signal: AbortSignal.timeout(14_000),
