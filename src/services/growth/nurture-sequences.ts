@@ -13,6 +13,8 @@
  *   {booking_url}     – lenke til videomøte-booking
  */
 
+import { ZENECO_BOOKING_REQUEST_URL } from "@/lib/booking-links";
+
 export interface NurtureStep {
   id: string;
   /** Dager etter at leadet kom inn før dette steget er "due". */
@@ -56,7 +58,7 @@ const ZENECO: NurtureSequence = {
   brandId: "zeneco",
   brandName: "Zen Eco Homes",
   advisor: "Freddy Bremseth",
-  bookingUrl: "https://appointment.chatgenius.pro/zeneco",
+  bookingUrl: ZENECO_BOOKING_REQUEST_URL,
   mode: "welcome",
   eligibleStatuses: ["NEW", "CONTACT", ""],
   steps: [
@@ -125,7 +127,9 @@ Det enkleste neste steget er en kort, hyggelig videoprat. På 15 minutter får d
 – et realistisk bilde av hva budsjettet gir på de stedene
 – svar på det dere lurer mest på – helt uforpliktende
 
-Book et tidspunkt som passer dere her: {booking_url}
+Send en forespørsel om en kort boligprat her: {booking_url}
+
+Skriv gjerne hvilke tidspunkt som passer. Jeg bekrefter avtalen direkte med dere.
 
 Eller svar på denne e-posten med et par tidspunkt, så ordner jeg resten.
 
@@ -145,7 +149,7 @@ const SOLEADA_REACTIVATION: NurtureSequence = {
   brandId: "soleada",
   brandName: "Soleada.no",
   advisor: "Freddy Bremseth",
-  bookingUrl: "https://appointment.chatgenius.pro/freddy",
+  bookingUrl: ZENECO_BOOKING_REQUEST_URL,
   mode: "reactivation",
   eligibleStatuses: ["NEW", "CONTACT", "QUALIFIED", ""],
   maxNewEnrollmentsPerRun: 25,
@@ -218,7 +222,7 @@ Dette er siste automatiske oppfølging fra meg hvis jeg ikke hører noe.
 
 Hvis bolig i Spania fortsatt er aktuelt, tar jeg gjerne en kort og uforpliktende videoprat. På 15 minutter kan vi avklare hvilke områder som passer, hva budsjettet realistisk gir og hva som er et fornuftig neste steg.
 
-Book et tidspunkt her: {booking_url}
+Send en forespørsel om en kort samtale her: {booking_url}
 Eller svar på denne e-posten med et par tidspunkt som passer.
 
 Jeg følger deg opp personlig fra Zen Eco Homes. Kundeforholdet og et eventuelt boligsalg ligger fortsatt hos Soleada.no.
@@ -238,7 +242,7 @@ const ZENECO_DE: NurtureSequence = {
   brandId: "zeneco",
   brandName: "Zen Eco Homes",
   advisor: "Freddy Bremseth",
-  bookingUrl: "https://appointment.chatgenius.pro/zeneco",
+  bookingUrl: ZENECO_BOOKING_REQUEST_URL,
   mode: "welcome",
   eligibleStatuses: ["NEW", "CONTACT", ""],
   steps: [
@@ -307,7 +311,8 @@ der einfachste nächste Schritt ist ein kurzes, freundliches Videogespräch. In 
 – ein realistisches Bild, was Ihr Budget dort ermöglicht
 – Antworten auf Ihre wichtigsten Fragen – ganz unverbindlich
 
-Buchen Sie einen passenden Termin hier: {booking_url}
+Senden Sie hier eine Anfrage für ein kurzes Gespräch: {booking_url}
+Teilen Sie uns Ihre bevorzugten Zeiten mit – ich bestätige den Termin persönlich.
 Oder antworten Sie mit ein paar Zeitvorschlägen.
 
 Herzliche Grüße
@@ -323,7 +328,7 @@ const ZENECO_EN: NurtureSequence = {
   brandId: "zeneco",
   brandName: "Zen Eco Homes",
   advisor: "Freddy Bremseth",
-  bookingUrl: "https://appointment.chatgenius.pro/zeneco",
+  bookingUrl: ZENECO_BOOKING_REQUEST_URL,
   mode: "welcome",
   eligibleStatuses: ["NEW", "CONTACT", ""],
   steps: [
@@ -392,7 +397,8 @@ the easiest next step is a short, friendly video call. In 15 minutes you'll get:
 – a realistic picture of what your budget allows there
 – answers to your main questions – with no obligation
 
-Book a time that suits you here: {booking_url}
+Request a short call here: {booking_url}
+Please suggest a time in the form; I will confirm the appointment personally.
 Or reply with a couple of times that work for you.
 
 Kind regards

@@ -1,9 +1,10 @@
 import { ZENECO_HEADER_DARK_SVG_URL } from "@/lib/brand-assets";
+import { ZENECO_BOOKING_REQUEST_URL } from "@/lib/booking-links";
 
 type JsonRecord = Record<string, unknown>;
 
 export const CORPORATE_DECISION_NOTE_SEQUENCE_ID = "zeneco-corporate-decision-note-v1";
-export const CORPORATE_DECISION_NOTE_BOOKING_URL = "https://appointment.chatgenius.pro/zeneco";
+export const CORPORATE_DECISION_NOTE_BOOKING_URL = ZENECO_BOOKING_REQUEST_URL;
 export const CORPORATE_DECISION_NOTE_TEMPLATE_KEY = "_zeneco_corporate_decision_note_template_v1";
 
 export type CorporateMarketHistoryPoint = {
@@ -102,7 +103,7 @@ export const DEFAULT_CORPORATE_DECISION_NOTE_TEMPLATE: CorporateDecisionNoteTemp
     "Tallene gir et godt første bilde, men blir først virkelig beslutningsklare når vi vet hvordan dere faktisk ønsker å bruke boligen. Neste nyttige steg er derfor en kort gjennomgang hvor vi avklarer bruk, område, boligtype, kapasitet og hvilke krav ledelsen eller styret har.",
   email_reply_prompt:
     "Du kan også bare svare direkte på denne e-posten med hva dere ønsker justert, hvilke spørsmål styret sitter med, eller om dere vil at jeg skal lage et mer konkret neste steg.",
-  email_cta_label: "Book en kort samtale",
+  email_cta_label: "Forespør en kort samtale",
   signature_name: "Freddy Bremseth",
   signature_title: "Eiendomsrådgiver",
   signature_brand: "Zen Eco Homes",
@@ -558,7 +559,7 @@ Det viktigste spørsmålet nå er egentlig enkelt: Er kjøpesummen, bruken og mo
 
 Svar gjerne direkte på denne e-posten med det dere vil endre. Da kan vi gjøre neste versjon mer presis.
 
-Hvis det er enklere, kan dere også booke en kort samtale her:
+Hvis dere ønsker en kort gjennomgang, kan dere sende en forespørsel her:
 ${CORPORATE_DECISION_NOTE_BOOKING_URL}
 
 Vennlig hilsen

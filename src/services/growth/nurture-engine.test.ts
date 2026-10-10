@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildNurtureRevenueEventInput } from "@/services/growth/nurture-engine";
+import { ZENECO_BOOKING_REQUEST_URL } from "@/lib/booking-links";
 import { renderTemplate, resolveSequence, type NurtureSequence, type NurtureStep } from "@/services/growth/nurture-sequences";
 
 const sequence: NurtureSequence = {
@@ -8,7 +9,7 @@ const sequence: NurtureSequence = {
   brandId: "zeneco",
   brandName: "Zen Eco Homes",
   advisor: "Freddy Bremseth",
-  bookingUrl: "https://appointment.chatgenius.pro/zeneco",
+  bookingUrl: ZENECO_BOOKING_REQUEST_URL,
   mode: "welcome",
   eligibleStatuses: ["NEW", "CONTACT", ""],
   steps: [],
@@ -118,4 +119,26 @@ test("historical Casaverano source never appears in ZenEco nurture copy", () => 
   });
   assert.doesNotMatch(rendered, /casaverano/i);
   assert.match(rendered, /Zen Eco Homes/i);
+});
+
+
+test("all nurture booking emails use the public working ZenEco request page", () => {
+  for (const [brand, source] of [
+    ["zeneco", "zenecohomes-public"],
+    ["zeneco", "zenecohomes-en"],
+    ["zeneco", "zenecohomes-de"],
+    ["soleada", "soleada-import"],
+  ] as const) {
+    const sequence = resolveSequence(brand, source);
+    assert.ok(sequence, `Missing nurture sequence for ${brand}/${source}`);
+    assert.equal(sequence.bookingUrl, ZENECO_BOOKING_REQUEST_URL);
+    assert.doesNotMatch(sequence.bookingUrl, /appointment\.chatgenius\.pro/);
+    const bookingSteps = sequence.steps.filter((item) => item.text.includes("{booking_url}"));
+    assert.ok(bookingSteps.length > 0, `No booking step for ${brand}/${source}`);
+    for (const bookingStep of bookingSteps) {
+      const rendered = renderTemplate(bookingStep.text, { booking_url: sequence.bookingUrl });
+      assert.match(rendered, /https:\/\/www\.zenecohomes\.com\/booking/);
+      assert.doesNotMatch(rendered, /appointment\.chatgenius\.pro|Book et tidspunkt|Book a time|Buchen Sie einen passenden Termin/);
+    }
+  }
 });
