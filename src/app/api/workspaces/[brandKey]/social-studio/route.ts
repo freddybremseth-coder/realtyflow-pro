@@ -1540,6 +1540,66 @@ export async function POST(
       }
     }
 
+    if (action === "advisor_composite_approve") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const assetId = clean(body.assetId, 80);
+      const propertyId = clean(body.propertyId, 80);
+      const review = body.review as Record<string, unknown> | null;
+      if (!UUID_RE.test(assetId) || !UUID_RE.test(propertyId) ||
+          !review || review.identity !== true || review.property !== true || review.perspective !== true) {
+        return fail(400, "ADVISOR_MANUAL_REVIEW_REQUIRED");
+      }
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: asset, error: assetError } = await access.value.supabase
+        .from("media_assets")
+        .select("id,job_id,brand_id,property_id,organization_id,public_url,ai_generated,ai_edited,metadata_json")
+        .eq("id", assetId)
+        .eq("brand_id", params.brandKey)
+        .eq("organization_id", organizationId)
+        .eq("property_id", propertyId)
+        .eq("ai_generated", true)
+        .eq("ai_edited", true)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (assetError || !asset?.id || !asset.job_id) return fail(404, "ADVISOR_ASSET_NOT_FOUND");
+      const { data: job, error: jobError } = await access.value.supabase
+        .from("media_generation_jobs")
+        .select("id,brand_id,property_id,organization_id,operation,status,idempotency_key")
+        .eq("id", asset.job_id)
+        .eq("brand_id", params.brandKey)
+        .eq("property_id", propertyId)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      if (jobError || !job?.id || job.status !== "completed" ||
+          job.operation !== "image_to_image" ||
+          !String(job.idempotency_key || "").startsWith("advisor-composite:")) {
+        return fail(409, "ADVISOR_JOB_NOT_APPROVABLE");
+      }
+      const metadata = asset.metadata_json && typeof asset.metadata_json === "object" &&
+        !Array.isArray(asset.metadata_json) ? asset.metadata_json : {};
+      const timestamp = new Date().toISOString();
+      const approval = {
+        approved: true,
+        approvedAt: timestamp,
+        approvedBy: access.value.verifiedEmail,
+        propertyId,
+        checks: { identity: true, property: true, perspective: true },
+        disclosure: "AI-illustrasjon – rådgiveren er digitalt plassert i boligbildet",
+      };
+      const { error: saveError } = await access.value.supabase
+        .from("media_assets")
+        .update({ metadata_json: { ...metadata, advisorManualApproval: approval } })
+        .eq("id", assetId)
+        .eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey);
+      if (saveError) return fail(503, "ADVISOR_APPROVAL_SAVE_FAILED");
+      return NextResponse.json({
+        ok: true, assetId, imageUrl: asset.public_url, approvedAt: timestamp,
+        requiresDisclosure: true,
+      }, { headers: noStore });
+    }
+
     if (action === "advisor_composite_status") {
       const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
       if (!propertyAccess.value) return propertyAccess.response;
