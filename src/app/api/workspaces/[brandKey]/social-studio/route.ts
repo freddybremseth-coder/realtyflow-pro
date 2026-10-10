@@ -1449,6 +1449,30 @@ export async function POST(
       }, { headers: noStore });
     }
 
+    if (action === "advisor_visual_options") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const propertyLookup = clean(body.propertyLookup, 100);
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
+      const candidates = propertyMediaUrls(property).slice(0, 24).map((url, index) => ({
+        id: String(index),
+        imageUrl: url,
+        isPrimary: url === property.primary_image,
+        // Ranking is provisional: human selection remains required until visual analysis is integrated.
+        rank: index + 1,
+        placement: "manual" as const,
+      }));
+      return NextResponse.json({
+        ok: true,
+        propertyId: property.id,
+        selectionMode: "manual",
+        generated: false,
+        candidates,
+        outfits: ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"],
+        disclosure: "AI-illustrasjon – rådgiver digitalt plassert i boligbildet",
+      }, { headers: noStore });
+    }
+
     if (action === "generate_concept_image") {
       const conceptId = clean(body.conceptId, 40);
       const sourceType = clean(body.sourceType, 20);
