@@ -163,6 +163,8 @@ export function WorkspaceSocialStudio({
   const generationRequestEpoch = useRef(0);
   const advisorCandidatesEpoch = useRef(0);
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
+  const [advisorStagedAssetIds, setAdvisorStagedAssetIds] = useState<Record<string, string>>({});
+  const [advisorApproving, setAdvisorApproving] = useState("");
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
   const [advisorTake, setAdvisorTake] = useState<Record<string, number>>({});
   const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
@@ -398,6 +400,8 @@ export function WorkspaceSocialStudio({
   // Changing any input invalidates staged/approved images to prevent stale approvals.
   useEffect(() => {
     setAdvisorStaged({});
+    setAdvisorStagedAssetIds({});
+    setAdvisorApproving("");
     setAdvisorApproved({});
     setAdvisorReview({});
     setAdvisorTake({});
@@ -464,6 +468,7 @@ export function WorkspaceSocialStudio({
     setAdvisorError("");
     setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    setAdvisorStagedAssetIds(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
 
@@ -477,7 +482,7 @@ export function WorkspaceSocialStudio({
       if (!response.ok) {
         throw new Error(body?.error?.message || body?.message || body?.error?.code || "Kunne ikke fullføre bildejobben.");
       }
-      return body as { imageUrl?: string | null; jobId?: string; status?: string; warning?: string };
+      return body as { imageUrl?: string | null; assetId?: string | null; jobId?: string; status?: string; warning?: string };
     };
 
     try {
@@ -504,6 +509,8 @@ export function WorkspaceSocialStudio({
         throw new Error("Bildebehandlingen pågår fortsatt. Jobben er lagret; prøv igjen senere. Ingenting er godkjent eller publisert.");
       }
       if (requestEpoch !== advisorRequestEpoch.current) return;
+      if (!result.assetId) throw new Error("Bildet mangler registrert medie-ID og kan ikke godkjennes.");
+      setAdvisorStagedAssetIds(current => ({ ...current, [variant.id]: String(result.assetId) }));
       setAdvisorStaged(current => ({ ...current, [variant.id]: String(result.imageUrl) }));
       setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
     } catch (cause) {
@@ -512,6 +519,40 @@ export function WorkspaceSocialStudio({
       }
     } finally {
       if (requestEpoch === advisorRequestEpoch.current) setAdvisorWorking("");
+    }
+  }
+
+  async function approveAdvisorComposite(variant: Variant) {
+    const currentReview = advisorReview[variant.id];
+    const assetId = advisorStagedAssetIds[variant.id];
+    const imageUrl = advisorStaged[variant.id];
+    if (!currentReview?.identity || !currentReview?.property || !currentReview?.perspective ||
+        !assetId || !imageUrl || !source?.propertyId || advisorApproving) return;
+    const requestEpoch = advisorRequestEpoch.current;
+    setAdvisorApproving(variant.id);
+    setAdvisorError("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "advisor_composite_approve", assetId, propertyId: source.propertyId,
+          review: { identity: true, property: true, perspective: true },
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.imageUrl !== imageUrl) {
+        throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke lagre godkjenningen på mediefilen.");
+      }
+      if (requestEpoch !== advisorRequestEpoch.current) return;
+      setAdvisorApproved(current => ({ ...current, [variant.id]: imageUrl }));
+      setPreviews(current => ({ ...current, [variant.id]: imageUrl }));
+      setVisualFormats(current => ({ ...current, [variant.id]: "single_image" }));
+    } catch (cause) {
+      if (requestEpoch === advisorRequestEpoch.current) {
+        setAdvisorError(cause instanceof Error ? cause.message : "Godkjenningen kunne ikke lagres.");
+      }
+    } finally {
+      if (requestEpoch === advisorRequestEpoch.current) setAdvisorApproving("");
     }
   }
 
@@ -612,6 +653,7 @@ export function WorkspaceSocialStudio({
     setVisualFormats({});
     setPreviews({});
     setAdvisorStaged({});
+    setAdvisorStagedAssetIds({});
     setAdvisorApproved({});
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
@@ -1460,6 +1502,7 @@ export function WorkspaceSocialStudio({
             {(advisorStaged[variant.id] || advisorApproved[variant.id]) && <button type="button" className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300"
               onClick={() => {
                 setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setAdvisorStagedAssetIds(current => { const next = { ...current }; delete next[variant.id]; return next; });
                 setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
                 setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
                 setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
@@ -1490,11 +1533,11 @@ export function WorkspaceSocialStudio({
                 {label}
               </label>)}
             </div>
-            <button type="button" disabled={!advisorReview[variant.id]?.identity || !advisorReview[variant.id]?.property || !advisorReview[variant.id]?.perspective} className="rounded-lg bg-cyan-800 px-3 py-2 text-xs text-white disabled:opacity-40" onClick={() => {
-              setAdvisorApproved(current => ({ ...current, [variant.id]: advisorStaged[variant.id] }));
-              setPreviews(current => ({ ...current, [variant.id]: advisorStaged[variant.id] }));
-              setVisualFormats(current => ({ ...current, [variant.id]: "single_image" }));
-            }}>Godkjenn bildet til utkast</button>
+            <button type="button" disabled={!advisorReview[variant.id]?.identity || !advisorReview[variant.id]?.property || !advisorReview[variant.id]?.perspective || !advisorStagedAssetIds[variant.id] || Boolean(advisorApproving)}
+              className="rounded-lg bg-cyan-800 px-3 py-2 text-xs text-white disabled:opacity-40"
+              onClick={() => void approveAdvisorComposite(variant)}>
+              {advisorApproving === variant.id ? "Lagrer godkjenning …" : "Godkjenn bildet til utkast"}
+            </button>
           </div>}
           {advisorApproved[variant.id] && <p className="mt-2 text-xs text-emerald-300">Komposisjon valgt til utkast. Merk publiseringen som AI-illustrasjon.</p>}
           {advisorError && <p role="alert" className="mt-2 text-xs text-rose-300">{advisorError}</p>}
