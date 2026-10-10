@@ -1,4 +1,5 @@
 "use client";
+import { ReferenceMediaPicker } from "@/components/media-studio/reference-media-picker";
 import { protectHumanText } from "@/lib/ui/protected-human-text";
 
 import { useEffect, useMemo, useState } from "react";
@@ -153,6 +154,12 @@ export function WorkspaceSocialStudio({
   const [sourceType, setSourceType] = useState<SourceType>("topic");
   const [propertyLookup, setPropertyLookup] = useState("");
   const [advisorMode, setAdvisorMode] = useState(false);
+  const [advisorReferenceUrl, setAdvisorReferenceUrl] = useState("");
+  const [advisorConsent, setAdvisorConsent] = useState(false);
+  const [advisorPose, setAdvisorPose] = useState("relaxed");
+  const [advisorWorking, setAdvisorWorking] = useState("");
+  const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
+  const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
   const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number }>>([]);
   const [advisorChosenImage, setAdvisorChosenImage] = useState("");
@@ -371,6 +378,39 @@ export function WorkspaceSocialStudio({
     void loadEditorialContent();
   }, [sourceType, brandKey, companionPropertyLookup, propertyContext?.id]);
 
+  async function createAdvisorComposite(variant: Variant) {
+    if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
+    setAdvisorWorking(variant.id);
+    setAdvisorError("");
+    try {
+      let completedImage = "";
+      for (let attempt = 0; attempt < 16; attempt++) {
+        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 5000));
+        const res = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "advisor_composite_create", propertyLookup: propertyLookup.trim(),
+            sourceImageUrl: advisorChosenImage, identityAssetUrl: advisorReferenceUrl,
+            confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose,
+            variantId: variant.id, channel: activePlatforms.has("instagram") ? "instagram" : "facebook",
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke generere komposisjonen.");
+        if (body.imageUrl) { completedImage = String(body.imageUrl); break; }
+        if (["failed", "cancelled", "expired"].includes(String(body.status))) throw new Error(body.warning || "Bildegenereringen feilet.");
+      }
+      if (!completedImage) throw new Error("Bildebehandlingen tar lengre tid. Prøv igjen senere.");
+      setAdvisorStaged(current => ({ ...current, [variant.id]: completedImage }));
+      setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    } catch (cause) {
+      setAdvisorError(cause instanceof Error ? cause.message : "Bildegenerering feilet.");
+    } finally {
+      setAdvisorWorking("");
+    }
+  }
+
   async function loadAdvisorCandidates() {
     if (!propertyLookup.trim() || advisorLoading) return;
     setAdvisorLoading(true);
@@ -515,6 +555,7 @@ export function WorkspaceSocialStudio({
       return { imageUrl: source?.imageUrl || imageUrl.trim(), fallback: false, visualFormat: "single_image" as VisualFormat };
     }
 
+    if (advisorApproved[variant.id]) return { imageUrl: advisorApproved[variant.id], fallback: false, visualFormat: "single_image" as VisualFormat };
     const visualFormat = visualFormats[variant.id] || "property_card";
     const selectedSourceImage = source.variantImages?.[variant.id] || source.imageUrl || "";
     if (visualFormat === "single_image") {
@@ -1085,6 +1126,9 @@ export function WorkspaceSocialStudio({
           </label>
           <p className="mt-2 text-xs leading-5 text-slate-400">Velg boligfoto og antrekk for en senere AI-komposisjon. Selve innsettingen er ikke aktiv ennå. Vanlige SoMe-forslag fungerer som før.</p>
           {advisorMode && <div className="mt-3 space-y-3">
+            <ReferenceMediaPicker value={advisorReferenceUrl} onChange={setAdvisorReferenceUrl} brandId={brandKey} title="Godkjent rådgiverportrett" description="Last opp originalportrettet eller velg et godkjent referansebilde fra Media Library. Det må tilhøre samme merkevare." />
+            <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={advisorConsent} onChange={event => setAdvisorConsent(event.target.checked)} />Jeg bekrefter at jeg har rett til å bruke dette personbildet og samtykke til AI-redigering.</label>
+            <label className="block text-xs text-slate-300">Positur<select value={advisorPose} onChange={event => setAdvisorPose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="relaxed">Avslappet</option><option value="presenting">Presenterer boligen</option><option value="standing">Stående</option></select></label>
             <label className="block text-xs text-slate-300">Antrekk
               <select value={advisorOutfit} onChange={(event) => setAdvisorOutfit(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm">
                 <option value="navy_armani">Marineblå dress · aviator</option>
@@ -1193,6 +1237,25 @@ export function WorkspaceSocialStudio({
           <span className="font-semibold text-slate-200">Visuell retning:</span> {protectHumanText(variant.visualDirection)}
         </p>
 
+        {source?.type === "property" && advisorMode && <div className="mt-3 rounded-xl border border-cyan-900/60 p-3">
+          <p className="text-xs text-slate-300">Megler i bildet · generert AI-illustrasjon</p>
+          <button type="button" onClick={() => void createAdvisorComposite(variant)}
+            disabled={!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || Boolean(advisorWorking)}
+            className="mt-2 rounded-lg border border-cyan-600 px-3 py-2 text-sm text-cyan-100 disabled:opacity-40">
+            {advisorWorking === variant.id ? "Genererer bilde …" : "Lag bilde med meg"}
+          </button>
+          {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
+            <img src={advisorStaged[variant.id]} alt="AI-komposisjon til manuell vurdering" className="max-h-80 w-full rounded-lg object-contain" />
+            <p className="text-xs text-amber-200">AI-illustrasjon – rådgiver digitalt plassert i boligbildet. Kontroller person, perspektiv og uendret bolig før godkjenning.</p>
+            <button type="button" className="rounded-lg bg-cyan-800 px-3 py-2 text-xs text-white" onClick={() => {
+              setAdvisorApproved(current => ({ ...current, [variant.id]: advisorStaged[variant.id] }));
+              setPreviews(current => ({ ...current, [variant.id]: advisorStaged[variant.id] }));
+              setVisualFormats(current => ({ ...current, [variant.id]: "single_image" }));
+            }}>Godkjenn bildet til utkast</button>
+          </div>}
+          {advisorApproved[variant.id] && <p className="mt-2 text-xs text-emerald-300">Komposisjon valgt til utkast. Merk publiseringen som AI-illustrasjon.</p>}
+          {advisorError && <p role="alert" className="mt-2 text-xs text-rose-300">{advisorError}</p>}
+        </div>}
         {source?.type === "property" && <div className="mt-3 space-y-3">
           <label className="block text-xs text-slate-300">Visuelt format
             <select value={visualFormats[variant.id] || "property_card"}
