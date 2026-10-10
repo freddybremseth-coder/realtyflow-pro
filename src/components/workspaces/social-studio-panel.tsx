@@ -390,6 +390,8 @@ export function WorkspaceSocialStudio({
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
     setAdvisorWorking(variant.id);
     setAdvisorError("");
+    setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
     try {
       let completedImage = "";
       for (let attempt = 0; attempt < 16; attempt++) {
@@ -457,6 +459,8 @@ export function WorkspaceSocialStudio({
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
+    setAdvisorStaged({});
+    setAdvisorApproved({});
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
         method: "POST",
@@ -1264,7 +1268,10 @@ export function WorkspaceSocialStudio({
             {advisorWorking === variant.id ? "Genererer bilde …" : "Lag bilde med meg"}
           </button>
           {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
-            <img src={advisorStaged[variant.id]} alt="AI-komposisjon til manuell vurdering" className="max-h-80 w-full rounded-lg object-contain" />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <figure><img src={advisorChosenImage} alt="Originalt boligfoto" className="aspect-[4/5] w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-slate-400">Originalboligen</figcaption></figure>
+              <figure><img src={advisorStaged[variant.id]} alt="AI-komposisjon til manuell vurdering" className="aspect-[4/5] w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-amber-200">AI-illustrasjon med rådgiver</figcaption></figure>
+            </div>
             <p className="text-xs text-amber-200">AI-illustrasjon – rådgiver digitalt plassert i boligbildet. Kontroller person, perspektiv og uendret bolig før godkjenning.</p>
             <button type="button" className="rounded-lg bg-cyan-800 px-3 py-2 text-xs text-white" onClick={() => {
               setAdvisorApproved(current => ({ ...current, [variant.id]: advisorStaged[variant.id] }));
