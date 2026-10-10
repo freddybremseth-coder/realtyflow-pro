@@ -441,3 +441,10 @@ test("Advisor visual analysis bounds image downloads and rejects unsafe network 
   assert.match(advisorPhotoAnalysis, /const maxBytes = 7 \* 1024 \* 1024/);
   assert.match(advisorPhotoAnalysis, /ADVISOR_PHOTO_URL_UNSAFE/);
 });
+
+test("Instagram carousel discloses AI visual if advisor appears on any slide", () => {
+  assert.match(studio, /const containsAdvisorComposite = variants\.some\(item => Boolean\(advisorApproved\[item\.id\]\)\)/);
+  assert.match(studio, /containsAdvisorComposite,/);
+  assert.match(studio, /const hasAdvisorComposite = Boolean\(advisorApproved\[variant\.id\] \|\| options\.containsAdvisorComposite\)/);
+  assert.match(studio, /hasAdvisorComposite \? \["ai-advisor-composite", "ai-illustration"\]/);
+});
