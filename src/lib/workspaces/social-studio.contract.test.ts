@@ -406,3 +406,19 @@ test("Advisor status polling refreshes scoped image jobs without creating duplic
   assert.match(studio, /jobId: created\.jobId/);
   assert.match(studio, /Submit once\. All later requests ONLY refresh/);
 });
+
+test("Advisor visual review is opt-in, single-image and gated by the property catalogue", () => {
+  assert.match(route, /action === "advisor_visual_analyze"/);
+  assert.match(route, /ADVISOR_PHOTO_NOT_IN_LISTING/);
+  assert.match(route, /reviewAdvisorPhoto\(sourceImageUrl\)/);
+  assert.match(studio, /AI-vurder valgt boligfoto/);
+  assert.match(studio, /action: "advisor_visual_analyze"/);
+});
+
+test("Advisor photo concepts have distinct visual instructions and explicitly review before save", () => {
+  assert.match(route, /const conceptDirection/);
+  assert.match(route, /architecture-first composition/);
+  assert.match(route, /Candid Mediterranean lifestyle composition/);
+  assert.match(route, /Confident but understated property-advisor stance/);
+  assert.match(studio, /Godkjenn bildet til utkast/);
+});
