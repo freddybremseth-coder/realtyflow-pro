@@ -162,6 +162,7 @@ export function WorkspaceSocialStudio({
   const advisorRequestEpoch = useRef(0);
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
+  const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
   const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number; reason?: string }>>([]);
   const [advisorChosenImage, setAdvisorChosenImage] = useState("");
@@ -385,6 +386,8 @@ export function WorkspaceSocialStudio({
   useEffect(() => {
     setAdvisorStaged({});
     setAdvisorApproved({});
+    setAdvisorReview({});
+    setAdvisorReview({});
     setPreviews({});
     advisorRequestEpoch.current += 1;
   }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup]);
@@ -392,6 +395,7 @@ export function WorkspaceSocialStudio({
   async function createAdvisorComposite(variant: Variant) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
     setAdvisorWorking(variant.id);
+    setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
     const requestEpoch = advisorRequestEpoch.current;
     setAdvisorError("");
     setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
@@ -1280,7 +1284,23 @@ export function WorkspaceSocialStudio({
               <figure><img src={advisorStaged[variant.id]} alt="AI-komposisjon til manuell vurdering" className="aspect-[4/5] w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-amber-200">AI-illustrasjon med rådgiver</figcaption></figure>
             </div>
             <p className="text-xs text-amber-200">AI-illustrasjon – rådgiver digitalt plassert i boligbildet. Kontroller person, perspektiv og uendret bolig før godkjenning.</p>
-            <button type="button" className="rounded-lg bg-cyan-800 px-3 py-2 text-xs text-white" onClick={() => {
+            <div className="space-y-2 rounded-lg border border-slate-700 p-3">
+              {([
+                ["identity", "Ansiktet mitt er gjenkjennelig og naturlig"],
+                ["property", "Fasade, vinduer, rom og utsikt er riktig gjengitt"],
+                ["perspective", "Størrelse, perspektiv, lys og skygger virker realistiske"],
+              ] as const).map(([key, label]) => <label key={key} className="flex items-start gap-2 text-xs text-slate-200">
+                <input type="checkbox" checked={advisorReview[variant.id]?.[key] || false} onChange={event =>
+                  setAdvisorReview(current => ({ ...current, [variant.id]: {
+                    identity: current[variant.id]?.identity || false,
+                    property: current[variant.id]?.property || false,
+                    perspective: current[variant.id]?.perspective || false,
+                    [key]: event.target.checked,
+                  } }))} />
+                {label}
+              </label>)}
+            </div>
+            <button type="button" disabled={!advisorReview[variant.id]?.identity || !advisorReview[variant.id]?.property || !advisorReview[variant.id]?.perspective} className="rounded-lg bg-cyan-800 px-3 py-2 text-xs text-white disabled:opacity-40" onClick={() => {
               setAdvisorApproved(current => ({ ...current, [variant.id]: advisorStaged[variant.id] }));
               setPreviews(current => ({ ...current, [variant.id]: advisorStaged[variant.id] }));
               setVisualFormats(current => ({ ...current, [variant.id]: "single_image" }));
