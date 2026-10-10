@@ -396,37 +396,56 @@ export function WorkspaceSocialStudio({
   async function createAdvisorComposite(variant: Variant) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
     setAdvisorWorking(variant.id);
-    setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
     const requestEpoch = advisorRequestEpoch.current;
     setAdvisorError("");
+    setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
-    try {
-      let completedImage = "";
-      for (let attempt = 0; attempt < 16; attempt++) {
-        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 5000));
-        const res = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "advisor_composite_create", propertyLookup: propertyLookup.trim(),
-            sourceImageUrl: advisorChosenImage, identityAssetUrl: advisorReferenceUrl,
-            confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose, placement: advisorPlacement,
-            variantId: variant.id, channel: activePlatforms.has("instagram") ? "instagram" : "facebook",
-          }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke generere komposisjonen.");
-        if (body.imageUrl) { completedImage = String(body.imageUrl); break; }
-        if (["failed", "cancelled", "expired"].includes(String(body.status))) throw new Error(body.warning || "Bildegenereringen feilet.");
+
+    const request = async (payload: Record<string, unknown>) => {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.error?.message || body?.message || body?.error?.code || "Kunne ikke fullføre bildejobben.");
       }
-      if (!completedImage) throw new Error("Bildebehandlingen er fortsatt ikke ferdig. Jobben er lagret; forsøk igjen senere. Ingen bilder er godkjent eller publisert.");
-      if (requestEpoch !== advisorRequestEpoch.current) return; // inputs changed while job was running
-      setAdvisorStaged(current => ({ ...current, [variant.id]: completedImage }));
+      return body as { imageUrl?: string | null; jobId?: string; status?: string; warning?: string };
+    };
+
+    try {
+      // Submit once. All later requests ONLY refresh an existing job; never resubmit in a poll.
+      const created = await request({
+        action: "advisor_composite_create", propertyLookup: propertyLookup.trim(),
+        sourceImageUrl: advisorChosenImage, identityAssetUrl: advisorReferenceUrl,
+        confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose,
+        placement: advisorPlacement, variantId: variant.id,
+        channel: activePlatforms.has("instagram") ? "instagram" : "facebook",
+      });
+      if (requestEpoch !== advisorRequestEpoch.current) return;
+      if (!created.jobId) throw new Error("RealtyFlow returnerte ingen jobb-ID.");
+      let result = created;
+      for (let attempt = 0; attempt < 16 && !result.imageUrl; attempt++) {
+        if (["failed", "cancelled", "expired"].includes(String(result.status))) {
+          throw new Error(result.warning || "Bildegenereringen feilet.");
+        }
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        if (requestEpoch !== advisorRequestEpoch.current) return;
+        result = await request({ action: "advisor_composite_status", jobId: created.jobId });
+      }
+      if (!result.imageUrl) {
+        throw new Error("Bildebehandlingen pågår fortsatt. Jobben er lagret; prøv igjen senere. Ingenting er godkjent eller publisert.");
+      }
+      if (requestEpoch !== advisorRequestEpoch.current) return;
+      setAdvisorStaged(current => ({ ...current, [variant.id]: String(result.imageUrl) }));
       setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
     } catch (cause) {
-      if (requestEpoch === advisorRequestEpoch.current) setAdvisorError(cause instanceof Error ? cause.message : "Bildegenerering feilet.");
+      if (requestEpoch === advisorRequestEpoch.current) {
+        setAdvisorError(cause instanceof Error ? cause.message : "Bildegenerering feilet.");
+      }
     } finally {
       setAdvisorWorking("");
     }
