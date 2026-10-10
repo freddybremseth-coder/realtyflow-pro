@@ -978,7 +978,7 @@ export function WorkspaceSocialStudio({
         strategyPeriodId: strategy?.strategyPeriodId || "",
         strategyRecommendationReason: strategy?.recommendationReason || "",
         packageId: options.packageId || "",
-        aiGeneratedImage: source?.type !== "property" && Boolean(previews[variant.id]),
+        aiGeneratedImage: Boolean(hasAdvisorComposite || (source?.type !== "property" && previews[variant.id])),
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -1599,6 +1599,7 @@ export function WorkspaceSocialStudio({
         {source?.type === "property" && <div className="mt-3 space-y-3">
           <label className="block text-xs text-slate-300">Visuelt format
             <select value={visualFormats[variant.id] || "property_card"}
+              disabled={Boolean(advisorApproved[variant.id])}
               onChange={(event) => {
                 setVisualFormats(current => ({ ...current, [variant.id]: event.target.value as VisualFormat }));
                 setPreviews(current => {
@@ -1612,6 +1613,7 @@ export function WorkspaceSocialStudio({
               <option value="property_card">Profesjonelt eiendomskort</option>
               <option value="collage_3" disabled={(source?.propertyImageCount || 0) < 3}>3-bilders kollasje{(source?.propertyImageCount || 0) < 3 ? " · trenger 3 bilder" : ""}</option>
             </select>
+            {advisorApproved[variant.id] && <p className="mt-1 text-xs text-amber-200">For å bytte bildeformat må du først velge «Forkast AI-bildet og bruk vanlig eiendomskort».</p>}
           </label>
 
           {(visualFormats[variant.id] || "property_card") === "property_card" && <label className="block text-xs text-slate-300">Eiendomsmal
