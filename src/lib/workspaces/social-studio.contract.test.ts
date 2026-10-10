@@ -522,3 +522,10 @@ test("Content Hub carousel images cannot use approved advisor composites from an
   assert.match(contentHubMedia, /advisorCompositeHasManualApproval\(auth\.supabase!, body\.source_url, auth\.draft!\.brand_id \|\| undefined\)/);
   assert.match(advisorMediaApproval, /brandKey && asset\.brand_id !== brandKey/);
 });
+
+test("Advisor composites are marked AI-generated in persisted Content Hub metadata", () => {
+  assert.match(studio, /aiGeneratedImage: Boolean\(hasAdvisorComposite \|\|/);
+  assert.match(studio, /const containsAdvisorComposite = variants\.some\(item => Boolean\(advisorApproved\[item\.id\]\)\)/);
+  assert.match(marketing, /ai_generated: aiGeneratedImage/);
+  assert.match(studio, /disabled=\{Boolean\(advisorApproved\[variant\.id\]\)\}/);
+});
