@@ -234,6 +234,19 @@ export function WorkspaceSocialStudio({
     setAreaLookup("");
     // Prefer the canonical property reference when available. Inventory can contain
     // non-UUID local/import IDs, while the server accepts either UUID or unique ref.
+    generationRequestEpoch.current += 1;
+    advisorRequestEpoch.current += 1;
+    advisorCandidatesEpoch.current += 1;
+    setAdvisorCandidatePropertyId("");
+    setAdvisorCandidates([]);
+    setAdvisorChosenImage("");
+    setAdvisorRankBusy(false);
+    setAdvisorRankNotice("");
+    setAdvisorStaged({});
+    setAdvisorStagedAssetIds({});
+    setAdvisorApproved({});
+    setAdvisorReview({});
+    setAdvisorTake({});
     setPropertyLookup(initialProperty.ref || initialProperty.id);
     setPropertyLabel([
       initialProperty.title || initialProperty.ref || "Bolig",
@@ -404,6 +417,7 @@ export function WorkspaceSocialStudio({
     setAdvisorStaged({});
     setAdvisorStagedAssetIds({});
     setAdvisorApproving("");
+    setAdvisorRevoking("");
     setAdvisorApproved({});
     setAdvisorApprovalNotice("");
     setAdvisorReview({});
@@ -693,7 +707,9 @@ export function WorkspaceSocialStudio({
     setPreviews({});
     setAdvisorStaged({});
     setAdvisorStagedAssetIds({});
+    setAdvisorTake({});
     setAdvisorApproved({});
+    setAdvisorApprovalNotice("");
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
         method: "POST",
