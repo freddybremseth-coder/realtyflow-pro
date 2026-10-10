@@ -1430,10 +1430,13 @@ export function WorkspaceSocialStudio({
         {source?.type === "property" && advisorMode && <div className="mt-3 rounded-xl border border-cyan-900/60 p-3">
           <p className="text-xs text-slate-300">Megler i bildet · generert AI-illustrasjon</p>
           <button type="button" onClick={() => void createAdvisorComposite(variant)}
-            disabled={!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || Boolean(advisorWorking)}
+            disabled={!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || Boolean(advisorWorking) ||
+              !advisorCandidatePropertyId || source.propertyId !== advisorCandidatePropertyId}
             className="mt-2 rounded-lg border border-cyan-600 px-3 py-2 text-sm text-cyan-100 disabled:opacity-40">
             {advisorWorking === variant.id ? "Genererer bilde …" : "Lag bilde med meg"}
           </button>
+          {advisorChosenImage && advisorCandidatePropertyId && source.propertyId !== advisorCandidatePropertyId &&
+            <p className="mt-2 text-xs text-amber-200" role="status">Boligbildet og SoMe-forslaget gjelder ulike eiendommer. Hent bilder for riktig eiendom og lag nye forslag.</p>}
           {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <figure><img src={advisorChosenImage} alt="Originalt boligfoto" className="aspect-[4/5] w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-slate-400">Originalboligen</figcaption></figure>
