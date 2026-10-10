@@ -157,6 +157,7 @@ export function WorkspaceSocialStudio({
   const [advisorReferenceUrl, setAdvisorReferenceUrl] = useState("");
   const [advisorConsent, setAdvisorConsent] = useState(false);
   const [advisorPose, setAdvisorPose] = useState("relaxed");
+  const [advisorPlacement, setAdvisorPlacement] = useState("auto");
   const [advisorWorking, setAdvisorWorking] = useState("");
   const advisorRequestEpoch = useRef(0);
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
@@ -386,7 +387,7 @@ export function WorkspaceSocialStudio({
     setAdvisorApproved({});
     setPreviews({});
     advisorRequestEpoch.current += 1;
-  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorReferenceUrl, propertyLookup]);
+  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup]);
 
   async function createAdvisorComposite(variant: Variant) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
@@ -405,7 +406,7 @@ export function WorkspaceSocialStudio({
           body: JSON.stringify({
             action: "advisor_composite_create", propertyLookup: propertyLookup.trim(),
             sourceImageUrl: advisorChosenImage, identityAssetUrl: advisorReferenceUrl,
-            confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose,
+            confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose, placement: advisorPlacement,
             variantId: variant.id, channel: activePlatforms.has("instagram") ? "instagram" : "facebook",
           }),
         });
@@ -1156,6 +1157,7 @@ export function WorkspaceSocialStudio({
             <ReferenceMediaPicker value={advisorReferenceUrl} onChange={setAdvisorReferenceUrl} brandId={brandKey} title="Godkjent rådgiverportrett" description="Last opp originalportrettet eller velg et godkjent referansebilde fra Media Library. Det må tilhøre samme merkevare." />
             <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={advisorConsent} onChange={event => setAdvisorConsent(event.target.checked)} />Jeg bekrefter at jeg har rett til å bruke dette personbildet og samtykke til AI-redigering.</label>
             <label className="block text-xs text-slate-300">Positur<select value={advisorPose} onChange={event => setAdvisorPose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="relaxed">Avslappet</option><option value="presenting">Presenterer boligen</option><option value="standing">Stående</option></select></label>
+            <label className="block text-xs text-slate-300">Plassering i bildet<select value={advisorPlacement} onChange={event => setAdvisorPlacement(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="auto">La AI velge trygg plassering</option><option value="left">Venstre</option><option value="right">Høyre</option><option value="center">Midten</option></select></label>
             <label className="block text-xs text-slate-300">Antrekk
               <select value={advisorOutfit} onChange={(event) => setAdvisorOutfit(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm">
                 <option value="navy_armani">Marineblå dress · aviator</option>
