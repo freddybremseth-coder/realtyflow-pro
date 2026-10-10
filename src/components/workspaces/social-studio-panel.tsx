@@ -1305,7 +1305,7 @@ export function WorkspaceSocialStudio({
             {advisorRankNotice && <p className="text-xs text-cyan-200" role="status">{advisorRankNotice}</p>}
             {advisorError && <p role="alert" className="text-xs text-rose-300">{advisorError}</p>}
             {advisorCandidates.length > 0 && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {advisorCandidates.slice(0, 9).map((candidate) => <button key={candidate.id} type="button" onClick={() => setAdvisorChosenImage(candidate.imageUrl)} className={`overflow-hidden rounded-lg border-2 text-left ${advisorChosenImage === candidate.imageUrl ? "border-cyan-400" : "border-slate-700"}`}>
+              {advisorCandidates.slice(0, 9).map((candidate) => <button key={candidate.id} type="button" onClick={() => { advisorCandidatesEpoch.current += 1; setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorChosenImage(candidate.imageUrl); }} className={`overflow-hidden rounded-lg border-2 text-left ${advisorChosenImage === candidate.imageUrl ? "border-cyan-400" : "border-slate-700"}`}>
                 <img src={candidate.imageUrl} alt={`Boligfoto ${candidate.rank}`} className="aspect-[4/3] w-full object-cover" />
                 <span className="block p-1 text-xs text-slate-300">{advisorChosenImage === candidate.imageUrl ? "Valgt" : "Velg bilde"} · {candidate.reason || "Ikke vurdert"}</span>
               </button>)}
