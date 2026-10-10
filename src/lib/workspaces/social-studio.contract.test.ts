@@ -471,3 +471,10 @@ test("Advisor image generation requires same resolved property as generated SoMe
   assert.match(studio, /setAdvisorCandidatePropertyId\(typeof body\.propertyId === "string"/);
   assert.match(studio, /advisorRequestEpoch\.current \+= 1/);
 });
+
+test("Changing property clears old generated concepts and invalidates in-flight responses", () => {
+  assert.match(studio, /const generationRequestEpoch = useRef\(0\)/);
+  assert.match(studio, /const generationEpoch = \+\+generationRequestEpoch\.current/);
+  assert.match(studio, /if \(generationEpoch !== generationRequestEpoch\.current\) return/);
+  assert.match(studio, /setSource\(null\); setVariants\(\[\]\)/);
+});
