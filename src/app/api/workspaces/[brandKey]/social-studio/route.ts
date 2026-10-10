@@ -1548,6 +1548,13 @@ export async function POST(
           },
         });
         let job = result.job as Record<string, any>;
+        // A failed idempotent job must be retried explicitly rather than returned forever.
+        if (result.existing && ["failed", "expired", "cancelled"].includes(String(job.status))) {
+          job = await retryMediaJob(access.value.supabase, {
+            organizationId, actorEmail: access.value.verifiedEmail,
+            jobId: String(job.id),
+          }) as Record<string, any>;
+        }
         if (["submitted", "processing"].includes(String(job.status))) {
           job = await refreshMediaJob(access.value.supabase, {
             organizationId, actorEmail: access.value.verifiedEmail,
