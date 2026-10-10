@@ -162,7 +162,7 @@ export function WorkspaceSocialStudio({
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
-  const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number }>>([]);
+  const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number; reason?: string }>>([]);
   const [advisorChosenImage, setAdvisorChosenImage] = useState("");
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [advisorError, setAdvisorError] = useState("");
@@ -437,7 +437,7 @@ export function WorkspaceSocialStudio({
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error?.message || "Kunne ikke hente godkjente boligbilder.");
-      const candidates = Array.isArray(body.candidates) ? body.candidates as Array<{ id: string; imageUrl: string; rank: number }> : [];
+      const candidates = Array.isArray(body.candidates) ? body.candidates as Array<{ id: string; imageUrl: string; rank: number; reason?: string }> : [];
       setAdvisorCandidates(candidates);
       setAdvisorChosenImage(candidates[0]?.imageUrl || "");
     } catch (cause) {
@@ -1172,10 +1172,10 @@ export function WorkspaceSocialStudio({
             {advisorCandidates.length > 0 && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {advisorCandidates.slice(0, 9).map((candidate) => <button key={candidate.id} type="button" onClick={() => setAdvisorChosenImage(candidate.imageUrl)} className={`overflow-hidden rounded-lg border-2 text-left ${advisorChosenImage === candidate.imageUrl ? "border-cyan-400" : "border-slate-700"}`}>
                 <img src={candidate.imageUrl} alt={`Boligfoto ${candidate.rank}`} className="aspect-[4/3] w-full object-cover" />
-                <span className="block p-1 text-xs text-slate-300">{advisorChosenImage === candidate.imageUrl ? "Valgt" : "Velg bilde"}</span>
+                <span className="block p-1 text-xs text-slate-300">{advisorChosenImage === candidate.imageUrl ? "Valgt" : "Velg bilde"} · {candidate.reason || "Ikke vurdert"}</span>
               </button>)}
             </div>}
-            <p className="text-xs text-amber-200">Bildegenerering skjer først når du trykker «Lag bilde med meg» under et SoMe-forslag. Godkjenn bildet etter å ha kontrollert at boligen ikke er endret. Ingenting publiseres automatisk.</p>
+            <p className="text-xs text-amber-200">Bildene er foreløpig sortert etter filnavn, ikke faktisk bildeanalyse. Velg riktig motiv manuelt. Bildegenerering skjer først når du trykker «Lag bilde med meg» under et SoMe-forslag. Godkjenn bildet etter å ha kontrollert at boligen ikke er endret. Ingenting publiseres automatisk.</p>
           </div>}
         </div>
       </>}
