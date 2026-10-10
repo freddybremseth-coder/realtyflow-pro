@@ -541,7 +541,7 @@ export async function executePublishForDraft(
   const { draftId, platforms, content, brandId, imageUrl, socialChannelIds } = params;
   const supabase = getSupabase();
   const { data: publication, error: publicationError } = await supabase
-    .from("content_publications").select("visual_format,ai_image_url,tags").eq("id", draftId).eq("brand_id", brandId).maybeSingle();
+    .from("content_publications").select("visual_format,ai_image_url,tags,content_features").eq("id", draftId).eq("brand_id", brandId).maybeSingle();
   if (publicationError || !publication) throw new Error("Kunne ikke verifisere publiseringsutkastet.");
   let carouselUrls: string[] = [];
   if (publication.visual_format === "carousel") {
@@ -567,10 +567,23 @@ export async function executePublishForDraft(
   ));
   const taggedAdvisorComposite = Array.isArray(publication.tags) &&
     publication.tags.includes("ai-advisor-composite");
-  // Even if a media library record has been physically deleted, a tagged advisor
-  // draft must retain an identifiable, approved composite somewhere in its images.
+  // Asset IDs are recorded when the draft is created, and must survive edits to
+  // tags and cover images. Their absence fails closed for AI-tagged drafts.
+  const recordedAdvisorAssets = Array.isArray(publication.content_features?.advisor_assets)
+    ? publication.content_features.advisor_assets as Array<{ assetId?: string; imageUrl?: string }>
+    : [];
+  const recordedApprovalChecks = await Promise.all(recordedAdvisorAssets.map(async ref => {
+    if (!ref || typeof ref.assetId !== "string" || typeof ref.imageUrl !== "string" ||
+        !candidateImages.includes(ref.imageUrl)) return false;
+    const status = await advisorCompositeApprovalStatus(
+      supabase, ref.imageUrl, brandId, undefined, ref.assetId
+    );
+    return status.allowed && status.advisorFound;
+  }));
   if (approvalResults.some(result => !result.allowed) ||
-      (taggedAdvisorComposite && !approvalResults.some(result => result.advisorFound && result.allowed))) {
+      recordedApprovalChecks.some(allowed => !allowed) ||
+      (taggedAdvisorComposite && (!recordedAdvisorAssets.length ||
+        !approvalResults.some(result => result.advisorFound && result.allowed)))) {
     const reason = "ADVISOR_COMPOSITE_REVIEW_REVOKED: En godkjent rådgiverkomposisjon må være tilgjengelig før publisering.";
     await supabase.from("content_publications").update({
       status: "failed",
