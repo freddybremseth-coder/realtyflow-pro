@@ -1401,7 +1401,14 @@ export function WorkspaceSocialStudio({
         </label>
         <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
           <label className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-            <input type="checkbox" checked={advisorMode} onChange={(event) => setAdvisorMode(event.target.checked)} />
+            <input type="checkbox" checked={advisorMode}
+              onChange={(event) => {
+                if (!event.target.checked && Object.keys(advisorApproved).length > 0) {
+                  setAdvisorError("Trekk tilbake godkjenningen eller velg «Forkast AI-bildet» for alle aktive AI-bilder før du slår av denne modusen. Forkasting endrer ikke godkjenning som allerede er lagret på server.");
+                  return;
+                }
+                setAdvisorMode(event.target.checked);
+              }} />
             Megler i boligbildet (under utvikling)
           </label>
           <p className="mt-2 text-xs leading-5 text-slate-400">Velg referanseportrett, boligfoto, antrekk og positur. Generer et AI-bilde fra hvert SoMe-konsept og godkjenn det manuelt før det brukes. Vanlige SoMe-forslag fungerer som før.</p>
@@ -1573,6 +1580,7 @@ export function WorkspaceSocialStudio({
               }}>
               Forkast AI-bildet og bruk vanlig eiendomskort
             </button>}
+            {advisorApproved[variant.id] && <p className="w-full text-xs text-slate-400">Forkasting fjerner kun bildet fra dette utkastet. For å stanse bruk av et tidligere godkjent bilde, velg «Trekk tilbake godkjenning» først.</p>}
           </div>}
           {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
