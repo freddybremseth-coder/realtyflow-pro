@@ -371,6 +371,30 @@ function propertyMediaUrls(property: any) {
     .filter((value) => /^https:\/\//i.test(value))));
 }
 
+function advisorPropertyPhotoCandidates(property: any) {
+  // Filename-based shortlist only. Never claim the photo has been visually analysed.
+  // Uninformative camera filenames retain the original gallery order.
+  const candidates = propertyMediaUrls(property).slice(0, 24).map((url, index) => {
+    let filename = "";
+    try { filename = decodeURIComponent(new URL(url).pathname).toLowerCase(); } catch {}
+    const exterior = /terrace|terraza|terrasse|balcon|balcony|pool|piscina|garden|jardin|exterior|facade|fachada|patio|outside|outdoor/.test(filename);
+    const indoor = /salon|living|lounge|comedor|interior|hall|entrance|entrada/.test(filename);
+    const tight = /bath|bano|baño|toilet|wc|closet|laundry|utility|floorplan|plano|mapa|map|logo/.test(filename);
+    const score = (exterior ? 50 : indoor ? 20 : 0) - (tight ? 80 : 0) + (url === property.primary_image ? 8 : 0);
+    return {
+      id: String(index),
+      imageUrl: url,
+      isPrimary: url === property.primary_image,
+      rank: index + 1,
+      score,
+      reason: tight ? "Lite egnet motiv basert på filnavn" : exterior ? "Mulig terrasse eller uteområde (filnavn)" : indoor ? "Mulig oppholdsrom (filnavn)" : "Ikke visuelt vurdert",
+      placement: "manual" as const,
+    };
+  }).sort((a, b) => b.score - a.score || a.rank - b.rank)
+    .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+  return candidates;
+}
+
 function variantPropertyImages(property: any) {
   const urls = propertyMediaUrls(property);
   if (!urls.length) return {} as Record<string, string>;
@@ -1455,26 +1479,7 @@ export async function POST(
       if (!propertyAccess.value) return propertyAccess.response;
       const propertyLookup = clean(body.propertyLookup, 100);
       const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
-      // Filename-based shortlist only. Never claim the photo has been visually analysed.
-      // Uninformative camera filenames retain the original gallery order.
-      const candidates = propertyMediaUrls(property).slice(0, 24).map((url, index) => {
-        let filename = "";
-        try { filename = decodeURIComponent(new URL(url).pathname).toLowerCase(); } catch {}
-        const exterior = /terrace|terraza|terrasse|balcon|balcony|pool|piscina|garden|jardin|exterior|facade|fachada|patio|outside|outdoor/.test(filename);
-        const indoor = /salon|living|lounge|comedor|interior|hall|entrance|entrada/.test(filename);
-        const tight = /bath|bano|baño|toilet|wc|closet|laundry|utility|floorplan|plano|mapa|map|logo/.test(filename);
-        const score = (exterior ? 50 : indoor ? 20 : 0) - (tight ? 80 : 0) + (url === property.primary_image ? 8 : 0);
-        return {
-          id: String(index),
-          imageUrl: url,
-          isPrimary: url === property.primary_image,
-          rank: index + 1,
-          score,
-          reason: tight ? "Lite egnet motiv basert på filnavn" : exterior ? "Mulig terrasse eller uteområde (filnavn)" : indoor ? "Mulig oppholdsrom (filnavn)" : "Ikke visuelt vurdert",
-          placement: "manual" as const,
-        };
-      }).sort((a, b) => b.score - a.score || a.rank - b.rank)
-        .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+      const candidates = advisorPropertyPhotoCandidates(property);
       return NextResponse.json({
         ok: true,
         propertyId: property.id,
@@ -1483,6 +1488,39 @@ export async function POST(
         candidates,
         outfits: ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"],
         disclosure: "AI-illustrasjon – rådgiver digitalt plassert i boligbildet",
+      }, { headers: noStore });
+    }
+
+    if (action === "advisor_visual_rank") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, clean(body.propertyLookup, 100));
+      // The user triggers this explicitly. Cap each ranking request to THREE photos.
+      const candidates = advisorPropertyPhotoCandidates(property).slice(0, 3);
+      if (!candidates.length) return fail(409, "ADVISOR_PROPERTY_PHOTOS_REQUIRED");
+      const assessed = await Promise.allSettled(candidates.map(async candidate => ({
+        candidate, review: await reviewAdvisorPhoto(candidate.imageUrl),
+      })));
+      const ranked = assessed.flatMap((outcome) => outcome.status === "fulfilled"
+        ? [{
+            imageUrl: outcome.value.candidate.imageUrl,
+            rank: outcome.value.candidate.rank,
+            score: outcome.value.review.score,
+            suitable: outcome.value.review.suitable,
+            placement: outcome.value.review.placement,
+            reason: outcome.value.review.reason,
+            warning: outcome.value.review.warning,
+          }]
+        : [] as Array<{imageUrl: string; rank: number; score: number; suitable: boolean; placement: string; reason: string; warning: string}>)
+        .sort((a, b) => Number(b.suitable) - Number(a.suitable) || b.score - a.score || a.rank - b.rank);
+      if (!ranked.length) return fail(503, "ADVISOR_VISUAL_RANK_UNAVAILABLE");
+      const recommended = ranked.find(item => item.suitable) || null;
+      return NextResponse.json({
+        ok: true, propertyId: property.id, reviewedCount: ranked.length,
+        attemptedCount: candidates.length, ranked,
+        recommendation: recommended,
+        requiresManualApproval: true,
+        disclaimer: "AI-egnethet er rådgivende, ikke verifisering av faktisk bolig eller bildekorrekthet.",
       }, { headers: noStore });
     }
 
