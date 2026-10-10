@@ -165,6 +165,8 @@ export function WorkspaceSocialStudio({
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
   const [advisorStagedAssetIds, setAdvisorStagedAssetIds] = useState<Record<string, string>>({});
   const [advisorApproving, setAdvisorApproving] = useState("");
+  const [advisorRevoking, setAdvisorRevoking] = useState("");
+  const [advisorApprovalNotice, setAdvisorApprovalNotice] = useState("");
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
   const [advisorTake, setAdvisorTake] = useState<Record<string, number>>({});
   const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
@@ -403,11 +405,12 @@ export function WorkspaceSocialStudio({
     setAdvisorStagedAssetIds({});
     setAdvisorApproving("");
     setAdvisorApproved({});
+    setAdvisorApprovalNotice("");
     setAdvisorReview({});
     setAdvisorTake({});
     setPreviews({});
     advisorRequestEpoch.current += 1;
-  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup]);
+  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup, advisorConsent]);
 
 
   useEffect(() => {
@@ -531,6 +534,7 @@ export function WorkspaceSocialStudio({
     const requestEpoch = advisorRequestEpoch.current;
     setAdvisorApproving(variant.id);
     setAdvisorError("");
+    setAdvisorApprovalNotice("");
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -547,12 +551,47 @@ export function WorkspaceSocialStudio({
       setAdvisorApproved(current => ({ ...current, [variant.id]: imageUrl }));
       setPreviews(current => ({ ...current, [variant.id]: imageUrl }));
       setVisualFormats(current => ({ ...current, [variant.id]: "single_image" }));
+      setAdvisorApprovalNotice("Godkjenningen er lagret på AI-mediefilen.");
     } catch (cause) {
       if (requestEpoch === advisorRequestEpoch.current) {
         setAdvisorError(cause instanceof Error ? cause.message : "Godkjenningen kunne ikke lagres.");
       }
     } finally {
       if (requestEpoch === advisorRequestEpoch.current) setAdvisorApproving("");
+    }
+  }
+
+  async function revokeAdvisorComposite(variant: Variant) {
+    const assetId = advisorStagedAssetIds[variant.id];
+    const propertyId = source?.propertyId;
+    if (!assetId || !propertyId || !advisorApproved[variant.id] || advisorRevoking) return;
+    const epoch = advisorRequestEpoch.current;
+    setAdvisorRevoking(variant.id);
+    setAdvisorError("");
+    setAdvisorApprovalNotice("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "advisor_composite_revoke", assetId, propertyId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.approved !== false) {
+        throw new Error(body?.error?.message || body?.error?.code || "Godkjenningen kunne ikke trekkes tilbake.");
+      }
+      if (epoch !== advisorRequestEpoch.current) return;
+      setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setAdvisorStagedAssetIds(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setVisualFormats(current => ({ ...current, [variant.id]: "property_card" }));
+      setAdvisorApprovalNotice("Godkjenningen er trukket tilbake. Eksisterende publiserte innlegg fjernes ikke automatisk.");
+    } catch (cause) {
+      if (epoch === advisorRequestEpoch.current) setAdvisorError(
+        cause instanceof Error ? cause.message : "Kunne ikke trekke tilbake godkjenningen."
+      );
+    } finally {
+      if (epoch === advisorRequestEpoch.current) setAdvisorRevoking("");
     }
   }
 
@@ -1352,7 +1391,15 @@ export function WorkspaceSocialStudio({
           <p className="mt-2 text-xs leading-5 text-slate-400">Velg referanseportrett, boligfoto, antrekk og positur. Generer et AI-bilde fra hvert SoMe-konsept og godkjenn det manuelt før det brukes. Vanlige SoMe-forslag fungerer som før.</p>
           {advisorMode && <div className="mt-3 space-y-3">
             <ReferenceMediaPicker value={advisorReferenceUrl} onChange={setAdvisorReferenceUrl} brandId={brandKey} purpose="advisor_portrait" title="Godkjent rådgiverportrett" description="Last opp et godkjent portrett av deg selv. Kun portretter registrert som rådgiverreferanse for denne merkevaren kan velges." />
-            <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={advisorConsent} onChange={event => setAdvisorConsent(event.target.checked)} />Jeg bekrefter at jeg har rett til å bruke dette personbildet og samtykke til AI-redigering.</label>
+            <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={advisorConsent} disabled={Boolean(advisorRevoking)}
+              onChange={event => {
+                if (!event.target.checked && Object.keys(advisorApproved).length) {
+                  setAdvisorError("Trekk tilbake godkjenningen for AI-bildene nedenfor før du fjerner samtykket.");
+                  return;
+                }
+                setAdvisorConsent(event.target.checked);
+              }} />
+              Jeg bekrefter at jeg har rett til å bruke dette personbildet og samtykke til AI-redigering.</label>
             <label className="block text-xs text-slate-300">Positur<select value={advisorPose} onChange={event => setAdvisorPose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="relaxed">Avslappet</option><option value="presenting">Presenterer boligen</option><option value="standing">Stående</option></select></label>
             <label className="block text-xs text-slate-300">Plassering i bildet<select value={advisorPlacement} onChange={event => setAdvisorPlacement(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="auto">La AI velge trygg plassering</option><option value="left">Venstre</option><option value="right">Høyre</option><option value="center">Midten</option></select></label>
             <label className="block text-xs text-slate-300">Antrekk
@@ -1539,7 +1586,14 @@ export function WorkspaceSocialStudio({
               {advisorApproving === variant.id ? "Lagrer godkjenning …" : "Godkjenn bildet til utkast"}
             </button>
           </div>}
-          {advisorApproved[variant.id] && <p className="mt-2 text-xs text-emerald-300">Komposisjon valgt til utkast. Merk publiseringen som AI-illustrasjon.</p>}
+          {advisorApproved[variant.id] && <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p className="text-xs text-emerald-300">Komposisjon godkjent og lagret. Merk publiseringen som AI-illustrasjon.</p>
+            <button type="button" onClick={() => void revokeAdvisorComposite(variant)}
+              disabled={Boolean(advisorRevoking)} className="rounded-lg border border-rose-700 px-3 py-2 text-xs text-rose-200 disabled:opacity-40">
+              {advisorRevoking === variant.id ? "Trekker tilbake …" : "Trekk tilbake godkjenning"}
+            </button>
+          </div>}
+          {advisorApprovalNotice && <p role="status" className="mt-2 text-xs text-cyan-200">{advisorApprovalNotice}</p>}
           {advisorError && <p role="alert" className="mt-2 text-xs text-rose-300">{advisorError}</p>}
         </div>}
         {source?.type === "property" && <div className="mt-3 space-y-3">
