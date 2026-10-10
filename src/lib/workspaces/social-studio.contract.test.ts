@@ -540,7 +540,7 @@ test("Opening a new property from Inventory or rebuilding concepts discards old 
 });
 
 test("Publish-time admission rejects a revoked advisor image including any carousel slide", () => {
-  assert.match(socialPublisher, /\.select\("visual_format,ai_image_url"\)/);
+  assert.match(socialPublisher, /\.select\("visual_format,ai_image_url,tags"\)/);
   assert.match(socialPublisher, /\.\.\.carouselUrls/);
   assert.match(socialPublisher, /advisorCompositeApprovalStatus\(supabase, url, brandId\)/);
   assert.match(socialPublisher, /publication\.tags\.includes\("ai-advisor-composite"\)/);
