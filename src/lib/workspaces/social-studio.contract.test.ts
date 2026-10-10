@@ -566,7 +566,7 @@ test("Advisor image generation preserves both ordered references through support
 
 test("Switching advisor mode off cannot silently hide an actively approved image", () => {
   assert.match(studio, /!event\.target\.checked && Object\.keys\(advisorApproved\)\.length > 0/);
-  assert.match(studio, /Forkasting fjerner kun bildet fra dette utkastet/);
+  assert.match(studio, /Godkjente bilder må først få godkjenningen trukket tilbake/);
   assert.match(studio, /Trekk tilbake godkjenningen eller velg/);
 });
 
