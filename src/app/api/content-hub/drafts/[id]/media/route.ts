@@ -25,7 +25,7 @@ function validUrl(input: unknown): input is string {
 async function publication(supabase: ReturnType<typeof db>, id: string) {
   if (!UUID.test(id)) return null;
   const { data } = await supabase.from("content_publications")
-    .select("id,status,ai_image_url,thumbnail_url,visual_format,media_revision")
+    .select("id,brand_id,status,ai_image_url,thumbnail_url,visual_format,media_revision")
     .eq("id", id).maybeSingle();
   return data;
 }
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (!validUrl(body?.source_url)) return error("Krever gyldig HTTPS-bildeadresse.");
     if (body.thumbnail_url && !validUrl(body.thumbnail_url)) return error("Ugyldig miniatyradresse.");
     if (body.source_kind && !KINDS.has(body.source_kind)) return error("Ugyldig bildekilde.");
-    if (!(await advisorCompositeHasManualApproval(auth.supabase!, body.source_url))) {
+    if (!(await advisorCompositeHasManualApproval(auth.supabase!, body.source_url, auth.draft!.brand_id || undefined))) {
       return error("AI-bildet må være godkjent før det kan legges til karusellen.", 409);
     }
     // One transaction preserves the legacy cover, appends the next image and
