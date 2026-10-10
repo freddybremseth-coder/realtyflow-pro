@@ -1576,8 +1576,14 @@ export async function POST(
         sand_cream: "sand cream tailored designer suit, elegant knit polo, no glasses",
         charcoal_olive: "charcoal olive tailored suit, white shirt, brown-tinted rounded sunglasses",
       };
+      const conceptDirection: Record<string, string> = {
+        editorial_premium: "Premium editorial architecture-first composition; make the building the hero and place the advisor discreetly near an unobstructed edge.",
+        lifestyle_story: "Candid Mediterranean lifestyle composition; advisor feels naturally present in a believable walking or relaxed standing moment.",
+        advisor_insight: "Confident but understated property-advisor stance, gently directing attention to an authentic architectural feature without hiding it.",
+      };
       const requestText = [
         "Create one realistic editorial composite for a Costa Blanca real estate advisor.",
+        conceptDirection[variantId],
         "FIRST reference image is the immutable actual listing photograph. SECOND reference is the approved advisor identity.",
         "Preserve all architecture, furniture, view, terrain, room dimensions and real property selling features from the FIRST reference.",
         "Insert ONE advisor with recognizable likeness from SECOND reference, naturally scaled to floor plane, with grounded shadows, correct perspective and coherent daylight.",
