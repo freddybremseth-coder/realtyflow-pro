@@ -1485,6 +1485,43 @@ export async function POST(
       }, { headers: noStore });
     }
 
+    if (action === "advisor_composite_status") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const jobId = clean(body.jobId, 80);
+      if (!UUID_RE.test(jobId)) return fail(400, "ADVISOR_JOB_ID_INVALID");
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: existing, error: lookupError } = await access.value.supabase
+        .from("media_generation_jobs")
+        .select("id,brand_id,idempotency_key,organization_id,operation")
+        .eq("id", jobId)
+        .eq("brand_id", params.brandKey)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      if (lookupError || !existing?.id ||
+          !String(existing.idempotency_key || "").startsWith("advisor-composite:") ||
+          existing.operation !== "image_to_image") {
+        return fail(404, "ADVISOR_JOB_NOT_FOUND");
+      }
+      try {
+        const job = await refreshMediaJob(access.value.supabase, {
+          organizationId,
+          actorEmail: access.value.verifiedEmail,
+          jobId,
+          autoExportToContentHub: false,
+        }) as Record<string, any>;
+        const asset = completedSocialStudioAsset(job);
+        return NextResponse.json({
+          ok: true, jobId, status: job.status,
+          imageUrl: asset?.imageUrl || null, assetId: asset?.assetId || null,
+          warning: job.error_message || null,
+          requiresManualApproval: true,
+        }, { headers: noStore });
+      } catch (cause) {
+        return fail(503, "ADVISOR_JOB_STATUS_FAILED", cause instanceof Error ? cause.message : undefined);
+      }
+    }
+
     if (action === "advisor_composite_create") {
       const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
       if (!propertyAccess.value) return propertyAccess.response;
