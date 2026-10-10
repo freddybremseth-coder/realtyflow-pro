@@ -167,6 +167,7 @@ export function WorkspaceSocialStudio({
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
   const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number; reason?: string }>>([]);
   const [advisorChosenImage, setAdvisorChosenImage] = useState("");
+  const [advisorCandidatePropertyId, setAdvisorCandidatePropertyId] = useState("");
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [advisorRankBusy, setAdvisorRankBusy] = useState(false);
   const [advisorRankNotice, setAdvisorRankNotice] = useState("");
@@ -397,7 +398,6 @@ export function WorkspaceSocialStudio({
     setAdvisorStaged({});
     setAdvisorApproved({});
     setAdvisorReview({});
-    setAdvisorReview({});
     setPreviews({});
     advisorRequestEpoch.current += 1;
   }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup]);
@@ -445,6 +445,11 @@ export function WorkspaceSocialStudio({
 
   async function createAdvisorComposite(variant: Variant) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
+    if (!source || source.type !== "property" || !source.propertyId ||
+        !advisorCandidatePropertyId || source.propertyId !== advisorCandidatePropertyId) {
+      setAdvisorError("Boligbildet tilhører ikke eiendommen som SoMe-forslagene er laget for. Hent bilder og lag nye forslag for samme bolig.");
+      return;
+    }
     setAdvisorWorking(variant.id);
     const requestEpoch = advisorRequestEpoch.current;
     setAdvisorError("");
@@ -567,6 +572,7 @@ export function WorkspaceSocialStudio({
       if (!response.ok) throw new Error(body?.error?.message || "Kunne ikke hente godkjente boligbilder.");
       const candidates = Array.isArray(body.candidates) ? body.candidates as Array<{ id: string; imageUrl: string; rank: number; reason?: string }> : [];
       if (candidateEpoch !== advisorCandidatesEpoch.current) return;
+      setAdvisorCandidatePropertyId(typeof body.propertyId === "string" ? body.propertyId : "");
       setAdvisorCandidates(candidates);
       setAdvisorChosenImage(candidates[0]?.imageUrl || "");
     } catch (cause) {
@@ -578,6 +584,9 @@ export function WorkspaceSocialStudio({
 
   async function generate() {
     if (!canGenerate) return;
+    advisorRequestEpoch.current += 1;
+    setAdvisorWorking("");
+    setAdvisorReview({});
     setBusy(true);
     setError("");
     setNotice("");
@@ -1277,7 +1286,7 @@ export function WorkspaceSocialStudio({
       {sourceType === "property" && <>
         {propertyLabel && <p className="rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">{propertyLabel}</p>}
         <label className="text-xs text-slate-300">Boligreferanse eller RealtyFlow-ID
-          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
+          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); setAdvisorCandidatePropertyId(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
             maxLength={100} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="F.eks. N9950"/>
         </label>
