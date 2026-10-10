@@ -1588,12 +1588,14 @@ export async function POST(
       const pose = clean(body.pose, 40);
       const placement = clean(body.placement, 40);
       const variantId = clean(body.variantId, 40);
+      const take = body.take == null ? 1 : Number(body.take);
       const channel = clean(body.channel, 20);
       const outfits = ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"];
       if (!propertyMediaUrls(property).includes(sourceImageUrl) ||
           !outfits.includes(outfit) || !["relaxed", "presenting", "standing"].includes(pose) ||
           !["auto", "left", "right", "center"].includes(placement) ||
           !["editorial_premium", "lifestyle_story", "advisor_insight"].includes(variantId) ||
+          !Number.isInteger(take) || take < 1 || take > 3 ||
           !["facebook", "instagram"].includes(channel)) {
         return fail(400, "ADVISOR_COMPOSITE_INPUT_INVALID");
       }
@@ -1633,6 +1635,7 @@ export async function POST(
           "Pose: relaxed elegant posture, one hand casually in pocket if appropriate.",
         "Keep advisor to a secondary portion of image. Do not change the property's original view or invent building elements.",
         "Use the actual floor or terrace ground plane. No floating people or impossible balcony placements.",
+        "Creative take " + take + " of 3. Later takes should vary natural micro-pose and framing without changing the real building or advisor identity.",
         "Advisor placement preference: " + placement + ". Respect physically plausible perspective above all.",
         "No text, logos, watermarks, additional persons or invented rooms.",
       ].join(" ");
@@ -1649,7 +1652,7 @@ export async function POST(
         allowText: false,
       });
       const digest = crypto.createHash("sha256").update([
-        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, "v2",
+        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, String(take), "v3",
       ].join("|")).digest("hex").slice(0, 32);
       try {
         const result = await createMediaJob(access.value.supabase, {
