@@ -544,7 +544,7 @@ test("Opening a new property from Inventory or rebuilding concepts discards old 
 });
 
 test("Publish-time admission rejects a revoked advisor image including any carousel slide", () => {
-  assert.match(socialPublisher, /\.select\("visual_format,ai_image_url,tags"\)/);
+  assert.match(socialPublisher, /\.select\("visual_format,ai_image_url,tags,content_features"\)/);
   assert.match(socialPublisher, /\.\.\.carouselUrls/);
   assert.match(socialPublisher, /advisorCompositeApprovalStatus\(supabase, url, brandId\)/);
   assert.match(socialPublisher, /publication\.tags\.includes\("ai-advisor-composite"\)/);
@@ -568,4 +568,27 @@ test("Switching advisor mode off cannot silently hide an actively approved image
   assert.match(studio, /!event\.target\.checked && Object\.keys\(advisorApproved\)\.length > 0/);
   assert.match(studio, /Forkasting fjerner kun bildet fra dette utkastet/);
   assert.match(studio, /Trekk tilbake godkjenningen eller velg/);
+});
+
+test("All advisor composites carry immutable approved asset IDs from studio through drafts to publication", () => {
+  assert.match(studio, /advisorAssets: advisorAssetIdsForDraft/);
+  assert.match(studio, /advisorStagedAssetIds\[item\.id\]/);
+  assert.match(marketing, /ADVISOR_ASSET_PROVENANCE_REQUIRED/);
+  assert.match(marketing, /ADVISOR_ASSET_APPROVAL_REQUIRED/);
+  assert.match(marketing, /advisor_assets: advisorAssets/);
+  assert.match(marketing, /ADVISOR_DRAFT_PROVENANCE_SAVE_FAILED/);
+  assert.match(socialPublisher, /publication\.content_features\?\.advisor_assets/);
+  assert.match(socialPublisher, /recordedApprovalChecks\.some\(allowed => !allowed\)/);
+  assert.match(socialPublisher, /candidateImages\.includes\(ref\.imageUrl\)/);
+  assert.match(socialPublisher, /ref\.imageUrl, brandId, undefined, ref\.assetId/);
+});
+
+test("AI disclosure tags are prioritised before optional tags may be truncated", () => {
+  const start = studio.indexOf("tags: Array.from(new Set([");
+  const end = studio.indexOf("])).slice(0, 20)", start);
+  assert.ok(start !== -1 && end > start, "Must locate Content Hub tags.");
+  const snippet = studio.slice(start, end);
+  const ai = snippet.indexOf("ai-advisor-composite");
+  const userTags = snippet.indexOf("...variant.tags");
+  assert.ok(ai !== -1 && userTags > ai, "Mandatory AI tags must precede optional concept tags.");
 });
