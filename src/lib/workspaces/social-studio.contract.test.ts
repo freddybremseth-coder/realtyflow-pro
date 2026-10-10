@@ -372,3 +372,27 @@ test("SoMe Studio and Content Hub protect human names from awkward line splittin
   assert.match(globalsCss, /\.rf-human-name\s*\{/);
   assert.match(globalsCss, /white-space:\s*nowrap/);
 });
+
+test("Advisor composites require authorized listing, identity asset and consent", () => {
+  assert.match(route, /action === "advisor_composite_create"/);
+  assert.match(route, /confirmIdentityRights !== true/);
+  assert.match(route, /propertyMediaUrls\(property\)\.includes\(sourceImageUrl\)/);
+  assert.match(route, /ADVISOR_REFERENCE_NOT_AUTHORIZED/);
+  assert.match(route, /autoExportToContentHub: false/);
+  assert.match(route, /requiresManualApproval: true/);
+});
+
+test("Advisor preview cannot approve without reviewing identity, property and perspective", () => {
+  assert.match(studio, /advisorReview\[variant\.id\]\?\.identity/);
+  assert.match(studio, /advisorReview\[variant\.id\]\?\.property/);
+  assert.match(studio, /advisorReview\[variant\.id\]\?\.perspective/);
+  assert.match(studio, /Godkjenn bildet til utkast/);
+  assert.match(studio, /advisorStaged\[variant\.id\] && !advisorApproved\[variant\.id\]/);
+});
+
+test("Advisor generation keeps the listing photograph first and labels synthetic output", () => {
+  assert.match(route, /sourceImageUrls: \[sourceImageUrl, String\(identityAsset\.public_url\)\]/);
+  assert.match(route, /Preserve all architecture, furniture, view, terrain/);
+  assert.match(studio, /AI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet/);
+  assert.match(studio, /Originalboligen/);
+});
