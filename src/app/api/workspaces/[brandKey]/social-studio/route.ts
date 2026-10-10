@@ -1599,14 +1599,16 @@ export async function POST(
       }
       const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
       const { data: identityAsset } = await access.value.supabase.from("media_assets")
-        .select("id,public_url,organization_id,brand_id,media_type")
+        .select("id,public_url,organization_id,brand_id,media_type,metadata_json")
         .eq("public_url", identityAssetUrl)
         .eq("organization_id", organizationId)
         .eq("brand_id", params.brandKey)
         .eq("media_type", "image")
         .is("deleted_at", null)
         .limit(1).maybeSingle();
-      if (!identityAsset?.id || !identityAsset.public_url) return fail(403, "ADVISOR_REFERENCE_NOT_AUTHORIZED");
+      if (!identityAsset?.id || !identityAsset.public_url || identityAsset.metadata_json?.purpose !== "advisor_portrait") {
+        return fail(403, "ADVISOR_REFERENCE_NOT_AUTHORIZED");
+      }
       const outfitDescriptions: Record<string, string> = {
         navy_armani: "tailored navy designer suit, crisp white shirt, dark aviator sunglasses",
         mediterranean_casual: "beige tailored trousers, white linen shirt, premium loafers without visible socks, no glasses",
