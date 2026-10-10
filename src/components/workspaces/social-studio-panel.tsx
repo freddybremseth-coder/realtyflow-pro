@@ -1580,7 +1580,7 @@ export function WorkspaceSocialStudio({
               className="rounded-lg border border-amber-600 px-3 py-2 text-xs text-amber-100 disabled:opacity-40">
               Lag ny AI-versjon ({Math.min((advisorTake[variant.id] || 1) + 1, 3)}/3) · bruker ekstra AI-kapasitet
             </button>
-            {(advisorStaged[variant.id] || advisorApproved[variant.id]) && <button type="button" className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300"
+            {(advisorStaged[variant.id] || advisorApproved[variant.id]) && <button type="button" disabled={Boolean(advisorApproved[variant.id])} className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 disabled:opacity-40"
               onClick={() => {
                 setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
                 setAdvisorStagedAssetIds(current => { const next = { ...current }; delete next[variant.id]; return next; });
@@ -1591,7 +1591,7 @@ export function WorkspaceSocialStudio({
               }}>
               Forkast AI-bildet og bruk vanlig eiendomskort
             </button>}
-            {advisorApproved[variant.id] && <p className="w-full text-xs text-slate-400">Forkasting fjerner kun bildet fra dette utkastet. For å stanse bruk av et tidligere godkjent bilde, velg «Trekk tilbake godkjenning» først.</p>}
+            {advisorApproved[variant.id] && <p className="w-full text-xs text-slate-400">Godkjente bilder må først få godkjenningen trukket tilbake. Bruk «Trekk tilbake godkjenning» ovenfor.</p>}
           </div>}
           {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
