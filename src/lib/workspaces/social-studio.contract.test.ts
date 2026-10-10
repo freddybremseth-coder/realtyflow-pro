@@ -422,3 +422,13 @@ test("Advisor photo concepts have distinct visual instructions and explicitly re
   assert.match(route, /Confident but understated property-advisor stance/);
   assert.match(studio, /Godkjenn bildet til utkast/);
 });
+
+test("Advisor AI shortlist compares at most three explicit listing images", () => {
+  assert.match(route, /action === "advisor_visual_rank"/);
+  assert.match(route, /advisorPropertyPhotoCandidates\(property\)\.slice\(0, 3\)/);
+  assert.match(route, /Promise\.allSettled\(candidates\.map/);
+  assert.match(route, /requiresManualApproval: true/);
+  assert.match(studio, /Finn beste bilde med AI \(maks 3 bilder\)/);
+  assert.match(studio, /action: "advisor_visual_rank"/);
+  assert.match(studio, /setAdvisorChosenImage\(recommendation\.imageUrl\)/);
+});
