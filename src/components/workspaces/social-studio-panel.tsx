@@ -164,6 +164,7 @@ export function WorkspaceSocialStudio({
   const advisorCandidatesEpoch = useRef(0);
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
+  const [advisorTake, setAdvisorTake] = useState<Record<string, number>>({});
   const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
   const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number; reason?: string }>>([]);
@@ -399,6 +400,7 @@ export function WorkspaceSocialStudio({
     setAdvisorStaged({});
     setAdvisorApproved({});
     setAdvisorReview({});
+    setAdvisorTake({});
     setPreviews({});
     advisorRequestEpoch.current += 1;
   }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup]);
@@ -444,8 +446,14 @@ export function WorkspaceSocialStudio({
     }
   }
 
-  async function createAdvisorComposite(variant: Variant) {
+  async function createAdvisorComposite(variant: Variant, newTake = false) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
+    const take = (advisorTake[variant.id] || 1) + (newTake ? 1 : 0);
+    if (take > 3) {
+      setAdvisorError("Du har brukt tre versjoner med samme innstillinger. Endre bilde, antrekk eller plassering for å starte på nytt.");
+      return;
+    }
+    setAdvisorTake(current => ({ ...current, [variant.id]: take }));
     if (!source || source.type !== "property" || !source.propertyId ||
         !advisorCandidatePropertyId || source.propertyId !== advisorCandidatePropertyId) {
       setAdvisorError("Boligbildet tilhører ikke eiendommen som SoMe-forslagene er laget for. Hent bilder og lag nye forslag for samme bolig.");
@@ -478,7 +486,7 @@ export function WorkspaceSocialStudio({
         action: "advisor_composite_create", propertyLookup: propertyLookup.trim(),
         sourceImageUrl: advisorChosenImage, identityAssetUrl: advisorReferenceUrl,
         confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose,
-        placement: advisorPlacement, variantId: variant.id,
+        placement: advisorPlacement, variantId: variant.id, take,
         channel: activePlatforms.has("instagram") ? "instagram" : "facebook",
       });
       if (requestEpoch !== advisorRequestEpoch.current) return;
@@ -1441,6 +1449,24 @@ export function WorkspaceSocialStudio({
           </button>
           {advisorChosenImage && advisorCandidatePropertyId && source.propertyId !== advisorCandidatePropertyId &&
             <p className="mt-2 text-xs text-amber-200" role="status">Boligbildet og SoMe-forslaget gjelder ulike eiendommer. Hent bilder for riktig eiendom og lag nye forslag.</p>}
+          {(advisorStaged[variant.id] || advisorApproved[variant.id]) && <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button"
+              onClick={() => void createAdvisorComposite(variant, true)}
+              disabled={Boolean(advisorWorking) || (advisorTake[variant.id] || 1) >= 3}
+              className="rounded-lg border border-amber-600 px-3 py-2 text-xs text-amber-100 disabled:opacity-40">
+              Lag ny AI-versjon ({Math.min((advisorTake[variant.id] || 1) + 1, 3)}/3) · bruker ekstra AI-kapasitet
+            </button>
+            <button type="button" className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300"
+              onClick={() => {
+                setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setVisualFormats(current => ({ ...current, [variant.id]: "property_card" }));
+              }}>
+              Forkast AI-bildet og bruk vanlig eiendomskort
+            </button>
+          </div>}
           {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <figure><img src={advisorChosenImage} alt="Originalt boligfoto" className="aspect-[4/5] w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-slate-400">Originalboligen</figcaption></figure>
