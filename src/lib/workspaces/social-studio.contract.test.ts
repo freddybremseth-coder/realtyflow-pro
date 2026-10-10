@@ -470,6 +470,7 @@ test("Advisor image generation requires same resolved property as generated SoMe
   assert.match(studio, /source\.propertyId !== advisorCandidatePropertyId/);
   assert.match(studio, /setAdvisorCandidatePropertyId\(typeof body\.propertyId === "string"/);
   assert.match(studio, /advisorRequestEpoch\.current \+= 1/);
+  assert.match(studio, /if \(requestEpoch === advisorRequestEpoch\.current\) setAdvisorWorking\(""\)/);
 });
 
 test("Changing property clears old generated concepts and invalidates in-flight responses", () => {
