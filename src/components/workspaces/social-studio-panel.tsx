@@ -168,6 +168,8 @@ export function WorkspaceSocialStudio({
   const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number; reason?: string }>>([]);
   const [advisorChosenImage, setAdvisorChosenImage] = useState("");
   const [advisorLoading, setAdvisorLoading] = useState(false);
+  const [advisorRankBusy, setAdvisorRankBusy] = useState(false);
+  const [advisorRankNotice, setAdvisorRankNotice] = useState("");
   const [advisorError, setAdvisorError] = useState("");
   const [advisorAnalyzing, setAdvisorAnalyzing] = useState(false);
   const advisorAnalysisEpoch = useRef(0);
@@ -499,9 +501,60 @@ export function WorkspaceSocialStudio({
     }
   }
 
+  async function rankAdvisorPhotos() {
+    if (!propertyLookup.trim() || !advisorCandidates.length || advisorRankBusy) return;
+    const candidateEpoch = advisorCandidatesEpoch.current;
+    setAdvisorRankBusy(true);
+    setAdvisorRankNotice("");
+    setAdvisorError("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "advisor_visual_rank", propertyLookup: propertyLookup.trim() }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "AI-rangering er ikke tilgjengelig.");
+      if (candidateEpoch !== advisorCandidatesEpoch.current) return;
+      const reviews = Array.isArray(body.ranked) ? body.ranked as Array<{
+        imageUrl: string; score: number; suitable: boolean; placement: "auto" | "left" | "right" | "center"; reason: string;
+      }> : [];
+      const byUrl = new Map(reviews.map(review => [review.imageUrl, review]));
+      setAdvisorCandidates(current => current.map(candidate => {
+        const review = byUrl.get(candidate.imageUrl);
+        return review
+          ? { ...candidate, reason: "AI: " + review.score + "/100 · " + review.reason }
+          : candidate;
+      }).sort((a, b) => {
+        const aReview = byUrl.get(a.imageUrl);
+        const bReview = byUrl.get(b.imageUrl);
+        return Number(Boolean(bReview?.suitable)) - Number(Boolean(aReview?.suitable)) ||
+          (bReview?.score ?? -1) - (aReview?.score ?? -1) || a.rank - b.rank;
+      }));
+      const recommendation = body.recommendation as typeof reviews[number] | null;
+      if (recommendation?.imageUrl && advisorCandidates.some(candidate => candidate.imageUrl === recommendation.imageUrl)) {
+        setAdvisorChosenImage(recommendation.imageUrl);
+        setAdvisorPlacement(recommendation.placement);
+        setAdvisorRankNotice("AI foreslår et egnet boligfoto og plassering. Se over valget før generering.");
+      } else {
+        setAdvisorRankNotice("Ingen av de vurderte bildene ble anbefalt. Velg et bilde manuelt, eller bruk en annen eiendom.");
+      }
+      if (Number(body.reviewedCount) < Number(body.attemptedCount)) {
+        setAdvisorRankNotice(current => current + " Ikke alle analysene kunne fullføres.");
+      }
+    } catch (cause) {
+      if (candidateEpoch === advisorCandidatesEpoch.current) {
+        setAdvisorError(cause instanceof Error ? cause.message : "AI-rangering feilet.");
+      }
+    } finally {
+      if (candidateEpoch === advisorCandidatesEpoch.current) setAdvisorRankBusy(false);
+    }
+  }
+
   async function loadAdvisorCandidates() {
     if (!propertyLookup.trim() || advisorLoading) return;
     setAdvisorLoading(true);
+    setAdvisorRankNotice("");
     const candidateEpoch = ++advisorCandidatesEpoch.current;
     setAdvisorError("");
     try {
@@ -1218,7 +1271,7 @@ export function WorkspaceSocialStudio({
       {sourceType === "property" && <>
         {propertyLabel && <p className="rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">{propertyLabel}</p>}
         <label className="text-xs text-slate-300">Boligreferanse eller RealtyFlow-ID
-          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
+          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
             maxLength={100} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="F.eks. N9950"/>
         </label>
@@ -1245,6 +1298,11 @@ export function WorkspaceSocialStudio({
             <button type="button" disabled={advisorLoading || !propertyLookup.trim()} onClick={() => void loadAdvisorCandidates()} className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200 disabled:opacity-50">
               {advisorLoading ? "Henter bilder …" : "Se aktuelle boligbilder"}
             </button>
+            <button type="button" disabled={advisorRankBusy || !advisorCandidates.length} onClick={() => void rankAdvisorPhotos()} className="rounded-lg border border-cyan-600 px-3 py-2 text-xs text-cyan-100 disabled:opacity-40">
+              {advisorRankBusy ? "Sammenligner tre bilder …" : "Finn beste bilde med AI (maks 3 bilder)"}
+            </button>
+            <p className="text-xs text-slate-400">Frivillig analyse av opptil tre bilder. Dette bruker AI-kapasitet og starter ingen generering eller publisering.</p>
+            {advisorRankNotice && <p className="text-xs text-cyan-200" role="status">{advisorRankNotice}</p>}
             {advisorError && <p role="alert" className="text-xs text-rose-300">{advisorError}</p>}
             {advisorCandidates.length > 0 && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {advisorCandidates.slice(0, 9).map((candidate) => <button key={candidate.id} type="button" onClick={() => setAdvisorChosenImage(candidate.imageUrl)} className={`overflow-hidden rounded-lg border-2 text-left ${advisorChosenImage === candidate.imageUrl ? "border-cyan-400" : "border-slate-700"}`}>
