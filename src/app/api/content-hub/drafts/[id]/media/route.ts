@@ -1,3 +1,4 @@
+import { advisorCompositeHasManualApproval } from "@/lib/marketing/approved-advisor-media";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
@@ -73,6 +74,9 @@ export async function POST(request: NextRequest, context: Context) {
     if (!validUrl(body?.source_url)) return error("Krever gyldig HTTPS-bildeadresse.");
     if (body.thumbnail_url && !validUrl(body.thumbnail_url)) return error("Ugyldig miniatyradresse.");
     if (body.source_kind && !KINDS.has(body.source_kind)) return error("Ugyldig bildekilde.");
+    if (!(await advisorCompositeHasManualApproval(auth.supabase!, body.source_url))) {
+      return error("AI-bildet må være godkjent før det kan legges til karusellen.", 409);
+    }
     // One transaction preserves the legacy cover, appends the next image and
     // updates the publication. Concurrent requests serialize on the draft row.
     const { error: appendError } = await auth.supabase!.rpc("append_content_publication_media", {
