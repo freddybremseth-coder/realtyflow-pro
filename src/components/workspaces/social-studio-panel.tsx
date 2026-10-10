@@ -152,6 +152,13 @@ export function WorkspaceSocialStudio({
 }) {
   const [sourceType, setSourceType] = useState<SourceType>("topic");
   const [propertyLookup, setPropertyLookup] = useState("");
+  const [advisorMode, setAdvisorMode] = useState(false);
+  const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
+  const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number }>>([]);
+  const [advisorChosenImage, setAdvisorChosenImage] = useState("");
+  const [advisorLoading, setAdvisorLoading] = useState(false);
+  const [advisorError, setAdvisorError] = useState("");
+
   const [propertyLabel, setPropertyLabel] = useState("");
   const [articleUrl, setArticleUrl] = useState("");
   const [areaLookup, setAreaLookup] = useState("");
@@ -363,6 +370,28 @@ export function WorkspaceSocialStudio({
     if (sourceType !== "article" && sourceType !== "area" && !propertyContext?.id) return;
     void loadEditorialContent();
   }, [sourceType, brandKey, companionPropertyLookup, propertyContext?.id]);
+
+  async function loadAdvisorCandidates() {
+    if (!propertyLookup.trim() || advisorLoading) return;
+    setAdvisorLoading(true);
+    setAdvisorError("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "advisor_visual_options", propertyLookup: propertyLookup.trim() }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error?.message || "Kunne ikke hente godkjente boligbilder.");
+      const candidates = Array.isArray(body.candidates) ? body.candidates as Array<{ id: string; imageUrl: string; rank: number }> : [];
+      setAdvisorCandidates(candidates);
+      setAdvisorChosenImage(candidates[0]?.imageUrl || "");
+    } catch (cause) {
+      setAdvisorError(cause instanceof Error ? cause.message : "Kunne ikke hente boligbilder.");
+    } finally {
+      setAdvisorLoading(false);
+    }
+  }
 
   async function generate() {
     if (!canGenerate) return;
@@ -1049,6 +1078,35 @@ export function WorkspaceSocialStudio({
             maxLength={100} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="F.eks. N9950"/>
         </label>
+        <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+            <input type="checkbox" checked={advisorMode} onChange={(event) => setAdvisorMode(event.target.checked)} />
+            Megler i boligbildet (under utvikling)
+          </label>
+          <p className="mt-2 text-xs leading-5 text-slate-400">Velg boligfoto og antrekk for en senere AI-komposisjon. Selve innsettingen er ikke aktiv ennå. Vanlige SoMe-forslag fungerer som før.</p>
+          {advisorMode && <div className="mt-3 space-y-3">
+            <label className="block text-xs text-slate-300">Antrekk
+              <select value={advisorOutfit} onChange={(event) => setAdvisorOutfit(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm">
+                <option value="navy_armani">Marineblå dress · aviator</option>
+                <option value="mediterranean_casual">Beige casual · uten briller</option>
+                <option value="light_grey">Lysegrå dress · rektangulære briller</option>
+                <option value="sand_cream">Sandfarget dress · uten briller</option>
+                <option value="charcoal_olive">Mørk dress · brune solbriller</option>
+              </select>
+            </label>
+            <button type="button" disabled={advisorLoading || !propertyLookup.trim()} onClick={() => void loadAdvisorCandidates()} className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200 disabled:opacity-50">
+              {advisorLoading ? "Henter bilder …" : "Se aktuelle boligbilder"}
+            </button>
+            {advisorError && <p role="alert" className="text-xs text-rose-300">{advisorError}</p>}
+            {advisorCandidates.length > 0 && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {advisorCandidates.slice(0, 9).map((candidate) => <button key={candidate.id} type="button" onClick={() => setAdvisorChosenImage(candidate.imageUrl)} className={`overflow-hidden rounded-lg border-2 text-left ${advisorChosenImage === candidate.imageUrl ? "border-cyan-400" : "border-slate-700"}`}>
+                <img src={candidate.imageUrl} alt={`Boligfoto ${candidate.rank}`} className="aspect-[4/3] w-full object-cover" />
+                <span className="block p-1 text-xs text-slate-300">{advisorChosenImage === candidate.imageUrl ? "Valgt" : "Velg bilde"}</span>
+              </button>)}
+            </div>}
+            <p className="text-xs text-amber-200">Ingen bildebehandling eller publisering skjer fra dette valget. Personreferanser, riktig perspektiv og godkjenning kobles til i neste utviklingstrinn.</p>
+          </div>}
+        </div>
       </>}
       {sourceType === "article" && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
         {selectedContent?.sourceType === "article" && <div className="mb-3 rounded-lg border border-emerald-900 bg-emerald-950/20 p-3">
