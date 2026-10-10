@@ -503,7 +503,7 @@ export function WorkspaceSocialStudio({
         setAdvisorError(cause instanceof Error ? cause.message : "Bildegenerering feilet.");
       }
     } finally {
-      setAdvisorWorking("");
+      if (requestEpoch === advisorRequestEpoch.current) setAdvisorWorking("");
     }
   }
 
