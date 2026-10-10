@@ -1128,7 +1128,7 @@ export function WorkspaceSocialStudio({
             <input type="checkbox" checked={advisorMode} onChange={(event) => setAdvisorMode(event.target.checked)} />
             Megler i boligbildet (under utvikling)
           </label>
-          <p className="mt-2 text-xs leading-5 text-slate-400">Velg boligfoto og antrekk for en senere AI-komposisjon. Selve innsettingen er ikke aktiv ennå. Vanlige SoMe-forslag fungerer som før.</p>
+          <p className="mt-2 text-xs leading-5 text-slate-400">Velg referanseportrett, boligfoto, antrekk og positur. Generer et AI-bilde fra hvert SoMe-konsept og godkjenn det manuelt før det brukes. Vanlige SoMe-forslag fungerer som før.</p>
           {advisorMode && <div className="mt-3 space-y-3">
             <ReferenceMediaPicker value={advisorReferenceUrl} onChange={setAdvisorReferenceUrl} brandId={brandKey} title="Godkjent rådgiverportrett" description="Last opp originalportrettet eller velg et godkjent referansebilde fra Media Library. Det må tilhøre samme merkevare." />
             <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={advisorConsent} onChange={event => setAdvisorConsent(event.target.checked)} />Jeg bekrefter at jeg har rett til å bruke dette personbildet og samtykke til AI-redigering.</label>
@@ -1152,7 +1152,7 @@ export function WorkspaceSocialStudio({
                 <span className="block p-1 text-xs text-slate-300">{advisorChosenImage === candidate.imageUrl ? "Valgt" : "Velg bilde"}</span>
               </button>)}
             </div>}
-            <p className="text-xs text-amber-200">Ingen bildebehandling eller publisering skjer fra dette valget. Personreferanser, riktig perspektiv og godkjenning kobles til i neste utviklingstrinn.</p>
+            <p className="text-xs text-amber-200">Bildegenerering skjer først når du trykker «Lag bilde med meg» under et SoMe-forslag. Godkjenn bildet etter å ha kontrollert at boligen ikke er endret. Ingenting publiseres automatisk.</p>
           </div>}
         </div>
       </>}
