@@ -2,7 +2,7 @@
 import { ReferenceMediaPicker } from "@/components/media-studio/reference-media-picker";
 import { protectHumanText } from "@/lib/ui/protected-human-text";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, Building2, ExternalLink, Facebook, Instagram, Sparkles, WandSparkles } from "lucide-react";
 
 export type WorkspaceSocialPropertySeed = {
@@ -158,6 +158,7 @@ export function WorkspaceSocialStudio({
   const [advisorConsent, setAdvisorConsent] = useState(false);
   const [advisorPose, setAdvisorPose] = useState("relaxed");
   const [advisorWorking, setAdvisorWorking] = useState("");
+  const advisorRequestEpoch = useRef(0);
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
@@ -384,11 +385,13 @@ export function WorkspaceSocialStudio({
     setAdvisorStaged({});
     setAdvisorApproved({});
     setPreviews({});
+    advisorRequestEpoch.current += 1;
   }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorReferenceUrl, propertyLookup]);
 
   async function createAdvisorComposite(variant: Variant) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
     setAdvisorWorking(variant.id);
+    const requestEpoch = advisorRequestEpoch.current;
     setAdvisorError("");
     setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
     setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
@@ -412,10 +415,11 @@ export function WorkspaceSocialStudio({
         if (["failed", "cancelled", "expired"].includes(String(body.status))) throw new Error(body.warning || "Bildegenereringen feilet.");
       }
       if (!completedImage) throw new Error("Bildebehandlingen tar lengre tid. Prøv igjen senere.");
+      if (requestEpoch !== advisorRequestEpoch.current) return; // inputs changed while job was running
       setAdvisorStaged(current => ({ ...current, [variant.id]: completedImage }));
       setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
     } catch (cause) {
-      setAdvisorError(cause instanceof Error ? cause.message : "Bildegenerering feilet.");
+      if (requestEpoch === advisorRequestEpoch.current) setAdvisorError(cause instanceof Error ? cause.message : "Bildegenerering feilet.");
     } finally {
       setAdvisorWorking("");
     }
