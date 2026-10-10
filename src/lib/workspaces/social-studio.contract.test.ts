@@ -502,7 +502,23 @@ test("Advisor human review is persisted on the image before client marks it appr
 test("Marketing and Content Hub must reject unreviewed advisor composites", () => {
   assert.match(marketing, /advisorCompositeHasManualApproval/);
   assert.match(marketing, /ADVISOR_COMPOSITE_REVIEW_REQUIRED/);
-  assert.match(contentHubMedia, /advisorCompositeHasManualApproval\(auth\.supabase!, body\.source_url\)/);
+  assert.match(contentHubMedia, /advisorCompositeHasManualApproval\(auth\.supabase!, body\.source_url, auth\.draft!\.brand_id \|\| undefined\)/);
   assert.match(advisorMediaApproval, /startsWith\("advisor-composite:"\)/);
   assert.match(advisorMediaApproval, /approval\?\.checks\?\.perspective/);
+});
+
+test("Advisor consent is reflected in preview state and approval can be revoked server-side", () => {
+  assert.match(studio, /advisorReferenceUrl, propertyLookup, advisorConsent\]/);
+  assert.match(studio, /action: "advisor_composite_revoke"/);
+  assert.match(studio, /Trekk tilbake godkjenning/);
+  assert.match(studio, /Trekk tilbake godkjenningen for AI-bildene nedenfor før du fjerner samtykket/);
+  assert.match(route, /action === "advisor_composite_revoke"/);
+  assert.match(route, /advisorManualApproval: \{/);
+  assert.match(route, /approved: false, revokedAt:/);
+});
+
+test("Content Hub carousel images cannot use approved advisor composites from another brand", () => {
+  assert.match(contentHubMedia, /id,brand_id,status,ai_image_url/);
+  assert.match(contentHubMedia, /advisorCompositeHasManualApproval\(auth\.supabase!, body\.source_url, auth\.draft!\.brand_id \|\| undefined\)/);
+  assert.match(advisorMediaApproval, /brandKey && asset\.brand_id !== brandKey/);
 });
