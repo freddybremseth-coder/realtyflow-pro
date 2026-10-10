@@ -7,6 +7,7 @@ export async function advisorCompositeApprovalStatus(
   imageUrl: string,
   brandKey?: string,
   propertyId?: string,
+  expectedAssetId?: string,
 ): Promise<{ allowed: boolean; advisorFound: boolean }> {
   if (!imageUrl) return { allowed: true, advisorFound: false };
   const lookups = await Promise.all([
@@ -19,7 +20,10 @@ export async function advisorCompositeApprovalStatus(
   ]);
   if (lookups.some(result => result.error)) return { allowed: false, advisorFound: false };
   const assets = [...(lookups[0].data || []), ...(lookups[1].data || [])];
-  if (!assets.length) return { allowed: true, advisorFound: false };
+  if (!assets.length) return { allowed: !expectedAssetId, advisorFound: false };
+  if (expectedAssetId && !assets.some(asset => asset.id === expectedAssetId)) {
+    return { allowed: false, advisorFound: false };
+  }
   let advisorFound = false;
   for (const asset of assets) {
     if (!asset.job_id) continue;
@@ -39,11 +43,11 @@ export async function advisorCompositeApprovalStatus(
         (brandKey && asset.brand_id !== brandKey) ||
         (propertyId && asset.property_id !== propertyId)) return { allowed: false, advisorFound };
   }
-  return { allowed: true, advisorFound };
+  return { allowed: !expectedAssetId || advisorFound, advisorFound };
 }
 
 export async function advisorCompositeHasManualApproval(
-  supabase: any, imageUrl: string, brandKey?: string, propertyId?: string,
+  supabase: any, imageUrl: string, brandKey?: string, propertyId?: string, expectedAssetId?: string,
 ): Promise<boolean> {
-  return (await advisorCompositeApprovalStatus(supabase, imageUrl, brandKey, propertyId)).allowed;
+  return (await advisorCompositeApprovalStatus(supabase, imageUrl, brandKey, propertyId, expectedAssetId)).allowed;
 }
