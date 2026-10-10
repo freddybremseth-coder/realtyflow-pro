@@ -12,6 +12,10 @@ export async function GET(request: NextRequest) {
     const mediaType = request.nextUrl.searchParams.get("mediaType");
     const brandId = request.nextUrl.searchParams.get("brandId");
     const projectId = request.nextUrl.searchParams.get("projectId");
+    const referencePurpose = request.nextUrl.searchParams.get("referencePurpose");
+    if (referencePurpose && !["advisor_portrait", "media_reference"].includes(referencePurpose)) {
+      return NextResponse.json({ error: "Ugyldig referansetype." }, { status: 400 });
+    }
     const status = request.nextUrl.searchParams.get("status") || "active";
     const favorite = request.nextUrl.searchParams.get("favorite");
 
@@ -31,6 +35,7 @@ export async function GET(request: NextRequest) {
     if (mediaType) query = query.eq("media_type", mediaType);
     if (brandId) query = query.eq("brand_id", brandId);
     if (projectId) query = query.eq("project_id", projectId);
+    if (referencePurpose) query = query.eq("metadata_json->>purpose", referencePurpose);
     if (favorite === "true") query = query.eq("is_favorite", true);
 
     const { data, error } = await query;

@@ -1,3 +1,4 @@
+import { advisorCompositeApprovalStatus, advisorCompositeHasManualApproval } from "@/lib/marketing/approved-advisor-media";
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { SOCIAL_CATEGORIES } from "@/lib/workspaces/social-strategy";
@@ -242,6 +243,24 @@ export async function POST(
     : "";
   const packageId = typeof body.packageId === "string" ? body.packageId.trim().slice(0, 100) : "";
   const aiGeneratedImage = body.aiGeneratedImage === true;
+  const rawAdvisorAssets = body.advisorAssets;
+  const advisorAssets = Array.isArray(rawAdvisorAssets) ? rawAdvisorAssets as Array<Record<string, unknown>> : [];
+  if ((rawAdvisorAssets !== undefined && !Array.isArray(rawAdvisorAssets)) ||
+      advisorAssets.length > 3 ||
+      advisorAssets.some(ref => !ref || typeof ref !== "object" || Array.isArray(ref) ||
+        typeof ref.assetId !== "string" || !UUID_RE.test(ref.assetId) ||
+        typeof ref.imageUrl !== "string" || ref.imageUrl.length > 2000 ||
+        !/^https:\/\//i.test(ref.imageUrl))) {
+    return fail(400, "ADVISOR_ASSET_REFERENCES_INVALID");
+  }
+  if (advisorAssets.length > 0 && (!sourcePropertyId || !aiGeneratedImage)) {
+    return fail(400, "ADVISOR_PROPERTY_AND_AI_FLAG_REQUIRED");
+  }
+  if ((advisorAssets.length > 0 && !tags.includes("ai-advisor-composite")) ||
+      (tags.includes("ai-advisor-composite") && !advisorAssets.length)) {
+    return fail(400, "ADVISOR_ASSET_PROVENANCE_REQUIRED");
+  }
+
 
   if (title.length > 200 || description.length < 1 || description.length > 5000 ||
       imageUrl.length > 2000 || (imageUrl && (!/^https:\/\//i.test(imageUrl) || /\s/.test(imageUrl))) ||
@@ -261,6 +280,22 @@ export async function POST(
   }
 
   let data: any = null;
+  // Advisor composites cannot enter Content Hub without an approval persisted on the actual image.
+  // Enforced for every actor, including authenticated workspace administrators.
+  if (imageUrl && !(await advisorCompositeHasManualApproval(
+    access.value.supabase, imageUrl, params.brandKey, sourcePropertyId || undefined
+  ))) return fail(409, "ADVISOR_COMPOSITE_REVIEW_REQUIRED");
+  // Persist immutable media identity, not just a mutable tag or externally editable URL.
+  // For a carousel, some approved advisor images may be on later slides.
+  for (const ref of advisorAssets) {
+    const check = await advisorCompositeApprovalStatus(
+      access.value.supabase, String(ref.imageUrl), params.brandKey,
+      sourcePropertyId || undefined, String(ref.assetId),
+    );
+    if (!check.allowed || !check.advisorFound) return fail(409, "ADVISOR_ASSET_APPROVAL_REQUIRED");
+  }
+
+
   if (!access.value.verifiedUserId) {
     if (!(await ownerChannelsActive(access.value.supabase, params.brandKey, platforms))) {
       return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
@@ -302,6 +337,7 @@ export async function POST(
           } : {}),
           ...(packageId ? { social_package_id: packageId } : {}),
           ...(aiGeneratedImage ? { ai_generated_image: true } : {}),
+          ...(advisorAssets.length ? { advisor_assets: advisorAssets } : {}),
         },
       })
       .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
@@ -337,6 +373,20 @@ export async function POST(
   }
   const publication = safePublication(data?.publication, params.brandKey);
   if (!data?.ok || !publication) return fail(503, "MARKETING_DRAFT_CREATE_FAILED");
+
+  if (access.value.verifiedUserId && advisorAssets.length) {
+    const { data: existing, error: readError } = await access.value.supabase
+      .from("content_publications").select("content_features")
+      .eq("id", publication.id).eq("brand_id", params.brandKey).maybeSingle();
+    if (readError || !existing) return fail(503, "ADVISOR_DRAFT_PROVENANCE_SAVE_FAILED");
+    const features = existing.content_features && typeof existing.content_features === "object" &&
+      !Array.isArray(existing.content_features) ? existing.content_features : {};
+    const { error: metadataError } = await access.value.supabase
+      .from("content_publications")
+      .update({ content_features: { ...features, advisor_assets: advisorAssets } })
+      .eq("id", publication.id).eq("brand_id", params.brandKey);
+    if (metadataError) return fail(503, "ADVISOR_DRAFT_PROVENANCE_SAVE_FAILED");
+  }
 
   // The workspace RPC historically stored only thumbnail_url. Mirror approved
   // media into the canonical Content Hub image fields so list cards, publishing

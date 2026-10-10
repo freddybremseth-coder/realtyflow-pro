@@ -13,6 +13,7 @@ const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "i
 
 const metadataSchema = z.object({
   brandId: z.string().max(80).optional(),
+  referencePurpose: z.enum(["media_reference", "advisor_portrait"]).optional(),
   projectId: z.string().uuid().optional(),
   title: z.string().trim().max(200).optional(),
 });
@@ -53,9 +54,14 @@ export async function POST(request: NextRequest) {
 
     const metadata = metadataSchema.parse({
       brandId: String(form.get("brandId") || "") || undefined,
+      referencePurpose: String(form.get("referencePurpose") || "") || undefined,
       projectId: String(form.get("projectId") || "") || undefined,
       title: String(form.get("title") || "") || undefined,
     });
+
+    if (metadata.referencePurpose === "advisor_portrait" && !metadata.brandId) {
+      return NextResponse.json({ error: "Rådgiverportrett må være tilknyttet en merkevare." }, { status: 400 });
+    }
 
     const buffer = Buffer.from(await fileValue.arrayBuffer());
     const extension = extensionForMime(fileValue.type);
@@ -103,9 +109,10 @@ export async function POST(request: NextRequest) {
         metadata_json: {
           actorEmail: context.scope.actorEmail,
           originalFilename: fileValue.name,
-          purpose: "media_reference",
+          purpose: metadata.referencePurpose || "media_reference",
         },
-        tags: ["media-studio", "reference", metadata.brandId || ""].filter(Boolean),
+        tags: ["media-studio", "reference", metadata.brandId || "",
+          ...(metadata.referencePurpose === "advisor_portrait" ? ["advisor-portrait"] : [])].filter(Boolean),
         status: "active",
       })
       .select("*")

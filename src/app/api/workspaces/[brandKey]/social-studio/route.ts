@@ -4,6 +4,7 @@ import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace"
 import { askClaude } from "@/services/ai/claude-client";
 import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media/job-service";
 import { createMediaPromptPlan } from "@/services/media/prompt-director";
+import { reviewAdvisorPhoto } from "@/services/marketing/advisor-photo-analysis";
 import { getProviderCapabilities, supportsCapability } from "@/services/media/capabilities";
 import { isOpenArtConnected } from "@/services/integrations/openart-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
@@ -368,6 +369,30 @@ function propertyMediaUrls(property: any) {
     ...(Array.isArray(property.gallery) ? property.gallery : []),
   ].map((value) => typeof value === "string" ? value.trim() : "")
     .filter((value) => /^https:\/\//i.test(value))));
+}
+
+function advisorPropertyPhotoCandidates(property: any) {
+  // Filename-based shortlist only. Never claim the photo has been visually analysed.
+  // Uninformative camera filenames retain the original gallery order.
+  const candidates = propertyMediaUrls(property).slice(0, 24).map((url, index) => {
+    let filename = "";
+    try { filename = decodeURIComponent(new URL(url).pathname).toLowerCase(); } catch {}
+    const exterior = /terrace|terraza|terrasse|balcon|balcony|pool|piscina|garden|jardin|exterior|facade|fachada|patio|outside|outdoor/.test(filename);
+    const indoor = /salon|living|lounge|comedor|interior|hall|entrance|entrada/.test(filename);
+    const tight = /bath|bano|baño|toilet|wc|closet|laundry|utility|floorplan|plano|mapa|map|logo/.test(filename);
+    const score = (exterior ? 50 : indoor ? 20 : 0) - (tight ? 80 : 0) + (url === property.primary_image ? 8 : 0);
+    return {
+      id: String(index),
+      imageUrl: url,
+      isPrimary: url === property.primary_image,
+      rank: index + 1,
+      score,
+      reason: tight ? "Lite egnet motiv basert på filnavn" : exterior ? "Mulig terrasse eller uteområde (filnavn)" : indoor ? "Mulig oppholdsrom (filnavn)" : "Ikke visuelt vurdert",
+      placement: "manual" as const,
+    };
+  }).sort((a, b) => b.score - a.score || a.rank - b.rank)
+    .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+  return candidates;
 }
 
 function variantPropertyImages(property: any) {
@@ -1447,6 +1472,329 @@ export async function POST(
         } : null,
         ...discovery,
       }, { headers: noStore });
+    }
+
+    if (action === "advisor_visual_options") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const propertyLookup = clean(body.propertyLookup, 100);
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
+      const candidates = advisorPropertyPhotoCandidates(property);
+      return NextResponse.json({
+        ok: true,
+        propertyId: property.id,
+        selectionMode: "filename_hint_manual_review",
+        generated: false,
+        candidates,
+        outfits: ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"],
+        disclosure: "AI-illustrasjon – rådgiver digitalt plassert i boligbildet",
+      }, { headers: noStore });
+    }
+
+    if (action === "advisor_visual_rank") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, clean(body.propertyLookup, 100));
+      // The user triggers this explicitly. Cap each ranking request to THREE photos.
+      const candidates = advisorPropertyPhotoCandidates(property).slice(0, 3);
+      if (!candidates.length) return fail(409, "ADVISOR_PROPERTY_PHOTOS_REQUIRED");
+      const assessed = await Promise.allSettled(candidates.map(async candidate => ({
+        candidate, review: await reviewAdvisorPhoto(candidate.imageUrl),
+      })));
+      const ranked = assessed.flatMap((outcome) => outcome.status === "fulfilled"
+        ? [{
+            imageUrl: outcome.value.candidate.imageUrl,
+            rank: outcome.value.candidate.rank,
+            score: outcome.value.review.score,
+            suitable: outcome.value.review.suitable,
+            placement: outcome.value.review.placement,
+            reason: outcome.value.review.reason,
+            warning: outcome.value.review.warning,
+          }]
+        : [] as Array<{imageUrl: string; rank: number; score: number; suitable: boolean; placement: string; reason: string; warning: string}>)
+        .sort((a, b) => Number(b.suitable) - Number(a.suitable) || b.score - a.score || a.rank - b.rank);
+      if (!ranked.length) return fail(503, "ADVISOR_VISUAL_RANK_UNAVAILABLE");
+      const recommended = ranked.find(item => item.suitable) || null;
+      return NextResponse.json({
+        ok: true, propertyId: property.id, reviewedCount: ranked.length,
+        attemptedCount: candidates.length, ranked,
+        recommendation: recommended,
+        requiresManualApproval: true,
+        disclaimer: "AI-egnethet er rådgivende, ikke verifisering av faktisk bolig eller bildekorrekthet.",
+      }, { headers: noStore });
+    }
+
+    if (action === "advisor_visual_analyze") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, clean(body.propertyLookup, 100));
+      const sourceImageUrl = clean(body.sourceImageUrl, 2000);
+      if (!propertyMediaUrls(property).includes(sourceImageUrl)) return fail(400, "ADVISOR_PHOTO_NOT_IN_LISTING");
+      try {
+        // Explicitly user-triggered analysis of ONE gallery photo, never batch by default.
+        const review = await reviewAdvisorPhoto(sourceImageUrl);
+        return NextResponse.json({ ok: true, propertyId: property.id, sourceImageUrl, review }, { headers: noStore });
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : "ADVISOR_PHOTO_ANALYSIS_FAILED";
+        return fail(reason === "ADVISOR_VISION_NOT_CONFIGURED" ? 409 : 503, "ADVISOR_PHOTO_ANALYSIS_UNAVAILABLE", reason);
+      }
+    }
+
+    if (action === "advisor_composite_revoke") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const assetId = clean(body.assetId, 80);
+      const propertyId = clean(body.propertyId, 80);
+      if (!UUID_RE.test(assetId) || !UUID_RE.test(propertyId)) {
+        return fail(400, "ADVISOR_REVOKE_INPUT_INVALID");
+      }
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: asset, error: assetError } = await access.value.supabase
+        .from("media_assets")
+        .select("id,job_id,metadata_json")
+        .eq("id", assetId).eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey).eq("property_id", propertyId)
+        .is("deleted_at", null).maybeSingle();
+      if (assetError || !asset?.id || !asset.job_id) return fail(404, "ADVISOR_ASSET_NOT_FOUND");
+      const { data: job, error: jobError } = await access.value.supabase
+        .from("media_generation_jobs")
+        .select("id,idempotency_key,operation")
+        .eq("id", asset.job_id).eq("brand_id", params.brandKey)
+        .eq("property_id", propertyId).eq("organization_id", organizationId)
+        .maybeSingle();
+      if (jobError || !job?.id || job.operation !== "image_to_image" ||
+          !String(job.idempotency_key || "").startsWith("advisor-composite:")) {
+        return fail(404, "ADVISOR_JOB_NOT_FOUND");
+      }
+      const metadata = asset.metadata_json && typeof asset.metadata_json === "object" &&
+        !Array.isArray(asset.metadata_json) ? asset.metadata_json : {};
+      const { error: saveError } = await access.value.supabase
+        .from("media_assets")
+        .update({ metadata_json: {
+          ...metadata,
+          advisorManualApproval: {
+            approved: false, revokedAt: new Date().toISOString(),
+            revokedBy: access.value.verifiedEmail, propertyId,
+          },
+        } })
+        .eq("id", assetId).eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey).eq("property_id", propertyId);
+      if (saveError) return fail(503, "ADVISOR_REVOKE_FAILED");
+      return NextResponse.json({ ok: true, assetId, approved: false }, { headers: noStore });
+    }
+
+    if (action === "advisor_composite_approve") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const assetId = clean(body.assetId, 80);
+      const propertyId = clean(body.propertyId, 80);
+      const review = body.review as Record<string, unknown> | null;
+      if (!UUID_RE.test(assetId) || !UUID_RE.test(propertyId) ||
+          !review || review.identity !== true || review.property !== true || review.perspective !== true) {
+        return fail(400, "ADVISOR_MANUAL_REVIEW_REQUIRED");
+      }
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: asset, error: assetError } = await access.value.supabase
+        .from("media_assets")
+        .select("id,job_id,brand_id,property_id,organization_id,public_url,ai_generated,ai_edited,metadata_json")
+        .eq("id", assetId)
+        .eq("brand_id", params.brandKey)
+        .eq("organization_id", organizationId)
+        .eq("property_id", propertyId)
+        .eq("ai_generated", true)
+        .eq("ai_edited", true)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (assetError || !asset?.id || !asset.job_id) return fail(404, "ADVISOR_ASSET_NOT_FOUND");
+      const { data: job, error: jobError } = await access.value.supabase
+        .from("media_generation_jobs")
+        .select("id,brand_id,property_id,organization_id,operation,status,idempotency_key")
+        .eq("id", asset.job_id)
+        .eq("brand_id", params.brandKey)
+        .eq("property_id", propertyId)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      if (jobError || !job?.id || job.status !== "completed" ||
+          job.operation !== "image_to_image" ||
+          !String(job.idempotency_key || "").startsWith("advisor-composite:")) {
+        return fail(409, "ADVISOR_JOB_NOT_APPROVABLE");
+      }
+      const metadata = asset.metadata_json && typeof asset.metadata_json === "object" &&
+        !Array.isArray(asset.metadata_json) ? asset.metadata_json : {};
+      const timestamp = new Date().toISOString();
+      const approval = {
+        approved: true,
+        approvedAt: timestamp,
+        approvedBy: access.value.verifiedEmail,
+        propertyId,
+        checks: { identity: true, property: true, perspective: true },
+        disclosure: "AI-illustrasjon – rådgiveren er digitalt plassert i boligbildet",
+      };
+      const { error: saveError } = await access.value.supabase
+        .from("media_assets")
+        .update({ metadata_json: { ...metadata, advisorManualApproval: approval } })
+        .eq("id", assetId)
+        .eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey);
+      if (saveError) return fail(503, "ADVISOR_APPROVAL_SAVE_FAILED");
+      return NextResponse.json({
+        ok: true, assetId, imageUrl: asset.public_url, approvedAt: timestamp,
+        requiresDisclosure: true,
+      }, { headers: noStore });
+    }
+
+    if (action === "advisor_composite_status") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const jobId = clean(body.jobId, 80);
+      if (!UUID_RE.test(jobId)) return fail(400, "ADVISOR_JOB_ID_INVALID");
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: existing, error: lookupError } = await access.value.supabase
+        .from("media_generation_jobs")
+        .select("id,brand_id,idempotency_key,organization_id,operation")
+        .eq("id", jobId)
+        .eq("brand_id", params.brandKey)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      if (lookupError || !existing?.id ||
+          !String(existing.idempotency_key || "").startsWith("advisor-composite:") ||
+          existing.operation !== "image_to_image") {
+        return fail(404, "ADVISOR_JOB_NOT_FOUND");
+      }
+      try {
+        const job = await refreshMediaJob(access.value.supabase, {
+          organizationId,
+          actorEmail: access.value.verifiedEmail,
+          jobId,
+          autoExportToContentHub: false,
+        }) as Record<string, any>;
+        const asset = completedSocialStudioAsset(job);
+        return NextResponse.json({
+          ok: true, jobId, status: job.status,
+          imageUrl: asset?.imageUrl || null, assetId: asset?.assetId || null,
+          warning: job.error_message || null,
+          requiresManualApproval: true,
+        }, { headers: noStore });
+      } catch (cause) {
+        return fail(503, "ADVISOR_JOB_STATUS_FAILED", cause instanceof Error ? cause.message : undefined);
+      }
+    }
+
+    if (action === "advisor_composite_create") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      if (body.confirmIdentityRights !== true) return fail(403, "ADVISOR_REFERENCE_CONSENT_REQUIRED");
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, clean(body.propertyLookup, 100));
+      const sourceImageUrl = clean(body.sourceImageUrl, 2000);
+      const identityAssetUrl = clean(body.identityAssetUrl, 2000);
+      const outfit = clean(body.outfit, 40);
+      const pose = clean(body.pose, 40);
+      const placement = clean(body.placement, 40);
+      const variantId = clean(body.variantId, 40);
+      const take = body.take == null ? 1 : Number(body.take);
+      const channel = clean(body.channel, 20);
+      const outfits = ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"];
+      if (!propertyMediaUrls(property).includes(sourceImageUrl) ||
+          !outfits.includes(outfit) || !["relaxed", "presenting", "standing"].includes(pose) ||
+          !["auto", "left", "right", "center"].includes(placement) ||
+          !["editorial_premium", "lifestyle_story", "advisor_insight"].includes(variantId) ||
+          !Number.isInteger(take) || take < 1 || take > 3 ||
+          !["facebook", "instagram"].includes(channel)) {
+        return fail(400, "ADVISOR_COMPOSITE_INPUT_INVALID");
+      }
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: identityAsset } = await access.value.supabase.from("media_assets")
+        .select("id,public_url,organization_id,brand_id,media_type,metadata_json")
+        .eq("public_url", identityAssetUrl)
+        .eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey)
+        .eq("media_type", "image")
+        .is("deleted_at", null)
+        .limit(1).maybeSingle();
+      if (!identityAsset?.id || !identityAsset.public_url || identityAsset.metadata_json?.purpose !== "advisor_portrait") {
+        return fail(403, "ADVISOR_REFERENCE_NOT_AUTHORIZED");
+      }
+      const outfitDescriptions: Record<string, string> = {
+        navy_armani: "tailored navy designer suit, crisp white shirt, dark aviator sunglasses",
+        mediterranean_casual: "beige tailored trousers, white linen shirt, premium loafers without visible socks, no glasses",
+        light_grey: "light grey tailored designer suit, pale blue shirt, rectangular sunglasses",
+        sand_cream: "sand cream tailored designer suit, elegant knit polo, no glasses",
+        charcoal_olive: "charcoal olive tailored suit, white shirt, brown-tinted rounded sunglasses",
+      };
+      const conceptDirection: Record<string, string> = {
+        editorial_premium: "Premium editorial architecture-first composition; make the building the hero and place the advisor discreetly near an unobstructed edge.",
+        lifestyle_story: "Candid Mediterranean lifestyle composition; advisor feels naturally present in a believable walking or relaxed standing moment.",
+        advisor_insight: "Confident but understated property-advisor stance, gently directing attention to an authentic architectural feature without hiding it.",
+      };
+      const requestText = [
+        "Create one realistic editorial composite for a Costa Blanca real estate advisor.",
+        conceptDirection[variantId],
+        "FIRST reference image is the immutable actual listing photograph. SECOND reference is the approved advisor identity.",
+        "Preserve all architecture, furniture, view, terrain, room dimensions and real property selling features from the FIRST reference.",
+        "Insert ONE advisor with recognizable likeness from SECOND reference, naturally scaled to floor plane, with grounded shadows, correct perspective and coherent daylight.",
+        "Dress the advisor in " + outfitDescriptions[outfit] + ".",
+        pose === "presenting" ? "Pose: natural welcoming gesture showing the property." :
+          pose === "standing" ? "Pose: standing comfortably without hiding important property details." :
+          "Pose: relaxed elegant posture, one hand casually in pocket if appropriate.",
+        "Keep advisor to a secondary portion of image. Do not change the property's original view or invent building elements.",
+        "Use the actual floor or terrace ground plane. No floating people or impossible balcony placements.",
+        "Creative take " + take + " of 3. Later takes should vary natural micro-pose and framing without changing the real building or advisor identity.",
+        "Advisor placement preference: " + placement + ". Respect physically plausible perspective above all.",
+        "No text, logos, watermarks, additional persons or invented rooms.",
+      ].join(" ");
+      const plan = createMediaPromptPlan({
+        request: requestText,
+        mode: "professional",
+        mediaType: "image",
+        useCase: "property_visual",
+        platform: channel,
+        brandId: params.brandKey,
+        qualityTier: "balanced",
+        aspectRatio: channel === "instagram" ? "4:5" : "1:1",
+        sourceImageUrls: [sourceImageUrl, String(identityAsset.public_url)],
+        allowText: false,
+      });
+      const digest = crypto.createHash("sha256").update([
+        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, String(take), "v3",
+      ].join("|")).digest("hex").slice(0, 32);
+      try {
+        const result = await createMediaJob(access.value.supabase, {
+          organizationId,
+          userId: access.value.verifiedUserId,
+          actorEmail: access.value.verifiedEmail,
+          body: {
+            plan, brandId: params.brandKey, propertyId: property.id,
+            sourceImageUrls: [sourceImageUrl, String(identityAsset.public_url)],
+            idempotencyKey: "advisor-composite:" + digest,
+            autoExportToContentHub: false,
+          },
+        });
+        let job = result.job as Record<string, any>;
+        // A failed idempotent job must be retried explicitly rather than returned forever.
+        if (result.existing && ["failed", "expired", "cancelled"].includes(String(job.status))) {
+          job = await retryMediaJob(access.value.supabase, {
+            organizationId, actorEmail: access.value.verifiedEmail,
+            jobId: String(job.id),
+          }) as Record<string, any>;
+        }
+        if (["submitted", "processing"].includes(String(job.status))) {
+          job = await refreshMediaJob(access.value.supabase, {
+            organizationId, actorEmail: access.value.verifiedEmail,
+            jobId: String(job.id), autoExportToContentHub: false,
+          }) as Record<string, any>;
+        }
+        const asset = completedSocialStudioAsset(job);
+        return NextResponse.json({
+          ok: true, jobId: job.id, status: job.status,
+          imageUrl: asset?.imageUrl || null, assetId: asset?.assetId || null,
+          originalImageUrl: sourceImageUrl,
+          disclosure: "AI-illustrasjon – rådgiver digitalt plassert i boligbildet",
+          requiresManualApproval: true,
+          warning: job.error_message || null,
+        }, { headers: noStore });
+      } catch (cause) {
+        return fail(503, "ADVISOR_COMPOSITE_GENERATION_FAILED", cause instanceof Error ? cause.message : undefined);
+      }
     }
 
     if (action === "generate_concept_image") {
