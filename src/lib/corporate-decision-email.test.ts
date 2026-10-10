@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { ZENECO_BOOKING_REQUEST_URL } from "@/lib/booking-links";
 import test from "node:test";
 import {
   buildCorporateDecisionNoteReport,
   normalizeCorporateDecisionNoteTemplate,
+  CORPORATE_DECISION_NOTE_BOOKING_URL,
 } from "@/lib/corporate-decision-note";
 import {
   corporateDecisionEmailHtml,
@@ -58,4 +60,14 @@ test("Corporate decision email HTML carries brand identity without sending", () 
   assert.match(html, /Corporate Homes/);
   assert.match(html, /Book 20 minutter/);
   assert.match(html, /Beslutningsgrunnlag for Eksempel AS/);
+});
+
+
+test("Corporate decision emails use the real booking-request page", () => {
+  assert.equal(CORPORATE_DECISION_NOTE_BOOKING_URL, ZENECO_BOOKING_REQUEST_URL);
+  const plainText = corporateDecisionEmailText(report(), true);
+  const html = corporateDecisionEmailHtml(report(), true);
+  assert.ok(plainText.includes(ZENECO_BOOKING_REQUEST_URL));
+  assert.ok(html.includes(ZENECO_BOOKING_REQUEST_URL.replaceAll("&", "&amp;")));
+  assert.doesNotMatch(plainText, /appointment\.chatgenius\.pro/);
 });
