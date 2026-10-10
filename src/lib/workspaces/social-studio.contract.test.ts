@@ -20,6 +20,10 @@ const mediaLibraryRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/
 const advisorMediaApproval = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/approved-advisor-media.ts"), "utf8");
 const contentHubMedia = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/[id]/media/route.ts"), "utf8");
 const socialPublisher = fs.readFileSync(path.join(process.cwd(), "src/services/publishing/publisher.ts"), "utf8");
+const mediaJobService = fs.readFileSync(path.join(process.cwd(), "src/services/media/job-service.ts"), "utf8");
+const geminiMediaProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/gemini-media-provider.ts"), "utf8");
+const openartMediaProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/openart-media-provider.ts"), "utf8");
+const openartClient = fs.readFileSync(path.join(process.cwd(), "src/services/integrations/openart-client.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -549,4 +553,19 @@ test("Publish-time admission rejects a revoked advisor image including any carou
   const guard = socialPublisher.indexOf("const candidateImages");
   const graphCall = socialPublisher.indexOf("const outcome = await resolveAndPublish(", guard);
   assert.ok(guard !== -1 && graphCall > guard, "Review must be verified before any external publishing.");
+});
+
+test("Advisor image generation preserves both ordered references through supported image providers", () => {
+  assert.match(route, /sourceImageUrls: \[sourceImageUrl, String\(identityAsset\.public_url\)\]/);
+  assert.match(mediaJobService, /submitToProvider\(provider, plan, body\.sourceImageUrls\)/);
+  assert.match(geminiMediaProvider, /for \(const sourceUrl of input\.sourceImageUrls \|\| \[\]\)/);
+  assert.match(geminiMediaProvider, /promptParts\.push\(\{ inlineData: await imageUrlToInlineData\(sourceUrl\) \}\)/);
+  assert.match(openartMediaProvider, /sourceImageUrls: input\.sourceImageUrls/);
+  assert.match(openartClient, /params\.visualReferences = references\.slice\(0, 14\)\.map/);
+});
+
+test("Switching advisor mode off cannot silently hide an actively approved image", () => {
+  assert.match(studio, /!event\.target\.checked && Object\.keys\(advisorApproved\)\.length > 0/);
+  assert.match(studio, /Forkasting fjerner kun bildet fra dette utkastet/);
+  assert.match(studio, /Trekk tilbake godkjenningen eller velg/);
 });
