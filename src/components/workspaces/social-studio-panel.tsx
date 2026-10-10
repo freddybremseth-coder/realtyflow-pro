@@ -378,6 +378,14 @@ export function WorkspaceSocialStudio({
     void loadEditorialContent();
   }, [sourceType, brandKey, companionPropertyLookup, propertyContext?.id]);
 
+  // A reviewed composite applies only to the exact property photo, portrait and styling.
+  // Changing any input invalidates staged/approved images to prevent stale approvals.
+  useEffect(() => {
+    setAdvisorStaged({});
+    setAdvisorApproved({});
+    setPreviews({});
+  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorReferenceUrl, propertyLookup]);
+
   async function createAdvisorComposite(variant: Variant) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
     setAdvisorWorking(variant.id);
@@ -676,6 +684,10 @@ export function WorkspaceSocialStudio({
       throw new Error((channel === "facebook" ? "Facebook" : "Instagram") + " er ikke aktivert for denne merkevaren.");
     }
 
+    // A prepared image must not bypass explicit approval when an advisor composite is selected.
+    if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
+      throw new Error("AI-bildet må godkjennes manuelt før du lagrer SoMe-utkastet.");
+    }
     const renderedImage = options.preparedImage || await ensureConceptImage(variant);
     const approvedImageUrl = renderedImage.imageUrl || "";
     if (channel === "instagram" && !approvedImageUrl) {
