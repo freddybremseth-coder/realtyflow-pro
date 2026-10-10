@@ -4,6 +4,7 @@ import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace"
 import { askClaude } from "@/services/ai/claude-client";
 import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media/job-service";
 import { createMediaPromptPlan } from "@/services/media/prompt-director";
+import { reviewAdvisorPhoto } from "@/services/marketing/advisor-photo-analysis";
 import { getProviderCapabilities, supportsCapability } from "@/services/media/capabilities";
 import { isOpenArtConnected } from "@/services/integrations/openart-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
@@ -1483,6 +1484,22 @@ export async function POST(
         outfits: ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"],
         disclosure: "AI-illustrasjon – rådgiver digitalt plassert i boligbildet",
       }, { headers: noStore });
+    }
+
+    if (action === "advisor_visual_analyze") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, clean(body.propertyLookup, 100));
+      const sourceImageUrl = clean(body.sourceImageUrl, 2000);
+      if (!propertyMediaUrls(property).includes(sourceImageUrl)) return fail(400, "ADVISOR_PHOTO_NOT_IN_LISTING");
+      try {
+        // Explicitly user-triggered analysis of ONE gallery photo, never batch by default.
+        const review = await reviewAdvisorPhoto(sourceImageUrl);
+        return NextResponse.json({ ok: true, propertyId: property.id, sourceImageUrl, review }, { headers: noStore });
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : "ADVISOR_PHOTO_ANALYSIS_FAILED";
+        return fail(reason === "ADVISOR_VISION_NOT_CONFIGURED" ? 409 : 503, "ADVISOR_PHOTO_ANALYSIS_UNAVAILABLE", reason);
+      }
     }
 
     if (action === "advisor_composite_status") {
