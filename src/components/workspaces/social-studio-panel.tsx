@@ -815,6 +815,7 @@ export function WorkspaceSocialStudio({
     options: {
       packageId?: string;
       preparedImage?: { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat };
+      containsAdvisorComposite?: boolean;
     } = {},
   ) {
     if (!activePlatforms.has(channel)) {
@@ -832,7 +833,8 @@ export function WorkspaceSocialStudio({
     }
 
     const baseText = channel === "facebook" ? variant.facebookText : variant.instagramText;
-    const text = advisorApproved[variant.id]
+    const hasAdvisorComposite = Boolean(advisorApproved[variant.id] || options.containsAdvisorComposite);
+    const text = hasAdvisorComposite
       ? baseText + "\n\nAI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet."
       : baseText;
     const packageTag = options.packageId ? "package-" + options.packageId : "";
@@ -853,7 +855,7 @@ export function WorkspaceSocialStudio({
           ...(source?.contentId ? ["source-content-" + source.contentId] : []),
           ...(source?.areaId ? ["source-area-" + source.areaId] : []),
           ...(source?.companionPropertyId ? ["paired-property"] : []),
-          ...(advisorApproved[variant.id] ? ["ai-advisor-composite", "ai-illustration"] : []),
+          ...(hasAdvisorComposite ? ["ai-advisor-composite", "ai-illustration"] : []),
           ...(source?.type === "property"
             ? [
                 "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
@@ -962,7 +964,11 @@ export function WorkspaceSocialStudio({
         images.push(result);
       }
       setPackageProgress("Lagrer Instagram-karusell i Content Hub…");
-      const saved = await persistVariantDraft(variants[0], "instagram", { preparedImage: images[0] });
+      const containsAdvisorComposite = variants.some(item => Boolean(advisorApproved[item.id]));
+      const saved = await persistVariantDraft(variants[0], "instagram", {
+        preparedImage: images[0],
+        containsAdvisorComposite,
+      });
       draftId = saved.id;
       // POST preserves the first image as the cover when inserting the first additional slide.
       const endpoint = "/api/content-hub/drafts/" + encodeURIComponent(draftId) + "/media";
