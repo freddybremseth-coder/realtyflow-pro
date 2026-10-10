@@ -19,6 +19,7 @@ const mediaUpload = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/
 const mediaLibraryRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/route.ts"), "utf8");
 const advisorMediaApproval = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/approved-advisor-media.ts"), "utf8");
 const contentHubMedia = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/[id]/media/route.ts"), "utf8");
+const socialPublisher = fs.readFileSync(path.join(process.cwd(), "src/services/publishing/publisher.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -536,4 +537,14 @@ test("Opening a new property from Inventory or rebuilding concepts discards old 
   assert.match(studio, /setAdvisorStagedAssetIds\(\{\}\)/);
   assert.match(studio, /setAdvisorTake\(\{\}\)/);
   assert.match(studio, /setAdvisorRevoking\(""\)/);
+});
+
+test("Publish-time admission rejects a revoked advisor image including any carousel slide", () => {
+  assert.match(socialPublisher, /\.select\("visual_format,ai_image_url"\)/);
+  assert.match(socialPublisher, /\.\.\.carouselUrls/);
+  assert.match(socialPublisher, /advisorCompositeHasManualApproval\(supabase, url, brandId\)/);
+  assert.match(socialPublisher, /ADVISOR_COMPOSITE_REVIEW_REVOKED/);
+  const guard = socialPublisher.indexOf("const candidateImages");
+  const graphCall = socialPublisher.indexOf("const outcome = await resolveAndPublish(", guard);
+  assert.ok(guard !== -1 && graphCall > guard, "Review must be verified before any external publishing.");
 });
