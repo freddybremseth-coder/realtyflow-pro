@@ -952,6 +952,16 @@ export function WorkspaceSocialStudio({
 
     const baseText = channel === "facebook" ? variant.facebookText : variant.instagramText;
     const hasAdvisorComposite = Boolean(advisorApproved[variant.id] || options.containsAdvisorComposite);
+    const advisorAssetIdsForDraft = (options.containsAdvisorComposite ? variants : [variant])
+      .filter(item => Boolean(advisorApproved[item.id]))
+      .map(item => ({
+        assetId: advisorStagedAssetIds[item.id] || "",
+        imageUrl: advisorApproved[item.id],
+      }));
+    if (hasAdvisorComposite && (!advisorAssetIdsForDraft.length ||
+        advisorAssetIdsForDraft.some(asset => !asset.assetId || !asset.imageUrl))) {
+      throw new Error("Godkjent AI-bilde mangler medie-ID. Lagre godkjenningen på nytt før utkastet opprettes.");
+    }
     const text = hasAdvisorComposite
       ? baseText + "\n\nAI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet."
       : baseText;
@@ -995,6 +1005,7 @@ export function WorkspaceSocialStudio({
         strategyRecommendationReason: strategy?.recommendationReason || "",
         packageId: options.packageId || "",
         aiGeneratedImage: Boolean(hasAdvisorComposite || (source?.type !== "property" && previews[variant.id])),
+        advisorAssets: advisorAssetIdsForDraft,
       }),
     });
     const body = await response.json().catch(() => ({}));
