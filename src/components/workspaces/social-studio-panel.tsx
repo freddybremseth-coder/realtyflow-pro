@@ -807,6 +807,9 @@ export function WorkspaceSocialStudio({
       const images: Array<{ imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }> = [];
       const seen = new Set<string>();
       for (const variant of variants) {
+        if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
+          throw new Error("Godkjenn eller forkast AI-bildet for " + variant.label + " før du lagrer karusellen.");
+        }
         let result = await ensureConceptImage(variant);
         if (seen.has(result.imageUrl) && source?.type !== "property") {
           setPackageProgress("Lager eget bilde for " + variant.label + " (unngår duplikat) …");
