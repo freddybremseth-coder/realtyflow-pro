@@ -1454,18 +1454,30 @@ export async function POST(
       if (!propertyAccess.value) return propertyAccess.response;
       const propertyLookup = clean(body.propertyLookup, 100);
       const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
-      const candidates = propertyMediaUrls(property).slice(0, 24).map((url, index) => ({
-        id: String(index),
-        imageUrl: url,
-        isPrimary: url === property.primary_image,
-        // Ranking is provisional: human selection remains required until visual analysis is integrated.
-        rank: index + 1,
-        placement: "manual" as const,
-      }));
+      // Filename-based shortlist only. Never claim the photo has been visually analysed.
+      // Uninformative camera filenames retain the original gallery order.
+      const candidates = propertyMediaUrls(property).slice(0, 24).map((url, index) => {
+        let filename = "";
+        try { filename = decodeURIComponent(new URL(url).pathname).toLowerCase(); } catch {}
+        const exterior = /terrace|terraza|terrasse|balcon|balcony|pool|piscina|garden|jardin|exterior|facade|fachada|patio|outside|outdoor/.test(filename);
+        const indoor = /salon|living|lounge|comedor|interior|hall|entrance|entrada/.test(filename);
+        const tight = /bath|bano|baño|toilet|wc|closet|laundry|utility|floorplan|plano|mapa|map|logo/.test(filename);
+        const score = (exterior ? 50 : indoor ? 20 : 0) - (tight ? 80 : 0) + (url === property.primary_image ? 8 : 0);
+        return {
+          id: String(index),
+          imageUrl: url,
+          isPrimary: url === property.primary_image,
+          rank: index + 1,
+          score,
+          reason: tight ? "Lite egnet motiv basert på filnavn" : exterior ? "Mulig terrasse eller uteområde (filnavn)" : indoor ? "Mulig oppholdsrom (filnavn)" : "Ikke visuelt vurdert",
+          placement: "manual" as const,
+        };
+      }).sort((a, b) => b.score - a.score || a.rank - b.rank)
+        .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
       return NextResponse.json({
         ok: true,
         propertyId: property.id,
-        selectionMode: "manual",
+        selectionMode: "filename_hint_manual_review",
         generated: false,
         candidates,
         outfits: ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"],
