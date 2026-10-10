@@ -1443,20 +1443,21 @@ export function WorkspaceSocialStudio({
           <p className="text-xs text-slate-300">Megler i bildet · generert AI-illustrasjon</p>
           <button type="button" onClick={() => void createAdvisorComposite(variant)}
             disabled={!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || Boolean(advisorWorking) ||
-              !advisorCandidatePropertyId || source.propertyId !== advisorCandidatePropertyId}
+              !advisorCandidatePropertyId || source.propertyId !== advisorCandidatePropertyId ||
+              Boolean(advisorStaged[variant.id] || advisorApproved[variant.id])}
             className="mt-2 rounded-lg border border-cyan-600 px-3 py-2 text-sm text-cyan-100 disabled:opacity-40">
-            {advisorWorking === variant.id ? "Genererer bilde …" : "Lag bilde med meg"}
+            {advisorWorking === variant.id ? "Genererer bilde …" : advisorTake[variant.id] ? "Hent eller prøv siste AI-versjon" : "Lag bilde med meg"}
           </button>
           {advisorChosenImage && advisorCandidatePropertyId && source.propertyId !== advisorCandidatePropertyId &&
             <p className="mt-2 text-xs text-amber-200" role="status">Boligbildet og SoMe-forslaget gjelder ulike eiendommer. Hent bilder for riktig eiendom og lag nye forslag.</p>}
-          {(advisorStaged[variant.id] || advisorApproved[variant.id]) && <div className="mt-2 flex flex-wrap gap-2">
+          {Boolean(advisorTake[variant.id]) && <div className="mt-2 flex flex-wrap gap-2">
             <button type="button"
               onClick={() => void createAdvisorComposite(variant, true)}
               disabled={Boolean(advisorWorking) || (advisorTake[variant.id] || 1) >= 3}
               className="rounded-lg border border-amber-600 px-3 py-2 text-xs text-amber-100 disabled:opacity-40">
               Lag ny AI-versjon ({Math.min((advisorTake[variant.id] || 1) + 1, 3)}/3) · bruker ekstra AI-kapasitet
             </button>
-            <button type="button" className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300"
+            {(advisorStaged[variant.id] || advisorApproved[variant.id]) && <button type="button" className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300"
               onClick={() => {
                 setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
                 setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
@@ -1465,7 +1466,7 @@ export function WorkspaceSocialStudio({
                 setVisualFormats(current => ({ ...current, [variant.id]: "property_card" }));
               }}>
               Forkast AI-bildet og bruk vanlig eiendomskort
-            </button>
+            </button>}
           </div>}
           {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
