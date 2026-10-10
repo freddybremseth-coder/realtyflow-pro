@@ -529,3 +529,11 @@ test("Advisor composites are marked AI-generated in persisted Content Hub metada
   assert.match(marketing, /ai_generated: aiGeneratedImage/);
   assert.match(studio, /disabled=\{Boolean\(advisorApproved\[variant\.id\]\)\}/);
 });
+
+test("Opening a new property from Inventory or rebuilding concepts discards old advisor gallery state", () => {
+  assert.match(studio, /setAdvisorCandidatePropertyId\(""\)/);
+  assert.match(studio, /setAdvisorCandidates\(\[\]\)/);
+  assert.match(studio, /setAdvisorStagedAssetIds\(\{\}\)/);
+  assert.match(studio, /setAdvisorTake\(\{\}\)/);
+  assert.match(studio, /setAdvisorRevoking\(""\)/);
+});
