@@ -14,6 +14,8 @@ const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/c
 const contentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/content-hub/page.tsx"), "utf8");
 const globalsCss = fs.readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
 const advisorPhotoAnalysis = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-photo-analysis.ts"), "utf8");
+const referencePicker = fs.readFileSync(path.join(process.cwd(), "src/components/media-studio/reference-media-picker.tsx"), "utf8");
+const mediaUpload = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/upload/route.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -447,4 +449,12 @@ test("Instagram carousel discloses AI visual if advisor appears on any slide", (
   assert.match(studio, /containsAdvisorComposite,/);
   assert.match(studio, /const hasAdvisorComposite = Boolean\(advisorApproved\[variant\.id\] \|\| options\.containsAdvisorComposite\)/);
   assert.match(studio, /hasAdvisorComposite \? \["ai-advisor-composite", "ai-illustration"\]/);
+});
+
+test("Advisor reference images must be explicitly uploaded and purpose-tagged", () => {
+  assert.match(studio, /purpose="advisor_portrait"/);
+  assert.match(referencePicker, /form\.set\("referencePurpose", "advisor_portrait"\)/);
+  assert.match(referencePicker, /asset\.metadata_json\?\.purpose === "advisor_portrait"/);
+  assert.match(mediaUpload, /purpose: metadata\.referencePurpose \|\| "media_reference"/);
+  assert.match(route, /identityAsset\.metadata_json\?\.purpose !== "advisor_portrait"/);
 });
