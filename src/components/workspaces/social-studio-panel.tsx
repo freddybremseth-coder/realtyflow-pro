@@ -682,7 +682,10 @@ export function WorkspaceSocialStudio({
       throw new Error("Instagram trenger et godkjent bilde. RealtyFlow forsøkte å lage et, men fikk ikke et ferdig resultat.");
     }
 
-    const text = channel === "facebook" ? variant.facebookText : variant.instagramText;
+    const baseText = channel === "facebook" ? variant.facebookText : variant.instagramText;
+    const text = advisorApproved[variant.id]
+      ? baseText + "\n\nAI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet."
+      : baseText;
     const packageTag = options.packageId ? "package-" + options.packageId : "";
     const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/marketing", {
       method: "POST",
@@ -701,6 +704,7 @@ export function WorkspaceSocialStudio({
           ...(source?.contentId ? ["source-content-" + source.contentId] : []),
           ...(source?.areaId ? ["source-area-" + source.areaId] : []),
           ...(source?.companionPropertyId ? ["paired-property"] : []),
+          ...(advisorApproved[variant.id] ? ["ai-advisor-composite", "ai-illustration"] : []),
           ...(source?.type === "property"
             ? [
                 "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
