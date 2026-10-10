@@ -169,6 +169,13 @@ export function WorkspaceSocialStudio({
   const [advisorChosenImage, setAdvisorChosenImage] = useState("");
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [advisorError, setAdvisorError] = useState("");
+  const [advisorAnalyzing, setAdvisorAnalyzing] = useState(false);
+  const advisorAnalysisEpoch = useRef(0);
+  const [advisorAnalysisError, setAdvisorAnalysisError] = useState("");
+  const [advisorPhotoReview, setAdvisorPhotoReview] = useState<null | {
+    photo: string; suitable: boolean; score: number; placement: "auto" | "left" | "right" | "center";
+    reason: string; warning: string;
+  }>(null);
 
   const [propertyLabel, setPropertyLabel] = useState("");
   const [articleUrl, setArticleUrl] = useState("");
@@ -392,6 +399,47 @@ export function WorkspaceSocialStudio({
     setPreviews({});
     advisorRequestEpoch.current += 1;
   }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup]);
+
+
+  useEffect(() => {
+    advisorAnalysisEpoch.current += 1;
+    setAdvisorAnalyzing(false);
+    setAdvisorPhotoReview(null);
+    setAdvisorAnalysisError("");
+  }, [advisorChosenImage, propertyLookup]);
+
+  async function analyzeAdvisorPhoto() {
+    if (!advisorChosenImage || !propertyLookup.trim() || advisorAnalyzing) return;
+    const epoch = ++advisorAnalysisEpoch.current;
+    const photo = advisorChosenImage;
+    setAdvisorAnalyzing(true);
+    setAdvisorAnalysisError("");
+    setAdvisorPhotoReview(null);
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "advisor_visual_analyze",
+          propertyLookup: propertyLookup.trim(), sourceImageUrl: photo,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "AI-vurderingen er ikke tilgjengelig.");
+      if (epoch !== advisorAnalysisEpoch.current || photo !== advisorChosenImage) return;
+      const review = body?.review;
+      if (!review || !Number.isFinite(review.score)) throw new Error("Bildemodellen svarte i feil format.");
+      setAdvisorPhotoReview({ photo, suitable: review.suitable === true,
+        score: Number(review.score), placement: review.placement || "auto",
+        reason: String(review.reason || ""), warning: String(review.warning || "") });
+    } catch (cause) {
+      if (epoch === advisorAnalysisEpoch.current) setAdvisorAnalysisError(
+        cause instanceof Error ? cause.message : "AI-vurderingen feilet.",
+      );
+    } finally {
+      if (epoch === advisorAnalysisEpoch.current) setAdvisorAnalyzing(false);
+    }
+  }
 
   async function createAdvisorComposite(variant: Variant) {
     if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
@@ -1204,6 +1252,19 @@ export function WorkspaceSocialStudio({
                 <span className="block p-1 text-xs text-slate-300">{advisorChosenImage === candidate.imageUrl ? "Valgt" : "Velg bilde"} · {candidate.reason || "Ikke vurdert"}</span>
               </button>)}
             </div>}
+            <div className="rounded-lg border border-slate-700 p-3">
+              <button type="button" disabled={!advisorChosenImage || advisorAnalyzing} onClick={() => void analyzeAdvisorPhoto()} className="rounded-lg border border-cyan-700 px-3 py-2 text-xs font-medium text-cyan-200 disabled:opacity-40">
+                {advisorAnalyzing ? "AI vurderer bildet …" : "AI-vurder valgt boligfoto"}
+              </button>
+              <p className="mt-1 text-xs text-slate-400">Frivillig analyse med Gemini av ett valgt boligfoto. Bildet sendes til AI-leverandøren først når du trykker her.</p>
+              {advisorAnalysisError && <p role="alert" className="mt-2 text-xs text-rose-300">{advisorAnalysisError}</p>}
+              {advisorPhotoReview?.photo === advisorChosenImage && <div className="mt-3 space-y-2 text-xs text-slate-200">
+                <p><strong>Egnethet: {advisorPhotoReview.score}/100</strong> · {advisorPhotoReview.suitable ? "Mulig plassering" : "Anbefaler annet bilde"}</p>
+                <p>{advisorPhotoReview.reason}</p>
+                {advisorPhotoReview.warning && <p className="text-amber-200">{advisorPhotoReview.warning}</p>}
+                {advisorPhotoReview.suitable && <button type="button" className="rounded-lg border border-slate-500 px-3 py-2 text-xs" onClick={() => setAdvisorPlacement(advisorPhotoReview.placement)}>Bruk foreslått plassering ({advisorPhotoReview.placement === "auto" ? "automatisk" : advisorPhotoReview.placement})</button>}
+              </div>}
+            </div>
             <p className="text-xs text-amber-200">Bildene er foreløpig sortert etter filnavn, ikke faktisk bildeanalyse. Velg riktig motiv manuelt. Bildegenerering skjer først når du trykker «Lag bilde med meg» under et SoMe-forslag. Godkjenn bildet etter å ha kontrollert at boligen ikke er endret. Ingenting publiseres automatisk.</p>
           </div>}
         </div>
