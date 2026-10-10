@@ -253,6 +253,9 @@ export async function POST(
         !/^https:\/\//i.test(ref.imageUrl))) {
     return fail(400, "ADVISOR_ASSET_REFERENCES_INVALID");
   }
+  if (advisorAssets.length > 0 && (!sourcePropertyId || !aiGeneratedImage)) {
+    return fail(400, "ADVISOR_PROPERTY_AND_AI_FLAG_REQUIRED");
+  }
   if ((advisorAssets.length > 0 && !tags.includes("ai-advisor-composite")) ||
       (tags.includes("ai-advisor-composite") && !advisorAssets.length)) {
     return fail(400, "ADVISOR_ASSET_PROVENANCE_REQUIRED");
