@@ -542,7 +542,9 @@ test("Opening a new property from Inventory or rebuilding concepts discards old 
 test("Publish-time admission rejects a revoked advisor image including any carousel slide", () => {
   assert.match(socialPublisher, /\.select\("visual_format,ai_image_url"\)/);
   assert.match(socialPublisher, /\.\.\.carouselUrls/);
-  assert.match(socialPublisher, /advisorCompositeHasManualApproval\(supabase, url, brandId\)/);
+  assert.match(socialPublisher, /advisorCompositeApprovalStatus\(supabase, url, brandId\)/);
+  assert.match(socialPublisher, /publication\.tags\.includes\("ai-advisor-composite"\)/);
+  assert.match(socialPublisher, /approvalResults\.some\(result => result\.advisorFound && result\.allowed\)/);
   assert.match(socialPublisher, /ADVISOR_COMPOSITE_REVIEW_REVOKED/);
   const guard = socialPublisher.indexOf("const candidateImages");
   const graphCall = socialPublisher.indexOf("const outcome = await resolveAndPublish(", guard);
