@@ -396,3 +396,13 @@ test("Advisor generation keeps the listing photograph first and labels synthetic
   assert.match(studio, /AI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet/);
   assert.match(studio, /Originalboligen/);
 });
+
+test("Advisor status polling refreshes scoped image jobs without creating duplicate generations", () => {
+  assert.match(route, /action === "advisor_composite_status"/);
+  assert.match(route, /ADVISOR_JOB_NOT_FOUND/);
+  assert.match(route, /startsWith\("advisor-composite:"\)/);
+  assert.match(route, /existing\.operation !== "image_to_image"/);
+  assert.match(studio, /action: "advisor_composite_status"/);
+  assert.match(studio, /jobId: created\.jobId/);
+  assert.match(studio, /Submit once\. All later requests ONLY refresh/);
+});
