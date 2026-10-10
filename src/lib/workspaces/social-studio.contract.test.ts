@@ -17,6 +17,8 @@ const advisorPhotoAnalysis = fs.readFileSync(path.join(process.cwd(), "src/servi
 const referencePicker = fs.readFileSync(path.join(process.cwd(), "src/components/media-studio/reference-media-picker.tsx"), "utf8");
 const mediaUpload = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/upload/route.ts"), "utf8");
 const mediaLibraryRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/route.ts"), "utf8");
+const advisorMediaApproval = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/approved-advisor-media.ts"), "utf8");
+const contentHubMedia = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/[id]/media/route.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -487,4 +489,20 @@ test("Advisor rerenders must be deliberate, capped and uniquely idempotent", () 
   assert.match(studio, /createAdvisorComposite\(variant, true\)/);
   assert.match(studio, /Lag ny AI-versjon/);
   assert.match(studio, /Forkast AI-bildet og bruk vanlig eiendomskort/);
+});
+
+test("Advisor human review is persisted on the image before client marks it approved", () => {
+  assert.match(route, /action === "advisor_composite_approve"/);
+  assert.match(route, /advisorManualApproval: approval/);
+  assert.match(route, /review\.identity !== true \|\| review\.property !== true \|\| review\.perspective !== true/);
+  assert.match(studio, /action: "advisor_composite_approve"/);
+  assert.match(studio, /setAdvisorApproved\(current => \(\{ \.\.\.current, \[variant\.id\]: imageUrl \}\)\)/);
+});
+
+test("Marketing and Content Hub must reject unreviewed advisor composites", () => {
+  assert.match(marketing, /advisorCompositeHasManualApproval/);
+  assert.match(marketing, /ADVISOR_COMPOSITE_REVIEW_REQUIRED/);
+  assert.match(contentHubMedia, /advisorCompositeHasManualApproval\(auth\.supabase!, body\.source_url\)/);
+  assert.match(advisorMediaApproval, /startsWith\("advisor-composite:"\)/);
+  assert.match(advisorMediaApproval, /approval\?\.checks\?\.perspective/);
 });
