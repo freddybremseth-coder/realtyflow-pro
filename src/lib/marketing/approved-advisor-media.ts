@@ -11,11 +11,11 @@ export async function advisorCompositeHasManualApproval(
   if (!imageUrl) return true;
   const lookups = await Promise.all([
     supabase.from("media_assets")
-      .select("id,brand_id,property_id,job_id,metadata_json")
-      .eq("public_url", imageUrl).is("deleted_at", null).limit(2),
+      .select("id,brand_id,property_id,job_id,metadata_json,deleted_at")
+      .eq("public_url", imageUrl).limit(8),
     supabase.from("media_assets")
-      .select("id,brand_id,property_id,job_id,metadata_json")
-      .eq("thumbnail_url", imageUrl).is("deleted_at", null).limit(2),
+      .select("id,brand_id,property_id,job_id,metadata_json,deleted_at")
+      .eq("thumbnail_url", imageUrl).limit(8),
   ]);
   if (lookups.some(result => result.error)) return false;
   const assets = [...(lookups[0].data || []), ...(lookups[1].data || [])];
@@ -28,7 +28,7 @@ export async function advisorCompositeHasManualApproval(
     if (error || !job) return false;
     if (!String(job.idempotency_key || "").startsWith("advisor-composite:")) continue;
     const approval = asset.metadata_json?.advisorManualApproval;
-    if (job.status !== "completed" || approval?.approved !== true ||
+    if (asset.deleted_at || job.status !== "completed" || approval?.approved !== true ||
         !approval?.approvedAt || !approval?.approvedBy ||
         !approval?.checks?.identity || !approval?.checks?.property || !approval?.checks?.perspective ||
         approval.propertyId !== asset.property_id ||
