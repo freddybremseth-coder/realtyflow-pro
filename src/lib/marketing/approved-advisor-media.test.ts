@@ -70,3 +70,18 @@ test("ordinary listing image without an advisor media asset retains legacy publi
   assert.equal(await advisorCompositeHasManualApproval(fakeSupabase([], []),
     "https://cdn.example.com/listing-original.jpg", brandId), true);
 });
+
+test("advisor provenance stays absent for removed media records", async () => {
+  const db = fakeSupabase([], []);
+  const { advisorCompositeApprovalStatus } = await import("./approved-advisor-media");
+  assert.deepEqual(await advisorCompositeApprovalStatus(db, imageUrl, brandId), {
+    allowed: true, advisorFound: false,
+  });
+});
+
+test("an approved advisor provides verified provenance for publish-time tagging", async () => {
+  const { advisorCompositeApprovalStatus } = await import("./approved-advisor-media");
+  assert.deepEqual(await advisorCompositeApprovalStatus(fakeSupabase([asset], [job]), imageUrl, brandId), {
+    allowed: true, advisorFound: true,
+  });
+});
