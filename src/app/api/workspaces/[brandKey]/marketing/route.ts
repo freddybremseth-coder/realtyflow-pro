@@ -1,3 +1,4 @@
+import { advisorCompositeHasManualApproval } from "@/lib/marketing/approved-advisor-media";
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { SOCIAL_CATEGORIES } from "@/lib/workspaces/social-strategy";
@@ -261,6 +262,12 @@ export async function POST(
   }
 
   let data: any = null;
+  // Advisor composites cannot enter Content Hub without an approval persisted on the actual image.
+  // Enforced for every actor, including authenticated workspace administrators.
+  if (imageUrl && !(await advisorCompositeHasManualApproval(
+    access.value.supabase, imageUrl, params.brandKey, sourcePropertyId || undefined
+  ))) return fail(409, "ADVISOR_COMPOSITE_REVIEW_REQUIRED");
+
   if (!access.value.verifiedUserId) {
     if (!(await ownerChannelsActive(access.value.supabase, params.brandKey, platforms))) {
       return fail(409, "CHANNEL_NOT_ACTIVE_FOR_BRAND");
