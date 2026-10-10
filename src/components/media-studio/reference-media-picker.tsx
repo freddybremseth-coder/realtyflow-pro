@@ -55,14 +55,16 @@ export function ReferenceMediaPicker({
   const loadImages = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await readJson<{ assets: ReferenceAsset[] }>("/api/media/assets?limit=120&mediaType=image");
+      const result = await readJson<{ assets: ReferenceAsset[] }>(
+        "/api/media/assets?limit=120&mediaType=image" + (brandId ? "&brandId=" + encodeURIComponent(brandId) : ""),
+      );
       setAssets((result.assets || []).filter((asset) => Boolean(asset.public_url)));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Kunne ikke laste Media Library.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [brandId]);
 
   useEffect(() => {
     void loadImages();
