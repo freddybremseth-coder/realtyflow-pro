@@ -1473,6 +1473,101 @@ export async function POST(
       }, { headers: noStore });
     }
 
+    if (action === "advisor_composite_create") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      if (body.confirmIdentityRights !== true) return fail(403, "ADVISOR_REFERENCE_CONSENT_REQUIRED");
+      const property = await loadMarketableProperty(access.value.supabase, params.brandKey, clean(body.propertyLookup, 100));
+      const sourceImageUrl = clean(body.sourceImageUrl, 2000);
+      const identityAssetUrl = clean(body.identityAssetUrl, 2000);
+      const outfit = clean(body.outfit, 40);
+      const pose = clean(body.pose, 40);
+      const variantId = clean(body.variantId, 40);
+      const channel = clean(body.channel, 20);
+      const outfits = ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"];
+      if (!propertyMediaUrls(property).includes(sourceImageUrl) ||
+          !outfits.includes(outfit) || !["relaxed", "presenting", "standing"].includes(pose) ||
+          !["editorial_premium", "lifestyle_story", "advisor_insight"].includes(variantId) ||
+          !["facebook", "instagram"].includes(channel)) {
+        return fail(400, "ADVISOR_COMPOSITE_INPUT_INVALID");
+      }
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: identityAsset } = await access.value.supabase.from("media_assets")
+        .select("id,public_url,organization_id,brand_id,media_type")
+        .eq("public_url", identityAssetUrl)
+        .eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey)
+        .eq("media_type", "image")
+        .is("deleted_at", null)
+        .limit(1).maybeSingle();
+      if (!identityAsset?.id || !identityAsset.public_url) return fail(403, "ADVISOR_REFERENCE_NOT_AUTHORIZED");
+      const outfitDescriptions: Record<string, string> = {
+        navy_armani: "tailored navy designer suit, crisp white shirt, dark aviator sunglasses",
+        mediterranean_casual: "beige tailored trousers, white linen shirt, premium loafers without visible socks, no glasses",
+        light_grey: "light grey tailored designer suit, pale blue shirt, rectangular sunglasses",
+        sand_cream: "sand cream tailored designer suit, elegant knit polo, no glasses",
+        charcoal_olive: "charcoal olive tailored suit, white shirt, brown-tinted rounded sunglasses",
+      };
+      const requestText = [
+        "Create one realistic editorial composite for a Costa Blanca real estate advisor.",
+        "FIRST reference image is the immutable actual listing photograph. SECOND reference is the approved advisor identity.",
+        "Preserve all architecture, furniture, view, terrain, room dimensions and real property selling features from the FIRST reference.",
+        "Insert ONE advisor with recognizable likeness from SECOND reference, naturally scaled to floor plane, with grounded shadows, correct perspective and coherent daylight.",
+        "Dress the advisor in " + outfitDescriptions[outfit] + ".",
+        pose === "presenting" ? "Pose: natural welcoming gesture showing the property." :
+          pose === "standing" ? "Pose: standing comfortably without hiding important property details." :
+          "Pose: relaxed elegant posture, one hand casually in pocket if appropriate.",
+        "Keep advisor to a secondary portion of image. Do not change the property's original view or invent building elements.",
+        "No text, logos, watermarks, additional persons or invented rooms.",
+      ].join(" ");
+      const plan = createMediaPromptPlan({
+        request: requestText,
+        mode: "professional",
+        mediaType: "image",
+        useCase: "property_visual",
+        platform: channel,
+        brandId: params.brandKey,
+        qualityTier: "balanced",
+        aspectRatio: channel === "instagram" ? "4:5" : "1:1",
+        sourceImageUrls: [sourceImageUrl, String(identityAsset.public_url)],
+        allowText: false,
+      });
+      const digest = crypto.createHash("sha256").update([
+        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, variantId, channel, "v1",
+      ].join("|")).digest("hex").slice(0, 32);
+      try {
+        const result = await createMediaJob(access.value.supabase, {
+          organizationId,
+          userId: access.value.verifiedUserId,
+          actorEmail: access.value.verifiedEmail,
+          body: {
+            plan, brandId: params.brandKey, propertyId: property.id,
+            sourceImageUrls: [sourceImageUrl, String(identityAsset.public_url)],
+            idempotencyKey: "advisor-composite:" + digest,
+            autoExportToContentHub: false,
+          },
+        });
+        let job = result.job as Record<string, any>;
+        if (["submitted", "processing"].includes(String(job.status))) {
+          job = await refreshMediaJob(access.value.supabase, {
+            organizationId, actorEmail: access.value.verifiedEmail,
+            jobId: String(job.id), autoExportToContentHub: false,
+          }) as Record<string, any>;
+        }
+        const asset = completedSocialStudioAsset(job);
+        return NextResponse.json({
+          ok: true, jobId: job.id, status: job.status,
+          imageUrl: asset?.imageUrl || null, assetId: asset?.assetId || null,
+          originalImageUrl: sourceImageUrl,
+          disclosure: "AI-illustrasjon – rådgiver digitalt plassert i boligbildet",
+          requiresManualApproval: true,
+          warning: job.error_message || null,
+        }, { headers: noStore });
+      } catch (cause) {
+        return fail(503, "ADVISOR_COMPOSITE_GENERATION_FAILED", cause instanceof Error ? cause.message : undefined);
+      }
+    }
+
     if (action === "generate_concept_image") {
       const conceptId = clean(body.conceptId, 40);
       const sourceType = clean(body.sourceType, 20);
