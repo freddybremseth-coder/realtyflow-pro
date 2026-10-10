@@ -16,6 +16,7 @@ const globalsCss = fs.readFileSync(path.join(process.cwd(), "src/app/globals.css
 const advisorPhotoAnalysis = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-photo-analysis.ts"), "utf8");
 const referencePicker = fs.readFileSync(path.join(process.cwd(), "src/components/media-studio/reference-media-picker.tsx"), "utf8");
 const mediaUpload = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/upload/route.ts"), "utf8");
+const mediaLibraryRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/route.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -457,4 +458,10 @@ test("Advisor reference images must be explicitly uploaded and purpose-tagged", 
   assert.match(referencePicker, /asset\.metadata_json\?\.purpose === "advisor_portrait"/);
   assert.match(mediaUpload, /purpose: metadata\.referencePurpose \|\| "media_reference"/);
   assert.match(route, /identityAsset\.metadata_json\?\.purpose !== "advisor_portrait"/);
+});
+
+test("Advisor portraits are filtered in the media API before the library limit", () => {
+  assert.match(referencePicker, /referencePurpose=advisor_portrait/);
+  assert.match(mediaLibraryRoute, /metadata_json->>purpose/);
+  assert.match(mediaLibraryRoute, /"advisor_portrait", "media_reference"/);
 });
