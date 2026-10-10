@@ -15,6 +15,7 @@ import {
 } from "./facebook-token-helper";
 import { contentPublishabilityGate } from "@/lib/marketing/autonomous/publishability";
 import { ensureBrandWebsiteLink } from "@/lib/marketing/social-website-link";
+import { advisorCompositeHasManualApproval } from "@/lib/marketing/approved-advisor-media";
 
 export interface PublishResult {
   platform: string;
@@ -540,7 +541,7 @@ export async function executePublishForDraft(
   const { draftId, platforms, content, brandId, imageUrl, socialChannelIds } = params;
   const supabase = getSupabase();
   const { data: publication, error: publicationError } = await supabase
-    .from("content_publications").select("visual_format").eq("id", draftId).eq("brand_id", brandId).maybeSingle();
+    .from("content_publications").select("visual_format,ai_image_url").eq("id", draftId).eq("brand_id", brandId).maybeSingle();
   if (publicationError || !publication) throw new Error("Kunne ikke verifisere publiseringsutkastet.");
   let carouselUrls: string[] = [];
   if (publication.visual_format === "carousel") {
@@ -552,6 +553,30 @@ export async function executePublishForDraft(
         entries.some(e => e.processing_status !== "ready" || !/^https:\/\//.test(e.source_url)))
       return { results: [{ platform: "instagram", success: false, error: "Karusellen har ugyldige eller uferdige bilder." }], anySuccess: false };
     carouselUrls = entries.map(e => e.source_url);
+  }
+
+  // An advisor's approval may have been revoked AFTER this draft was saved or scheduled.
+  // Revalidate the exact image URLs before ANY external API call, including every carousel slide.
+  const candidateImages = [...new Set([
+    imageUrl || "",
+    publication.ai_image_url || "",
+    ...carouselUrls,
+  ].filter((url): url is string => typeof url === "string" && /^https:\/\//i.test(url)))];
+  const approvalResults = await Promise.all(candidateImages.map(url =>
+    advisorCompositeHasManualApproval(supabase, url, brandId)
+  ));
+  if (approvalResults.some(approved => !approved)) {
+    const reason = "ADVISOR_COMPOSITE_REVIEW_REVOKED: AI-bildet må godkjennes på nytt før publisering.";
+    await supabase.from("content_publications").update({
+      status: "failed",
+      updated_at: new Date().toISOString(),
+      publish_attempts: 1,
+      last_publish_error: reason,
+    }).eq("id", draftId).eq("brand_id", brandId);
+    return {
+      results: platforms.map(platform => ({ platform, success: false, error: reason })),
+      anySuccess: false,
+    };
   }
 
   let finalContent: string;
