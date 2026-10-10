@@ -1540,6 +1540,49 @@ export async function POST(
       }
     }
 
+    if (action === "advisor_composite_revoke") {
+      const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
+      if (!propertyAccess.value) return propertyAccess.response;
+      const assetId = clean(body.assetId, 80);
+      const propertyId = clean(body.propertyId, 80);
+      if (!UUID_RE.test(assetId) || !UUID_RE.test(propertyId)) {
+        return fail(400, "ADVISOR_REVOKE_INPUT_INVALID");
+      }
+      const organizationId = await brandMediaOrganizationId(access.value.supabase, params.brandKey);
+      const { data: asset, error: assetError } = await access.value.supabase
+        .from("media_assets")
+        .select("id,job_id,metadata_json")
+        .eq("id", assetId).eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey).eq("property_id", propertyId)
+        .is("deleted_at", null).maybeSingle();
+      if (assetError || !asset?.id || !asset.job_id) return fail(404, "ADVISOR_ASSET_NOT_FOUND");
+      const { data: job, error: jobError } = await access.value.supabase
+        .from("media_generation_jobs")
+        .select("id,idempotency_key,operation")
+        .eq("id", asset.job_id).eq("brand_id", params.brandKey)
+        .eq("property_id", propertyId).eq("organization_id", organizationId)
+        .maybeSingle();
+      if (jobError || !job?.id || job.operation !== "image_to_image" ||
+          !String(job.idempotency_key || "").startsWith("advisor-composite:")) {
+        return fail(404, "ADVISOR_JOB_NOT_FOUND");
+      }
+      const metadata = asset.metadata_json && typeof asset.metadata_json === "object" &&
+        !Array.isArray(asset.metadata_json) ? asset.metadata_json : {};
+      const { error: saveError } = await access.value.supabase
+        .from("media_assets")
+        .update({ metadata_json: {
+          ...metadata,
+          advisorManualApproval: {
+            approved: false, revokedAt: new Date().toISOString(),
+            revokedBy: access.value.verifiedEmail, propertyId,
+          },
+        } })
+        .eq("id", assetId).eq("organization_id", organizationId)
+        .eq("brand_id", params.brandKey).eq("property_id", propertyId);
+      if (saveError) return fail(503, "ADVISOR_REVOKE_FAILED");
+      return NextResponse.json({ ok: true, assetId, approved: false }, { headers: noStore });
+    }
+
     if (action === "advisor_composite_approve") {
       const propertyAccess = await requireBrandWorkspace(request, params.brandKey, "properties.catalog.read");
       if (!propertyAccess.value) return propertyAccess.response;
