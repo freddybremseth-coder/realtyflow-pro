@@ -93,3 +93,18 @@ test("Approval cannot be substituted using a different asset ID or a deleted med
   const vanished = fakeSupabase([], []);
   assert.equal(await advisorCompositeHasManualApproval(vanished, imageUrl, brandId, propertyId, "a-001"), false);
 });
+
+test("A different non-advisor asset sharing the same URL cannot borrow the advisor approval", async () => {
+  const ordinary = {
+    ...asset, id: "ordinary-asset", job_id: "ordinary-job",
+    metadata_json: {},
+  };
+  const ordinaryJob = { ...job, id: "ordinary-job", idempotency_key: "regular-image:123" };
+  const db = fakeSupabase([ordinary, asset], [ordinaryJob, job]);
+  assert.equal(await advisorCompositeHasManualApproval(
+    db, imageUrl, brandId, propertyId, "ordinary-asset"
+  ), false);
+  assert.equal(await advisorCompositeHasManualApproval(
+    db, imageUrl, brandId, propertyId, "a-001"
+  ), true);
+});
