@@ -160,6 +160,7 @@ export function WorkspaceSocialStudio({
   const [advisorPlacement, setAdvisorPlacement] = useState("auto");
   const [advisorWorking, setAdvisorWorking] = useState("");
   const advisorRequestEpoch = useRef(0);
+  const advisorCandidatesEpoch = useRef(0);
   const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
   const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
@@ -434,6 +435,7 @@ export function WorkspaceSocialStudio({
   async function loadAdvisorCandidates() {
     if (!propertyLookup.trim() || advisorLoading) return;
     setAdvisorLoading(true);
+    const candidateEpoch = ++advisorCandidatesEpoch.current;
     setAdvisorError("");
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
@@ -444,12 +446,13 @@ export function WorkspaceSocialStudio({
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error?.message || "Kunne ikke hente godkjente boligbilder.");
       const candidates = Array.isArray(body.candidates) ? body.candidates as Array<{ id: string; imageUrl: string; rank: number; reason?: string }> : [];
+      if (candidateEpoch !== advisorCandidatesEpoch.current) return;
       setAdvisorCandidates(candidates);
       setAdvisorChosenImage(candidates[0]?.imageUrl || "");
     } catch (cause) {
-      setAdvisorError(cause instanceof Error ? cause.message : "Kunne ikke hente boligbilder.");
+      if (candidateEpoch === advisorCandidatesEpoch.current) setAdvisorError(cause instanceof Error ? cause.message : "Kunne ikke hente boligbilder.");
     } finally {
-      setAdvisorLoading(false);
+      if (candidateEpoch === advisorCandidatesEpoch.current) setAdvisorLoading(false);
     }
   }
 
@@ -1148,7 +1151,7 @@ export function WorkspaceSocialStudio({
       {sourceType === "property" && <>
         {propertyLabel && <p className="rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">{propertyLabel}</p>}
         <label className="text-xs text-slate-300">Boligreferanse eller RealtyFlow-ID
-          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
+          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
             maxLength={100} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="F.eks. N9950"/>
         </label>
