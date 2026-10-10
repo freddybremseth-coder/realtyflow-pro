@@ -13,6 +13,7 @@ const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/
 const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/route.ts"), "utf8");
 const contentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/content-hub/page.tsx"), "utf8");
 const globalsCss = fs.readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
+const advisorPhotoAnalysis = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-photo-analysis.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -431,4 +432,12 @@ test("Advisor AI shortlist compares at most three explicit listing images", () =
   assert.match(studio, /Finn beste bilde med AI \(maks 3 bilder\)/);
   assert.match(studio, /action: "advisor_visual_rank"/);
   assert.match(studio, /setAdvisorChosenImage\(recommendation\.imageUrl\)/);
+});
+
+test("Advisor visual analysis bounds image downloads and rejects unsafe network destinations", () => {
+  assert.match(advisorPhotoAnalysis, /assertPublicDns\(url\.hostname\)/);
+  assert.match(advisorPhotoAnalysis, /isPublicAddress\(item\.address\)/);
+  assert.match(advisorPhotoAnalysis, /redirect: "error"/);
+  assert.match(advisorPhotoAnalysis, /const maxBytes = 7 \* 1024 \* 1024/);
+  assert.match(advisorPhotoAnalysis, /ADVISOR_PHOTO_URL_UNSAFE/);
 });
