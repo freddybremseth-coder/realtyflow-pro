@@ -976,6 +976,7 @@ export function WorkspaceSocialStudio({
         tags: Array.from(new Set([
           channel,
           ...(packageTag ? [packageTag] : []),
+          ...(hasAdvisorComposite ? ["ai-advisor-composite", "ai-illustration"] : []),
           ...variant.tags,
           ...(source?.socialCategory ? ["social-category-" + source.socialCategory.replace(/_/g, "-")] : []),
           "concept-" + variant.id.replace(/_/g, "-"),
@@ -983,7 +984,6 @@ export function WorkspaceSocialStudio({
           ...(source?.contentId ? ["source-content-" + source.contentId] : []),
           ...(source?.areaId ? ["source-area-" + source.areaId] : []),
           ...(source?.companionPropertyId ? ["paired-property"] : []),
-          ...(hasAdvisorComposite ? ["ai-advisor-composite", "ai-illustration"] : []),
           ...(source?.type === "property"
             ? [
                 "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
