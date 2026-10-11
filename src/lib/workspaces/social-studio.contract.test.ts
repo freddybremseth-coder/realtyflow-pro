@@ -534,7 +534,7 @@ test("Content Hub carousel images cannot use approved advisor composites from an
 
 test("Advisor composites are marked AI-generated in persisted Content Hub metadata", () => {
   assert.match(studio, /aiGeneratedImage: Boolean\(hasAdvisorComposite \|\|/);
-  assert.match(studio, /const containsAdvisorComposite = variants\.some\(item => Boolean\(advisorApproved\[item\.id\]\)\)/);
+  assert.match(studio, /const containsAdvisorComposite = carouselSlides\.some\(slide => slide\.isAdvisor\)/);
   assert.match(marketing, /ai_generated: aiGeneratedImage/);
   assert.match(studio, /disabled=\{Boolean\(advisorApproved\[variant\.id\]\)\}/);
 });
