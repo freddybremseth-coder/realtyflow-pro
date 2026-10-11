@@ -14,6 +14,7 @@ const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/c
 const contentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/content-hub/page.tsx"), "utf8");
 const globalsCss = fs.readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
 const advisorPhotoAnalysis = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-photo-analysis.ts"), "utf8");
+const advisorPropertyReference = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-property-reference.ts"), "utf8");
 const referencePicker = fs.readFileSync(path.join(process.cwd(), "src/components/media-studio/reference-media-picker.tsx"), "utf8");
 const mediaUpload = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/upload/route.ts"), "utf8");
 const mediaLibraryRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/route.ts"), "utf8");
@@ -402,7 +403,7 @@ test("Advisor preview cannot approve without reviewing identity, property and pe
 });
 
 test("Advisor generation keeps the listing photograph first and labels synthetic output", () => {
-  assert.match(route, /sourceImageUrls: \[sourceImageUrl, String\(identityAsset\.public_url\)\]/);
+  assert.match(route, /sourceImageUrls: \[stagedPropertyPhotoUrl, String\(identityAsset\.public_url\)\]/);
   assert.match(route, /Preserve all architecture, furniture, view, terrain/);
   assert.match(studio, /AI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet/);
   assert.match(studio, /Originalboligen/);
@@ -556,7 +557,7 @@ test("Publish-time admission rejects a revoked advisor image including any carou
 });
 
 test("Advisor image generation preserves both ordered references through supported image providers", () => {
-  assert.match(route, /sourceImageUrls: \[sourceImageUrl, String\(identityAsset\.public_url\)\]/);
+  assert.match(route, /sourceImageUrls: \[stagedPropertyPhotoUrl, String\(identityAsset\.public_url\)\]/);
   assert.match(mediaJobService, /submitToProvider\(provider, plan, body\.sourceImageUrls\)/);
   assert.match(geminiMediaProvider, /for \(const sourceUrl of input\.sourceImageUrls \|\| \[\]\)/);
   assert.match(geminiMediaProvider, /promptParts\.push\(\{ inlineData: await imageUrlToInlineData\(sourceUrl\) \}\)/);
@@ -591,4 +592,16 @@ test("AI disclosure tags are prioritised before optional tags may be truncated",
   const ai = snippet.indexOf("ai-advisor-composite");
   const userTags = snippet.indexOf("...variant.tags");
   assert.ok(ai !== -1 && userTags > ai, "Mandatory AI tags must precede optional concept tags.");
+});
+
+test("Advisor image generation preflights and stages listing photos before OpenArt", () => {
+  assert.match(route, /stageAdvisorPropertyReference\(access\.value\.supabase/);
+  assert.match(route, /ADVISOR_PROPERTY_IMAGE_PREPARATION_FAILED/);
+  assert.match(route, /"v4-staged-property-photo"/);
+  assert.match(route, /originalImageUrl: sourceImageUrl/);
+  assert.match(advisorPropertyReference, /await readBoundedPhoto\(input\.sourceImageUrl\)/);
+  assert.match(advisorPropertyReference, /getPublicUrl\(filePath\)/);
+  assert.match(advisorPropertyReference, /upload\(/);
+  assert.match(studio, /1002\|upstream_error/);
+  assert.match(studio, /et nytt forsøk kan bruke OpenArt-kreditter/);
 });
