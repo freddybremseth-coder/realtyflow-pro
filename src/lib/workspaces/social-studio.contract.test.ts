@@ -680,7 +680,7 @@ test("Instagram batch and carousel use each selected photo without replacing Fac
   assert.match(studio, /!channels\.includes\("facebook"\) &&/);
   assert.match(studio, /channel === "instagram" && instagramImages\[variant\.id\] \? "custom"/);
   assert.match(studio, /let result = selected\s*\? \{ imageUrl: selected/);
-  assert.match(studio, /source_kind: item\.isOwnImage \? "library" : "openart"/);
+  assert.match(studio, /source_kind: item\.isOwnImage \|\| item\.isAdvisor \? "library" : "property"/);
   assert.match(studio, /ensureAdvisorPackageReady\(true\)/);
   assert.match(studio, /const pending = variants\.filter\(item => Boolean\(advisorStaged\[item\.id\]\) && !advisorApproved\[item\.id\]\)/);
 });
