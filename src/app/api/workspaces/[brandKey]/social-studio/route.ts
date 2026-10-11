@@ -856,7 +856,11 @@ function parseVariants(raw: string, sourceUrl: string, sourceType: string) {
       angle: clean(source.angle, 500),
       visualDirection: clean(source.visualDirection, 500),
       facebookText: ensureLink(clean(source.facebookText, 4_200), sourceUrl),
-      instagramText: ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType),
+      // Instagram previously removed every URL. Keep the *canonical* source
+      // link after engagement copy for property and editorial articles.
+      instagramText: ["property", "article"].includes(sourceType)
+        ? ensureLink(ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType), sourceUrl)
+        : ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType),
       tags: safeTags(source.tags),
     };
   });
@@ -2084,9 +2088,11 @@ export async function POST(
       const property = await loadMarketableProperty(access.value.supabase, params.brandKey, propertyLookup);
       const facts = propertyFacts(property);
       sourceTitle = property.title || property.property_type || property.ref || "Bolig";
-      sourceUrl = property.ref
-        ? definition.website.replace(/\/$/, "") + "/eiendommer/" + encodeURIComponent(property.ref)
-        : definition.website;
+      if (!property.ref) {
+        return fail(422, "PROPERTY_PUBLIC_LINK_UNAVAILABLE",
+          "Eiendommen mangler offentlig referanse. Kan ikke lage SoMe-utkast uten direkte eiendomslenke.");
+      }
+      sourceUrl = definition.website.replace(/\/$/, "") + "/eiendommer/" + encodeURIComponent(property.ref);
       sourceImageUrl = property.primary_image || sourceImageUrl;
       variantImages = variantPropertyImages(property);
       propertyImageCount = propertyMediaUrls(property).length;
