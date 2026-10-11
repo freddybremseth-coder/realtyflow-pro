@@ -26,7 +26,8 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// OpenAI image edits can require more than a 60s provider roundtrip.
+export const maxDuration = 180;
 
 const noStore = { "Cache-Control": "private, no-store" };
 const SUPPORTED_BRANDS = new Set(["zeneco", "pinosoecolife"]);
@@ -1694,12 +1695,14 @@ export async function POST(
       const variantId = clean(body.variantId, 40);
       const take = body.take == null ? 1 : Number(body.take);
       const channel = clean(body.channel, 20);
+      const selectedProvider = clean(body.imageProvider, 20) || "openart";
       const outfits = ["navy_armani", "mediterranean_casual", "light_grey", "sand_cream", "charcoal_olive"];
       if (!propertyMediaUrls(property).includes(sourceImageUrl) ||
           !outfits.includes(outfit) || !["relaxed", "presenting", "standing"].includes(pose) ||
           !["auto", "left", "right", "center"].includes(placement) ||
           !["editorial_premium", "lifestyle_story", "advisor_insight"].includes(variantId) ||
           !Number.isInteger(take) || take < 1 || take > 3 ||
+          !["openart", "openai"].includes(selectedProvider) ||
           !["facebook", "instagram"].includes(channel)) {
         return fail(400, "ADVISOR_COMPOSITE_INPUT_INVALID");
       }
@@ -1715,6 +1718,17 @@ export async function POST(
       if (!identityAsset?.id || !identityAsset.public_url || identityAsset.metadata_json?.purpose !== "advisor_portrait") {
         return fail(403, "ADVISOR_REFERENCE_NOT_AUTHORIZED");
       }
+      // This workflow only accepts Nano Banana 2 via OpenArt or GPT Image via
+      // OpenAI. Do not silently route to Gemini or another provider.
+      const availableProviders = await getProviderCapabilities(access.value.supabase, organizationId);
+      const chosenCapability = availableProviders.find(item => item.provider === selectedProvider);
+      if (!chosenCapability || !supportsCapability(chosenCapability, "image", "image_to_image")) {
+        return fail(409, "ADVISOR_IMAGE_PROVIDER_NOT_CONFIGURED",
+          selectedProvider === "openai"
+            ? "OpenAI-bilder er ikke aktivert. OPENAI_API_KEY må være konfigurert i Vercel."
+            : "Nano Banana 2 via OpenArt er ikke tilgjengelig. Kontroller OpenArt-tilkobling og kreditter.");
+      }
+
       let stagedPropertyPhotoUrl: string;
       try {
         // Ensure external gallery images are genuinely retrievable before
@@ -1768,8 +1782,19 @@ export async function POST(
         sourceImageUrls: [stagedPropertyPhotoUrl, String(identityAsset.public_url)],
         allowText: false,
       });
+      const preferredPlan = {
+        ...plan,
+        providerRecommendation: {
+          ...plan.providerRecommendation,
+          provider: selectedProvider as "openart" | "openai",
+          displayName: selectedProvider === "openart" ? "Nano Banana 2 (OpenArt)" : "OpenAI GPT Image 2",
+          model: selectedProvider === "openart" ? "nano-banana-2" : "gpt-image-2",
+          reason: "Brukeren valgte denne bildemodellen eksplisitt i SoMe Studio.",
+          estimatedCostTier: selectedProvider === "openart" ? "high" as const : "medium" as const,
+        },
+      };
       const digest = crypto.createHash("sha256").update([
-        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, String(take), "v4-staged-property-photo",
+        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, String(take), selectedProvider, "v5-manual-image-provider",
       ].join("|")).digest("hex").slice(0, 32);
       try {
         const result = await createMediaJob(access.value.supabase, {
@@ -1777,7 +1802,7 @@ export async function POST(
           userId: access.value.verifiedUserId,
           actorEmail: access.value.verifiedEmail,
           body: {
-            plan, brandId: params.brandKey, propertyId: property.id,
+            plan: preferredPlan, brandId: params.brandKey, propertyId: property.id,
             sourceImageUrls: [stagedPropertyPhotoUrl, String(identityAsset.public_url)],
             idempotencyKey: "advisor-composite:" + digest,
             autoExportToContentHub: false,
