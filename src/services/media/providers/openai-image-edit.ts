@@ -1,6 +1,10 @@
 import { readBoundedPhoto } from "@/services/marketing/advisor-photo-analysis";
 import type { ImageGenerationInput, MediaGenerationJob } from "../types";
-import { redactOpenAIErrorMessage } from "./openai-voice-provider";
+function redactOpenAIErrorMessage(message: string) {
+  return message
+    .replace(/\\bsk-[A-Za-z0-9_-]{12,}\\b/g, "[REDACTED]")
+    .replace(/\\b(?:AQ|sess|proj)\\.[A-Za-z0-9_*.-]{12,}\\b/g, "[REDACTED]");
+}
 
 const EDIT_ENDPOINT = "https://api.openai.com/v1/images/edits";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2";
