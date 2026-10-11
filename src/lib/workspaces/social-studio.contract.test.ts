@@ -655,3 +655,37 @@ test("A single advisor post cannot silently save a non-advisor image", () => {
   assert.match(studio, /Lag 3 tekst- og SoMe-konsepter/);
   assert.match(studio, /Tre forskjellige konsepter lager ikke tre ferdige AI-foto/);
 });
+
+test("Each Instagram concept can select or upload an independent brand media image", () => {
+  assert.match(studio, /const \[instagramImages, setInstagramImages\] = useState<Record<string, string>>\(\{\}\)/);
+  assert.match(studio, /usage="social_post"/);
+  assert.match(studio, /brandId=\{brandKey\}/);
+  assert.match(studio, /value=\{instagramImages\[variant\.id\] \|\| ""\}/);
+  assert.match(studio, /setInstagramImages\(current =>/);
+  assert.match(referencePicker, /usage !== "social_post"/);
+  assert.match(referencePicker, /"\/api\/media\/assets\/upload"/);
+});
+
+test("Selected Instagram image wins over prepared generic imagery but not approved advisor AI", () => {
+  assert.match(studio, /channel === "instagram" && !advisorApproved\[variant\.id\]/);
+  assert.match(studio, /instagramImages\[variant\.id\] \|\| ""/);
+  assert.match(studio, /const renderedImage = selectedInstagramImage\s*\? \{ imageUrl: selectedInstagramImage/);
+  assert.match(studio, /: options\.preparedImage \|\| await ensureConceptImage\(variant\)/);
+  assert.match(studio, /setInstagramImages\(current => \{ const next = \{ \.\.\.current \}; delete next\[variant\.id\]; return next; \}\)/);
+  assert.match(studio, /\.\.\.\(selectedInstagramImage \? \["instagram-own-image"\] : \[\]\)/);
+});
+
+test("Instagram batch and carousel use each selected photo without replacing Facebook images", () => {
+  assert.match(studio, /!channels\.includes\("facebook"\) &&/);
+  assert.match(studio, /channel === "instagram" && instagramImages\[variant\.id\] \? "custom"/);
+  assert.match(studio, /let result = selected\s*\? \{ imageUrl: selected/);
+  assert.match(studio, /source_kind: item\.isOwnImage \? "library" : "openart"/);
+  assert.match(studio, /ensureAdvisorPackageReady\(true\)/);
+  assert.match(studio, /const pending = variants\.filter\(item => Boolean\(advisorStaged\[item\.id\]\) && !advisorApproved\[item\.id\]\)/);
+});
+
+test("Content Hub distinguishes manual Instagram photos in batch view", () => {
+  assert.match(contentHubPage, /packageOwnImageCount/);
+  assert.match(contentHubPage, /Eget Instagram-bilde/);
+  assert.match(contentHubPage, /instagram-own-image/);
+});
