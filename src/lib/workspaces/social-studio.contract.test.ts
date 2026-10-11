@@ -689,3 +689,12 @@ test("Content Hub distinguishes manual Instagram photos in batch view", () => {
   assert.match(contentHubPage, /Eget Instagram-bilde/);
   assert.match(contentHubPage, /instagram-own-image/);
 });
+
+test("Exactly three separate Instagram drafts can be created with distinct media", () => {
+  assert.match(studio, /async function saveInstagramTrio\(\)/);
+  assert.match(studio, /ensureAdvisorPackageReady\(true\)/);
+  assert.match(studio, /persistVariantDraft\(variant, "instagram", \{ packageId \}\)/);
+  assert.match(studio, /setSavedPackageDrafts\(\[\.\.\.createdDrafts\]\)/);
+  assert.match(studio, /Lagre 3 Instagram-innlegg som utkast/);
+  assert.match(studio, /Disse blir tre forskjellige innlegg/);
+});
