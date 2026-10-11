@@ -457,7 +457,7 @@ test("Advisor visual analysis bounds image downloads and rejects unsafe network 
 });
 
 test("Instagram carousel discloses AI visual if advisor appears on any slide", () => {
-  assert.match(studio, /const containsAdvisorComposite = variants\.some\(item => Boolean\(advisorApproved\[item\.id\]\)\)/);
+  assert.match(studio, /const containsAdvisorComposite = carouselSlides\.some\(slide => slide\.isAdvisor\)/);
   assert.match(studio, /containsAdvisorComposite,/);
   assert.match(studio, /const hasAdvisorComposite = Boolean\(advisorApproved\[variant\.id\] \|\| options\.containsAdvisorComposite\)/);
   assert.match(studio, /hasAdvisorComposite \? \["ai-advisor-composite", "ai-illustration"\]/);
