@@ -5,6 +5,7 @@ import test from "node:test";
 
 const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[brandKey]/social-studio/route.ts"), "utf8");
 const studio = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/social-studio-panel.tsx"), "utf8");
+const marketingPanel = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/marketing-panel.tsx"), "utf8");
 const catalogue = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/property-catalogue.tsx"), "utf8");
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx"), "utf8");
@@ -719,4 +720,12 @@ test("Carousel promotes approved advisor image to first slide and aligns caption
   assert.match(studio, /variantId: cover\.variant\.id/);
   assert.match(studio, /Godkjent AI-bilde med rådgiver/);
   assert.match(studio, /OpenArt som valgt modell betyr ikke/);
+});
+
+test("SoMe Studio overview has a prominent direct Content Hub link filtered by brand and drafts", () => {
+  assert.match(marketingPanel, /Åpne Content Hub/);
+  assert.match(marketingPanel, /href=\{"\/content-hub\?from=social-studio&brand=" \+ encodeURIComponent\(brandKey\)\}/);
+  assert.match(marketingPanel, /aria-label="Åpne Content Hub og utkast for denne merkevaren"/);
+  assert.match(contentHubPage, /requestedOrigin === "social-studio" && requestedBrand/);
+  assert.match(contentHubPage, /setActiveContentTab\("utkast"\)/);
 });
