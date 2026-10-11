@@ -491,7 +491,7 @@ test("Changing property clears old generated concepts and invalidates in-flight 
 test("Advisor rerenders must be deliberate, capped and uniquely idempotent", () => {
   assert.match(route, /const take = body\.take == null \? 1 : Number\(body\.take\)/);
   assert.match(route, /!Number\.isInteger\(take\) \|\| take < 1 \|\| take > 3/);
-  assert.match(route, /variantId, channel, String\(take\), "v3"/);
+  assert.match(route, /variantId, channel, String\(take\), "v4-staged-property-photo"/);
   assert.match(studio, /createAdvisorComposite\(variant, true\)/);
   assert.match(studio, /Lag ny AI-versjon/);
   assert.match(studio, /Forkast AI-bildet og bruk vanlig eiendomskort/);
