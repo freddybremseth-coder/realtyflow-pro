@@ -426,9 +426,13 @@ function factSources(property: any) {
 }
 
 function ensureLink(text: string, url: string) {
-  const compact = clean(text, 4_500);
-  if (!url || compact.includes(url)) return compact;
-  return compact + "\n\n" + url;
+  const compact = clean(text, 4_200);
+  if (!url) return compact;
+  // Keep the canonical link intact, and leave room for mandatory AI disclosure
+  // added when the user saves a manually approved advisor composite.
+  const withoutDuplicate = compact.replaceAll(url, "").trim();
+  const available = Math.max(0, 4_700 - url.length - 2);
+  return withoutDuplicate.slice(0, available).trimEnd() + "\n\n" + url;
 }
 
 function instagramCaptionWithoutLinks(text: string) {
