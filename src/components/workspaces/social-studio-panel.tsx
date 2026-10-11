@@ -1259,7 +1259,7 @@ export function WorkspaceSocialStudio({
     setSavedPackageDrafts([]);
     const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     const publicationIds: string[] = [];
-    const createdDrafts: Array<{ id: string; label: string; channel: Channel; imageKind: "advisor" | "property" }> = [];
+    const createdDrafts: Array<{ id: string; label: string; channel: Channel; imageKind: "advisor" | "property" | "custom" }> = [];
 
     try {
       const prepared = new Map<string, { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }>();
