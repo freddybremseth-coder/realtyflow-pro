@@ -1050,6 +1050,14 @@ export function WorkspaceSocialStudio({
   async function saveVariant(variant: Variant, channel: Channel) {
     if (!canDraft || saving || packageSaving) return;
     const feedbackKey = variant.id + ":" + channel;
+    if (advisorMode && source?.type === "property" && !advisorApproved[variant.id] &&
+        !allowMixedAdvisorPackage) {
+      setSaveFeedback(current => ({
+        ...current,
+        [feedbackKey]: { kind: "error", text: "Dette konseptet mangler godkjent AI-bilde med rådgiver. Lag og godkjenn bildet, eller velg tydelig å bruke vanlig boligfoto under oppsummeringen." },
+      }));
+      return;
+    }
     setSaving(feedbackKey);
     setSaveFeedback(current => {
       const next = { ...current };
@@ -1601,8 +1609,9 @@ export function WorkspaceSocialStudio({
 
     <button type="button" onClick={() => void generate()} disabled={!canGenerate}
       className="mt-4 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">
-      <Sparkles size={16}/>{busy ? "Lager tre konsepter…" : "Lag 3 forskjellige forslag"}
+      <Sparkles size={16}/>{busy ? "Lager tre konsepter…" : "Lag 3 tekst- og SoMe-konsepter"}
     </button>
+    {sourceType === "property" && advisorMode && <p className="mt-2 text-xs text-slate-400">Tre forskjellige konsepter lager ikke tre ferdige AI-foto. Bilder med rådgiver genereres og godkjennes separat under hvert konsept.</p>}
     {generationFeedback && <p role={generationFeedback.kind === "error" ? "alert" : "status"}
       className={"mt-3 max-w-3xl rounded-lg border p-3 text-sm " + (generationFeedback.kind === "error"
         ? "border-amber-800 bg-amber-950/30 text-amber-200"
@@ -1888,7 +1897,12 @@ export function WorkspaceSocialStudio({
           {packageSaving ? "Lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken som utkast"}
         </button>
       </div>
-      {savedPublicationId && <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fuchsia-500 px-4 py-2 text-sm font-semibold text-fuchsia-100 hover:bg-fuchsia-950/50">Åpne utkastet i Content Hub → Innhold → Utkast <ExternalLink size={14}/></a>}
+      {savedPublicationId && <a href={"/content-hub?" + (savedPackageId
+        ? "package=" + encodeURIComponent(savedPackageId)
+        : "draft=" + encodeURIComponent(savedPublicationId)) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fuchsia-500 px-4 py-2 text-sm font-semibold text-fuchsia-100 hover:bg-fuchsia-950/50">
+        {savedPackageId ? "Se hele pakken i Content Hub" : "Åpne lagret utkast i Content Hub"} <ExternalLink size={14}/>
+      </a>}
       {savedPackageDrafts.length > 0 && <div className="mt-3 rounded-xl border border-slate-700 p-3">
         <p className="text-xs font-semibold text-slate-100">Lagrede utkast ({savedPackageDrafts.length}) · åpne hvert utkast direkte</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
