@@ -137,10 +137,13 @@ function captionWithSourceLink(text: string, source: GeneratedSource | null) {
   if (!url || !/^https:\/\//i.test(url)) {
     throw new Error("Utkastet mangler direkte lenke til boligen eller artikkelen. Hent kildeinnholdet på nytt.");
   }
-  if (caption.includes(url)) return caption;
   const label = source.type === "property" ? "Se boligen:" :
     /\/guide\//i.test(url) ? "Les hele guiden:" : "Les hele artikkelen:";
-  return [caption, label + " " + url].filter(Boolean).join("\n\n");
+  const suffix = label + " " + url;
+  if (caption.includes(url) && caption.length <= 4700) return caption;
+  const available = Math.max(0, 4700 - suffix.length - 2);
+  return [caption.replaceAll(url, "").trim().slice(0, available).trimEnd(), suffix]
+    .filter(Boolean).join("\n\n");
 }
 
 function formatContentDate(value: string | null) {
