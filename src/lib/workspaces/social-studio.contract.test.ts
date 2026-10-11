@@ -239,7 +239,7 @@ test("Saved owner drafts persist strategy category and concept metadata", () => 
 });
 
 
-test("SoMe Studio keeps Instagram captions link-free and varies engagement CTAs", () => {
+test("SoMe Studio keeps Instagram CTAs while appending the canonical property or article URL", () => {
   assert.match(route, /function instagramCaptionWithoutLinks/);
   assert.match(route, /replace\(\/https\?:\\\/\\\/\[\^\\s/);
   assert.match(route, /function instagramEngagementCta/);
@@ -248,7 +248,8 @@ test("SoMe Studio keeps Instagram captions link-free and varies engagement CTAs"
   assert.match(route, /Send oss en melding/);
   assert.match(route, /Instagram-engasjement skal variere mellom konseptene/);
   assert.match(route, /facebookText: ensureLink/);
-  assert.match(route, /instagramText: ensureInstagramEngagement/);
+  assert.match(route, /instagramText: \["property", "article"\]\.includes\(sourceType\)/);
+  assert.match(route, /ensureLink\(ensureInstagramEngagement\(source\.instagramText, blueprint\.id, sourceType\), sourceUrl\)/);
 });
 
 test("SoMe Studio supports a three-image collage visual format with safe fallback", () => {
@@ -697,4 +698,25 @@ test("Exactly three separate Instagram drafts can be created with distinct media
   assert.match(studio, /setSavedPackageDrafts\(\[\.\.\.createdDrafts\]\)/);
   assert.match(studio, /Lagre 3 Instagram-innlegg som utkast/);
   assert.match(studio, /Disse blir tre forskjellige innlegg/);
+});
+
+test("Property and editorial drafts always preserve the exact verified source URL", () => {
+  assert.match(route, /PROPERTY_PUBLIC_LINK_UNAVAILABLE/);
+  assert.match(route, /"\/eiendommer\/" \+ encodeURIComponent\(property\.ref\)/);
+  assert.match(route, /sourceUrl = article\.url/);
+  assert.match(studio, /function captionWithSourceLink\(text: string, source: GeneratedSource \| null\)/);
+  assert.match(studio, /\["property", "article"\]\.includes\(source\.type\)/);
+  assert.match(studio, /captionWithSourceLink\(channel === "facebook" \? variant\.facebookText : variant\.instagramText, source\)/);
+  assert.match(studio, /Utkastet mangler direkte lenke til boligen eller artikkelen/);
+  assert.match(studio, /source\.url/);
+});
+
+test("Carousel promotes approved advisor image to first slide and aligns caption with the cover", () => {
+  assert.match(studio, /carouselSlides\.sort\(\(a, b\) => Number\(b\.isAdvisor\) - Number\(a\.isAdvisor\)\)/);
+  assert.match(studio, /const cover = carouselSlides\[0\]/);
+  assert.match(studio, /persistVariantDraft\(cover\.variant, "instagram"/);
+  assert.match(studio, /preparedImage: cover/);
+  assert.match(studio, /variantId: cover\.variant\.id/);
+  assert.match(studio, /Godkjent AI-bilde med rådgiver/);
+  assert.match(studio, /OpenArt som valgt modell betyr ikke/);
 });
