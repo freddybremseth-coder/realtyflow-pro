@@ -491,7 +491,7 @@ test("Changing property clears old generated concepts and invalidates in-flight 
 test("Advisor rerenders must be deliberate, capped and uniquely idempotent", () => {
   assert.match(route, /const take = body\.take == null \? 1 : Number\(body\.take\)/);
   assert.match(route, /!Number\.isInteger\(take\) \|\| take < 1 \|\| take > 3/);
-  assert.match(route, /variantId, channel, String\(take\), "v4-staged-property-photo"/);
+  assert.match(route, /variantId, channel, String\(take\), selectedProvider, "v5-manual-image-provider"/);
   assert.match(studio, /createAdvisorComposite\(variant, true\)/);
   assert.match(studio, /Lag ny AI-versjon/);
   assert.match(studio, /Forkast AI-bildet og bruk vanlig eiendomskort/);
@@ -597,7 +597,7 @@ test("AI disclosure tags are prioritised before optional tags may be truncated",
 test("Advisor image generation preflights and stages listing photos before OpenArt", () => {
   assert.match(route, /stageAdvisorPropertyReference\(access\.value\.supabase/);
   assert.match(route, /ADVISOR_PROPERTY_IMAGE_PREPARATION_FAILED/);
-  assert.match(route, /"v4-staged-property-photo"/);
+  assert.match(route, /"v5-manual-image-provider"/);
   assert.match(route, /originalImageUrl: sourceImageUrl/);
   assert.match(advisorPropertyReference, /await readBoundedPhoto\(input\.sourceImageUrl\)/);
   assert.match(advisorPropertyReference, /getPublicUrl\(filePath\)/);
