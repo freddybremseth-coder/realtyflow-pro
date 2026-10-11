@@ -1112,16 +1112,16 @@ export function WorkspaceSocialStudio({
 
   function ensureAdvisorPackageReady(forInstagramOnly = false) {
     if (!advisorMode || source?.type !== "property") return;
+    const pending = variants.filter(item => Boolean(advisorStaged[item.id]) && !advisorApproved[item.id]);
     const missing = variants.filter(item => !advisorApproved[item.id] &&
       !(instagramImages[item.id] && (forInstagramOnly || !activePlatforms.has("facebook"))));
-    const pending = missing.filter(item => Boolean(advisorStaged[item.id]));
     if (pending.length) {
       throw new Error("Godkjenn eller forkast AI-bildene for " + pending.map(item => item.label).join(", ") +
         " før du lagrer.");
     }
     if (missing.length && !allowMixedAdvisorPackage) {
-      throw new Error("Bare " + (variants.length - missing.length) + " av 3 konsepter har godkjent AI-bilde. " +
-        "Generer og godkjenn ett AI-bilde for hvert konsept, eller kryss av for å bruke vanlige boligfoto på de resterende.");
+      throw new Error("Bare " + (variants.length - missing.length) + " av 3 konsepter har valgt og godkjent bilde. " +
+        "Lag og godkjenn AI-bilder, eller velg egne Instagram-bilder. Hvis resten skal bruke vanlige boligfoto, kryss av for en blandet pakke.");
     }
   }
 
