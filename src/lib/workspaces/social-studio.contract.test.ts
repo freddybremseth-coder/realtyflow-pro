@@ -281,7 +281,7 @@ test("SoMe Studio can hand off all three concepts as one package with approved m
   assert.match(route, /social-studio-concept:/);
   assert.match(studio, /Lagre hele SoMe-pakken/);
   assert.match(studio, /savePackage/);
-  assert.match(studio, /kanalutkast er lagret i Content Hub/);
+  assert.match(studio, /enkeltutkast for tre konsepter er lagret i Content Hub/);
   assert.match(studio, /package-/);
   assert.match(studio, /Lag alternativt AI-bilde/);
 });
@@ -628,4 +628,22 @@ test("OpenAI image editing validates references, preserves their order and never
   assert.match(openaiImageEdit, /form\.append\("image\[\]"/);
   assert.match(openaiImageEdit, /form\.append\("n", "1"\)/);
   assert.match(openaiImageEdit, /OPENAI_IMAGE_NOT_CONFIGURED/);
+});
+
+test("Saving three social concepts never silently substitutes missing advisor imagery", () => {
+  assert.match(studio, /function ensureAdvisorPackageReady\(\)/);
+  assert.match(studio, /if \(missing\.length && !allowMixedAdvisorPackage\)/);
+  assert.match(studio, /try \{ ensureAdvisorPackageReady\(\); \} catch \(cause\)/);
+  assert.match(studio, /Jeg vil lagre en blandet pakke/);
+  assert.match(studio, /Godkjente AI-bilder: \{variants\.filter\(item => Boolean\(advisorApproved\[item\.id\]\)\)\.length\} av 3/);
+  assert.match(studio, /"visual-" \+ \(renderedImage\.visualFormat \|\| "single_image"\)/);
+});
+
+test("Content Hub package links expose all saved channel drafts and distinguish advisor images", () => {
+  assert.match(studio, /setSavedPackageDrafts\(\[\.\.\.createdDrafts\]\)/);
+  assert.match(studio, /Lagrede utkast \(\{savedPackageDrafts\.length\}\)/);
+  assert.match(studio, /draft\.imageKind === "advisor"/);
+  assert.match(contentHubPage, /packageAdvisorConceptCount/);
+  assert.match(contentHubPage, /Godkjent rådgiverbilde/);
+  assert.match(contentHubPage, /Vanlig bolig-\/kildebilde/);
 });
