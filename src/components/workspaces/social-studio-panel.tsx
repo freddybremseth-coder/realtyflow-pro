@@ -130,6 +130,19 @@ const EDITORIAL_CATEGORIES: Array<{ id: EditorialCategory; label: string }> = [
   { id: "notShared60Days", label: "Ikke delt siste 60 dager" },
 ];
 
+function captionWithSourceLink(text: string, source: GeneratedSource | null) {
+  const caption = text.trim();
+  if (!source || !["property", "article"].includes(source.type)) return caption;
+  const url = source.url?.trim();
+  if (!url || !/^https:\/\//i.test(url)) {
+    throw new Error("Utkastet mangler direkte lenke til boligen eller artikkelen. Hent kildeinnholdet på nytt.");
+  }
+  if (caption.includes(url)) return caption;
+  const label = source.type === "property" ? "Se boligen:" :
+    /\/guide\//i.test(url) ? "Les hele guiden:" : "Les hele artikkelen:";
+  return [caption, label + " " + url].filter(Boolean).join("\n\n");
+}
+
 function formatContentDate(value: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -989,7 +1002,7 @@ export function WorkspaceSocialStudio({
       throw new Error("Instagram trenger et godkjent bilde. RealtyFlow forsøkte å lage et, men fikk ikke et ferdig resultat.");
     }
 
-    const baseText = channel === "facebook" ? variant.facebookText : variant.instagramText;
+    const baseText = captionWithSourceLink(channel === "facebook" ? variant.facebookText : variant.instagramText, source);
     const hasAdvisorComposite = Boolean(advisorApproved[variant.id] || options.containsAdvisorComposite);
     const advisorAssetIdsForDraft = (options.containsAdvisorComposite ? variants : [variant])
       .filter(item => Boolean(advisorApproved[item.id]))
