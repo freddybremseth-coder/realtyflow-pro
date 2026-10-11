@@ -56,7 +56,7 @@ async function assertPublicDns(hostname: string) {
   }
 }
 
-async function readBoundedPhoto(photoUrl: string) {
+export async function readBoundedPhoto(photoUrl: string) {
   const url = publicPhotoUrl(photoUrl);
   await assertPublicDns(url.hostname);
   const response = await fetch(url, {
