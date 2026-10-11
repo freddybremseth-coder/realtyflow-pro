@@ -1835,6 +1835,36 @@ export function WorkspaceSocialStudio({
       </div>
     </div>}
 
+    {variants.length === 3 && source?.type === "property" && advisorMode && <div className="mt-5 rounded-xl border border-amber-700/60 bg-amber-950/15 p-4">
+      <h3 className="text-sm font-semibold text-amber-100">Tre tekstkonsepter er ikke automatisk tre AI-bilder</h3>
+      <p className="mt-2 text-xs leading-5 text-slate-300">
+        «Lag 3 forslag» gir tre ulike tekster og kreative retninger. For tre bilder med deg må du trykke
+        «Lag bilde med meg» i hvert konsept og godkjenne hvert bilde separat.
+        Et genereringsforsøk kan koste AI-kreditter.
+      </p>
+      <p className="mt-2 text-xs font-semibold text-cyan-200">
+        Godkjente AI-bilder: {variants.filter(item => Boolean(advisorApproved[item.id])).length} av 3
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {variants.map(item => <div key={item.id} className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs">
+          <p className="font-semibold text-white">{item.label}</p>
+          <p className={advisorApproved[item.id] ? "mt-1 text-emerald-300" : "mt-1 text-amber-200"}>
+            {advisorApproved[item.id] ? "Godkjent AI-bilde" :
+              advisorStaged[item.id] ? "AI-bilde venter på manuell godkjenning" : "Mangler eget AI-bilde"}
+          </p>
+          {advisorApproved[item.id] && <img src={advisorApproved[item.id]} alt={"Godkjent AI-bilde · " + item.label}
+            className="mt-2 aspect-[4/5] w-full rounded-lg object-contain" />}
+        </div>)}
+      </div>
+      {variants.some(item => !advisorApproved[item.id]) && <label className="mt-3 flex items-start gap-2 rounded-lg border border-amber-900/50 p-3 text-xs text-amber-100">
+        <input type="checkbox" checked={allowMixedAdvisorPackage}
+          onChange={(event) => setAllowMixedAdvisorPackage(event.target.checked)}
+          disabled={Boolean(packageSaving)} />
+        <span>Jeg vil lagre en blandet pakke: behold godkjente AI-bilder der de finnes, og bruk vanlige boligfoto for resten.
+          Ikke generer flere AI-bilder.</span>
+      </label>}
+      <p className="mt-2 text-xs text-slate-400">«Lagre hele SoMe-pakken» gir ett innlegg per konsept per aktiv kanal (opptil seks utkast). «3-bilders Instagram-karusell» gir ett utkast med tre lysbilder.</p>
+    </div>}
     {variants.length === 3 && activePlatforms.has("instagram") && <div className="mt-5 rounded-xl border border-fuchsia-700/60 bg-fuchsia-950/20 p-4">
       <h3 className="text-sm font-semibold text-fuchsia-100">Nyhet: Instagram-karusell fra tre konsepter</h3>
       <p className="mt-2 text-xs text-slate-300">Du trenger ikke velge «Lag alternativt AI-bilde» først. Denne knappen lager eller bruker bildene fra de tre konseptene og lagrer dem samlet i ett Instagram-utkast. Deretter åpner du Content Hub → Innhold → Utkast → «Rediger bilder / lag karusell» for å bytte, legge til eller sortere bilder. Ingenting publiseres automatisk.</p>
@@ -1850,7 +1880,7 @@ export function WorkspaceSocialStudio({
           <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Neste steg · lagre som utkast</p>
           <h3 className="mt-1 text-base font-semibold">Lagre alle tre konsepter i Content Hub</h3>
           <p className="mt-1 max-w-3xl text-xs text-slate-400">
-            RealtyFlow lager egne kanalutkast for Facebook og Instagram. Deretter åpner du Content Hub for å redigere, planlegge eller publisere. Ingenting publiseres nå.
+            Du lagrer tre separate konsepter, med ett utkast per aktiv kanal (opptil seks). Hvert utkast har sitt eget bilde. Har du valgt «Megler i bildet», kreves et godkjent AI-bilde per konsept eller et eksplisitt valg om å bruke vanlige boligfoto. Ingenting publiseres nå.
           </p>
         </div>
         <button type="button" onClick={() => void savePackage()} disabled={packageSaving || Boolean(saving)}
@@ -1859,6 +1889,19 @@ export function WorkspaceSocialStudio({
         </button>
       </div>
       {savedPublicationId && <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fuchsia-500 px-4 py-2 text-sm font-semibold text-fuchsia-100 hover:bg-fuchsia-950/50">Åpne utkastet i Content Hub → Innhold → Utkast <ExternalLink size={14}/></a>}
+      {savedPackageDrafts.length > 0 && <div className="mt-3 rounded-xl border border-slate-700 p-3">
+        <p className="text-xs font-semibold text-slate-100">Lagrede utkast ({savedPackageDrafts.length}) · åpne hvert utkast direkte</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {savedPackageDrafts.map(draft => <a key={draft.id}
+            href={"/content-hub?draft=" + encodeURIComponent(draft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+            className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 p-3 text-xs text-slate-200 hover:border-cyan-500">
+            <span>{draft.label} · {draft.channel === "instagram" ? "Instagram" : "Facebook"}
+              <span className="mt-1 block text-slate-400">{draft.imageKind === "advisor" ? "Godkjent AI-bilde" : "Vanlig boligfoto"}</span>
+            </span>
+            <ExternalLink size={14}/>
+          </a>)}
+        </div>
+      </div>}
       {packageProgress && <div className="mt-3 rounded-lg border border-cyan-900/70 bg-slate-950/50 p-3">
         <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
