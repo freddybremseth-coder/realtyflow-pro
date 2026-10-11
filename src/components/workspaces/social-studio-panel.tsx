@@ -1152,7 +1152,14 @@ export function WorkspaceSocialStudio({
     try {
       // Do not silently reuse the same editorial/source image for all slides.
       // Generate sequentially so each concept can have its own image job.
-      const images: Array<{ imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat; isOwnImage?: boolean }> = [];
+      const carouselSlides: Array<{
+        variant: Variant;
+        imageUrl: string;
+        fallback?: boolean;
+        visualFormat?: VisualFormat;
+        isOwnImage: boolean;
+        isAdvisor: boolean;
+      }> = [];
       const seen = new Set<string>();
       for (const variant of variants) {
         if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
@@ -1173,30 +1180,36 @@ export function WorkspaceSocialStudio({
           throw new Error("To konsepter har samme bilde. Velg eller generer forskjellige bilder før du lager karusell.");
         }
         seen.add(result.imageUrl);
-        images.push({ ...result, isOwnImage: Boolean(selected) });
+        carouselSlides.push({ variant, ...result,
+          isOwnImage: Boolean(selected), isAdvisor: Boolean(advisorApproved[variant.id]) });
       }
+      // If a verified advisor composite exists, put it first as the carousel
+      // cover. Otherwise Content Hub only previews a plain property photo.
+      // Keep the cover's caption matched to the actual cover concept.
+      carouselSlides.sort((a, b) => Number(b.isAdvisor) - Number(a.isAdvisor));
+      const cover = carouselSlides[0];
       setPackageProgress("Lagrer Instagram-karusell i Content Hub…");
-      const containsAdvisorComposite = variants.some(item => Boolean(advisorApproved[item.id]));
-      const saved = await persistVariantDraft(variants[0], "instagram", {
-        preparedImage: images[0],
+      const containsAdvisorComposite = carouselSlides.some(slide => slide.isAdvisor);
+      const saved = await persistVariantDraft(cover.variant, "instagram", {
+        preparedImage: cover,
         containsAdvisorComposite,
       });
       draftId = saved.id;
       // POST preserves the first image as the cover when inserting the first additional slide.
       const endpoint = "/api/content-hub/drafts/" + encodeURIComponent(draftId) + "/media";
-      for (const item of images.slice(1)) {
+      for (const item of carouselSlides.slice(1)) {
         const response = await fetch(endpoint, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source_url: item.imageUrl, source_kind: item.isOwnImage ? "library" : "openart" }),
+          body: JSON.stringify({ source_url: item.imageUrl, source_kind: item.isOwnImage || item.isAdvisor ? "library" : "property" }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || "Kunne ikke legge til karusellbildet.");
       }
       setSavedPublicationId(draftId);
-      setSavedDraft({ id: draftId, variantId: variants[0].id, channel: "instagram" });
+      setSavedDraft({ id: draftId, variantId: cover.variant.id, channel: "instagram" });
       setPackageFeedback({
         kind: "success",
-        text: "Instagram-karusellen med tre bilder er lagret som utkast. Kontroller rekkefølge og tekst i Content Hub før publisering.",
+        text: "Instagram-karusellen med tre bilder er lagret som utkast. " + (containsAdvisorComposite ? "Det godkjente AI-bildet av rådgiveren er satt først som forside. " : "Ingen godkjente rådgiverbilder var valgt; karusellen inneholder derfor bolig-/egne bilder. ") + "Kontroller bildene i Content Hub før publisering.",
       });
       await onDraftSaved?.();
     } catch (cause) {
