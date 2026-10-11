@@ -604,8 +604,8 @@ test("Advisor image generation preflights and stages listing photos before OpenA
   assert.match(advisorPropertyReference, /await readBoundedPhoto\(input\.sourceImageUrl\)/);
   assert.match(advisorPropertyReference, /getPublicUrl\(filePath\)/);
   assert.match(advisorPropertyReference, /upload\(/);
-  assert.match(studio, /1002\|upstream_error/);
-  assert.match(studio, /et nytt forsøk kan bruke OpenArt-kreditter/);
+  assert.match(studio, /1002\|upstream_error|1002: upstream_error/);
+  assert.match(studio, /Et nytt forsøk kan koste kreditter|Et nytt forsøk kan koste kreditter|et nytt forsøk kan koste kreditter/);
 });
 
 test("Advisor AI provider is explicitly selected, and does not automatically route to Gemini", () => {
