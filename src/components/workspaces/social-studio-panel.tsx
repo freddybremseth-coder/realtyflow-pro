@@ -172,7 +172,7 @@ export function WorkspaceSocialStudio({
   // Mixed packages require an explicit opt-in from the user.
   const [allowMixedAdvisorPackage, setAllowMixedAdvisorPackage] = useState(false);
   const [savedPackageDrafts, setSavedPackageDrafts] = useState<Array<{
-    id: string; label: string; channel: Channel; imageKind: "advisor" | "property";
+    id: string; label: string; channel: Channel; imageKind: "advisor" | "property" | "custom";
   }>>([]);
 
   const [advisorTake, setAdvisorTake] = useState<Record<string, number>>({});
@@ -1016,6 +1016,7 @@ export function WorkspaceSocialStudio({
           channel,
           ...(packageTag ? [packageTag] : []),
           ...(hasAdvisorComposite ? ["ai-advisor-composite", "ai-illustration"] : []),
+          ...(selectedInstagramImage ? ["instagram-own-image"] : []),
           ...variant.tags,
           ...(source?.socialCategory ? ["social-category-" + source.socialCategory.replace(/_/g, "-")] : []),
           "concept-" + variant.id.replace(/_/g, "-"),
@@ -1138,7 +1139,7 @@ export function WorkspaceSocialStudio({
     try {
       // Do not silently reuse the same editorial/source image for all slides.
       // Generate sequentially so each concept can have its own image job.
-      const images: Array<{ imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }> = [];
+      const images: Array<{ imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat; isOwnImage?: boolean }> = [];
       const seen = new Set<string>();
       for (const variant of variants) {
         if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
@@ -1159,7 +1160,7 @@ export function WorkspaceSocialStudio({
           throw new Error("To konsepter har samme bilde. Velg eller generer forskjellige bilder før du lager karusell.");
         }
         seen.add(result.imageUrl);
-        images.push(result);
+        images.push({ ...result, isOwnImage: Boolean(selected) });
       }
       setPackageProgress("Lagrer Instagram-karusell i Content Hub…");
       const containsAdvisorComposite = variants.some(item => Boolean(advisorApproved[item.id]));
@@ -1173,7 +1174,7 @@ export function WorkspaceSocialStudio({
       for (const item of images.slice(1)) {
         const response = await fetch(endpoint, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source_url: item.imageUrl, source_kind: "openart" }),
+          body: JSON.stringify({ source_url: item.imageUrl, source_kind: item.isOwnImage ? "library" : "openart" }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || "Kunne ikke legge til karusellbildet.");
@@ -1246,7 +1247,8 @@ export function WorkspaceSocialStudio({
           });
           publicationIds.push(saved.id);
           createdDrafts.push({ id: saved.id, label: variant.label, channel,
-            imageKind: advisorApproved[variant.id] ? "advisor" : "property" });
+            imageKind: advisorApproved[variant.id] ? "advisor" :
+              channel === "instagram" && instagramImages[variant.id] ? "custom" : "property" });
           setSavedPackageDrafts([...createdDrafts]);
           savedCount += 1;
           if (savedCount === 1) setSavedPackageId(packageId);
@@ -1850,6 +1852,58 @@ export function WorkspaceSocialStudio({
           <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/10 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-fuchsia-200"><Instagram size={14}/> Instagram</div>
             <p className="rf-human-text mt-2 whitespace-pre-line text-sm text-slate-300">{protectHumanText(variant.instagramText)}</p>
+            <div className="mt-3 rounded-xl border border-fuchsia-800/40 bg-slate-950/40 p-3">
+              <p className="text-xs font-semibold text-fuchsia-200">Bilde til dette Instagram-innlegget</p>
+              {advisorApproved[variant.id] ? <>
+                <img src={advisorApproved[variant.id]} alt={"Godkjent bilde for " + variant.label}
+                  className="mt-2 aspect-[4/5] max-h-64 w-full rounded-lg object-contain" />
+                <p className="mt-2 text-xs text-emerald-200">
+                  Godkjent «Megler i bildet» brukes. Trekk tilbake bildegodkjenningen dersom du heller vil laste opp et eget bilde.
+                </p>
+              </> : <>
+                {instagramImages[variant.id] ? <figure className="mt-2">
+                  <img src={instagramImages[variant.id]} alt={"Ditt valgte Instagram-bilde til " + variant.label}
+                    className="aspect-[4/5] max-h-72 w-full rounded-lg object-contain" />
+                  <figcaption className="mt-1 text-xs text-emerald-200">Ditt bilde er valgt for Instagram. Facebook-bildet endres ikke.</figcaption>
+                </figure> : <p className="mt-1 text-xs text-slate-400">Bruk foreslått bilde eller velg ditt eget før utkastet lagres.</p>}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" disabled={Boolean(packageSaving || saving)}
+                    onClick={() => setInstagramImagePicker(current => current === variant.id ? "" : variant.id)}
+                    className="rounded-lg border border-fuchsia-700 px-3 py-2 text-xs font-semibold text-fuchsia-100 disabled:opacity-40">
+                    {instagramImagePicker === variant.id ? "Lukk bildevelger" : instagramImages[variant.id] ? "Bytt Instagram-bilde" : "Velg eller last opp eget bilde"}
+                  </button>
+                  {instagramImages[variant.id] && <button type="button" disabled={Boolean(packageSaving || saving)}
+                    onClick={() => setInstagramImages(current => { const next = { ...current }; delete next[variant.id]; return next; })}
+                    className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 disabled:opacity-40">
+                    Bruk foreslått bilde
+                  </button>}
+                </div>
+                {instagramImagePicker === variant.id && <div className="mt-3">
+                  <ReferenceMediaPicker
+                    brandId={brandKey}
+                    purpose="media_reference"
+                    usage="social_post"
+                    title={"Velg bilde · " + variant.label}
+                    description="Last opp ditt eget bilde eller velg et godkjent bilde fra denne merkevarens Media Library. Bildet knyttes bare til dette Instagram-konseptet."
+                    value={instagramImages[variant.id] || ""}
+                    onChange={(url) => {
+                      setInstagramImages(current => {
+                        const next = { ...current };
+                        if (url) next[variant.id] = url;
+                        else delete next[variant.id];
+                        return next;
+                      });
+                      setSaveFeedback(current => {
+                        const next = { ...current };
+                        delete next[variant.id + ":instagram"];
+                        return next;
+                      });
+                      setSavedDraft(null);
+                    }}
+                  />
+                </div>}
+              </>}
+            </div>
             <button type="button" disabled={Boolean(saving) || !activePlatforms.has("instagram")}
               onClick={() => void saveVariant(variant, "instagram")}
               className="mt-3 rounded-lg border border-fuchsia-800 px-3 py-2 text-xs text-fuchsia-200 disabled:opacity-40">
@@ -1941,7 +1995,7 @@ export function WorkspaceSocialStudio({
             href={"/content-hub?draft=" + encodeURIComponent(draft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
             className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 p-3 text-xs text-slate-200 hover:border-cyan-500">
             <span>{draft.label} · {draft.channel === "instagram" ? "Instagram" : "Facebook"}
-              <span className="mt-1 block text-slate-400">{draft.imageKind === "advisor" ? "Godkjent AI-bilde" : "Vanlig boligfoto"}</span>
+              <span className="mt-1 block text-slate-400">{draft.imageKind === "advisor" ? "Godkjent AI-bilde" : draft.imageKind === "custom" ? "Eget Instagram-bilde" : "Vanlig boligfoto"}</span>
             </span>
             <ExternalLink size={14}/>
           </a>)}
