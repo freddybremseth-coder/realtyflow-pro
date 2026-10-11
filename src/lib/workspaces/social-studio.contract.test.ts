@@ -318,7 +318,7 @@ test("SoMe package handoff opens the whole package instead of one arbitrary draf
   assert.match(studio, /Åpne hele pakken i Content Hub/);
   assert.match(contentHubPage, /focusedPackageId/);
   assert.match(contentHubPage, /packageDrafts/);
-  assert.match(contentHubPage, /Du ser nå bare denne pakken/);
+  assert.match(contentHubPage, /Denne pakken inneholder/);
   assert.match(contentHubPage, /Ingenting er publisert automatisk/);
   assert.match(contentHubPage, /Tilbake til SoMe Studio/);
 });
