@@ -516,7 +516,10 @@ export function WorkspaceSocialStudio({
       let result = created;
       for (let attempt = 0; attempt < 16 && !result.imageUrl; attempt++) {
         if (["failed", "cancelled", "expired"].includes(String(result.status))) {
-          throw new Error(result.warning || "Bildegenereringen feilet.");
+          const providerMessage = result.warning || "Bildegenereringen feilet.";
+          throw new Error(/\\b1002\\b|upstream_error/i.test(providerMessage)
+            ? "OpenArt stoppet bildegenereringen (1002: upstream_error). Ingen bilde ble laget. RealtyFlow har nå klargjort boligfotoet på egen bildeserver. Du kan forsøke genereringen igjen; et nytt forsøk kan bruke OpenArt-kreditter."
+            : "OpenArt klarte ikke fullføre bildet: " + providerMessage);
         }
         await new Promise(resolve => setTimeout(resolve, 5000));
         if (requestEpoch !== advisorRequestEpoch.current) return;
@@ -532,7 +535,11 @@ export function WorkspaceSocialStudio({
       setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
     } catch (cause) {
       if (requestEpoch === advisorRequestEpoch.current) {
-        setAdvisorError(cause instanceof Error ? cause.message : "Bildegenerering feilet.");
+        const providerMessage = cause instanceof Error ? cause.message : "Bildegenerering feilet.";
+        setAdvisorError(providerMessage.includes("ADVISOR_PROPERTY_IMAGE_PREPARATION_FAILED") ||
+          providerMessage.includes("ADVISOR_PROPERTY_SOURCE_UNAVAILABLE")
+          ? "Boligfotoet er ikke tilgjengelig for AI akkurat nå. Velg et annet godkjent boligfoto og prøv igjen (ingen ny OpenArt-jobb ble startet)."
+          : providerMessage);
       }
     } finally {
       if (requestEpoch === advisorRequestEpoch.current) setAdvisorWorking("");
