@@ -168,6 +168,13 @@ export function WorkspaceSocialStudio({
   const [advisorRevoking, setAdvisorRevoking] = useState("");
   const [advisorApprovalNotice, setAdvisorApprovalNotice] = useState("");
   const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
+  // Never quietly replace missing advisor composites with ordinary property photos.
+  // Mixed packages require an explicit opt-in from the user.
+  const [allowMixedAdvisorPackage, setAllowMixedAdvisorPackage] = useState(false);
+  const [savedPackageDrafts, setSavedPackageDrafts] = useState<Array<{
+    id: string; label: string; channel: Channel; imageKind: "advisor" | "property";
+  }>>([]);
+
   const [advisorTake, setAdvisorTake] = useState<Record<string, number>>({});
   const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
@@ -417,9 +424,12 @@ export function WorkspaceSocialStudio({
   useEffect(() => {
     setAdvisorStaged({});
     setAdvisorStagedAssetIds({});
+    setAllowMixedAdvisorPackage(false);
     setAdvisorApproving("");
     setAdvisorRevoking("");
     setAdvisorApproved({});
+    setAllowMixedAdvisorPackage(false);
+    setSavedPackageDrafts([]);
     setAdvisorApprovalNotice("");
     setAdvisorReview({});
     setAdvisorTake({});
@@ -711,6 +721,7 @@ export function WorkspaceSocialStudio({
     setPackageFeedback(null);
     setPackageProgress("");
     setSavedPackageId("");
+    setSavedPackageDrafts([]);
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
@@ -996,7 +1007,7 @@ export function WorkspaceSocialStudio({
           ...(source?.type === "property"
             ? [
                 "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
-                "visual-" + (visualFormats[variant.id] || "property_card").replace(/_/g, "-"),
+                "visual-" + (renderedImage.visualFormat || "single_image").replace(/_/g, "-"),
               ]
             : ["visual-single-image"]),
         ])).slice(0, 20),
@@ -1071,8 +1082,26 @@ export function WorkspaceSocialStudio({
     }
   }
 
+  function ensureAdvisorPackageReady() {
+    if (!advisorMode || source?.type !== "property") return;
+    const missing = variants.filter(item => !advisorApproved[item.id]);
+    const pending = missing.filter(item => Boolean(advisorStaged[item.id]));
+    if (pending.length) {
+      throw new Error("Godkjenn eller forkast AI-bildene for " + pending.map(item => item.label).join(", ") +
+        " før du lagrer.");
+    }
+    if (missing.length && !allowMixedAdvisorPackage) {
+      throw new Error("Bare " + (variants.length - missing.length) + " av 3 konsepter har godkjent AI-bilde. " +
+        "Generer og godkjenn ett AI-bilde for hvert konsept, eller kryss av for å bruke vanlige boligfoto på de resterende.");
+    }
+  }
+
   async function saveInstagramCarousel() {
     if (!canDraft || packageSaving || variants.length !== 3 || !activePlatforms.has("instagram")) return;
+    try { ensureAdvisorPackageReady(); } catch (cause) {
+      setPackageFeedback({ kind: "error", text: cause instanceof Error ? cause.message : "Mangler godkjente AI-bilder." });
+      return;
+    }
     setPackageSaving(true);
     setPackageFeedback(null);
     setSavedPublicationId("");
@@ -1140,6 +1169,10 @@ export function WorkspaceSocialStudio({
 
   async function savePackage() {
     if (!canDraft || packageSaving || variants.length !== 3) return;
+    try { ensureAdvisorPackageReady(); } catch (cause) {
+      setPackageFeedback({ kind: "error", text: cause instanceof Error ? cause.message : "Mangler godkjente AI-bilder." });
+      return;
+    }
     const channels = (["facebook", "instagram"] as Channel[]).filter(channel => activePlatforms.has(channel));
     if (!channels.length) {
       setPackageFeedback({ kind: "error", text: "Ingen aktive Facebook/Instagram-kanaler er tilgjengelige for denne merkevaren." });
@@ -1150,8 +1183,10 @@ export function WorkspaceSocialStudio({
     setPackageFeedback(null);
     setPackageProgress("1 av 2 · Klargjør bilder for de tre konseptene…");
     setSavedPackageId("");
+    setSavedPackageDrafts([]);
     const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     const publicationIds: string[] = [];
+    const createdDrafts: Array<{ id: string; label: string; channel: Channel; imageKind: "advisor" | "property" }> = [];
 
     try {
       const prepared = new Map<string, { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }>();
@@ -1173,6 +1208,9 @@ export function WorkspaceSocialStudio({
             preparedImage: image,
           });
           publicationIds.push(saved.id);
+          createdDrafts.push({ id: saved.id, label: variant.label, channel,
+            imageKind: advisorApproved[variant.id] ? "advisor" : "property" });
+          setSavedPackageDrafts([...createdDrafts]);
           savedCount += 1;
           if (savedCount === 1) setSavedPackageId(packageId);
           setPackageProgress("2 av 2 · Lagrer " + savedCount + " av " + totalDrafts + " kanalutkast i Content Hub…");
@@ -1185,7 +1223,7 @@ export function WorkspaceSocialStudio({
       }
       setPackageFeedback({
         kind: "success",
-        text: `Ferdig. ${publicationIds.length} kanalutkast er lagret i Content Hub. Ingenting er publisert ennå.`,
+        text: `Ferdig. ${publicationIds.length} enkeltutkast for tre konsepter er lagret i Content Hub. ${variants.filter(item => Boolean(advisorApproved[item.id])).length} av 3 konsepter har godkjent AI-bilde. Ingenting er publisert.`,
       });
       if (typeof window !== "undefined") {
         window.setTimeout(() => {
