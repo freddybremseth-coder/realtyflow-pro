@@ -647,3 +647,11 @@ test("Content Hub package links expose all saved channel drafts and distinguish 
   assert.match(contentHubPage, /Godkjent rådgiverbilde/);
   assert.match(contentHubPage, /Vanlig bolig-\/kildebilde/);
 });
+
+test("A single advisor post cannot silently save a non-advisor image", () => {
+  assert.match(studio, /advisorMode && source\?\.type === "property" && !advisorApproved\[variant\.id\]/);
+  assert.match(studio, /!allowMixedAdvisorPackage/);
+  assert.match(studio, /Dette konseptet mangler godkjent AI-bilde med rådgiver/);
+  assert.match(studio, /Lag 3 tekst- og SoMe-konsepter/);
+  assert.match(studio, /Tre forskjellige konsepter lager ikke tre ferdige AI-foto/);
+});
