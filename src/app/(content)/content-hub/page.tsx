@@ -1969,6 +1969,12 @@ export default function ContentHubPage() {
       .map((draft) => (draft.tags || []).find((tag) => tag.startsWith("concept-")) || "")
       .filter(Boolean),
   ).size, [packageDrafts]);
+  const packageAdvisorConceptCount = useMemo(() => new Set(
+    packageDrafts.filter((draft) => (draft.tags || []).includes("ai-advisor-composite"))
+      .map((draft) => socialConceptLabel(draft.tags))
+      .filter(Boolean),
+  ).size, [packageDrafts]);
+
   const packagePlatforms = useMemo(() => Array.from(new Set(
     packageDrafts.flatMap((draft) => draft.scheduled_platforms || [])
       .filter(Boolean),
@@ -2077,7 +2083,7 @@ export default function ContentHubPage() {
                 {draftsLoading && packageDrafts.length === 0
                   ? "Henter kanalutkastene…"
                   : packageDrafts.length > 0
-                    ? `Du ser nå bare denne pakken: ${packageDrafts.length} kanalutkast fra ${packageConceptCount || 3} konsepter. Hvert kort er en egen Facebook- eller Instagram-versjon.`
+                    ? `Denne pakken inneholder ${packageDrafts.length} enkeltutkast fra ${packageConceptCount || 3} konsepter. ${packageAdvisorConceptCount} av ${packageConceptCount || 3} konsepter har et godkjent AI-bilde med rådgiveren. Facebook og Instagram får hvert sitt utkast, men kan bruke samme bilde.`
                     : "Fant ikke utkastene i pakken ennå. Oppdater siden, eller vis hele Content Hub."}
               </p>
               <p className="mt-2 text-xs text-slate-400">
@@ -2390,6 +2396,10 @@ export default function ContentHubPage() {
                               {statusBadge(draft.status)}
                               {isSocialStudioDraft && <Badge className="bg-cyan-500/15 text-cyan-200 text-xs">SoMe Studio</Badge>}
                               {conceptLabel && <Badge variant="outline" className="text-xs border-slate-700 text-slate-300">{conceptLabel}</Badge>}
+                              {isSocialStudioDraft && (draft.tags || []).includes("ai-advisor-composite") && <Badge
+                                variant="outline" className="border-emerald-700 text-emerald-200 text-xs">Godkjent rådgiverbilde</Badge>}
+                              {isSocialStudioDraft && !(draft.tags || []).includes("ai-advisor-composite") && <Badge
+                                variant="outline" className="border-amber-800 text-amber-200 text-xs">Vanlig bolig-/kildebilde</Badge>}
                               {channelLabels.map((platform) => <Badge key={platform} variant="outline" className="text-xs border-slate-700 text-slate-300">
                                 {friendlyPlatformName(platform)}
                               </Badge>)}
