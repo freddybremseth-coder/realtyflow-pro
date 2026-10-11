@@ -171,6 +171,7 @@ export function WorkspaceSocialStudio({
   const [advisorTake, setAdvisorTake] = useState<Record<string, number>>({});
   const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
   const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
+  const [advisorImageProvider, setAdvisorImageProvider] = useState<"openart" | "openai">("openart");
   const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number; reason?: string }>>([]);
   const [advisorChosenImage, setAdvisorChosenImage] = useState("");
   const [advisorCandidatePropertyId, setAdvisorCandidatePropertyId] = useState("");
@@ -424,7 +425,7 @@ export function WorkspaceSocialStudio({
     setAdvisorTake({});
     setPreviews({});
     advisorRequestEpoch.current += 1;
-  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup, advisorConsent]);
+  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup, advisorConsent, advisorImageProvider]);
 
 
   useEffect(() => {
@@ -509,6 +510,7 @@ export function WorkspaceSocialStudio({
         sourceImageUrl: advisorChosenImage, identityAssetUrl: advisorReferenceUrl,
         confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose,
         placement: advisorPlacement, variantId: variant.id, take,
+        imageProvider: advisorImageProvider,
         channel: activePlatforms.has("instagram") ? "instagram" : "facebook",
       });
       if (requestEpoch !== advisorRequestEpoch.current) return;
@@ -518,8 +520,8 @@ export function WorkspaceSocialStudio({
         if (["failed", "cancelled", "expired"].includes(String(result.status))) {
           const providerMessage = result.warning || "Bildegenereringen feilet.";
           throw new Error(/1002|upstream_error/i.test(providerMessage)
-            ? "OpenArt stoppet bildegenereringen (1002: upstream_error). Ingen bilde ble laget. RealtyFlow har nå klargjort boligfotoet på egen bildeserver. Du kan forsøke genereringen igjen; et nytt forsøk kan bruke OpenArt-kreditter."
-            : "OpenArt klarte ikke fullføre bildet: " + providerMessage);
+            ? "OpenArt stoppet bildegenereringen (1002: upstream_error). Ingen bilde ble laget. Du kan velge OpenAI GPT Image 2 under «Bildemodell» og generere manuelt. Et nytt forsøk kan koste kreditter."
+            : (advisorImageProvider === "openai" ? "OpenAI" : "OpenArt") + " klarte ikke fullføre bildet: " + providerMessage);
         }
         await new Promise(resolve => setTimeout(resolve, 5000));
         if (requestEpoch !== advisorRequestEpoch.current) return;
@@ -1441,6 +1443,25 @@ export function WorkspaceSocialStudio({
                 setAdvisorConsent(event.target.checked);
               }} />
               Jeg bekrefter at jeg har rett til å bruke dette personbildet og samtykke til AI-redigering.</label>
+            <label className="block text-xs text-slate-300">
+              Bildemodell
+              <select value={advisorImageProvider}
+                disabled={Boolean(advisorWorking) || Object.keys(advisorApproved).length > 0}
+                onChange={(event) => {
+                  setAdvisorImageProvider(event.target.value === "openai" ? "openai" : "openart");
+                  setAdvisorError("");
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm">
+                <option value="openart">Nano Banana 2 via OpenArt · førstevalg</option>
+                <option value="openai">OpenAI GPT Image 2 · alternativ</option>
+              </select>
+              <span className="mt-1 block text-xs text-slate-400">
+                Ingen automatisk reservekjøring. Velg OpenAI her hvis OpenArt feiler. Hvert nytt genereringsforsøk kan koste kreditter.
+              </span>
+              {Object.keys(advisorApproved).length > 0 && <span className="mt-1 block text-xs text-amber-200">
+                Trekk tilbake godkjenningen av aktive AI-bilder før du bytter bildemodell.
+              </span>}
+            </label>
             <label className="block text-xs text-slate-300">Positur<select value={advisorPose} onChange={event => setAdvisorPose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="relaxed">Avslappet</option><option value="presenting">Presenterer boligen</option><option value="standing">Stående</option></select></label>
             <label className="block text-xs text-slate-300">Plassering i bildet<select value={advisorPlacement} onChange={event => setAdvisorPlacement(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="auto">La AI velge trygg plassering</option><option value="left">Venstre</option><option value="right">Høyre</option><option value="center">Midten</option></select></label>
             <label className="block text-xs text-slate-300">Antrekk
