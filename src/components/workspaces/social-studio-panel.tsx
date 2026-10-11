@@ -1602,7 +1602,7 @@ export function WorkspaceSocialStudio({
                 <option value="openai">OpenAI GPT Image 2 · alternativ</option>
               </select>
               <span className="mt-1 block text-xs text-slate-400">
-                Ingen automatisk reservekjøring. Velg OpenAI her hvis OpenArt feiler. Hvert nytt genereringsforsøk kan koste kreditter.
+                Modellvalget gjelder bare «Lag bilde med meg». En trebilders karusell bruker bildene som allerede er laget og godkjent. Ingen automatisk reservekjøring eller ekstra betalte forsøk.
               </span>
               {Object.keys(advisorApproved).length > 0 && <span className="mt-1 block text-xs text-amber-200">
                 Trekk tilbake godkjenningen av aktive AI-bilder før du bytter bildemodell.
@@ -1996,6 +1996,12 @@ export function WorkspaceSocialStudio({
       </div>
     </div>}
 
+    {variants.length === 3 && source && ["property", "article"].includes(source.type) && source.url &&
+      <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950/30 p-3">
+        <p className="text-xs font-semibold text-slate-200">Kildelenke som legges til i alle Facebook- og Instagram-utkast</p>
+        <a href={source.url} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all text-xs text-cyan-300 hover:underline">{source.url}</a>
+        <p className="mt-1 text-xs text-slate-400">Instagram viser nettadressen som tekst i bildeteksten; lenker i vanlige Instagram-bildetekster er normalt ikke klikkbare.</p>
+      </div>}
     {variants.length === 3 && source?.type === "property" && advisorMode && <div className="mt-5 rounded-xl border border-amber-700/60 bg-amber-950/15 p-4">
       <h3 className="text-sm font-semibold text-amber-100">Tre tekstkonsepter er ikke automatisk tre AI-bilder</h3>
       <p className="mt-2 text-xs leading-5 text-slate-300">
@@ -2039,8 +2045,23 @@ export function WorkspaceSocialStudio({
       </button>
       <div className="my-4 border-t border-fuchsia-800/50" />
 
-      <h3 className="text-sm font-semibold text-fuchsia-100">Nyhet: Instagram-karusell fra tre konsepter</h3>
-      <p className="mt-2 text-xs text-slate-300">Du trenger ikke velge «Lag alternativt AI-bilde» først. Denne knappen lager eller bruker bildene fra de tre konseptene og lagrer dem samlet i ett Instagram-utkast. Deretter åpner du Content Hub → Innhold → Utkast → «Rediger bilder / lag karusell» for å bytte, legge til eller sortere bilder. Ingenting publiseres automatisk.</p>
+      <h3 className="text-sm font-semibold text-fuchsia-100">Instagram-karusell fra tre konsepter</h3>
+      <p className="mt-2 text-xs text-slate-300">Dette lager én post med tre bilder, ikke tre nye AI-bilder. Hvis du vil være med på bildene, generer og godkjenn «Lag bilde med meg» i hvert ønsket konsept før du lagrer karusellen. Bilder med deg kommer først. Øvrige bilder hentes fra eiendommen eller fra dine egne bildevalg. Ingenting publiseres automatisk.</p>
+      {source?.type === "property" && <div className="mt-3 rounded-lg border border-fuchsia-900/60 bg-slate-950/50 p-3">
+        <p className="text-xs font-semibold text-fuchsia-100">Dette vil karusellen inneholde:</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {[...variants].sort((a, b) => Number(Boolean(advisorApproved[b.id])) - Number(Boolean(advisorApproved[a.id]))).map((item, i) =>
+            <div key={item.id} className="rounded border border-slate-700 p-2 text-xs text-slate-300">
+              <span className="font-semibold text-white">Bilde {i + 1}: {item.label}</span>
+              <span className="mt-1 block">{advisorApproved[item.id] ? "Godkjent AI-bilde med rådgiver" :
+                instagramImages[item.id] ? "Eget valgt Instagram-bilde" : "Vanlig boligbilde / eiendomskort"}</span>
+            </div>)}
+        </div>
+        {variants.every(item => !advisorApproved[item.id]) &&
+          <p role="status" className="mt-2 text-xs text-amber-200">
+            Ingen bilder med rådgiveren er godkjent ennå. OpenArt som valgt modell betyr ikke at disse genereres av karusellknappen.
+          </p>}
+      </div>}
       <button type="button" disabled={packageSaving || Boolean(saving)}
         onClick={() => void saveInstagramCarousel()}
         className="mt-3 rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-semibold text-white hover:bg-fuchsia-600 disabled:opacity-40">
