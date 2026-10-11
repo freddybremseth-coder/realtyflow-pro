@@ -516,7 +516,7 @@ test("Marketing and Content Hub must reject unreviewed advisor composites", () =
 });
 
 test("Advisor consent is reflected in preview state and approval can be revoked server-side", () => {
-  assert.match(studio, /advisorReferenceUrl, propertyLookup, advisorConsent\]/);
+  assert.match(studio, /advisorReferenceUrl, propertyLookup, advisorConsent, advisorImageProvider\]/);
   assert.match(studio, /action: "advisor_composite_revoke"/);
   assert.match(studio, /Trekk tilbake godkjenning/);
   assert.match(studio, /Trekk tilbake godkjenningen for AI-bildene nedenfor før du fjerner samtykket/);
