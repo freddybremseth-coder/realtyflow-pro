@@ -1199,6 +1199,47 @@ export function WorkspaceSocialStudio({
     }
   }
 
+  async function saveInstagramTrio() {
+    if (!canDraft || packageSaving || saving || variants.length !== 3 || !activePlatforms.has("instagram")) return;
+    try { ensureAdvisorPackageReady(true); } catch (cause) {
+      setPackageFeedback({ kind: "error", text: cause instanceof Error ? cause.message : "Mangler godkjente Instagram-bilder." });
+      return;
+    }
+    setPackageSaving(true);
+    setPackageFeedback(null);
+    setSavedPackageId("");
+    setSavedPublicationId("");
+    setSavedPackageDrafts([]);
+    const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    const createdDrafts: Array<{ id: string; label: string; channel: Channel; imageKind: "advisor" | "property" | "custom" }> = [];
+    try {
+      for (const [index, variant] of variants.entries()) {
+        setPackageProgress("Lagrer Instagram-innlegg " + (index + 1) + " av 3 med riktig bilde …");
+        const saved = await persistVariantDraft(variant, "instagram", { packageId });
+        createdDrafts.push({
+          id: saved.id, label: variant.label, channel: "instagram",
+          imageKind: advisorApproved[variant.id] ? "advisor" :
+            instagramImages[variant.id] ? "custom" : "property",
+        });
+        setSavedPackageDrafts([...createdDrafts]);
+        setSavedPublicationId(saved.id);
+        setSavedPackageId(packageId);
+      }
+      setPackageFeedback({ kind: "success",
+        text: "Tre separate Instagram-utkast er lagret med hvert sitt bilde. Åpne pakken for å gjennomgå bildene og tekstene før publisering." });
+      await onDraftSaved?.();
+    } catch (cause) {
+      setPackageFeedback({ kind: "error", text: createdDrafts.length
+        ? createdDrafts.length + " av 3 Instagram-utkast er lagret. " +
+          (cause instanceof Error ? cause.message : "Resten kunne ikke lagres.") +
+          " De ferdige utkastene kan åpnes nedenfor."
+        : cause instanceof Error ? cause.message : "Kunne ikke lagre Instagram-innleggene." });
+    } finally {
+      setPackageProgress("");
+      setPackageSaving(false);
+    }
+  }
+
   async function savePackage() {
     if (!canDraft || packageSaving || variants.length !== 3) return;
     try { ensureAdvisorPackageReady(); } catch (cause) {
@@ -1960,6 +2001,18 @@ export function WorkspaceSocialStudio({
       <p className="mt-2 text-xs text-slate-400">«Lagre hele SoMe-pakken» gir ett innlegg per konsept per aktiv kanal (opptil seks utkast). «3-bilders Instagram-karusell» gir ett utkast med tre lysbilder.</p>
     </div>}
     {variants.length === 3 && activePlatforms.has("instagram") && <div className="mt-5 rounded-xl border border-fuchsia-700/60 bg-fuchsia-950/20 p-4">
+      <h3 className="text-sm font-semibold text-fuchsia-100">Lagre tre separate Instagram-innlegg</h3>
+      <p className="mt-2 text-xs text-slate-300">
+        Ett Instagram-utkast for hvert konsept, med bildet du har valgt under den aktuelle teksten.
+        Disse blir tre forskjellige innlegg – ikke én karusell. Ingenting publiseres automatisk.
+      </p>
+      <button type="button" disabled={packageSaving || Boolean(saving) || !canDraft}
+        onClick={() => void saveInstagramTrio()}
+        className="mt-3 rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-semibold text-white hover:bg-fuchsia-600 disabled:opacity-40">
+        {packageSaving ? "Lagrer Instagram-utkast…" : "Lagre 3 Instagram-innlegg som utkast"}
+      </button>
+      <div className="my-4 border-t border-fuchsia-800/50" />
+
       <h3 className="text-sm font-semibold text-fuchsia-100">Nyhet: Instagram-karusell fra tre konsepter</h3>
       <p className="mt-2 text-xs text-slate-300">Du trenger ikke velge «Lag alternativt AI-bilde» først. Denne knappen lager eller bruker bildene fra de tre konseptene og lagrer dem samlet i ett Instagram-utkast. Deretter åpner du Content Hub → Innhold → Utkast → «Rediger bilder / lag karusell» for å bytte, legge til eller sortere bilder. Ingenting publiseres automatisk.</p>
       <button type="button" disabled={packageSaving || Boolean(saving)}
