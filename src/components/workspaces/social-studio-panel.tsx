@@ -212,6 +212,8 @@ export function WorkspaceSocialStudio({
   const [styles, setStyles] = useState<Record<string, string>>({});
   const [visualFormats, setVisualFormats] = useState<Record<string, VisualFormat>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [instagramImages, setInstagramImages] = useState<Record<string, string>>({});
+  const [instagramImagePicker, setInstagramImagePicker] = useState<string>("");
   const [previewing, setPreviewing] = useState("");
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState("");
@@ -264,6 +266,8 @@ export function WorkspaceSocialStudio({
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
+    setInstagramImages({});
+    setInstagramImagePicker("");
     setSource(null);
     setError("");
     setSavedPublicationId("");
@@ -307,6 +311,8 @@ export function WorkspaceSocialStudio({
   function applyStrategyRecommendation() {
     if (!strategy) return;
     setVariants([]);
+    setInstagramImages({});
+    setInstagramImagePicker("");
     setSource(null);
     setSavedPublicationId("");
     setSavedDraft(null);
@@ -582,6 +588,8 @@ export function WorkspaceSocialStudio({
       }
       if (requestEpoch !== advisorRequestEpoch.current) return;
       setAdvisorApproved(current => ({ ...current, [variant.id]: imageUrl }));
+      setInstagramImages(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setInstagramImagePicker("");
       setPreviews(current => ({ ...current, [variant.id]: imageUrl }));
       setVisualFormats(current => ({ ...current, [variant.id]: "single_image" }));
       setAdvisorApprovalNotice("Godkjenningen er lagret på AI-mediefilen.");
@@ -725,6 +733,8 @@ export function WorkspaceSocialStudio({
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
+    setInstagramImages({});
+    setInstagramImagePicker("");
     setAdvisorStaged({});
     setAdvisorStagedAssetIds({});
     setAdvisorTake({});
@@ -964,7 +974,16 @@ export function WorkspaceSocialStudio({
     if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
       throw new Error("AI-bildet må godkjennes manuelt før du lagrer SoMe-utkastet.");
     }
-    const renderedImage = options.preparedImage || await ensureConceptImage(variant);
+    // An expressly chosen Instagram image is per-concept and per-channel.
+    // Never override a manually approved advisor composite.
+    const selectedInstagramImage = channel === "instagram" && !advisorApproved[variant.id]
+      ? instagramImages[variant.id] || "" : "";
+    if (selectedInstagramImage && !/^https:\/\//i.test(selectedInstagramImage)) {
+      throw new Error("Velg eller last opp et gyldig HTTPS-bilde til Instagram.");
+    }
+    const renderedImage = selectedInstagramImage
+      ? { imageUrl: selectedInstagramImage, fallback: false, visualFormat: "single_image" as VisualFormat }
+      : options.preparedImage || await ensureConceptImage(variant);
     const approvedImageUrl = renderedImage.imageUrl || "";
     if (channel === "instagram" && !approvedImageUrl) {
       throw new Error("Instagram trenger et godkjent bilde. RealtyFlow forsøkte å lage et, men fikk ikke et ferdig resultat.");
@@ -1024,7 +1043,7 @@ export function WorkspaceSocialStudio({
         strategyPeriodId: strategy?.strategyPeriodId || "",
         strategyRecommendationReason: strategy?.recommendationReason || "",
         packageId: options.packageId || "",
-        aiGeneratedImage: Boolean(hasAdvisorComposite || (source?.type !== "property" && previews[variant.id])),
+        aiGeneratedImage: Boolean(hasAdvisorComposite || (!selectedInstagramImage && source?.type !== "property" && previews[variant.id])),
         advisorAssets: advisorAssetIdsForDraft,
       }),
     });
@@ -1051,7 +1070,7 @@ export function WorkspaceSocialStudio({
     if (!canDraft || saving || packageSaving) return;
     const feedbackKey = variant.id + ":" + channel;
     if (advisorMode && source?.type === "property" && !advisorApproved[variant.id] &&
-        !allowMixedAdvisorPackage) {
+        !(channel === "instagram" && instagramImages[variant.id]) && !allowMixedAdvisorPackage) {
       setSaveFeedback(current => ({
         ...current,
         [feedbackKey]: { kind: "error", text: "Dette konseptet mangler godkjent AI-bilde med rådgiver. Lag og godkjenn bildet, eller velg tydelig å bruke vanlig boligfoto under oppsummeringen." },
@@ -1090,9 +1109,10 @@ export function WorkspaceSocialStudio({
     }
   }
 
-  function ensureAdvisorPackageReady() {
+  function ensureAdvisorPackageReady(forInstagramOnly = false) {
     if (!advisorMode || source?.type !== "property") return;
-    const missing = variants.filter(item => !advisorApproved[item.id]);
+    const missing = variants.filter(item => !advisorApproved[item.id] &&
+      !(instagramImages[item.id] && (forInstagramOnly || !activePlatforms.has("facebook"))));
     const pending = missing.filter(item => Boolean(advisorStaged[item.id]));
     if (pending.length) {
       throw new Error("Godkjenn eller forkast AI-bildene for " + pending.map(item => item.label).join(", ") +
@@ -1106,7 +1126,7 @@ export function WorkspaceSocialStudio({
 
   async function saveInstagramCarousel() {
     if (!canDraft || packageSaving || variants.length !== 3 || !activePlatforms.has("instagram")) return;
-    try { ensureAdvisorPackageReady(); } catch (cause) {
+    try { ensureAdvisorPackageReady(true); } catch (cause) {
       setPackageFeedback({ kind: "error", text: cause instanceof Error ? cause.message : "Mangler godkjente AI-bilder." });
       return;
     }
@@ -1124,8 +1144,11 @@ export function WorkspaceSocialStudio({
         if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
           throw new Error("Godkjenn eller forkast AI-bildet for " + variant.label + " før du lagrer karusellen.");
         }
-        let result = await ensureConceptImage(variant);
-        if (seen.has(result.imageUrl) && source?.type !== "property") {
+        const selected = !advisorApproved[variant.id] ? instagramImages[variant.id] || "" : "";
+        let result = selected
+          ? { imageUrl: selected, fallback: false, visualFormat: "single_image" as VisualFormat }
+          : await ensureConceptImage(variant);
+        if (seen.has(result.imageUrl) && !selected && source?.type !== "property") {
           setPackageProgress("Lager eget bilde for " + variant.label + " (unngår duplikat) …");
           result = await ensureConceptImage(variant, true);
         }
@@ -1199,7 +1222,13 @@ export function WorkspaceSocialStudio({
     try {
       const prepared = new Map<string, { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }>();
       const mediaResults = await Promise.all(variants.map(async variant => {
-        const image = await ensureConceptImage(variant);
+        // An Instagram-only package with user-selected photos must not
+        // create extra billable concept images that will never be used.
+        const instagramOnlyImage = !channels.includes("facebook") &&
+          !advisorApproved[variant.id] ? instagramImages[variant.id] : "";
+        const image = instagramOnlyImage
+          ? { imageUrl: instagramOnlyImage, fallback: false, visualFormat: "single_image" as VisualFormat }
+          : await ensureConceptImage(variant);
         return [variant.id, image] as const;
       }));
       mediaResults.forEach(([id, image]) => prepared.set(id, image));
@@ -1352,6 +1381,8 @@ export function WorkspaceSocialStudio({
         onClick={() => {
           setSourceType(id);
           setVariants([]);
+          setInstagramImages({});
+          setInstagramImagePicker("");
           setSource(null);
           setError("");
           setNotice("");
@@ -1461,7 +1492,7 @@ export function WorkspaceSocialStudio({
       {sourceType === "property" && <>
         {propertyLabel && <p className="rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">{propertyLabel}</p>}
         <label className="text-xs text-slate-300">Boligreferanse eller RealtyFlow-ID
-          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); generationRequestEpoch.current += 1; advisorRequestEpoch.current += 1; setBusy(false); setSource(null); setVariants([]); setGenerationFeedback(null); setSavedDraft(null); setSavedPublicationId(""); setPreviews({}); setAdvisorReview({}); setAdvisorCandidatePropertyId(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
+          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); setInstagramImages({}); setInstagramImagePicker(""); generationRequestEpoch.current += 1; advisorRequestEpoch.current += 1; setBusy(false); setSource(null); setVariants([]); setGenerationFeedback(null); setSavedDraft(null); setSavedPublicationId(""); setPreviews({}); setAdvisorReview({}); setAdvisorCandidatePropertyId(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
             maxLength={100} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="F.eks. N9950"/>
         </label>
