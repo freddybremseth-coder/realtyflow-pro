@@ -631,7 +631,7 @@ test("OpenAI image editing validates references, preserves their order and never
 });
 
 test("Saving three social concepts never silently substitutes missing advisor imagery", () => {
-  assert.match(studio, /function ensureAdvisorPackageReady\(\)/);
+  assert.match(studio, /function ensureAdvisorPackageReady\(forInstagramOnly = false\)/);
   assert.match(studio, /if \(missing\.length && !allowMixedAdvisorPackage\)/);
   assert.match(studio, /try \{ ensureAdvisorPackageReady\(\); \} catch \(cause\)/);
   assert.match(studio, /Jeg vil lagre en blandet pakke/);
