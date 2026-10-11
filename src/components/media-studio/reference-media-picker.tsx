@@ -20,6 +20,7 @@ interface ReferenceMediaPickerProps {
   onChange: (url: string) => void;
   brandId?: string;
   purpose?: "media_reference" | "advisor_portrait";
+  usage?: "reference" | "social_post";
   title?: string;
   description?: string;
 }
@@ -46,6 +47,7 @@ export function ReferenceMediaPicker({
   onChange,
   brandId,
   purpose = "media_reference",
+  usage = "reference",
   title = "Referansebilde",
   description = "Last opp et bilde eller velg et eksisterende bilde fra Media Library.",
 }: ReferenceMediaPickerProps) {
@@ -149,7 +151,7 @@ export function ReferenceMediaPicker({
               ))}
             </select>
           </div>
-          {purpose !== "advisor_portrait" && <div>
+          {purpose !== "advisor_portrait" && usage !== "social_post" && <div>
             <label className="mb-1 block text-xs text-slate-400">Eller lim inn bilde-URL</label>
             <input
               value={value}
@@ -168,14 +170,14 @@ export function ReferenceMediaPicker({
           ) : (
             <div className="px-5 text-center text-xs text-slate-500">
               <ImageIcon size={28} className="mx-auto mb-2" />
-              Bildet vises her og sendes som referanse til image-to-image, image-to-video, portrett- og produktjobber.
+              {usage === "social_post" ? "Last opp et nytt bilde, eller velg et bilde fra Media Library. Dette bildet brukes i Instagram-utkastet." : "Bildet vises her og sendes som referanse til image-to-image, image-to-video, portrett- og produktjobber."}
             </div>
           )}
         </div>
       </div>
 
       {error && <p className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 p-2 text-xs text-red-200">{error}</p>}
-      <p className="mt-3 text-[11px] text-slate-500">Maks 25 MB. JPG, PNG, WebP eller GIF. Bruk bare bilder du har rettighet og nødvendig samtykke til å behandle.</p>
+      <p className="mt-3 text-[11px] text-slate-500">Maks 25 MB. JPG, PNG, WebP eller GIF. Bruk bare bilder du har rettighet og nødvendig samtykke til å behandle.{usage === "social_post" ? " Bildet lagres for denne merkevaren og knyttes til valgt Instagram-konsept." : ""}</p>
     </div>
   );
 }
