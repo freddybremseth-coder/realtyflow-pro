@@ -5,6 +5,7 @@ import { askClaude } from "@/services/ai/claude-client";
 import { createMediaJob, refreshMediaJob, retryMediaJob } from "@/services/media/job-service";
 import { createMediaPromptPlan } from "@/services/media/prompt-director";
 import { reviewAdvisorPhoto } from "@/services/marketing/advisor-photo-analysis";
+import { stageAdvisorPropertyReference } from "@/services/marketing/advisor-property-reference";
 import { getProviderCapabilities, supportsCapability } from "@/services/media/capabilities";
 import { isOpenArtConnected } from "@/services/integrations/openart-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
@@ -1714,6 +1715,19 @@ export async function POST(
       if (!identityAsset?.id || !identityAsset.public_url || identityAsset.metadata_json?.purpose !== "advisor_portrait") {
         return fail(403, "ADVISOR_REFERENCE_NOT_AUTHORIZED");
       }
+      let stagedPropertyPhotoUrl: string;
+      try {
+        // Ensure external gallery images are genuinely retrievable before
+        // submitting a credit-consuming image generation to OpenArt.
+        stagedPropertyPhotoUrl = await stageAdvisorPropertyReference(access.value.supabase, {
+          organizationId, propertyId: String(property.id), sourceImageUrl,
+        });
+      } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : "ADVISOR_PROPERTY_SOURCE_UNAVAILABLE";
+        return fail(422, "ADVISOR_PROPERTY_IMAGE_PREPARATION_FAILED",
+          "Kunne ikke klargjøre boligbildet for AI. Velg et annet boligfoto og prøv igjen. " + detail);
+      }
+
       const outfitDescriptions: Record<string, string> = {
         navy_armani: "tailored navy designer suit, crisp white shirt, dark aviator sunglasses",
         mediterranean_casual: "beige tailored trousers, white linen shirt, premium loafers without visible socks, no glasses",
@@ -1751,11 +1765,11 @@ export async function POST(
         brandId: params.brandKey,
         qualityTier: "balanced",
         aspectRatio: channel === "instagram" ? "4:5" : "1:1",
-        sourceImageUrls: [sourceImageUrl, String(identityAsset.public_url)],
+        sourceImageUrls: [stagedPropertyPhotoUrl, String(identityAsset.public_url)],
         allowText: false,
       });
       const digest = crypto.createHash("sha256").update([
-        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, String(take), "v3",
+        params.brandKey, property.id, sourceImageUrl, identityAsset.id, outfit, pose, placement, variantId, channel, String(take), "v4-staged-property-photo",
       ].join("|")).digest("hex").slice(0, 32);
       try {
         const result = await createMediaJob(access.value.supabase, {
@@ -1764,7 +1778,7 @@ export async function POST(
           actorEmail: access.value.verifiedEmail,
           body: {
             plan, brandId: params.brandKey, propertyId: property.id,
-            sourceImageUrls: [sourceImageUrl, String(identityAsset.public_url)],
+            sourceImageUrls: [stagedPropertyPhotoUrl, String(identityAsset.public_url)],
             idempotencyKey: "advisor-composite:" + digest,
             autoExportToContentHub: false,
           },
