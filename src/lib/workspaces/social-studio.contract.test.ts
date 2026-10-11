@@ -25,6 +25,8 @@ const mediaJobService = fs.readFileSync(path.join(process.cwd(), "src/services/m
 const geminiMediaProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/gemini-media-provider.ts"), "utf8");
 const openartMediaProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/openart-media-provider.ts"), "utf8");
 const openartClient = fs.readFileSync(path.join(process.cwd(), "src/services/integrations/openart-client.ts"), "utf8");
+const openaiImageEdit = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/openai-image-edit.ts"), "utf8");
+const openaiProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/openai-voice-provider.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -604,4 +606,26 @@ test("Advisor image generation preflights and stages listing photos before OpenA
   assert.match(advisorPropertyReference, /upload\(/);
   assert.match(studio, /1002\|upstream_error/);
   assert.match(studio, /et nytt forsøk kan bruke OpenArt-kreditter/);
+});
+
+test("Advisor AI provider is explicitly selected, and does not automatically route to Gemini", () => {
+  assert.match(studio, /Nano Banana 2 via OpenArt/);
+  assert.match(studio, /OpenAI GPT Image 2/);
+  assert.match(studio, /imageProvider: advisorImageProvider/);
+  assert.match(route, /!\["openart", "openai"\]\.includes\(selectedProvider\)/);
+  assert.match(route, /ADVISOR_IMAGE_PROVIDER_NOT_CONFIGURED/);
+  assert.match(route, /provider: selectedProvider as "openart" \| "openai"/);
+  assert.match(route, /selectedProvider, "v5-manual-image-provider"/);
+  assert.match(openaiProvider, /imageToImage: configured/);
+  assert.match(openaiProvider, /generateOpenAIImageEdit\(input\)/);
+});
+
+test("OpenAI image editing validates references, preserves their order and never automatically retries", () => {
+  assert.match(openaiImageEdit, /const DEFAULT_IMAGE_MODEL = "gpt-image-2"/);
+  assert.match(openaiImageEdit, /EDIT_ENDPOINT = "https:\/\/api\.openai\.com\/v1\/images\/edits"/);
+  assert.match(openaiImageEdit, /for \(const \[index, sourceUrl\] of refs\.entries\(\)\)/);
+  assert.match(openaiImageEdit, /await readBoundedPhoto\(sourceUrl\)/);
+  assert.match(openaiImageEdit, /form\.append\("image\[\]"/);
+  assert.match(openaiImageEdit, /form\.append\("n", "1"\)/);
+  assert.match(openaiImageEdit, /OPENAI_IMAGE_NOT_CONFIGURED/);
 });
