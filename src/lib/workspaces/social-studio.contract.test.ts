@@ -5,6 +5,7 @@ import test from "node:test";
 
 const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[brandKey]/social-studio/route.ts"), "utf8");
 const studio = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/social-studio-panel.tsx"), "utf8");
+const marketingPanel = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/marketing-panel.tsx"), "utf8");
 const catalogue = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/property-catalogue.tsx"), "utf8");
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"), "utf8");
 const inventory = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx"), "utf8");
@@ -13,6 +14,20 @@ const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/
 const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/route.ts"), "utf8");
 const contentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/content-hub/page.tsx"), "utf8");
 const globalsCss = fs.readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
+const advisorPhotoAnalysis = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-photo-analysis.ts"), "utf8");
+const advisorPropertyReference = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-property-reference.ts"), "utf8");
+const referencePicker = fs.readFileSync(path.join(process.cwd(), "src/components/media-studio/reference-media-picker.tsx"), "utf8");
+const mediaUpload = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/upload/route.ts"), "utf8");
+const mediaLibraryRoute = fs.readFileSync(path.join(process.cwd(), "src/app/api/media/assets/route.ts"), "utf8");
+const advisorMediaApproval = fs.readFileSync(path.join(process.cwd(), "src/lib/marketing/approved-advisor-media.ts"), "utf8");
+const contentHubMedia = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/[id]/media/route.ts"), "utf8");
+const socialPublisher = fs.readFileSync(path.join(process.cwd(), "src/services/publishing/publisher.ts"), "utf8");
+const mediaJobService = fs.readFileSync(path.join(process.cwd(), "src/services/media/job-service.ts"), "utf8");
+const geminiMediaProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/gemini-media-provider.ts"), "utf8");
+const openartMediaProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/openart-media-provider.ts"), "utf8");
+const openartClient = fs.readFileSync(path.join(process.cwd(), "src/services/integrations/openart-client.ts"), "utf8");
+const openaiImageEdit = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/openai-image-edit.ts"), "utf8");
+const openaiProvider = fs.readFileSync(path.join(process.cwd(), "src/services/media/providers/openai-voice-provider.ts"), "utf8");
 
 test("SoMe Studio stays behind workspace marketing and property permissions", () => {
   assert.match(route, /requireBrandWorkspace\(request, params\.brandKey, "marketing\.draft"\)/);
@@ -225,7 +240,7 @@ test("Saved owner drafts persist strategy category and concept metadata", () => 
 });
 
 
-test("SoMe Studio keeps Instagram captions link-free and varies engagement CTAs", () => {
+test("SoMe Studio keeps Instagram CTAs while appending the canonical property or article URL", () => {
   assert.match(route, /function instagramCaptionWithoutLinks/);
   assert.match(route, /replace\(\/https\?:\\\/\\\/\[\^\\s/);
   assert.match(route, /function instagramEngagementCta/);
@@ -234,7 +249,8 @@ test("SoMe Studio keeps Instagram captions link-free and varies engagement CTAs"
   assert.match(route, /Send oss en melding/);
   assert.match(route, /Instagram-engasjement skal variere mellom konseptene/);
   assert.match(route, /facebookText: ensureLink/);
-  assert.match(route, /instagramText: ensureInstagramEngagement/);
+  assert.match(route, /instagramText: \["property", "article"\]\.includes\(sourceType\)/);
+  assert.match(route, /ensureLink\(ensureInstagramEngagement\(source\.instagramText, blueprint\.id, sourceType\), sourceUrl\)/);
 });
 
 test("SoMe Studio supports a three-image collage visual format with safe fallback", () => {
@@ -267,7 +283,7 @@ test("SoMe Studio can hand off all three concepts as one package with approved m
   assert.match(route, /social-studio-concept:/);
   assert.match(studio, /Lagre hele SoMe-pakken/);
   assert.match(studio, /savePackage/);
-  assert.match(studio, /kanalutkast er lagret i Content Hub/);
+  assert.match(studio, /enkeltutkast for tre konsepter er lagret i Content Hub/);
   assert.match(studio, /package-/);
   assert.match(studio, /Lag alternativt AI-bilde/);
 });
@@ -304,7 +320,7 @@ test("SoMe package handoff opens the whole package instead of one arbitrary draf
   assert.match(studio, /Åpne hele pakken i Content Hub/);
   assert.match(contentHubPage, /focusedPackageId/);
   assert.match(contentHubPage, /packageDrafts/);
-  assert.match(contentHubPage, /Du ser nå bare denne pakken/);
+  assert.match(contentHubPage, /Denne pakken inneholder/);
   assert.match(contentHubPage, /Ingenting er publisert automatisk/);
   assert.match(contentHubPage, /Tilbake til SoMe Studio/);
 });
@@ -371,4 +387,345 @@ test("SoMe Studio and Content Hub protect human names from awkward line splittin
   assert.match(globalsCss, /hyphens:\s*none/);
   assert.match(globalsCss, /\.rf-human-name\s*\{/);
   assert.match(globalsCss, /white-space:\s*nowrap/);
+});
+
+test("Advisor composites require authorized listing, identity asset and consent", () => {
+  assert.match(route, /action === "advisor_composite_create"/);
+  assert.match(route, /confirmIdentityRights !== true/);
+  assert.match(route, /propertyMediaUrls\(property\)\.includes\(sourceImageUrl\)/);
+  assert.match(route, /ADVISOR_REFERENCE_NOT_AUTHORIZED/);
+  assert.match(route, /autoExportToContentHub: false/);
+  assert.match(route, /requiresManualApproval: true/);
+});
+
+test("Advisor preview cannot approve without reviewing identity, property and perspective", () => {
+  assert.match(studio, /advisorReview\[variant\.id\]\?\.identity/);
+  assert.match(studio, /advisorReview\[variant\.id\]\?\.property/);
+  assert.match(studio, /advisorReview\[variant\.id\]\?\.perspective/);
+  assert.match(studio, /Godkjenn bildet til utkast/);
+  assert.match(studio, /advisorStaged\[variant\.id\] && !advisorApproved\[variant\.id\]/);
+});
+
+test("Advisor generation keeps the listing photograph first and labels synthetic output", () => {
+  assert.match(route, /sourceImageUrls: \[stagedPropertyPhotoUrl, String\(identityAsset\.public_url\)\]/);
+  assert.match(route, /Preserve all architecture, furniture, view, terrain/);
+  assert.match(studio, /AI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet/);
+  assert.match(studio, /Originalboligen/);
+});
+
+test("Advisor status polling refreshes scoped image jobs without creating duplicate generations", () => {
+  assert.match(route, /action === "advisor_composite_status"/);
+  assert.match(route, /ADVISOR_JOB_NOT_FOUND/);
+  assert.match(route, /startsWith\("advisor-composite:"\)/);
+  assert.match(route, /existing\.operation !== "image_to_image"/);
+  assert.match(studio, /action: "advisor_composite_status"/);
+  assert.match(studio, /jobId: created\.jobId/);
+  assert.match(studio, /Submit once\. All later requests ONLY refresh/);
+});
+
+test("Advisor visual review is opt-in, single-image and gated by the property catalogue", () => {
+  assert.match(route, /action === "advisor_visual_analyze"/);
+  assert.match(route, /ADVISOR_PHOTO_NOT_IN_LISTING/);
+  assert.match(route, /reviewAdvisorPhoto\(sourceImageUrl\)/);
+  assert.match(studio, /AI-vurder valgt boligfoto/);
+  assert.match(studio, /action: "advisor_visual_analyze"/);
+});
+
+test("Advisor photo concepts have distinct visual instructions and explicitly review before save", () => {
+  assert.match(route, /const conceptDirection/);
+  assert.match(route, /architecture-first composition/);
+  assert.match(route, /Candid Mediterranean lifestyle composition/);
+  assert.match(route, /Confident but understated property-advisor stance/);
+  assert.match(studio, /Godkjenn bildet til utkast/);
+});
+
+test("Advisor AI shortlist compares at most three explicit listing images", () => {
+  assert.match(route, /action === "advisor_visual_rank"/);
+  assert.match(route, /advisorPropertyPhotoCandidates\(property\)\.slice\(0, 3\)/);
+  assert.match(route, /Promise\.allSettled\(candidates\.map/);
+  assert.match(route, /requiresManualApproval: true/);
+  assert.match(studio, /Finn beste bilde med AI \(maks 3 bilder\)/);
+  assert.match(studio, /action: "advisor_visual_rank"/);
+  assert.match(studio, /setAdvisorChosenImage\(recommendation\.imageUrl\)/);
+});
+
+test("Advisor visual analysis bounds image downloads and rejects unsafe network destinations", () => {
+  assert.match(advisorPhotoAnalysis, /assertPublicDns\(url\.hostname\)/);
+  assert.match(advisorPhotoAnalysis, /isPublicAddress\(item\.address\)/);
+  assert.match(advisorPhotoAnalysis, /redirect: "error"/);
+  assert.match(advisorPhotoAnalysis, /const maxBytes = 7 \* 1024 \* 1024/);
+  assert.match(advisorPhotoAnalysis, /ADVISOR_PHOTO_URL_UNSAFE/);
+});
+
+test("Instagram carousel discloses AI visual if advisor appears on any slide", () => {
+  assert.match(studio, /const containsAdvisorComposite = carouselSlides\.some\(slide => slide\.isAdvisor\)/);
+  assert.match(studio, /containsAdvisorComposite,/);
+  assert.match(studio, /const hasAdvisorComposite = Boolean\(advisorApproved\[variant\.id\] \|\| options\.containsAdvisorComposite\)/);
+  assert.match(studio, /hasAdvisorComposite \? \["ai-advisor-composite", "ai-illustration"\]/);
+});
+
+test("Advisor reference images must be explicitly uploaded and purpose-tagged", () => {
+  assert.match(studio, /purpose="advisor_portrait"/);
+  assert.match(referencePicker, /form\.set\("referencePurpose", "advisor_portrait"\)/);
+  assert.match(referencePicker, /asset\.metadata_json\?\.purpose === "advisor_portrait"/);
+  assert.match(mediaUpload, /purpose: metadata\.referencePurpose \|\| "media_reference"/);
+  assert.match(route, /identityAsset\.metadata_json\?\.purpose !== "advisor_portrait"/);
+});
+
+test("Advisor portraits are filtered in the media API before the library limit", () => {
+  assert.match(referencePicker, /referencePurpose=advisor_portrait/);
+  assert.match(mediaLibraryRoute, /metadata_json->>purpose/);
+  assert.match(mediaLibraryRoute, /"advisor_portrait", "media_reference"/);
+});
+
+test("Advisor image generation requires same resolved property as generated SoMe proposals", () => {
+  assert.match(studio, /source\.propertyId !== advisorCandidatePropertyId/);
+  assert.match(studio, /setAdvisorCandidatePropertyId\(typeof body\.propertyId === "string"/);
+  assert.match(studio, /advisorRequestEpoch\.current \+= 1/);
+  assert.match(studio, /if \(requestEpoch === advisorRequestEpoch\.current\) setAdvisorWorking\(""\)/);
+});
+
+test("Changing property clears old generated concepts and invalidates in-flight responses", () => {
+  assert.match(studio, /const generationRequestEpoch = useRef\(0\)/);
+  assert.match(studio, /const generationEpoch = \+\+generationRequestEpoch\.current/);
+  assert.match(studio, /if \(generationEpoch !== generationRequestEpoch\.current\) return/);
+  assert.match(studio, /setSource\(null\); setVariants\(\[\]\)/);
+});
+
+test("Advisor rerenders must be deliberate, capped and uniquely idempotent", () => {
+  assert.match(route, /const take = body\.take == null \? 1 : Number\(body\.take\)/);
+  assert.match(route, /!Number\.isInteger\(take\) \|\| take < 1 \|\| take > 3/);
+  assert.match(route, /variantId, channel, String\(take\), selectedProvider, "v5-manual-image-provider"/);
+  assert.match(studio, /createAdvisorComposite\(variant, true\)/);
+  assert.match(studio, /Lag ny AI-versjon/);
+  assert.match(studio, /Forkast AI-bildet og bruk vanlig eiendomskort/);
+});
+
+test("Advisor human review is persisted on the image before client marks it approved", () => {
+  assert.match(route, /action === "advisor_composite_approve"/);
+  assert.match(route, /advisorManualApproval: approval/);
+  assert.match(route, /review\.identity !== true \|\| review\.property !== true \|\| review\.perspective !== true/);
+  assert.match(studio, /action: "advisor_composite_approve"/);
+  assert.match(studio, /setAdvisorApproved\(current => \(\{ \.\.\.current, \[variant\.id\]: imageUrl \}\)\)/);
+});
+
+test("Marketing and Content Hub must reject unreviewed advisor composites", () => {
+  assert.match(marketing, /advisorCompositeHasManualApproval/);
+  assert.match(marketing, /ADVISOR_COMPOSITE_REVIEW_REQUIRED/);
+  assert.match(contentHubMedia, /advisorCompositeHasManualApproval\(auth\.supabase!, body\.source_url, auth\.draft!\.brand_id \|\| undefined\)/);
+  assert.match(advisorMediaApproval, /startsWith\("advisor-composite:"\)/);
+  assert.match(advisorMediaApproval, /approval\?\.checks\?\.perspective/);
+});
+
+test("Advisor consent is reflected in preview state and approval can be revoked server-side", () => {
+  assert.match(studio, /advisorReferenceUrl, propertyLookup, advisorConsent, advisorImageProvider\]/);
+  assert.match(studio, /action: "advisor_composite_revoke"/);
+  assert.match(studio, /Trekk tilbake godkjenning/);
+  assert.match(studio, /Trekk tilbake godkjenningen for AI-bildene nedenfor før du fjerner samtykket/);
+  assert.match(route, /action === "advisor_composite_revoke"/);
+  assert.match(route, /advisorManualApproval: \{/);
+  assert.match(route, /approved: false, revokedAt:/);
+});
+
+test("Content Hub carousel images cannot use approved advisor composites from another brand", () => {
+  assert.match(contentHubMedia, /id,brand_id,status,ai_image_url/);
+  assert.match(contentHubMedia, /advisorCompositeHasManualApproval\(auth\.supabase!, body\.source_url, auth\.draft!\.brand_id \|\| undefined\)/);
+  assert.match(advisorMediaApproval, /brandKey && asset\.brand_id !== brandKey/);
+});
+
+test("Advisor composites are marked AI-generated in persisted Content Hub metadata", () => {
+  assert.match(studio, /aiGeneratedImage: Boolean\(hasAdvisorComposite \|\|/);
+  assert.match(studio, /const containsAdvisorComposite = carouselSlides\.some\(slide => slide\.isAdvisor\)/);
+  assert.match(marketing, /ai_generated: aiGeneratedImage/);
+  assert.match(studio, /disabled=\{Boolean\(advisorApproved\[variant\.id\]\)\}/);
+});
+
+test("Opening a new property from Inventory or rebuilding concepts discards old advisor gallery state", () => {
+  assert.match(studio, /setAdvisorCandidatePropertyId\(""\)/);
+  assert.match(studio, /setAdvisorCandidates\(\[\]\)/);
+  assert.match(studio, /setAdvisorStagedAssetIds\(\{\}\)/);
+  assert.match(studio, /setAdvisorTake\(\{\}\)/);
+  assert.match(studio, /setAdvisorRevoking\(""\)/);
+});
+
+test("Publish-time admission rejects a revoked advisor image including any carousel slide", () => {
+  assert.match(socialPublisher, /\.select\("visual_format,ai_image_url,tags,content_features"\)/);
+  assert.match(socialPublisher, /\.\.\.carouselUrls/);
+  assert.match(socialPublisher, /advisorCompositeApprovalStatus\(supabase, url, brandId\)/);
+  assert.match(socialPublisher, /publication\.tags\.includes\("ai-advisor-composite"\)/);
+  assert.match(socialPublisher, /approvalResults\.some\(result => result\.advisorFound && result\.allowed\)/);
+  assert.match(socialPublisher, /ADVISOR_COMPOSITE_REVIEW_REVOKED/);
+  const guard = socialPublisher.indexOf("const candidateImages");
+  const graphCall = socialPublisher.indexOf("const outcome = await resolveAndPublish(", guard);
+  assert.ok(guard !== -1 && graphCall > guard, "Review must be verified before any external publishing.");
+});
+
+test("Advisor image generation preserves both ordered references through supported image providers", () => {
+  assert.match(route, /sourceImageUrls: \[stagedPropertyPhotoUrl, String\(identityAsset\.public_url\)\]/);
+  assert.match(mediaJobService, /submitToProvider\(provider, plan, body\.sourceImageUrls\)/);
+  assert.match(geminiMediaProvider, /for \(const sourceUrl of input\.sourceImageUrls \|\| \[\]\)/);
+  assert.match(geminiMediaProvider, /promptParts\.push\(\{ inlineData: await imageUrlToInlineData\(sourceUrl\) \}\)/);
+  assert.match(openartMediaProvider, /sourceImageUrls: input\.sourceImageUrls/);
+  assert.match(openartClient, /params\.visualReferences = references\.slice\(0, 14\)\.map/);
+});
+
+test("Switching advisor mode off cannot silently hide an actively approved image", () => {
+  assert.match(studio, /!event\.target\.checked && Object\.keys\(advisorApproved\)\.length > 0/);
+  assert.match(studio, /Godkjente bilder må først få godkjenningen trukket tilbake/);
+  assert.match(studio, /Trekk tilbake godkjenningen eller velg/);
+});
+
+test("All advisor composites carry immutable approved asset IDs from studio through drafts to publication", () => {
+  assert.match(studio, /advisorAssets: advisorAssetIdsForDraft/);
+  assert.match(studio, /advisorStagedAssetIds\[item\.id\]/);
+  assert.match(marketing, /ADVISOR_ASSET_PROVENANCE_REQUIRED/);
+  assert.match(marketing, /ADVISOR_ASSET_APPROVAL_REQUIRED/);
+  assert.match(marketing, /advisor_assets: advisorAssets/);
+  assert.match(marketing, /ADVISOR_DRAFT_PROVENANCE_SAVE_FAILED/);
+  assert.match(socialPublisher, /publication\.content_features\?\.advisor_assets/);
+  assert.match(socialPublisher, /recordedApprovalChecks\.some\(allowed => !allowed\)/);
+  assert.match(socialPublisher, /candidateImages\.includes\(ref\.imageUrl\)/);
+  assert.match(socialPublisher, /ref\.imageUrl, brandId, undefined, ref\.assetId/);
+});
+
+test("AI disclosure tags are prioritised before optional tags may be truncated", () => {
+  const start = studio.indexOf("tags: Array.from(new Set([");
+  const end = studio.indexOf("])).slice(0, 20)", start);
+  assert.ok(start !== -1 && end > start, "Must locate Content Hub tags.");
+  const snippet = studio.slice(start, end);
+  const ai = snippet.indexOf("ai-advisor-composite");
+  const userTags = snippet.indexOf("...variant.tags");
+  assert.ok(ai !== -1 && userTags > ai, "Mandatory AI tags must precede optional concept tags.");
+});
+
+test("Advisor image generation preflights and stages listing photos before OpenArt", () => {
+  assert.match(route, /stageAdvisorPropertyReference\(access\.value\.supabase/);
+  assert.match(route, /ADVISOR_PROPERTY_IMAGE_PREPARATION_FAILED/);
+  assert.match(route, /"v5-manual-image-provider"/);
+  assert.match(route, /originalImageUrl: sourceImageUrl/);
+  assert.match(advisorPropertyReference, /await readBoundedPhoto\(input\.sourceImageUrl\)/);
+  assert.match(advisorPropertyReference, /getPublicUrl\(filePath\)/);
+  assert.match(advisorPropertyReference, /upload\(/);
+  assert.match(studio, /1002\|upstream_error|1002: upstream_error/);
+  assert.match(studio, /Et nytt forsøk kan koste kreditter|Et nytt forsøk kan koste kreditter|et nytt forsøk kan koste kreditter/);
+});
+
+test("Advisor AI provider is explicitly selected, and does not automatically route to Gemini", () => {
+  assert.match(studio, /Nano Banana 2 via OpenArt/);
+  assert.match(studio, /OpenAI GPT Image 2/);
+  assert.match(studio, /imageProvider: advisorImageProvider/);
+  assert.match(route, /!\["openart", "openai"\]\.includes\(selectedProvider\)/);
+  assert.match(route, /ADVISOR_IMAGE_PROVIDER_NOT_CONFIGURED/);
+  assert.match(route, /provider: selectedProvider as "openart" \| "openai"/);
+  assert.match(route, /selectedProvider, "v5-manual-image-provider"/);
+  assert.match(openaiProvider, /imageToImage: configured/);
+  assert.match(openaiProvider, /generateOpenAIImageEdit\(input\)/);
+});
+
+test("OpenAI image editing validates references, preserves their order and never automatically retries", () => {
+  assert.match(openaiImageEdit, /const DEFAULT_IMAGE_MODEL = "gpt-image-2"/);
+  assert.match(openaiImageEdit, /EDIT_ENDPOINT = "https:\/\/api\.openai\.com\/v1\/images\/edits"/);
+  assert.match(openaiImageEdit, /for \(const \[index, sourceUrl\] of refs\.entries\(\)\)/);
+  assert.match(openaiImageEdit, /await readBoundedPhoto\(sourceUrl\)/);
+  assert.match(openaiImageEdit, /form\.append\("image\[\]"/);
+  assert.match(openaiImageEdit, /form\.append\("n", "1"\)/);
+  assert.match(openaiImageEdit, /OPENAI_IMAGE_NOT_CONFIGURED/);
+});
+
+test("Saving three social concepts never silently substitutes missing advisor imagery", () => {
+  assert.match(studio, /function ensureAdvisorPackageReady\(forInstagramOnly = false\)/);
+  assert.match(studio, /if \(missing\.length && !allowMixedAdvisorPackage\)/);
+  assert.match(studio, /try \{ ensureAdvisorPackageReady\(\); \} catch \(cause\)/);
+  assert.match(studio, /Jeg vil lagre en blandet pakke/);
+  assert.match(studio, /Godkjente AI-bilder: \{variants\.filter\(item => Boolean\(advisorApproved\[item\.id\]\)\)\.length\} av 3/);
+  assert.match(studio, /"visual-" \+ \(renderedImage\.visualFormat \|\| "single_image"\)/);
+});
+
+test("Content Hub package links expose all saved channel drafts and distinguish advisor images", () => {
+  assert.match(studio, /setSavedPackageDrafts\(\[\.\.\.createdDrafts\]\)/);
+  assert.match(studio, /Lagrede utkast \(\{savedPackageDrafts\.length\}\)/);
+  assert.match(studio, /draft\.imageKind === "advisor"/);
+  assert.match(contentHubPage, /packageAdvisorConceptCount/);
+  assert.match(contentHubPage, /Godkjent rådgiverbilde/);
+  assert.match(contentHubPage, /Vanlig bolig-\/kildebilde/);
+});
+
+test("A single advisor post cannot silently save a non-advisor image", () => {
+  assert.match(studio, /advisorMode && source\?\.type === "property" && !advisorApproved\[variant\.id\]/);
+  assert.match(studio, /!allowMixedAdvisorPackage/);
+  assert.match(studio, /Dette konseptet mangler godkjent AI-bilde med rådgiver/);
+  assert.match(studio, /Lag 3 tekst- og SoMe-konsepter/);
+  assert.match(studio, /Tre forskjellige konsepter lager ikke tre ferdige AI-foto/);
+});
+
+test("Each Instagram concept can select or upload an independent brand media image", () => {
+  assert.match(studio, /const \[instagramImages, setInstagramImages\] = useState<Record<string, string>>\(\{\}\)/);
+  assert.match(studio, /usage="social_post"/);
+  assert.match(studio, /brandId=\{brandKey\}/);
+  assert.match(studio, /value=\{instagramImages\[variant\.id\] \|\| ""\}/);
+  assert.match(studio, /setInstagramImages\(current =>/);
+  assert.match(referencePicker, /usage !== "social_post"/);
+  assert.match(referencePicker, /"\/api\/media\/assets\/upload"/);
+});
+
+test("Selected Instagram image wins over prepared generic imagery but not approved advisor AI", () => {
+  assert.match(studio, /channel === "instagram" && !advisorApproved\[variant\.id\]/);
+  assert.match(studio, /instagramImages\[variant\.id\] \|\| ""/);
+  assert.match(studio, /const renderedImage = selectedInstagramImage\s*\? \{ imageUrl: selectedInstagramImage/);
+  assert.match(studio, /: options\.preparedImage \|\| await ensureConceptImage\(variant\)/);
+  assert.match(studio, /setInstagramImages\(current => \{ const next = \{ \.\.\.current \}; delete next\[variant\.id\]; return next; \}\)/);
+  assert.match(studio, /\.\.\.\(selectedInstagramImage \? \["instagram-own-image"\] : \[\]\)/);
+});
+
+test("Instagram batch and carousel use each selected photo without replacing Facebook images", () => {
+  assert.match(studio, /!channels\.includes\("facebook"\) &&/);
+  assert.match(studio, /channel === "instagram" && instagramImages\[variant\.id\] \? "custom"/);
+  assert.match(studio, /let result = selected\s*\? \{ imageUrl: selected/);
+  assert.match(studio, /source_kind: item\.isOwnImage \|\| item\.isAdvisor \? "library" : "property"/);
+  assert.match(studio, /ensureAdvisorPackageReady\(true\)/);
+  assert.match(studio, /const pending = variants\.filter\(item => Boolean\(advisorStaged\[item\.id\]\) && !advisorApproved\[item\.id\]\)/);
+});
+
+test("Content Hub distinguishes manual Instagram photos in batch view", () => {
+  assert.match(contentHubPage, /packageOwnImageCount/);
+  assert.match(contentHubPage, /Eget Instagram-bilde/);
+  assert.match(contentHubPage, /instagram-own-image/);
+});
+
+test("Exactly three separate Instagram drafts can be created with distinct media", () => {
+  assert.match(studio, /async function saveInstagramTrio\(\)/);
+  assert.match(studio, /ensureAdvisorPackageReady\(true\)/);
+  assert.match(studio, /persistVariantDraft\(variant, "instagram", \{ packageId \}\)/);
+  assert.match(studio, /setSavedPackageDrafts\(\[\.\.\.createdDrafts\]\)/);
+  assert.match(studio, /Lagre 3 Instagram-innlegg som utkast/);
+  assert.match(studio, /Disse blir tre forskjellige innlegg/);
+});
+
+test("Property and editorial drafts always preserve the exact verified source URL", () => {
+  assert.match(route, /PROPERTY_PUBLIC_LINK_UNAVAILABLE/);
+  assert.match(route, /"\/eiendommer\/" \+ encodeURIComponent\(property\.ref\)/);
+  assert.match(route, /sourceUrl = article\.url/);
+  assert.match(studio, /function captionWithSourceLink\(text: string, source: GeneratedSource \| null\)/);
+  assert.match(studio, /\["property", "article"\]\.includes\(source\.type\)/);
+  assert.match(studio, /captionWithSourceLink\(channel === "facebook" \? variant\.facebookText : variant\.instagramText, source\)/);
+  assert.match(studio, /Utkastet mangler direkte lenke til boligen eller artikkelen/);
+  assert.match(studio, /source\.url/);
+});
+
+test("Carousel promotes approved advisor image to first slide and aligns caption with the cover", () => {
+  assert.match(studio, /carouselSlides\.sort\(\(a, b\) => Number\(b\.isAdvisor\) - Number\(a\.isAdvisor\)\)/);
+  assert.match(studio, /const cover = carouselSlides\[0\]/);
+  assert.match(studio, /persistVariantDraft\(cover\.variant, "instagram"/);
+  assert.match(studio, /preparedImage: cover/);
+  assert.match(studio, /variantId: cover\.variant\.id/);
+  assert.match(studio, /Godkjent AI-bilde med rådgiver/);
+  assert.match(studio, /OpenArt som valgt modell betyr ikke/);
+});
+
+test("SoMe Studio overview has a prominent direct Content Hub link filtered by brand and drafts", () => {
+  assert.match(marketingPanel, /Åpne Content Hub/);
+  assert.match(marketingPanel, /href=\{"\/content-hub\?from=social-studio&brand=" \+ encodeURIComponent\(brandKey\)\}/);
+  assert.match(marketingPanel, /aria-label="Åpne Content Hub og utkast for denne merkevaren"/);
+  assert.match(contentHubPage, /requestedOrigin === "social-studio" && requestedBrand/);
+  assert.match(contentHubPage, /setActiveContentTab\("utkast"\)/);
 });
