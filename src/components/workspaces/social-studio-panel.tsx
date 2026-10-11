@@ -517,7 +517,7 @@ export function WorkspaceSocialStudio({
       for (let attempt = 0; attempt < 16 && !result.imageUrl; attempt++) {
         if (["failed", "cancelled", "expired"].includes(String(result.status))) {
           const providerMessage = result.warning || "Bildegenereringen feilet.";
-          throw new Error(/\\b1002\\b|upstream_error/i.test(providerMessage)
+          throw new Error(/1002|upstream_error/i.test(providerMessage)
             ? "OpenArt stoppet bildegenereringen (1002: upstream_error). Ingen bilde ble laget. RealtyFlow har nå klargjort boligfotoet på egen bildeserver. Du kan forsøke genereringen igjen; et nytt forsøk kan bruke OpenArt-kreditter."
             : "OpenArt klarte ikke fullføre bildet: " + providerMessage);
         }
