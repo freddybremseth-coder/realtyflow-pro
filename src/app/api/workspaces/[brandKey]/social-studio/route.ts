@@ -896,7 +896,9 @@ function parseVariants(raw: string, sourceUrl: string, sourceType: string, focus
       angle: clean(source.angle, 500),
       visualDirection: clean(source.visualDirection, 500),
       facebookText: ensureLink(removeUnrelatedCompanionQuestion(clean(source.facebookText, 4_200), focus), sourceUrl),
-      instagramText: ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType, focus),
+      instagramText: ["property", "article"].includes(sourceType)
+        ? ensureLink(ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType, focus), sourceUrl)
+        : ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType, focus),
       tags: safeTags(source.tags),
     };
   });
