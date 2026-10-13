@@ -9,6 +9,7 @@ import { isOpenArtConnected } from "@/services/integrations/openart-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
 import {
   removeUnrelatedCompanionQuestion,
+  socialCopyReview,
   socialEditorialFocus,
   type SocialEditorialFocus,
 } from "@/lib/workspaces/social-editorial-quality";
@@ -478,7 +479,14 @@ function ensureInstagramEngagement(
           : /\b(del|dele|send (?:denne|posten) til)\b/i.test(caption)
       : /\b(send oss en melding|skriv til oss|send en melding|dm oss|melding)\b/i.test(caption);
 
-  if (hasExpectedCta) return caption;
+  const finalLine = caption.split(/\n+/).map(line => line.trim()).filter(Boolean).at(-1) || "";
+  const relevantQuestion = /\?$/.test(finalLine) && (
+    focus.theme === "costs" ? /kostnad|budsjett|avgift|skatt|boligkjøp/i.test(finalLine)
+    : focus.theme === "customer_case" ? /prosess|råd|viktig|erfaring|hjelp/i.test(finalLine)
+    : true
+  );
+  // A relevant question is already one engagement CTA: do not append a second one.
+  if (hasExpectedCta || relevantQuestion) return caption;
   return [caption, instagramEngagementCta(conceptId, sourceType, focus)].filter(Boolean).join("\n\n");
 }
 
@@ -1953,7 +1961,51 @@ export async function POST(
       raw = JSON.stringify(buildDeterministicVariantPayload(sourceTitle, sourceText));
       generationFallback = true;
     }
-    const variants = parseVariants(raw, sourceUrl, sourceType, editorialFocus);
+    let variants = parseVariants(raw, sourceUrl, sourceType, editorialFocus);
+    const criticalIssues = (rows: typeof variants) => rows.flatMap(row =>
+      [row.facebookText, row.instagramText].flatMap(copy =>
+        socialCopyReview(copy, editorialFocus).filter(issue =>
+          issue.includes("kundehistorie") || issue.includes("Kundehistorien")
+        )
+      )
+    );
+    let editorialRevisionApplied = false;
+    if (!generationFallback && criticalIssues(variants).length > 0) {
+      // Repair the minority of AI outputs that still combine unrelated themes.
+      // Keep the original if the repair fails schema/grounding or does not improve quality.
+      try {
+        const editorialRepair = [
+          "Du er kvalitetsredaktør. Forbedre følgende tre SoMe-konsepter uten å finne på fakta.",
+          "Hvert konsept skal beholde samme ID og kun ha ett tema: " + editorialFocus.label + ".",
+          "Kutt sidetemaer (kundehistorie i kostnadsguide, kostnadsguide i kundehistorie).",
+          "Bilde/hook/visualDirection/caption/CTA skal samsvare. Bruk relevant CTA og forklar nyttige, dokumenterte detaljer.",
+          "Bare bruk fakta i følgende kilde. Hvis fakta ikke finnes, må de utelates.",
+          "KILDE: " + sourceText.slice(0, 8_000),
+          "ORIGINAL JSON: " + raw.slice(0, 16_000),
+          "Returner nøyaktig schemaet med variants: id, hook, angle, visualDirection, facebookText, instagramText, tags.",
+        ].join("\n\n");
+        const corrected = await askClaude(editorialRepair, {
+          model: "sonnet",
+          maxTokens: 4_000,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA as any,
+          validateResponse: validVariantPayload,
+          fallbackOnInvalidResponse: true,
+        });
+        if (validVariantPayload(corrected)) {
+          const improved = parseVariants(corrected, sourceUrl, sourceType, editorialFocus);
+          if (criticalIssues(improved).length < criticalIssues(variants).length) {
+            variants = improved;
+            editorialRevisionApplied = true;
+          }
+        }
+      } catch (repairError) {
+        console.warn("[social-studio] editorial revision unavailable", {
+          brandKey: params.brandKey,
+          reason: repairError instanceof Error ? repairError.message.slice(0, 100) : "unknown",
+        });
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -1976,6 +2028,7 @@ export async function POST(
       variants,
       generation: {
         fallback: generationFallback,
+        editorialRevisionApplied,
         reason: generationFallback ? "AI_FORMAT_RECOVERED_LOCALLY" : null,
       },
       propertyStyles: PROPERTY_CREATIVE_STYLES,
