@@ -1,8 +1,9 @@
 "use client";
+import { ReferenceMediaPicker } from "@/components/media-studio/reference-media-picker";
 import { protectHumanText } from "@/lib/ui/protected-human-text";
 import { socialCopyReview, type SocialEditorialFocus } from "@/lib/workspaces/social-editorial-quality";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, Building2, ExternalLink, Facebook, Instagram, Sparkles, WandSparkles } from "lucide-react";
 
 export type WorkspaceSocialPropertySeed = {
@@ -131,6 +132,22 @@ const EDITORIAL_CATEGORIES: Array<{ id: EditorialCategory; label: string }> = [
   { id: "notShared60Days", label: "Ikke delt siste 60 dager" },
 ];
 
+function captionWithSourceLink(text: string, source: GeneratedSource | null) {
+  const caption = text.trim();
+  if (!source || !["property", "article"].includes(source.type)) return caption;
+  const url = source.url?.trim();
+  if (!url || !/^https:\/\//i.test(url)) {
+    throw new Error("Utkastet mangler direkte lenke til boligen eller artikkelen. Hent kildeinnholdet på nytt.");
+  }
+  const label = source.type === "property" ? "Se boligen:" :
+    /\/guide\//i.test(url) ? "Les hele guiden:" : "Les hele artikkelen:";
+  const suffix = label + " " + url;
+  if (caption.includes(url) && caption.length <= 4700) return caption;
+  const available = Math.max(0, 4700 - suffix.length - 2);
+  return [caption.replaceAll(url, "").trim().slice(0, available).trimEnd(), suffix]
+    .filter(Boolean).join("\n\n");
+}
+
 function formatContentDate(value: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -154,6 +171,47 @@ export function WorkspaceSocialStudio({
 }) {
   const [sourceType, setSourceType] = useState<SourceType>("topic");
   const [propertyLookup, setPropertyLookup] = useState("");
+  const [advisorMode, setAdvisorMode] = useState(false);
+  const [advisorReferenceUrl, setAdvisorReferenceUrl] = useState("");
+  const [advisorConsent, setAdvisorConsent] = useState(false);
+  const [advisorPose, setAdvisorPose] = useState("relaxed");
+  const [advisorPlacement, setAdvisorPlacement] = useState("auto");
+  const [advisorWorking, setAdvisorWorking] = useState("");
+  const advisorRequestEpoch = useRef(0);
+  const generationRequestEpoch = useRef(0);
+  const advisorCandidatesEpoch = useRef(0);
+  const [advisorStaged, setAdvisorStaged] = useState<Record<string, string>>({});
+  const [advisorStagedAssetIds, setAdvisorStagedAssetIds] = useState<Record<string, string>>({});
+  const [advisorApproving, setAdvisorApproving] = useState("");
+  const [advisorRevoking, setAdvisorRevoking] = useState("");
+  const [advisorApprovalNotice, setAdvisorApprovalNotice] = useState("");
+  const [advisorApproved, setAdvisorApproved] = useState<Record<string, string>>({});
+  // Never quietly replace missing advisor composites with ordinary property photos.
+  // Mixed packages require an explicit opt-in from the user.
+  const [allowMixedAdvisorPackage, setAllowMixedAdvisorPackage] = useState(false);
+  const [savedPackageDrafts, setSavedPackageDrafts] = useState<Array<{
+    id: string; label: string; channel: Channel; imageKind: "advisor" | "property" | "custom";
+  }>>([]);
+
+  const [advisorTake, setAdvisorTake] = useState<Record<string, number>>({});
+  const [advisorReview, setAdvisorReview] = useState<Record<string, { identity: boolean; property: boolean; perspective: boolean }>>({});
+  const [advisorOutfit, setAdvisorOutfit] = useState("navy_armani");
+  const [advisorImageProvider, setAdvisorImageProvider] = useState<"openart" | "openai">("openart");
+  const [advisorCandidates, setAdvisorCandidates] = useState<Array<{ id: string; imageUrl: string; rank: number; reason?: string }>>([]);
+  const [advisorChosenImage, setAdvisorChosenImage] = useState("");
+  const [advisorCandidatePropertyId, setAdvisorCandidatePropertyId] = useState("");
+  const [advisorLoading, setAdvisorLoading] = useState(false);
+  const [advisorRankBusy, setAdvisorRankBusy] = useState(false);
+  const [advisorRankNotice, setAdvisorRankNotice] = useState("");
+  const [advisorError, setAdvisorError] = useState("");
+  const [advisorAnalyzing, setAdvisorAnalyzing] = useState(false);
+  const advisorAnalysisEpoch = useRef(0);
+  const [advisorAnalysisError, setAdvisorAnalysisError] = useState("");
+  const [advisorPhotoReview, setAdvisorPhotoReview] = useState<null | {
+    photo: string; suitable: boolean; score: number; placement: "auto" | "left" | "right" | "center";
+    reason: string; warning: string;
+  }>(null);
+
   const [propertyLabel, setPropertyLabel] = useState("");
   const [articleUrl, setArticleUrl] = useState("");
   const [areaLookup, setAreaLookup] = useState("");
@@ -172,6 +230,8 @@ export function WorkspaceSocialStudio({
   const [styles, setStyles] = useState<Record<string, string>>({});
   const [visualFormats, setVisualFormats] = useState<Record<string, VisualFormat>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [instagramImages, setInstagramImages] = useState<Record<string, string>>({});
+  const [instagramImagePicker, setInstagramImagePicker] = useState<string>("");
   const [previewing, setPreviewing] = useState("");
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState("");
@@ -202,6 +262,19 @@ export function WorkspaceSocialStudio({
     setAreaLookup("");
     // Prefer the canonical property reference when available. Inventory can contain
     // non-UUID local/import IDs, while the server accepts either UUID or unique ref.
+    generationRequestEpoch.current += 1;
+    advisorRequestEpoch.current += 1;
+    advisorCandidatesEpoch.current += 1;
+    setAdvisorCandidatePropertyId("");
+    setAdvisorCandidates([]);
+    setAdvisorChosenImage("");
+    setAdvisorRankBusy(false);
+    setAdvisorRankNotice("");
+    setAdvisorStaged({});
+    setAdvisorStagedAssetIds({});
+    setAdvisorApproved({});
+    setAdvisorReview({});
+    setAdvisorTake({});
     setPropertyLookup(initialProperty.ref || initialProperty.id);
     setPropertyLabel([
       initialProperty.title || initialProperty.ref || "Bolig",
@@ -211,6 +284,8 @@ export function WorkspaceSocialStudio({
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
+    setInstagramImages({});
+    setInstagramImagePicker("");
     setSource(null);
     setError("");
     setSavedPublicationId("");
@@ -254,6 +329,8 @@ export function WorkspaceSocialStudio({
   function applyStrategyRecommendation() {
     if (!strategy) return;
     setVariants([]);
+    setInstagramImages({});
+    setInstagramImagePicker("");
     setSource(null);
     setSavedPublicationId("");
     setSavedDraft(null);
@@ -366,8 +443,299 @@ export function WorkspaceSocialStudio({
     void loadEditorialContent();
   }, [sourceType, brandKey, companionPropertyLookup, propertyContext?.id]);
 
+  // A reviewed composite applies only to the exact property photo, portrait and styling.
+  // Changing any input invalidates staged/approved images to prevent stale approvals.
+  useEffect(() => {
+    setAdvisorStaged({});
+    setAdvisorStagedAssetIds({});
+    setAllowMixedAdvisorPackage(false);
+    setAdvisorApproving("");
+    setAdvisorRevoking("");
+    setAdvisorApproved({});
+    setAllowMixedAdvisorPackage(false);
+    setSavedPackageDrafts([]);
+    setAdvisorApprovalNotice("");
+    setAdvisorReview({});
+    setAdvisorTake({});
+    setPreviews({});
+    advisorRequestEpoch.current += 1;
+  }, [advisorMode, advisorChosenImage, advisorOutfit, advisorPose, advisorPlacement, advisorReferenceUrl, propertyLookup, advisorConsent, advisorImageProvider]);
+
+
+  useEffect(() => {
+    advisorAnalysisEpoch.current += 1;
+    setAdvisorAnalyzing(false);
+    setAdvisorPhotoReview(null);
+    setAdvisorAnalysisError("");
+  }, [advisorChosenImage, propertyLookup]);
+
+  async function analyzeAdvisorPhoto() {
+    if (!advisorChosenImage || !propertyLookup.trim() || advisorAnalyzing) return;
+    const epoch = ++advisorAnalysisEpoch.current;
+    const photo = advisorChosenImage;
+    setAdvisorAnalyzing(true);
+    setAdvisorAnalysisError("");
+    setAdvisorPhotoReview(null);
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "advisor_visual_analyze",
+          propertyLookup: propertyLookup.trim(), sourceImageUrl: photo,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "AI-vurderingen er ikke tilgjengelig.");
+      if (epoch !== advisorAnalysisEpoch.current || photo !== advisorChosenImage) return;
+      const review = body?.review;
+      if (!review || !Number.isFinite(review.score)) throw new Error("Bildemodellen svarte i feil format.");
+      setAdvisorPhotoReview({ photo, suitable: review.suitable === true,
+        score: Number(review.score), placement: review.placement || "auto",
+        reason: String(review.reason || ""), warning: String(review.warning || "") });
+    } catch (cause) {
+      if (epoch === advisorAnalysisEpoch.current) setAdvisorAnalysisError(
+        cause instanceof Error ? cause.message : "AI-vurderingen feilet.",
+      );
+    } finally {
+      if (epoch === advisorAnalysisEpoch.current) setAdvisorAnalyzing(false);
+    }
+  }
+
+  async function createAdvisorComposite(variant: Variant, newTake = false) {
+    if (!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || advisorWorking) return;
+    const take = (advisorTake[variant.id] || 1) + (newTake ? 1 : 0);
+    if (take > 3) {
+      setAdvisorError("Du har brukt tre versjoner med samme innstillinger. Endre bilde, antrekk eller plassering for å starte på nytt.");
+      return;
+    }
+    setAdvisorTake(current => ({ ...current, [variant.id]: take }));
+    if (!source || source.type !== "property" || !source.propertyId ||
+        !advisorCandidatePropertyId || source.propertyId !== advisorCandidatePropertyId) {
+      setAdvisorError("Boligbildet tilhører ikke eiendommen som SoMe-forslagene er laget for. Hent bilder og lag nye forslag for samme bolig.");
+      return;
+    }
+    setAdvisorWorking(variant.id);
+    const requestEpoch = advisorRequestEpoch.current;
+    setAdvisorError("");
+    setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    setAdvisorStagedAssetIds(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
+
+    const request = async (payload: Record<string, unknown>) => {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.error?.message || body?.message || body?.error?.code || "Kunne ikke fullføre bildejobben.");
+      }
+      return body as { imageUrl?: string | null; assetId?: string | null; jobId?: string; status?: string; warning?: string };
+    };
+
+    try {
+      // Submit once. All later requests ONLY refresh an existing job; never resubmit in a poll.
+      const created = await request({
+        action: "advisor_composite_create", propertyLookup: propertyLookup.trim(),
+        sourceImageUrl: advisorChosenImage, identityAssetUrl: advisorReferenceUrl,
+        confirmIdentityRights: advisorConsent, outfit: advisorOutfit, pose: advisorPose,
+        placement: advisorPlacement, variantId: variant.id, take,
+        imageProvider: advisorImageProvider,
+        channel: activePlatforms.has("instagram") ? "instagram" : "facebook",
+      });
+      if (requestEpoch !== advisorRequestEpoch.current) return;
+      if (!created.jobId) throw new Error("RealtyFlow returnerte ingen jobb-ID.");
+      let result = created;
+      for (let attempt = 0; attempt < 16 && !result.imageUrl; attempt++) {
+        if (["failed", "cancelled", "expired"].includes(String(result.status))) {
+          const providerMessage = result.warning || "Bildegenereringen feilet.";
+          throw new Error(/1002|upstream_error/i.test(providerMessage)
+            ? "OpenArt stoppet bildegenereringen (1002: upstream_error). Ingen bilde ble laget. Du kan velge OpenAI GPT Image 2 under «Bildemodell» og generere manuelt. Et nytt forsøk kan koste kreditter."
+            : (advisorImageProvider === "openai" ? "OpenAI" : "OpenArt") + " klarte ikke fullføre bildet: " + providerMessage);
+        }
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        if (requestEpoch !== advisorRequestEpoch.current) return;
+        result = await request({ action: "advisor_composite_status", jobId: created.jobId });
+      }
+      if (!result.imageUrl) {
+        throw new Error("Bildebehandlingen pågår fortsatt. Jobben er lagret; prøv igjen senere. Ingenting er godkjent eller publisert.");
+      }
+      if (requestEpoch !== advisorRequestEpoch.current) return;
+      if (!result.assetId) throw new Error("Bildet mangler registrert medie-ID og kan ikke godkjennes.");
+      setAdvisorStagedAssetIds(current => ({ ...current, [variant.id]: String(result.assetId) }));
+      setAdvisorStaged(current => ({ ...current, [variant.id]: String(result.imageUrl) }));
+      setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
+    } catch (cause) {
+      if (requestEpoch === advisorRequestEpoch.current) {
+        const providerMessage = cause instanceof Error ? cause.message : "Bildegenerering feilet.";
+        setAdvisorError(providerMessage.includes("ADVISOR_PROPERTY_IMAGE_PREPARATION_FAILED") ||
+          providerMessage.includes("ADVISOR_PROPERTY_SOURCE_UNAVAILABLE")
+          ? "Boligfotoet er ikke tilgjengelig for AI akkurat nå. Velg et annet godkjent boligfoto og prøv igjen (ingen ny OpenArt-jobb ble startet)."
+          : providerMessage);
+      }
+    } finally {
+      if (requestEpoch === advisorRequestEpoch.current) setAdvisorWorking("");
+    }
+  }
+
+  async function approveAdvisorComposite(variant: Variant) {
+    const currentReview = advisorReview[variant.id];
+    const assetId = advisorStagedAssetIds[variant.id];
+    const imageUrl = advisorStaged[variant.id];
+    if (!currentReview?.identity || !currentReview?.property || !currentReview?.perspective ||
+        !assetId || !imageUrl || !source?.propertyId || advisorApproving) return;
+    const requestEpoch = advisorRequestEpoch.current;
+    setAdvisorApproving(variant.id);
+    setAdvisorError("");
+    setAdvisorApprovalNotice("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "advisor_composite_approve", assetId, propertyId: source.propertyId,
+          review: { identity: true, property: true, perspective: true },
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.imageUrl !== imageUrl) {
+        throw new Error(body?.error?.message || body?.error?.code || "Kunne ikke lagre godkjenningen på mediefilen.");
+      }
+      if (requestEpoch !== advisorRequestEpoch.current) return;
+      setAdvisorApproved(current => ({ ...current, [variant.id]: imageUrl }));
+      setInstagramImages(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setInstagramImagePicker("");
+      setPreviews(current => ({ ...current, [variant.id]: imageUrl }));
+      setVisualFormats(current => ({ ...current, [variant.id]: "single_image" }));
+      setAdvisorApprovalNotice("Godkjenningen er lagret på AI-mediefilen.");
+    } catch (cause) {
+      if (requestEpoch === advisorRequestEpoch.current) {
+        setAdvisorError(cause instanceof Error ? cause.message : "Godkjenningen kunne ikke lagres.");
+      }
+    } finally {
+      if (requestEpoch === advisorRequestEpoch.current) setAdvisorApproving("");
+    }
+  }
+
+  async function revokeAdvisorComposite(variant: Variant) {
+    const assetId = advisorStagedAssetIds[variant.id];
+    const propertyId = source?.propertyId;
+    if (!assetId || !propertyId || !advisorApproved[variant.id] || advisorRevoking) return;
+    const epoch = advisorRequestEpoch.current;
+    setAdvisorRevoking(variant.id);
+    setAdvisorError("");
+    setAdvisorApprovalNotice("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "advisor_composite_revoke", assetId, propertyId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.approved !== false) {
+        throw new Error(body?.error?.message || body?.error?.code || "Godkjenningen kunne ikke trekkes tilbake.");
+      }
+      if (epoch !== advisorRequestEpoch.current) return;
+      setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setAdvisorStagedAssetIds(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
+      setVisualFormats(current => ({ ...current, [variant.id]: "property_card" }));
+      setAdvisorApprovalNotice("Godkjenningen er trukket tilbake. Eksisterende publiserte innlegg fjernes ikke automatisk.");
+    } catch (cause) {
+      if (epoch === advisorRequestEpoch.current) setAdvisorError(
+        cause instanceof Error ? cause.message : "Kunne ikke trekke tilbake godkjenningen."
+      );
+    } finally {
+      if (epoch === advisorRequestEpoch.current) setAdvisorRevoking("");
+    }
+  }
+
+  async function rankAdvisorPhotos() {
+    if (!propertyLookup.trim() || !advisorCandidates.length || advisorRankBusy) return;
+    const candidateEpoch = advisorCandidatesEpoch.current;
+    setAdvisorRankBusy(true);
+    setAdvisorRankNotice("");
+    setAdvisorError("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "advisor_visual_rank", propertyLookup: propertyLookup.trim() }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "AI-rangering er ikke tilgjengelig.");
+      if (candidateEpoch !== advisorCandidatesEpoch.current) return;
+      const reviews = Array.isArray(body.ranked) ? body.ranked as Array<{
+        imageUrl: string; score: number; suitable: boolean; placement: "auto" | "left" | "right" | "center"; reason: string;
+      }> : [];
+      const byUrl = new Map(reviews.map(review => [review.imageUrl, review]));
+      setAdvisorCandidates(current => current.map(candidate => {
+        const review = byUrl.get(candidate.imageUrl);
+        return review
+          ? { ...candidate, reason: "AI: " + review.score + "/100 · " + review.reason }
+          : candidate;
+      }).sort((a, b) => {
+        const aReview = byUrl.get(a.imageUrl);
+        const bReview = byUrl.get(b.imageUrl);
+        return Number(Boolean(bReview?.suitable)) - Number(Boolean(aReview?.suitable)) ||
+          (bReview?.score ?? -1) - (aReview?.score ?? -1) || a.rank - b.rank;
+      }));
+      const recommendation = body.recommendation as typeof reviews[number] | null;
+      if (recommendation?.imageUrl && advisorCandidates.some(candidate => candidate.imageUrl === recommendation.imageUrl)) {
+        setAdvisorChosenImage(recommendation.imageUrl);
+        setAdvisorPlacement(recommendation.placement);
+        setAdvisorRankNotice("AI foreslår et egnet boligfoto og plassering. Se over valget før generering.");
+      } else {
+        setAdvisorRankNotice("Ingen av de vurderte bildene ble anbefalt. Velg et bilde manuelt, eller bruk en annen eiendom.");
+      }
+      if (Number(body.reviewedCount) < Number(body.attemptedCount)) {
+        setAdvisorRankNotice(current => current + " Ikke alle analysene kunne fullføres.");
+      }
+    } catch (cause) {
+      if (candidateEpoch === advisorCandidatesEpoch.current) {
+        setAdvisorError(cause instanceof Error ? cause.message : "AI-rangering feilet.");
+      }
+    } finally {
+      if (candidateEpoch === advisorCandidatesEpoch.current) setAdvisorRankBusy(false);
+    }
+  }
+
+  async function loadAdvisorCandidates() {
+    if (!propertyLookup.trim() || advisorLoading) return;
+    setAdvisorLoading(true);
+    setAdvisorRankNotice("");
+    const candidateEpoch = ++advisorCandidatesEpoch.current;
+    setAdvisorError("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "advisor_visual_options", propertyLookup: propertyLookup.trim() }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error?.message || "Kunne ikke hente godkjente boligbilder.");
+      const candidates = Array.isArray(body.candidates) ? body.candidates as Array<{ id: string; imageUrl: string; rank: number; reason?: string }> : [];
+      if (candidateEpoch !== advisorCandidatesEpoch.current) return;
+      setAdvisorCandidatePropertyId(typeof body.propertyId === "string" ? body.propertyId : "");
+      setAdvisorCandidates(candidates);
+      setAdvisorChosenImage(candidates[0]?.imageUrl || "");
+    } catch (cause) {
+      if (candidateEpoch === advisorCandidatesEpoch.current) setAdvisorError(cause instanceof Error ? cause.message : "Kunne ikke hente boligbilder.");
+    } finally {
+      if (candidateEpoch === advisorCandidatesEpoch.current) setAdvisorLoading(false);
+    }
+  }
+
   async function generate() {
     if (!canGenerate) return;
+    const generationEpoch = ++generationRequestEpoch.current;
+    advisorRequestEpoch.current += 1;
+    setAdvisorWorking("");
+    setAdvisorReview({});
     setBusy(true);
     setError("");
     setNotice("");
@@ -379,9 +747,17 @@ export function WorkspaceSocialStudio({
     setPackageFeedback(null);
     setPackageProgress("");
     setSavedPackageId("");
+    setSavedPackageDrafts([]);
     setVariants([]);
     setVisualFormats({});
     setPreviews({});
+    setInstagramImages({});
+    setInstagramImagePicker("");
+    setAdvisorStaged({});
+    setAdvisorStagedAssetIds({});
+    setAdvisorTake({});
+    setAdvisorApproved({});
+    setAdvisorApprovalNotice("");
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/social-studio", {
         method: "POST",
@@ -402,6 +778,7 @@ export function WorkspaceSocialStudio({
         }),
       });
       const body = await response.json().catch(() => ({}));
+      if (generationEpoch !== generationRequestEpoch.current) return;
       if (!response.ok) {
         const code = body?.error?.code || "";
         throw new Error(
@@ -441,12 +818,13 @@ export function WorkspaceSocialStudio({
         }, 80);
       }
     } catch (cause) {
+      if (generationEpoch !== generationRequestEpoch.current) return;
       setGenerationFeedback({
         kind: "error",
         text: cause instanceof Error ? cause.message : "Kunne ikke lage forslag.",
       });
     } finally {
-      setBusy(false);
+      if (generationEpoch === generationRequestEpoch.current) setBusy(false);
     }
   }
 
@@ -488,6 +866,7 @@ export function WorkspaceSocialStudio({
       return { imageUrl: source?.imageUrl || imageUrl.trim(), fallback: false, visualFormat: "single_image" as VisualFormat };
     }
 
+    if (advisorApproved[variant.id]) return { imageUrl: advisorApproved[variant.id], fallback: false, visualFormat: "single_image" as VisualFormat };
     const visualFormat = visualFormats[variant.id] || "property_card";
     const selectedSourceImage = source.variantImages?.[variant.id] || source.imageUrl || "";
     if (visualFormat === "single_image") {
@@ -617,19 +996,47 @@ export function WorkspaceSocialStudio({
     options: {
       packageId?: string;
       preparedImage?: { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat };
+      containsAdvisorComposite?: boolean;
     } = {},
   ) {
     if (!activePlatforms.has(channel)) {
       throw new Error((channel === "facebook" ? "Facebook" : "Instagram") + " er ikke aktivert for denne merkevaren.");
     }
 
-    const renderedImage = options.preparedImage || await ensureConceptImage(variant);
+    // A prepared image must not bypass explicit approval when an advisor composite is selected.
+    if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
+      throw new Error("AI-bildet må godkjennes manuelt før du lagrer SoMe-utkastet.");
+    }
+    // An expressly chosen Instagram image is per-concept and per-channel.
+    // Never override a manually approved advisor composite.
+    const selectedInstagramImage = channel === "instagram" && !advisorApproved[variant.id]
+      ? instagramImages[variant.id] || "" : "";
+    if (selectedInstagramImage && !/^https:\/\//i.test(selectedInstagramImage)) {
+      throw new Error("Velg eller last opp et gyldig HTTPS-bilde til Instagram.");
+    }
+    const renderedImage = selectedInstagramImage
+      ? { imageUrl: selectedInstagramImage, fallback: false, visualFormat: "single_image" as VisualFormat }
+      : options.preparedImage || await ensureConceptImage(variant);
     const approvedImageUrl = renderedImage.imageUrl || "";
     if (channel === "instagram" && !approvedImageUrl) {
       throw new Error("Instagram trenger et godkjent bilde. RealtyFlow forsøkte å lage et, men fikk ikke et ferdig resultat.");
     }
 
-    const text = channel === "facebook" ? variant.facebookText : variant.instagramText;
+    const baseText = captionWithSourceLink(channel === "facebook" ? variant.facebookText : variant.instagramText, source);
+    const hasAdvisorComposite = Boolean(advisorApproved[variant.id] || options.containsAdvisorComposite);
+    const advisorAssetIdsForDraft = (options.containsAdvisorComposite ? variants : [variant])
+      .filter(item => Boolean(advisorApproved[item.id]))
+      .map(item => ({
+        assetId: advisorStagedAssetIds[item.id] || "",
+        imageUrl: advisorApproved[item.id],
+      }));
+    if (hasAdvisorComposite && (!advisorAssetIdsForDraft.length ||
+        advisorAssetIdsForDraft.some(asset => !asset.assetId || !asset.imageUrl))) {
+      throw new Error("Godkjent AI-bilde mangler medie-ID. Lagre godkjenningen på nytt før utkastet opprettes.");
+    }
+    const text = hasAdvisorComposite
+      ? baseText + "\n\nAI-illustrasjon: Rådgiveren er digitalt plassert i boligbildet."
+      : baseText;
     const packageTag = options.packageId ? "package-" + options.packageId : "";
     const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/marketing", {
       method: "POST",
@@ -641,6 +1048,8 @@ export function WorkspaceSocialStudio({
         tags: Array.from(new Set([
           channel,
           ...(packageTag ? [packageTag] : []),
+          ...(hasAdvisorComposite ? ["ai-advisor-composite", "ai-illustration"] : []),
+          ...(selectedInstagramImage ? ["instagram-own-image"] : []),
           ...variant.tags,
           ...(source?.socialCategory ? ["social-category-" + source.socialCategory.replace(/_/g, "-")] : []),
           "concept-" + variant.id.replace(/_/g, "-"),
@@ -651,7 +1060,7 @@ export function WorkspaceSocialStudio({
           ...(source?.type === "property"
             ? [
                 "style-" + (styles[variant.id] || variant.creativeStyle).replace(/_/g, "-"),
-                "visual-" + (visualFormats[variant.id] || "property_card").replace(/_/g, "-"),
+                "visual-" + (renderedImage.visualFormat || "single_image").replace(/_/g, "-"),
               ]
             : ["visual-single-image"]),
         ])).slice(0, 20),
@@ -668,7 +1077,8 @@ export function WorkspaceSocialStudio({
         strategyPeriodId: strategy?.strategyPeriodId || "",
         strategyRecommendationReason: strategy?.recommendationReason || "",
         packageId: options.packageId || "",
-        aiGeneratedImage: source?.type !== "property" && Boolean(previews[variant.id]),
+        aiGeneratedImage: Boolean(hasAdvisorComposite || (!selectedInstagramImage && source?.type !== "property" && previews[variant.id])),
+        advisorAssets: advisorAssetIdsForDraft,
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -693,6 +1103,14 @@ export function WorkspaceSocialStudio({
   async function saveVariant(variant: Variant, channel: Channel) {
     if (!canDraft || saving || packageSaving) return;
     const feedbackKey = variant.id + ":" + channel;
+    if (advisorMode && source?.type === "property" && !advisorApproved[variant.id] &&
+        !(channel === "instagram" && instagramImages[variant.id]) && !allowMixedAdvisorPackage) {
+      setSaveFeedback(current => ({
+        ...current,
+        [feedbackKey]: { kind: "error", text: "Dette konseptet mangler godkjent AI-bilde med rådgiver. Lag og godkjenn bildet, eller velg tydelig å bruke vanlig boligfoto under oppsummeringen." },
+      }));
+      return;
+    }
     setSaving(feedbackKey);
     setSaveFeedback(current => {
       const next = { ...current };
@@ -725,8 +1143,27 @@ export function WorkspaceSocialStudio({
     }
   }
 
+  function ensureAdvisorPackageReady(forInstagramOnly = false) {
+    if (!advisorMode || source?.type !== "property") return;
+    const pending = variants.filter(item => Boolean(advisorStaged[item.id]) && !advisorApproved[item.id]);
+    const missing = variants.filter(item => !advisorApproved[item.id] &&
+      !(instagramImages[item.id] && (forInstagramOnly || !activePlatforms.has("facebook"))));
+    if (pending.length) {
+      throw new Error("Godkjenn eller forkast AI-bildene for " + pending.map(item => item.label).join(", ") +
+        " før du lagrer.");
+    }
+    if (missing.length && !allowMixedAdvisorPackage) {
+      throw new Error("Bare " + (variants.length - missing.length) + " av 3 konsepter har valgt og godkjent bilde. " +
+        "Lag og godkjenn AI-bilder, eller velg egne Instagram-bilder. Hvis resten skal bruke vanlige boligfoto, kryss av for en blandet pakke.");
+    }
+  }
+
   async function saveInstagramCarousel() {
     if (!canDraft || packageSaving || variants.length !== 3 || !activePlatforms.has("instagram")) return;
+    try { ensureAdvisorPackageReady(true); } catch (cause) {
+      setPackageFeedback({ kind: "error", text: cause instanceof Error ? cause.message : "Mangler godkjente AI-bilder." });
+      return;
+    }
     setPackageSaving(true);
     setPackageFeedback(null);
     setSavedPublicationId("");
@@ -735,11 +1172,24 @@ export function WorkspaceSocialStudio({
     try {
       // Do not silently reuse the same editorial/source image for all slides.
       // Generate sequentially so each concept can have its own image job.
-      const images: Array<{ imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }> = [];
+      const carouselSlides: Array<{
+        variant: Variant;
+        imageUrl: string;
+        fallback?: boolean;
+        visualFormat?: VisualFormat;
+        isOwnImage: boolean;
+        isAdvisor: boolean;
+      }> = [];
       const seen = new Set<string>();
       for (const variant of variants) {
-        let result = await ensureConceptImage(variant);
-        if (seen.has(result.imageUrl) && source?.type !== "property") {
+        if (advisorStaged[variant.id] && !advisorApproved[variant.id]) {
+          throw new Error("Godkjenn eller forkast AI-bildet for " + variant.label + " før du lagrer karusellen.");
+        }
+        const selected = !advisorApproved[variant.id] ? instagramImages[variant.id] || "" : "";
+        let result = selected
+          ? { imageUrl: selected, fallback: false, visualFormat: "single_image" as VisualFormat }
+          : await ensureConceptImage(variant);
+        if (seen.has(result.imageUrl) && !selected && source?.type !== "property") {
           setPackageProgress("Lager eget bilde for " + variant.label + " (unngår duplikat) …");
           result = await ensureConceptImage(variant, true);
         }
@@ -750,26 +1200,36 @@ export function WorkspaceSocialStudio({
           throw new Error("To konsepter har samme bilde. Velg eller generer forskjellige bilder før du lager karusell.");
         }
         seen.add(result.imageUrl);
-        images.push(result);
+        carouselSlides.push({ variant, ...result,
+          isOwnImage: Boolean(selected), isAdvisor: Boolean(advisorApproved[variant.id]) });
       }
+      // If a verified advisor composite exists, put it first as the carousel
+      // cover. Otherwise Content Hub only previews a plain property photo.
+      // Keep the cover's caption matched to the actual cover concept.
+      carouselSlides.sort((a, b) => Number(b.isAdvisor) - Number(a.isAdvisor));
+      const cover = carouselSlides[0];
       setPackageProgress("Lagrer Instagram-karusell i Content Hub…");
-      const saved = await persistVariantDraft(variants[0], "instagram", { preparedImage: images[0] });
+      const containsAdvisorComposite = carouselSlides.some(slide => slide.isAdvisor);
+      const saved = await persistVariantDraft(cover.variant, "instagram", {
+        preparedImage: cover,
+        containsAdvisorComposite,
+      });
       draftId = saved.id;
       // POST preserves the first image as the cover when inserting the first additional slide.
       const endpoint = "/api/content-hub/drafts/" + encodeURIComponent(draftId) + "/media";
-      for (const item of images.slice(1)) {
+      for (const item of carouselSlides.slice(1)) {
         const response = await fetch(endpoint, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source_url: item.imageUrl, source_kind: "openart" }),
+          body: JSON.stringify({ source_url: item.imageUrl, source_kind: item.isOwnImage || item.isAdvisor ? "library" : "property" }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || "Kunne ikke legge til karusellbildet.");
       }
       setSavedPublicationId(draftId);
-      setSavedDraft({ id: draftId, variantId: variants[0].id, channel: "instagram" });
+      setSavedDraft({ id: draftId, variantId: cover.variant.id, channel: "instagram" });
       setPackageFeedback({
         kind: "success",
-        text: "Instagram-karusellen med tre bilder er lagret som utkast. Kontroller rekkefølge og tekst i Content Hub før publisering.",
+        text: "Instagram-karusellen med tre bilder er lagret som utkast. " + (containsAdvisorComposite ? "Det godkjente AI-bildet av rådgiveren er satt først som forside. " : "Ingen godkjente rådgiverbilder var valgt; karusellen inneholder derfor bolig-/egne bilder. ") + "Kontroller bildene i Content Hub før publisering.",
       });
       await onDraftSaved?.();
     } catch (cause) {
@@ -785,8 +1245,53 @@ export function WorkspaceSocialStudio({
     }
   }
 
+  async function saveInstagramTrio() {
+    if (!canDraft || packageSaving || saving || variants.length !== 3 || !activePlatforms.has("instagram")) return;
+    try { ensureAdvisorPackageReady(true); } catch (cause) {
+      setPackageFeedback({ kind: "error", text: cause instanceof Error ? cause.message : "Mangler godkjente Instagram-bilder." });
+      return;
+    }
+    setPackageSaving(true);
+    setPackageFeedback(null);
+    setSavedPackageId("");
+    setSavedPublicationId("");
+    setSavedPackageDrafts([]);
+    const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    const createdDrafts: Array<{ id: string; label: string; channel: Channel; imageKind: "advisor" | "property" | "custom" }> = [];
+    try {
+      for (const [index, variant] of variants.entries()) {
+        setPackageProgress("Lagrer Instagram-innlegg " + (index + 1) + " av 3 med riktig bilde …");
+        const saved = await persistVariantDraft(variant, "instagram", { packageId });
+        createdDrafts.push({
+          id: saved.id, label: variant.label, channel: "instagram",
+          imageKind: advisorApproved[variant.id] ? "advisor" :
+            instagramImages[variant.id] ? "custom" : "property",
+        });
+        setSavedPackageDrafts([...createdDrafts]);
+        setSavedPublicationId(saved.id);
+        setSavedPackageId(packageId);
+      }
+      setPackageFeedback({ kind: "success",
+        text: "Tre separate Instagram-utkast er lagret med hvert sitt bilde. Åpne pakken for å gjennomgå bildene og tekstene før publisering." });
+      await onDraftSaved?.();
+    } catch (cause) {
+      setPackageFeedback({ kind: "error", text: createdDrafts.length
+        ? createdDrafts.length + " av 3 Instagram-utkast er lagret. " +
+          (cause instanceof Error ? cause.message : "Resten kunne ikke lagres.") +
+          " De ferdige utkastene kan åpnes nedenfor."
+        : cause instanceof Error ? cause.message : "Kunne ikke lagre Instagram-innleggene." });
+    } finally {
+      setPackageProgress("");
+      setPackageSaving(false);
+    }
+  }
+
   async function savePackage() {
     if (!canDraft || packageSaving || variants.length !== 3) return;
+    try { ensureAdvisorPackageReady(); } catch (cause) {
+      setPackageFeedback({ kind: "error", text: cause instanceof Error ? cause.message : "Mangler godkjente AI-bilder." });
+      return;
+    }
     const channels = (["facebook", "instagram"] as Channel[]).filter(channel => activePlatforms.has(channel));
     if (!channels.length) {
       setPackageFeedback({ kind: "error", text: "Ingen aktive Facebook/Instagram-kanaler er tilgjengelige for denne merkevaren." });
@@ -797,13 +1302,21 @@ export function WorkspaceSocialStudio({
     setPackageFeedback(null);
     setPackageProgress("1 av 2 · Klargjør bilder for de tre konseptene…");
     setSavedPackageId("");
+    setSavedPackageDrafts([]);
     const packageId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     const publicationIds: string[] = [];
+    const createdDrafts: Array<{ id: string; label: string; channel: Channel; imageKind: "advisor" | "property" | "custom" }> = [];
 
     try {
       const prepared = new Map<string, { imageUrl: string; fallback?: boolean; visualFormat?: VisualFormat }>();
       const mediaResults = await Promise.all(variants.map(async variant => {
-        const image = await ensureConceptImage(variant);
+        // An Instagram-only package with user-selected photos must not
+        // create extra billable concept images that will never be used.
+        const instagramOnlyImage = !channels.includes("facebook") &&
+          !advisorApproved[variant.id] ? instagramImages[variant.id] : "";
+        const image = instagramOnlyImage
+          ? { imageUrl: instagramOnlyImage, fallback: false, visualFormat: "single_image" as VisualFormat }
+          : await ensureConceptImage(variant);
         return [variant.id, image] as const;
       }));
       mediaResults.forEach(([id, image]) => prepared.set(id, image));
@@ -820,6 +1333,10 @@ export function WorkspaceSocialStudio({
             preparedImage: image,
           });
           publicationIds.push(saved.id);
+          createdDrafts.push({ id: saved.id, label: variant.label, channel,
+            imageKind: advisorApproved[variant.id] ? "advisor" :
+              channel === "instagram" && instagramImages[variant.id] ? "custom" : "property" });
+          setSavedPackageDrafts([...createdDrafts]);
           savedCount += 1;
           if (savedCount === 1) setSavedPackageId(packageId);
           setPackageProgress("2 av 2 · Lagrer " + savedCount + " av " + totalDrafts + " kanalutkast i Content Hub…");
@@ -832,7 +1349,7 @@ export function WorkspaceSocialStudio({
       }
       setPackageFeedback({
         kind: "success",
-        text: `Ferdig. ${publicationIds.length} kanalutkast er lagret i Content Hub. Ingenting er publisert ennå.`,
+        text: `Ferdig. ${publicationIds.length} enkeltutkast for tre konsepter er lagret i Content Hub. ${variants.filter(item => Boolean(advisorApproved[item.id])).length} av 3 konsepter har godkjent AI-bilde. Ingenting er publisert.`,
       });
       if (typeof window !== "undefined") {
         window.setTimeout(() => {
@@ -953,6 +1470,8 @@ export function WorkspaceSocialStudio({
         onClick={() => {
           setSourceType(id);
           setVariants([]);
+          setInstagramImages({});
+          setInstagramImagePicker("");
           setSource(null);
           setError("");
           setNotice("");
@@ -1062,10 +1581,95 @@ export function WorkspaceSocialStudio({
       {sourceType === "property" && <>
         {propertyLabel && <p className="rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">{propertyLabel}</p>}
         <label className="text-xs text-slate-300">Boligreferanse eller RealtyFlow-ID
-          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); }}
+          <input value={propertyLookup} onChange={(event) => { setPropertyLookup(event.target.value); setPropertyLabel(""); setInstagramImages({}); setInstagramImagePicker(""); generationRequestEpoch.current += 1; advisorRequestEpoch.current += 1; setBusy(false); setSource(null); setVariants([]); setGenerationFeedback(null); setSavedDraft(null); setSavedPublicationId(""); setPreviews({}); setAdvisorReview({}); setAdvisorCandidatePropertyId(""); advisorCandidatesEpoch.current += 1; setAdvisorLoading(false); setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorCandidates([]); setAdvisorChosenImage(""); setAdvisorStaged({}); setAdvisorApproved({}); }}
             maxLength={100} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="F.eks. N9950"/>
         </label>
+        <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+            <input type="checkbox" checked={advisorMode}
+              onChange={(event) => {
+                if (!event.target.checked && Object.keys(advisorApproved).length > 0) {
+                  setAdvisorError("Trekk tilbake godkjenningen eller velg «Forkast AI-bildet» for alle aktive AI-bilder før du slår av denne modusen. Forkasting endrer ikke godkjenning som allerede er lagret på server.");
+                  return;
+                }
+                setAdvisorMode(event.target.checked);
+              }} />
+            Megler i boligbildet (under utvikling)
+          </label>
+          <p className="mt-2 text-xs leading-5 text-slate-400">Velg referanseportrett, boligfoto, antrekk og positur. Generer et AI-bilde fra hvert SoMe-konsept og godkjenn det manuelt før det brukes. Vanlige SoMe-forslag fungerer som før.</p>
+          {advisorMode && <div className="mt-3 space-y-3">
+            <ReferenceMediaPicker value={advisorReferenceUrl} onChange={setAdvisorReferenceUrl} brandId={brandKey} purpose="advisor_portrait" title="Godkjent rådgiverportrett" description="Last opp et godkjent portrett av deg selv. Kun portretter registrert som rådgiverreferanse for denne merkevaren kan velges." />
+            <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={advisorConsent} disabled={Boolean(advisorRevoking)}
+              onChange={event => {
+                if (!event.target.checked && Object.keys(advisorApproved).length) {
+                  setAdvisorError("Trekk tilbake godkjenningen for AI-bildene nedenfor før du fjerner samtykket.");
+                  return;
+                }
+                setAdvisorConsent(event.target.checked);
+              }} />
+              Jeg bekrefter at jeg har rett til å bruke dette personbildet og samtykke til AI-redigering.</label>
+            <label className="block text-xs text-slate-300">
+              Bildemodell
+              <select value={advisorImageProvider}
+                disabled={Boolean(advisorWorking) || Object.keys(advisorApproved).length > 0}
+                onChange={(event) => {
+                  setAdvisorImageProvider(event.target.value === "openai" ? "openai" : "openart");
+                  setAdvisorError("");
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm">
+                <option value="openart">Nano Banana 2 via OpenArt · førstevalg</option>
+                <option value="openai">OpenAI GPT Image 2 · alternativ</option>
+              </select>
+              <span className="mt-1 block text-xs text-slate-400">
+                Modellvalget gjelder bare «Lag bilde med meg». En trebilders karusell bruker bildene som allerede er laget og godkjent. Ingen automatisk reservekjøring eller ekstra betalte forsøk.
+              </span>
+              {Object.keys(advisorApproved).length > 0 && <span className="mt-1 block text-xs text-amber-200">
+                Trekk tilbake godkjenningen av aktive AI-bilder før du bytter bildemodell.
+              </span>}
+            </label>
+            <label className="block text-xs text-slate-300">Positur<select value={advisorPose} onChange={event => setAdvisorPose(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="relaxed">Avslappet</option><option value="presenting">Presenterer boligen</option><option value="standing">Stående</option></select></label>
+            <label className="block text-xs text-slate-300">Plassering i bildet<select value={advisorPlacement} onChange={event => setAdvisorPlacement(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm"><option value="auto">La AI velge trygg plassering</option><option value="left">Venstre</option><option value="right">Høyre</option><option value="center">Midten</option></select></label>
+            <label className="block text-xs text-slate-300">Antrekk
+              <select value={advisorOutfit} onChange={(event) => setAdvisorOutfit(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-sm">
+                <option value="navy_armani">Marineblå dress · aviator</option>
+                <option value="mediterranean_casual">Beige casual · uten briller</option>
+                <option value="light_grey">Lysegrå dress · rektangulære briller</option>
+                <option value="sand_cream">Sandfarget dress · uten briller</option>
+                <option value="charcoal_olive">Mørk dress · brune solbriller</option>
+              </select>
+            </label>
+            <button type="button" disabled={advisorLoading || !propertyLookup.trim()} onClick={() => void loadAdvisorCandidates()} className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200 disabled:opacity-50">
+              {advisorLoading ? "Henter bilder …" : "Se aktuelle boligbilder"}
+            </button>
+            <button type="button" disabled={advisorRankBusy || !advisorCandidates.length} onClick={() => void rankAdvisorPhotos()} className="rounded-lg border border-cyan-600 px-3 py-2 text-xs text-cyan-100 disabled:opacity-40">
+              {advisorRankBusy ? "Sammenligner tre bilder …" : "Finn beste bilde med AI (maks 3 bilder)"}
+            </button>
+            <p className="text-xs text-slate-400">Frivillig analyse av opptil tre bilder. Dette bruker AI-kapasitet og starter ingen generering eller publisering.</p>
+            {advisorRankNotice && <p className="text-xs text-cyan-200" role="status">{advisorRankNotice}</p>}
+            {advisorError && <p role="alert" className="text-xs text-rose-300">{advisorError}</p>}
+            {advisorCandidates.length > 0 && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {advisorCandidates.slice(0, 9).map((candidate) => <button key={candidate.id} type="button" onClick={() => { advisorCandidatesEpoch.current += 1; setAdvisorRankBusy(false); setAdvisorRankNotice(""); setAdvisorChosenImage(candidate.imageUrl); }} className={`overflow-hidden rounded-lg border-2 text-left ${advisorChosenImage === candidate.imageUrl ? "border-cyan-400" : "border-slate-700"}`}>
+                <img src={candidate.imageUrl} alt={`Boligfoto ${candidate.rank}`} className="aspect-[4/3] w-full object-cover" />
+                <span className="block p-1 text-xs text-slate-300">{advisorChosenImage === candidate.imageUrl ? "Valgt" : "Velg bilde"} · {candidate.reason || "Ikke vurdert"}</span>
+              </button>)}
+            </div>}
+            <div className="rounded-lg border border-slate-700 p-3">
+              <button type="button" disabled={!advisorChosenImage || advisorAnalyzing} onClick={() => void analyzeAdvisorPhoto()} className="rounded-lg border border-cyan-700 px-3 py-2 text-xs font-medium text-cyan-200 disabled:opacity-40">
+                {advisorAnalyzing ? "AI vurderer bildet …" : "AI-vurder valgt boligfoto"}
+              </button>
+              <p className="mt-1 text-xs text-slate-400">Frivillig analyse med Gemini av ett valgt boligfoto. Bildet sendes til AI-leverandøren først når du trykker her.</p>
+              {advisorAnalysisError && <p role="alert" className="mt-2 text-xs text-rose-300">{advisorAnalysisError}</p>}
+              {advisorPhotoReview?.photo === advisorChosenImage && <div className="mt-3 space-y-2 text-xs text-slate-200">
+                <p><strong>Egnethet: {advisorPhotoReview.score}/100</strong> · {advisorPhotoReview.suitable ? "Mulig plassering" : "Anbefaler annet bilde"}</p>
+                <p>{advisorPhotoReview.reason}</p>
+                {advisorPhotoReview.warning && <p className="text-amber-200">{advisorPhotoReview.warning}</p>}
+                {advisorPhotoReview.suitable && <button type="button" className="rounded-lg border border-slate-500 px-3 py-2 text-xs" onClick={() => setAdvisorPlacement(advisorPhotoReview.placement)}>Bruk foreslått plassering ({advisorPhotoReview.placement === "auto" ? "automatisk" : advisorPhotoReview.placement})</button>}
+              </div>}
+            </div>
+            <p className="text-xs text-amber-200">Bildene er foreløpig sortert etter filnavn, ikke faktisk bildeanalyse. Velg riktig motiv manuelt. Bildegenerering skjer først når du trykker «Lag bilde med meg» under et SoMe-forslag. Godkjenn bildet etter å ha kontrollert at boligen ikke er endret. Ingenting publiseres automatisk.</p>
+          </div>}
+        </div>
       </>}
       {sourceType === "article" && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
         {selectedContent?.sourceType === "article" && <div className="mb-3 rounded-lg border border-emerald-900 bg-emerald-950/20 p-3">
@@ -1125,8 +1729,9 @@ export function WorkspaceSocialStudio({
 
     <button type="button" onClick={() => void generate()} disabled={!canGenerate}
       className="mt-4 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">
-      <Sparkles size={16}/>{busy ? "Lager tre konsepter…" : "Lag 3 forskjellige forslag"}
+      <Sparkles size={16}/>{busy ? "Lager tre konsepter…" : "Lag 3 tekst- og SoMe-konsepter"}
     </button>
+    {sourceType === "property" && advisorMode && <p className="mt-2 text-xs text-slate-400">Tre forskjellige konsepter lager ikke tre ferdige AI-foto. Bilder med rådgiver genereres og godkjennes separat under hvert konsept.</p>}
     {generationFeedback && <p role={generationFeedback.kind === "error" ? "alert" : "status"}
       className={"mt-3 max-w-3xl rounded-lg border p-3 text-sm " + (generationFeedback.kind === "error"
         ? "border-amber-800 bg-amber-950/30 text-amber-200"
@@ -1156,9 +1761,79 @@ export function WorkspaceSocialStudio({
           <span className="font-semibold text-slate-200">Visuell retning:</span> {protectHumanText(variant.visualDirection)}
         </p>
 
+        {source?.type === "property" && advisorMode && <div className="mt-3 rounded-xl border border-cyan-900/60 p-3">
+          <p className="text-xs text-slate-300">Megler i bildet · generert AI-illustrasjon</p>
+          <button type="button" onClick={() => void createAdvisorComposite(variant)}
+            disabled={!advisorConsent || !advisorReferenceUrl || !advisorChosenImage || Boolean(advisorWorking) ||
+              !advisorCandidatePropertyId || source.propertyId !== advisorCandidatePropertyId ||
+              Boolean(advisorStaged[variant.id] || advisorApproved[variant.id])}
+            className="mt-2 rounded-lg border border-cyan-600 px-3 py-2 text-sm text-cyan-100 disabled:opacity-40">
+            {advisorWorking === variant.id ? "Genererer bilde …" : advisorTake[variant.id] ? "Hent eller prøv siste AI-versjon" : "Lag bilde med meg"}
+          </button>
+          {advisorChosenImage && advisorCandidatePropertyId && source.propertyId !== advisorCandidatePropertyId &&
+            <p className="mt-2 text-xs text-amber-200" role="status">Boligbildet og SoMe-forslaget gjelder ulike eiendommer. Hent bilder for riktig eiendom og lag nye forslag.</p>}
+          {Boolean(advisorTake[variant.id]) && <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button"
+              onClick={() => void createAdvisorComposite(variant, true)}
+              disabled={Boolean(advisorWorking) || (advisorTake[variant.id] || 1) >= 3}
+              className="rounded-lg border border-amber-600 px-3 py-2 text-xs text-amber-100 disabled:opacity-40">
+              Lag ny AI-versjon ({Math.min((advisorTake[variant.id] || 1) + 1, 3)}/3) · bruker ekstra AI-kapasitet
+            </button>
+            {(advisorStaged[variant.id] || advisorApproved[variant.id]) && <button type="button" disabled={Boolean(advisorApproved[variant.id])} className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 disabled:opacity-40"
+              onClick={() => {
+                setAdvisorStaged(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setAdvisorStagedAssetIds(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setAdvisorApproved(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setAdvisorReview(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setPreviews(current => { const next = { ...current }; delete next[variant.id]; return next; });
+                setVisualFormats(current => ({ ...current, [variant.id]: "property_card" }));
+              }}>
+              Forkast AI-bildet og bruk vanlig eiendomskort
+            </button>}
+            {advisorApproved[variant.id] && <p className="w-full text-xs text-slate-400">Godkjente bilder må først få godkjenningen trukket tilbake. Bruk «Trekk tilbake godkjenning» ovenfor.</p>}
+          </div>}
+          {advisorStaged[variant.id] && <div className="mt-3 space-y-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <figure><img src={advisorChosenImage} alt="Originalt boligfoto" className="aspect-[4/5] w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-slate-400">Originalboligen</figcaption></figure>
+              <figure><img src={advisorStaged[variant.id]} alt="AI-komposisjon til manuell vurdering" className="aspect-[4/5] w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-amber-200">AI-illustrasjon med rådgiver</figcaption></figure>
+            </div>
+            <p className="text-xs text-amber-200">AI-illustrasjon – rådgiver digitalt plassert i boligbildet. Kontroller person, perspektiv og uendret bolig før godkjenning.</p>
+            <div className="space-y-2 rounded-lg border border-slate-700 p-3">
+              {([
+                ["identity", "Ansiktet mitt er gjenkjennelig og naturlig"],
+                ["property", "Fasade, vinduer, rom og utsikt er riktig gjengitt"],
+                ["perspective", "Størrelse, perspektiv, lys og skygger virker realistiske"],
+              ] as const).map(([key, label]) => <label key={key} className="flex items-start gap-2 text-xs text-slate-200">
+                <input type="checkbox" checked={advisorReview[variant.id]?.[key] || false} onChange={event =>
+                  setAdvisorReview(current => ({ ...current, [variant.id]: {
+                    identity: current[variant.id]?.identity || false,
+                    property: current[variant.id]?.property || false,
+                    perspective: current[variant.id]?.perspective || false,
+                    [key]: event.target.checked,
+                  } }))} />
+                {label}
+              </label>)}
+            </div>
+            <button type="button" disabled={!advisorReview[variant.id]?.identity || !advisorReview[variant.id]?.property || !advisorReview[variant.id]?.perspective || !advisorStagedAssetIds[variant.id] || Boolean(advisorApproving)}
+              className="rounded-lg bg-cyan-800 px-3 py-2 text-xs text-white disabled:opacity-40"
+              onClick={() => void approveAdvisorComposite(variant)}>
+              {advisorApproving === variant.id ? "Lagrer godkjenning …" : "Godkjenn bildet til utkast"}
+            </button>
+          </div>}
+          {advisorApproved[variant.id] && <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p className="text-xs text-emerald-300">Komposisjon godkjent og lagret. Merk publiseringen som AI-illustrasjon.</p>
+            <button type="button" onClick={() => void revokeAdvisorComposite(variant)}
+              disabled={Boolean(advisorRevoking)} className="rounded-lg border border-rose-700 px-3 py-2 text-xs text-rose-200 disabled:opacity-40">
+              {advisorRevoking === variant.id ? "Trekker tilbake …" : "Trekk tilbake godkjenning"}
+            </button>
+          </div>}
+          {advisorApprovalNotice && <p role="status" className="mt-2 text-xs text-cyan-200">{advisorApprovalNotice}</p>}
+          {advisorError && <p role="alert" className="mt-2 text-xs text-rose-300">{advisorError}</p>}
+        </div>}
         {source?.type === "property" && <div className="mt-3 space-y-3">
           <label className="block text-xs text-slate-300">Visuelt format
             <select value={visualFormats[variant.id] || "property_card"}
+              disabled={Boolean(advisorApproved[variant.id])}
               onChange={(event) => {
                 setVisualFormats(current => ({ ...current, [variant.id]: event.target.value as VisualFormat }));
                 setPreviews(current => {
@@ -1172,6 +1847,7 @@ export function WorkspaceSocialStudio({
               <option value="property_card">Profesjonelt eiendomskort</option>
               <option value="collage_3" disabled={(source?.propertyImageCount || 0) < 3}>3-bilders kollasje{(source?.propertyImageCount || 0) < 3 ? " · trenger 3 bilder" : ""}</option>
             </select>
+            {advisorApproved[variant.id] && <p className="mt-1 text-xs text-amber-200">For å bytte bildeformat må du først velge «Forkast AI-bildet og bruk vanlig eiendomskort».</p>}
           </label>
 
           {(visualFormats[variant.id] || "property_card") === "property_card" && <label className="block text-xs text-slate-300">Eiendomsmal
@@ -1277,6 +1953,58 @@ export function WorkspaceSocialStudio({
           <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/10 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-fuchsia-200"><Instagram size={14}/> Instagram</div>
             <p className="rf-human-text mt-2 whitespace-pre-line text-sm text-slate-300">{protectHumanText(variant.instagramText)}</p>
+            <div className="mt-3 rounded-xl border border-fuchsia-800/40 bg-slate-950/40 p-3">
+              <p className="text-xs font-semibold text-fuchsia-200">Bilde til dette Instagram-innlegget</p>
+              {advisorApproved[variant.id] ? <>
+                <img src={advisorApproved[variant.id]} alt={"Godkjent bilde for " + variant.label}
+                  className="mt-2 aspect-[4/5] max-h-64 w-full rounded-lg object-contain" />
+                <p className="mt-2 text-xs text-emerald-200">
+                  Godkjent «Megler i bildet» brukes. Trekk tilbake bildegodkjenningen dersom du heller vil laste opp et eget bilde.
+                </p>
+              </> : <>
+                {instagramImages[variant.id] ? <figure className="mt-2">
+                  <img src={instagramImages[variant.id]} alt={"Ditt valgte Instagram-bilde til " + variant.label}
+                    className="aspect-[4/5] max-h-72 w-full rounded-lg object-contain" />
+                  <figcaption className="mt-1 text-xs text-emerald-200">Ditt bilde er valgt for Instagram. Facebook-bildet endres ikke.</figcaption>
+                </figure> : <p className="mt-1 text-xs text-slate-400">Bruk foreslått bilde eller velg ditt eget før utkastet lagres.</p>}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" disabled={Boolean(packageSaving || saving)}
+                    onClick={() => setInstagramImagePicker(current => current === variant.id ? "" : variant.id)}
+                    className="rounded-lg border border-fuchsia-700 px-3 py-2 text-xs font-semibold text-fuchsia-100 disabled:opacity-40">
+                    {instagramImagePicker === variant.id ? "Lukk bildevelger" : instagramImages[variant.id] ? "Bytt Instagram-bilde" : "Velg eller last opp eget bilde"}
+                  </button>
+                  {instagramImages[variant.id] && <button type="button" disabled={Boolean(packageSaving || saving)}
+                    onClick={() => setInstagramImages(current => { const next = { ...current }; delete next[variant.id]; return next; })}
+                    className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 disabled:opacity-40">
+                    Bruk foreslått bilde
+                  </button>}
+                </div>
+                {instagramImagePicker === variant.id && <div className="mt-3">
+                  <ReferenceMediaPicker
+                    brandId={brandKey}
+                    purpose="media_reference"
+                    usage="social_post"
+                    title={"Velg bilde · " + variant.label}
+                    description="Last opp ditt eget bilde eller velg et godkjent bilde fra denne merkevarens Media Library. Bildet knyttes bare til dette Instagram-konseptet."
+                    value={instagramImages[variant.id] || ""}
+                    onChange={(url) => {
+                      setInstagramImages(current => {
+                        const next = { ...current };
+                        if (url) next[variant.id] = url;
+                        else delete next[variant.id];
+                        return next;
+                      });
+                      setSaveFeedback(current => {
+                        const next = { ...current };
+                        delete next[variant.id + ":instagram"];
+                        return next;
+                      });
+                      setSavedDraft(null);
+                    }}
+                  />
+                </div>}
+              </>}
+            </div>
             {source?.editorialFocus && socialCopyReview(variant.instagramText, source.editorialFocus).map((issue, index) =>
               <p key={index} className="mt-2 text-xs text-amber-200">Sjekk før lagring: {issue}</p>)}
             <details className="mt-2">
@@ -1312,9 +2040,72 @@ export function WorkspaceSocialStudio({
       </div>
     </div>}
 
+    {variants.length === 3 && source && ["property", "article"].includes(source.type) && source.url &&
+      <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950/30 p-3">
+        <p className="text-xs font-semibold text-slate-200">Kildelenke som legges til i alle Facebook- og Instagram-utkast</p>
+        <a href={source.url} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all text-xs text-cyan-300 hover:underline">{source.url}</a>
+        <p className="mt-1 text-xs text-slate-400">Instagram viser nettadressen som tekst i bildeteksten; lenker i vanlige Instagram-bildetekster er normalt ikke klikkbare.</p>
+      </div>}
+    {variants.length === 3 && source?.type === "property" && advisorMode && <div className="mt-5 rounded-xl border border-amber-700/60 bg-amber-950/15 p-4">
+      <h3 className="text-sm font-semibold text-amber-100">Tre tekstkonsepter er ikke automatisk tre AI-bilder</h3>
+      <p className="mt-2 text-xs leading-5 text-slate-300">
+        «Lag 3 forslag» gir tre ulike tekster og kreative retninger. For tre bilder med deg må du trykke
+        «Lag bilde med meg» i hvert konsept og godkjenne hvert bilde separat.
+        Et genereringsforsøk kan koste AI-kreditter.
+      </p>
+      <p className="mt-2 text-xs font-semibold text-cyan-200">
+        Godkjente AI-bilder: {variants.filter(item => Boolean(advisorApproved[item.id])).length} av 3
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {variants.map(item => <div key={item.id} className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs">
+          <p className="font-semibold text-white">{item.label}</p>
+          <p className={advisorApproved[item.id] ? "mt-1 text-emerald-300" : "mt-1 text-amber-200"}>
+            {advisorApproved[item.id] ? "Godkjent AI-bilde" :
+              advisorStaged[item.id] ? "AI-bilde venter på manuell godkjenning" : "Mangler eget AI-bilde"}
+          </p>
+          {advisorApproved[item.id] && <img src={advisorApproved[item.id]} alt={"Godkjent AI-bilde · " + item.label}
+            className="mt-2 aspect-[4/5] w-full rounded-lg object-contain" />}
+        </div>)}
+      </div>
+      {variants.some(item => !advisorApproved[item.id]) && <label className="mt-3 flex items-start gap-2 rounded-lg border border-amber-900/50 p-3 text-xs text-amber-100">
+        <input type="checkbox" checked={allowMixedAdvisorPackage}
+          onChange={(event) => setAllowMixedAdvisorPackage(event.target.checked)}
+          disabled={Boolean(packageSaving)} />
+        <span>Jeg vil lagre en blandet pakke: behold godkjente AI-bilder der de finnes, og bruk vanlige boligfoto for resten.
+          Ikke generer flere AI-bilder.</span>
+      </label>}
+      <p className="mt-2 text-xs text-slate-400">«Lagre hele SoMe-pakken» gir ett innlegg per konsept per aktiv kanal (opptil seks utkast). «3-bilders Instagram-karusell» gir ett utkast med tre lysbilder.</p>
+    </div>}
     {variants.length === 3 && activePlatforms.has("instagram") && <div className="mt-5 rounded-xl border border-fuchsia-700/60 bg-fuchsia-950/20 p-4">
-      <h3 className="text-sm font-semibold text-fuchsia-100">Nyhet: Instagram-karusell fra tre konsepter</h3>
-      <p className="mt-2 text-xs text-slate-300">Du trenger ikke velge «Lag alternativt AI-bilde» først. Denne knappen lager eller bruker bildene fra de tre konseptene og lagrer dem samlet i ett Instagram-utkast. Deretter åpner du Content Hub → Innhold → Utkast → «Rediger bilder / lag karusell» for å bytte, legge til eller sortere bilder. Ingenting publiseres automatisk.</p>
+      <h3 className="text-sm font-semibold text-fuchsia-100">Lagre tre separate Instagram-innlegg</h3>
+      <p className="mt-2 text-xs text-slate-300">
+        Ett Instagram-utkast for hvert konsept, med bildet du har valgt under den aktuelle teksten.
+        Disse blir tre forskjellige innlegg – ikke én karusell. Ingenting publiseres automatisk.
+      </p>
+      <button type="button" disabled={packageSaving || Boolean(saving) || !canDraft}
+        onClick={() => void saveInstagramTrio()}
+        className="mt-3 rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-semibold text-white hover:bg-fuchsia-600 disabled:opacity-40">
+        {packageSaving ? "Lagrer Instagram-utkast…" : "Lagre 3 Instagram-innlegg som utkast"}
+      </button>
+      <div className="my-4 border-t border-fuchsia-800/50" />
+
+      <h3 className="text-sm font-semibold text-fuchsia-100">Instagram-karusell fra tre konsepter</h3>
+      <p className="mt-2 text-xs text-slate-300">Dette lager én post med tre bilder, ikke tre nye AI-bilder. Hvis du vil være med på bildene, generer og godkjenn «Lag bilde med meg» i hvert ønsket konsept før du lagrer karusellen. Bilder med deg kommer først. Øvrige bilder hentes fra eiendommen eller fra dine egne bildevalg. Ingenting publiseres automatisk.</p>
+      {source?.type === "property" && <div className="mt-3 rounded-lg border border-fuchsia-900/60 bg-slate-950/50 p-3">
+        <p className="text-xs font-semibold text-fuchsia-100">Dette vil karusellen inneholde:</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {[...variants].sort((a, b) => Number(Boolean(advisorApproved[b.id])) - Number(Boolean(advisorApproved[a.id]))).map((item, i) =>
+            <div key={item.id} className="rounded border border-slate-700 p-2 text-xs text-slate-300">
+              <span className="font-semibold text-white">Bilde {i + 1}: {item.label}</span>
+              <span className="mt-1 block">{advisorApproved[item.id] ? "Godkjent AI-bilde med rådgiver" :
+                instagramImages[item.id] ? "Eget valgt Instagram-bilde" : "Vanlig boligbilde / eiendomskort"}</span>
+            </div>)}
+        </div>
+        {variants.every(item => !advisorApproved[item.id]) &&
+          <p role="status" className="mt-2 text-xs text-amber-200">
+            Ingen bilder med rådgiveren er godkjent ennå. OpenArt som valgt modell betyr ikke at disse genereres av karusellknappen.
+          </p>}
+      </div>}
       <button type="button" disabled={packageSaving || Boolean(saving)}
         onClick={() => void saveInstagramCarousel()}
         className="mt-3 rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-semibold text-white hover:bg-fuchsia-600 disabled:opacity-40">
@@ -1327,7 +2118,7 @@ export function WorkspaceSocialStudio({
           <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Neste steg · lagre som utkast</p>
           <h3 className="mt-1 text-base font-semibold">Lagre alle tre konsepter i Content Hub</h3>
           <p className="mt-1 max-w-3xl text-xs text-slate-400">
-            RealtyFlow lager egne kanalutkast for Facebook og Instagram. Deretter åpner du Content Hub for å redigere, planlegge eller publisere. Ingenting publiseres nå.
+            Du lagrer tre separate konsepter, med ett utkast per aktiv kanal (opptil seks). Hvert utkast har sitt eget bilde. Har du valgt «Megler i bildet», kreves et godkjent AI-bilde per konsept eller et eksplisitt valg om å bruke vanlige boligfoto. Ingenting publiseres nå.
           </p>
         </div>
         <button type="button" onClick={() => void savePackage()} disabled={packageSaving || Boolean(saving)}
@@ -1335,7 +2126,25 @@ export function WorkspaceSocialStudio({
           {packageSaving ? "Lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken som utkast"}
         </button>
       </div>
-      {savedPublicationId && <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fuchsia-500 px-4 py-2 text-sm font-semibold text-fuchsia-100 hover:bg-fuchsia-950/50">Åpne utkastet i Content Hub → Innhold → Utkast <ExternalLink size={14}/></a>}
+      {savedPublicationId && <a href={"/content-hub?" + (savedPackageId
+        ? "package=" + encodeURIComponent(savedPackageId)
+        : "draft=" + encodeURIComponent(savedPublicationId)) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fuchsia-500 px-4 py-2 text-sm font-semibold text-fuchsia-100 hover:bg-fuchsia-950/50">
+        {savedPackageId ? "Se hele pakken i Content Hub" : "Åpne lagret utkast i Content Hub"} <ExternalLink size={14}/>
+      </a>}
+      {savedPackageDrafts.length > 0 && <div className="mt-3 rounded-xl border border-slate-700 p-3">
+        <p className="text-xs font-semibold text-slate-100">Lagrede utkast ({savedPackageDrafts.length}) · åpne hvert utkast direkte</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {savedPackageDrafts.map(draft => <a key={draft.id}
+            href={"/content-hub?draft=" + encodeURIComponent(draft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+            className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 p-3 text-xs text-slate-200 hover:border-cyan-500">
+            <span>{draft.label} · {draft.channel === "instagram" ? "Instagram" : "Facebook"}
+              <span className="mt-1 block text-slate-400">{draft.imageKind === "advisor" ? "Godkjent AI-bilde" : draft.imageKind === "custom" ? "Eget Instagram-bilde" : "Vanlig boligfoto"}</span>
+            </span>
+            <ExternalLink size={14}/>
+          </a>)}
+        </div>
+      </div>}
       {packageProgress && <div className="mt-3 rounded-lg border border-cyan-900/70 bg-slate-950/50 p-3">
         <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
