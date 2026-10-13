@@ -3,12 +3,14 @@ import {
   emptyImageCapabilities,
   emptyVideoCapabilities,
   providerCapabilitiesSchema,
+  type ImageGenerationInput,
   type MediaGenerationJob,
   type MediaProvider,
   type ProviderCapabilities,
   type ProviderJobStatus,
   type VoiceGenerationInput,
 } from "../types";
+import { generateOpenAIImageEdit } from "./openai-image-edit";
 
 const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
 const DEFAULT_MODEL = "gpt-4o-mini-tts";
@@ -63,7 +65,7 @@ export function redactOpenAIErrorMessage(message: string) {
 
 export class OpenAIVoiceProvider implements MediaProvider {
   readonly id = "openai" as const;
-  readonly displayName = "OpenAI Voice";
+  readonly displayName = "OpenAI (bilder og tale)";
 
   async getCapabilities(): Promise<ProviderCapabilities> {
     const configured = Boolean(process.env.OPENAI_API_KEY);
@@ -72,7 +74,7 @@ export class OpenAIVoiceProvider implements MediaProvider {
       displayName: this.displayName,
       updatedAt: new Date().toISOString(),
       status: configured ? "available" : "unavailable",
-      image: emptyImageCapabilities,
+      image: { ...emptyImageCapabilities, textToImage: false, imageToImage: configured },
       video: emptyVideoCapabilities,
       avatar: emptyAvatarCapabilities,
       voice: {
@@ -80,11 +82,18 @@ export class OpenAIVoiceProvider implements MediaProvider {
         voiceClone: false,
       },
       tools: configured
-        ? [{ name: "audio.speech", description: "OpenAI server-side text-to-speech" }]
+        ? [
+            { name: "audio.speech", description: "OpenAI server-side text-to-speech" },
+            { name: "images.edit", description: "OpenAI GPT Image reference-based edits" },
+          ]
         : [],
       account: { configured },
       errorMessage: configured ? undefined : "OPENAI_API_KEY er ikke konfigurert.",
     });
+  }
+
+  async generateImage(input: ImageGenerationInput): Promise<MediaGenerationJob> {
+    return generateOpenAIImageEdit(input);
   }
 
   async generateVoice(input: VoiceGenerationInput): Promise<MediaGenerationJob> {
