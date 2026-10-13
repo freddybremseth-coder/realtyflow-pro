@@ -250,13 +250,13 @@ test("SoMe Studio keeps Instagram CTAs while appending the canonical property or
   assert.match(route, /Instagram-engasjement skal variere mellom konseptene/);
   assert.match(route, /facebookText: ensureLink/);
   assert.match(route, /instagramText: \["property", "article"\]\.includes\(sourceType\)/);
-  assert.match(route, /ensureLink\(ensureInstagramEngagement\(source\.instagramText, blueprint\.id, sourceType\), sourceUrl\)/);
+  assert.match(route, /ensureLink\(ensureInstagramEngagement\(source\.instagramText, blueprint\.id, sourceType, focus\), sourceUrl\)/);
 });
 
 test("Andrea's editorial guidelines apply to generation and human review", () => {
   assert.match(route, /socialEditorialFocus\(\{ sourceType, sourceTitle, brief, socialCategory \}\)/);
   assert.match(route, /ETT INNLEGG = ETT TEMA/);
-  assert.match(route, /instagramText: ensureInstagramEngagement\(source\.instagramText, blueprint\.id, sourceType, focus\)/);
+  assert.match(route, /ensureInstagramEngagement\(source\.instagramText, blueprint\.id, sourceType, focus\)/);
   assert.match(route, /removeUnrelatedCompanionQuestion/);
   assert.match(route, /editorialFocus,/);
   assert.match(studio, /Gi tilbakemelding · rediger Facebook-caption/);
