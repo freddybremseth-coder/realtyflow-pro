@@ -1,5 +1,6 @@
 "use client";
 import { protectHumanText } from "@/lib/ui/protected-human-text";
+import { socialCopyReview, type SocialEditorialFocus } from "@/lib/workspaces/social-editorial-quality";
 
 import { useEffect, useMemo, useState } from "react";
 import { BookOpenText, Building2, ExternalLink, Facebook, Instagram, Sparkles, WandSparkles } from "lucide-react";
@@ -38,6 +39,7 @@ type GeneratedSource = {
   areaId?: string | null;
   companionPropertyId?: string | null;
   socialCategory?: SocialCategory;
+  editorialFocus?: SocialEditorialFocus;
   variantImages?: Record<string, string>;
   propertyImageCount?: number;
 };
@@ -594,6 +596,21 @@ export function WorkspaceSocialStudio({
     }
   }
 
+  function editVariantCaption(variantId: Variant["id"], channel: Channel, value: string) {
+    const key = variantId + ":" + channel;
+    const field = channel === "facebook" ? "facebookText" : "instagramText";
+    setVariants(current => current.map(item => item.id === variantId ? { ...item, [field]: value } : item));
+    // Existing saved-draft links and feedback refer to the previous text.
+    setSavedDraft(current => current?.variantId === variantId && current.channel === channel ? null : current);
+    setSaveFeedback(current => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setPackageFeedback(null);
+    setSavedPackageId("");
+  }
+
   async function persistVariantDraft(
     variant: Variant,
     channel: Channel,
@@ -1131,6 +1148,10 @@ export function WorkspaceSocialStudio({
           </div>
         </div>
         <p className="rf-human-text mt-2 text-xs text-slate-400">{protectHumanText(variant.angle)}</p>
+        {source?.editorialFocus && <div className="mt-3 rounded-lg border border-cyan-900/60 bg-cyan-950/15 p-3 text-xs text-slate-300">
+          <p className="font-semibold text-cyan-200">Redaksjonell sjekk · ett tema per innlegg</p>
+          <p className="mt-1">Hovedtema: {source.editorialFocus.label}. Sjekk at teksten på bildet, captionen og oppfordringen til handling handler om dette temaet. Hver post bør gi ett konkret råd eller en dokumentert innsikt.</p>
+        </div>}
         <p className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
           <span className="font-semibold text-slate-200">Visuell retning:</span> {protectHumanText(variant.visualDirection)}
         </p>
@@ -1226,6 +1247,16 @@ export function WorkspaceSocialStudio({
           <div className="rounded-xl border border-blue-900/60 bg-blue-950/15 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-blue-200"><Facebook size={14}/> Facebook</div>
             <p className="rf-human-text mt-2 whitespace-pre-line text-sm text-slate-300">{protectHumanText(variant.facebookText)}</p>
+            {source?.editorialFocus && socialCopyReview(variant.facebookText, source.editorialFocus).map((issue, index) =>
+              <p key={index} className="mt-2 text-xs text-amber-200">Sjekk før lagring: {issue}</p>)}
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs font-semibold text-blue-200">Gi tilbakemelding · rediger Facebook-caption</summary>
+              <label className="mt-2 block text-xs text-slate-300">Caption for dette innlegget
+                <textarea value={variant.facebookText} rows={7} maxLength={4200}
+                  onChange={(event) => editVariantCaption(variant.id, "facebook", event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-blue-800 bg-slate-950 p-2 text-sm text-slate-100" />
+              </label>
+            </details>
             <button type="button" disabled={Boolean(saving) || !activePlatforms.has("facebook")}
               onClick={() => void saveVariant(variant, "facebook")}
               className="mt-3 rounded-lg border border-blue-800 px-3 py-2 text-xs text-blue-200 disabled:opacity-40">
@@ -1246,6 +1277,16 @@ export function WorkspaceSocialStudio({
           <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/10 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-fuchsia-200"><Instagram size={14}/> Instagram</div>
             <p className="rf-human-text mt-2 whitespace-pre-line text-sm text-slate-300">{protectHumanText(variant.instagramText)}</p>
+            {source?.editorialFocus && socialCopyReview(variant.instagramText, source.editorialFocus).map((issue, index) =>
+              <p key={index} className="mt-2 text-xs text-amber-200">Sjekk før lagring: {issue}</p>)}
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs font-semibold text-fuchsia-200">Gi tilbakemelding · rediger Instagram-caption</summary>
+              <label className="mt-2 block text-xs text-slate-300">Caption for dette innlegget
+                <textarea value={variant.instagramText} rows={7} maxLength={4200}
+                  onChange={(event) => editVariantCaption(variant.id, "instagram", event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-fuchsia-800 bg-slate-950 p-2 text-sm text-slate-100" />
+              </label>
+            </details>
             <button type="button" disabled={Boolean(saving) || !activePlatforms.has("instagram")}
               onClick={() => void saveVariant(variant, "instagram")}
               className="mt-3 rounded-lg border border-fuchsia-800 px-3 py-2 text-xs text-fuchsia-200 disabled:opacity-40">
