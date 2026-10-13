@@ -40,10 +40,17 @@ const nextConfig = {
   },
 }
 
-export default withWorkflow(nextConfig, {
+const wrappedNextConfig = withWorkflow(nextConfig, {
   // Workflow bundles default to source maps; omitting them lowers build peak
   // memory without changing runtime behavior.
   workflows: {
     sourcemap: false,
   },
 });
+
+// workflow/next currently injects a top-level `turbopack` key even when the
+// application builds with Next.js 14.2.35. Next 14 rejects that key and logs
+// "Invalid next.config.mjs options". Webpack is the production compiler here.
+// Keep all other Workflow configuration intact; remove only the incompatible key.
+const { turbopack: _next14UnsupportedTurbopack, ...compatibleNextConfig } = wrappedNextConfig;
+export default compatibleNextConfig;
