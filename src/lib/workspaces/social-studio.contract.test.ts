@@ -237,6 +237,19 @@ test("SoMe Studio keeps Instagram captions link-free and varies engagement CTAs"
   assert.match(route, /instagramText: ensureInstagramEngagement/);
 });
 
+test("Andrea's editorial guidelines apply to generation and human review", () => {
+  assert.match(route, /socialEditorialFocus\(\{ sourceType, sourceTitle, brief, socialCategory \}\)/);
+  assert.match(route, /ETT INNLEGG = ETT TEMA/);
+  assert.match(route, /instagramText: ensureInstagramEngagement\(source\.instagramText, blueprint\.id, sourceType, focus\)/);
+  assert.match(route, /removeUnrelatedCompanionQuestion/);
+  assert.match(route, /editorialFocus,/);
+  assert.match(studio, /Gi tilbakemelding · rediger Facebook-caption/);
+  assert.match(studio, /Gi tilbakemelding · rediger Instagram-caption/);
+  assert.match(studio, /socialCopyReview\(variant\.instagramText/);
+  assert.match(studio, /editVariantCaption\(variant\.id, "facebook"/);
+  assert.match(studio, /setPackageFeedback\(null\)/);
+});
+
 test("SoMe Studio supports a three-image collage visual format with safe fallback", () => {
   assert.match(route, /action === "render_property_collage"/);
   assert.match(route, /renderPropertySocialCollage/);
