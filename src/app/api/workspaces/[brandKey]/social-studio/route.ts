@@ -7,6 +7,11 @@ import { createMediaPromptPlan } from "@/services/media/prompt-director";
 import { getProviderCapabilities, supportsCapability } from "@/services/media/capabilities";
 import { isOpenArtConnected } from "@/services/integrations/openart-client";
 import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
+import {
+  removeUnrelatedCompanionQuestion,
+  socialEditorialFocus,
+  type SocialEditorialFocus,
+} from "@/lib/workspaces/social-editorial-quality";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 import {
   buildSocialStrategySnapshot,
@@ -419,19 +424,35 @@ function instagramCaptionWithoutLinks(text: string) {
 function instagramEngagementCta(
   conceptId: typeof VARIANT_BLUEPRINTS[number]["id"],
   sourceType: string,
+  focus: SocialEditorialFocus,
 ) {
+  // The subject outranks the creative format: never invite "who would you bring?"
+  // on a cost guide or a customer case merely because this is Story/Lifestyle.
+  if (focus.theme === "costs") {
+    if (conceptId === "editorial_premium") return "Lagre posten når du skal sette opp budsjettet for boligkjøp i Spania.";
+    if (conceptId === "lifestyle_story") return "Kjenner du noen som planlegger boligkjøp i Spania? Del kostnadsoversikten med dem.";
+    return "Vil du ha hjelp til å gå gjennom kjøpskostnadene i ditt budsjett? Send oss en melding.";
+  }
+  if (focus.theme === "customer_case") {
+    if (conceptId === "editorial_premium") return "Lagre dette som inspirasjon til din egen kjøpsprosess.";
+    if (conceptId === "lifestyle_story") return "Hva ville vært viktigst for deg i en lignende kjøpsprosess?";
+    return "Vil du vite mer om hvordan vi følger opp boligkjøpere? Send oss en melding.";
+  }
+  if (focus.theme === "guide") {
+    if (conceptId === "editorial_premium") return "Lagre posten slik at du finner rådene igjen senere.";
+    if (conceptId === "lifestyle_story") return "Kjenner du noen som kan ha nytte av dette rådet? Del det gjerne.";
+    return "Har du spørsmål om dette før et boligkjøp? Send oss en melding.";
+  }
   if (conceptId === "editorial_premium") {
     return sourceType === "property"
       ? "Lagre posten hvis du vil sammenligne denne boligen med andre senere."
       : "Lagre posten til senere hvis dette er relevant for boligplanene dine.";
   }
-
   if (conceptId === "lifestyle_story") {
-    return sourceType === "article"
-      ? "Kjenner du noen som også ville hatt nytte av dette? Del posten med dem."
-      : "Hvem ville du tatt med deg hit?";
+    return focus.theme === "area"
+      ? "Hvem ville du tatt med deg hit?"
+      : "Kjenner du noen som også ville hatt nytte av dette? Del posten med dem.";
   }
-
   return sourceType === "area"
     ? "Lurer du på hvilket område som passer best for deg? Send oss en melding, så hjelper vi deg."
     : sourceType === "property"
@@ -443,16 +464,22 @@ function ensureInstagramEngagement(
   text: string,
   conceptId: typeof VARIANT_BLUEPRINTS[number]["id"],
   sourceType: string,
+  focus: SocialEditorialFocus,
 ) {
-  const caption = instagramCaptionWithoutLinks(text);
+  const caption = removeUnrelatedCompanionQuestion(instagramCaptionWithoutLinks(text), focus);
+  // Explicitly validate the type of action, not merely the existence of a question.
   const hasExpectedCta = conceptId === "editorial_premium"
     ? /\b(lagre|save)\b/i.test(caption)
     : conceptId === "lifestyle_story"
-      ? /\b(hvem|tagg|del|dele|ta med|send (?:denne|posten) til)\b/i.test(caption)
+      ? focus.theme === "area"
+        ? /\b(hvem|tagg|del|dele|ta med)\b/i.test(caption)
+        : focus.theme === "customer_case"
+          ? /\b(hva (?:ville|vil|er)|del|dele)\b/i.test(caption)
+          : /\b(del|dele|send (?:denne|posten) til)\b/i.test(caption)
       : /\b(send oss en melding|skriv til oss|send en melding|dm oss|melding)\b/i.test(caption);
 
   if (hasExpectedCta) return caption;
-  return [caption, instagramEngagementCta(conceptId, sourceType)].filter(Boolean).join("\n\n");
+  return [caption, instagramEngagementCta(conceptId, sourceType, focus)].filter(Boolean).join("\n\n");
 }
 
 function safeTags(value: unknown) {
@@ -815,7 +842,7 @@ function buildDeterministicVariantPayload(sourceTitle: string, sourceText: strin
   };
 }
 
-function parseVariants(raw: string, sourceUrl: string, sourceType: string) {
+function parseVariants(raw: string, sourceUrl: string, sourceType: string, focus: SocialEditorialFocus) {
   const normalized = normalizeVariantPayload(raw);
   if (!normalized) throw new Error("SOCIAL_STUDIO_AI_INVALID");
 
@@ -828,8 +855,8 @@ function parseVariants(raw: string, sourceUrl: string, sourceType: string) {
       hook: clean(source.hook, 220),
       angle: clean(source.angle, 500),
       visualDirection: clean(source.visualDirection, 500),
-      facebookText: ensureLink(clean(source.facebookText, 4_200), sourceUrl),
-      instagramText: ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType),
+      facebookText: ensureLink(removeUnrelatedCompanionQuestion(clean(source.facebookText, 4_200), focus), sourceUrl),
+      instagramText: ensureInstagramEngagement(source.instagramText, blueprint.id, sourceType, focus),
       tags: safeTags(source.tags),
     };
   });
@@ -1785,6 +1812,8 @@ export async function POST(
       explicitCategory: requestedCategory,
     });
 
+    const editorialFocus = socialEditorialFocus({ sourceType, sourceTitle, brief, socialCategory });
+
     const systemPrompt = [
       "Du er senior redaktør for sosiale medier for " + definition.name + ".",
       "Lag akkurat tre tydelig forskjellige konsepter: editorial_premium, lifestyle_story og advisor_insight.",
@@ -1792,10 +1821,14 @@ export async function POST(
       "Bruk bare fakta som finnes i KILDEINNHOLD eller brukerens korte brief. Ikke finn på egenskaper, markedsdata, avkastning, avstander eller juridiske/skattetekniske påstander.",
       "Merkevaren er rådgiver/formidler. Ikke skriv at boligen er vår med mindre kilden uttrykkelig dokumenterer eierskap.",
       companionPropertyId ? "Når KONTEKSTBOLIG finnes, kan du koble kilden til den konkrete boligen. Hold generelle guide-/områdefakta og boligfakta tydelig adskilt, og ikke finn på en sammenheng som ikke følger av kildene." : "",
-      "Editorial/Premium skal være stram, eksklusiv og tilbakeholden. Story/Lifestyle skal fortelle en konkret liten historie uten å dikte fakta. Advisor/Insight skal vise vurdering og kompetanse og gjerne si hvem innholdet passer for.",
-      "Facebook: mer forklarende og samtalepreget, normalt 70–150 ord. Når KILDE-URL finnes kan hele URL-en stå naturlig mot slutten av Facebook-teksten.",
-      "Instagram: mer visuelt og kompakt, normalt 50–110 ord og maks fem relevante hashtags. Organiske Instagram-caption skal IKKE inneholde URL eller 'lenke i bio', fordi lenker i caption ikke er en god klikkbar handlingsvei.",
-      "Instagram-engasjement skal variere mellom konseptene og tilpasses innholdet: Editorial/Premium bør normalt invitere til å lagre posten; Story/Lifestyle bør stille et sosialt eller relasjonelt spørsmål som 'Hvem ville du tatt med deg hit?' eller invitere til deling; Advisor/Insight bør invitere til melding når leseren ønsker konkret hjelp, for eksempel områdevalg eller vurdering av bolig.",
+      "ETT INNLEGG = ETT TEMA: fokuser kun på '" + editorialFocus.label + "'. Variantene kan ha forskjellige fortellergrep, men hvert bilde, hook, caption og CTA i samme variant må handle om dette ene temaet. Ikke bland kundecase, kjøpskostnader og livsstilsspørsmål i én post.",
+      "Start med verdien for leseren: et konkret svar, en kildebasert innsikt eller et nyttig råd. Forklar hva leseren skal forstå eller gjøre etter å ha lest posten. Hvis kilden er tynn, skriv kortere – aldri fyll med oppdiktede detaljer.",
+      "Hvis temaet er kjøpskostnader, forklar et konkret dokumentert kostnadselement eller hva som må budsjetteres. Ikke dikt prosenter. Hvis temaet er en kundecase, bruk bare dokumenterte hendelser og godkjente kundenavn/sitater; aldri oppdiktede familier eller anbefalinger.",
+      "Bilde/visuell retning, eventuell kort tekst på et godkjent bildekort og captionen skal formidle samme hovedpoeng. Behold gjerne tekst på bildet når den er korrekt, kort og samsvarer med captionen. Ikke be AI generere ubekreftede påstander eller tekst i selve bildet.",
+      "Editorial/Premium skal være stram, eksklusiv og tilbakeholden. Story/Lifestyle skal være varm og konkret, men aldri endre tema til et irrelevant relasjonsspørsmål. Advisor/Insight skal vise vurdering og kompetanse og gjerne si hvem innholdet passer for.",
+      "Facebook: mer forklarende og samtalepreget, normalt 90–180 ord med 1–2 konkrete, kildebaserte poenger. Når KILDE-URL finnes kan hele URL-en stå naturlig mot slutten av Facebook-teksten.",
+      "Instagram: normalt 70–140 ord, 1–2 konkrete, kildebaserte poenger og maks fem relevante hashtags. Organiske Instagram-caption skal IKKE inneholde URL eller 'lenke i bio', fordi lenker i caption ikke er en god klikkbar handlingsvei.",
+      "Instagram-engasjement skal variere mellom konseptene OG samsvare med temaet: kostnader = 'Lagre dette til senere' eller del kostnadsguiden; område/livsstil = 'Hvem ville du tatt med deg hit?'; kundecase = et spørsmål om prosessen; bolig = visning/informasjon; Advisor/Insight = relevant rådgivning. Ikke spør hvem man vil ta med til Spania i et kostnadsinnlegg.",
       "Ikke bruk samme CTA i alle tre Instagram-konseptene. CTA-en skal føles naturlig for kilden og ikke være masete.",
       "Unngå klisjeer som 'drømmebolig', 'paradis', 'unik mulighet' og 'fantastisk' med mindre kilden faktisk underbygger det.",
       "Skriv på norsk bokmål. Returner bare strukturert JSON i skjemaet.",
@@ -1805,6 +1838,8 @@ export async function POST(
       "MERKEVARE: " + definition.name,
       "KILDETYPE: " + sourceType,
       "KILDETITTEL: " + sourceTitle,
+      "ENESTE HOVEDTEMA: " + editorialFocus.label,
+      "TEMATILPASSET HANDLING: " + editorialFocus.recommendedCta,
       "KILDE-URL: " + sourceUrl,
       sourceImageUrl ? "KILDEBILDE: " + sourceImageUrl : "",
       companionPropertyId ? "KOMBINASJON: Kilden skal vurderes sammen med en konkret Inventory-bolig. Advisor/Insight bør bruke denne koblingen når den er naturlig." : "",
@@ -1815,7 +1850,7 @@ export async function POST(
       brief ? "BRIEF FRA BRUKER:\n" + brief : "Ingen ekstra brief.",
       "",
       "De tre variantene skal ha id nøyaktig: editorial_premium, lifestyle_story, advisor_insight.",
-      "For hver variant: hook, angle, visualDirection, facebookText, instagramText og tags.",
+      "For hver variant: hook, angle, visualDirection, facebookText, instagramText og tags. Hvert konsept har en hook som faktisk dekkes i teksten, visuell retning som stemmer med hook og kun én naturlig CTA knyttet til samme tema.",
     ].filter(Boolean).join("\n");
 
     let raw = "";
@@ -1918,7 +1953,7 @@ export async function POST(
       raw = JSON.stringify(buildDeterministicVariantPayload(sourceTitle, sourceText));
       generationFallback = true;
     }
-    const variants = parseVariants(raw, sourceUrl, sourceType);
+    const variants = parseVariants(raw, sourceUrl, sourceType, editorialFocus);
 
     return NextResponse.json({
       ok: true,
@@ -1933,6 +1968,7 @@ export async function POST(
         areaId,
         companionPropertyId,
         socialCategory,
+        editorialFocus,
         variantImages,
         propertyImageCount,
       },
