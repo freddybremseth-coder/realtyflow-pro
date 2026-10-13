@@ -47,13 +47,9 @@ export async function runCorporateHomesContentDrafts(
     }
 
     const copy = buildCorporateOrganicCopy(topic);
-    const description = [
-      copy.linkedin,
-      "",
-      "—",
-      "Facebook-variant:",
-      copy.facebook,
-    ].join("\n");
+    // One publication is currently shared by both scheduled platforms.
+    // Never concatenate channel variants into a public-facing caption.
+    const description = copy.facebook;
 
     const { data, error } = await supabase
       .from("content_publications")
