@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { applyZenEcoLogo } from "@/services/marketing/autopilot-media";
 import { NextRequest, NextResponse } from "next/server";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { askClaude } from "@/services/ai/claude-client";
@@ -1307,8 +1308,13 @@ async function generateSocialStudioConceptImage(
     throw new Error("SOCIAL_STUDIO_MEDIA_NOT_READY:" + status);
   }
 
+  const brandedImageUrl = input.brandKey === "zeneco"
+    ? await applyZenEcoLogo(supabase, { brandId: input.brandKey, contentKey: `social-studio:${job.id}`, theme: input.sourceTitle }, asset.imageUrl)
+    : asset.imageUrl;
+
   return {
     ...asset,
+    imageUrl: brandedImageUrl,
     jobId: String(job.id),
     provider: job.provider ? String(job.provider) : null,
     existing: result.existing,
