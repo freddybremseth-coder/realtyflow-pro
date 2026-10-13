@@ -222,6 +222,8 @@ function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
   if (["capabilities", "properties"].includes(resource)) return verb === "GET";
   if (resource === "customer360") return ["GET", "PATCH"].includes(verb);
   if (resource === "marketing") return ["GET", "POST"].includes(verb);
+  // SoMe Studio is separately scoped by requireBrandWorkspace("marketing.draft").
+  if (resource === "social-studio") return ["zeneco", "pinosoecolife"].includes(brand) && verb === "POST";
   if (resource === "growth") return ["GET", "POST"].includes(verb);
   if (resource === "content") return ["GET", "POST"].includes(verb);
   if (resource === "email") return ["GET", "POST"].includes(verb);
