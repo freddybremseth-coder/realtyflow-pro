@@ -14,7 +14,7 @@ export type SocialEditorialFocus = {
 const COSTS = /\b(kjøpskostnad\w*|omkostning\w*|kostnad\w*|avgift\w*|skatt\w*|mva|iva|itp|ajd|notar\w*|dokumentavgift\w*|finansiering\w*|boliglån\w*|budsjett\w*)\b/i;
 const CASE = /\b(kundecase|kundehistorie|kundeerfaring|familien\s+[\p{L}][\p{L}'’-]+|kundereise)\b/iu;
 const AREA = /\b(område\w*|livsstil|nabolag|strand\w*|bydel|hverdagsliv|lokalliv)\b/i;
-const WRONG_COMPANION_QUESTION = /(?:^|[.!?]\s+|\n)\s*(?:Hvem (?:ville|vil|ønsker|kunne) du (?:ta|tatt|ha|hatt) med(?: deg)?(?: (?:hit|til Spania|på tur|dit))?|Hvem vil du dele (?:livet|opplevelsen) med(?: i Spania)?)\s*[?!.]?/gim;
+const WRONG_COMPANION_QUESTION = /\b(?:Hvem (?:ville|vil|ønsker|kunne) du (?:ta|tatt|ha|hatt) med(?: deg)?(?: (?:hit|til Spania|på tur|dit))?|Hvem vil du dele (?:livet|opplevelsen) med(?: i Spania)?)\s*[?!.]?/gim;
 
 export function socialEditorialFocus(input: {
   sourceType: string;
@@ -26,9 +26,11 @@ export function socialEditorialFocus(input: {
   const brief = (input.brief || "").trim();
   // A specific source headline outranks a looser user brief and long source text.
   const source = title || brief;
+  const firstCost = source.search(COSTS);
+  const firstCase = source.search(CASE);
   const theme: SocialEditorialTheme =
-    COSTS.test(source) ? "costs"
-    : CASE.test(source) ? "customer_case"
+    firstCase >= 0 && (firstCost < 0 || firstCase < firstCost) ? "customer_case"
+    : firstCost >= 0 ? "costs"
     : input.sourceType === "area" || AREA.test(source) && input.socialCategory === "area_lifestyle" ? "area"
     : input.sourceType === "property" ? "property"
     : input.sourceType === "article" ? "guide"
