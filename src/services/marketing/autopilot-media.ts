@@ -80,7 +80,7 @@ async function recoverExistingMediaJob(
   return job;
 }
 
-async function applyZenEcoLogo(
+export async function applyZenEcoLogo(
   supabase: SupabaseClient,
   input: AutopilotInstagramMediaInput,
   imageUrl: string,
