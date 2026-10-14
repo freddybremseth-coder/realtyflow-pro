@@ -97,9 +97,8 @@ begin
        set name=v_name,
            company=case when btrim(coalesce(company,''))='' then v_company else company end,
            interactions=coalesce(interactions,'[]'::jsonb)||jsonb_build_array(v_activity),
-           -- A contact request never opts the customer into nurture campaigns.
-           nurture_status=case when nurture_status in ('eligible','enrolled','active') then 'stopped' else nurture_status end,
-           ai_auto_followup=false,
+           -- Keep any independently-established prior subscription preferences intact;
+           -- this request adds no new marketing consent or auto-follow-up.
            notes=concat_ws(E'\n',nullif(notes,''),'Altovena website request: '||v_message),
            updated_at=v_time,
            next_followup=case when next_followup is null or next_followup>v_time+interval '1 day'
