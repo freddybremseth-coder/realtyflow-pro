@@ -86,17 +86,20 @@ begin
   if v_contact_id is null then
     insert into public.contacts (
       name,email,company,type,source,brand,brand_id,pipeline_status,pipeline_value,
-      notes,interactions,ai_auto_followup,created_at,updated_at,next_followup
+      notes,interactions,ai_auto_followup,nurture_status,created_at,updated_at,next_followup
     ) values (
       v_name,v_email,v_company,'other','altovena.com/contact','altovena','altovena',
       'NEW',0,'Altovena website request: '||v_message,jsonb_build_array(v_activity),
-      false,v_time,v_time,v_time+interval '1 day'
+      false,'stopped',v_time,v_time,v_time+interval '1 day'
     ) returning id into v_contact_id;
   else
     update public.contacts
        set name=v_name,
            company=case when btrim(coalesce(company,''))='' then v_company else company end,
            interactions=coalesce(interactions,'[]'::jsonb)||jsonb_build_array(v_activity),
+           -- A contact request never opts the customer into nurture campaigns.
+           nurture_status=case when nurture_status in ('eligible','enrolled','active') then 'stopped' else nurture_status end,
+           ai_auto_followup=false,
            notes=concat_ws(E'\n',nullif(notes,''),'Altovena website request: '||v_message),
            updated_at=v_time,
            next_followup=case when next_followup is null or next_followup>v_time+interval '1 day'
