@@ -36,7 +36,7 @@ test("The DB migration creates an isolated brand and atomic CRM + work-item path
   assert.match(sql,/grant execute on function public\.altovena_receive_lead[\s\S]*to service_role/i);
   assert.match(sql,/from public\.contacts[\s\S]*brand_id='altovena' and brand='altovena'/i);
   assert.match(sql,/insert into public\.work_items/i);
-  assert.match(sql,/brand_id,'altovena'/i);
+  assert.match(sql,/'altovena','website_lead'/i);
   assert.match(sql,/insert into public\.altovena_intake_receipts/i);
   assert.match(sql,/pg_advisory_xact_lock/);
   assert.doesNotMatch(sql,/insert into core\.brand_workspace_memberships/i);
