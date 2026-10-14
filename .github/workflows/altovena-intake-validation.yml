@@ -1,0 +1,28 @@
+name: Altovena intake validation
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/public/altovena-leads/**"
+      - "supabase/migrations/*altovena*"
+      - "src/lib/marketing/brand-registry.ts"
+      - "docs/altovena-realtyflow-intake.md"
+      - "package.json"
+      - ".github/workflows/altovena-intake-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit
+      - run: npm run test:altovena-intake
