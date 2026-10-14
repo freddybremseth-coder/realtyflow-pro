@@ -16,7 +16,7 @@ function audit(overrides: Partial<SiteAudit> = {}): SiteAudit {
 test("bounded healthy audit cannot authorize publication", () => {
   const result = visibilityAuditSummary(audit());
   assert.equal(result.publicationEligible, false);
-  assert.equal(result.diagnosticStatus, "APPROVED");
+  assert.equal(result.diagnosticStatus, "OBSERVED_NO_BLOCKERS");
 });
 test("unknown homepage is not silently treated as passing", () => {
   const sample = audit();
@@ -28,5 +28,13 @@ test("explicit noindex is flagged without inferring desired indexing", () => {
   sample.home.robotsMeta = "noindex,follow";
   const result = visibilityAuditSummary(sample);
   assert.ok(result.issues.some(issue => issue.code === "INDEXING_BLOCKED"));
+  assert.equal(result.publicationEligible, false);
+});
+
+test("non-200 homepage is a diagnostic issue, never publishing authority", () => {
+  const sample = audit();
+  sample.home.status = 301;
+  const result = visibilityAuditSummary(sample);
+  assert.equal(result.diagnosticStatus, "ACTION_REQUIRED");
   assert.equal(result.publicationEligible, false);
 });
