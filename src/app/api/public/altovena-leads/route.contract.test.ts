@@ -51,3 +51,20 @@ test("Altovena marketing brand is separate and has no pilot publishing routes en
   assert.match(segment,/RealtyFlow is the sole CRM/);
   assert.doesNotMatch(segment,/pilotChannels: \["instagram"/);
 });
+
+const scopedTaskRoute=readFileSync("src/app/api/workspaces/[brandKey]/lead-tasks/route.ts","utf8");
+const altovenaTaskPanel=readFileSync("src/components/workspaces/altovena-lead-attention.tsx","utf8");
+const workspacePage=readFileSync("src/app/(realty)/workspace/[brandKey]/page.tsx","utf8");
+
+test("pending Altovena website tasks remain in the same verified brand workspace",()=>{
+  assert.match(scopedTaskRoute,/params\.brandKey !== "altovena"/);
+  assert.match(scopedTaskRoute,/requireBrandWorkspace\(request, "altovena", "crm.read"\)/);
+  assert.match(scopedTaskRoute,/\.eq\("brand_id", "altovena"\)/);
+  assert.match(scopedTaskRoute,/\.eq\("source_type", "website_lead"\)/);
+  assert.match(scopedTaskRoute,/\.in\("status", allowedStatuses\)/);
+  assert.doesNotMatch(scopedTaskRoute,/\.from\("contacts"\)|\.from\("brand_settings"\)/);
+  assert.match(altovenaTaskPanel,/\/api\/workspaces\/altovena\/lead-tasks/);
+  assert.match(altovenaTaskPanel,/Dette er varsling i arbeidsflaten/);
+  assert.match(workspacePage,/brandKey === "altovena" && permissions\.includes\("crm.read"\)/);
+  assert.match(workspacePage,/AltovenaLeadAttention/);
+});
