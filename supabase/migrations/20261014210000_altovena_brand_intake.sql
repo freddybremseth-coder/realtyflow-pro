@@ -76,7 +76,8 @@ begin
     'id',p_submission_id::text,'type','note','direction','in','date',v_time,
     'brand_id','altovena','content','Website request: '||v_message,
     'metadata',jsonb_build_object('source','altovena.com/contact','product',p_product,
-      'marketing_opt_in',false,'human_follow_up',true)
+      'submitted_name',v_name,'submitted_company',v_company,
+      'marketing_opt_in',false,'human_follow_up',true,'identity_verified',false)
   );
 
   select id into v_contact_id from public.contacts
@@ -93,10 +94,10 @@ begin
       false,'stopped',v_time,v_time,v_time+interval '1 day'
     ) returning id into v_contact_id;
   else
+    -- Public submissions are NOT identity verification: never overwrite the
+    -- canonical name/company of an existing contact simply from a matching email.
     update public.contacts
-       set name=v_name,
-           company=case when btrim(coalesce(company,''))='' then v_company else company end,
-           interactions=coalesce(interactions,'[]'::jsonb)||jsonb_build_array(v_activity),
+       set interactions=coalesce(interactions,'[]'::jsonb)||jsonb_build_array(v_activity),
            -- Keep any independently-established prior subscription preferences intact;
            -- this request adds no new marketing consent or auto-follow-up.
            notes=concat_ws(E'\n',nullif(notes,''),'Altovena website request: '||v_message),
