@@ -46,6 +46,10 @@ function supabaseMock(result: { data?: unknown; error?: unknown } = { data: [], 
       calls.push({ method: "order", args });
       return builder;
     },
+    limit(...args: unknown[]) {
+      calls.push({ method: "limit", args });
+      return builder;
+    },
     in(...args: unknown[]) {
       calls.push({ method: "in", args });
       return builder;
