@@ -22,7 +22,7 @@ export default function ScopedContentHubPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!["zeneco", "pinosoecolife"].includes(brandKey)) {
+    if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(brandKey)) {
       setError("Merkevaren er ikke tilgjengelig."); setLoading(false); return;
     }
     const controller = new AbortController();
@@ -46,7 +46,7 @@ export default function ScopedContentHubPage() {
   return <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-slate-100">
     <header className="space-y-3">
       <Link className="text-sm text-cyan-300 underline" href={`/workspace/${encodeURIComponent(brandKey)}?tab=growth&focus=social`}>← Tilbake til SoMe Studio</Link>
-      <h1 className="text-3xl font-bold">Content Hub · {brandKey === "zeneco" ? "Zen Eco Homes" : "PinosoEcolife"}</h1>
+      <h1 className="text-3xl font-bold">Content Hub · {brandKey === "zeneco" ? "Zen Eco Homes" : brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "altovena" ? "Altovena" : brandKey}</h1>
       <p className="text-sm text-slate-300">Merkevarens SoMe-utkast og publikasjoner. Denne avgrensede oversikten gir ikke tilgang til andre virksomheters innhold.</p>
     </header>
     {loading && <p role="status">Laster innhold…</p>}
