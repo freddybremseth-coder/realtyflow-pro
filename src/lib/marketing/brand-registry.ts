@@ -5,6 +5,7 @@ export type OwnedGrowthBrandId =
   | "pinosoecolife"
   | "donaanna"
   | "chatgenius"
+  | "altovena"
   | "freddyb"
   | "freddyart"
   | "freddypublishing"
@@ -79,6 +80,19 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     conversionGoals: ["demo_request", "subscription", "website_lead", "consultation"],
     primaryCtas: ["see_demo", "start_subscription", "request_website", "contact"],
     notes: "Promote AI help for businesses, subscription-ready apps and affordable demo/web solutions. Specific features, pricing, integrations and outcome claims must be verified before publication.",
+  },
+  {
+    id: "altovena",
+    name: "Altovena",
+    kind: "saas",
+    website: "https://altovena.com",
+    // Prepare the brand in Growth OS, but do NOT enable posting until channels and sign-off exist.
+    pilotChannels: [],
+    plannedChannels: ["linkedin", "instagram", "facebook", "youtube", "website", "email"],
+    contentPillars: ["ai_products", "business_processes", "offer_intelligence", "seo_aeo_geo", "realtyflow", "olivia_os", "trust_and_control"],
+    conversionGoals: ["qualified_enquiry", "product_demo_request", "guide_read", "website_visit", "newsletter_opt_in"],
+    primaryCtas: ["explore_product", "read_guide", "contact", "request_demo"],
+    notes: "RealtyFlow is the sole CRM, newsletter, email and social publishing control plane for Altovena. All enquiries must be brand-scoped to altovena with a human review task. Do not enable auto-replies, newsletter subscription, or publish to social channels until approved identities, connected channels, lawful basis and owner review are verified. SEO/AEO/GEO copy follows Andrea and Erlend's customer-journey manual, with evidence-led claims, no invented rankings or client results. Dedicated Altovena branding must never be replaced with Freddy AI's temporary identity.",
   },
   {
     id: "freddyb",
