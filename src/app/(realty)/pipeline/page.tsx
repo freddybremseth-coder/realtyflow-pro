@@ -98,6 +98,8 @@ function dateInfo(value: unknown) {
 export default function PipelinePage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState("");
+  const [serviceFilter, setServiceFilter] = useState<"all" | "care" | "property">("all");
+  const [actionOnly, setActionOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -126,8 +128,12 @@ export default function PipelinePage() {
 
   const visibleContacts = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return activeContacts;
-    return activeContacts.filter((contact) => [
+    const scoped = activeContacts.filter((contact) => {
+      const care = String(contact.source || "").toLowerCase().includes("care") || String(contact.brand_id || "").toLowerCase() === "keyholding";
+      return (serviceFilter === "all" || (serviceFilter === "care" ? care : !care)) && (!actionOnly || buildCustomerListAction(contact).needsAction);
+    });
+    if (!query) return scoped;
+    return scoped.filter((contact) => [
       contact.name,
       contact.email,
       contact.phone,
@@ -137,7 +143,7 @@ export default function PipelinePage() {
       contact.brand,
       contact.source,
     ].filter(Boolean).join(" ").toLowerCase().includes(query));
-  }, [activeContacts, search]);
+  }, [activeContacts, search, serviceFilter, actionOnly]);
 
   const byStage = useMemo(() => {
     const result = new Map<CustomerPipelineStatus, Contact[]>();
@@ -222,7 +228,14 @@ export default function PipelinePage() {
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><CircleDollarSign className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Pipeline-verdi</p><strong className="mt-1 block text-2xl text-white">{money(metrics.value)}</strong></article>
       </section>
 
-      <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4">
+      <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-2" aria-label="Filtrer salgsoversikten">
+          {([["all", "Alle kunder"], ["care", "Care"], ["property", "Eiendom og øvrige"]] as const).map(([key, label]) => (
+            <Button key={key} size="sm" variant={serviceFilter === key ? "default" : "outline"} onClick={() => setServiceFilter(key)} aria-pressed={serviceFilter === key}>{label}</Button>
+          ))}
+          <Button size="sm" variant={actionOnly ? "default" : "outline"} onClick={() => setActionOnly((value) => !value)} aria-pressed={actionOnly}><AlertTriangle size={14} className="mr-1" />Kun trenger handling</Button>
+          <Link href="/care/leads" className="ml-auto text-xs text-cyan-300 hover:underline">Care-henvendelser og tilbud →</Link>
+        </div>
         <div className="relative max-w-xl"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk navn, område, e-post, brand eller kilde" className="pl-10" /></div>
       </section>
 
@@ -263,13 +276,14 @@ export default function PipelinePage() {
                             <GripVertical size={16} className="mt-1 shrink-0 cursor-grab text-slate-600" />
                             <div className="min-w-0 flex-1">
                               <h2 className="truncate text-sm font-semibold text-white">{contact.name || contact.email || "Ukjent kontakt"}</h2>
-                              <p className="mt-0.5 truncate text-[11px] text-slate-500">{BRAND_LABELS[brandId] || brandId}</p>
+                              <p className="mt-0.5 truncate text-[11px] text-slate-500">{String(contact.source || "").toLowerCase().includes("care") ? "Care · " : ""}{BRAND_LABELS[brandId] || brandId}</p>
                             </div>
                             {savingId === contact.id && <Loader2 size={14} className="animate-spin text-cyan-300" />}
                           </div>
 
                           <p className="mt-3 line-clamp-2 min-h-9 text-xs text-slate-400">{contact.property_interest || contact.preferred_location || "Ingen boliginteresse registrert"}</p>
 
+                          {action.needsAction && <div className="mt-2 inline-flex rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200">Trenger oppfølging</div>}
                           <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/60 p-2">
                             <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-slate-500"><span>Neste fokus</span><span>{action.score}/100</span></div>
                             <p className="mt-1 text-xs font-medium text-slate-200">{action.label}</p>
