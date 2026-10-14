@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   if (!permitted(input.name, 120) || !permitted(input.email, 254) ||
       !permitted(input.message, 2500) || !emailPattern.test(value(input.email)) ||
       typeof input.company !== "string" || input.company.length > 160 ||
-      !products.has(input.product)) return respond(422, "INVALID_FIELDS");
+      (typeof input.product !== "string" || !products.has(input.product))) return respond(422, "INVALID_FIELDS");
   const consent = input.consent;
   if (!consent || typeof consent !== "object" || Array.isArray(consent) ||
       (consent as Record<string, unknown>).purpose !== "respond_to_request" ||
