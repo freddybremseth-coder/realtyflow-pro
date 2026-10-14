@@ -2126,7 +2126,7 @@ export function WorkspaceSocialStudio({
           {packageSaving ? "Lagrer SoMe-pakken…" : "Lagre hele SoMe-pakken som utkast"}
         </button>
       </div>
-      {savedPublicationId && <a href={"/content-hub?" + (savedPackageId
+      {savedPublicationId && <a href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?" + (savedPackageId
         ? "package=" + encodeURIComponent(savedPackageId)
         : "draft=" + encodeURIComponent(savedPublicationId)) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
         className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fuchsia-500 px-4 py-2 text-sm font-semibold text-fuchsia-100 hover:bg-fuchsia-950/50">
