@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   CalendarClock,
   Trash2,
+  CheckCircle2,
   ExternalLink,
   GripVertical,
   LayoutDashboard,
@@ -269,7 +270,7 @@ export default function PipelinePage() {
         <article className="rounded-xl border border-red-500/20 bg-slate-900/60 p-4"><Sparkles className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Trenger handling</p><strong className="mt-1 block text-2xl text-white">{metrics.needsAction}</strong></article>
         <article className="rounded-xl border border-amber-500/20 bg-slate-900/60 p-4"><CalendarClock className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Forfalt</p><strong className="mt-1 block text-2xl text-white">{metrics.overdue}</strong></article>
         <article className="rounded-xl border border-cyan-500/20 bg-slate-900/60 p-4"><Search className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Matching</p><strong className="mt-1 block text-2xl text-white">{metrics.matching}</strong></article>
-        <article className="rounded-xl border border-emerald-500/20 bg-slate-900/60 p-4"><CircleDollarSign className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Reservert</p><strong className="mt-1 block text-2xl text-white">{metrics.reserved}</strong></article>
+        <article className="rounded-xl border border-emerald-500/20 bg-slate-900/60 p-4"><CheckCircle2 className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Reservert</p><strong className="mt-1 block text-2xl text-white">{metrics.reserved}</strong></article>
       </section>
 
       <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 space-y-3">
