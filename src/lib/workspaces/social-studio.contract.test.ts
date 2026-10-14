@@ -366,7 +366,7 @@ test("SoMe workspace separates creation from Content Hub and keeps saved drafts 
   assert.doesNotMatch(workspace, /SoMe Studio · Content Hub/);
   assert.match(workspace, /Når du lagrer, finner du utkastene i Content Hub/);
   assert.match(studio, /Se lagrede utkast/);
-  assert.match(studio, /href=\{"\/content-hub\?from=social-studio&brand="/);
+  assert.match(studio, /href=\{"\/workspace\/" \+ encodeURIComponent\(brandKey\) \+ "\/content-hub\?from=social-studio&brand="/);
 });
 
 test("Content Hub prioritizes brand media and exposes planning from SoMe drafts", () => {
