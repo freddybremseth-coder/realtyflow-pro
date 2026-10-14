@@ -39,6 +39,11 @@ test("The DB migration creates an isolated brand and atomic CRM + work-item path
   assert.match(sql,/'altovena','website_lead'/i);
   assert.match(sql,/insert into public\.altovena_intake_receipts/i);
   assert.match(sql,/pg_advisory_xact_lock/);
+  assert.match(sql,/notes,interactions,ai_auto_followup,nurture_status,created_at/);
+  assert.match(sql,/false,'stopped',v_time/);
+  assert.match(sql,/marketing_opt_in',false/);
+  assert.match(sql,/Keep any independently-established prior subscription preferences intact/);
+
   assert.doesNotMatch(sql,/insert into core\.brand_workspace_memberships/i);
   assert.doesNotMatch(sql,/subscribe|sendmail|notify.*external/i);
 });
