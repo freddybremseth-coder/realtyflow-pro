@@ -11,7 +11,8 @@ export function visibilityAuditSummary(audit: SiteAudit) {
   if (audit.home.status !== null && audit.home.status !== 200) {
     issues.push({ code: "HTTP_ERROR", evidence: "Homepage status: " + audit.home.status, affectedUrl: audit.base });
   }
-  // Potential indexing issue only: some routes deliberately use noindex.\n  if (audit.home.robotsMeta?.match(/\bnoindex\b/i) || audit.home.xRobots?.match(/\bnoindex\b/i) ||
+  // Potential indexing issue only: some routes deliberately use noindex.
+  if (audit.home.robotsMeta?.match(/\bnoindex\b/i) || audit.home.xRobots?.match(/\bnoindex\b/i) ||
       audit.robots.googlebotBlocked === true) {
     issues.push({ code: "INDEXING_BLOCKED", evidence: "Explicit noindex or site-wide Googlebot disallow", affectedUrl: audit.base });
   }
