@@ -196,7 +196,35 @@ export async function GET(request: NextRequest) {
     .filter((c: any) => isCustomerStatus(c.pipeline_status) && (c.buying_signal_score !== 100 || c.purchase_signal_score !== 100 || c.sentiment === 'neutral'))
     .map((c: any) => updateContactWithFallbacks(supabase, c.id, { pipeline_status: 'WON', sentiment: 'hot', buying_signal_score: 100, purchase_signal_score: 100, updated_at: new Date().toISOString() }));
   if (repairs.length > 0) Promise.allSettled(repairs).catch(() => {});
-  return NextResponse.json({ contacts, communicationCounts });
+  // Alert on unacknowledged Care requests using the durable intake work item.
+  // An existing contact alone must not be interpreted as an acknowledged enquiry.
+  const { data: rawCareItems, error: careAlertError } = await supabase
+    .from('work_items')
+    .select('id,title,source_id,status,metadata,created_at')
+    .eq('brand_id', 'zeneco')
+    .eq('source_type', 'website_lead')
+    .eq('status', 'TO_DO')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  const visibleIds = new Set(filteredContacts.map((contact: any) => String(contact.id)));
+  const careAlerts = (rawCareItems || []).filter((item: any) => {
+    const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+    const care = String(metadata.segment || '').toLowerCase() === 'care'
+      || String(metadata.request_type || '').toLowerCase().startsWith('care-');
+    return care && String(metadata.care_sales_stage || 'new').toLowerCase() === 'new'
+      && visibleIds.has(String(item.source_id));
+  }).map((item: any) => ({
+    id: item.id,
+    contactId: item.source_id,
+    title: item.title,
+    createdAt: item.created_at,
+  }));
+
+  return NextResponse.json({
+    contacts, communicationCounts, careAlerts,
+    careAlertsWarning: careAlertError ? 'Care-varsler kunne ikke hentes. Kontroller Care-oversikten.' : null,
+  });
 }
 
 export async function POST(request: NextRequest) {
