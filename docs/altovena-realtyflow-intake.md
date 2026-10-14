@@ -33,3 +33,12 @@ Real publishing must also check connected destinations, verified sender identity
 ## Privacy and customer journey
 
 Contact requests are used to respond to that request only. Newsletter enrolment must use a separate positive opt-in, with its own proof, suppression and unsubscribe flow, all owned by RealtyFlow. Editorial copy follows Andrea and Erlend's SEO/AEO/GEO and customer-journey manual; no fabricated statistics, no fake AI recommendations, and product demos must be labelled honestly.
+
+## Privacy and identity safeguards verified against the live schema (15 October 2026)
+
+- The existing `public.contacts.nurture_status` defaults to `eligible`. This integration **overrides that default to `stopped` for brand-new Altovena web enquiries**, and sets `ai_auto_followup=false`. Existing independent opt-in preferences remain untouched when an existing contact makes another enquiry.
+- An unauthenticated web form **never overwrites the canonical name or company** of an existing contact with a matching email. The new submission's provided details are marked `identity_verified:false` inside the recorded interaction pending human verification.
+- Intake receipt and brand-scoped follow-up task are written in one database function call and no success is acknowledged before both exist.
+- `getBrandWorkspace` staff authorization is checked before the Altovena task endpoint reads the specific brand's tasks. The UI is an in-app attention surface; email/push notifications require a separate verified path.
+- Live project schema/constraints were examined with **read-only** SQL to confirm receipt foreign keys, lead source types, task priorities and nurture values. No live data was inserted or mutated.
+- Production activation still requires verified legal controller, email/notification delivery, both brand grants and an approved test via a dedicated safe environment before turning on real submissions.
