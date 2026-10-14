@@ -145,9 +145,9 @@ export function WorkspaceMarketingPanel({
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-800/60 bg-cyan-950/20 p-3 sm:p-4">
       <div>
         <p className="text-sm font-semibold text-cyan-100">Klar til å jobbe videre med utkastene?</p>
-        <p className="mt-1 text-xs text-slate-300">Åpne Content Hub direkte for å redigere bilder og tekst, planlegge eller publisere.</p>
+        <p className="mt-1 text-xs text-slate-300">Åpne merkevarens oversikt over lagrede SoMe-utkast og publikasjoner.</p>
       </div>
-      <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 sm:w-auto" aria-label="Åpne Content Hub og utkast for denne merkevaren">
+      <a href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?from=social-studio"} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 sm:w-auto" aria-label="Åpne Content Hub og utkast for denne merkevaren">
         Åpne Content Hub <ExternalLink size={16} aria-hidden="true"/>
       </a>
     </div>

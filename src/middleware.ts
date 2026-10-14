@@ -215,6 +215,9 @@ function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
       !/^[a-z0-9][a-z0-9-]{1,62}$/.test(parts[3])) return false;
   const brand = parts[3];
   const resource = parts[4];
+  if (parts.length === 6 && resource === "corporate") {
+    return brand === "zeneco" && Boolean(parts[5]) && ["GET", "POST"].includes(verb);
+  }
   if (parts.length === 6) {
     return resource === "reels" && parts[5] === "publish" &&
       ["zeneco", "pinosoecolife"].includes(brand) && verb === "POST";
@@ -376,7 +379,7 @@ export async function middleware(request: NextRequest) {
         }
       } else if (internalAlertsPage || executiveBriefingPage || operatingReviewPage || weeklyManagementReviewPage || continuousImprovementPage) {
         if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
-      } else if (!(pathname === "/workspace" || (pathname.startsWith("/workspace/") && pathname.split("/").length === 3)) && !canSeeNavHref(session.role, pathname)) {
+      } else if (!(pathname === "/workspace" || (pathname.startsWith("/workspace/") && pathname.split("/").length === 3) || (session.role === "WORKSPACE_MEMBER" && (/^\/workspace\/zeneco\/corporate\/[^/]+$/.test(pathname) || /^\/workspace\/(zeneco|pinosoecolife)\/content-hub$/.test(pathname)))) && !canSeeNavHref(session.role, pathname)) {
         return roleDenied(request, session.role, "page-access");
       }
     }
