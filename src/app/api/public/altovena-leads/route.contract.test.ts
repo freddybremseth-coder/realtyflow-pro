@@ -43,6 +43,12 @@ test("The DB migration creates an isolated brand and atomic CRM + work-item path
   assert.match(sql,/false,'stopped',v_time/);
   assert.match(sql,/marketing_opt_in',false/);
   assert.match(sql,/Keep any independently-established prior subscription preferences intact/);
+  // An anonymous form must never update an existing contact's canonical identity.
+  assert.match(sql,/identity_verified',false/);
+  assert.match(sql,/Public submissions are NOT identity verification/);
+  const contactUpdate = sql.slice(sql.indexOf("update public.contacts"), sql.indexOf("where id=v_contact_id"));
+  assert.doesNotMatch(contactUpdate,/set\s+name\s*=|company\s*=/i);
+
 
   assert.doesNotMatch(sql,/insert into core\.brand_workspace_memberships/i);
   assert.doesNotMatch(sql,/subscribe|sendmail|notify.*external/i);
