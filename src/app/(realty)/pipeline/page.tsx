@@ -24,6 +24,13 @@ import {
   type CustomerPipelineStatus,
 } from "@/lib/customer-updates";
 
+interface CareAlert {
+  id: string;
+  contactId: string;
+  title: string;
+  createdAt: string;
+}
+
 interface Contact {
   id: string;
   name?: string | null;
@@ -97,6 +104,8 @@ function dateInfo(value: unknown) {
 
 export default function PipelinePage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [careAlerts, setCareAlerts] = useState<CareAlert[]>([]);
+  const [careAlertsWarning, setCareAlertsWarning] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState<"all" | "care" | "property">("all");
   const [actionOnly, setActionOnly] = useState(false);
@@ -113,6 +122,8 @@ export default function PipelinePage() {
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke hente pipeline.");
       setContacts(body?.contacts || []);
+      setCareAlerts(Array.isArray(body?.careAlerts) ? body.careAlerts : []);
+      setCareAlertsWarning(body?.careAlertsWarning || null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Kunne ikke hente pipeline.");
     } finally {
@@ -218,6 +229,23 @@ export default function PipelinePage() {
       </header>
 
       {error && <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle size={18} className="mt-0.5 shrink-0" />{error}</div>}
+      {careAlertsWarning && <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">{careAlertsWarning}</div>}
+      {careAlerts.length > 0 && (
+        <section aria-label="Nye Care-henvendelser" role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-amber-100"><AlertTriangle size={18} /><strong>{careAlerts.length} Care-henvendelse{careAlerts.length === 1 ? "" : "r"} trenger bekreftet oppfølging</strong></div>
+            <Button asChild size="sm"><Link href="/care/leads">Åpne Care-leads</Link></Button>
+          </div>
+          <p className="mt-2 text-xs text-amber-200/80">Varslet beholdes til henvendelsen får status Kontaktet, Tilbud sendt eller annen registrert Care-status. Oppdater status i Care når kunden er fulgt opp.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {careAlerts.slice(0, 5).map((lead) => (
+              <Link key={lead.id} href="/care/leads" className="rounded-lg border border-amber-500/30 bg-slate-950/30 px-3 py-2 text-sm text-amber-100 hover:bg-amber-500/10">
+                {lead.title} · {new Date(lead.createdAt).toLocaleDateString("nb-NO")}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Aktiv pipeline</p><strong className="mt-1 block text-2xl text-white">{metrics.active}</strong></article>
