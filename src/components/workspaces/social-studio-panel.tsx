@@ -1381,7 +1381,7 @@ export function WorkspaceSocialStudio({
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <a href={"/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)}
+        <a href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?from=social-studio&brand=" + encodeURIComponent(brandKey)}
           className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-300 hover:border-cyan-700 hover:text-cyan-200">
           Se lagrede utkast <ExternalLink size={12}/>
         </a>
@@ -1392,7 +1392,7 @@ export function WorkspaceSocialStudio({
     {savedPackageId && packageFeedback?.kind === "success" && <div role="status" aria-live="polite" className="mt-5 rounded-2xl border-2 border-emerald-400 bg-emerald-950/60 p-5">
       <p className="text-lg font-bold text-white">Forslagene er lagret – klar for neste steg</p>
       <p className="mt-2 text-sm text-emerald-100">Ingenting er publisert. Gå til Content Hub, velg ønsket utkast, kontroller bilde og tekst og velg «Publiser / planlegg».</p>
-      <a href={"/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+      <a href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
         className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300">
         Gå til Content Hub og publiser / planlegg <ExternalLink size={16}/>
       </a>
@@ -1459,7 +1459,7 @@ export function WorkspaceSocialStudio({
     {error && <p role="alert" className="mt-4 rounded-xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">{error}</p>}
     {notice && <div role="status" className="mt-4 rounded-xl border border-emerald-800 bg-emerald-950/25 p-3 text-sm text-emerald-200">
       <p>{notice}</p>
-      {savedPublicationId && <a href={"/content-hub?draft=" + encodeURIComponent(savedPublicationId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+      {savedPublicationId && <a href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?draft=" + encodeURIComponent(savedPublicationId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
         className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-700 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-950/40">
         Åpne lagret utkast i Content Hub <ExternalLink size={14}/>
       </a>}
@@ -1945,7 +1945,7 @@ export function WorkspaceSocialStudio({
               {saveFeedback[variant.id + ":facebook"].text}
             </p>}
             {savedDraft?.variantId === variant.id && savedDraft.channel === "facebook" && <a
-              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+              href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?draft=" + encodeURIComponent(savedDraft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
               className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">
               Åpne utkastet og gå videre <ExternalLink size={13}/>
             </a>}
@@ -2027,7 +2027,7 @@ export function WorkspaceSocialStudio({
               {saveFeedback[variant.id + ":instagram"].text}
             </p>}
             {savedDraft?.variantId === variant.id && savedDraft.channel === "instagram" && <a
-              href={"/content-hub?draft=" + encodeURIComponent(savedDraft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+              href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?draft=" + encodeURIComponent(savedDraft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
               className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-700/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-700/35">
               Åpne utkastet og gå videre <ExternalLink size={13}/>
             </a>}
@@ -2136,7 +2136,7 @@ export function WorkspaceSocialStudio({
         <p className="text-xs font-semibold text-slate-100">Lagrede utkast ({savedPackageDrafts.length}) · åpne hvert utkast direkte</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {savedPackageDrafts.map(draft => <a key={draft.id}
-            href={"/content-hub?draft=" + encodeURIComponent(draft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+            href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?draft=" + encodeURIComponent(draft.id) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
             className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 p-3 text-xs text-slate-200 hover:border-cyan-500">
             <span>{draft.label} · {draft.channel === "instagram" ? "Instagram" : "Facebook"}
               <span className="mt-1 block text-slate-400">{draft.imageKind === "advisor" ? "Godkjent AI-bilde" : draft.imageKind === "custom" ? "Eget Instagram-bilde" : "Vanlig boligfoto"}</span>
@@ -2159,7 +2159,7 @@ export function WorkspaceSocialStudio({
         <p className="mt-1 text-xs">{packageFeedback.text}</p>
         {savedPackageId && <div className="mt-3 flex flex-wrap items-center gap-3">
           <a
-            href={"/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
+            href={"/workspace/" + encodeURIComponent(brandKey) + "/content-hub?package=" + encodeURIComponent(savedPackageId) + "&from=social-studio&brand=" + encodeURIComponent(brandKey)}
             className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400">
             Åpne hele pakken i Content Hub <ExternalLink size={13}/>
           </a>
