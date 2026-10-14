@@ -8,10 +8,10 @@ import { evaluateVisibilityGate, type VisibilityIssue } from "./visibility-quali
  */
 export function visibilityAuditSummary(audit: SiteAudit) {
   const issues: VisibilityIssue[] = [];
-  if (audit.home.status !== null && (audit.home.status < 200 || audit.home.status >= 400)) {
+  if (audit.home.status !== null && audit.home.status !== 200) {
     issues.push({ code: "HTTP_ERROR", evidence: "Homepage status: " + audit.home.status, affectedUrl: audit.base });
   }
-  if (audit.home.robotsMeta?.match(/\bnoindex\b/i) || audit.home.xRobots?.match(/\bnoindex\b/i) ||
+  // Potential indexing issue only: some routes deliberately use noindex.\n  if (audit.home.robotsMeta?.match(/\bnoindex\b/i) || audit.home.xRobots?.match(/\bnoindex\b/i) ||
       audit.robots.googlebotBlocked === true) {
     issues.push({ code: "INDEXING_BLOCKED", evidence: "Explicit noindex or site-wide Googlebot disallow", affectedUrl: audit.base });
   }
@@ -34,6 +34,6 @@ export function visibilityAuditSummary(audit: SiteAudit) {
     issues,
     // A site audit must NEVER authorize publication; it lacks change-specific verification.
     publicationEligible: false as const,
-    diagnosticStatus: incomplete ? "UNKNOWN" as const : gate.status,
+    diagnosticStatus: incomplete ? "UNKNOWN" as const : gate.blocked.length ? "ACTION_REQUIRED" as const : gate.warnings.length ? "REVIEW_RECOMMENDED" as const : "OBSERVED_NO_BLOCKERS" as const,
   };
 }
