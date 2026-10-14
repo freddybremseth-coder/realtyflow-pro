@@ -5,6 +5,7 @@ import test from "node:test";
 const route = readFileSync("src/app/api/public/altovena-leads/route.ts","utf8");
 const sql = readFileSync("supabase/migrations/20261014210000_altovena_brand_intake.sql","utf8");
 const registry = readFileSync("src/lib/marketing/brand-registry.ts","utf8");
+const centralBrands=readFileSync("src/lib/constants.ts","utf8");
 
 test("Altovena intake remains off until secret, brand and database are configured", () => {
   for (const item of [
@@ -61,6 +62,8 @@ test("Altovena marketing brand is separate and has no pilot publishing routes en
   assert.match(segment,/website: "https:\/\/altovena\.com"/);
   assert.match(segment,/RealtyFlow is the sole CRM/);
   assert.doesNotMatch(segment,/pilotChannels: \["instagram"/);
+  assert.match(centralBrands, /id: "altovena", name: "Altovena", type: "saas"/);
+  assert.match(centralBrands, /"Offer Intelligence".*"Visibility".*"RealtyFlow".*"Olivia OS"/);
 });
 
 const scopedTaskRoute=readFileSync("src/app/api/workspaces/[brandKey]/lead-tasks/route.ts","utf8");
