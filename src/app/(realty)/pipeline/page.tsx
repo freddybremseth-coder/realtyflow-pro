@@ -85,15 +85,6 @@ function contactBrand(contact: Contact) {
   return String(contact.brand_id || contact.brand || "unassigned").trim().toLowerCase();
 }
 
-function money(value: unknown) {
-  return new Intl.NumberFormat("nb-NO", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-    notation: Number(value || 0) >= 1_000_000 ? "compact" : "standard",
-  }).format(Number(value || 0));
-}
-
 function dateInfo(value: unknown) {
   if (!value) return { label: "Ikke planlagt", overdue: false, future: false };
   const date = new Date(String(value));
