@@ -66,8 +66,14 @@ function leadReceiptCopy(input: {
   preferredArea: string;
   budget: string;
   portalLink?: string;
+  isBuyerMatch?: boolean;
 }) {
-  const firstName = input.name.trim().split(/\s+/)[0] || input.name;
+  const rawFirstName = input.name.trim().split(/\s+/)[0] || "";
+  const firstName = /^(boligmatch|ukjent|kunde)$/i.test(rawFirstName) ? "" : rawFirstName;
+  const greeting = firstName ? `Hei ${firstName},` : "Hei,";
+  const acknowledgement = input.isBuyerMatch
+    ? "Takk for at du fylte ut Boligmatch. Vi har mottatt boligønskene dine. En rådgiver går gjennom svarene før vi eventuelt sender deg et personlig utvalg boliger. Du kan også se aktuelle boliger på nettsiden mens du venter."
+    : "Takk for henvendelsen. Skjemaet er mottatt hos Zen Eco Homes, og vi bruker opplysningene til å gi deg mer relevant oppfølging.";
   const summary = [
     input.preferredArea ? `Område: ${input.preferredArea}` : "",
     input.budget ? `Budsjett: ${input.budget}` : "",
@@ -80,8 +86,8 @@ function leadReceiptCopy(input: {
     : "";
   return {
     subject: "Vi har mottatt henvendelsen din | Zen Eco Homes",
-    bodyText: `Hei ${firstName},\n\nTakk for henvendelsen. Skjemaet er mottatt hos Zen Eco Homes, og vi bruker opplysningene til å gi deg mer relevant oppfølging.${summary.length ? `\n\n${summary.join("\n")}` : ""}${portalText}\n\nMed vennlig hilsen\nZen Eco Homes`,
-    bodyHtml: `<p>Hei ${firstName},</p><p>Takk for henvendelsen. Skjemaet er mottatt hos Zen Eco Homes, og vi bruker opplysningene til å gi deg mer relevant oppfølging.</p>${summary.length ? `<p>${summary.join("<br>")}</p>` : ""}${portalHtml}<p>Med vennlig hilsen<br>Zen Eco Homes</p>`,
+    bodyText: `${greeting}\n\n${acknowledgement}${summary.length ? `\n\n${summary.join("\n")}` : ""}${portalText}\n\nMed vennlig hilsen\nZen Eco Homes`,
+    bodyHtml: `<p>${greeting}</p><p>${acknowledgement}</p>${summary.length ? `<p>${summary.join("<br>")}</p>` : ""}${portalHtml}<p>Med vennlig hilsen<br>Zen Eco Homes</p>`,
   };
 }
 
@@ -1111,7 +1117,7 @@ export async function POST(request: NextRequest) {
       ? `${publicBaseUrl()}/api/public/portal-opt-in?token=${encodeURIComponent(optInToken)}`
       : undefined;
     if (!isCorporateDecisionNote) {
-      const receipt = leadReceiptCopy({ name, preferredArea, budget, portalLink });
+      const receipt = leadReceiptCopy({ name, preferredArea, budget, portalLink, isBuyerMatch: requestType.toLowerCase() === "boligmatch" || source.toLowerCase().includes("buyer-match") });
       sendBrandEmail(supabase, {
         brandId: "zeneco",
         to: [email],
