@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CalendarClock,
-  CircleDollarSign,
+  Trash2,
   ExternalLink,
   GripVertical,
   LayoutDashboard,
@@ -37,7 +37,6 @@ interface Contact {
   email?: string | null;
   phone?: string | null;
   pipeline_status?: string | null;
-  pipeline_value?: number | null;
   property_interest?: string | null;
   preferred_location?: string | null;
   brand_id?: string | null;
@@ -78,8 +77,13 @@ const BRAND_LABELS: Record<string, string> = {
   zeneco: "Zen Eco Homes",
   soleada: "Soleada.no",
   pinosoecolife: "Pinoso EcoLife",
-  keyholding: "Keyholding",
+  keyholding: "Care",
 };
+
+function contactBrand(contact: Contact) {
+  if (String(contact.source || "").toLowerCase().includes("care") || String(contact.brand_id || "").toLowerCase() === "keyholding") return "care";
+  return String(contact.brand_id || contact.brand || "unassigned").trim().toLowerCase();
+}
 
 function money(value: unknown) {
   return new Intl.NumberFormat("nb-NO", {
@@ -109,6 +113,10 @@ export default function PipelinePage() {
   const [search, setSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState<"all" | "care" | "property">("all");
   const [actionOnly, setActionOnly] = useState(false);
+  const [brandFilter, setBrandFilter] = useState("all");
+  const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -135,13 +143,15 @@ export default function PipelinePage() {
     void load();
   }, [load]);
 
+  const brands = useMemo(() => Array.from(new Set(contacts.map(contactBrand).filter(Boolean))).sort(), [contacts]);
+
   const activeContacts = useMemo(() => contacts.filter((contact) => ACTIVE_STAGES.includes(normalizeCustomerPipelineStatus(contact.pipeline_status))), [contacts]);
 
   const visibleContacts = useMemo(() => {
     const query = search.trim().toLowerCase();
     const scoped = activeContacts.filter((contact) => {
       const care = String(contact.source || "").toLowerCase().includes("care") || String(contact.brand_id || "").toLowerCase() === "keyholding";
-      return (serviceFilter === "all" || (serviceFilter === "care" ? care : !care)) && (!actionOnly || buildCustomerListAction(contact).needsAction);
+      return (serviceFilter === "all" || (serviceFilter === "care" ? care : !care)) && (brandFilter === "all" || contactBrand(contact) === brandFilter) && (!actionOnly || buildCustomerListAction(contact).needsAction);
     });
     if (!query) return scoped;
     return scoped.filter((contact) => [
@@ -154,7 +164,7 @@ export default function PipelinePage() {
       contact.brand,
       contact.source,
     ].filter(Boolean).join(" ").toLowerCase().includes(query));
-  }, [activeContacts, search, serviceFilter, actionOnly]);
+  }, [activeContacts, search, serviceFilter, brandFilter, actionOnly]);
 
   const byStage = useMemo(() => {
     const result = new Map<CustomerPipelineStatus, Contact[]>();
@@ -164,7 +174,7 @@ export default function PipelinePage() {
       result.get(stage)?.push(contact);
     }
     for (const rows of result.values()) {
-      rows.sort((a, b) => buildCustomerListAction(b).score - buildCustomerListAction(a).score || Number(b.pipeline_value || 0) - Number(a.pipeline_value || 0));
+      rows.sort((a, b) => buildCustomerListAction(b).score - buildCustomerListAction(a).score);
     }
     return result;
   }, [visibleContacts]);
@@ -177,9 +187,25 @@ export default function PipelinePage() {
       overdue: activeContacts.filter((contact) => dateInfo(contact.next_followup).overdue).length,
       matching: activeContacts.filter((contact) => normalizeCustomerPipelineStatus(contact.pipeline_status) === "MATCHING").length,
       reserved: activeContacts.filter((contact) => normalizeCustomerPipelineStatus(contact.pipeline_status) === "RESERVED").length,
-      value: activeContacts.reduce((sum, contact) => sum + Number(contact.pipeline_value || 0), 0),
     };
   }, [activeContacts]);
+
+  async function deleteContact() {
+    if (!deleteTarget || confirmText !== "SLETT") return;
+    setDeleting(true);
+    setError("");
+    try {
+      const response = await fetch("/api/contacts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deleteTarget.id }) });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.success) throw new Error(body?.error?.message || body?.error || "Kontakten kunne ikke slettes.");
+      setContacts((rows) => rows.filter((row) => row.id !== deleteTarget.id));
+      setCareAlerts((rows) => rows.filter((row) => row.contactId !== deleteTarget.id));
+      setDeleteTarget(null);
+      setConfirmText("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kontakten kunne ikke slettes.");
+    } finally { setDeleting(false); }
+  }
 
   async function moveContact(contactId: string, stage: CustomerPipelineStatus) {
     if (!ACTIVE_STAGES.includes(stage)) return;
@@ -247,13 +273,12 @@ export default function PipelinePage() {
         </section>
       )}
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Aktiv pipeline</p><strong className="mt-1 block text-2xl text-white">{metrics.active}</strong></article>
         <article className="rounded-xl border border-red-500/20 bg-slate-900/60 p-4"><Sparkles className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Trenger handling</p><strong className="mt-1 block text-2xl text-white">{metrics.needsAction}</strong></article>
         <article className="rounded-xl border border-amber-500/20 bg-slate-900/60 p-4"><CalendarClock className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Forfalt</p><strong className="mt-1 block text-2xl text-white">{metrics.overdue}</strong></article>
         <article className="rounded-xl border border-cyan-500/20 bg-slate-900/60 p-4"><Search className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Matching</p><strong className="mt-1 block text-2xl text-white">{metrics.matching}</strong></article>
         <article className="rounded-xl border border-emerald-500/20 bg-slate-900/60 p-4"><CircleDollarSign className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Reservert</p><strong className="mt-1 block text-2xl text-white">{metrics.reserved}</strong></article>
-        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><CircleDollarSign className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Pipeline-verdi</p><strong className="mt-1 block text-2xl text-white">{money(metrics.value)}</strong></article>
       </section>
 
       <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 space-y-3">
@@ -263,6 +288,10 @@ export default function PipelinePage() {
           ))}
           <Button size="sm" variant={actionOnly ? "default" : "outline"} onClick={() => setActionOnly((value) => !value)} aria-pressed={actionOnly}><AlertTriangle size={14} className="mr-1" />Kun trenger handling</Button>
           <Link href="/care/leads" className="ml-auto text-xs text-cyan-300 hover:underline">Care-henvendelser og tilbud →</Link>
+        </div>
+        <div className="flex flex-wrap items-center gap-2" aria-label="Filtrer etter merkevare">
+          <span className="text-xs font-medium text-slate-400">Merkevare:</span>
+          {(["all", ...brands] as string[]).map((brand) => <Button key={brand} size="sm" variant={brandFilter === brand ? "default" : "outline"} aria-pressed={brandFilter === brand} onClick={() => setBrandFilter(brand)}>{brand === "all" ? "Alle merkevarer" : brand === "care" ? "Care" : BRAND_LABELS[brand] || brand}</Button>)}
         </div>
         <div className="relative max-w-xl"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk navn, område, e-post, brand eller kilde" className="pl-10" /></div>
       </section>
@@ -307,6 +336,7 @@ export default function PipelinePage() {
                               <p className="mt-0.5 truncate text-[11px] text-slate-500">{String(contact.source || "").toLowerCase().includes("care") ? "Care · " : ""}{BRAND_LABELS[brandId] || brandId}</p>
                             </div>
                             {savingId === contact.id && <Loader2 size={14} className="animate-spin text-cyan-300" />}
+                            <button type="button" draggable={false} onClick={() => { setDeleteTarget(contact); setConfirmText(""); }} aria-label={`Slett ${contact.name || "kontakt"}`} title="Slett kontakt" className="rounded p-1 text-slate-500 hover:bg-red-500/10 hover:text-red-300"><Trash2 size={15}/></button>
                           </div>
 
                           <p className="mt-3 line-clamp-2 min-h-9 text-xs text-slate-400">{contact.property_interest || contact.preferred_location || "Ingen boliginteresse registrert"}</p>
@@ -318,7 +348,6 @@ export default function PipelinePage() {
                           </div>
 
                           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-                            <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2 py-1 text-slate-300">{money(contact.pipeline_value)}</span>
                             <span className={`rounded-full border px-2 py-1 ${followup.overdue ? "border-red-500/30 bg-red-500/10 text-red-200" : followup.future ? "border-cyan-500/20 bg-cyan-500/5 text-cyan-200" : "border-slate-700 bg-slate-800/60 text-slate-400"}`}>
                               {followup.overdue ? "Forfalt " : followup.future ? "Planlagt " : ""}{followup.label}
                             </span>
@@ -338,6 +367,7 @@ export default function PipelinePage() {
         </section>
       )}
 
+      {deleteTarget && <div role="dialog" aria-modal="true" aria-label="Bekreft sletting" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-md rounded-xl border border-red-500/30 bg-slate-900 p-5 shadow-xl"><h2 className="text-lg font-bold text-white">Slette kontakten?</h2><p className="mt-2 text-sm text-slate-300">Du er i ferd med å slette <strong>{deleteTarget.name || deleteTarget.email || "kontakt"}</strong> fra CRM. Dette kan fjerne tilknyttet historikk og kan ikke angres. For å bare avslutte salgsprosessen, flytt kunden til tapt/avsluttet i stedet.</p><label className="mt-4 block text-sm text-slate-300" htmlFor="delete-confirm">Skriv SLETT for å bekrefte</label><Input id="delete-confirm" value={confirmText} onChange={(event) => setConfirmText(event.target.value)} autoComplete="off" className="mt-2" /><div className="mt-4 flex justify-end gap-2"><Button variant="outline" disabled={deleting} onClick={() => setDeleteTarget(null)}>Avbryt</Button><Button disabled={deleting || confirmText !== "SLETT"} onClick={() => void deleteContact()} className="bg-red-700 hover:bg-red-600 text-white">{deleting ? "Sletter …" : "Slett permanent"}</Button></div></div></div>}
       <p className="text-xs text-slate-500">Gjennomførte og tapte saker håndteres i <Link href="/customers?tab=customers" className="text-cyan-300 hover:underline">CRM & leads → Avsluttet</Link>. Kanban endrer kun pipeline-status; all kundehistorikk og videre arbeid ligger i Customer 360.</p>
     </div>
   );
