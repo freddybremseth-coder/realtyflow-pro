@@ -54,6 +54,7 @@ begin
     or v_email !~ '^[^[:space:]@<>]+@[^[:space:]@<>]+[.][^[:space:]@<>]+$'
     or length(v_company)>160
     or length(v_message) not between 1 and 2500
+    or p_product is null
     or p_product not in ('offer','visibility','realtyflow','olivia','other')
     then raise exception 'Invalid Altovena enquiry';
   end if;
