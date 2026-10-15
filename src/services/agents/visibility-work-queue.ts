@@ -75,6 +75,7 @@ export function visibilityWorkDisplayState(status: string, metadata?: Record<str
   if (execution === "AWAITING_APPROVAL") return "AWAITING_APPROVAL";
   if (execution === "BLOCKED") return "BLOCKED";
   if (execution === "FAILED") return "FAILED";
+  if (execution === "PROPOSED") return "PROPOSED";
   if (status === "IN_PROGRESS") return "RUNNING";
   if (status === "TO_DO" || status === "REVIEW") return "QUEUED";
   // DONE without verification evidence is not a verified resolution.
