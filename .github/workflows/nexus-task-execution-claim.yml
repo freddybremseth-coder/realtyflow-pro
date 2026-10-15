@@ -19,6 +19,7 @@ on:
       - "scripts/qa-nexus-claim-bootstrap.sql"
       - "scripts/qa-nexus-claim-postgres.sql"
       - "scripts/qa-nexus-lifecycle-postgres.sql"
+      - "scripts/qa-nexus-board-reader-postgres.sql"
       - ".github/workflows/nexus-task-execution-claim.yml"
   push:
     branches: [main]
@@ -39,6 +40,7 @@ on:
       - "scripts/qa-nexus-claim-bootstrap.sql"
       - "scripts/qa-nexus-claim-postgres.sql"
       - "scripts/qa-nexus-lifecycle-postgres.sql"
+      - "scripts/qa-nexus-board-reader-postgres.sql"
       - ".github/workflows/nexus-task-execution-claim.yml"
 permissions:
   contents: read
@@ -86,3 +88,5 @@ jobs:
         run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-claim-postgres.sql
       - name: Assert server-authorized proposal, review and claim lifecycle
         run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-lifecycle-postgres.sql
+      - name: Verify least-privilege private board reader
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-board-reader-postgres.sql
