@@ -50,9 +50,10 @@ export function MorningBriefSeoSummary() {
           Google-målinger, tekniske signaler og eventuelle beslutninger. Full analyse og publiseringskontroller ligger i Growth Hub.
         </p>
       </div>
+      <div className="flex flex-wrap items-center gap-4"><Link href="/visibility" className="inline-flex items-center gap-1 text-sm font-bold text-teal-700 hover:underline">Nexus Visibility · produktvisning <ArrowRight size={16}/></Link>
       <Link href="/growth-hub" className="inline-flex items-center gap-1 text-sm font-bold text-cyan-700 hover:underline">
         Åpne full SEO-rapport <ArrowRight size={16} />
-      </Link>
+      </Link></div>
     </div>
 
     {state === "loading" && <p role="status" className="mt-4 text-sm text-slate-600">Henter SEO-status…</p>}
