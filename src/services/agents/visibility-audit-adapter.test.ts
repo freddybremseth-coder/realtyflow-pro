@@ -38,3 +38,14 @@ test("non-200 homepage is a diagnostic issue, never publishing authority", () =>
   assert.equal(result.diagnosticStatus, "ACTION_REQUIRED");
   assert.equal(result.publicationEligible, false);
 });
+
+test("JSON-LD parse errors do not masquerade as heading defects or misleading schema", () => {
+  const sample = audit();
+  sample.home.jsonLdParseErrors = 2;
+  const result = visibilityAuditSummary(sample);
+  assert.ok(result.issues.some(issue => issue.code === "SCHEMA_PARSE_ERROR"));
+  assert.ok(!result.issues.some(issue => issue.code === "HEADING_STRUCTURE"));
+  assert.ok(!result.issues.some(issue => issue.code === "MISLEADING_SCHEMA"));
+  assert.equal(result.diagnosticStatus, "REVIEW_RECOMMENDED");
+  assert.equal(result.publicationEligible, false);
+});
