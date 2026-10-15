@@ -88,19 +88,17 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: { code: "INVALID_STATUS" } },
       { status: 400, headers: noStore });
   }
-  const { data, error } = await access.value.supabase
-    .from("work_items")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("brand_id", "altovena")
-    .eq("source_type", "website_lead")
-    .in("status", allowedStatuses)
-    .select("id,status,brand_id,source_type")
-    .maybeSingle();
+  // A single verified service-role RPC performs the status change and an
+  // append-only actor/timestamp audit; nothing is updated without crm.write.
+  const { data, error } = await access.value.supabase.rpc("altovena_mark_lead_task", {
+    p_task_id: id,
+    p_status: status,
+    p_actor_email: access.value.verifiedEmail,
+  });
   if (error) return NextResponse.json({ ok: false, error: { code: "TASK_UPDATE_FAILED" } },
     { status: 503, headers: noStore });
-  if (!data || data.id !== id || data.brand_id !== "altovena" ||
-      data.source_type !== "website_lead" || data.status !== status) {
+  if (data?.ok !== true || data?.brand !== "altovena" ||
+      data?.task?.id !== id || data?.task?.status !== status) {
     return NextResponse.json({ ok: false, error: { code: "TASK_NOT_FOUND_OR_ALREADY_HANDLED" } },
       { status: 404, headers: noStore });
   }
