@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Banknote, Clapperboard, Megaphone, Menu, Search, Settings, Target, Users, X } from "lucide-react";
+import { Banknote, BookOpen, Clapperboard, Megaphone, Menu, Search, Settings, Target, Users, X } from "lucide-react";
 import { buildVisibleNavigation } from "@/lib/navigation";
 import type { AccessRole } from "@/lib/access-control";
 
@@ -14,6 +14,7 @@ const CORE = [
   { href: "/content", label: "Content", Icon: Clapperboard },
   { href: "/finance", label: "Finance", Icon: Banknote },
   { href: "/operations", label: "Platform", Icon: Settings },
+  { href: "/hjelp", label: "Hjelp", Icon: BookOpen },
 ] as const;
 
 type CurrentUser = { email: string; role: AccessRole; permissions: string[] };
@@ -84,7 +85,7 @@ export function MobileNexusMenu() {
       <div className="h-[calc(100dvh-3.5rem)] overflow-y-auto pb-24">
         <div className="border-b border-slate-700 p-4">
           <div className="grid grid-cols-2 gap-2">
-            {CORE.map(({ href, label, Icon }) => {
+            {CORE.filter(item => item.href !== "/hjelp" || user?.role === "OWNER").map(({ href, label, Icon }) => {
               const active = pathname === href || pathname.startsWith(`${href}/`);
               return (
                 <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active ? "border-cyan-300 bg-cyan-300/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-100"}`}>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BookOpen, CheckCircle2, ChevronLeft, Clock, Target } from "lucide-react";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import { trainingArticlesFor, type TrainingArticle } from "@/lib/workspaces/training-content";
+import { applyTrainingOverrides, type TrainingOverride } from "@/lib/workspaces/training-overrides";
 
 function storageKey(brandKey: string) {
   return `realtyflow-workspace-training:${brandKey}`;
@@ -16,10 +17,26 @@ export function WorkspaceTrainingPanel({
   brandKey: string;
   permissions: WorkspacePermission[];
 }) {
+  const [trainingOverrides, setTrainingOverrides] = useState<TrainingOverride[]>([]);
   const articles = useMemo(
-    () => trainingArticlesFor({ brandKey, permissions }),
-    [brandKey, permissions],
+    () => applyTrainingOverrides(trainingArticlesFor({ brandKey, permissions }), brandKey, trainingOverrides),
+    [brandKey, permissions, trainingOverrides],
   );
+  useEffect(() => {
+    const controller = new AbortController();
+    setTrainingOverrides([]);
+    fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/capabilities`, {
+      cache: "no-store", signal: controller.signal,
+    }).then(async response => response.ok ? response.json() : null)
+      .then(body => {
+        if (!controller.signal.aborted) setTrainingOverrides(
+          Array.isArray(body?.trainingOverrides) ? body.trainingOverrides : [],
+        );
+      }).catch(() => {
+        if (!controller.signal.aborted) setTrainingOverrides([]);
+      });
+    return () => controller.abort();
+  }, [brandKey]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [readIds, setReadIds] = useState<string[]>([]);
 

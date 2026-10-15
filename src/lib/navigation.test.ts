@@ -25,7 +25,7 @@ test("owner navigation is organized around four work apps plus home and platform
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
-    ["workspace", "sales", "marketing", "content", "finance", "platform"],
+    ["workspace", "sales", "marketing", "content", "finance", "help", "platform"],
   );
 
   const home = sections.find((section) => section.id === "workspace");
@@ -46,6 +46,8 @@ test("owner navigation is organized around four work apps plus home and platform
   assert.equal(sections.find((section) => section.id === "content")?.items[0]?.href, "/content");
   assert.equal(sections.find((section) => section.id === "finance")?.items[0]?.href, "/finance");
   assert.equal(sections.find((section) => section.id === "platform")?.items[0]?.href, "/operations");
+  assert.equal(sections.find((section) => section.id === "help")?.items[0]?.href, "/hjelp");
+  assert.equal(buildVisibleNavigation("WORKSPACE_MEMBER", []).some(section => section.id === "help"), false);
 
   assert.equal(sections.find((section) => section.id === "sales")?.items.some((item) => item.href === "/inventory/property-360"), true);
   assert.equal(sections.find((section) => section.id === "sales")?.items.some((item) => item.href === "/sales/corporate-homes"), true);
