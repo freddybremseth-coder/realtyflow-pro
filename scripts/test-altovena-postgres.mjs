@@ -31,7 +31,23 @@ try {
   const q=await client.query("select has_function_privilege('anon',$1,'EXECUTE') as anon, has_function_privilege('authenticated',$1,'EXECUTE') as authenticated, has_function_privilege('service_role',$1,'EXECUTE') as service_role",[fn]);
   assert.deepEqual(q.rows[0],{anon:false,authenticated:false,service_role:true});
 
+  const healthFn = "public.altovena_intake_health()";
+  const healthPrivileges = await client.query(
+    "select has_function_privilege('anon',$1,'EXECUTE') as anon, has_function_privilege('authenticated',$1,'EXECUTE') as authenticated, has_function_privilege('service_role',$1,'EXECUTE') as service_role",
+    [healthFn]
+  );
+  assert.deepEqual(healthPrivileges.rows[0],{anon:false,authenticated:false,service_role:true});
+
   await client.query("set role service_role");
+  const health = (await client.query("select public.altovena_intake_health() as status")).rows[0].status;
+  assert.deepEqual(health,{
+    schema_version:"altovena-intake-v1",
+    brand_present:true,
+    receipts_present:true,
+    intake_rpc_secured:true,
+    task_rpc_secured:true,
+  });
+
   const first=(await receive(ids[0],"Canonical Example","shared@example.invalid","Canonical Ltd","Please explain Offer Intelligence.")).rows[0].answer;
   assert.equal(first.ok,true);
   assert.equal(first.accepted,true);
