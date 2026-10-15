@@ -1,7 +1,8 @@
 -- Dedicated ephemeral CI PostgreSQL fixture; NEVER run against RealtyFlow data.
 create role anon nologin;
 create role authenticated nologin;
-create role service_role nologin;
+-- Match Supabase's service_role RLS bypass semantics in this disposable test DB.
+create role service_role nologin bypassrls;
 create schema auth;
 create schema core;
 create table auth.users (id uuid primary key);
