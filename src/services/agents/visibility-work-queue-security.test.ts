@@ -7,12 +7,12 @@ const fromRepo = (path: string) => readFileSync(new URL("../../../" + path, impo
 test("Visibility queue API cannot accept caller-supplied findings", () => {
  const route = fromRepo("src/app/api/visibility/work-items/route.ts");
  assert.doesNotMatch(route, /export async function POST\(/);
- assert.match(route, /ctx\.role!=="OWNER"/);
+ assert.match(route, /ctx\?\.role!=="OWNER"/);
  assert.match(route, /ctx\.source!=="owner-session"/);
 });
 test("Sync requires actual owner session and restricts cross-site requests", () => {
  const route = fromRepo("src/app/api/visibility/work-items/sync/route.ts");
- assert.match(route, /ctx\.role!=="OWNER"/);
+ assert.match(route, /ctx\?\.role!=="OWNER"/);
  assert.match(route, /ctx\.source!=="owner-session"/);
  assert.match(route, /sec-fetch-site/);
  assert.match(route, /seo_gsc_live_read/);
