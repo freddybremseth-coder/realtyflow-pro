@@ -48,7 +48,7 @@ create table core.nexus_execution_approvals (
 create table core.nexus_execution_authorizations (
   brand_id uuid not null,
   user_id uuid not null,
-  capability text not null check (capability in ('propose','review','execute')),
+  capability text not null check (capability in ('view','propose','review','execute')),
   enabled boolean not null default false,
   granted_at timestamptz,
   granted_by uuid references auth.users(id) on delete restrict,
