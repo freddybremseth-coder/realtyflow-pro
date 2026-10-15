@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { loadNexusTaskBoard, normalizeTaskBoardBrandFilter } from "./task-board-read";
+import { hasNexusTaskBoardViewGrant, loadNexusTaskBoard, normalizeTaskBoardBrandFilter } from "./task-board-read";
 
 const task = "66666666-6666-4666-8666-666666666666";
 const brand = "11111111-1111-4111-8111-111111111111";
@@ -21,7 +21,7 @@ test("zero real rows gives zero; no sample or synthetic tasks",async()=>{
   assert.equal(queries.length,1);
   assert.match(queries[0].sql,/core\.nexus_execution_tasks/);
   assert.match(queries[0].sql,/limit 50/i);
-  assert.deepEqual(queries[0].values,[null]);
+  assert.deepEqual(queries[0].values,[null,null]);
 });
 test("task board maps only non-sensitive metadata, event provenance and brand",async()=>{
   const db={async query(){return {rows:[{
@@ -54,4 +54,34 @@ test("owner session, off-by-default activation and zero mutation routes are sour
   assert.doesNotMatch(route,/export async function (POST|PATCH|PUT|DELETE)/);
   assert.doesNotMatch(route,/process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(route,/console\.log/);
+});
+
+test("staff board access requires independent DB capability and live membership",async()=>{
+  const calls:Array<{sql:string;values:readonly unknown[]}>= [];
+  const userId="33333333-3333-4333-8333-333333333333";
+  const db={async query(sql:string,values:readonly unknown[]){
+    calls.push({sql,values});
+    return {rows:sql.includes("as allowed")?[{allowed:true}]:[]};
+  }};
+  assert.equal(await hasNexusTaskBoardViewGrant(db,brand,userId),true);
+  assert.deepEqual(await loadNexusTaskBoard(db,brand,userId),[]);
+  assert.deepEqual(calls[0].values,[brand,userId]);
+  assert.deepEqual(calls[1].values,[brand,userId]);
+  assert.match(calls[1].sql,/authz.capability='view'/);
+  assert.match(calls[1].sql,/membership.status='active'/);
+  assert.match(calls[1].sql,/nexus.read/);
+  assert.match(calls[1].sql,/t.brand_id=\$1::uuid/);
+  await assert.rejects(loadNexusTaskBoard(db,null,userId),/NEXUS_MEMBER_BRAND_REQUIRED/);
+  assert.equal(calls.length,2);
+  const denied={async query(){return {rows:[{allowed:false}]}}};
+  assert.equal(await hasNexusTaskBoardViewGrant(denied,brand,userId),false);
+});
+test("member route remains GET-only, gated and bound to verified user identity",()=>{
+  const route=readFileSync(new URL("../../app/api/workspaces/[brandKey]/nexus-task-board/route.ts",import.meta.url),"utf8");
+  assert.match(route,/requireBrandWorkspace\(request,\s*brandKey,\s*"nexus.read"\)/);
+  assert.match(route,/verifiedUserId/);
+  assert.match(route,/hasNexusTaskBoardViewGrant/);
+  assert.match(route,/NEXUS_TASK_BOARD_STAFF_READ_ENABLED/);
+  assert.doesNotMatch(route,/export async function (POST|PUT|PATCH|DELETE)/);
+  assert.doesNotMatch(route,/process.env.SUPABASE_SERVICE_ROLE_KEY/);
 });
