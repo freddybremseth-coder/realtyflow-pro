@@ -275,7 +275,8 @@ export function resolveWebsiteCmsConfig(
     webhookSecret: String(
       nested.webhook_secret ||
         settings.websiteCmsWebhookSecret ||
-        envValue(`REALTYFLOW_CMS_SECRET_${suffix}`, `WEBSITE_CMS_SECRET_${suffix}`),
+        envValue(`REALTYFLOW_CMS_SECRET_${suffix}`, `WEBSITE_CMS_SECRET_${suffix}`) ||
+        (["zeneco", "pinosoecolife"].includes(brandId) ? envValue("REALTYFLOW_CMS_SECRET") : ""),
     ),
   };
 }
