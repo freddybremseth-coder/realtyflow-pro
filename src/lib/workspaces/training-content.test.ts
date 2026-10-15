@@ -141,7 +141,8 @@ test("owner edits training copy but can never broaden audience, scope or staff p
   const base = trainingArticlesFor({ brandKey: "zeneco", permissions: ["marketing.read"] });
   const first = base.find(article => article.id === "how-we-work");
   assert.ok(first);
-  const edited = { ...editableTrainingContent(first), title: "Oppdatert arbeidsflyt" };
+  const edited = { ...editableTrainingContent(first), title: "Oppdatert arbeidsflyt",
+    brands: ["soleada"], anyPermissions: [], id: "forged-article" } as any;
   assert.equal(validateTrainingContent(edited), true);
   const copy = applyTrainingOverrides(base, "zeneco", [{ article_id: "how-we-work", content: edited }]);
   assert.equal(copy.find(article => article.id === "how-we-work")?.title, "Oppdatert arbeidsflyt");
