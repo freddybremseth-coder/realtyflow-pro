@@ -79,6 +79,7 @@ export function buildWorkspaceMemberNavigation(workspaces:WorkspaceNavigationSou
       if(p.includes("reels.read")) items.push({label:"Reels Studio",href:`${base}?tab=growth&focus=reels`,icon:"Clapperboard"});
       if(p.includes("youtube.read")) items.push({label:"YouTube Studio",href:`${base}?tab=growth&focus=youtube`,icon:"Clapperboard"});
       if(p.includes("nexus.read")) items.push({label:"Nexus-innsikt",href:`${base}?tab=growth&focus=nexus`,icon:"Sparkles"});
+      if(["zeneco","pinosoecolife"].includes(workspace.brandKey)&&p.includes("nexus.read")) items.push({label:"Agentoppdrag",href:`${base}/agent-oppdrag`,icon:"ClipboardCheck"});
       items.push({label:"Slik jobber vi",href:`${base}?tab=today&training=1`,icon:"BookOpen"});
       return {id:`workspace:${workspace.brandKey}` as NavigationSectionId,label:workspace.name||workspace.brandKey,icon:"Building2",items};
     })
