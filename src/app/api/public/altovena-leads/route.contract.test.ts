@@ -121,3 +121,26 @@ test("Altovena right-to-erasure cleanup cannot leave branded task or intake rece
   assert.match(sql,/delete from public\.work_items[\s\S]*where brand_id='altovena'[\s\S]*and source_type='website_lead'[\s\S]*and source_id=old\.id::text/);
   assert.match(sql,/create trigger altovena_contact_erasure_cleanup[\s\S]*before delete on public\.contacts/);
 });
+
+
+const launchApi=readFileSync("src/app/api/workspaces/altovena/launch-readiness/route.ts","utf8");
+const launchCard=readFileSync("src/components/workspaces/altovena-launch-readiness.tsx","utf8");
+
+test("Altovena launch checklist is owner-only, read-only and cannot activate a form",()=>{
+  assert.match(launchApi,/export async function GET\(/);
+  assert.match(launchApi,/getRequestAccessContext\(request\)/);
+  assert.match(launchApi,/context\.role !== "OWNER" \|\| context\.source !== "owner-session"/);
+  assert.match(launchApi,/workspace_access_snapshot/);
+  assert.match(launchApi,/ALTOVENA_ANDREA_AUTH_USER_ID/);
+  assert.match(launchApi,/auth\.admin\.getUserById\(id\)/);
+  assert.match(launchApi,/workspace_user_brand_grants/);
+  assert.match(launchApi,/hasVerifiedBrandGrant/);
+  assert.match(launchApi,/OPERATIVE_PERMISSIONS\.every/);
+  assert.match(launchApi,/readyForPublicForm = false/);
+  assert.match(launchApi,/needs_external_verification/);
+  assert.doesNotMatch(launchApi,/export async function POST|export async function PATCH|\.insert\(|\.update\(|\.upsert\(/);
+  assert.doesNotMatch(launchApi,/return reply\(\{\s*[\s\S]*ALTOVENA_INTAKE_KEY:/);
+  assert.match(launchCard,/\/api\/workspaces\/altovena\/launch-readiness/);
+  assert.match(launchCard,/Denne kontrollen aktiverer ingenting/);
+  assert.match(workspacePage,/brandKey === "altovena" && owner && !ownerPreview && <AltovenaLaunchReadiness/);
+});
