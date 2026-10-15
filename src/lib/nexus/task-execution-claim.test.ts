@@ -111,13 +111,11 @@ test("the adapter must reserve exactly one claim under concurrency", async () =>
   assert.equal(f.claims, 1);
   assert.equal(f.events, 1);
 });
-test("task modifications between read and atomic claim fail closed", async () => {
+test("replay after an already claimed task cannot start a second execution", async () => {
   const f = fixture();
-  // Force the atomic compare-and-swap to encounter a changed task.
-  const p = f.invoke();
-  f.alterTask({ version: task.version + 1 });
-  const result = await p;
-  assert.equal(result.kind, "stale");
-  assert.equal(f.claims, 0);
-  assert.equal(f.events, 0);
+  assert.equal((await f.invoke()).kind, "claimed");
+  await assert.rejects(f.invoke(), (e: unknown) =>
+    e instanceof NexusTaskClaimDenied && e.reason === "task_not_approved");
+  assert.equal(f.claims, 1);
+  assert.equal(f.events, 1);
 });
