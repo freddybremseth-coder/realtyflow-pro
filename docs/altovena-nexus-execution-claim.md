@@ -44,8 +44,20 @@ The targeted CI workflow runs this contract and existing Nexus execution-boundar
 
 ## Explicit activation and compatibility blockers
 - The active Supabase database has not been checked for current `core` schema drift or conflicting migration revisions. Do not apply without schema diff, advisors and an isolated staging run.
-- `core.nexus_execution_authorizations` starts empty; existing workspace membership alone does not activate agent execution. An audited owner-controlled grant writer, approval writer and task writer must be designed separately.
+- `core.nexus_execution_authorizations` starts empty; existing workspace membership alone does not activate agent execution. An audited owner-controlled **grant writer** and trusted application identity binding remain necessary. The staged migration contains DB task/approval writers, but there is no authenticated application route or admin workflow to invoke them.
 - `claim_nexus_execution_task` runs inside PostgreSQL and commits a reservation, not execution. It has a three-action internal-draft allowlist and accepts only a service-role caller. A backend adapter must **derive and verify the actor** from a real authenticated session before supplying a UUID; never trust a submitted actor ID, brand, approval or content hash.
 - The private `core` function is not necessarily exposed by PostgREST. Plan an approved backend database connection/controlled RPC integration rather than opening the schema to browsers.
-- The current TypeScript repository interface uses string task IDs while SQL uses UUIDs. A typed adapter and contract normalization are still required; no adapter has been connected.
+- The typed internal PostgreSQL adapter now validates UUID inputs and binds query parameters. It has **not** been connected to a real pool, session, API route or worker.
 - Transaction-level replay tests run sequentially; a separate multi-connection concurrency test, crash/restart recovery, revoked-grant races and full immutable lifecycle audit are still required before activation.
+
+## Phase 2: staged proposal / independent review lifecycle
+The **same unmerged migration file** now also contains:
+- `core.create_nexus_review_task`: only allowed internal-draft action types, SHA-256-bound idempotent proposal key, non-empty evidence references, current active brand membership with `tasks.joint.write` plus explicitly enabled `propose` capability. Task is saved as `review_required`, not executable.
+- `core.decide_nexus_review_task`: brand-scoped `review` capability, independent reviewer, task row lock, expected version and exact action digest. A single approved/rejected decision advances the task version, stores its version-bound decision and an immutable decision event. It does not perform a preflight or invoke any external tool.
+- `core.nexus_execution_task_events`: append-only proposal / review audit, with no browser or authenticated-user table access. No proposal/review/execution capability is activated automatically.
+- Isolated PostgreSQL lifecycle contract: no implicit rights, tampered proposal deduplication, self-approval denial, double-decision denial, blocked claim before preflight, tested positive reviewed claim after a **privileged test-fixture-only preflight update**, and terminal rejection. This CI simulation is not production readiness.
+
+## Phase 2: internal-only TypeScript database adapter
+`src/lib/nexus/task-execution-postgres.ts` defines a typed and parameterized backend adapter for creating a proposal, recording a human decision, reading task+approval records and calling the atomic claim function. It is not instantiated in an HTTP API or a worker and has no database connection string, secret or side effect on its own. Its tests mock the SQL boundary and prove that invalid action types are blocked, parameters stay bound, and stale claims cannot be reported as successful.
+
+**Still required:** explicit server-side verified identity (not caller-provided actor IDs), secure database connectivity to private `core`, permission/activation user interface with independent approval, external preflight writer and evidence provenance, production migration review, expiry/revocation handling, immutable full lifecycle/recovery tests and operational monitoring. No `service_role` key or PG credential may be exposed to browsers. No task execution enabled by this PR.
