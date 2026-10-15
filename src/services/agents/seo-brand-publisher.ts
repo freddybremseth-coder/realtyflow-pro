@@ -185,6 +185,10 @@ export async function runBrandPublisher(
       return result("blocked","Forslaget inneholder mer enn den godkjente metadataendringen.",{pullUrl:pull.html_url});
     if (!await gh.green(pull.head.sha)) return result("pending","Venter på grønne GitHub- og Vercel-kontroller.",{pullUrl:pull.html_url});
     if (await gh.main() !== main) return result("pending","Hovedgrenen flyttet seg; ny kontroll kjøres neste gang.");
+    // Recheck consent immediately before the irreversible GitHub merge to
+    // reduce the race if the owner revoked permission during this cron run.
+    if (!rollback && !await canRunApprovedDonaAnnaMetadata(db,site,version,now))
+      return result("blocked","Eierens tillatelse mangler eller ble trukket tilbake før sammenslåing.",{pullUrl:pull.html_url});
     const merged = await gh.call("PUT","/pulls/"+job.pullNumber+"/merge",{sha:pull.head.sha,merge_method:"squash"});
     if (!merged.merged) return result("blocked","GitHub tillot ikke automatisk sammenslåing.",{pullUrl:pull.html_url});
     await save(job.phase,{...job,phase:rollback?"rollback_deploy":"deploy",mergeSha:merged.sha,mergedAt:now.toISOString()});
