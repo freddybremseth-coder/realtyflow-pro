@@ -138,7 +138,10 @@ test("dashboard recovers pending state from durable intent when daily summary is
   const states=await portfolioPublicationStatuses(e.db.client,null);
   const current=states.find(s=>s.brandId===site.brandId)!;
   assert.equal(current.status,"pending");assert.match(current.pullUrl!,/\/pull\/1$/);
-  assert.equal(states.filter(s=>s.status==="monitor").length,6);
+  assert.equal(states.filter(s=>s.status==="monitor").length,5);
+  const dona=states.find(s=>s.brandId==="donaanna")!;
+  assert.equal(dona.status,"blocked");
+  assert.match(dona.reason,/eiergodkjenning/);
 });
 test("merge success with lost DB save is recovered without merging again",async()=>{
   const e=environment();await e.run();await e.run();e.db.rows[0].details.phase="checks";
