@@ -42,3 +42,22 @@ Contact requests are used to respond to that request only. Newsletter enrolment 
 - `getBrandWorkspace` staff authorization is checked before the Altovena task endpoint reads the specific brand's tasks. The UI is an in-app attention surface; email/push notifications require a separate verified path.
 - Live project schema/constraints were examined with **read-only** SQL to confirm receipt foreign keys, lead source types, task priorities and nurture values. No live data was inserted or mutated.
 - Production activation still requires verified legal controller, email/notification delivery, both brand grants and an approved test via a dedicated safe environment before turning on real submissions.
+
+## Verified CI PostgreSQL acceptance test (15 October 2026)
+
+`npm run test:altovena-intake` checks endpoint contracts and mocked RPC responses. In addition, the `Altovena intake validation` workflow runs `node scripts/test-altovena-postgres.mjs` on a **temporary PostgreSQL 17 service** with explicit schema-faithful fixtures. The script checks its connection hostname and exact disposable database name before any schema execution.
+
+This exercises the actual `20261014210000_altovena_brand_intake.sql` file and confirms:
+- two consecutive applications of the migration are idempotent
+- only `service_role` can execute the intake function; `anon` and `authenticated` cannot
+- a same-email contact from another brand is never merged
+- every new Altovena contact is excluded from nurture by default and has `ai_auto_followup=false`
+- anonymous repeat submissions cannot overwrite an existing canonical contact identity
+- a repeated submission UUID returns the existing contact/task receipt without making duplicates
+- invalid products fail without creating a receipt
+- a forced work-item constraint failure rolls back the contact and receipt transaction
+- simultaneous requests for one email create one brand contact and separate tasks; simultaneous retries of one UUID create only one task
+
+**Verified in GitHub Actions:** both focused contract and isolated PostgreSQL jobs passed. This does not certify production credentials, the live database, emails, notifications, frontend browsers or legal processing details.
+
+The production database and real users are unchanged. The Altovena contact form must remain disabled until all activation checks in this document are explicitly completed.
