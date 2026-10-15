@@ -112,3 +112,15 @@ test("private board queries only projected views, not raw protected tables",asyn
     assert.doesNotMatch(sql,/\bevidence_refs\b/);
   }
 });
+
+test("cross-brand rows fail closed even if the database query is altered",async()=>{
+ const wrongBrand="99999999-9999-4999-8999-999999999999";
+ const db={async query(){return {rows:[{
+  id:task,brand_id:wrongBrand,brand_key:"other",status:"approved",version:2,
+  action_type:"shortlist_draft_prepare",evidence_count:0,quality_reviewed:false,
+  preflight_passed:false,review_decision:null,review_expires_at:null,
+  reserved:false,created_at:"2026-10-15T20:00:00Z",updated_at:"2026-10-15T20:00:00Z",events:[]
+ }]}}};
+ await assert.rejects(loadNexusTaskBoard(db,brand),/NEXUS_TASK_BOARD_BRAND_SCOPE_MISMATCH/);
+ await assert.rejects(loadNexusTaskBoard(db,brand,"33333333-3333-4333-8333-333333333333"),/NEXUS_TASK_BOARD_BRAND_SCOPE_MISMATCH/);
+});
