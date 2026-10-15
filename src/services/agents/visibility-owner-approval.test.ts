@@ -48,7 +48,7 @@ test("route is owner-only and scoped; product has no demo publish action",()=>{
   assert.match(product,/mode==="live" && f\.category==="publishing"/);
   assert.match(ui,/Gi begrenset publiseringstillatelse/);
   assert.match(ui,/Trekk tilbake tillatelsen/);
-  assert.match(publisher,/canRunApprovedDonaAnnaMetadata\(db,site,"v1",now\)/);
+  assert.match(publisher,/canRunApprovedDonaAnnaMetadata\(db, site, version, now\)/);
 });
 
 test("direct Dona Anna publisher invocation fails closed before any GitHub write without consent",async()=>{
