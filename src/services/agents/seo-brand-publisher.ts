@@ -5,7 +5,7 @@ import { brandPublishingEvidence, patchBrandHtml, patchNextHomepage, publisherFo
   readNextHomepageMetadata, readNextLayoutMetadata, secondVariantForBrand, SEO_BRAND_PUBLISHERS, type BrandEvidence, type BrandMetadata, type BrandPublisher } from "./seo-brand-publishing";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "./seo-change-monitor";
 import { githubForSite, githubRequest, type GithubRequest } from "./seo-brand-github";
-import { canRunApprovedDonaAnnaMetadata } from "./visibility-owner-approval";
+import { canRunApprovedDonaAnnaMetadata, getVisibilityApproval } from "./visibility-owner-approval";
 
 const ACTION = "seo_brand_publication_v1";
 export type BrandPublicationStatus = {
@@ -309,6 +309,9 @@ export async function portfolioPublicationStatuses(db: SupabaseClient, last: unk
   ]);
   const rows = await db.from("automation_logs").select("id,details").eq("action",ACTION).in("id",ids);
   if (rows.error) throw new Error("Publication status unavailable");
+  // A stored in-flight phase does not mean the system is still allowed to run.
+  // If consent was revoked, surface that block rather than promising progress.
+  const donaConsent = await getVisibilityApproval(db).catch(() => ({approved:false}));
   return SEO_BRAND_PUBLISHERS.map(site => {
     const v2 = rows.data?.find(row=>row.id===brandPublicationId(site.brandId,":v2"))?.details as BrandPublicationJob | undefined;
     const v1 = rows.data?.find(row=>row.id===brandPublicationId(site.brandId))?.details as BrandPublicationJob | undefined;
@@ -317,6 +320,13 @@ export async function portfolioPublicationStatuses(db: SupabaseClient, last: unk
     const version = job === v2 ? "v2" : "v1";
     const saved = Array.isArray(last) ? last.find(item=>item?.brandId===site.brandId) as BrandPublicationStatus | undefined : undefined;
     const common = {brandId:site.brandId,page:"/" as const,published:0};
+    const readOnlyOrSafetyPhase=job && (["deploy","done","rolled_back"].includes(job.phase) || job.phase.startsWith("rollback_"));
+    if (site.brandId === "donaanna" && !donaConsent.approved && !readOnlyOrSafetyPhase) {
+      const sourceNote=saved?.reason && /metadata|kilden|kildeavvik/i.test(saved.reason)
+        ? " Sist registrerte kildekontroll: "+saved.reason : "";
+      return {...common,status:"blocked" as const,
+        reason:"Ingen aktiv eiergodkjenning for eksakt metadata-variant. Sam skriver ikke til nettstedet."+sourceNote};
+    }
     if (job) {
       if (job.phase === "rolled_back") return {...common,status:"rollback",reason:`${version.toUpperCase()} er tilbakeført og bekreftet offentlig.`};
       if (job.phase.startsWith("rollback_") && saved?.status === "blocked") return saved;
