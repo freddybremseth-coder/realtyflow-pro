@@ -50,3 +50,16 @@ test("route is owner-only and scoped; product has no demo publish action",()=>{
   assert.match(ui,/Trekk tilbake tillatelsen/);
   assert.match(publisher,/canRunApprovedDonaAnnaMetadata\(db,site,"v1",now\)/);
 });
+
+test("direct Dona Anna publisher invocation fails closed before any GitHub write without consent",async()=>{
+  const {runBrandPublisher}=await import("./seo-brand-publisher");
+  let githubCalls=0;
+  const fakeDb={from:()=>({select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({data:null,error:null})})})})})} as any;
+  const status=await runBrandPublisher(fakeDb,publisherForBrand("donaanna")!,null,{
+    github:async()=>{githubCalls++;throw Error("never call github");},
+    publicHtml:async()=>{throw Error("never fetch public source");},now,
+  });
+  assert.equal(status.status,"blocked");
+  assert.match(status.reason,/tillatelse/);
+  assert.equal(githubCalls,0);
+});
