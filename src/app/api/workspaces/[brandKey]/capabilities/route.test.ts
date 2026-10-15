@@ -67,7 +67,7 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
     rpc: async (method: string) => {
       if (method === "workspace_brand_grant") return {
         data: { brand: { id: "zeneco-uuid", brand_key: "zeneco" },
-          grant: { brand_id: "zeneco-uuid", user_id: "staff-id", email: "staff@example.test", status: "active", permissions: permitted } },
+          grant: { brand_id: "zeneco-uuid", user_id: "staff-id", email: "staff@example.test", status: "active", permissions: permitted, operational_role: "BRAND_OPERATIONS" } },
         error: null,
       };
       if (method === "workspace_user_admin_snapshot") return {
@@ -98,6 +98,7 @@ test("Zen Eco member capability response never advertises brand-wide CRM for his
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.deepEqual(body.permissions, ["properties.catalog.read"]);
+    assert.equal(body.operationalRole, "BRAND_OPERATIONS");
     assert.equal(JSON.stringify(body).includes("crm.read"), false);
     assert.equal(JSON.stringify(body).includes("crm.write"), false);
     assert.deepEqual(body.responsibilities, ["property-matching"]);
