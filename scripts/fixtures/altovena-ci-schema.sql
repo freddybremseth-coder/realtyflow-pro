@@ -63,7 +63,7 @@ create table public.work_items(
 );
 grant usage on schema core,public to service_role;
 grant select on core.tenants,core.brands to service_role;
-grant select,insert,update on public.contacts,public.work_items to service_role;
+grant select,insert,update,delete on public.contacts,public.work_items to service_role;
 -- Same email may exist in a second brand and must remain distinct.
 insert into public.contacts(name,email,company,brand,brand_id)
 values('Other Brand Example','shared@example.invalid','Other Ltd','zeneco','zeneco');
