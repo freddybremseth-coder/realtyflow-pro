@@ -111,3 +111,13 @@ test("Altovena tasks support protected human follow-up and timely in-app attenti
   assert.match(altovenaTaskPanel,/Ingen e-post eller pushvarsler er aktivert/);
   assert.match(workspacePage,/canManage=\{permissions\.includes\("crm.write"\)\}/);
 });
+
+
+test("Altovena right-to-erasure cleanup cannot leave branded task or intake receipts", () => {
+  assert.match(sql,/contact_id uuid not null references public\.contacts\(id\) on delete cascade/);
+  assert.match(sql,/work_item_id uuid not null references public\.work_items\(id\) on delete cascade/);
+  assert.match(sql,/create or replace function public\.altovena_delete_contact_related_tasks\(/);
+  assert.match(sql,/if old\.brand_id='altovena' and old\.brand='altovena'/);
+  assert.match(sql,/delete from public\.work_items[\s\S]*where brand_id='altovena'[\s\S]*and source_type='website_lead'[\s\S]*and source_id=old\.id::text/);
+  assert.match(sql,/create trigger altovena_contact_erasure_cleanup[\s\S]*before delete on public\.contacts/);
+});
