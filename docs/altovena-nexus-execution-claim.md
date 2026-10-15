@@ -3,7 +3,7 @@
 ## Scope and result
 This change lives in the **active RealtyFlow Pro application**, not in Altovena's static marketing site. It adds a **server-side task execution admission / claim contract** and tests only.
 
-It does **not** create a database table, API endpoint, worker, customer task, provider action, entitlement, or real audit receipt. Production is unchanged; integration is off until a separate reviewed PR and migration.
+It stages a **private database schema and atomic claim function as a GitHub migration file**. The migration is NOT applied to the production Supabase project. It does **not** create any live API endpoint, worker, customer task, provider action, enabled entitlement or production audit receipt. Production is unchanged.
 
 ## Reuse first
 Existing components already in RealtyFlow:
@@ -24,8 +24,8 @@ Existing components already in RealtyFlow:
 6. A separate allowlisted worker can eventually consume claims **after another fresh policy/security check**. Claiming must not itself perform a customer action.
 
 ## MUST exist before any live connection
-- A private PostgreSQL schema + reviewed migration; strong tenant isolation, immutable audit events and a unique idempotency constraint.
-- A single transaction (or carefully reviewed SQL RPC) for status compare-and-swap, approval invalidation/withdrawal check, membership verification, claim insert and audit append.
+- Review and apply the staged additive migration `supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql` in an isolated, project-representative staging Supabase environment before any production decision. Tables are under the existing private `core` schema, RLS is enabled and no execution authorizations are seeded. The migration does not modify existing business tables.
+- A database transaction is drafted in `core.claim_nexus_execution_task`: row locks, current member/capability validation, preflight freshness, approved action digest/version, unique claim and same-transaction claim audit. It is tested on a disposable PostgreSQL 16 instance; this is not a staging Supabase verification of existing live permissions, auth or API exposure.
 - Current verified session and active `core.brand_workspace_memberships` grant; no trusting client-provided permissions, brand IDs, timestamps, approval details or mutable JWT user metadata.
 - Task and approval records authored by the server; content digest computed over a canonical action payload. Evidence/source IDs must point to actual permissible records.
 - Approval revocation, expiration, content edits, race between two workers and retry after process restart must all fail closed or return a genuine existing claim.
@@ -35,9 +35,17 @@ Existing components already in RealtyFlow:
 ## Test coverage
 A memory-only adapter simulates durable claim behavior to test admissions and races. It is **not** evidence that production PostgreSQL transactions, RLS, permissions, receipts or worker execution work.
 
-The targeted CI workflow runs this contract and existing Nexus execution-boundary tests.
+The targeted CI workflow runs this contract and existing Nexus execution-boundary tests, **and also applies the staged migration to a disposable PostgreSQL 16 instance**. Its SQL checks deny-by-default behavior, first claim, replay returning the original claim ID, unauthorized changed-key replays and an exactly-once claim/audit/task-state commit. This is not production deployment or a test against the real Supabase tenant configuration.
 
 ## Release notes
 - Altovena's public-facing Demo Workspace still uses static illustrative data, with no live execution or CRM writes.
-- No Supabase database changes, API routes, new credentials or migrations were deployed.
+- A new migration file exists in GitHub, but **no production Supabase database changes or migrations were executed**. No API routes, live grants, worker, new credentials or external actions were deployed.
 - Treat the work as a proposed internal building block in a feature PR, **not a launched agent platform**.
+
+## Explicit activation and compatibility blockers
+- The active Supabase database has not been checked for current `core` schema drift or conflicting migration revisions. Do not apply without schema diff, advisors and an isolated staging run.
+- `core.nexus_execution_authorizations` starts empty; existing workspace membership alone does not activate agent execution. An audited owner-controlled grant writer, approval writer and task writer must be designed separately.
+- `claim_nexus_execution_task` runs inside PostgreSQL and commits a reservation, not execution. It has a three-action internal-draft allowlist and accepts only a service-role caller. A backend adapter must **derive and verify the actor** from a real authenticated session before supplying a UUID; never trust a submitted actor ID, brand, approval or content hash.
+- The private `core` function is not necessarily exposed by PostgREST. Plan an approved backend database connection/controlled RPC integration rather than opening the schema to browsers.
+- The current TypeScript repository interface uses string task IDs while SQL uses UUIDs. A typed adapter and contract normalization are still required; no adapter has been connected.
+- Transaction-level replay tests run sequentially; a separate multi-connection concurrency test, crash/restart recovery, revoked-grant races and full immutable lifecycle audit are still required before activation.
