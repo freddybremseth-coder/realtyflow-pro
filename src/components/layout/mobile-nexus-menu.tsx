@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Banknote, Clapperboard, Megaphone, Menu, Search, Settings, Target, Users, X } from "lucide-react";
+import { Banknote, BookOpen, Clapperboard, Megaphone, Menu, Search, Settings, Target, Users, X } from "lucide-react";
 import { buildVisibleNavigation } from "@/lib/navigation";
 import type { AccessRole } from "@/lib/access-control";
 
@@ -14,6 +14,7 @@ const CORE = [
   { href: "/content", label: "Content", Icon: Clapperboard },
   { href: "/finance", label: "Finance", Icon: Banknote },
   { href: "/operations", label: "Platform", Icon: Settings },
+  { href: "/hjelp", label: "Hjelp", Icon: BookOpen },
 ] as const;
 
 type CurrentUser = { email: string; role: AccessRole; permissions: string[] };
