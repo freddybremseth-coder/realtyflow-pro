@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import type { SEOControlReport } from "@/services/agents/seo-control-report";
+import { planVisibilityReviewItems } from "@/services/agents/visibility-review-items";
 
 const names: Record<string, string> = {
   zeneco: "Zen Eco Homes", pinosoecolife: "PinosoEcolife",
@@ -17,6 +18,8 @@ export function VisibilityOverview({ report }: { report: SEOControlReport | null
   const [brand, setBrand] = useState("all");
   const sites = report?.sites ?? [];
   const filtered = useMemo(() => brand === "all" ? sites : sites.filter(site => site.brandId === brand), [sites, brand]);
+  const proposals = useMemo(() => planVisibilityReviewItems(report), [report]);
+  const visibleProposals = useMemo(() => brand === "all" ? proposals : proposals.filter(item => item.brandId === brand), [proposals, brand]);
   return <section aria-label="Visibility – teknisk oversikt" className="mt-6 rounded-xl border border-slate-300 bg-white p-4 text-slate-950">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -53,5 +56,22 @@ export function VisibilityOverview({ report }: { report: SEOControlReport | null
         </article>;
       })}
     </div>}
+    {report && visibleProposals.length > 0 && <section aria-label="Visibility – foreslåtte undersøkelser" className="mt-6 border-t border-slate-200 pt-4">
+      <h4 className="font-bold">Dette bør undersøkes · {visibleProposals.length}</h4>
+      <p className="mt-1 text-sm text-slate-700">Prioriterte undersøkelser basert på begrensede observasjoner. Dette er ikke opprettede oppgaver, ferdigbekreftede feil eller forslag som kan publiseres direkte.</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {visibleProposals.map(item => <article key={item.key} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold">{names[item.brandId] ?? item.brandId}</span>
+            <span className="rounded border border-slate-300 px-2 py-1">{item.priority === "HIGH" ? "Høy kontrollprioritet" : item.priority === "MEDIUM" ? "Bør undersøkes" : "Manglende datagrunnlag"}</span>
+          </div>
+          <h5 className="mt-2 font-semibold">{item.title}</h5>
+          {item.affectedUrl && <p className="mt-1 break-all text-xs text-slate-700">Side: {item.affectedUrl}</p>}
+          <p className="mt-2 text-sm"><strong>Observasjon:</strong> {item.evidence}</p>
+          <p className="mt-2 text-sm"><strong>Neste kontroll:</strong> {item.nextStep}</p>
+          <p className="mt-2 text-xs text-slate-600">Skrivebeskyttet · ingen publiseringsgodkjenning</p>
+        </article>)}
+      </div>
+    </section>}
   </section>;
 }

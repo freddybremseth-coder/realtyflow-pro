@@ -23,3 +23,22 @@ test("no SEO report does not claim any site has passed", () => {
   const html = renderToStaticMarkup(createElement(VisibilityOverview, { report: null }));
   assert.match(html, /Ingen kontrollrapport tilgjengelig/);
 });
+
+test("known observed issue renders as an investigation, not an approval task", () => {
+  const report = {
+    checkedAt: "2026-10-15T08:00:00Z",
+    sites: [{
+      brandId: "zeneco", checkedAt: "2026-10-15T08:00:00Z", pagesChecked: 1, incomplete: false,
+      visibilityDiagnostic: {
+        brandId: "zeneco", sampledOnly: true, incomplete: false, publicationEligible: false,
+        diagnosticStatus: "ACTION_REQUIRED",
+        issues: [{ code: "HTTP_ERROR", evidence: "HTTP 404", affectedUrl: "https://www.zenecohomes.com/guide" }],
+      },
+    }],
+  } as unknown as SEOControlReport;
+  const html = renderToStaticMarkup(createElement(VisibilityOverview, { report }));
+  assert.match(html, /Dette bør undersøkes/);
+  assert.match(html, /Gjenta kontrollen/);
+  assert.match(html, /Skrivebeskyttet/);
+  assert.doesNotMatch(html, /Godkjenn publisering/);
+});
