@@ -14,8 +14,8 @@ on conflict (brand_key) do nothing;
 -- never duplicated in a new marketing/lead table.
 create table if not exists public.altovena_intake_receipts (
   submission_id uuid primary key,
-  contact_id uuid not null references public.contacts(id) on delete restrict,
-  work_item_id uuid not null references public.work_items(id) on delete restrict,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  work_item_id uuid not null references public.work_items(id) on delete cascade,
   received_at timestamptz not null default now()
 );
 create index if not exists altovena_intake_receipts_contact_idx
@@ -188,3 +188,29 @@ revoke execute on function public.altovena_mark_lead_task(uuid,text,text)
 grant execute on function public.altovena_mark_lead_task(uuid,text,text) to service_role;
 comment on function public.altovena_mark_lead_task(uuid,text,text) is
   'Verified staff-only, brand-scoped lead task transitions with append-only metadata history.';
+
+
+-- An authorized contact erasure must not be blocked by a receipt FK or leave
+-- Altovena website-lead tasks containing the deleted individual's details.
+-- Narrow trigger: it never touches other brands or non-website tasks.
+create or replace function public.altovena_delete_contact_related_tasks()
+returns trigger
+language plpgsql
+security invoker
+set search_path=''
+as $$
+begin
+  if old.brand_id='altovena' and old.brand='altovena' then
+    delete from public.work_items
+    where brand_id='altovena'
+      and source_type='website_lead'
+      and source_id=old.id::text;
+  end if;
+  return old;
+end $$;
+drop trigger if exists altovena_contact_erasure_cleanup on public.contacts;
+create trigger altovena_contact_erasure_cleanup
+before delete on public.contacts
+for each row execute function public.altovena_delete_contact_related_tasks();
+comment on function public.altovena_delete_contact_related_tasks() is
+  'Clean up Altovena-owned website leads and receipts when an authorized Altovena contact erasure occurs.';
