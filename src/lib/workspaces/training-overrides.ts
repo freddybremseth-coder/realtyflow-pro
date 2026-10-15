@@ -70,7 +70,10 @@ export function applyTrainingOverrides(
     if (!trainingBrandAllowed(article, brandKey)) return article;
     const editable = byId.get(article.id);
     return editable
-      ? { ...article, ...editable, sections: editable.sections.map(
+      ? { ...article,
+        title: editable.title, shortTitle: editable.shortTitle, summary: editable.summary,
+        readMinutes: editable.readMinutes,
+        sections: editable.sections.map(
           (section: TrainingSection) => ({
             heading: section.heading, paragraphs: section.paragraphs || [],
             bullets: section.bullets || [], emphasis: section.emphasis || "",
