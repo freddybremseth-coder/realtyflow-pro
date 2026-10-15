@@ -112,7 +112,7 @@ export function VisibilityProductConsole(){
               Nexus Product Suite
             </div>
             <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">Visibility<span className="text-teal-300">.</span></h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">SEO, AEO og GEO i én forståelig arbeidsflate – fra observasjon til beslutning og dokumentert effekt.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">En egen arbeidsflate for teknisk SEO, Google-målinger og dokumenterte undersøkelser. AEO/GEO og full effektmåling er neste produktfase.</p>
             <p className="mt-2 text-xs text-slate-400">Produktprototype i RealtyFlow · reelle målinger fra Sam når tilgjengelig · ingen automatisk publisering</p>
           </div>
           <div className="flex flex-wrap gap-2">
