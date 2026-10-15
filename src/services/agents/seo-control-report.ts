@@ -1,4 +1,5 @@
 import type { SiteAudit } from "./seo-audit";
+import { visibilityAuditSummary } from "./visibility-audit-adapter";
 import type { ReferralPreflightCheck } from "./seo-referral-health";
 
 export type SEOControlReport = {
@@ -8,6 +9,7 @@ export type SEOControlReport = {
     findings: number; incomplete: boolean; sampledPaths: string[];
     accessibilityFindings: number; invalidStructuredData: number;
     pagesWithContactOrForm: number; qualityPagesChecked: number;
+    visibilityDiagnostic: ReturnType<typeof visibilityAuditSummary>;
   }>;
   referralsAvailable: boolean;
   leadsAvailable: boolean;
@@ -33,6 +35,7 @@ export function buildSEOControlReport(input: {
         .filter((quality): quality is NonNullable<typeof quality> => quality !== undefined);
       return {
         brandId: audit.brandId, checkedAt: audit.checkedAt,
+        visibilityDiagnostic: visibilityAuditSummary(audit),
         pagesChecked: Number(audit.home.status !== null) + audit.samples.filter(page => page.status !== null).length,
         findings: audit.observations.length,
         incomplete: audit.home.status === null || audit.robots.status === null || audit.sitemap.status === null ||

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, ExternalLink, Loader2, RefreshCw, SearchCheck } from "lucide-react";
 
 import { SamSEOBrandPublishing } from "./sam-seo-brand-publishing";
+import { VisibilityOverview } from "./visibility-overview";
 import type { BrandPublicationStatus } from "@/services/agents/seo-brand-publisher";
 import type { SEOControlReport } from "@/services/agents/seo-control-report";
 
@@ -565,6 +566,7 @@ export function SamSEOActionBoard() {
               ))}
             </section>
           )}
+          <VisibilityOverview report={data.controlReport} />
           <section className="mt-6 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
