@@ -144,3 +144,17 @@ test("Altovena launch checklist is owner-only, read-only and cannot activate a f
   assert.match(launchCard,/Denne kontrollen aktiverer ingenting/);
   assert.match(workspacePage,/brandKey === "altovena" && owner && !ownerPreview && <AltovenaLaunchReadiness/);
 });
+
+
+const launchPage=readFileSync("src/app/(realty)/altovena-launch/page.tsx","utf8");
+const ownerHome=readFileSync("src/app/(realty)/workspaces/page.tsx","utf8");
+test("standalone launch page works before brand provisioning but requires owner session",()=>{
+  assert.match(launchPage,/verifyAdminSession\(token\)/);
+  assert.match(launchPage,/session\.role !== "OWNER"/);
+  assert.match(launchPage,/isAdminEmail\(session\.email\)/);
+  assert.match(launchPage,/verifyWorkspacePreviewSession/);
+  assert.match(launchPage,/AltovenaLaunchReadiness/);
+  assert.match(ownerHome,/user\.role === "OWNER"/);
+  assert.match(ownerHome,/href="\/altovena-launch"/);
+  assert.doesNotMatch(launchPage,/getPlatformSupabase\(\)|SUPABASE_SERVICE_ROLE_KEY|ALTOVENA_INTAKE_KEY/);
+});
