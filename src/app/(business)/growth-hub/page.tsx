@@ -1,6 +1,7 @@
 "use client";
 
 import { SamSEOActionBoard } from "@/components/hub/sam-seo-action-board";
+import Link from "next/link";
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -608,6 +609,7 @@ export default function GrowthHubPage() {
         </Button>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-300/30 bg-teal-950/60 px-5 py-4 text-white"><div><strong>Nexus Visibility – eget produkt</strong><p className="mt-1 text-sm text-teal-100">Utforsk det nye produktgrensesnittet med live-data eller en tydelig merket demonstrasjon.</p></div><Link href="/visibility" className="rounded-lg bg-teal-300 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-teal-200">Åpne Nexus Visibility →</Link></div>
       <SamSEOActionBoard />
 
       <DomainWorkItems
