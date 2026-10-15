@@ -48,3 +48,61 @@ export async function GET(
   });
   return NextResponse.json({ ok: true, brand: "altovena", tasks, capped: data.length === 40 }, { headers: noStore });
 }
+
+
+type UpdateRequest = { id?: unknown; status?: unknown };
+/**
+ * Explicit, human-initiated task status changes only; never modifies the contact
+ * or sends email. Brand, source type, current status and verified crm.write access
+ * are checked again in the single SQL update.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { brandKey: string } },
+) {
+  if (params.brandKey !== "altovena") return NextResponse.json(
+    { ok: false, error: { code: "WORKSPACE_NOT_FOUND" } },
+    { status: 404, headers: noStore },
+  );
+  const access = await requireBrandWorkspace(request, "altovena", "crm.write");
+  if (!access.value) return access.response;
+
+  const origin = request.headers.get("origin");
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json") ||
+      !origin || origin !== new URL(request.url).origin ||
+      request.headers.get("sec-fetch-site") === "cross-site") {
+    return NextResponse.json({ ok: false, error: { code: "INVALID_REQUEST_ORIGIN" } },
+      { status: 403, headers: noStore });
+  }
+  const body: unknown = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body) ||
+      Object.keys(body).some(key => !["id", "status"].includes(key))) {
+    return NextResponse.json({ ok: false, error: { code: "INVALID_TASK" } },
+      { status: 400, headers: noStore });
+  }
+  const { id, status } = body as UpdateRequest;
+  // Only human-selected transitions. Cancellation/administrative mutations
+  // are not available from the quick action.
+  if (typeof id !== "string" || !uuid.test(id) ||
+      typeof status !== "string" || !["IN_PROGRESS", "DONE"].includes(status)) {
+    return NextResponse.json({ ok: false, error: { code: "INVALID_STATUS" } },
+      { status: 400, headers: noStore });
+  }
+  const { data, error } = await access.value.supabase
+    .from("work_items")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("brand_id", "altovena")
+    .eq("source_type", "website_lead")
+    .in("status", allowedStatuses)
+    .select("id,status,brand_id,source_type")
+    .maybeSingle();
+  if (error) return NextResponse.json({ ok: false, error: { code: "TASK_UPDATE_FAILED" } },
+    { status: 503, headers: noStore });
+  if (!data || data.id !== id || data.brand_id !== "altovena" ||
+      data.source_type !== "website_lead" || data.status !== status) {
+    return NextResponse.json({ ok: false, error: { code: "TASK_NOT_FOUND_OR_ALREADY_HANDLED" } },
+      { status: 404, headers: noStore });
+  }
+  return NextResponse.json({ ok: true, brand: "altovena", task: { id, status } }, { headers: noStore });
+}
