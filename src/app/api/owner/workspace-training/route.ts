@@ -94,7 +94,13 @@ export async function POST(request: NextRequest) {
   const { error } = await supabase.from("workspace_training_overrides").upsert({
     brand_key: brandKey,
     article_id: articleId,
-    content: body.content,
+    content: {
+      title: body.content.title,
+      shortTitle: body.content.shortTitle,
+      summary: body.content.summary,
+      readMinutes: body.content.readMinutes,
+      sections: body.content.sections,
+    },
     updated_by: auth.context.email,
     updated_at: new Date().toISOString(),
   }, { onConflict: "brand_key,article_id" });
