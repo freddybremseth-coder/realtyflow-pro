@@ -22,7 +22,7 @@ test("Sync requires actual owner session and restricts cross-site requests", () 
  assert.match(route, /publication_authorized:false/);
 });
 test("Nexus queue RPC keeps invoker privileges and revokes public execution", () => {
- const sql = fromRepo("supabase/migrations/20261015195000_visibility_review_queue.sql").toLowerCase();
+ const sql = fromRepo("supabase/migrations/20261015222519_visibility_review_queue.sql").toLowerCase();
  assert.match(sql, /security invoker/);
  assert.match(sql, /revoke all on function public\.enqueue_visibility_review/);
  assert.match(sql, /from public, anon, authenticated/);
