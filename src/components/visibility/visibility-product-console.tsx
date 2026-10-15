@@ -67,8 +67,8 @@ const steps=[
   {n:"01",title:"Koble til",desc:"Koble til bekreftet nettsted og Google Search Console. Kontroller tilganger og eierskap.",state:"Lesetilgang finnes"},
   {n:"02",title:"Observer",desc:"Sam henter et avgrenset teknisk utvalg og separate søkemålinger. Kilde og tidspunkt lagres.",state:"I bruk"},
   {n:"03",title:"Prioriter",desc:"Vurder tekniske signaler, manglende data og blokkert publisering hver for seg.",state:"I bruk"},
-  {n:"04",title:"Godkjenn endring",desc:"Dokumenter mål-URL, faktagrunnlag, ansvar og eksplisitt endringsgodkjenning.",state:"Planlagt P1"},
-  {n:"05",title:"Publiser og kontroller",desc:"Utfør avgrensede endringer, verifiser offentlig resultat og tilby rollback.",state:"Planlagt P1"},
+  {n:"04",title:"Godkjenn endring",desc:"Doña Anna har nå begrenset eiergodkjenning for én eksakt metadata-variant. Generell URL-basert godkjenning og redaksjonell signatur er under utvikling.",state:"Delvis i bruk"},
+  {n:"05",title:"Publiser og kontroller",desc:"Den eksisterende metadata-motoren kan kjøre avgrensede GitHub/Vercel-forsøk ved bestått preflight og dokumentert grunnlag. Generelle reparasjoner er ikke automatisert.",state:"Delvis i bruk"},
   {n:"06",title:"Mål effekten",desc:"Følg sammenlignbare GSC-perioder, GA4-hendelser og kvalifiserte leads.",state:"Delvis / planlagt"},
 ];
 export function VisibilityProductConsole(){
@@ -168,6 +168,14 @@ export function VisibilityProductConsole(){
               <Metric value={findings.length} label="Undersøkelsesforslag" foot="Ikke automatiske publiseringsoppgaver"/>
               <Metric value={blocked} label="Publiseringsblokkeringer" foot="Basert på sist registrerte status"/>
               <Metric value={pending} label="Mangelfulle / eldre kontroller" foot="Nytt bevis kreves før beslutning"/>
+            </div>
+            <div className="rounded-2xl border border-teal-200 bg-white p-5">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-950"><Workflow size={17} className="text-teal-700"/> Hva arbeider systemet faktisk med?</div>
+              <div className="mt-3 grid gap-3 text-sm md:grid-cols-3">
+                <div className="rounded-xl bg-teal-50 p-3"><strong>Automatisk nå</strong><p className="mt-1 text-slate-700">Planlagt daglig SEO-kontroll, GSC-målinger og oppfølging av kvalifiserte metadata-eksperimenter.</p></div>
+                <div className="rounded-xl bg-amber-50 p-3"><strong>Kun forslag nå</strong><p className="mt-1 text-slate-700">Mange tekniske H1-, lenke- og canonical-funn blir ikke reparert automatisk. Status «neste kontroll» betyr ikke aktiv jobb.</p></div>
+                <div className="rounded-xl bg-slate-100 p-3"><strong>Ferdig først ved bevis</strong><p className="mt-1 text-slate-700">En sak er ferdig når endringen er gjennomført og offentlig verifisert – ikke når et forslag eller en godkjenning er registrert.</p></div>
+              </div>
             </div>
             <div className="grid gap-5 xl:grid-cols-3">
               <div className="space-y-4 xl:col-span-2">
@@ -278,7 +286,10 @@ export function VisibilityProductConsole(){
                 <Icon className="text-teal-800" size={26}/><div className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-500">{item.state}</div><h3 className="mt-2 font-bold">{item.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{item.text}</p></article>})}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-6"><h3 className="font-bold">Arkitekturprinsipp</h3><p className="mt-2 text-sm leading-6 text-slate-600">Altovena Visibility skal kunne selges selvstendig, men dele trygg tjenestelogikk med RealtyFlow/Nexus. Kundeavgrensning skjer på server, ikke bare i UI. Ingen separate CRM-siloer eller åpne tverrmerkedata.</p>
-              <Link className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-teal-800" href="/growth-hub">Se dagens operative SEO-funksjoner <ArrowRight size={16}/></Link>
+              <div className="mt-4 flex flex-wrap gap-4">
+                <Link className="inline-flex items-center gap-2 text-sm font-bold text-teal-800" href="/growth-hub">Se dagens operative SEO-funksjoner <ArrowRight size={16}/></Link>
+                <a className="inline-flex items-center gap-2 text-sm font-bold text-teal-800" href="https://altovena-3wgpizwid-freddy-bremseths-projects.vercel.app/no/produkter/visibility/" target="_blank" rel="noopener noreferrer">Altovena produktside (preview) <ExternalLink size={15}/></a>
+              </div>
             </div>
           </>}
         </>}
