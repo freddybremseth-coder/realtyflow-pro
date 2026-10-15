@@ -137,5 +137,29 @@ try {
   assert.equal(denied.ok,false);
   assert.equal((await client.query("select status from public.work_items where id=$1",[foreign.rows[0].id])).rows[0].status,"TO_DO");
   await assert.rejects(change(second.workItemId,"CANCELLED"),/Invalid Altovena task mutation/);
-  console.log("PASS: real Altovena SQL migration, role restrictions, brand isolation, atomicity, consent, identity, duplicate/concurrent leads and audited brand-scoped task transitions.");
+
+  // A legitimate contact erasure must also erase that person's branded
+  // lead tasks and receipt references, without touching a different brand.
+  assert.equal(await count("public.altovena_intake_receipts","contact_id=$1",[first.leadId]),2);
+  assert.equal(await count("public.work_items","brand_id='altovena' and source_id=$1",[first.leadId]),2);
+  const deleted=await client.query(
+    "delete from public.contacts where id=$1 and brand_id='altovena' and brand='altovena' returning id",
+    [first.leadId],
+  );
+  assert.equal(deleted.rowCount,1);
+  assert.equal(await count("public.altovena_intake_receipts","contact_id=$1",[first.leadId]),0);
+  assert.equal(await count("public.work_items","brand_id='altovena' and source_id=$1",[first.leadId]),0);
+  assert.equal(await count("public.contacts","id=$1",[first.leadId]),0);
+  assert.equal(await count("public.work_items","id=$1",[foreign.rows[0].id]),1);
+  assert.equal(await count("public.contacts","brand_id='zeneco'"),1);
+  // Clearing an Altovena website task also clears the stale idempotency receipt.
+  assert.equal(await count("public.altovena_intake_receipts","contact_id=$1",[pair[0].leadId]),3);
+  const removeTask=await client.query(
+    "delete from public.work_items where id=$1 and brand_id='altovena' returning id",
+    [pair[0].workItemId],
+  );
+  assert.equal(removeTask.rowCount,1);
+  assert.equal(await count("public.altovena_intake_receipts","work_item_id=$1",[pair[0].workItemId]),0);
+  assert.equal(await count("public.contacts","id=$1",[pair[0].leadId]),1);
+  console.log("PASS: real Altovena SQL migration, role restrictions, brand isolation, atomicity, consent, identity, duplicate/concurrent leads and audited status history and safe contact erasure.");
 }finally{await client.end();}
