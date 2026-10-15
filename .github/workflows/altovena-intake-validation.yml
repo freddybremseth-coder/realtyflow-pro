@@ -8,6 +8,8 @@ on:
       - "src/lib/marketing/brand-registry.ts"
       - "docs/altovena-realtyflow-intake.md"
       - "package.json"
+      - "scripts/test-altovena-postgres.mjs"
+      - "scripts/fixtures/altovena-ci-schema.sql"
       - ".github/workflows/altovena-intake-validation.yml"
   workflow_dispatch:
 
@@ -26,3 +28,36 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts --no-audit
       - run: npm run test:altovena-intake
+
+  database-integration:
+    name: Isolated PostgreSQL Altovena migration + RPC
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: altovena_ci_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d altovena_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ALTOVENA_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/altovena_ci_test
+      SUPABASE_DB_URL: ""
+      POSTGRES_URL: ""
+      DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit
+      - name: Verify real Altovena SQL + RPC in isolated PostgreSQL
+        run: node scripts/test-altovena-postgres.mjs
