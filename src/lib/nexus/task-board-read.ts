@@ -42,7 +42,24 @@ function safeText(value: unknown, limit = 100): string {
   return String(value ?? "").slice(0, limit);
 }
 
-export async function loadNexusTaskBoard(client: NexusTaskBoardQueryClient, brandId: string | null = null): Promise<NexusTaskBoardEntry[]> {
+export async function hasNexusTaskBoardViewGrant(client: NexusTaskBoardQueryClient, brandId: string, verifiedUserId: string): Promise<boolean> {
+  normalizeTaskBoardBrandFilter(brandId);
+  normalizeTaskBoardBrandFilter(verifiedUserId);
+  const result = await client.query(
+    `select exists (
+       select 1 from core.nexus_execution_authorizations a
+       join core.brand_workspace_memberships m
+         on m.brand_id=a.brand_id and m.user_id=a.user_id
+       where a.brand_id=$1::uuid and a.user_id=$2::uuid
+         and a.capability='view' and a.enabled=true
+         and m.status='active' and 'nexus.read'=any(m.permissions)
+     ) as allowed`, [brandId,verifiedUserId]);
+  return result.rows.length===1 && result.rows[0].allowed===true;
+}
+
+export async function loadNexusTaskBoard(client: NexusTaskBoardQueryClient, brandId: string | null = null, verifiedMemberUserId: string | null = null): Promise<NexusTaskBoardEntry[]> {
+  if(verifiedMemberUserId!==null && brandId===null) throw new Error("NEXUS_MEMBER_BRAND_REQUIRED");
+  const memberId=normalizeTaskBoardBrandFilter(verifiedMemberUserId);
   const brandFilter = normalizeTaskBoardBrandFilter(brandId);
   const result = await client.query(
     `select t.id::text as id, t.brand_id::text as brand_id, b.brand_key,
@@ -58,9 +75,17 @@ export async function loadNexusTaskBoard(client: NexusTaskBoardQueryClient, bran
        left join core.nexus_execution_approvals a
          on a.task_id=t.id and a.task_version=t.version
       where ($1::uuid is null or t.brand_id=$1::uuid)
+        and ($2::uuid is null or exists (
+          select 1 from core.nexus_execution_authorizations authz
+          join core.brand_workspace_memberships membership
+            on membership.brand_id=authz.brand_id and membership.user_id=authz.user_id
+          where authz.brand_id=t.brand_id and authz.user_id=$2::uuid
+            and authz.capability='view' and authz.enabled=true
+            and membership.status='active' and 'nexus.read'=any(membership.permissions)
+        ))
       order by t.updated_at desc,t.id desc
       limit 50`,
-    [brandFilter],
+    [brandFilter,memberId],
   );
   if (!Array.isArray(result.rows)) throw new Error("NEXUS_TASK_BOARD_INVALID_DATA");
   return result.rows.map(row => {
