@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Building2, LockKeyhole } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-type Workspace = { brandKey: string; name: string; permissions: string[] };
+type Workspace = { brandKey: string; name: string; permissions: string[]; operationalRole?: string };
 
 function workSummary(permissions: string[]) {
   const areas: string[] = [];
@@ -66,6 +66,8 @@ export default function MyWorkspacesPage() {
             className="flex items-center justify-between gap-4 rounded-2xl border border-slate-700 bg-slate-900 p-5 hover:border-cyan-500">
             <span className="flex items-center gap-3"><Building2 className="text-cyan-400" size={25}/>
               <span><span className="block text-lg font-semibold">{workspace.name}</span>
+                {workspace.operationalRole === "BRAND_OPERATIONS" &&
+                  <span className="block text-xs font-semibold text-cyan-300">Brand Operations</span>}
                 <span className="text-sm text-slate-400">{workSummary(workspace.permissions)}</span></span></span>
             <ArrowRight size={19} className="text-cyan-300"/>
           </Link>)}
