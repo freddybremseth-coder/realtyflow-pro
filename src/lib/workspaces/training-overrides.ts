@@ -61,6 +61,8 @@ export function applyTrainingOverrides(
   brandKey: string,
   overrides: TrainingOverride[],
 ): TrainingArticle[] {
+  // No other brand may consume the editable staff training store.
+  if (!TRAINING_BRANDS.some(item => item === brandKey)) return articles;
   const byId = new Map(overrides.filter(row =>
     row && typeof row.article_id === "string" && validateTrainingContent(row.content),
   ).map(row => [row.article_id, row.content]));
