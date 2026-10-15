@@ -226,10 +226,11 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
     subject: result.draftReply.subject,
     body_text: result.draftReply.body_text,
     body_html: result.draftReply.body_html || null,
-    ai_model: "claude-sonnet-4",
+    ai_model: result.aiModel,
     ai_context: {
       analysis: result.analysis,
       context_match: result.contextMatch,
+      ai_model_used: result.aiModel,
       properties_mentioned: result.draftReply.properties_mentioned,
       property_shortlist: {
         version: 2,

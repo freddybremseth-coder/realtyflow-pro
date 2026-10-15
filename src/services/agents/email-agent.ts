@@ -5,6 +5,7 @@ import {
   NORWEGIAN_CONTENT_RULES,
   CLEAN_OUTPUT_RULES,
 } from "./base-agent";
+import { boundedElenaEmailText, prepareElenaMatchContext } from "@/services/email/elena-prompt-budget";
 
 // ─── Email Agent Interfaces ─────────────────────────────────────────
 
@@ -56,6 +57,11 @@ export class EmailAgent extends BaseAgent {
     ]);
 
     this.brandContext = brandContext ?? "";
+  }
+
+  // Elena: Claude first, OpenAI fallback. Never use Gemini, even if its key exists.
+  protected override getAIFallbackProviders(): readonly ('gemini' | 'openai')[] {
+    return ['openai'];
   }
 
   protected getAvailableTasks(): string[] {
@@ -193,7 +199,7 @@ Gi konkrete anbefalinger for:
    */
   async analyzeEmail(params: Record<string, unknown>): Promise<string> {
     const subject = (params.subject as string) ?? "";
-    const body = (params.body as string) ?? "";
+    const body = boundedElenaEmailText(params.body, 16000);
     const fromAddress = (params.from_address as string) ?? "";
     const fromName = (params.from_name as string) ?? "";
 
@@ -235,12 +241,20 @@ RETNINGSLINJER:
    * Match email content against existing leads, customers, properties, and plots.
    */
   async matchContext(params: Record<string, unknown>): Promise<string> {
-    const emailContent = (params.email_content as string) ?? "";
     const fromAddress = (params.from_address as string) ?? "";
-    const leads = params.leads ? JSON.stringify(params.leads) : "[]";
-    const customers = params.customers ? JSON.stringify(params.customers) : "[]";
-    const properties = params.properties ? JSON.stringify(params.properties) : "[]";
-    const plots = params.plots ? JSON.stringify(params.plots) : "[]";
+    const bounded = prepareElenaMatchContext({
+      emailContent: (params.email_content as string) ?? "",
+      fromAddress,
+      leads: Array.isArray(params.leads) ? params.leads as Record<string, unknown>[] : [],
+      customers: Array.isArray(params.customers) ? params.customers as Record<string, unknown>[] : [],
+      properties: Array.isArray(params.properties) ? params.properties as Record<string, unknown>[] : [],
+      plots: Array.isArray(params.plots) ? params.plots as Record<string, unknown>[] : [],
+    });
+    const emailContent = bounded.emailContent;
+    const leads = JSON.stringify(bounded.leads);
+    const customers = JSON.stringify(bounded.customers);
+    const properties = JSON.stringify(bounded.properties);
+    const plots = JSON.stringify(bounded.plots);
 
     const prompt = `Match denne e-posten med eksisterende data i systemet.
 
@@ -285,11 +299,16 @@ REGLER:
    * Draft a contextual reply using brand tone, matched properties, and pricing.
    */
   async draftReply(params: Record<string, unknown>): Promise<string> {
-    const originalEmail = (params.original_email as string) ?? "";
+    const originalEmail = boundedElenaEmailText(params.original_email, 16000);
     const subject = (params.subject as string) ?? "";
     const analysis = params.analysis ? JSON.stringify(params.analysis) : "{}";
     const matchedProperties = params.matched_properties
-      ? JSON.stringify(params.matched_properties)
+      ? JSON.stringify((Array.isArray(params.matched_properties) ? params.matched_properties : [])
+          .slice(0, 5).map((property: Record<string, unknown>) => ({
+            ...property, title: String(property.title || "").slice(0, 160),
+            primary_image: String(property.primary_image || "").slice(0, 400),
+            gallery: Array.isArray(property.gallery) ? property.gallery.slice(0, 3).map((url: unknown) => String(url).slice(0, 400)) : [],
+          })))
       : "[]";
     const brandInfo = params.brand_info ? JSON.stringify(params.brand_info) : "{}";
     const signature = (params.signature as string) ?? "";
@@ -409,6 +428,7 @@ Returner KUN gyldig JSON:
     analysis: EmailAnalysis;
     contextMatch: EmailContextMatch;
     draftReply: EmailDraftReply;
+    aiModel: string;
   }> {
     // Step 1: Analyze the email
     const analysisRaw = await this.analyzeEmail({
@@ -447,6 +467,6 @@ Returner KUN gyldig JSON:
     });
     const draftReply = this.parseJSON<EmailDraftReply>(draftRaw);
 
-    return { analysis, contextMatch, draftReply };
+    return { analysis, contextMatch, draftReply, aiModel: this.lastAIModel || 'unknown' };
   }
 }
