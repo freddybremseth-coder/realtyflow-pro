@@ -5,8 +5,8 @@ import { VisibilityProductConsole } from "@/components/visibility/visibility-pro
 import { verifyAdminSession, verifyWorkspacePreviewSession, WORKSPACE_PREVIEW_COOKIE } from "@/lib/admin-auth";
 
 export const metadata: Metadata = {
-  title: "Nexus Visibility · Produktoversikt | RealtyFlow",
-  description: "Selvstendig produktprototype for SEO, AEO, GEO, nettstedskontroll og dokumenterte anbefalinger.",
+  title: "Altovena Visibility · SEO og søkesynlighet | Altovena",
+  description: "Altovena Visibility – selvstendig produktprototype for SEO, AEO, GEO, nettstedskontroll og dokumenterte anbefalinger.",
   robots: { index: false, follow: false },
 };
 
