@@ -5,6 +5,7 @@ import { isAdminEmail, verifyAdminSession, verifyWorkspacePreviewSession, WORKSP
 import { AltovenaLaunchReadiness } from "@/components/workspaces/altovena-launch-readiness";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Altovena – intern aktiveringskontroll", robots: { index: false, follow: false } };
 export const revalidate = 0;
 
 export default async function AltovenaLaunchPage() {
