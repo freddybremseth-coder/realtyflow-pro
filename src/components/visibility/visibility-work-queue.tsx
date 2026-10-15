@@ -2,6 +2,11 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null};
+const displayState: Record<string,string> = {
+ PROPOSED:"Foreslått",QUEUED:"I kø",RUNNING:"Pågår",AWAITING_APPROVAL:"Venter på godkjenning",
+ BLOCKED:"Blokkert",VERIFYING:"Kontrolleres",UNVERIFIED:"Avsluttet uten verifisering",
+ FAILED:"Feilet",CANCELLED:"Avbrutt",
+};
 export function VisibilityWorkQueue(){
  const [items,setItems]=useState<Work[]>([]);
  const [busy,setBusy]=useState(false);
@@ -37,7 +42,7 @@ export function VisibilityWorkQueue(){
     items.slice(0,30).map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-3">
      <div><div className="text-sm font-semibold text-slate-900">{item.title}</div>
       <div className="text-xs text-slate-500">{item.brand_id} · {item.next_action||"Ingen neste handling registrert"}</div></div>
-     <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{item.visibility_state==="PROPOSED"?"Foreslått":item.visibility_state}</span>
+     <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{displayState[item.visibility_state] || "Ukjent status"}</span>
     </div>)}
   </div>
  </section>;
