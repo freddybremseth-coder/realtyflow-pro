@@ -5,12 +5,18 @@ on:
       - "src/lib/nexus/task-execution-claim.ts"
       - "src/lib/nexus/task-execution-claim.test.ts"
       - "docs/altovena-nexus-execution-claim.md"
+      - "supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql"
+      - "scripts/qa-nexus-claim-bootstrap.sql"
+      - "scripts/qa-nexus-claim-postgres.sql"
       - ".github/workflows/nexus-task-execution-claim.yml"
   push:
     branches: [main]
     paths:
       - "src/lib/nexus/task-execution-claim.ts"
       - "src/lib/nexus/task-execution-claim.test.ts"
+      - "supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql"
+      - "scripts/qa-nexus-claim-bootstrap.sql"
+      - "scripts/qa-nexus-claim-postgres.sql"
       - ".github/workflows/nexus-task-execution-claim.yml"
 permissions:
   contents: read
@@ -27,3 +33,32 @@ jobs:
       - run: npm ci --silent
       - name: Validate Nexus claim boundaries
         run: node --import tsx --test src/lib/nexus/task-execution-claim.test.ts src/lib/nexus/execution-boundary.test.ts
+
+  verify-claim-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL CLI
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Bootstrap empty isolated database
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-claim-bootstrap.sql
+      - name: Apply proposed migration in test only
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql
+      - name: Assert deny-by-default and atomic claim receipt
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-claim-postgres.sql
