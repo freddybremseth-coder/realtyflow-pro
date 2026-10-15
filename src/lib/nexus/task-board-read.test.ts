@@ -19,7 +19,7 @@ test("zero real rows gives zero; no sample or synthetic tasks",async()=>{
   const db={async query(sql:string,values:readonly unknown[]){queries.push({sql,values});return {rows:[]}}};
   assert.deepEqual(await loadNexusTaskBoard(db,null),[]);
   assert.equal(queries.length,1);
-  assert.match(queries[0].sql,/core\.nexus_execution_tasks/);
+  assert.match(queries[0].sql,/core\.nexus_task_board_entries/);
   assert.match(queries[0].sql,/limit 50/i);
   assert.deepEqual(queries[0].values,[null,null]);
 });
@@ -67,9 +67,9 @@ test("staff board access requires independent DB capability and live membership"
   assert.deepEqual(await loadNexusTaskBoard(db,brand,userId),[]);
   assert.deepEqual(calls[0].values,[brand,userId]);
   assert.deepEqual(calls[1].values,[brand,userId]);
-  assert.match(calls[1].sql,/authz.capability='view'/);
-  assert.match(calls[1].sql,/membership.status='active'/);
-  assert.match(calls[1].sql,/nexus.read/);
+  assert.match(calls[1].sql,/core\.nexus_task_board_allowed_readers/);
+  assert.doesNotMatch(calls[1].sql,/core\.brand_workspace_memberships/);
+  assert.doesNotMatch(calls[1].sql,/core\.nexus_execution_authorizations/);
   assert.match(calls[1].sql,/t.brand_id=\$1::uuid/);
   await assert.rejects(loadNexusTaskBoard(db,null,userId),/NEXUS_MEMBER_BRAND_REQUIRED/);
   assert.equal(calls.length,2);
@@ -97,4 +97,18 @@ test("middleware scopes task-board GET and staff page to the two approved brands
   assert.match(staffPage,/nexus-task-board/);
   assert.doesNotMatch(staffPage,/fetch\([^)]*method:\s*"(POST|PATCH|PUT|DELETE)"/);
   assert.doesNotMatch(staffPage,/(godkjenn oppdrag|start agent)/i);
+});
+
+test("private board queries only projected views, not raw protected tables",async()=>{
+  const queries:string[]=[];
+  const db={async query(sql:string){queries.push(sql);return {rows:sql.includes("as allowed")?[{allowed:false}]:[]}}};
+  await hasNexusTaskBoardViewGrant(db,brand,"33333333-3333-4333-8333-333333333333");
+  await loadNexusTaskBoard(db,null);
+  assert.equal(queries.length,2);
+  assert.match(queries[0],/core\.nexus_task_board_allowed_readers/);
+  assert.match(queries[1],/core\.nexus_task_board_entries/);
+  for(const sql of queries){
+    assert.doesNotMatch(sql,/core\.(nexus_execution_tasks|nexus_execution_approvals|nexus_execution_authorizations|brand_workspace_memberships)/);
+    assert.doesNotMatch(sql,/\bevidence_refs\b/);
+  }
 });
