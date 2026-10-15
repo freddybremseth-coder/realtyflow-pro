@@ -158,3 +158,20 @@ test("standalone launch page works before brand provisioning but requires owner 
   assert.match(ownerHome,/href="\/altovena-launch"/);
   assert.doesNotMatch(launchPage,/getPlatformSupabase\(\)|SUPABASE_SERVICE_ROLE_KEY|ALTOVENA_INTAKE_KEY/);
 });
+
+
+test("Launch health checks live migration, not merely server environment settings",()=>{
+  assert.match(sql,/create or replace function public\.altovena_intake_health\(\)/);
+  assert.match(sql,/security invoker[\s\S]*altovena_intake_health/); // health is a restricted invoker
+  assert.match(sql,/grant execute on function public\.altovena_intake_health\(\) to service_role/);
+  assert.match(sql,/revoke execute on function public\.altovena_intake_health\(\)[\s\S]*from public,anon,authenticated/);
+  assert.match(launchApi,/\.rpc\("altovena_intake_health"\)/);
+  assert.match(launchApi,/schema_version === "altovena-intake-v1"/);
+  assert.match(launchApi,/receipts_present === true/);
+  assert.match(launchApi,/intake_rpc_secured === true/);
+  assert.match(launchApi,/task_rpc_secured === true/);
+  assert.match(launchApi,/const intakeConfigured = migrationHealthy &&/);
+  assert.match(launchApi,/migrationMissing/);
+  assert.match(launchApi,/INTAKE_HEALTH_UNAVAILABLE/);
+  assert.match(launchApi,/readyForPublicForm = false/);
+});
