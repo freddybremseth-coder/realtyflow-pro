@@ -89,7 +89,7 @@ test("Altovena tasks support protected human follow-up and timely in-app attenti
   assert.match(scopedTaskRoute,/requireBrandWorkspace\(request, "altovena", "crm.write"\)/);
   assert.match(scopedTaskRoute,/request.headers.get\("origin"\)/);
   assert.match(scopedTaskRoute,/INVALID_REQUEST_ORIGIN/);
-  assert.match(scopedTaskRoute,/\.eq\("id", id\)/);
+  assert.match(scopedTaskRoute,/p_task_id: id/);
   assert.match(scopedTaskRoute,/\.eq\("brand_id", "altovena"\)/);
   assert.match(scopedTaskRoute,/\.eq\("source_type", "website_lead"\)/);
   assert.match(scopedTaskRoute,/\.in\("status", allowedStatuses\)/);
