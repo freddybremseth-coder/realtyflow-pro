@@ -58,6 +58,11 @@ export class EmailAgent extends BaseAgent {
     this.brandContext = brandContext ?? "";
   }
 
+  // Elena: Claude first, OpenAI fallback. Never use Gemini, even if its key exists.
+  protected override getAIFallbackProviders(): readonly ('gemini' | 'openai')[] {
+    return ['openai'];
+  }
+
   protected getAvailableTasks(): string[] {
     return [
       "analyze_email",
@@ -409,6 +414,7 @@ Returner KUN gyldig JSON:
     analysis: EmailAnalysis;
     contextMatch: EmailContextMatch;
     draftReply: EmailDraftReply;
+    aiModel: string;
   }> {
     // Step 1: Analyze the email
     const analysisRaw = await this.analyzeEmail({
@@ -447,6 +453,6 @@ Returner KUN gyldig JSON:
     });
     const draftReply = this.parseJSON<EmailDraftReply>(draftRaw);
 
-    return { analysis, contextMatch, draftReply };
+    return { analysis, contextMatch, draftReply, aiModel: this.lastAIModel || 'unknown' };
   }
 }
