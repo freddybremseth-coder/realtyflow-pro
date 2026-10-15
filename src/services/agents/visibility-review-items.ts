@@ -34,8 +34,12 @@ const nextSteps: Partial<Record<VisibilityIssueCode, { title: string; nextStep: 
     nextStep: "Sammenlign nettstedets hensikt, omdirigeringer og publisert canonical før et eventuelt korrigeringsforslag.",
   },
   HEADING_STRUCTURE: {
-    title: "Vurder struktur eller JSON-LD",
-    nextStep: "Bekreft dokumentert strukturproblem i HTML og synlig innhold. Foreslå kun endringer som samsvarer med siden.",
+    title: "Kontroller overskriftsstruktur",
+    nextStep: "Bekreft H1/H2-hierarki i HTML og at sidens synlige innhold samsvarer med overskriftene.",
+  },
+  SCHEMA_PARSE_ERROR: {
+    title: "Kontroller ugyldig JSON-LD",
+    nextStep: "Valider JSON-LD-syntaks, kontroller samsvar med synlig innhold og foreslå en målrettet rettelse. Parsefeil er ikke bevis på villedende schema.",
   },
 };
 const significant = new Set<VisibilityIssueCode>([
