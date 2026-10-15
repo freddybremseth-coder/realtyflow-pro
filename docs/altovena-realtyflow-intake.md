@@ -93,3 +93,15 @@ The result deliberately stays `readyForPublicForm=false` until a future separate
 As of 15 October 2026, read-only checks of production Supabase found no `altovena` brand and no deployed Altovena intake/task RPCs. The Altovena Vercel project had no configured environment variables. Therefore all real lead receipt, staff brand grant and external notification claims remain pending; successful CI in a disposable PostgreSQL service does not change this.
 
 The `partner` preset is appropriate for broad Andrea access to available scoped CRM, content, email, marketing, ads and Visibility modules, subject to owner approval and staff security readiness. Existing Reels/YouTube APIs are currently hard-scoped to other brands and must not be advertised as active Altovena functionality without separate adaptation, channel verification and permission checks.
+
+## Pre-provisioning activation screen (15 October 2026)
+
+The authenticated RealtyFlow OWNER can access **`/altovena-launch`** directly or via **RealtyFlow Platform → Merkevarearbeidsflater → Altovena · aktivering**. This page does not need an already provisioned Altovena brand and does not create one. It redirects unauthenticated users to login, rejects non-owners and owner-preview sessions, and uses the protected read-only readiness API.
+
+**Configuration for operator verification:** Set `ALTOVENA_ANDREA_AUTH_USER_ID` to Andrea's **independently verified** Supabase Auth user UUID on the RealtyFlow backend. The readiness API looks up that exact Auth identity and checks a live, active `altovena` brand grant for supported `crm`, `marketing`, `content`, `email`, `visibility`, `ads`, `events` and `nexus` rights. It neither creates a user nor grants permissions and does not return account identity or secret values in JSON.
+
+The owner Freddy uses an owner session and does not need a redundant employee-style brand grant. The operator’s approved grant must remain specific to `altovena`. Features not yet implemented for Altovena (such as Zen-only YouTube and property-based Reels) are not counted as missing permissions and must not be silently enabled.
+
+All website-side settings, legal review, domain HTTPS, test delivery and notifications require an independent verification step. The checklist permanently reports the public form as **not ready** until a deliberate, separately reviewed go-live release; this dashboard cannot enable customer collection.
+
+**Status before production activation:** RealtyFlow's live Altovena brand and both intake/status RPCs were absent, and Altovena's Vercel project had no configured environment variables in the last read-only check. It is incorrect to describe the new lead or task workflow as publicly active at this point.
