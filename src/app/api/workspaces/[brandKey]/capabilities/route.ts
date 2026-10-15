@@ -114,7 +114,15 @@ export async function GET(
     }
     if (permissions.length === 0) return fail(403, "ACCESS_DENIED");
   }
-  return NextResponse.json({ ok: true, brand: brandKey, permissions, responsibilities,
+  // Read training text only after independently verifying the actual brand grant.
+  // Never infer access from the editable training copy.
+  let trainingOverrides: Array<{ article_id: string; content: unknown }> = [];
+  if (["zeneco", "pinosoecolife"].includes(brandKey) && typeof supabase.from === "function") {
+    const { data: trainingRows } = await supabase.from("workspace_training_overrides")
+      .select("article_id,content").eq("brand_key", brandKey);
+    trainingOverrides = Array.isArray(trainingRows) ? trainingRows : [];
+  }
+  return NextResponse.json({ ok: true, brand: brandKey, permissions, responsibilities, trainingOverrides,
     ...(operationalRole ? { operationalRole } : {}),
   }, { headers: noStore });
 }
