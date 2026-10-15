@@ -41,7 +41,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
-  OWNER:["/workspaces","/nexus-os/today","/sales","/marketing","/content","/hjelp"],
+  OWNER:["/workspaces","/workspace/zeneco?tab=growth&focus=social","/sales","/marketing","/content","/finance"],
   SALES:["/sales","/today","/customers","/communications","/execution","/lead-intelligence"],
   CLOSING:["/sales","/today","/closing","/closing-pack","/execution","/customers"],
   FINANCE:["/finance","/billing","/revenue-command","/monthly-close","/commissions","/forecast"],
