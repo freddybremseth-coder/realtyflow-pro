@@ -82,3 +82,25 @@ test("pending Altovena website tasks remain in the same verified brand workspace
   assert.match(workspacePage,/brandKey === "altovena" && permissions\.includes\("crm.read"\)/);
   assert.match(workspacePage,/AltovenaLeadAttention/);
 });
+
+
+test("Altovena tasks support protected human follow-up and timely in-app attention", () => {
+  assert.match(scopedTaskRoute,/export async function PATCH/);
+  assert.match(scopedTaskRoute,/requireBrandWorkspace\(request, "altovena", "crm.write"\)/);
+  assert.match(scopedTaskRoute,/request.headers.get\("origin"\)/);
+  assert.match(scopedTaskRoute,/INVALID_REQUEST_ORIGIN/);
+  assert.match(scopedTaskRoute,/\.eq\("id", id\)/);
+  assert.match(scopedTaskRoute,/\.eq\("brand_id", "altovena"\)/);
+  assert.match(scopedTaskRoute,/\.eq\("source_type", "website_lead"\)/);
+  assert.match(scopedTaskRoute,/\.in\("status", allowedStatuses\)/);
+  assert.match(scopedTaskRoute,/!\\["IN_PROGRESS", "DONE"\\].includes\(status\)/);
+  assert.match(scopedTaskRoute,/\.select\("id,status,brand_id,source_type"\)/);
+  assert.doesNotMatch(scopedTaskRoute,/\.from\("contacts"\)|\.rpc\("sendBrandEmail"/);
+  assert.match(altovenaTaskPanel,/canManage: boolean/);
+  assert.match(altovenaTaskPanel,/window.setInterval\(tick, 60000\)/);
+  assert.match(altovenaTaskPanel,/document.addEventListener\("visibilitychange", onVisible\)/);
+  assert.match(altovenaTaskPanel,/24 \* 60 \* 60 \* 1000/);
+  assert.match(altovenaTaskPanel,/Marker oppfølging utført/);
+  assert.match(altovenaTaskPanel,/Ingen e-post eller pushvarsler er aktivert/);
+  assert.match(workspacePage,/canManage=\{permissions.includes\("crm.write"\)\}/);
+});
