@@ -27,7 +27,8 @@ test.beforeEach(() => {
   returnedUpdate = null;
   returnedContacts = [{ id: "33333333-3333-4333-8333-333333333333", brand_id: "zeneco", brand: "zeneco",
     name: "New joint client", email: "new@example.test", phone: "+34000000000",
-    pipeline_status: "NEW", created_at: "2026-09-24T11:00:00Z", updated_at: "2026-09-24T11:00:00Z" }];
+    pipeline_status: "NEW", approved_joint_lead: true, assigned_to_member: false,
+    created_at: "2026-09-24T11:00:00Z", updated_at: "2026-09-24T11:00:00Z" }];
   setPlatformSupabaseFactoryForTests(() => ({
     rpc: async (name: string, args?: Record<string, unknown>) => {
       calls.push({ name, args });
@@ -121,6 +122,27 @@ test("mixed response cannot serialize historical, cross-brand or internal fields
   assert.equal(JSON.stringify(body).includes("secret@example.test"), false);
 });
 
+test("verified assigned historical Zen contacts are visible; unassigned and Soleada records stay hidden", async () => {
+  liveProfile();
+  returnedContacts.push(
+    { id: "66666666-6666-4666-8666-666666666666", brand_id: "zeneco", brand: "zeneco",
+      name: "ASSIGNED HISTORICAL ZEN", assigned_to_member: true, approved_joint_lead: false,
+      created_at: "2026-03-01T09:00:00Z" },
+    { id: "77777777-7777-4777-8777-777777777777", brand_id: "zeneco", brand: "zeneco",
+      name: "UNASSIGNED HISTORICAL ZEN", assigned_to_member: false, approved_joint_lead: false,
+      created_at: "2026-03-01T09:00:00Z" },
+    { id: "88888888-8888-4888-8888-888888888888", brand_id: "soleada", brand: "soleada",
+      name: "PRIVATE SOLEADA", assigned_to_member: true, created_at: "2026-03-01T09:00:00Z" },
+  );
+  const token = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
+  const result = await GET(req(token) as any, { params: { brandKey: "zeneco" } });
+  assert.equal(result.status, 200);
+  const body = await result.json();
+  assert.deepEqual(body.contacts.map((row: { name: string }) => row.name),
+    ["New joint client", "ASSIGNED HISTORICAL ZEN"]);
+  assert.equal(JSON.stringify(body).includes("PRIVATE SOLEADA"), false);
+});
+
 test("invalid pagination fails closed before the Zen cohort query", async () => {
   liveProfile();
   const token = `realtyflow_admin=${await createAdminSession("staff@example.test", "WORKSPACE_MEMBER")}`;
@@ -194,7 +216,7 @@ test("joint PATCH fails closed for forged fields, unsafe origin and invalid cust
   assert.equal(calls.some(call => call.name === "workspace_zeneco_joint_contact_update"), false);
 });
 
-test("revoked/ineligible join returns 404 and cannot leak a mismatched brand or old contact", async () => {
+test("revoked/ineligible join returns 404 and cannot leak a mismatched brand; assigned historical record is permitted", async () => {
   liveProfile();
   permissions = ["crm.joint.read", "crm.joint.write"];
   const token = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
@@ -204,7 +226,8 @@ test("revoked/ineligible join returns 404 and cannot leak a mismatched brand or 
   returnedUpdate = { ...returnedContacts[0], ...updateBody, brand_id: "soleada", brand: "soleada" };
   assert.equal((await PATCH(patch(token, updateBody) as any,
     { params: { brandKey: "zeneco" } })).status, 503);
+  // The privileged SQL function returns a historical contact only after verifying the exact member assignment.
   returnedUpdate = { ...returnedContacts[0], ...updateBody, created_at: "2026-09-22T13:00:00Z" };
   assert.equal((await PATCH(patch(token, updateBody) as any,
-    { params: { brandKey: "zeneco" } })).status, 503);
+    { params: { brandKey: "zeneco" } })).status, 200);
 });
