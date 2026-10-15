@@ -79,6 +79,9 @@ export async function loadNexusTaskBoard(client: NexusTaskBoardQueryClient, bran
     const version = Number(row.version);
     if (!UUID.test(id) || !UUID.test(bid) || !STATUSES.has(String(row.status)) ||
       !Number.isSafeInteger(version) || version < 1) throw new Error("NEXUS_TASK_BOARD_INVALID_DATA");
+    // Defense in depth: never serialize a mismatched brand even if the SQL view,
+    // mock, future database adapter or query optimizer supplies foreign rows.
+    if (brandFilter && bid !== brandFilter) throw new Error("NEXUS_TASK_BOARD_BRAND_SCOPE_MISMATCH");
     const events = Array.isArray(row.events) ? row.events : [];
     const createdAt = dateOrNull(row.created_at);
     const updatedAt = dateOrNull(row.updated_at);
