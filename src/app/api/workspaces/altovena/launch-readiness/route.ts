@@ -40,10 +40,25 @@ export async function GET(request: NextRequest) {
     return reply({ ok: false, error: "WORKSPACE_UNAVAILABLE" }, 503);
   const brand = snapshot.brands.find((item: any) => item?.brand_key === "altovena") || null;
   const brandRegistered = typeof brand?.id === "string" && brand.id.length > 0;
+  // Check the *actual* deployed schema; environment variables alone are not proof
+  // that a write RPC exists or that anonymous users are denied execute access.
+  const { data: health, error: healthError } = await supabase.rpc("altovena_intake_health");
+  const migrationMissing = Boolean(healthError &&
+    (healthError.code === "PGRST202" || healthError.code === "42883") &&
+    /altovena_intake_health/i.test(healthError.message || ""));
+  if (healthError && !migrationMissing)
+    return reply({ ok: false, error: "INTAKE_HEALTH_UNAVAILABLE" }, 503);
+  const migrationHealthy = !healthError &&
+    health?.schema_version === "altovena-intake-v1" &&
+    health?.brand_present === true &&
+    health?.receipts_present === true &&
+    health?.intake_rpc_secured === true &&
+    health?.task_rpc_secured === true &&
+    brandRegistered;
 
   // This is RealtyFlow-side intake readiness only. The independent Altovena
   // deployment, verified Turnstile, privacy review and a real test are separate gates.
-  const intakeConfigured = process.env.ALTOVENA_INTAKE_ENABLED === "true" &&
+  const intakeConfigured = migrationHealthy && process.env.ALTOVENA_INTAKE_ENABLED === "true" &&
     Boolean(process.env.ALTOVENA_INTAKE_KEY &&
       process.env.ALTOVENA_INTAKE_KEY.length >= 32 &&
       process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -80,10 +95,11 @@ export async function GET(request: NextRequest) {
 
   const checks = [
     { id: "brand", label: "Altovena-merkevare i RealtyFlow", state: brandRegistered ? "verified" : "blocked" },
+    { id: "migration", label: "Databasemigrasjon og sikre mottaksfunksjoner", state: migrationHealthy ? "verified" : "blocked" },
     { id: "owner", label: "Eierøkten er autentisert", state: "verified" },
     { id: "operator_identity", label: "Andreas autentiserte brukerkonto", state: !operatorConfigured ? "not_configured" : operatorVerified ? "verified" : "blocked" },
     { id: "operator_grants", label: "Andreas merkevarespesifikke arbeidsrettigheter", state: !operatorConfigured ? "not_configured" : operatorPermissionsComplete ? "verified" : "blocked" },
-    { id: "receiver", label: "Sikret RealtyFlow-mottak", state: intakeConfigured ? "verified" : "blocked" },
+    { id: "receiver", label: "Sikkert mottak: database og serverkonfigurasjon", state: intakeConfigured ? "verified" : "blocked" },
     { id: "website", label: "Altovena-skjema og botbeskyttelse", state: "needs_external_verification" },
     { id: "legal", label: "Juridisk ansvar, sletterutiner og personvern", state: "needs_external_verification" },
     { id: "e2e", label: "Syntetisk ende-til-ende-test og oppfølgingsvarsel", state: "needs_external_verification" },
