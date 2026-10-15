@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "src/app/api/public/altovena-leads/**"
+      - "src/app/api/workspaces/altovena/**"
+      - "src/app/api/workspaces/[brandKey]/lead-tasks/**"
+      - "src/components/workspaces/altovena-*.tsx"
+      - "src/app/(realty)/altovena-launch/**"
       - "supabase/migrations/*altovena*"
       - "src/lib/marketing/brand-registry.ts"
       - "docs/altovena-realtyflow-intake.md"
