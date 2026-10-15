@@ -72,7 +72,7 @@ function leadReceiptCopy(input: {
   const firstName = /^(boligmatch|ukjent|kunde)$/i.test(rawFirstName) ? "" : rawFirstName;
   const greeting = firstName ? `Hei ${firstName},` : "Hei,";
   const acknowledgement = input.isBuyerMatch
-    ? "Takk for at du fylte ut Boligmatch. Vi har mottatt boligønskene dine. En rådgiver går gjennom svarene før vi eventuelt sender deg et personlig utvalg boliger. Du kan også se aktuelle boliger på nettsiden mens du venter."
+    ? "Takk for at du fylte ut Boligmatch. Vi har mottatt boligønskene dine. En rådgiver går gjennom svarene og vurderer hvilke boliger som passer ønskene dine før vi sender deg et personlig utvalg. Du kan også se aktuelle boliger på nettsiden mens du venter."
     : "Takk for henvendelsen. Skjemaet er mottatt hos Zen Eco Homes, og vi bruker opplysningene til å gi deg mer relevant oppfølging.";
   const summary = [
     input.preferredArea ? `Område: ${input.preferredArea}` : "",
