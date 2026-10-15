@@ -5,6 +5,7 @@ import { brandPublishingEvidence, patchBrandHtml, patchNextHomepage, publisherFo
   readNextHomepageMetadata, readNextLayoutMetadata, secondVariantForBrand, SEO_BRAND_PUBLISHERS, type BrandEvidence, type BrandMetadata, type BrandPublisher } from "./seo-brand-publishing";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "./seo-change-monitor";
 import { githubForSite, githubRequest, type GithubRequest } from "./seo-brand-github";
+import { canRunApprovedDonaAnnaMetadata } from "./visibility-owner-approval";
 
 const ACTION = "seo_brand_publication_v1";
 export type BrandPublicationStatus = {
@@ -248,8 +249,17 @@ export async function runPortfolioPublishers(db: SupabaseClient, snapshots: read
     for (const site of SEO_BRAND_PUBLISHERS.filter(item=>item.repository===repository)) {
       try {
         const snapshot = snapshots.find(s=>s.brandId===site.brandId)||null;
+        // Doña Anna only: never begin a write intent until the OWNER has
+        // consented to this exact V1 title and description. Approval does not
+        // override the source/public HTML or GitHub/CI gates in the publisher.
+        if (!await canRunApprovedDonaAnnaMetadata(db,site,"v1",now)) {
+          results.push({brandId:site.brandId,page:"/",status:"blocked",published:0,
+            reason:"Krever eiergodkjenning for nøyaktig metadata-variant. Eksisterende tekniske kildeavvik må også avklares."});
+          continue;
+        }
         const first = await runBrandPublisher(db,site,snapshot,{github,publicHtml:readBrandPublicHtml,now});
-        if (first.status === "verified" && await v1EffectMeasured(db,site,snapshot)) {
+        if (first.status === "verified" && await v1EffectMeasured(db,site,snapshot) &&
+            await canRunApprovedDonaAnnaMetadata(db,site,"v2",now)) {
           results.push(await runBrandPublisher(
             db,site,snapshot,{github,publicHtml:readBrandPublicHtml,now},
             { version:"v2", target:secondVariantForBrand(site.brandId) },
