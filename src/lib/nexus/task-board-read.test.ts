@@ -85,3 +85,16 @@ test("member route remains GET-only, gated and bound to verified user identity",
   assert.doesNotMatch(route,/export async function (POST|PUT|PATCH|DELETE)/);
   assert.doesNotMatch(route,/process.env.SUPABASE_SERVICE_ROLE_KEY/);
 });
+
+test("middleware scopes task-board GET and staff page to the two approved brands",()=>{
+  const middleware=readFileSync(new URL("../../middleware.ts",import.meta.url),"utf8");
+  const navigation=readFileSync(new URL("../navigation.ts",import.meta.url),"utf8");
+  const staffPage=readFileSync(new URL("../../app/(realty)/workspace/[brandKey]/agent-oppdrag/page.tsx",import.meta.url),"utf8");
+  assert.match(middleware,/resource === "nexus-task-board"/);
+  assert.match(middleware,/\["zeneco","pinosoecolife"\].includes\(brand\) && verb === "GET"/);
+  assert.match(middleware,/content-hub\|agent-oppdrag/);
+  assert.match(navigation,/p.includes\("nexus.read"\).*Agentoppdrag/);
+  assert.match(staffPage,/nexus-task-board/);
+  assert.doesNotMatch(staffPage,/fetch\([^)]*method:\s*"(POST|PATCH|PUT|DELETE)"/);
+  assert.doesNotMatch(staffPage,/(godkjenn oppdrag|start agent)/i);
+});
