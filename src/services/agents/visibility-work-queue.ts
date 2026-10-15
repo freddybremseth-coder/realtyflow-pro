@@ -3,6 +3,7 @@
  * Planning only: producing a plan NEVER executes a fix or grants publishing consent.
  * The durable work_items table is the single task ledger.
  */
+import { createHash } from "node:crypto";
 import type { VisibilityFinding } from "@/lib/visibility-product";
 
 export type VisibilityWorkState =
@@ -33,7 +34,7 @@ export type VisibilityWorkPlan = {
   };
 };
 
-const SAFE_ID = /^[a-zA-Z0-9_.:-]{1,180}$/;
+const SAFE_ID = /^visibility:[a-z0-9_-]{1,64}:(?:[A-Z_]+|data-gap)(?::.*)?$/;
 const VALID_BRAND = /^[a-z0-9_-]{1,64}$/;
 
 export function planVisibilityWorkItem(finding: VisibilityFinding): VisibilityWorkPlan {
@@ -42,7 +43,8 @@ export function planVisibilityWorkItem(finding: VisibilityFinding): VisibilityWo
   }
   // Repeated scans must map the same finding to the same task. The database
   // writer still needs atomic uniqueness/upsert for true concurrent safety.
-  const sourceId = `visibility:${finding.brandId}:${finding.id}`;
+  const stableFindingId = createHash("sha256").update(finding.id).digest("hex").slice(0,40);
+  const sourceId = `visibility:${finding.brandId}:${stableFindingId}`;
   return {
     source_type: "ai_agent",
     source_id: sourceId,
@@ -56,7 +58,7 @@ export function planVisibilityWorkItem(finding: VisibilityFinding): VisibilityWo
     metadata: {
       product: "altovena_visibility",
       origin: "visibility_finding",
-      finding_id: finding.id,
+      finding_id: stableFindingId,
       evidence_at: finding.updatedAt,
       evidence_age: finding.evidenceAge,
       category: finding.category,
