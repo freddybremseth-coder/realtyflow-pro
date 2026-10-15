@@ -317,7 +317,7 @@ export default function FocusedWorkspacePage() {
               </p>
             </div>
             {brandKey === "altovena" && permissions.includes("crm.read") &&
-              <AltovenaLeadAttention onOpenLeads={() => setTab("leads")} />}
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={() => setTab("leads")} />}
             <WorkspaceTodayPriorities
               brandKey={brandKey}
               permissions={permissions}
@@ -404,7 +404,7 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && showCrm && tab === "leads" && (
           <section className="space-y-5">
             {brandKey === "altovena" && permissions.includes("crm.read") &&
-              <AltovenaLeadAttention onOpenLeads={() => void loadCrm()} />}
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={() => void loadCrm()} />}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
