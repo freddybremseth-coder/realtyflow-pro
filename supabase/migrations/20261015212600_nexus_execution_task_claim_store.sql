@@ -464,3 +464,74 @@ comment on function core.create_nexus_review_task(uuid,uuid,text,text,text[],tex
   'Server-authored, brand-scoped Nexus proposal. Does not execute anything.';
 comment on function core.decide_nexus_review_task(uuid,uuid,integer,text,text) is
   'Independent review with version-bound approval and durable decision event. Does not execute anything.';
+
+
+-- Private read-only projection for the Nexus board. Server credentials inherit
+-- a NOLOGIN read role; nothing is granted to browser-facing API roles.
+-- The view owner can read private base tables, so its SELECT column projection
+-- and server-side membership checks are the intentional disclosure boundary.
+-- This is not per-user RLS: the application MUST authenticate the member,
+-- bind the requested brand and user ID, and never expose the DB credential.
+create role nexus_task_board_reader nologin noinherit nobypassrls;
+grant usage on schema core to nexus_task_board_reader;
+
+create view core.nexus_task_board_entries
+  with (security_barrier=true)
+as
+select
+  t.id,t.brand_id,b.brand_key,t.status,t.version,t.action_type,
+  cardinality(t.evidence_refs) as evidence_count,
+  t.quality_reviewed,t.preflight_passed,t.created_at,t.updated_at,
+  a.decision as review_decision,
+  a.expires_at as review_expires_at,
+  exists(
+    select 1 from core.nexus_execution_claims c where c.task_id=t.id
+  ) as reserved,
+  (select coalesce(jsonb_agg(
+       jsonb_build_object('type',events.event_type,'at',events.happened_at)
+       order by events.happened_at
+     ), '[]'::jsonb)
+     from (
+        select e.event_type,e.happened_at
+        from core.nexus_execution_task_events e
+        where e.task_id=t.id
+        order by e.happened_at desc
+        limit 30
+     ) events
+  ) as events
+from core.nexus_execution_tasks t
+join core.brands b on b.id=t.brand_id
+left join lateral (
+  select decision,expires_at
+  from core.nexus_execution_approvals a
+  where a.task_id=t.id
+  order by a.task_version desc
+  limit 1
+) a on true;
+
+-- A second narrowly projected view exists solely to recheck current live
+-- grants inside the staff board's parameterized row query. Viewer credentials
+-- can read grant IDs but not membership emails, raw grants or approval records.
+create view core.nexus_task_board_allowed_readers
+  with (security_barrier=true)
+as
+select a.brand_id,a.user_id
+from core.nexus_execution_authorizations a
+join core.brand_workspace_memberships m
+  on m.brand_id=a.brand_id and m.user_id=a.user_id
+where a.capability='view' and a.enabled=true
+  and m.status='active' and 'nexus.read'=any(m.permissions);
+
+revoke all on core.nexus_task_board_entries,
+  core.nexus_task_board_allowed_readers
+  from public,anon,authenticated,service_role;
+grant select on core.nexus_task_board_entries,
+  core.nexus_task_board_allowed_readers
+  to nexus_task_board_reader;
+
+comment on role nexus_task_board_reader is
+  'NOLOGIN, restricted Nexus task-board SQL view reader. Do not inherit via public/API users.';
+comment on view core.nexus_task_board_entries is
+  'Minimal internal board projection. No raw evidence, contact, secrets, approval actor, or source payload.';
+comment on view core.nexus_task_board_allowed_readers is
+  'Current active brand/user IDs eligible for internal Nexus read; never a direct browser authorization source.';
