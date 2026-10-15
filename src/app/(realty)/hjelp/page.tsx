@@ -126,7 +126,15 @@ export default function HelpOwnerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action, brandKey, articleId: selectedArticle.id,
-          ...(action === "save" ? { content: draft } : {}),
+          ...(action === "save" ? { content: {
+            ...draft,
+            sections: draft?.sections.map(section => ({
+              ...section,
+              paragraphs: (section.paragraphs || []).map(line => line.trim()).filter(Boolean),
+              bullets: (section.bullets || []).map(line => line.trim()).filter(Boolean),
+              emphasis: section.emphasis?.trim() || "",
+            })) || [],
+          } } : {}),
         }),
       });
       const body = await response.json();
