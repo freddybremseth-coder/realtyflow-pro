@@ -9,6 +9,7 @@ import { GET } from "./route";
 const userId = "11111111-1111-4111-8111-111111111111";
 let permissions: string[] = [];
 let currentBrand = "pinosoecolife";
+let operationalRole = "STANDARD";
 let previous: Record<string, string | undefined>;
 let previousFetch: typeof globalThis.fetch;
 
@@ -33,6 +34,7 @@ test.beforeEach(() => {
   process.env.REALTYFLOW_ADMIN_EMAILS = "owner@example.test";
   permissions = [];
   currentBrand = "pinosoecolife";
+  operationalRole = "STANDARD";
 
   setPlatformSupabaseFactoryForTests(() => ({
     rpc: async (name: string) => {
@@ -43,7 +45,7 @@ test.beforeEach(() => {
             currentBrand === "zeneco" ? "Zen Eco Homes" : "Pinoso EcoLife" },
           grant: {
             brand_id: "brand-id", user_id: userId, email: "staff@example.test",
-            status: "active", permissions,
+            status: "active", permissions, operational_role: operationalRole,
           },
         }],
         error: null,
@@ -76,6 +78,32 @@ test.afterEach(() => {
     if (value === undefined) delete process.env[envKey];
     else process.env[envKey] = value;
   }
+});
+
+test("Brand Operations is an explicitly assigned per-brand label, never a blanket grant", async () => {
+  operationalRole = "BRAND_OPERATIONS";
+  permissions = ["content.read", "content.edit", "content.publish", "marketing.read", "marketing.draft", "marketing.publish"];
+  const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  let response = await GET(request(cookie) as any);
+  assert.equal(response.status, 200);
+  let body = await response.json();
+  assert.equal(body.workspaces[0].operationalRole, "BRAND_OPERATIONS");
+  assert.equal(body.workspaces[0].brandKey, "pinosoecolife");
+  assert.equal(body.workspaces[0].permissions.includes("content.publish"), true);
+  assert.equal(JSON.stringify(body).includes("finance"), false);
+  assert.equal(JSON.stringify(body).includes("system.admin"), false);
+  // The role name alone must never fabricate missing granular permissions.
+  permissions = ["content.read"];
+  response = await GET(request(cookie) as any);
+  assert.equal(response.status, 200);
+  body = await response.json();
+  assert.deepEqual(body.workspaces[0].permissions, ["content.read"]);
+  assert.equal(body.workspaces[0].operationalRole, "BRAND_OPERATIONS");
+  // A non-enabled brand may not use the Brand Operations display role.
+  currentBrand = "soleada";
+  response = await GET(request(cookie) as any);
+  body = await response.json();
+  assert.equal(body.workspaces[0].operationalRole, undefined);
 });
 
 test("social publishing is advertised only with complete marketing read draft publish scope", async () => {
