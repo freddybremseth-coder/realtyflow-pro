@@ -94,7 +94,14 @@ test("Altovena tasks support protected human follow-up and timely in-app attenti
   assert.match(scopedTaskRoute,/\.eq\("source_type", "website_lead"\)/);
   assert.match(scopedTaskRoute,/\.in\("status", allowedStatuses\)/);
   assert.match(scopedTaskRoute,/!\["IN_PROGRESS", "DONE"\]\.includes\(status\)/);
-  assert.match(scopedTaskRoute,/\.select\("id,status,brand_id,source_type"\)/);
+  assert.match(scopedTaskRoute,/\.rpc\("altovena_mark_lead_task"/);
+  assert.match(scopedTaskRoute,/p_actor_email: access\.value\.verifiedEmail/);
+  assert.match(sql,/create or replace function public\.altovena_mark_lead_task/);
+  assert.match(sql,/brand_id='altovena'/);
+  assert.match(sql,/source_type='website_lead'/);
+  assert.match(sql,/status_history/);
+  assert.match(sql,/verified_altovena_workspace/);
+  assert.match(sql,/grant execute on function public\.altovena_mark_lead_task[\s\S]*to service_role/);
   assert.doesNotMatch(scopedTaskRoute,/\.from\("contacts"\)|\.rpc\("sendBrandEmail"/);
   assert.match(altovenaTaskPanel,/canManage: boolean/);
   assert.match(altovenaTaskPanel,/window.setInterval\(tick, 60000\)/);
