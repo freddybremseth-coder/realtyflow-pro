@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdminApi } from "@/lib/api-admin";
+import { getRequestAccessContext } from "@/lib/api-admin";
 import { visibilityWorkDisplayState } from "@/services/agents/visibility-work-queue";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,8 @@ function db() {
  return url && key ? createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}}) : null;
 }
 export async function GET(request: NextRequest) {
- const denied = await requireAdminApi(request); if(denied) return denied;
+ const ctx = await getRequestAccessContext(request);
+ if(ctx?.role!=="OWNER" || ctx.source!=="owner-session") return NextResponse.json({error:"Owner session required"},{status:403});
  const client=db(); if(!client) return NextResponse.json({error:"Database unavailable"},{status:503});
  const {data,error}=await client.from("work_items")
   .select("id,title,brand_id,status,source_id,updated_at,assigned_agent,metadata,next_action")
