@@ -13,7 +13,8 @@ function safeContactRow(row: unknown, brandKey: string) {
   const item = row as Record<string, unknown>;
   if (typeof item.id !== "string" || !item.id || item.id.length > 128 ||
       item.brand_id !== brandKey || item.brand !== brandKey ||
-      typeof item.name !== "string") return null;
+      typeof item.name !== "string" ||
+    String(item.source || "").startsWith("__SPAM__:")) return null;
   return {
     id: item.id, name: item.name,
     email: typeof item.email === "string" ? item.email : null,
@@ -86,7 +87,8 @@ export async function GET(
 
   // Owner path: legacy CRM stores BOTH labels. Require agreement, never infer sharing from just one tag.
   let query = access.value.supabase.from("contacts").select(SAFE_CONTACT_COLUMNS)
-    .eq("brand_id", brandKey).eq("brand", brandKey);
+    .eq("brand_id", brandKey).eq("brand", brandKey)
+    .not("source", "like", "__SPAM__:%");
   if (safeTerm) {
     query = query.or(`name.ilike.%${safeTerm}%,email.ilike.%${safeTerm}%,phone.ilike.%${safeTerm}%`);
   }
