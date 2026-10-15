@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { setPlatformSupabaseFactoryForTests } from "@/lib/platform/supabase";
 import { GET, POST } from "./route";
+import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const draftId = "22222222-2222-4222-8222-222222222222";
@@ -238,6 +239,29 @@ test("Brand Operations content workflow works for both approved brands, never So
   }, cookie) as any, { params: { brandKey: "zeneco" } });
   assert.equal(denied.status, 403);
   assert.equal(webhookBodies.length, 0);
+});
+
+test("shared CMS secret is available only for Zen and Pinoso website publishing", () => {
+  const previous = process.env.REALTYFLOW_CMS_SECRET;
+  const previousZen = process.env.REALTYFLOW_CMS_SECRET_ZENECO;
+  const previousPinoso = process.env.REALTYFLOW_CMS_SECRET_PINOSOECOLIFE;
+  process.env.REALTYFLOW_CMS_SECRET = "shared-test-secret";
+  delete process.env.REALTYFLOW_CMS_SECRET_ZENECO;
+  delete process.env.REALTYFLOW_CMS_SECRET_PINOSOECOLIFE;
+  try {
+    assert.equal(resolveWebsiteCmsConfig("zeneco", {}).webhookSecret, "shared-test-secret");
+    assert.equal(resolveWebsiteCmsConfig("pinosoecolife", {}).webhookSecret, "shared-test-secret");
+    assert.notEqual(resolveWebsiteCmsConfig("soleada", {}).webhookSecret, "shared-test-secret");
+    assert.notEqual(resolveWebsiteCmsConfig("donaanna", {}).webhookSecret, "shared-test-secret");
+    assert.equal(resolveWebsiteCmsConfig("zeneco", { websiteCmsWebhookSecret: "specific-secret" }).webhookSecret, "specific-secret");
+  } finally {
+    if (previous === undefined) delete process.env.REALTYFLOW_CMS_SECRET;
+    else process.env.REALTYFLOW_CMS_SECRET = previous;
+    if (previousZen === undefined) delete process.env.REALTYFLOW_CMS_SECRET_ZENECO;
+    else process.env.REALTYFLOW_CMS_SECRET_ZENECO = previousZen;
+    if (previousPinoso === undefined) delete process.env.REALTYFLOW_CMS_SECRET_PINOSOECOLIFE;
+    else process.env.REALTYFLOW_CMS_SECRET_PINOSOECOLIFE = previousPinoso;
+  }
 });
 
 test("content snapshot is exact-brand and never exposes webhook credentials", async () => {
