@@ -76,3 +76,20 @@ The production database and real users are unchanged. The Altovena contact form 
 - When a contact with **both** `brand_id='altovena'` and `brand='altovena'` is deleted through a permitted administrative flow, a narrowly scoped `BEFORE DELETE` trigger removes only `altovena`/`website_lead` work items whose `source_id` is that contact UUID. All corresponding receipts disappear automatically. Other-brand work items and contacts are never touched by the trigger.
 - These are infrastructure safeguards, **not** a public self-service deletion endpoint. Identity checks, retention rules, audit requirements and an approved legal-erasure workflow are still required; do not erase contacts solely on the basis of an unverified website request.
 - The isolated PostgreSQL integration test deletes a test contact and verifies related receipt/task removal, preserving foreign-brand data; it also checks task-deletion receipt cleanup. Never run this fixture against production.
+
+## Owner-side launch readiness (15 October 2026)
+
+The RealtyFlow brand workspace now has a **read-only Altovena activation checklist** under **I dag**, visible only for a real OWNER session (never owner-preview). It calls `GET /api/workspaces/altovena/launch-readiness`, which independently requires `context.role === 'OWNER'` and `context.source === 'owner-session'` and does not allow mutations. No credentials or personal details are returned to the browser.
+
+The checklist checks:
+- whether the Altovena brand exists in RealtyFlow's brand/workspace registry
+- an authenticated Freddy owner session
+- the actual Andrea account, configured by the **verified Supabase Auth UUID** in `ALTOVENA_ANDREA_AUTH_USER_ID` (never guessed from a name/email), and a live brand-specific grant against the necessary set of currently supported business permissions
+- whether the RealtyFlow server-side intake enable switch, sufficiently long secret and database credentials are present
+- **separately unverified** website-level Turnstile/form configuration, legal controller/retention notice, domain/HTTPS, real E2E delivery and external alerts
+
+The result deliberately stays `readyForPublicForm=false` until a future separately approved release and a real end-to-end review. **Do not use this status display to bypass the disabled contact form.**
+
+As of 15 October 2026, read-only checks of production Supabase found no `altovena` brand and no deployed Altovena intake/task RPCs. The Altovena Vercel project had no configured environment variables. Therefore all real lead receipt, staff brand grant and external notification claims remain pending; successful CI in a disposable PostgreSQL service does not change this.
+
+The `partner` preset is appropriate for broad Andrea access to available scoped CRM, content, email, marketing, ads and Visibility modules, subject to owner approval and staff security readiness. Existing Reels/YouTube APIs are currently hard-scoped to other brands and must not be advertised as active Altovena functionality without separate adaptation, channel verification and permission checks.
