@@ -113,3 +113,9 @@ All website-side settings, legal review, domain HTTPS, test delivery and notific
 - The server-side intake configuration is marked verified only when the live migration is healthy, a sufficiently long key is present and the RealtyFlow enable switch is deliberately on. **Actual form delivery, Turnstile, legal approval, full-domain HTTPS and notification routing remain independent checks.** Public-form readiness is still forced false.
 - The disposable PostgreSQL 17 job now tests the real health function's values and its service-role-only execute grants. The owner API has executable session/role tests for no login, staff login, owner-preview, missing and broken migrations, valid but unapproved configuration, verified operator grants and secret-free output.
 - These checks must be re-run and recorded against the final PR commit before any production merge. There is **no live Supabase migration or customer write** in this change.
+
+## Identity and brand grant shown separately (15 October 2026)
+
+The owner preflight screen verifies Andrea's **Supabase Auth user ID independently** of whether the Altovena brand has been provisioned. This allows an active employee account to show **Verified** even if the `altovena` brand is not created. The separate permissions row remains **Blocked** until a matching, active Altovena-only grant satisfies all supported operative permissions. A matching identity never implies authorisation.
+
+A missing or invalid configured user ID is `not_configured`; an unresolved account is `blocked`. A database/Auth outage is `503` (fail-closed). No user ID, email or personal data is returned to the owner checklist. Runtime tests cover both pre-provisioning identity and valid identity without a brand grant.
