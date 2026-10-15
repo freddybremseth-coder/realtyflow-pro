@@ -25,7 +25,7 @@ const brands = [
 
 function joinLines(lines: string[] = []) { return lines.join("\n"); }
 function splitLines(text: string) {
-  return text.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+  return text.split(/\r?\n/);
 }
 
 export default function HelpOwnerPage() {
