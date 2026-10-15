@@ -1,6 +1,6 @@
 "use client";
 
-import { SamSEOActionBoard } from "@/components/hub/sam-seo-action-board";
+import { MorningBriefSeoSummary } from "@/components/hub/morning-brief-seo-summary";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,7 +8,7 @@ import { AlertTriangle, ArrowRight, BrainCircuit, BriefcaseBusiness, CheckCircle
 import { confidenceFromSignal, revenuePriorityConfidence, revenueWorkConfidence, type EvidenceConfidence } from "@/lib/morning-brief-confidence";
 import { dataGapSummary, genericSignalDataGaps, revenuePriorityDataGaps, revenueWorkDataGaps } from "@/lib/morning-brief-data-gaps";
 import { revenuePriorityEvidenceDimensions, revenueWorkEvidenceDimensions } from "@/lib/morning-brief-evidence";
-import { rankMorningBriefPriorities } from "@/lib/morning-brief-priority";
+import { isStalePersonalDeadline, operationalPriorityEvidence, personalDeadlineScore, rankMorningBriefPriorities } from "@/lib/morning-brief-priority";
 import { todayDestination, type TodayDestinationType } from "@/lib/personal-intelligence/today-destination";
 
 type AttentionItem = {
@@ -19,6 +19,7 @@ type AttentionItem = {
   detail: string;
   href: string;
   source: string;
+  responsibility?: "USER" | "SYSTEM" | "WATCH";
 };
 
 type RevenuePriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -111,18 +112,6 @@ function businessUrgency(priority: RevenuePriority) {
   return 50;
 }
 
-function personalDeadlineScore(dueAt?: string | null) {
-  if (!dueAt) return 45;
-  const timestamp = Date.parse(dueAt);
-  if (!Number.isFinite(timestamp)) return 45;
-  const hours = (timestamp - Date.now()) / 3_600_000;
-  if (hours <= 0) return 100;
-  if (hours <= 24) return 90;
-  if (hours <= 72) return 75;
-  if (hours <= 168) return 60;
-  return 40;
-}
-
 export default function MorningBriefPage() {
   const [attention, setAttention] = useState<LoadState<AttentionPayload>>({ data: null, error: null });
   const [revenue, setRevenue] = useState<LoadState<RevenuePayload>>({ data: null, error: null });
@@ -180,6 +169,7 @@ export default function MorningBriefPage() {
 
     const operational = (attention.data?.attention ?? []).filter((item) => item.id !== "os:clear")[0];
     if (operational) {
+      const dimensions = operationalPriorityEvidence(operational);
       const evidence = [`attention severity ${operational.severity}`, `attention score ${operational.score}/100`];
       const confidence = confidenceFromSignal({ sourceStrength: 88, evidenceCount: evidence.length, hasCanonicalScore: true });
       const gaps = genericSignalDataGaps({ evidenceCount: evidence.length, hasCanonicalScore: true, hasExplicitDeadline: false });
@@ -191,10 +181,10 @@ export default function MorningBriefPage() {
         detail: operational.detail,
         href: operational.href,
         source: operational.source || "Nexus Attention",
-        urgency: operational.severity === "high" ? 95 : operational.severity === "medium" ? 75 : 55,
-        impact: Math.max(50, Math.min(100, operational.score || 60)),
-        deadlineOrIrreversibility: operational.severity === "high" ? 90 : operational.severity === "medium" ? 70 : 50,
-        ownerRequired: operational.severity === "high" ? 75 : 55,
+        urgency: dimensions.urgency,
+        impact: dimensions.impact,
+        deadlineOrIrreversibility: dimensions.deadlineOrIrreversibility,
+        ownerRequired: dimensions.ownerRequired,
         evidence,
         confidence,
         dataGapSummary: dataGapSummary(gaps, confidence.score),
@@ -220,7 +210,7 @@ export default function MorningBriefPage() {
         ownerRequired: 100,
         evidence,
         confidence,
-        dataGapSummary: dataGapSummary(gaps, confidence.score),
+        dataGapSummary: [dataGapSummary(gaps, confidence.score), isStalePersonalDeadline(snapshot.oneThing.dueAt) ? "Den oppgitte fristen er over 14 dager gammel. Bekreft om den fortsatt gjelder." : null].filter(Boolean).join(" · ") || null,
       });
     }
 
@@ -277,7 +267,6 @@ export default function MorningBriefPage() {
   const errors = [attention.error, revenue.error, personal.error].filter((value): value is string => Boolean(value));
 
   return <main className="mx-auto max-w-[1400px] space-y-6 p-4 sm:p-6">
-    <SamSEOActionBoard />
     <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -297,16 +286,16 @@ export default function MorningBriefPage() {
       <div className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-300">ONE THING</div>
       {primary ? <div className="mt-3 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
-          <div className="text-xs font-black text-slate-400">{primary.label} · {primary.source} · decision score {primary.score}/100 · confidence {primary.confidence.label} {primary.confidence.score}/100</div>
+          <div className="text-xs font-bold text-slate-300">{primary.label} · {primary.source} · intern prioritet {primary.score}/100 · datatillit {primary.confidence.label}</div>
           <h2 className="mt-2 text-2xl font-black tracking-tight">{primary.title}</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">{primary.detail}</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-wide text-slate-300">
+          <details className="mt-3 text-xs text-slate-300"><summary className="cursor-pointer font-semibold">Vis prioriteringsgrunnlag og usikkerhet</summary><div className="mt-2 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-wide text-slate-300">
             <span className="rounded-full border border-slate-700 px-2 py-1">Urgency {primary.urgency}</span>
             <span className="rounded-full border border-slate-700 px-2 py-1">Impact {primary.impact}</span>
             <span className="rounded-full border border-slate-700 px-2 py-1">Deadline / irreversible {primary.deadlineOrIrreversibility}</span>
             <span className="rounded-full border border-slate-700 px-2 py-1">Needs you {primary.ownerRequired}</span>
             <span className="rounded-full border border-slate-700 px-2 py-1">Confidence {primary.confidence.label} {primary.confidence.score}</span>
-          </div>
+          </div></details>
           {primary.evidence?.length ? <div className="mt-3 text-xs leading-5 text-slate-400"><strong className="text-slate-300">Evidence:</strong> {primary.evidence.join(" · ")}</div> : null}
           {primary.dataGapSummary ? <div className="mt-3 rounded-xl border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs leading-5 text-amber-200"><strong className="text-amber-100">Improve confidence:</strong> {primary.dataGapSummary} <Link href={primary.href} className="ml-1 inline-flex items-center font-black text-amber-100 underline underline-offset-2">Open source <ArrowRight size={12} className="ml-1" /></Link></div> : null}
         </div>
@@ -324,11 +313,13 @@ export default function MorningBriefPage() {
         </div>
         <h3 className="mt-3 font-black text-slate-950">{item.title}</h3>
         <p className="mt-2 text-sm leading-5 text-slate-600">{item.detail}</p>
-        <div className="mt-3 text-[11px] font-bold text-slate-400">Source: {item.source} · score {item.score}/100 · confidence {item.confidence.label} {item.confidence.score}/100</div>
+        <div className="mt-3 text-[11px] font-bold text-slate-500">Kilde: {item.source} · intern prioritet {item.score}/100 · datatillit {item.confidence.label}</div>
         {item.evidence?.length ? <div className="mt-2 text-[11px] leading-4 text-slate-400">{item.evidence.slice(0, 3).join(" · ")}</div> : null}
         {item.dataGapSummary ? <div className="mt-2 text-[11px] leading-4 text-amber-700">{item.dataGapSummary} <span className="font-black">Open to improve →</span></div> : null}
       </Link>)}
     </section>
+
+    <MorningBriefSeoSummary />
 
     <section className="grid gap-4 lg:grid-cols-2">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
