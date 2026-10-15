@@ -6,6 +6,11 @@ on:
       - "src/lib/nexus/task-execution-claim.test.ts"
       - "src/lib/nexus/task-execution-postgres.ts"
       - "src/lib/nexus/task-execution-postgres.test.ts"
+      - "src/lib/nexus/task-board-read.ts"
+      - "src/lib/nexus/task-board-read.test.ts"
+      - "src/app/api/nexus/task-board/route.ts"
+      - "src/app/(tools)/nexus-os/agent-oppdrag/page.tsx"
+      - "src/lib/navigation.ts"
       - "docs/altovena-nexus-execution-claim.md"
       - "supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql"
       - "scripts/qa-nexus-claim-bootstrap.sql"
@@ -19,6 +24,11 @@ on:
       - "src/lib/nexus/task-execution-claim.test.ts"
       - "src/lib/nexus/task-execution-postgres.ts"
       - "src/lib/nexus/task-execution-postgres.test.ts"
+      - "src/lib/nexus/task-board-read.ts"
+      - "src/lib/nexus/task-board-read.test.ts"
+      - "src/app/api/nexus/task-board/route.ts"
+      - "src/app/(tools)/nexus-os/agent-oppdrag/page.tsx"
+      - "src/lib/navigation.ts"
       - "supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql"
       - "scripts/qa-nexus-claim-bootstrap.sql"
       - "scripts/qa-nexus-claim-postgres.sql"
@@ -38,7 +48,7 @@ jobs:
           cache: npm
       - run: npm ci --silent
       - name: Validate Nexus claim boundaries
-        run: node --import tsx --test src/lib/nexus/task-execution-claim.test.ts src/lib/nexus/task-execution-postgres.test.ts src/lib/nexus/execution-boundary.test.ts
+        run: node --import tsx --test src/lib/nexus/task-execution-claim.test.ts src/lib/nexus/task-execution-postgres.test.ts src/lib/nexus/task-board-read.test.ts src/lib/nexus/execution-boundary.test.ts
 
   verify-claim-postgres:
     runs-on: ubuntu-latest
