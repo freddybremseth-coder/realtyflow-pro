@@ -44,3 +44,46 @@ export function rankMorningBriefPriorities<T extends MorningBriefPriorityInput>(
 }
 
 export const MORNING_BRIEF_PRIORITY_WEIGHTS = WEIGHTS;
+
+
+/**
+ * Very old personal due dates are stale signals, not ever-growing urgency.
+ * The source remains visible, but needs verification before a new deadline is implied.
+ */
+export function personalDeadlineScore(dueAt?: string | null, now = new Date()): number {
+  if (!dueAt) return 45;
+  const due = Date.parse(dueAt);
+  if (!Number.isFinite(due)) return 45;
+  const hours = (due - now.getTime()) / 3_600_000;
+  if (hours < -24 * 14) return 45;
+  if (hours < -24 * 7) return 65;
+  if (hours <= 0) return 95;
+  if (hours <= 24) return 90;
+  if (hours <= 72) return 75;
+  if (hours <= 168) return 60;
+  return 40;
+}
+
+/** A high-severity system signal is not evidence of an actual deadline. */
+export function operationalPriorityEvidence(input: {
+  severity: "high" | "medium" | "low";
+  score: number;
+  responsibility?: "USER" | "SYSTEM" | "WATCH";
+}) {
+  const urgency = input.severity === "high" ? 95 : input.severity === "medium" ? 75 : 55;
+  return {
+    urgency,
+    impact: clamp(input.score || 60),
+    // No due date or irreversible transition is supplied by this source.
+    deadlineOrIrreversibility: 40,
+    // Respect explicit responsibility rather than assuming all high-severity
+    // configuration checks must be handled by the owner immediately.
+    ownerRequired: input.responsibility === "USER" ? 75 : input.responsibility === "SYSTEM" ? 20 : 30,
+  };
+}
+
+export function isStalePersonalDeadline(dueAt?: string | null, now = new Date()): boolean {
+  if (!dueAt) return false;
+  const timestamp = Date.parse(dueAt);
+  return Number.isFinite(timestamp) && timestamp < now.getTime() - 14 * 24 * 60 * 60 * 1000;
+}
