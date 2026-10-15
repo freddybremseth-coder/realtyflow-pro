@@ -72,8 +72,13 @@ export async function loadNexusTaskBoard(client: NexusTaskBoardQueryClient, bran
              from core.nexus_execution_task_events e where e.task_id=t.id) as events
        from core.nexus_execution_tasks t
        join core.brands b on b.id=t.brand_id
-       left join core.nexus_execution_approvals a
-         on a.task_id=t.id and a.task_version=t.version
+       left join lateral (
+         select decision,expires_at
+         from core.nexus_execution_approvals a
+         where a.task_id=t.id
+         order by a.task_version desc
+         limit 1
+       ) a on true
       where ($1::uuid is null or t.brand_id=$1::uuid)
         and ($2::uuid is null or exists (
           select 1 from core.nexus_execution_authorizations authz
