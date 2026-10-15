@@ -38,7 +38,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
   useEffect(() => {
     const controller = new AbortController();
     // Avoid flashing a full loading state during background refresh.
-    if (!lastChecked) setLoading(true);
+    if (refresh === 0) setLoading(true);
     setError("");
     fetch("/api/workspaces/altovena/lead-tasks", { cache: "no-store", signal: controller.signal })
       .then(async res => {
