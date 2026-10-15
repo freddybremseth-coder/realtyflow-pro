@@ -85,6 +85,15 @@ test("Owner readiness never activates a contact form, reports real migration and
     assert.equal(first.checks.find((c:{id:string})=>c.id==="receiver").state,"blocked");
     assert.ok(!JSON.stringify(first).includes("test-service-role"));
 
+    // Andrea's verified Supabase identity must show independently of whether
+    // Altovena has been provisioned or any scoped brand permission was granted.
+    process.env.ALTOVENA_ANDREA_AUTH_USER_ID=operatorId;
+    const beforeBrand=await (await GET(req(owner))).json();
+    assert.equal(beforeBrand.checks.find((c:{id:string})=>c.id==="operator_identity").state,"verified");
+    assert.equal(beforeBrand.checks.find((c:{id:string})=>c.id==="operator_grants").state,"blocked");
+    assert.equal(beforeBrand.checks.find((c:{id:string})=>c.id==="brand").state,"blocked");
+    delete process.env.ALTOVENA_ANDREA_AUTH_USER_ID;
+
     // The schema can be present while its intake RPC is unexpectedly exposed.
     // A secret alone must never mark such a deployment as ready.
     flags.brand=true;flags.missingHealth=false;flags.health=false;
@@ -105,6 +114,7 @@ test("Owner readiness never activates a contact form, reports real migration and
     process.env.ALTOVENA_ANDREA_AUTH_USER_ID=operatorId;
     flags.grant=false;
     answer=await (await GET(req(owner))).json();
+    assert.equal(answer.checks.find((c:{id:string})=>c.id==="operator_identity").state,"verified");
     assert.equal(answer.checks.find((c:{id:string})=>c.id==="operator_grants").state,"blocked");
     flags.grant=true;
     answer=await (await GET(req(owner))).json();
