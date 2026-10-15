@@ -29,7 +29,7 @@ export function validateTrainingContent(value: unknown): value is TrainingEditab
   const data = value as Record<string, unknown>;
   if (!validLine(data.title, 200) || !validLine(data.shortTitle, 100) ||
       !validLine(data.summary, 700) ||
-      !Number.isInteger(data.readMinutes) || Number(data.readMinutes) < 1 || Number(data.readMinutes) > 90 ||
+      (typeof data.readMinutes !== "number" || !Number.isInteger(data.readMinutes) || data.readMinutes < 1 || data.readMinutes > 90) ||
       !Array.isArray(data.sections) || data.sections.length < 1 || data.sections.length > 30) return false;
   return data.sections.every((raw: unknown) => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
