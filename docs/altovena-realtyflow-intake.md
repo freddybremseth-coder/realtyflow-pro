@@ -61,3 +61,11 @@ This exercises the actual `20261014210000_altovena_brand_intake.sql` file and co
 **Verified in GitHub Actions:** both focused contract and isolated PostgreSQL jobs passed. This does not certify production credentials, the live database, emails, notifications, frontend browsers or legal processing details.
 
 The production database and real users are unchanged. The Altovena contact form must remain disabled until all activation checks in this document are explicitly completed.
+
+## In-app attention and manual task resolution (15 October 2026)
+
+- The brand-scoped Altovena lead panel on **I dag** and **Kunder & leads** refreshes every 60 seconds while the browser tab is visible and on focus. It shows last-checked time and highlights tasks older than 24 hours. This is **in-app awareness**, not external email/push delivery.
+- Users with an independently verified `crm.read` grant can only view Altovena's currently open website-lead tasks. No cross-brand fallback is possible.
+- Only users with an independently verified `crm.write` grant can use **Start oppfølging** (`IN_PROGRESS`) or **Marker oppfølging utført** (`DONE`) quick actions. These actions require same-origin JSON and update only an existing `altovena`/`website_lead` task by UUID, with an allowed prior status.
+- Task resolution **does not** automatically send email, mark a customer as contacted, alter CRM customer details or imply newsletter consent. The human user must complete the follow-up before marking a task done.
+- These controls and their permission boundaries are covered by `Altovena intake validation` contract tests. The features remain in a draft PR until reviewed and deployed.
