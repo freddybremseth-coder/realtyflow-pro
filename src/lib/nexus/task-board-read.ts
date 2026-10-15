@@ -47,12 +47,8 @@ export async function hasNexusTaskBoardViewGrant(client: NexusTaskBoardQueryClie
   normalizeTaskBoardBrandFilter(verifiedUserId);
   const result = await client.query(
     `select exists (
-       select 1 from core.nexus_execution_authorizations a
-       join core.brand_workspace_memberships m
-         on m.brand_id=a.brand_id and m.user_id=a.user_id
-       where a.brand_id=$1::uuid and a.user_id=$2::uuid
-         and a.capability='view' and a.enabled=true
-         and m.status='active' and 'nexus.read'=any(m.permissions)
+       select 1 from core.nexus_task_board_allowed_readers readers
+       where readers.brand_id=$1::uuid and readers.user_id=$2::uuid
      ) as allowed`, [brandId,verifiedUserId]);
   return result.rows.length===1 && result.rows[0].allowed===true;
 }
@@ -62,31 +58,15 @@ export async function loadNexusTaskBoard(client: NexusTaskBoardQueryClient, bran
   const memberId=normalizeTaskBoardBrandFilter(verifiedMemberUserId);
   const brandFilter = normalizeTaskBoardBrandFilter(brandId);
   const result = await client.query(
-    `select t.id::text as id, t.brand_id::text as brand_id, b.brand_key,
-            t.status,t.version,t.action_type,cardinality(t.evidence_refs) as evidence_count,
+    `select t.id::text as id,t.brand_id::text as brand_id,t.brand_key,
+            t.status,t.version,t.action_type,t.evidence_count,
             t.quality_reviewed,t.preflight_passed,t.created_at,t.updated_at,
-            a.decision as review_decision,a.expires_at as review_expires_at,
-            exists(select 1 from core.nexus_execution_claims c where c.task_id=t.id) as reserved,
-            (select coalesce(jsonb_agg(jsonb_build_object('type', e.event_type, 'at', e.happened_at)
-                order by e.happened_at), '[]'::jsonb)
-             from core.nexus_execution_task_events e where e.task_id=t.id) as events
-       from core.nexus_execution_tasks t
-       join core.brands b on b.id=t.brand_id
-       left join lateral (
-         select decision,expires_at
-         from core.nexus_execution_approvals a
-         where a.task_id=t.id
-         order by a.task_version desc
-         limit 1
-       ) a on true
+            t.review_decision,t.review_expires_at,t.reserved,t.events
+       from core.nexus_task_board_entries t
       where ($1::uuid is null or t.brand_id=$1::uuid)
         and ($2::uuid is null or exists (
-          select 1 from core.nexus_execution_authorizations authz
-          join core.brand_workspace_memberships membership
-            on membership.brand_id=authz.brand_id and membership.user_id=authz.user_id
-          where authz.brand_id=t.brand_id and authz.user_id=$2::uuid
-            and authz.capability='view' and authz.enabled=true
-            and membership.status='active' and 'nexus.read'=any(membership.permissions)
+          select 1 from core.nexus_task_board_allowed_readers readers
+          where readers.brand_id=t.brand_id and readers.user_id=$2::uuid
         ))
       order by t.updated_at desc,t.id desc
       limit 50`,
