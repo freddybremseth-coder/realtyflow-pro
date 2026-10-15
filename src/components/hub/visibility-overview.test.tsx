@@ -57,3 +57,43 @@ test("incomplete sampled audits cannot be presented as SEO-cleared sites", () =>
   assert.doesNotMatch(html, /Ingen klassifiserte blokkeringer i utvalget/);
   assert.match(html, /1 observert side/);
 });
+
+test("publishing blocker is separate from technical SEO clearance and preserves evidence", () => {
+  const report = {
+    sites: [{
+      brandId: "donaanna", checkedAt: "2026-10-15T08:00:00Z", pagesChecked: 4,
+      sampledPaths: ["/om-oss", "/oliven"],
+      incomplete: false,
+      visibilityDiagnostic: { diagnosticStatus: "OBSERVED_NO_BLOCKERS", incomplete: false, sampledOnly: true, issues: [] },
+    }, {
+      brandId: "remasterfreddy", checkedAt: "2026-10-15T08:00:00Z", pagesChecked: 1,
+      sampledPaths: [],
+      incomplete: false,
+      visibilityDiagnostic: {
+        diagnosticStatus: "REVIEW_RECOMMENDED", incomplete: false, sampledOnly: true,
+        issues: [{ code: "HEADING_STRUCTURE", evidence: "No server-rendered homepage H1" }],
+      },
+    }, {
+      brandId: "zenecocare", checkedAt: "2026-10-15T08:00:00Z", pagesChecked: 4,
+      sampledPaths: [], incomplete: false,
+      visibilityDiagnostic: { diagnosticStatus: "OBSERVED_NO_BLOCKERS", incomplete: false, sampledOnly: true, issues: [] },
+    }],
+  } as unknown as SEOControlReport;
+  const publishers = [
+    { brandId: "donaanna", page: "/", status: "blocked", reason: "Metadata source differs from public page.", published: 0 },
+    { brandId: "remasterfreddy", page: "/", status: "monitor", reason: "No search signal.", published: 0 },
+  ] as any;
+  const html = renderToStaticMarkup(createElement(VisibilityOverview, { report, publishingStatuses: publishers }));
+  assert.match(html, /Publiseringsblokkeringer/);
+  assert.match(html, /Metadata source differs from public page/);
+  assert.match(html, /No server-rendered homepage H1/);
+  assert.match(html, /Care: kun teknisk kontroll/);
+  assert.match(html, /Utvalgte sidebaner/);
+  assert.match(html, /Sams metadata-publiseringskontroll/);
+  assert.doesNotMatch(html, /Godkjenn publisering/);
+});
+
+test("no publisher data is not falsely treated as publication-ready or blocked", () => {
+  const html = renderToStaticMarkup(createElement(VisibilityOverview, { report: null }));
+  assert.doesNotMatch(html, /Publiseringsblokkeringer/);
+});
