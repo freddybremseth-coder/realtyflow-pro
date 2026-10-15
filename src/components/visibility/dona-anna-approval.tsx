@@ -44,7 +44,7 @@ export function DonaAnnaVisibilityApproval(){
   return <section aria-label="Doña Anna metadata-godkjenning" className="mt-4 rounded-xl border border-teal-200 bg-white p-4">
     <div className="flex items-center gap-2"><LockKeyhole size={16} className="text-teal-700"/><h4 className="text-sm font-bold text-slate-950">Eierbeslutning · Doña Anna</h4></div>
     <p className="mt-2 text-sm leading-6 text-slate-700">
-      Gi Sam tillatelse til **bare** metadata-tittel og -beskrivelse på Doña Annas hovedside.
+      Gi Sam tillatelse til <strong>bare</strong> metadata-tittel og -beskrivelse på Doña Annas hovedside.
       Tillatelsen gjelder én eksakt variant i maksimalt 30 dager. Den overstyrer ikke kildeavvik,
       Google-krav, GitHub-kontroll eller offentlig verifisering.
     </p>
