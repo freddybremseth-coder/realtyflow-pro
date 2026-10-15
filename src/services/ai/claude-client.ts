@@ -162,8 +162,12 @@ export async function askClaude(
     // bokskriving gir de svakere modellene dårlig/kort prosa som ikke følger
     // formatet — bedre å feile tydelig så brukeren ser at Anthropic er nede.
     anthropicOnly?: boolean;
+    fallbackProviders?: readonly ('gemini' | 'openai')[];
+    onProviderSelected?: (provider: 'anthropic' | 'gemini' | 'openai', model: string) => void;
   }
 ): Promise<string> {
+  const allowGemini = options?.fallbackProviders ? options.fallbackProviders.includes('gemini') : true;
+  const allowOpenAI = options?.fallbackProviders ? options.fallbackProviders.includes('openai') : true;
   if (options?.anthropicOnly && !process.env.ANTHROPIC_API_KEY) {
     throw new Error('Anthropic AI er ikke konfigurert (mangler API-nøkkel).');
   }
@@ -193,9 +197,12 @@ export async function askClaude(
         const accepted = acceptGeneratedText(
           'Anthropic',
           textBlock?.text || '',
-          !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
+          !!((allowGemini && process.env.GEMINI_API_KEY) || (allowOpenAI && process.env.OPENAI_API_KEY)),
         );
-        if (accepted !== null) return accepted;
+        if (accepted !== null) {
+          options?.onProviderSelected?.('anthropic', model);
+          return accepted;
+        }
         break; // gyldig svar men avvist av validator → gå til fallback
       } catch (err: any) {
         lastErr = err;
@@ -233,7 +240,7 @@ export async function askClaude(
       );
     }
     if (isRateLimit || isCredit || status === 400) {
-      console.warn(`[AI Fallback] Anthropic unavailable (${status || 'error'}), trying Gemini...`);
+      console.warn(`[AI Fallback] Anthropic unavailable (${status || 'error'}), trying ${allowGemini ? 'Gemini' : allowOpenAI ? 'OpenAI' : 'no other provider'}...`);
     } else {
       console.error(`[AI] Anthropic error:`, msg);
     }
@@ -243,30 +250,37 @@ export async function askClaude(
   }
 
   // Fallback 1: Gemini
-  if (process.env.GEMINI_API_KEY) {
+  if (allowGemini && process.env.GEMINI_API_KEY) {
     try {
       console.log('[AI Fallback] Using Gemini');
       const text = await askGemini(prompt, options as any);
-      const accepted = acceptGeneratedText('Gemini', text, !!process.env.OPENAI_API_KEY);
-      if (accepted !== null) return accepted;
+      const accepted = acceptGeneratedText('Gemini', text, !!(allowOpenAI && process.env.OPENAI_API_KEY));
+      if (accepted !== null) {
+        options?.onProviderSelected?.('gemini', 'gemini-2.5-flash');
+        return accepted;
+      }
     } catch (err: any) {
       console.warn(`[AI Fallback] Gemini failed: ${err?.message || err}`);
     }
   }
 
   // Fallback 2: OpenAI
-  if (process.env.OPENAI_API_KEY) {
+  if (allowOpenAI && process.env.OPENAI_API_KEY) {
     try {
       console.log('[AI Fallback] Using OpenAI');
       const text = await askOpenAI(prompt, options as any);
       const accepted = acceptGeneratedText('OpenAI', text, false);
-      if (accepted !== null) return accepted;
+      if (accepted !== null) {
+        options?.onProviderSelected?.('openai', 'gpt-4o-mini');
+        return accepted;
+      }
     } catch (err: any) {
       console.warn(`[AI Fallback] OpenAI failed: ${err?.message || err}`);
     }
   }
 
-  throw new Error('Alle AI-tjenester utilgjengelige. Sjekk API-nøkler og kreditter for Anthropic, Gemini eller OpenAI.');
+  const names = ['Anthropic', ...(allowGemini ? ['Gemini'] : []), ...(allowOpenAI ? ['OpenAI'] : [])];
+  throw new Error('Alle tillatte AI-tjenester utilgjengelige. Sjekk API-nøkler og kreditter for ' + names.join(' eller ') + '.');
 }
 
 // ─── askClaudeWithWebSearch ─────────────────────────────────────────
