@@ -20,7 +20,7 @@ export function visibilityAuditSummary(audit: SiteAudit) {
     issues.push({ code: "CANONICAL_MISMATCH", evidence: "Homepage canonical host/URL requires inspection", affectedUrl: audit.base });
   }
   if (audit.home.jsonLdParseErrors && audit.home.jsonLdParseErrors > 0) {
-    issues.push({ code: "HEADING_STRUCTURE", evidence: "Unparseable JSON-LD requires review (" + audit.home.jsonLdParseErrors + ")", affectedUrl: audit.base });
+    issues.push({ code: "SCHEMA_PARSE_ERROR", evidence: "Unparseable JSON-LD requires review (" + audit.home.jsonLdParseErrors + ")", affectedUrl: audit.base });
   }
   if (audit.home.h1Count === 0) {
     issues.push({ code: "HEADING_STRUCTURE", evidence: "No server-rendered homepage H1", affectedUrl: audit.base });
