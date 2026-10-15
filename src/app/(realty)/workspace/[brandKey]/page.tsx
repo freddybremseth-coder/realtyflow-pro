@@ -490,6 +490,8 @@ export default function FocusedWorkspacePage() {
                   className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300">Lukk kundekort</button>
               </div>
 
+              {isJointCrm && <p className="mt-3 text-sm font-semibold text-cyan-200">Ansvarlig rådgiver: Freddy Bremseth</p>}
+
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
                   <p className="text-[11px] uppercase text-slate-500">Status</p>
@@ -571,6 +573,7 @@ export default function FocusedWorkspacePage() {
                         {stale && <span className="rounded-full border border-amber-800 px-2 py-0.5 text-[10px] text-amber-300">Oppfølging</span>}
                       </div>
                       <p className="mt-1 text-sm text-slate-400">{contact.email || "Ingen e-post"}{contact.phone ? ` · ${contact.phone}` : ""}</p>
+                      {isJointCrm && <p className="mt-1 text-xs text-cyan-300">Ansvarlig: Freddy Bremseth · Felles Zen Eco Homes-lead</p>}
                       <p className="mt-1 text-xs text-slate-500">
                         <span className="text-cyan-300">{crmStatusLabels[contact.pipeline_status || "UNSET"] || contact.pipeline_status || "Uten status"}</span>
                         {contact.source ? ` · ${contact.source}` : ""} · Oppdatert {crmDate(contact.updated_at)}
