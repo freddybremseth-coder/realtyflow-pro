@@ -51,10 +51,10 @@ function crmIsStale(value?: string | null) {
   const time = new Date(value).getTime();
   return Number.isNaN(time) || Date.now() - time > 7 * 86_400_000;
 }
-const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: WorkspacePermission[] }> = [
-  { id: "today", label: "I dag", icon: Building2 },
-  { id: "leads", label: "Kunder & leads", icon: Users, permitted: ["crm.read", "crm.joint.read", "tasks.joint.read"] },
-  { id: "growth", label: "Vekst & innhold", icon: TrendingUp, permitted: [
+const tabs: Array<{ id: Tab; label: string; permitted?: WorkspacePermission[] }> = [
+  { id: "today", label: "I dag" },
+  { id: "leads", label: "Kunder & leads", permitted: ["crm.read", "crm.joint.read", "tasks.joint.read"] },
+  { id: "growth", label: "Vekst & innhold", permitted: [
     "marketing.read", "marketing.draft", "marketing.publish",
     "reels.read", "reels.create", "reels.publish",
     "youtube.read", "youtube.publish", "nexus.read",
@@ -63,7 +63,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Users; permitted?: Work
     "content.read", "content.edit", "content.publish",
     "email.read", "email.draft", "email.send",
   ] },
-  { id: "properties", label: "Eiendommer", icon: Building2, permitted: ["properties.catalog.read"] },
+  { id: "properties", label: "Eiendommer", permitted: ["properties.catalog.read"] },
 ];
 
 export default function FocusedWorkspacePage() {
@@ -213,7 +213,6 @@ export default function FocusedWorkspacePage() {
   useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery, crmStatus, crmSource, crmSort]);
   const filtered = contacts;
   const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
-  const visibleTabs = tabs.filter(item => !item.permitted || item.permitted.some(permission => permissions.includes(permission)));
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
   const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
   const showJointTasks = brandKey === "zeneco" && permissions.includes("crm.joint.read") && permissions.includes("tasks.joint.read");
@@ -276,16 +275,6 @@ export default function FocusedWorkspacePage() {
           </div>
         </div>
       </header>
-      {!loading && !error && <nav className="border-b border-slate-800 px-4" aria-label="Arbeidsområdet">
-        <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto py-2">
-          {visibleTabs.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => { setShowTraining(false); setTab(id); }} type="button" aria-current={tab === id ? "page" : undefined}
-              className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm ${tab === id ? "bg-cyan-600 font-semibold text-white" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>
-              <Icon size={16}/>{label}
-            </button>
-          ))}
-        </div>
-      </nav>}
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-7">
         {ownerPreview && <div role="status" className="rounded-2xl border border-amber-600/70 bg-amber-950/30 p-4 text-amber-100">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -506,6 +495,8 @@ export default function FocusedWorkspacePage() {
                   className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300">Lukk kundekort</button>
               </div>
 
+              {isJointCrm && <p className="mt-3 text-sm font-semibold text-cyan-200">Ansvarlig rådgiver: Freddy Bremseth</p>}
+
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
                   <p className="text-[11px] uppercase text-slate-500">Status</p>
@@ -587,6 +578,7 @@ export default function FocusedWorkspacePage() {
                         {stale && <span className="rounded-full border border-amber-800 px-2 py-0.5 text-[10px] text-amber-300">Oppfølging</span>}
                       </div>
                       <p className="mt-1 text-sm text-slate-400">{contact.email || "Ingen e-post"}{contact.phone ? ` · ${contact.phone}` : ""}</p>
+                      {isJointCrm && <p className="mt-1 text-xs text-cyan-300">Ansvarlig: Freddy Bremseth · Felles Zen Eco Homes-lead</p>}
                       <p className="mt-1 text-xs text-slate-500">
                         <span className="text-cyan-300">{crmStatusLabels[contact.pipeline_status || "UNSET"] || contact.pipeline_status || "Uten status"}</span>
                         {contact.source ? ` · ${contact.source}` : ""} · Oppdatert {crmDate(contact.updated_at)}
@@ -642,7 +634,7 @@ export default function FocusedWorkspacePage() {
           />}
         {!loading && !error && (showGrowth || showMarketing) && tab === "growth" &&
           <section className="space-y-5">
-            {showMarketing && <details id="workspace-focus-social" open={requestedFocus === "social" || Boolean(socialPropertySeed)} className="scroll-mt-24 rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+            {showMarketing && (!requestedFocus || requestedFocus === "social") && <details id="workspace-focus-social" open={requestedFocus === "social" || Boolean(socialPropertySeed)} className="scroll-mt-24 rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">SoMe Studio</strong>
                 <p className="mt-1 text-sm text-slate-400">Lag og vurder tre Facebook/Instagram-konsepter. Når du lagrer, finner du utkastene i Content Hub for redigering, planlegging og publisering.</p>
@@ -656,8 +648,8 @@ export default function FocusedWorkspacePage() {
                 />
               </div>
             </details>}
-            {showGrowthTools && requestedFocus !== "social" && <GrowthCorporatePanel brandKey={brandKey} permissions={permissions} initialArea={requestedArea} />}
-            {showNexus && <details id="workspace-focus-nexus" open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
+            {showGrowthTools && (!requestedFocus || ["corporate", "content", "email", "visibility", "ads", "plan"].includes(requestedFocus)) && <GrowthCorporatePanel key={requestedArea || requestedFocus || "growth"} brandKey={brandKey} permissions={permissions} initialArea={requestedArea} />}
+            {showNexus && (!requestedFocus || requestedFocus === "nexus") && <details id="workspace-focus-nexus" open className="rounded-2xl border border-violet-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-violet-100">Nexus OS · innsikt</strong>
                 <p className="mt-1 text-sm text-slate-400">Se hva Nexus lærer og prioriterer uten tilgang til runtime, autonomy eller utførelse.</p>
@@ -666,7 +658,7 @@ export default function FocusedWorkspacePage() {
                 <WorkspaceNexusInsightsPanel brandKey={brandKey} />
               </div>
             </details>}
-            {showReels && <details id="workspace-focus-reels" open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+            {showReels && (!requestedFocus || requestedFocus === "reels") && <details id="workspace-focus-reels" open className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">Reels Studio</strong>
                 <p className="mt-1 text-sm text-slate-400">Lag og forhåndsvis Reels uten å åpne Re-Master-admin.</p>
@@ -677,7 +669,7 @@ export default function FocusedWorkspacePage() {
                   initialProperty={reelPropertySeed} onInitialPropertyConsumed={() => setReelPropertySeed(null)} />
               </div>
             </details>}
-            {showYoutube && <details id="workspace-focus-youtube" open className="rounded-2xl border border-red-900/60 bg-slate-900/70">
+            {showYoutube && (!requestedFocus || requestedFocus === "youtube") && <details id="workspace-focus-youtube" open className="rounded-2xl border border-red-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-red-100">YouTube Studio</strong>
                 <p className="mt-1 text-sm text-slate-400">Se Zen-kanalen og publiser ferdig Reel som YouTube Short uten kanaladmin.</p>
@@ -687,7 +679,7 @@ export default function FocusedWorkspacePage() {
               </div>
             </details>}
             
-            {permissions.includes("marketing.publish") && <details className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
+            {permissions.includes("marketing.publish") && (!requestedFocus || requestedFocus === "publish") && <details className="rounded-2xl border border-cyan-900/60 bg-slate-900/70">
               <summary className="cursor-pointer list-none p-5">
                 <strong className="text-lg text-cyan-100">Publiser til sosiale medier</strong>
                 <p className="mt-1 text-sm text-slate-400">Velg et eksisterende brand-utkast og publiser bare til de kanalene RealtyFlow har verifisert.</p>
