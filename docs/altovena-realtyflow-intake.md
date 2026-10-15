@@ -69,3 +69,10 @@ The production database and real users are unchanged. The Altovena contact form 
 - Only users with an independently verified `crm.write` grant can use **Start oppfølging** (`IN_PROGRESS`) or **Marker oppfølging utført** (`DONE`) quick actions. These actions require same-origin JSON and update only an existing `altovena`/`website_lead` task by UUID, with an allowed prior status.
 - Task resolution **does not** automatically send email, mark a customer as contacted, alter CRM customer details or imply newsletter consent. The human user must complete the follow-up before marking a task done.
 - These controls and their permission boundaries are covered by `Altovena intake validation` contract tests. The features remain in a draft PR until reviewed and deployed.
+
+## Privacy erasure semantics (15 October 2026)
+
+- Intake receipts reference both the canonical CRM contact and its associated follow-up work item. Their foreign keys use `ON DELETE CASCADE` so a verified, authorised erasure is not blocked by historic ingestion receipts.
+- When a contact with **both** `brand_id='altovena'` and `brand='altovena'` is deleted through a permitted administrative flow, a narrowly scoped `BEFORE DELETE` trigger removes only `altovena`/`website_lead` work items whose `source_id` is that contact UUID. All corresponding receipts disappear automatically. Other-brand work items and contacts are never touched by the trigger.
+- These are infrastructure safeguards, **not** a public self-service deletion endpoint. Identity checks, retention rules, audit requirements and an approved legal-erasure workflow are still required; do not erase contacts solely on the basis of an unverified website request.
+- The isolated PostgreSQL integration test deletes a test contact and verifies related receipt/task removal, preserving foreign-brand data; it also checks task-deletion receipt cleanup. Never run this fixture against production.
