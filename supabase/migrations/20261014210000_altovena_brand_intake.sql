@@ -131,3 +131,60 @@ revoke execute on function public.altovena_receive_lead(uuid,text,text,text,text
 grant execute on function public.altovena_receive_lead(uuid,text,text,text,text,text) to service_role;
 comment on function public.altovena_receive_lead(uuid,text,text,text,text,text) is
   'Atomic Altovena-only contact/work-item intake. Only service_role may call. No cross-brand merges.';
+
+-- Authenticated staff mutations go through the existing verified brand-workspace
+-- middleware and this service-role-only RPC, recording an internal audit event.
+-- Do NOT expose this RPC directly to browser authentication roles.
+create or replace function public.altovena_mark_lead_task(
+  p_task_id uuid,
+  p_status text,
+  p_actor_email text
+) returns jsonb
+language plpgsql
+security invoker
+set search_path=''
+as $$
+declare
+  v_actor text := lower(btrim(coalesce(p_actor_email,'')));
+  v_id uuid;
+  v_status text;
+begin
+  if p_task_id is null
+    or p_status is null
+    or p_status not in ('IN_PROGRESS','DONE')
+    or v_actor !~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
+  then raise exception 'Invalid Altovena task mutation'; end if;
+
+  update public.work_items
+    set status=p_status,
+        updated_at=now(),
+        metadata=jsonb_set(
+          coalesce(metadata,'{}'::jsonb),
+          '{status_history}',
+          (case when jsonb_typeof(metadata->'status_history')='array'
+                 then metadata->'status_history' else '[]'::jsonb end)
+          || jsonb_build_array(jsonb_build_object(
+             'at',now(),
+             'status',p_status,
+             'actor',v_actor,
+             'source','verified_altovena_workspace'
+          )),
+          true
+        )
+    where id=p_task_id
+      and brand_id='altovena'
+      and source_type='website_lead'
+      and status in ('TO_DO','IN_PROGRESS','REVIEW')
+    returning id,status into v_id,v_status;
+
+  if v_id is null then
+    return jsonb_build_object('ok',false,'error','TASK_NOT_FOUND_OR_ALREADY_HANDLED');
+  end if;
+  return jsonb_build_object('ok',true,'brand','altovena',
+    'task',jsonb_build_object('id',v_id::text,'status',v_status));
+end $$;
+revoke execute on function public.altovena_mark_lead_task(uuid,text,text)
+  from public,anon,authenticated;
+grant execute on function public.altovena_mark_lead_task(uuid,text,text) to service_role;
+comment on function public.altovena_mark_lead_task(uuid,text,text) is
+  'Verified staff-only, brand-scoped lead task transitions with append-only metadata history.';
