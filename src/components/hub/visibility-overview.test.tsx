@@ -97,3 +97,46 @@ test("no publisher data is not falsely treated as publication-ready or blocked",
   const html = renderToStaticMarkup(createElement(VisibilityOverview, { report: null }));
   assert.doesNotMatch(html, /Publiseringsblokkeringer/);
 });
+
+test("old sample cannot be described as current SEO clearance", () => {
+  const report = {
+    sites: [{
+      brandId: "donaanna", pagesChecked: 1, checkedAt: "2024-01-01T00:00:00Z",
+      incomplete: false, sampledPaths: [],
+      visibilityDiagnostic: { diagnosticStatus: "OBSERVED_NO_BLOCKERS", issues: [], incomplete: false, sampledOnly: true },
+    }],
+  } as unknown as SEOControlReport;
+  const html = renderToStaticMarkup(createElement(VisibilityOverview, { report }));
+  assert.match(html, /eldre kontroll/);
+  assert.match(html, /Kontrollen er eldre enn 10 dager/);
+  assert.match(html, /historiske observasjoner/);
+});
+
+test("missing evidence timestamp is unknown rather than a fresh approval", () => {
+  const report = {
+    sites: [{
+      brandId: "remasterfreddy", pagesChecked: 1, checkedAt: "invalid-timestamp",
+      incomplete: false, sampledPaths: [],
+      visibilityDiagnostic: { diagnosticStatus: "REVIEW_RECOMMENDED", issues: [
+        { code: "HEADING_STRUCTURE", evidence: "Server HTML lacks H1" },
+      ], incomplete: false, sampledOnly: true },
+    }],
+  } as unknown as SEOControlReport;
+  const html = renderToStaticMarkup(createElement(VisibilityOverview, { report }));
+  assert.match(html, /kontrolltid ukjent/);
+  assert.match(html, /Kontrolltidspunktet kan ikke verifiseres/);
+  assert.match(html, /Server HTML lacks H1/);
+  assert.doesNotMatch(html, /Invalid Date/);
+});
+
+test("stored publisher blockers disclose unavailable verification time", () => {
+  const html = renderToStaticMarkup(createElement(VisibilityOverview, {
+    report: null, publishingStatuses: [
+      { brandId: "donaanna", status: "blocked", reason: "Source mismatch", page: "/", published: 0 },
+    ],
+  }));
+  assert.match(html, /kontrolltid ukjent/);
+  assert.match(html, /kontrolltid er ikke oppgitt/);
+  assert.match(html, /Source mismatch/);
+  assert.doesNotMatch(html, /Godkjenn publisering/);
+});
