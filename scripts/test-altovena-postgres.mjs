@@ -80,5 +80,35 @@ try {
   assert.equal(await count("public.contacts","email='rollback@example.invalid'"),0);
   assert.equal(await count("public.altovena_intake_receipts","submission_id=$1",[ids[3]]),0);
   assert.equal(await count("public.work_items","brand_id='altovena'"),2);
-  console.log("PASS: real Altovena migration idempotent; roles restricted; scoped CRM and tasks; retry safety; consent, identity and transaction rollback verified.");
+  // Concurrent submissions are realistic: two tabs or impatient double clicks.
+  // Locking by brand/email must yield ONE contact and two separately traceable requests.
+  const concurrently=async(submissionId,message)=>{
+    const connection=new pg.Client({connectionString:urlText,connectionTimeoutMillis:5000});
+    await connection.connect();
+    try{
+      await connection.query("set role service_role");
+      const r=await connection.query(
+        "select public.altovena_receive_lead($1::uuid,$2::text,$3::text,$4::text,$5::text,$6::text) as answer",
+        [submissionId,"Parallel Example","parallel@example.invalid","Parallel Ltd",message,"realtyflow"]
+      );
+      return r.rows[0].answer;
+    }finally{await connection.end();}
+  };
+  const pair=await Promise.all([
+    concurrently("55555555-5555-4555-8555-555555555555","First parallel request"),
+    concurrently("66666666-6666-4666-8666-666666666666","Second parallel request"),
+  ]);
+  assert.equal(pair[0].leadId,pair[1].leadId);
+  assert.notEqual(pair[0].workItemId,pair[1].workItemId);
+  assert.equal(await count("public.contacts","brand_id='altovena' and email='parallel@example.invalid'"),1);
+  assert.equal(await count("public.work_items","brand_id='altovena' and source_id=$1",[pair[0].leadId]),2);
+  const race=await Promise.all([
+    concurrently("77777777-7777-4777-8777-777777777777","Same ID both clients"),
+    concurrently("77777777-7777-4777-8777-777777777777","Same ID both clients"),
+  ]);
+  assert.equal(race[0].leadId,race[1].leadId);
+  assert.equal(race[0].workItemId,race[1].workItemId);
+  assert.deepEqual(race.map(r=>r.duplicate).sort(),[false,true]);
+  assert.equal(await count("public.work_items","brand_id='altovena' and source_id=$1",[pair[0].leadId]),3);
+  console.log("PASS: real Altovena SQL migration, role restrictions, brand isolation, atomicity, consent, identity, duplicate and concurrent lead safety.");
 }finally{await client.end();}
