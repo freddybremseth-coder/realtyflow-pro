@@ -9,9 +9,9 @@ const fail = (status: number, code: string) =>
   NextResponse.json({ ok: false, error: { code } }, { status, headers: noStore });
 
 /**
- * Only individually owner-approved NEW Zen Eco leads, never the historical
- * Zen brand-wide CRM. The reviewed SQL cohort + live staff grant are rechecked
- * at every request using the independently verified Supabase Auth user ID.
+ * Only explicitly assigned Zen contacts or individually approved new joint Zen leads.
+ * Historical clients require a verified member-specific workspace assignment;
+ * the SQL RPC rechecks assignment, brand, and current grant on every request.
  */
 export async function GET(request: NextRequest, { params }: { params: { brandKey: string } }) {
   if (params.brandKey !== "zeneco") return fail(404, "WORKSPACE_NOT_FOUND");
@@ -49,7 +49,9 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
     const row = item as Record<string, unknown>;
     return row.brand_id === "zeneco" && row.brand === "zeneco" &&
       typeof row.id === "string" && typeof row.name === "string" &&
-      typeof row.created_at === "string" && Date.parse(row.created_at) >= cutoff;
+      typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at)) &&
+      (row.assigned_to_member === true ||
+        (row.approved_joint_lead === true && Date.parse(row.created_at) >= cutoff));
   }).slice(0, 50).map((row: Record<string, unknown>) => ({
     id: row.id, name: row.name, email: typeof row.email === "string" ? row.email : null,
     phone: typeof row.phone === "string" ? row.phone : null,
@@ -67,7 +69,7 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
 
 
 /**
- * Edit only basic details of an already reviewed joint Zen contact.
+ * Edit only basic details of an explicitly assigned or approved joint Zen contact.
  * No create/delete, brand transfer, status change, notes or financial fields.
  * SQL checks the current user grant AND the approved contact in one UPDATE,
  * then records who edited it without copying PII into a global audit table.
@@ -110,7 +112,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
   if (error) return fail(503, "JOINT_CRM_UNAVAILABLE");
   if (!data) return fail(404, "JOINT_CONTACT_NOT_FOUND");
   if (data.id !== input.id || data.brand_id !== "zeneco" || data.brand !== "zeneco" ||
-      typeof data.created_at !== "string" || Date.parse(data.created_at) < cutoff)
+      typeof data.created_at !== "string" || !Number.isFinite(Date.parse(data.created_at)))
     return fail(503, "JOINT_CRM_UNAVAILABLE");
   return NextResponse.json({
     ok: true, brand: "zeneco",
