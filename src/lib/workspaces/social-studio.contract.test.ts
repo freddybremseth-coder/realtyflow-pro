@@ -743,5 +743,6 @@ test("SoMe Studio overview has a prominent direct Content Hub link filtered by b
   assert.match(contentHubPage, /requestedOrigin === "social-studio" && requestedBrand/);
   assert.match(contentHubPage, /setActiveContentTab\("utkast"\)/);
   assert.match(scopedContentHubPage, /"\/api\/workspaces\/" \+ encodeURIComponent\(brandKey\) \+ "\/marketing"/);
-  assert.match(scopedContentHubPage, /brandKey === "altovena" \? "Altovena"/);
+  assert.match(scopedContentHubPage, /\["zeneco", "pinosoecolife", "altovena"\]\.includes\(brandKey\)/);
+  assert.match(scopedContentHubPage, /brandKey === "pinosoecolife" \? "Pinoso EcoLife" : "Altovena"/);
 });
