@@ -105,3 +105,11 @@ The owner Freddy uses an owner session and does not need a redundant employee-st
 All website-side settings, legal review, domain HTTPS, test delivery and notifications require an independent verification step. The checklist permanently reports the public form as **not ready** until a deliberate, separately reviewed go-live release; this dashboard cannot enable customer collection.
 
 **Status before production activation:** RealtyFlow's live Altovena brand and both intake/status RPCs were absent, and Altovena's Vercel project had no configured environment variables in the last read-only check. It is incorrect to describe the new lead or task workflow as publicly active at this point.
+
+## Live database health as a release gate (15 October 2026)
+
+- Added `public.altovena_intake_health()`, a read-only, **service-role-only** function in the Altovena migration. It verifies the current Altovena brand, intake receipts table, and that both the intake and task-status functions exist and are callable by service role **but not** by `anon` or `authenticated`. It returns only booleans and a schema version, never customer or credential data.
+- The owner launch readiness API now requires the **live** health function to return the expected `altovena-intake-v1` version and all positive safety booleans. A missing migration is marked blocked rather than treating configured environment variables as proof that the database is ready. Unexpected RPC failures return HTTP 503, also blocking launch.
+- The server-side intake configuration is marked verified only when the live migration is healthy, a sufficiently long key is present and the RealtyFlow enable switch is deliberately on. **Actual form delivery, Turnstile, legal approval, full-domain HTTPS and notification routing remain independent checks.** Public-form readiness is still forced false.
+- The disposable PostgreSQL 17 job now tests the real health function's values and its service-role-only execute grants. The owner API has executable session/role tests for no login, staff login, owner-preview, missing and broken migrations, valid but unapproved configuration, verified operator grants and secret-free output.
+- These checks must be re-run and recorded against the final PR commit before any production merge. There is **no live Supabase migration or customer write** in this change.
