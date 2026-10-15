@@ -304,7 +304,7 @@ export function Sidebar() {
     "/marketing", "/workspace/zeneco?tab=growth&focus=social",
     "/growth-hub", "/visibility", "/email", "/ad-campaigns",
     "/content", "/content-hub", "/website-cms", "/content-studio",
-    "/finance", "/operations", "/hjelp",
+    "/finance", "/operations", "/nexus-os/agent-oppdrag", "/hjelp",
   ]);
   const visibleSections = useMemo(() => (
     user?.role === "OWNER" && simpleMode
