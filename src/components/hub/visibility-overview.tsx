@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { SEOControlReport } from "@/services/agents/seo-control-report";
 
 const names: Record<string, string> = {
