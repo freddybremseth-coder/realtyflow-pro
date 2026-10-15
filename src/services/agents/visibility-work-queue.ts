@@ -8,7 +8,7 @@ import type { VisibilityFinding } from "@/lib/visibility-product";
 
 export type VisibilityWorkState =
   | "PROPOSED" | "QUEUED" | "RUNNING" | "AWAITING_APPROVAL"
-  | "BLOCKED" | "VERIFYING" | "VERIFIED" | "FAILED";
+  | "BLOCKED" | "VERIFYING" | "UNVERIFIED" | "FAILED" | "CANCELLED";
 
 export type VisibilityWorkPlan = {
   source_type: "ai_agent";
@@ -72,7 +72,10 @@ export function planVisibilityWorkItem(finding: VisibilityFinding): VisibilityWo
 
 export function visibilityWorkDisplayState(status: string, metadata?: Record<string, unknown> | null): VisibilityWorkState {
   const execution = metadata?.execution_state;
-  if (execution === "VERIFIED" && status === "DONE") return "VERIFIED";
+  // No independent verification receipt exists in this phase. A writable metadata
+  // marker can be forged via the generic work-items PATCH route and is NOT proof.
+  if (status === "DONE") return "UNVERIFIED";
+  if (status === "CANCELLED") return "CANCELLED";
   if (execution === "VERIFYING") return "VERIFYING";
   if (execution === "AWAITING_APPROVAL") return "AWAITING_APPROVAL";
   if (execution === "BLOCKED") return "BLOCKED";
@@ -80,6 +83,5 @@ export function visibilityWorkDisplayState(status: string, metadata?: Record<str
   if (execution === "PROPOSED") return "PROPOSED";
   if (status === "IN_PROGRESS") return "RUNNING";
   if (status === "TO_DO" || status === "REVIEW") return "QUEUED";
-  // DONE without verification evidence is not a verified resolution.
   return "PROPOSED";
 }
