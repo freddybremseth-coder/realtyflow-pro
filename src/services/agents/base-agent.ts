@@ -75,6 +75,8 @@ export abstract class BaseAgent {
 
   protected client: Anthropic;
   protected model: string = "claude-sonnet-5";
+  protected lastAIModel: string | null = null;
+  protected getAIFallbackProviders(): readonly ('gemini' | 'openai')[] { return ['gemini', 'openai']; }
 
   constructor(name: string, role: string, expertise: string[]) {
     this.name = name;
@@ -90,12 +92,15 @@ export abstract class BaseAgent {
   protected async callAI(prompt: string, systemPrompt?: string): Promise<string> {
     const system = systemPrompt ?? this.getDefaultSystemPrompt();
 
-    // Use askClaude which has built-in fallback to Gemini/OpenAI
+    // Each agent may restrict fallback providers without affecting the others.
+    this.lastAIModel = null;
     try {
       return await askClaude(prompt, {
         systemPrompt: system,
         maxTokens: 4096,
         model: 'sonnet',
+        fallbackProviders: this.getAIFallbackProviders(),
+        onProviderSelected: (_provider, model) => { this.lastAIModel = model; },
       });
     } catch (error) {
       const errorMessage =
