@@ -110,5 +110,32 @@ try {
   assert.equal(race[0].workItemId,race[1].workItemId);
   assert.deepEqual(race.map(r=>r.duplicate).sort(),[false,true]);
   assert.equal(await count("public.work_items","brand_id='altovena' and source_id=$1",[pair[0].leadId]),3);
-  console.log("PASS: real Altovena SQL migration, role restrictions, brand isolation, atomicity, consent, identity, duplicate and concurrent lead safety.");
+  // Human follow-up status changes are atomic and audited, and never send messages.
+  const acl = await client.query(
+    "select has_function_privilege('anon',$1,'EXECUTE') as anon, has_function_privilege('authenticated',$1,'EXECUTE') as authenticated, has_function_privilege('service_role',$1,'EXECUTE') as service_role",
+    ["public.altovena_mark_lead_task(uuid,text,text)"],
+  );
+  assert.deepEqual(acl.rows[0],{anon:false,authenticated:false,service_role:true});
+  const change = (taskId,status,actor="andrea@example.invalid") =>
+    client.query("select public.altovena_mark_lead_task($1::uuid,$2::text,$3::text) as answer",[taskId,status,actor]);
+  const started=(await change(first.workItemId,"IN_PROGRESS")).rows[0].answer;
+  assert.deepEqual(started,{ok:true,brand:"altovena",task:{id:first.workItemId,status:"IN_PROGRESS"}});
+  const closed=(await change(first.workItemId,"DONE","owner@example.invalid")).rows[0].answer;
+  assert.equal(closed.task.status,"DONE");
+  const saved=(await client.query("select status,metadata from public.work_items where id=$1",[first.workItemId])).rows[0];
+  assert.equal(saved.status,"DONE");
+  assert.deepEqual(saved.metadata.status_history.map(event=>event.actor),["andrea@example.invalid","owner@example.invalid"]);
+  assert.deepEqual(saved.metadata.status_history.map(event=>event.status),["IN_PROGRESS","DONE"]);
+  assert.ok(saved.metadata.status_history.every(event=>Boolean(event.at)));
+  assert.ok(saved.metadata.status_history.every(event=>event.source==="verified_altovena_workspace"));
+  const again=(await change(first.workItemId,"DONE")).rows[0].answer;
+  assert.deepEqual(again,{ok:false,error:"TASK_NOT_FOUND_OR_ALREADY_HANDLED"});
+  const foreign=await client.query(
+    "insert into public.work_items(title,brand_id,source_type) values ('Foreign brand lead task','zeneco','website_lead') returning id",
+  );
+  const denied=(await change(foreign.rows[0].id,"IN_PROGRESS")).rows[0].answer;
+  assert.equal(denied.ok,false);
+  assert.equal((await client.query("select status from public.work_items where id=$1",[foreign.rows[0].id])).rows[0].status,"TO_DO");
+  await assert.rejects(change(second.workItemId,"CANCELLED"),/Invalid Altovena task mutation/);
+  console.log("PASS: real Altovena SQL migration, role restrictions, brand isolation, atomicity, consent, identity, duplicate/concurrent leads and audited brand-scoped task transitions.");
 }finally{await client.end();}
