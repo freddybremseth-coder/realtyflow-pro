@@ -34,11 +34,15 @@ export async function GET(
 
   let permissions: WorkspacePermission[] = [...WORKSPACE_PERMISSIONS];
   let responsibilities: WorkspaceResponsibilityId[] = [];
+  let operationalRole: "BRAND_OPERATIONS" | undefined;
   if (context.role !== "OWNER") {
     const grant = scope.grant;
     if (!grant?.user_id) return fail(403, "ACCESS_DENIED");
     const { data: identity, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !identity?.user) return fail(403, "ACCESS_DENIED");
+    // Role is metadata only. It never bypasses explicit granular grants or brand guards.
+    if (grant.operational_role === "BRAND_OPERATIONS" &&
+        ["zeneco", "pinosoecolife"].includes(brandKey)) operationalRole = "BRAND_OPERATIONS";
     permissions = WORKSPACE_PERMISSIONS.filter(permission =>
       (brandKey === "zeneco"
         ? permission !== "crm.read" && permission !== "crm.write"
@@ -110,5 +114,7 @@ export async function GET(
     }
     if (permissions.length === 0) return fail(403, "ACCESS_DENIED");
   }
-  return NextResponse.json({ ok: true, brand: brandKey, permissions, responsibilities }, { headers: noStore });
+  return NextResponse.json({ ok: true, brand: brandKey, permissions, responsibilities,
+    ...(operationalRole ? { operationalRole } : {}),
+  }, { headers: noStore });
 }
