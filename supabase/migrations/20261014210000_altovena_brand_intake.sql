@@ -214,3 +214,44 @@ before delete on public.contacts
 for each row execute function public.altovena_delete_contact_related_tasks();
 comment on function public.altovena_delete_contact_related_tasks() is
   'Clean up Altovena-owned website leads and receipts when an authorized Altovena contact erasure occurs.';
+
+
+-- A read-only, service-role-only health probe for the OWNER go-live checklist.
+-- It discloses no customer information and performs no data mutations.
+-- Both write RPCs and the receipts table must be present before intake is ready.
+create or replace function public.altovena_intake_health()
+returns jsonb
+language sql
+stable
+security invoker
+set search_path=''
+as $$
+  select jsonb_build_object(
+    'schema_version','altovena-intake-v1',
+    'brand_present',exists(
+      select 1 from core.brands where brand_key='altovena'
+    ),
+    'receipts_present',pg_catalog.to_regclass('public.altovena_intake_receipts') is not null,
+    'intake_rpc_secured',
+      pg_catalog.to_regprocedure('public.altovena_receive_lead(uuid,text,text,text,text,text)') is not null
+      and pg_catalog.has_function_privilege('service_role',
+        'public.altovena_receive_lead(uuid,text,text,text,text,text)','EXECUTE')
+      and not pg_catalog.has_function_privilege('anon',
+        'public.altovena_receive_lead(uuid,text,text,text,text,text)','EXECUTE')
+      and not pg_catalog.has_function_privilege('authenticated',
+        'public.altovena_receive_lead(uuid,text,text,text,text,text)','EXECUTE'),
+    'task_rpc_secured',
+      pg_catalog.to_regprocedure('public.altovena_mark_lead_task(uuid,text,text)') is not null
+      and pg_catalog.has_function_privilege('service_role',
+        'public.altovena_mark_lead_task(uuid,text,text)','EXECUTE')
+      and not pg_catalog.has_function_privilege('anon',
+        'public.altovena_mark_lead_task(uuid,text,text)','EXECUTE')
+      and not pg_catalog.has_function_privilege('authenticated',
+        'public.altovena_mark_lead_task(uuid,text,text)','EXECUTE')
+  );
+$$;
+revoke execute on function public.altovena_intake_health()
+  from public,anon,authenticated;
+grant execute on function public.altovena_intake_health() to service_role;
+comment on function public.altovena_intake_health() is
+  'Read-only Altovena intake readiness: brand, receipt table, and locked-down server RPCs.';
