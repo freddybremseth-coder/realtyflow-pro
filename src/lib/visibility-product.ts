@@ -56,7 +56,7 @@ export function buildVisibilityProduct(input: VisibilitySource): VisibilityProdu
     ...statuses.map(s => s.brandId),
     ...metrics.map(s => s.brandId),
   ]);
-  const sites: VisibilitySite[] = [...ids].filter(Boolean).map(id => {
+  const sites: VisibilitySite[] = [...ids].filter(Boolean).map((id): VisibilitySite => {
     const site = auditSites.find(s => s.brandId === id);
     const publisher = statuses.find(s => s.brandId === id);
     const metric = metrics.find(s => s.brandId === id);
