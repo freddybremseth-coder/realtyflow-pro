@@ -42,3 +42,18 @@ test("known observed issue renders as an investigation, not an approval task", (
   assert.match(html, /Skrivebeskyttet/);
   assert.doesNotMatch(html, /Godkjenn publisering/);
 });
+
+test("incomplete sampled audits cannot be presented as SEO-cleared sites", () => {
+  const report = {
+    sites: [{
+      brandId: "zeneco", checkedAt: "2026-10-15T08:00:00Z", pagesChecked: 1, incomplete: true,
+      visibilityDiagnostic: {
+        diagnosticStatus: "UNKNOWN", issues: [], incomplete: true, sampledOnly: true, publicationEligible: false,
+      },
+    }],
+  } as unknown as SEOControlReport;
+  const html = renderToStaticMarkup(createElement(VisibilityOverview, { report }));
+  assert.match(html, /Ingen funn registrert, men datagrunnlaget er ufullstendig/);
+  assert.doesNotMatch(html, /Ingen klassifiserte blokkeringer i utvalget/);
+  assert.match(html, /1 observert side/);
+});

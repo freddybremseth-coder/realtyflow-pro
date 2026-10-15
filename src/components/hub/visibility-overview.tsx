@@ -12,7 +12,7 @@ const names: Record<string, string> = {
 };
 const statusText: Record<string, string> = {
   UNKNOWN: "Ufullstendige data", ACTION_REQUIRED: "Teknisk funn",
-  REVIEW_RECOMMENDED: "Bør vurderes", OBSERVED_NO_BLOCKERS: "Ingen blokkering observert",
+  REVIEW_RECOMMENDED: "Bør vurderes", OBSERVED_NO_BLOCKERS: "Ingen klassifiserte blokkeringer i utvalget",
 };
 export function VisibilityOverview({ report }: { report: SEOControlReport | null | undefined }) {
   const [brand, setBrand] = useState("all");
@@ -45,13 +45,14 @@ export function VisibilityOverview({ report }: { report: SEOControlReport | null
             <h4 className="font-semibold">{names[site.brandId] ?? site.brandId}</h4>
             <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold">{audit ? (statusText[audit.diagnosticStatus] ?? "Ukjent") : "Krever ny kontroll"}</span>
           </div>
-          <p className="mt-2 text-xs text-slate-600">{site.pagesChecked} observerte sider · {audit?.issues.length ?? "ukjent"} klassifiserte funn</p>
+          <p className="mt-2 text-xs text-slate-600">{site.pagesChecked} {site.pagesChecked === 1 ? "observert side" : "observerte sider"} · {audit?.issues.length ?? "ukjent"} klassifiserte funn</p>
           {audit?.incomplete && <p className="mt-2 text-xs text-amber-800">Kontrollen er ufullstendig. Ikke konkluder om nettstedets totale tilstand.</p>}
           {audit && audit.issues.length > 0 && <ul className="mt-3 list-disc space-y-2 pl-5 text-sm">
             {audit?.issues.map((issue, index) => <li key={issue.code + index}><strong>{issue.code.replaceAll("_", " ")}</strong>: {issue.evidence}</li>)}
           </ul>}
           {!audit && <p role="status" className="mt-3 text-sm text-amber-800">Rapporten ble lagret før Visibility-kontrollen ble lagt til. Kjør en ny SEO-kontroll for denne merkevaren.</p>}
-          {audit && audit.issues.length === 0 && <p className="mt-3 text-sm text-slate-700">Ingen av de begrensede kontrollene ga et klassifisert funn.</p>}
+          {audit && !audit.incomplete && audit.issues.length === 0 && <p className="mt-3 text-sm text-slate-700">Ingen klassifiserte funn i det begrensede utvalget. Dette er ikke en fullstendig SEO-kontroll.</p>}
+          {audit && audit.incomplete && audit.issues.length === 0 && <p className="mt-3 text-sm text-amber-800">Ingen funn registrert, men datagrunnlaget er ufullstendig og kan ikke friskmelde siden.</p>}
           <p className="mt-3 text-xs text-slate-500">Sist kontrollert: {site.checkedAt ? new Date(site.checkedAt).toLocaleString("nb-NO") : "Ukjent"}</p>
         </article>;
       })}
