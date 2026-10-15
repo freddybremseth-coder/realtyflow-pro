@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { DonaAnnaVisibilityApproval } from "./dona-anna-approval";
+import { VisibilityWorkQueue } from "./visibility-work-queue";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, ArrowRight, ArrowUpRight, BarChart3, CheckCircle2, ChevronRight,
@@ -268,6 +269,7 @@ export function VisibilityProductConsole(){
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5"><h3 className="font-bold">Neste måleledd</h3><p className="mt-2 text-sm text-slate-600">GA4-hendelser → skjema → CRM-kvalifiserte henvendelser → reell effekt. Dette er produktplanen, ikke ferdig målt attribusjon i dagens Visibility.</p></div>
           </>}
           {tab==="workflow"&&<>
+            {mode==="live"&&<VisibilityWorkQueue/>}
             <div><h2 className="text-2xl font-extrabold">Slik arbeider Nexus Visibility</h2><p className="mt-1 text-sm text-slate-600">Produktreisen fra tilkobling til dokumenterte beslutninger. Aktiv funksjonalitet og planlagte steg er merket separat.</p></div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{steps.map(s=><article key={s.n} className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="flex items-center justify-between gap-3"><span className="text-2xl font-black text-teal-700">{s.n}</span><span className={"rounded-full px-2 py-1 text-xs font-semibold "+(s.state==="I bruk"?"bg-teal-50 text-teal-900":"bg-slate-100 text-slate-700")}>{s.state}</span></div>
