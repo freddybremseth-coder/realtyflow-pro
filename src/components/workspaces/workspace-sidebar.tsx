@@ -23,6 +23,7 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [permissions, setPermissions] = useState<WorkspacePermission[]>([]);
+  const [operationalRole, setOperationalRole] = useState<string>("");
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -33,6 +34,7 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setOperationalRole("");
     Promise.all([
       fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/capabilities`, { cache: "no-store", signal: controller.signal }),
       fetch("/api/workspaces/available", { cache: "no-store", signal: controller.signal }),
@@ -42,6 +44,7 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
       const list = available.ok ? await available.json() : null;
       if (controller.signal.aborted) return;
       setPermissions(Array.isArray(cap.permissions) ? cap.permissions : []);
+      setOperationalRole(cap.operationalRole === "BRAND_OPERATIONS" ? "Brand Operations" : "");
       setBrands(Array.isArray(list?.workspaces)
         ? list.workspaces.filter((item: Brand) => item.brandKey === "zeneco" || item.brandKey === "pinosoecolife")
         : []);
@@ -140,7 +143,8 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
         <button type="button" onClick={() => setBrandPickerOpen(value => !value)}
           aria-expanded={brandPickerOpen}
           className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm font-semibold hover:bg-slate-800">
-          <span>{isZen ? "Zen Eco Homes" : "PinosoEcolife"}</span><ChevronDown size={16}/>
+          <span>{isZen ? "Zen Eco Homes" : "PinosoEcolife"}{operationalRole &&
+            <span className="mt-1 block text-xs font-normal text-cyan-300">{operationalRole}</span>}</span><ChevronDown size={16}/>
         </button>
         {brandPickerOpen && <div className="mt-1 space-y-1 border-t border-slate-800 pt-2">
           {brands.map(brand => <Link key={brand.brandKey}
