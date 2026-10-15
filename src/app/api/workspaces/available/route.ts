@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     p_email: context.email,
   });
   if (error || !Array.isArray(candidates)) return fail(503, "WORKSPACE_UNAVAILABLE");
-  const workspaces: Array<{ brandKey: string; name: string; permissions: WorkspacePermission[] }> = [];
+  const workspaces: Array<{ brandKey: string; name: string; permissions: WorkspacePermission[]; operationalRole?: "BRAND_OPERATIONS" }> = [];
   for (const entry of candidates.slice(0, 100)) {
     const brand = entry?.brand;
     const grant = entry?.grant;
@@ -78,6 +78,9 @@ export async function GET(request: NextRequest) {
         brandKey: brand.brand_key,
         name: typeof brand.display_name === "string" ? brand.display_name : brand.brand_key,
         permissions,
+        ...(grant.operational_role === "BRAND_OPERATIONS" &&
+          ["zeneco", "pinosoecolife"].includes(brand.brand_key)
+          ? { operationalRole: "BRAND_OPERATIONS" as const } : {}),
       });
     }
   }
