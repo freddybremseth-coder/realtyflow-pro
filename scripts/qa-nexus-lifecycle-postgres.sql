@@ -201,3 +201,67 @@ begin
 end;
 $reject$;
 reset role;
+
+-- Staff read permission is separate from ordinary Nexus workspace access.
+do $view_default$
+begin
+ if exists(select 1 from core.nexus_execution_authorizations where capability='view') then
+   raise exception 'Migration incorrectly activated staff view capabilities';
+ end if;
+end;
+$view_default$;
+
+insert into core.nexus_execution_authorizations
+ (brand_id,user_id,capability,enabled,granted_at,granted_by)
+values
+ ('11111111-1111-4111-8111-111111111111',
+  '44444444-4444-4444-8444-444444444444',
+  'view',true,now(),'22222222-2222-4222-8222-222222222222');
+
+-- A view capability must also require an active current membership with
+-- independent nexus.read permission. Existing tasks.joint.write is insufficient.
+do $view_scoped$
+declare
+ allowed boolean;
+begin
+ select exists(
+    select 1 from core.nexus_execution_authorizations a
+    join core.brand_workspace_memberships m
+      on m.brand_id=a.brand_id and m.user_id=a.user_id
+    where a.brand_id='11111111-1111-4111-8111-111111111111'
+      and a.user_id='44444444-4444-4444-8444-444444444444'
+      and a.capability='view' and a.enabled=true
+      and m.status='active' and 'nexus.read'=any(m.permissions)
+ ) into allowed;
+ if allowed then raise exception 'Existing task write grant improperly enabled Nexus read'; end if;
+end;
+$view_scoped$;
+update core.brand_workspace_memberships
+set permissions=array_append(permissions,'nexus.read')
+where brand_id='11111111-1111-4111-8111-111111111111'
+ and user_id='44444444-4444-4444-8444-444444444444';
+do $view_active$
+begin
+ if not exists(
+    select 1 from core.nexus_execution_authorizations a
+    join core.brand_workspace_memberships m
+      on m.brand_id=a.brand_id and m.user_id=a.user_id
+    where a.brand_id='11111111-1111-4111-8111-111111111111'
+      and a.user_id='44444444-4444-4444-8444-444444444444'
+      and a.capability='view' and a.enabled=true
+      and m.status='active' and 'nexus.read'=any(m.permissions)
+ ) then raise exception 'Scoped view capability not recognized'; end if;
+end;
+$view_active$;
+update core.nexus_execution_authorizations
+set enabled=false
+where user_id='44444444-4444-4444-8444-444444444444' and capability='view';
+do $view_revoked$
+begin
+ if exists(
+    select 1 from core.nexus_execution_authorizations a
+    where a.user_id='44444444-4444-4444-8444-444444444444'
+      and a.capability='view' and a.enabled=true
+ ) then raise exception 'Disabled view capability was still authorized'; end if;
+end;
+$view_revoked$;
