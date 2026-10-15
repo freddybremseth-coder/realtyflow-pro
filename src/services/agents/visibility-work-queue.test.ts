@@ -22,7 +22,8 @@ test("Unknown identity cannot be placed in work queue", () => {
   assert.throws(() => planVisibilityWorkItem({...finding, brandId: "../other"}));
 });
 test("A closed task is not a verified outcome without evidence", () => {
-  assert.equal(visibilityWorkDisplayState("DONE", {}), "PROPOSED");
-  assert.equal(visibilityWorkDisplayState("DONE", {execution_state:"VERIFIED"}), "VERIFIED");
+  assert.equal(visibilityWorkDisplayState("DONE", {}), "UNVERIFIED");
+  assert.equal(visibilityWorkDisplayState("DONE", {execution_state:"VERIFIED"}), "UNVERIFIED");
+  assert.equal(visibilityWorkDisplayState("CANCELLED", {}), "CANCELLED");
   assert.equal(visibilityWorkDisplayState("TO_DO", {execution_state:"BLOCKED"}), "BLOCKED");
 });
