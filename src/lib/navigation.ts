@@ -15,7 +15,7 @@ const LABEL_OVERRIDES: Record<string,string> = {
   "/nexus-os/today":"I dag", "/personal-intelligence":"AI-rådgiver", "/nexus-os/inbox":"Innboks",
   "/nexus-os/focus":"Mitt fokus", "/nexus-os/communications":"E-post & kommunikasjon",
   "/nexus-os/brand-brain":"Merkevarer & kanaler", "/nexus-os/runtime":"Automatisering – status",
-  "/nexus-os/autonomy":"Autopilot-regler", "/nexus-os/outbound-engagement":"Outbound & Engagement", "/connections":"Tilkoblinger", "/nexus-os":"Nexus AI & autopilot",
+  "/nexus-os/autonomy":"Autopilot-regler", "/nexus-os/agent-oppdrag":"Agentoppdrag", "/nexus-os/outbound-engagement":"Outbound & Engagement", "/connections":"Tilkoblinger", "/nexus-os":"Nexus AI & autopilot",
 };
 const WORKSPACES_NAV_ITEM: NavigationItem = { label: "Arbeidsområder", href: "/workspaces", icon: "PanelsTopLeft" };
 const SALES_APP_NAV_ITEM: NavigationItem = { label: "Sales", href: "/sales", icon: "Users" };
@@ -29,6 +29,7 @@ const PERSONAL_INTELLIGENCE_NAV_ITEM: NavigationItem = { label: "AI-rådgiver", 
 const PROPERTY_360_NAV_ITEM: NavigationItem = { label: "Property 360", href: "/inventory/property-360", icon: "Target" };
 const BRAND_BRAIN_NAV_ITEM: NavigationItem = { label: "Merkevarer & kanaler", href: "/nexus-os/brand-brain", icon: "BrainCircuit" };
 const NEXUS_INBOX_NAV_ITEM: NavigationItem = { label: "Innboks", href: "/nexus-os/inbox", icon: "Inbox" };
+const NEXUS_TASK_BOARD_NAV_ITEM: NavigationItem = { label: "Agentoppdrag", href: "/nexus-os/agent-oppdrag", icon: "ClipboardCheck" };
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id:"workspace", label:"Hjem", icon:"PanelsTopLeft", hrefs:["/workspaces","/nexus-os/today","/nexus-os/focus","/personal-intelligence","/nexus-os/inbox","/nexus-os/communications","/approvals","/","/today"] },
@@ -37,7 +38,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
   { id:"content", label:"Content", icon:"Clapperboard", hrefs:["/content","/content-studio","/media-studio","/posts","/ai-personal-brand","/content-hub","/image-studio","/website-cms","/publishing","/publishing/forfatterstudio","/book-growth","/youtube-studio","/remaster-freddy"] },
   { id:"finance", label:"Finance", icon:"Banknote", hrefs:["/finance","/revenue-command","/commissions","/billing","/forecast","/monthly-close","/goals","/executive-briefing","/business-overview","/operating-review","/weekly-management-review","/continuous-improvement","/internal-alerts","/revenue-data-health","/care/invoices","/dona-anna","/mondeo"] },
   { id:"help", label:"Hjelp", icon:"BookOpen", hrefs:["/hjelp"] },
-  { id:"platform", label:"Platform / Operations", icon:"Settings", hrefs:["/operations","/business-hub","/platform","/demosites","/saas","/revenue-engine","/team-workload","/nexus-os/account-launch","/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/nexus-os/outbound-engagement","/automation","/agents","/data-health","/workspace-users","/access-control","/audit-log"] },
+  { id:"platform", label:"Platform / Operations", icon:"Settings", hrefs:["/operations","/business-hub","/platform","/demosites","/saas","/revenue-engine","/team-workload","/nexus-os/account-launch","/nexus-os","/os","/connections","/brands","/settings","/nexus-os/runtime","/nexus-os/autonomy","/nexus-os/agent-oppdrag","/nexus-os/outbound-engagement","/automation","/agents","/data-health","/workspace-users","/access-control","/audit-log"] },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
@@ -51,7 +52,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole,string[]> = {
   WORKSPACE_MEMBER:[],
 };
 
-function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,WORKSPACES_NAV_ITEM,SALES_APP_NAV_ITEM,MARKETING_APP_NAV_ITEM,ZENECO_SOME_STUDIO_NAV_ITEM,CONTENT_APP_NAV_ITEM,FINANCE_APP_NAV_ITEM,OPERATIONS_APP_NAV_ITEM,HELP_NAV_ITEM]; }
+function sourceItems(){ return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(),NEXUS_TODAY_NAV_ITEM,PERSONAL_INTELLIGENCE_NAV_ITEM,PROPERTY_360_NAV_ITEM,BRAND_BRAIN_NAV_ITEM,NEXUS_INBOX_NAV_ITEM,NEXUS_TASK_BOARD_NAV_ITEM,WORKSPACES_NAV_ITEM,SALES_APP_NAV_ITEM,MARKETING_APP_NAV_ITEM,ZENECO_SOME_STUDIO_NAV_ITEM,CONTENT_APP_NAV_ITEM,FINANCE_APP_NAV_ITEM,OPERATIONS_APP_NAV_ITEM,HELP_NAV_ITEM]; }
 function canSeeItem(role:AccessRole,permissions:string[],href:string){ if(role==="OWNER"&&OWNER_HIDDEN_HREFS.has(href)) return false; if(REVENUE_READ_PAGES.has(href)) return permissions.includes("revenue.read"); return canSeeNavHref(role,href); }
 export function buildVisibleNavigation(role:AccessRole,permissions:string[]):NavigationSection[]{ const itemByHref=new Map(sourceItems().map(item=>[item.href,{...item,label:LABEL_OVERRIDES[item.href]||item.label}])); return GROUPS.map(group=>({id:group.id,label:group.label,icon:group.icon,items:group.hrefs.map(href=>itemByHref.get(href)).filter((item):item is NavigationItem=>Boolean(item)).filter(item=>canSeeItem(role,permissions,item.href))})).filter(section=>section.items.length>0); }
 
