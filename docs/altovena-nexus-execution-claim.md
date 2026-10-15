@@ -73,3 +73,20 @@ The **same unmerged migration file** now also contains:
 - **No POST/PATCH/DELETE endpoint** and no approval/execute buttons. A stored decision is not interpreted as proof that an external action occurred.
 - Andrea/brand operators are intentionally **not yet granted access**. A separate endpoint must verify current identity and exact active per-brand membership and a dedicated `nexus.read` capability; do not grant owner-level access to solve this.
 - This PR is **not yet a deployed integration**: no staging database connection, real Supabase migration, user grant reconciliation, UI end-to-end test or provider worker is activated.
+
+
+## Phase 4: brand-scoped staff task board (read-only, disabled by default)
+
+- The private `core.nexus_execution_authorizations` enum now also allows a separate `view` capability; **no view grants are seeded**. It is not inferred from `tasks.joint.write`, Brand Operations, or `nexus.read`.
+- Route `GET /api/workspaces/[brandKey]/nexus-task-board` is limited to `zeneco` and `pinosoecolife`, and to an active, independently verified `WORKSPACE_MEMBER` / read-only owner-preview identity. Existing `requireBrandWorkspace(request,brandKey,"nexus.read")` checks the exact current brand grant and Supabase Auth user; the private database additionally verifies an enabled `view` capability and current `nexus.read` membership.
+- The SQL that reads task rows **rechecks** both identity and current per-brand membership in the same row-filtering statement, never falling back to another brand. The staff route enforces that every returned task belongs to the requested brand.
+- Both `NEXUS_TASK_BOARD_READ_ENABLED` and `NEXUS_TASK_BOARD_STAFF_READ_ENABLED` must equal `true` for any staff database connection. Both default to disabled. The server-side `NEXUS_TASK_BOARD_DATABASE_URL` and independently verified TLS remain mandatory.
+- Staff URL `/workspace/[brandKey]/agent-oppdrag` is linked only inside ZenEco / Pinoso workspaces with existing `nexus.read` permission. The page and API are GET-only and contain no approval or execution action. No demo rows impersonate real records.
+- Production access for Andrea is **not** activated. The eventual grant must be explicitly set per allowed brand after owner approval, with test accounts and revocation checks.
+
+### Supabase read-only compatibility finding
+A read-only metadata inspection of the currently connected active RealtyFlowPRO project showed existing RLS-enabled `core.brands` and `core.brand_workspace_memberships`, and **none** of the proposed `nexus_execution_*` tables. This was a SELECT-only inspection; no migration or production data was modified.
+
+The connected Supabase account did not reveal a clearly separate, active RealtyFlow staging project. Before activation, create/use a dedicated isolated staging environment and verify the private schema, SSL trust, permissions and migration history. A dedicated PostgreSQL read-only identity must have explicit narrowly scoped SELECT grants **and appropriate RLS policies** for the required private tables; simply granting SELECT to a non-BYPASSRLS user with RLS enabled yields no rows. Do not solve that by granting service_role to the browser or broadly opening the core schema. Design and test the role/RLS model before enabling `NEXUS_TASK_BOARD_READ_ENABLED` or `NEXUS_TASK_BOARD_STAFF_READ_ENABLED`.
+
+Staff workflow tests currently mock database responses, while isolated PostgreSQL tests exercise the opt-in view capability and its revocation. Full end-to-end integration with actual Auth sessions, a restricted DB reader credential, Supabase staging, and production browser routes remains a release blocker.
