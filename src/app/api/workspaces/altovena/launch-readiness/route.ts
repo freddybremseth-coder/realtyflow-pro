@@ -68,28 +68,30 @@ export async function GET(request: NextRequest) {
   const operatorConfigured = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
   let operatorVerified = false;
   let operatorPermissionsComplete = false;
-  if (brandRegistered && operatorConfigured) {
+  // Identity and permission checks must be independent. An active verified staff
+  // account does not imply any Altovena access, and should be identifiable even
+  // before the brand exists in the database.
+  if (operatorConfigured) {
     const { data: auth, error: authError } = await supabase.auth.admin.getUserById(id);
     if (authError) return reply({ ok: false, error: "USER_DIRECTORY_UNAVAILABLE" }, 503);
     const user = auth?.user;
-    if (user?.id === id && user?.email) {
-      const email = String(user.email).toLowerCase();
-      const { data: grants, error: grantsError } = await supabase.rpc("workspace_user_brand_grants", {
-        p_email: email,
-      });
-      if (grantsError || !Array.isArray(grants))
-        return reply({ ok: false, error: "GRANTS_UNAVAILABLE" }, 503);
-      const g = grants.find((entry: any) => entry?.brand?.id === brand.id)?.grant || null;
-      operatorVerified = Boolean(g && hasVerifiedBrandGrant({
-        grant: g, brandId: brand.id, sessionEmail: email, verifiedUserId: user.id,
-        verifiedUserEmail: email, permission: "crm.read",
-      }));
-      operatorPermissionsComplete = operatorVerified && OPERATIVE_PERMISSIONS.every(permission =>
-        hasVerifiedBrandGrant({
-          grant: g, brandId: brand.id, sessionEmail: email, verifiedUserId: user.id,
-          verifiedUserEmail: email, permission,
-        }),
-      );
+    if (user?.id === id && typeof user.email === "string" && user.email.trim()) {
+      operatorVerified = true;
+      if (brandRegistered) {
+        const email = user.email.trim().toLowerCase();
+        const { data: grants, error: grantsError } = await supabase.rpc("workspace_user_brand_grants", {
+          p_email: email,
+        });
+        if (grantsError || !Array.isArray(grants))
+          return reply({ ok: false, error: "GRANTS_UNAVAILABLE" }, 503);
+        const grant = grants.find((entry: any) => entry?.brand?.id === brand.id)?.grant || null;
+        operatorPermissionsComplete = OPERATIVE_PERMISSIONS.every(permission =>
+          hasVerifiedBrandGrant({
+            grant, brandId: brand.id, sessionEmail: email, verifiedUserId: user.id,
+            verifiedUserEmail: email, permission,
+          }),
+        );
+      }
     }
   }
 
