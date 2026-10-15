@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdminApi } from "@/lib/api-admin";
+import { getRequestAccessContext } from "@/lib/api-admin";
 import type { SEOControlReport } from "@/services/agents/seo-control-report";
 import { planVisibilityReviewItems } from "@/services/agents/visibility-review-items";
 import { visibilityEvidenceAge } from "@/services/agents/visibility-evidence-age";
@@ -16,7 +16,10 @@ export const maxDuration = 60;
  * approval, starts GitHub/Vercel deployments, or trusts client findings.
  */
 export async function POST(request: NextRequest) {
- const denied=await requireAdminApi(request); if(denied) return denied;
+ const ctx=await getRequestAccessContext(request);
+ if(ctx?.role!=="OWNER" || ctx.source!=="owner-session")return NextResponse.json({error:"Owner session required"},{status:403});
+ const origin=request.headers.get("origin");
+ if((origin && origin!==request.nextUrl.origin) || request.headers.get("sec-fetch-site")==="cross-site")return NextResponse.json({error:"Invalid request origin"},{status:403});
  const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;
  if(!url||!key)return NextResponse.json({error:"Database not configured"},{status:503});
  const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
