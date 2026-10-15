@@ -50,3 +50,14 @@ test("brand and URL are included in dedup key to prevent cross-brand conflation"
   assert.equal(items.length, 2);
   assert.notEqual(items[0].key, items[1].key);
 });
+
+test("schema parse errors are separate from headings and never imply misleading markup", () => {
+  const item = planVisibilityReviewItems(report([site("zeneco", [{
+    code: "SCHEMA_PARSE_ERROR", evidence: "2 invalid JSON-LD blocks",
+    affectedUrl: "https://www.zenecohomes.com/",
+  }])]))[0];
+  assert.equal(item.priority, "MEDIUM");
+  assert.equal(item.title, "Kontroller ugyldig JSON-LD");
+  assert.match(item.nextStep, /ikke bevis på villedende schema/);
+  assert.equal(item.publicationEligible, false);
+});
