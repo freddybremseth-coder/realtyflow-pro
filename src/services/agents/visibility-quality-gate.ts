@@ -5,7 +5,7 @@ export type VisibilityIssueCode =
   | "MOBILE_FUNCTION_BROKEN" | "CONTENT_NOT_RENDERED"
   | "MISLEADING_SCHEMA" | "MASS_PUBLICATION_RISK"
   | "SITEWIDE_CHANGE" | "HIGH_RISK_FACT_UNVERIFIED"
-  | "METADATA_LENGTH" | "HEADING_STRUCTURE"
+  | "METADATA_LENGTH" | "HEADING_STRUCTURE" | "SCHEMA_PARSE_ERROR"
   | "WEAK_INTERNAL_LINKS" | "MISSING_FAQ";
 
 export type VisibilityIssue = {
@@ -35,12 +35,18 @@ export function evaluateVisibilityGate(input: VisibilityGateInput) {
   const warnings = input.issues.filter(issue => !blockingCodes.has(issue.code));
   const requiresHumanReview = input.isSitewideChange || input.isHighRiskTopic ||
     input.issues.some(issue => issue.code === "SITEWIDE_CHANGE");
-  const canPublish = blocked.length === 0 && (!requiresHumanReview || input.humanApproved);
+  const reviewPassed = blocked.length === 0 && (!requiresHumanReview || input.humanApproved);
   return {
-    status: blocked.length ? "BLOCKED" as const :
-      requiresHumanReview && !input.humanApproved ? "REVIEW_REQUIRED" as const :
-      warnings.length ? "APPROVED_WITH_WARNINGS" as const : "APPROVED" as const,
-    canPublish,
+    // This checks only supplied observations and human-review signals.
+    // It MUST NOT authorize publication without change-specific preflight,
+    // actual URL verification, source review and an audited editor action.
+    status: blocked.length ? "REVIEW_BLOCKED" as const :
+      requiresHumanReview && !input.humanApproved ? "HUMAN_REVIEW_REQUIRED" as const :
+      warnings.length ? "REVIEW_WARNINGS" as const : "REVIEW_PASSED" as const,
+    reviewPassed,
+    canPublish: false as const,
+    publicationEligible: false as const,
+    requiresChangeSpecificPreflight: true as const,
     blocked,
     warnings,
     requiresHumanReview,
