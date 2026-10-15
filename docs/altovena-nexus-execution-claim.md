@@ -3,7 +3,7 @@
 ## Scope and result
 This change lives in the **active RealtyFlow Pro application**, not in Altovena's static marketing site. It adds a **server-side task execution admission / claim contract** and tests only.
 
-It stages a **private database schema and atomic claim function as a GitHub migration file**. The migration is NOT applied to the production Supabase project. It does **not** create any live API endpoint, worker, customer task, provider action, enabled entitlement or production audit receipt. Production is unchanged.
+It stages a **private database schema and atomic claim function as a GitHub migration file**. The migration is NOT applied to the production Supabase project. The subsequent branch includes a **disabled-by-default, owner-only read API** and an internal task-board UI. The API performs SELECTs only when explicitly enabled and a separately provisioned read-only PostgreSQL connection exists. No mutation API, worker, customer task, provider action, enabled entitlement or production audit receipt exists. Production is unchanged.
 
 ## Reuse first
 Existing components already in RealtyFlow:
@@ -61,3 +61,15 @@ The **same unmerged migration file** now also contains:
 `src/lib/nexus/task-execution-postgres.ts` defines a typed and parameterized backend adapter for creating a proposal, recording a human decision, reading task+approval records and calling the atomic claim function. It is not instantiated in an HTTP API or a worker and has no database connection string, secret or side effect on its own. Its tests mock the SQL boundary and prove that invalid action types are blocked, parameters stay bound, and stale claims cannot be reported as successful.
 
 **Still required:** explicit server-side verified identity (not caller-provided actor IDs), secure database connectivity to private `core`, permission/activation user interface with independent approval, external preflight writer and evidence provenance, production migration review, expiry/revocation handling, immutable full lifecycle/recovery tests and operational monitoring. No `service_role` key or PG credential may be exposed to browsers. No task execution enabled by this PR.
+
+
+## Phase 3: internal owner task board (read only)
+
+- Navigation: Platform / Operations → Agentoppdrag (`/nexus-os/agent-oppdrag`).
+- Endpoint: `GET /api/nexus/task-board`. Requires RealtyFlow owner session (not staff, owner-preview impersonation or remaster-proxy); `requireAdminApi` also applies.
+- **Feature disabled by default:** `NEXUS_TASK_BOARD_READ_ENABLED` must explicitly equal `true` to permit any database access. When disabled or missing connection, the UI displays a clear unavailable state rather than synthetic data or incorrect counts.
+- Separate server-only `NEXUS_TASK_BOARD_DATABASE_URL` credential must be provisioned as a **least-privilege read-only PostgreSQL account**, with TLS certificate verification. It must be independently granted SELECT on the exact required `core` tables and no INSERT/UPDATE/DELETE/EXECUTE or public schema access. No credentials are shipped in code or templates.
+- The SELECT is brand-UUID-filtered, parameterized, bounded to 50 rows and exposes only task identifier/brand, lifecycle status, action type, evidence count, quality/preflight flags, decision expiry, reservation flag and proposal/review events. It does not expose raw source contents, PII, or credentials.
+- **No POST/PATCH/DELETE endpoint** and no approval/execute buttons. A stored decision is not interpreted as proof that an external action occurred.
+- Andrea/brand operators are intentionally **not yet granted access**. A separate endpoint must verify current identity and exact active per-brand membership and a dedicated `nexus.read` capability; do not grant owner-level access to solve this.
+- This PR is **not yet a deployed integration**: no staging database connection, real Supabase migration, user grant reconciliation, UI end-to-end test or provider worker is activated.
