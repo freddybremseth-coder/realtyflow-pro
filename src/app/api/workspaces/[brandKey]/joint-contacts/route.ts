@@ -48,6 +48,7 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
     if (!item || typeof item !== "object") return false;
     const row = item as Record<string, unknown>;
     return row.brand_id === "zeneco" && row.brand === "zeneco" &&
+      !String(row.source || "").startsWith("__SPAM__:") &&
       typeof row.id === "string" && typeof row.name === "string" &&
       typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at)) &&
       (row.assigned_to_member === true ||
