@@ -295,10 +295,16 @@ export function Sidebar() {
   );
   // Presentation only. Advanced routes, APIs and permissions are unchanged;
   // the staff shell uses its own brand-scoped navigation and data guards.
+  // The owner's everyday menu follows the clearer staff design: practical
+  // entry points grouped by work, while the complete menu stays one click away.
+  // This changes presentation only: no routes, services, permissions or records are removed.
   const simpleOwnerHrefs = new Set([
-    "/workspaces", "/workspace/zeneco?tab=growth&focus=social",
-    "/sales", "/marketing", "/content", "/finance", "/operations",
-    "/nexus-os/today",
+    "/workspaces", "/nexus-os/today", "/nexus-os/inbox", "/personal-intelligence",
+    "/sales", "/customers", "/inventory", "/care", "/sales/corporate-homes",
+    "/marketing", "/workspace/zeneco?tab=growth&focus=social",
+    "/growth-hub", "/visibility", "/email", "/ad-campaigns",
+    "/content", "/content-hub", "/website-cms", "/content-studio",
+    "/finance", "/operations", "/hjelp",
   ]);
   const visibleSections = useMemo(() => (
     user?.role === "OWNER" && simpleMode
@@ -458,6 +464,29 @@ export function Sidebar() {
       {user?.role === "OWNER" && (
         <div className={cn("px-3 pb-3", collapsed && "lg:hidden")}>
           <div className="mb-2"><SpanishQuickButton /></div>
+          <div className="mb-3 rounded-xl border border-slate-700 bg-slate-900/70 p-2">
+            <p className="px-2 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Velg merkevare
+            </p>
+            <div className="space-y-1">
+              <Link href="/workspace/zeneco" onClick={closeMobile}
+                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white">
+                <Building2 size={15} className="text-cyan-300"/> Zen Eco Homes
+              </Link>
+              <Link href="/workspace/pinosoecolife" onClick={closeMobile}
+                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white">
+                <Building2 size={15} className="text-emerald-300"/> PinosoEcolife
+              </Link>
+              <Link href="/workspaces" onClick={closeMobile}
+                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs text-cyan-300 hover:bg-slate-800">
+                <PanelsTopLeft size={15}/> Alle arbeidsområder
+              </Link>
+            </div>
+          </div>
+          <Link href="/hjelp" onClick={closeMobile}
+            className="mb-3 flex items-center gap-2 rounded-lg border border-cyan-900/60 bg-cyan-950/20 px-3 py-2.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-950/40">
+            <BookOpen size={16}/> Hjelp og opplæring
+          </Link>
           <button type="button" onClick={() => setSimpleMode(mode => !mode)}
             className="w-full rounded-lg border border-slate-700 px-3 py-2 text-left text-xs font-medium text-cyan-300 hover:bg-slate-800"
             aria-pressed={!simpleMode}>
