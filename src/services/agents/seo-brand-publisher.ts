@@ -68,6 +68,16 @@ export async function runBrandPublisher(
   const loaded = await db.from("automation_logs").select("details").eq("id",id).eq("action",ACTION).maybeSingle();
   if (loaded.error) throw new Error("Publication state unavailable");
   let job: BrandPublicationJob | null = loaded.data?.details as BrandPublicationJob || null;
+  // Direct invocations cannot bypass the exact owner grant. Read-only
+  // verification and rollback must still proceed after consent revocation.
+  const safeExistingPhase = job && (["deploy","done","rolled_back"].includes(job.phase) || job.phase.startsWith("rollback_"));
+  if (site.brandId === "donaanna" && !safeExistingPhase &&
+      !await canRunApprovedDonaAnnaMetadata(db, site, version, now)) {
+    return result("blocked", version === "v2"
+      ? "Metadata-variant V2 krever separat, spesifikk eiergodkjenning."
+      : "Eierens begrensede tillatelse mangler eller er utløpt. Eksisterende kildeavvik må også avklares.");
+  }
+
   const save = async (previous: Phase, next: BrandPublicationJob) => {
     const saved = await db.from("automation_logs").update({ details: next,
       status: ["done","rolled_back"].includes(next.phase) ? "success" : "partial" })
@@ -249,14 +259,6 @@ export async function runPortfolioPublishers(db: SupabaseClient, snapshots: read
     for (const site of SEO_BRAND_PUBLISHERS.filter(item=>item.repository===repository)) {
       try {
         const snapshot = snapshots.find(s=>s.brandId===site.brandId)||null;
-        // Doña Anna only: never begin a write intent until the OWNER has
-        // consented to this exact V1 title and description. Approval does not
-        // override the source/public HTML or GitHub/CI gates in the publisher.
-        if (!await canRunApprovedDonaAnnaMetadata(db,site,"v1",now)) {
-          results.push({brandId:site.brandId,page:"/",status:"blocked",published:0,
-            reason:"Krever eiergodkjenning for nøyaktig metadata-variant. Eksisterende tekniske kildeavvik må også avklares."});
-          continue;
-        }
         const first = await runBrandPublisher(db,site,snapshot,{github,publicHtml:readBrandPublicHtml,now});
         if (first.status === "verified" && await v1EffectMeasured(db,site,snapshot) &&
             await canRunApprovedDonaAnnaMetadata(db,site,"v2",now)) {
