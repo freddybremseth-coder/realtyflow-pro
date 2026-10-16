@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createReviewedNexusProposal,
+  inspectNexusClaimBeforeDispatch,
   decideNexusProposal,
   makeNexusPostgresClaimRepository,
   type NexusSqlClient,
@@ -121,4 +122,31 @@ test("stale transaction maps to a non-success result; unexpected failures propag
   assert.deepEqual(await makeNexusPostgresClaimRepository(sqlError).claimAtomically(sample), { kind: "stale" });
   const unavailable: NexusSqlClient = { async query() { throw new Error("db offline"); } };
   await assert.rejects(makeNexusPostgresClaimRepository(unavailable).claimAtomically(sample), /db offline/);
+});
+
+test("post-claim adapter returns current eligibility without suggesting execution occurred",async()=>{
+  const s = spy([[{outcome:"eligible_now",reason:null,claim_id:ids.claim}]]);
+  const result=await inspectNexusClaimBeforeDispatch(s.db,{claimId:ids.claim,verifiedActorId:ids.executor});
+  assert.deepEqual(result,{status:"eligible_now",reason:null,claimId:ids.claim});
+  assert.deepEqual(s.calls[0].values,[ids.claim,ids.executor]);
+  assert.match(s.calls[0].sql,/core\.revalidate_nexus_claim_before_dispatch/);
+  assert.doesNotMatch(s.calls[0].sql,/\b(insert|update|delete)\b/i);
+});
+test("post-claim adapter returns cancelled with audited reason, without invoking a worker",async()=>{
+  const s=spy([[{outcome:"cancelled",reason:"approval_revoked",claim_id:ids.claim}]]);
+  const result=await inspectNexusClaimBeforeDispatch(s.db,{claimId:ids.claim,verifiedActorId:ids.executor});
+  assert.deepEqual(result,{status:"cancelled",reason:"approval_revoked",claimId:ids.claim});
+  assert.equal(s.calls.length,1);
+});
+test("post-claim adapter rejects malformed principal or forged result",async()=>{
+  const invalid=spy();
+  await assert.rejects(inspectNexusClaimBeforeDispatch(invalid.db,{claimId:"no",verifiedActorId:ids.executor}),/NEXUS_INVALID_UUID/);
+  await assert.rejects(inspectNexusClaimBeforeDispatch(invalid.db,{claimId:ids.claim,verifiedActorId:"fake"}),/NEXUS_INVALID_UUID/);
+  assert.equal(invalid.calls.length,0);
+  const unexpected=spy([[{outcome:"executed",reason:null,claim_id:ids.claim}]]);
+  await assert.rejects(inspectNexusClaimBeforeDispatch(unexpected.db,{claimId:ids.claim,verifiedActorId:ids.executor}),/NEXUS_DISPATCH_CHECK_INVALID_RECEIPT/);
+  const spoof=spy([[{outcome:"eligible_now",reason:null,claim_id:ids.task}]]);
+  await assert.rejects(inspectNexusClaimBeforeDispatch(spoof.db,{claimId:ids.claim,verifiedActorId:ids.executor}),/NEXUS_DISPATCH_CHECK_INVALID_RECEIPT/);
+  const noReason=spy([[{outcome:"cancelled",reason:null,claim_id:ids.claim}]]);
+  await assert.rejects(inspectNexusClaimBeforeDispatch(noReason.db,{claimId:ids.claim,verifiedActorId:ids.executor}),/NEXUS_DISPATCH_CHECK_INVALID_RECEIPT/);
 });
