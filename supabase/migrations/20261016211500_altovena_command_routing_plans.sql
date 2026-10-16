@@ -117,7 +117,7 @@ GRANT EXECUTE ON FUNCTION public.altovena_internal_command_plan_propose(text,uui
 CREATE OR REPLACE FUNCTION public.altovena_internal_command_plan_input(p_mission_id uuid)
 RETURNS TABLE(id uuid, goal text, state text, created_by uuid)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog
-AS $
+AS $plan_input$
 DECLARE v_tenant uuid;
 BEGIN
  SELECT t.id INTO v_tenant FROM altovena.tenants t
@@ -131,7 +131,7 @@ BEGIN
  WHERE m.tenant_id=v_tenant AND m.id=p_mission_id AND m.product_slug='command'
  AND m.state='draft';
 END;
-$;
+$plan_input$;
 REVOKE ALL ON FUNCTION public.altovena_internal_command_plan_input(uuid)
  FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.altovena_internal_command_plan_input(uuid)
