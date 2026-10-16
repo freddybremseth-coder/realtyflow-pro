@@ -113,3 +113,52 @@ begin
 end;
 $read_revoked$;
 reset role;
+
+-- Exercise the SAME privilege checks as src/lib/nexus/task-board-connection.ts
+-- on an actual restricted database role, rather than a mocked reply.
+set role nexus_task_board_reader;
+do $reader_identity_proof$
+declare
+  v_ok boolean;
+begin
+  select
+    pg_catalog.pg_has_role(current_user,'nexus_task_board_reader','USAGE')
+    and exists(select 1 from pg_catalog.pg_roles
+        where rolname=current_user
+          and not (rolsuper or rolbypassrls or rolcreatedb or rolcreaterole))
+    and pg_catalog.has_table_privilege(current_user,'core.nexus_task_board_entries','SELECT')
+    and pg_catalog.has_table_privilege(current_user,'core.nexus_task_board_allowed_readers','SELECT')
+    and not pg_catalog.has_schema_privilege(current_user,'core','CREATE')
+    and not pg_catalog.has_table_privilege(current_user,'core.nexus_execution_tasks','SELECT,INSERT,UPDATE,DELETE')
+    and not pg_catalog.has_table_privilege(current_user,'core.nexus_execution_approvals','SELECT,INSERT,UPDATE,DELETE')
+    and not pg_catalog.has_table_privilege(current_user,'core.nexus_execution_authorizations','SELECT,INSERT,UPDATE,DELETE')
+    and not pg_catalog.has_table_privilege(current_user,'core.brand_workspace_memberships','SELECT,INSERT,UPDATE,DELETE')
+    and not pg_catalog.has_table_privilege(current_user,'core.nexus_execution_claims','SELECT,INSERT,UPDATE,DELETE')
+    and not pg_catalog.has_function_privilege(current_user,
+      'core.claim_nexus_execution_task(uuid,integer,uuid,uuid,text,text,text)','EXECUTE')
+    and not pg_catalog.has_function_privilege(current_user,
+      'core.create_nexus_review_task(uuid,uuid,text,text,text[],text)','EXECUTE')
+    and not pg_catalog.has_function_privilege(current_user,
+      'core.decide_nexus_review_task(uuid,uuid,integer,text,text)','EXECUTE')
+  into v_ok;
+  if v_ok is distinct from true then
+    raise exception 'Restricted reader was not independently proven safe';
+  end if;
+end;
+$reader_identity_proof$;
+reset role;
+
+-- And verify the same gate rejects the fixture admin superuser.
+do $superuser_identity_proof$
+declare
+  v_ordinary boolean;
+begin
+  select exists(select 1 from pg_catalog.pg_roles
+    where rolname=current_user
+      and not (rolsuper or rolbypassrls or rolcreatedb or rolcreaterole))
+  into v_ordinary;
+  if v_ordinary then
+    raise exception 'Superuser unexpectedly classified as an ordinary reader';
+  end if;
+end;
+$superuser_identity_proof$;
