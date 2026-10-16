@@ -179,11 +179,67 @@ export function ChatWidget({
   const [speakReplies, setSpeakReplies] = useState(false);
   const [restored, setRestored] = useState(false);
   const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({});
+  const [developmentOwner, setDevelopmentOwner] = useState(false);
+  const [developmentBusy, setDevelopmentBusy] = useState<Record<number, boolean>>({});
+  const [developmentSaved, setDevelopmentSaved] = useState<Record<number, string>>({});
+  const [developmentTasks, setDevelopmentTasks] = useState<Array<{ id: string; request_text: string; status: string }>>([]);
+  const [showDevelopmentTasks, setShowDevelopmentTasks] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef("");
   const messagesRef = useRef(messages);
   const storageKey = `nexus-chat:${brandId}:${apiUrl || "default"}`;
+
+  useEffect(() => {
+    if (apiUrl !== "/api/nexus/victoria") return;
+    let live = true;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (live) setDevelopmentOwner(data?.user?.role === "OWNER" && !data?.preview?.active); })
+      .catch(() => { if (live) setDevelopmentOwner(false); });
+    return () => { live = false; };
+  }, [apiUrl]);
+
+  const registerDevelopmentTask = async (message: string, index: number) => {
+    if (developmentBusy[index]) return;
+    setDevelopmentBusy(current => ({ ...current, [index]: true }));
+    try {
+      const res = await fetch("/api/nexus/development-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request: message,
+          scope: "investigation",
+          pagePath: window.location.pathname,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Kunne ikke lagre oppgaven");
+      setDevelopmentSaved(current => ({ ...current, [index]: String(body.task?.id || "registered") }));
+      setDevelopmentTasks(tasks => [body.task, ...tasks].filter(Boolean).slice(0, 50));
+    } catch (error) {
+      setMessages(previous => [...previous, {
+        role: "assistant",
+        content: `Utviklingsoppgaven ble ikke lagret: ${error instanceof Error ? error.message : "ukjent feil"}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } finally {
+      setDevelopmentBusy(current => ({ ...current, [index]: false }));
+    }
+  };
+
+  const loadDevelopmentTasks = async () => {
+    if (showDevelopmentTasks) { setShowDevelopmentTasks(false); return; }
+    try {
+      const response = await fetch("/api/nexus/development-tasks", { cache: "no-store" });
+      if (!response.ok) throw new Error("Kunne ikke hente oppgaver");
+      const data = await response.json();
+      setDevelopmentTasks(Array.isArray(data.tasks) ? data.tasks : []);
+      setShowDevelopmentTasks(true);
+    } catch {
+      setShowDevelopmentTasks(false);
+    }
+  };
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { draftRef.current = input; }, [input]);
@@ -416,6 +472,24 @@ export function ChatWidget({
           </div>
 
           {!minimized && <>
+            {developmentOwner && (
+              <div className="border-b border-slate-700 bg-slate-900 px-4 py-2">
+                <button type="button" onClick={() => void loadDevelopmentTasks()}
+                  className="text-xs font-medium text-cyan-300 hover:text-cyan-100">
+                  {showDevelopmentTasks ? "Skjul utviklingsoppgaver" : "Utviklingsoppgaver"}
+                </button>
+                {showDevelopmentTasks && (
+                  <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+                    {developmentTasks.length === 0 && <p className="text-xs text-slate-400">Ingen lagrede oppgaver.</p>}
+                    {developmentTasks.map(task => (
+                      <p key={task.id} className="truncate text-xs text-slate-300" title={task.request_text}>
+                        <span className="text-cyan-300">[{task.status}]</span> {task.request_text}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex-1 space-y-3 overflow-y-auto bg-slate-900 p-4" style={{ minHeight: "300px" }}>
               {messages.map((msg, i) => (
                 <div key={i} className={`flex gap-2 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
@@ -424,6 +498,13 @@ export function ChatWidget({
                   </div>
                   <div className="max-w-[80%]">
                     <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${msg.role === "user" ? "rounded-tr-sm bg-slate-700 text-white" : "rounded-tl-sm border border-slate-700/50 bg-slate-800 text-slate-200"}`}>{msg.content}</div>
+                    {msg.role === "user" && developmentOwner && (
+                      <button type="button" disabled={Boolean(developmentBusy[i]) || Boolean(developmentSaved[i])}
+                        onClick={() => void registerDevelopmentTask(msg.content, i)}
+                        className="mt-1 rounded-md border border-slate-600 px-2 py-1 text-[10px] text-cyan-200 hover:border-cyan-400 disabled:opacity-70">
+                        {developmentSaved[i] ? "Registrert · ikke utført" : developmentBusy[i] ? "Registrerer…" : "Lagre som utviklingsoppgave"}
+                      </button>
+                    )}
                     {msg.role === "assistant" && msg.proposedActions && msg.proposedActions.length > 0 && (
                       <div className="mt-2 flex flex-col gap-1.5">
                         {msg.proposedActions.map((action) => (
