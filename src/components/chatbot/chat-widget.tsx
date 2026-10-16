@@ -182,7 +182,7 @@ export function ChatWidget({
   const [developmentOwner, setDevelopmentOwner] = useState(false);
   const [developmentBusy, setDevelopmentBusy] = useState<Record<number, boolean>>({});
   const [developmentSaved, setDevelopmentSaved] = useState<Record<number, string>>({});
-  const [developmentTasks, setDevelopmentTasks] = useState<Array<{ id: string; request_text: string; status: string }>>([]);
+  const [developmentTasks, setDevelopmentTasks] = useState<Array<{ id: string; request_text: string; status: string; suggested_repository?: string }>>([]);
   const [showDevelopmentTasks, setShowDevelopmentTasks] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -482,9 +482,20 @@ export function ChatWidget({
                   <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
                     {developmentTasks.length === 0 && <p className="text-xs text-slate-400">Ingen lagrede oppgaver.</p>}
                     {developmentTasks.map(task => (
-                      <p key={task.id} className="truncate text-xs text-slate-300" title={task.request_text}>
-                        <span className="text-cyan-300">[{task.status}]</span> {task.request_text}
-                      </p>
+                      <div key={task.id} className="rounded-md border border-slate-700 p-2 text-xs text-slate-300">
+                        <p className="line-clamp-2" title={task.request_text}>
+                          <span className="text-cyan-300">[{task.status}]</span> {task.request_text}
+                        </p>
+                        {task.suggested_repository && <p className="mt-1 truncate text-[10px] text-slate-400">Foreslått: {task.suggested_repository}</p>}
+                        <button type="button" className="mt-1 text-cyan-300 underline hover:text-cyan-100"
+                          onClick={() => {
+                            setInput(`Fortsett med utviklingsoppgave ${task.id}: ${task.request_text.slice(0, 2000)}. Status: ${task.status}. Undersøk neste trygge steg og skill mellom forslag og faktisk utførte handlinger.`);
+                            setShowDevelopmentTasks(false);
+                            inputRef.current?.focus();
+                          }}>
+                          Fortsett i Nexus
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
