@@ -87,6 +87,39 @@ export async function decideNexusProposal(client: NexusSqlClient, input: {
   return { decision: String(row.outcome), taskVersion: Number(row.task_version), approvalId: requireUuid(String(row.approval_id)) };
 }
 
+/**
+ * Post-reservation status check. Does not dispatch or execute the task.
+ *
+ * The actor must come from verified server auth. SQL performs a fresh
+ * transactional check against the approval, grants and claim receipt;
+ * if invalid, SQL atomically cancels and audits the reservation.
+ */
+export async function inspectNexusClaimBeforeDispatch(
+  client: NexusSqlClient,
+  input: { claimId: string; verifiedActorId: string },
+): Promise<{ status: "eligible_now" | "cancelled"; reason: string | null; claimId: string }> {
+  requireUuid(input.claimId);
+  requireUuid(input.verifiedActorId);
+  const result = await client.query(
+    "select outcome,reason,claim_id from core.revalidate_nexus_claim_before_dispatch($1::uuid,$2::uuid)",
+    [input.claimId,input.verifiedActorId],
+  );
+  const row = requiredRow(result.rows,"claim_id");
+  const claimId = requireUuid(String(row.claim_id));
+  if (claimId !== input.claimId || (row.outcome !== "eligible_now" && row.outcome !== "cancelled")) {
+    throw new Error("NEXUS_DISPATCH_CHECK_INVALID_RECEIPT");
+  }
+  if (row.outcome === "eligible_now" && row.reason != null) {
+    throw new Error("NEXUS_DISPATCH_CHECK_INVALID_RECEIPT");
+  }
+  if (row.outcome === "cancelled" && (typeof row.reason !== "string" ||
+      !["approval_revoked","approval_expired","executor_scope_denied",
+        "reviewer_scope_denied","preflight_stale","task_integrity_changed"].includes(row.reason))) {
+    throw new Error("NEXUS_DISPATCH_CHECK_INVALID_RECEIPT");
+  }
+  return { status: row.outcome, reason: row.reason == null ? null : String(row.reason), claimId };
+}
+
 export function makeNexusPostgresClaimRepository(client: NexusSqlClient): NexusTaskClaimRepository {
   return {
     async loadTask(taskId: string): Promise<NexusStoredTask | null> {
