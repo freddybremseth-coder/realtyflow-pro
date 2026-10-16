@@ -101,6 +101,8 @@ BEGIN
  OR v_plan->>'mode' IS DISTINCT FROM 'ROUTING_PROPOSAL_ONLY'
  OR v_plan->>'source' IS DISTINCT FROM 'realtyflow-nexus-agent-fleet'
  OR v_plan->>'missionId' IS DISTINCT FROM p_mission_id::text
+ OR v_plan->>'goalDigest' IS DISTINCT FROM
+  encode(sha256(convert_to(btrim(v_mission.goal),'UTF8')),'hex')
  OR v_plan->'controls'->>'requiresHumanReview' IS DISTINCT FROM 'true'
  OR v_plan->'controls'->>'approvedForExecution' IS DISTINCT FROM 'false'
  OR v_plan->'controls'->>'permittedExternalActions' IS DISTINCT FROM 'false'
