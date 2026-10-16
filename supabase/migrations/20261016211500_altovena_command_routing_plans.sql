@@ -85,7 +85,7 @@ BEGIN
  -- idempotent, changed payloads fail (no accidental overwrite of reviewed plan).
  INSERT INTO altovena.mission_route_plans(tenant_id,mission_id,proposed_by,plan)
  VALUES(v_tenant,p_mission_id,v_actor,p_plan)
- ON CONFLICT (tenant_id,mission_id) DO NOTHING;
+ ON CONFLICT ON CONSTRAINT mission_route_plans_pkey DO NOTHING;
  GET DIAGNOSTICS v_inserted=ROW_COUNT;
  IF v_inserted=1 THEN
     INSERT INTO altovena.events(tenant_id,mission_id,event_type,payload)
