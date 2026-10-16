@@ -4,6 +4,10 @@ on:
     paths:
       - "src/lib/altovena/command-nexus-handoff.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
+      - "src/app/api/altovena/command/analysis/route.ts"
+      - "supabase/migrations/*altovena_command_analysis_preparation.sql"
+      - "tests/altovena/analysis-preparation.sql"
+      - "tests/altovena/analysis-preparation-contract.test.mjs"
       - "tests/altovena/command-nexus-integration-bootstrap.sql"
       - "tests/altovena/command-nexus-coexistence.sql"
       - "src/app/(realty)/altovena/command/page.tsx"
@@ -26,7 +30,9 @@ jobs:
           cache: npm
       - run: npm ci --silent
       - name: Verify that Command planning cannot activate Nexus execution
-        run: node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
+        run: |
+          node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
+          node --test tests/altovena/analysis-preparation-contract.test.mjs
 
   verify-shared-postgres-schema:
     runs-on: ubuntu-latest
@@ -67,5 +73,9 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f tests/altovena/gateway.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261016211500_altovena_command_routing_plans.sql
           psql -v ON_ERROR_STOP=1 -f tests/altovena/routing-plan.sql
+      - name: Install immutable analysis preparation gateway
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261017001500_altovena_command_analysis_preparation.sql
+          psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-preparation.sql
       - name: Validate that both schemas coexist without implicit execution
         run: psql -v ON_ERROR_STOP=1 -f tests/altovena/command-nexus-coexistence.sql
