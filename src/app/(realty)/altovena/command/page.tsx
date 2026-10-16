@@ -1,0 +1,172 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+
+type Mission = {
+  id: string;
+  goal: string;
+  state: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
+type Listing = { missions?: Mission[]; error?: string };
+type Creation = { mission?: Mission; error?: string };
+
+const stateNames: Record<string, string> = {
+  draft: "Utkast",
+  planned: "Planlagt",
+  running: "Pågår",
+  awaiting_review: "Venter på godkjenning",
+  approved: "Godkjent",
+  executing: "Utfører",
+  verifying: "Verifiserer",
+  completed: "Ferdig",
+  paused: "Pauset",
+  failed: "Feilet",
+  partial: "Delvis ferdig",
+  rejected: "Avvist",
+  cancelled: "Avbrutt",
+};
+function niceDate(value?: string) {
+  if (!value) return "–";
+  return new Date(value).toLocaleString("nb-NO", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+export default function AltovenaCommandPage() {
+  const [missions, setMissions] = useState<Mission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [goal, setGoal] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/altovena/command", {
+        credentials: "same-origin", cache: "no-store",
+      });
+      const result = await response.json() as Listing;
+      if (!response.ok || !Array.isArray(result.missions)) {
+        throw new Error(result.error || "Kunne ikke hente lagrede oppdrag.");
+      }
+      setMissions(result.missions);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Kunne ikke hente oppdrag.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const createDraft = async () => {
+    if (goal.trim().length < 1 || goal.trim().length > 4000) {
+      setError("Beskriv oppdraget med opptil 4000 tegn.");
+      return;
+    }
+    setCreating(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/altovena/command", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goal: goal.trim(), requestId: crypto.randomUUID(),
+        }),
+      });
+      const result = await response.json() as Creation;
+      if (!response.ok || !result.mission) {
+        throw new Error(result.error || "Utkast kunne ikke lagres.");
+      }
+      setGoal("");
+      setNotice("Oppdraget ble lagret som utkast. Ingen agent er startet.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Kunne ikke opprette utkast.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 text-slate-100">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="mb-2 text-sm font-semibold tracking-widest text-teal-400">ALTOVENA · COMMAND</div>
+          <h1 className="text-3xl font-semibold">Mine AI-oppdrag</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+            Oppdragene lagres i Altovena-schemaet i RealtyflowPRO.
+            Denne interne versjonen oppretter kun utkast – agentene starter ikke automatisk.
+          </p>
+        </div>
+        <Link href="/" className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">
+          Tilbake til RealtyFlow
+        </Link>
+      </div>
+
+      <section className="rounded-xl border border-amber-700/50 bg-amber-950/30 p-4 text-sm text-amber-100">
+        <strong>Intern betaversjon.</strong> Oppdrag kan lagres og finnes igjen etter omstart,
+        men utførelse, utsendelser og godkjenninger er ikke aktivert.
+        Bare RealtyFlow-eierens innloggede sesjon har tilgang til denne siden.
+      </section>
+
+      <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+        <h2 className="mb-3 text-lg font-semibold">Nytt oppdragsutkast</h2>
+        <label htmlFor="command-goal" className="mb-2 block text-sm text-slate-300">
+          Hva ønsker du at Altovena Command skal utføre senere?
+        </label>
+        <textarea id="command-goal" rows={4} maxLength={4000} value={goal}
+          onChange={(e) => setGoal(e.target.value)}
+          className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 outline-none focus:border-teal-500"
+          placeholder="For eksempel: Undersøk nye B2B-muligheter, analyser datakvalitet og legg et forslag til godkjenning." />
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-slate-500">{goal.length}/4000 tegn · Lagres kun som utkast</span>
+          <button type="button" onClick={() => void createDraft()} disabled={creating || !goal.trim()}
+            className="rounded-xl bg-teal-500 px-5 py-2.5 font-semibold text-slate-950 hover:bg-teal-400 disabled:opacity-50">
+            {creating ? "Lagrer …" : "Lagre oppdrag"}
+          </button>
+        </div>
+      </section>
+
+      {error && <div role="alert" className="rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200">{error}</div>}
+      {notice && <div role="status" className="rounded-xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200">{notice}</div>}
+
+      <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Lagrede oppdrag</h2>
+          <button type="button" onClick={() => void load()} disabled={loading}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-50">
+            {loading ? "Laster …" : "Oppdater"}
+          </button>
+        </div>
+        {!loading && missions.length===0 && !error && (
+          <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">
+            Ingen oppdrag er lagret. Opprett det første utkastet ovenfor.
+          </div>
+        )}
+        <div className="divide-y divide-slate-800">
+          {missions.map((mission) => (
+            <article key={mission.id} className="flex flex-wrap justify-between gap-3 py-4">
+              <div className="max-w-3xl">
+                <p className="whitespace-pre-wrap font-medium">{mission.goal}</p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Opprettet {niceDate(mission.created_at)} · Oppdatert {niceDate(mission.updated_at)}
+                </p>
+              </div>
+              <span className="h-fit rounded-full border border-teal-800 bg-teal-950/40 px-3 py-1 text-xs text-teal-200">
+                {stateNames[mission.state] || mission.state}
+              </span>
+            </article>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
