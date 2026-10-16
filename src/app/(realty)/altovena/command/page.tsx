@@ -13,6 +13,17 @@ type Mission = {
 };
 type Listing = { missions?: Mission[]; error?: string };
 type Creation = { mission?: Mission; error?: string };
+type PlanProposal = {
+  status: "proposed";
+  plan: {
+    mode: "ROUTING_PROPOSAL_ONLY";
+    agents: Array<{agentId:string;agentName:string;role:string;executionStatus:"not_started"}>;
+    relatedAutomations: Array<{name:string;reference:string;executionStatus:"not_started"}>;
+    controls: { requiresHumanReview:boolean; approvedForExecution:boolean; permittedExternalActions:boolean };
+    note: string;
+  };
+};
+type PlanResponse = { proposal?:PlanProposal|null; error?:string };
 
 const stateNames: Record<string, string> = {
   draft: "Utkast",
@@ -43,6 +54,8 @@ export default function AltovenaCommandPage() {
   const [goal, setGoal] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [planByMission, setPlanByMission] = useState<Record<string,PlanProposal|null>>({});
+  const [planningMission, setPlanningMission] = useState<string|null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +108,40 @@ export default function AltovenaCommandPage() {
     }
   };
 
+  const showPlan = async (missionId:string) => {
+    setPlanningMission(missionId);
+    setError("");
+    try {
+      const res=await fetch(`/api/altovena/command/plan?missionId=${encodeURIComponent(missionId)}`,{
+        credentials:"same-origin",cache:"no-store",
+      });
+      const data=await res.json() as PlanResponse;
+      if(!res.ok) throw Error(data.error||"Kunne ikke hente planforslaget.");
+      setPlanByMission(old=>({...old,[missionId]:data.proposal||null}));
+    } catch(e) {
+      setError(e instanceof Error?e.message:"Kunne ikke hente plan.");
+    } finally { setPlanningMission(null); }
+  };
+
+  const createPlan = async (missionId:string) => {
+    setPlanningMission(missionId);
+    setError("");
+    setNotice("");
+    try {
+      const res=await fetch("/api/altovena/command/plan",{
+        method:"POST",credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({missionId}),
+      });
+      const data=await res.json() as PlanResponse;
+      if(!res.ok || !data.proposal) throw Error(data.error||"Kunne ikke lagre planforslaget.");
+      setPlanByMission(old=>({...old,[missionId]:data.proposal!}));
+      setNotice("Agentforslaget ble lagret til gjennomgang. Ingen agent er startet.");
+    } catch(e) {
+      setError(e instanceof Error?e.message:"Kunne ikke lage planforslag.");
+    } finally { setPlanningMission(null); }
+  };
+
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 text-slate-100">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -103,7 +150,7 @@ export default function AltovenaCommandPage() {
           <h1 className="text-3xl font-semibold">Mine AI-oppdrag</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
             Oppdragene lagres i Altovena-schemaet i RealtyflowPRO.
-            Denne interne versjonen oppretter kun utkast – agentene starter ikke automatisk.
+            Denne interne versjonen lagrer utkast og foreslår eksisterende Nexus-agenter. Ingen agenter starter automatisk.
           </p>
         </div>
         <Link href="/" className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">
@@ -113,7 +160,7 @@ export default function AltovenaCommandPage() {
 
       <section className="rounded-xl border border-amber-700/50 bg-amber-950/30 p-4 text-sm text-amber-100">
         <strong>Intern betaversjon.</strong> Oppdrag kan lagres og finnes igjen etter omstart,
-        men utførelse, utsendelser og godkjenninger er ikke aktivert.
+        men utførelse, utsendelser og faktisk godkjenning for handling er ikke aktivert.
         Bare RealtyFlow-eierens innloggede sesjon har tilgang til denne siden.
       </section>
 
@@ -160,9 +207,39 @@ export default function AltovenaCommandPage() {
                   Opprettet {niceDate(mission.created_at)} · Oppdatert {niceDate(mission.updated_at)}
                 </p>
               </div>
-              <span className="h-fit rounded-full border border-teal-800 bg-teal-950/40 px-3 py-1 text-xs text-teal-200">
-                {stateNames[mission.state] || mission.state}
-              </span>
+              <div className="flex flex-col items-end gap-2">
+                <span className="h-fit rounded-full border border-teal-800 bg-teal-950/40 px-3 py-1 text-xs text-teal-200">
+                  {stateNames[mission.state] || mission.state}
+                </span>
+                <div className="flex gap-2">
+                  <button type="button" disabled={planningMission===mission.id}
+                    onClick={() => void showPlan(mission.id)}
+                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-50">
+                    Vis plan
+                  </button>
+                  {mission.state==="draft" && <button type="button"
+                    disabled={planningMission===mission.id}
+                    onClick={() => void createPlan(mission.id)}
+                    className="rounded-lg border border-teal-600 px-3 py-1.5 text-xs text-teal-300 hover:bg-teal-950 disabled:opacity-50">
+                    Foreslå Nexus-agenter
+                  </button>}
+                </div>
+              </div>
+              {planByMission[mission.id] && (
+                <div className="w-full rounded-xl border border-cyan-800/50 bg-cyan-950/20 p-4 text-sm">
+                  <p className="font-semibold text-cyan-200">Agentforslag · ikke utført</p>
+                  <p className="mt-1 text-xs text-slate-400">{planByMission[mission.id]?.plan.note}</p>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {planByMission[mission.id]?.plan.agents.map(agent => (
+                      <div key={agent.agentId} className="rounded-lg border border-slate-700 p-3">
+                        <p className="font-medium">{agent.agentName}</p>
+                        <p className="text-xs text-slate-400">{agent.role} · Ikke startet</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-amber-200">Planleggingen oppretter ingen agentkjøringer, publiseringer eller kundemeldinger.</p>
+                </div>
+              )}
             </article>
           ))}
         </div>
