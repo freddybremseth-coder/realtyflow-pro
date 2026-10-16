@@ -48,7 +48,7 @@ export async function POST(request:NextRequest) {
   if(Object.keys(body).length!==1 || typeof body.missionId!=="string"
     || !UUID.test(body.missionId)) return fail("invalid_mission",400);
 
-  const missionId=body.missionId;
+  const missionId=body.missionId.toLowerCase();
   const {data:drafts,error:draftError}=await auth.context!.supabase.rpc(
     "altovena_internal_command_plan_input",{p_mission_id:missionId}
   );
