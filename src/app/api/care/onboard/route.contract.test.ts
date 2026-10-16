@@ -9,7 +9,8 @@ const dashboard = readFileSync("src/components/care/care-dashboard.tsx", "utf8")
 test("Care onboarding is an explicit admin-only action", () => {
   assert.match(route, /requireAdminApi\(request\)/);
   assert.match(route, /supabase\.rpc\("care_onboard_lead"/);
-  assert.match(route, /const planId = clean\(body\.planId/);
+  assert.match(route, /const requestedPlanId = clean\(body\.planId/);
+  assert.match(route, /const planId = acceptedQuotePlanId \|\| requestedPlanId/);
   assert.match(route, /p_plan_id: planId \|\| null/);
   assert.doesNotMatch(route, /sendBrandEmail|sendEmail|createInvoice|sendMessage/);
 });
@@ -49,4 +50,12 @@ test("Care onboarding UI makes plan activation optional and explicit", () => {
   assert.match(dashboard, /Aktiver avtale/);
   assert.match(dashboard, /activatingAgreement && !planId/);
   assert.match(dashboard, /lead\.carePropertyAddress/);
+});
+
+
+test("Care onboarding honors an accepted quote plan and links the quote to the property", () => {
+  assert.match(route, /\.schema\("care"\)[\s\S]*\.from\("kh_quotes"\)/);
+  assert.match(route, /acceptedQuotePlanId/);
+  assert.match(route, /Care-planen må samsvare med det aksepterte tilbudet/);
+  assert.match(route, /property_id: propertyId/);
 });

@@ -37,6 +37,7 @@ import type {
   CareKey,
   CarePhoto,
   CarePlan,
+  CareQuote,
   CareProperty,
   CareReport,
   CareSalesStage,
@@ -90,13 +91,13 @@ function careOperationalDateScore(value: string | null) {
 
 function statusClass(status: string) {
   const normalized = status.toLowerCase();
-  if (["active", "ok", "sent", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
+  if (["active", "ok", "sent", "accepted", "paid", "approved", "completed", "complete", "done"].includes(normalized)) {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
   }
   if (["draft", "planned", "open", "issued", "pending", "to_do", "in_progress"].includes(normalized)) {
     return "border-amber-500/30 bg-amber-500/10 text-amber-200";
   }
-  if (["overdue", "critical", "blocked"].includes(normalized)) {
+  if (["overdue", "critical", "blocked", "declined"].includes(normalized)) {
     return "border-red-500/35 bg-red-500/10 text-red-200";
   }
   return "border-slate-700 bg-slate-800 text-slate-300";
@@ -260,7 +261,7 @@ function CareOnboardingDialog({
   const [postcode, setPostcode] = useState(lead.carePostcode || "");
   const [hasPool, setHasPool] = useState(lead.careHasPool);
   const [hasGarden, setHasGarden] = useState(lead.careHasGarden);
-  const [planId, setPlanId] = useState("");
+  const [planId, setPlanId] = useState(lead.careQuotePlanId || "");
   const [startsOn, setStartsOn] = useState(todayInputValue());
   const [billingDay, setBillingDay] = useState("1");
   const [saving, setSaving] = useState(false);
@@ -388,10 +389,12 @@ function CareOnboardingDialog({
 
 function CareLeadFollowupDialog({
   lead,
+  plans,
   onClose,
   onSaved,
 }: {
   lead: CareLead;
+  plans: CarePlan[];
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }) {
@@ -399,6 +402,7 @@ function CareLeadFollowupDialog({
   const [stage, setStage] = useState<Exclude<CareSalesStage, "activated">>(initialStage as Exclude<CareSalesStage, "activated">);
   const [followUpOn, setFollowUpOn] = useState(lead.followUpOn || "");
   const [note, setNote] = useState(lead.salesNote || "");
+  const [quotePlanId, setQuotePlanId] = useState(lead.quotePlanId || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const needsFollowUp = stage === "quote_sent" || stage === "waiting_customer";
@@ -412,7 +416,7 @@ function CareLeadFollowupDialog({
       const response = await fetch(`/api/care/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage, followUpOn: followUpOn || null, note }),
+        body: JSON.stringify({ stage, followUpOn: followUpOn || null, note, quotePlanId: needsFollowUp ? quotePlanId : null }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-oppfølgingen.");
@@ -449,6 +453,19 @@ function CareLeadFollowupDialog({
             </select>
           </label>
 
+          {needsFollowUp && (
+            <label className="block space-y-1.5 text-sm text-slate-300">
+              <span>Tilbudt Care-plan <span className="text-amber-300">*</span></span>
+              <select required value={quotePlanId} onChange={(event) => setQuotePlanId(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+                <option value="">Velg plan</option>
+                {plans.filter((plan) => plan.active).map((plan) => (
+                  <option key={plan.id} value={plan.id}>{plan.name} · {plan.visitsPerMonth} besøk/mnd · {moneyFromCents(plan.priceCents, plan.currency)}/mnd</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">Plan og månedspris lagres på leadet som tilbudssnapshot. Ingen e-post sendes her.</p>
+            </label>
+          )}
+
           <label className="block space-y-1.5 text-sm text-slate-300">
             <span>Neste oppfølging {needsFollowUp ? <span className="text-amber-300">*</span> : <span className="text-slate-500">(valgfritt)</span>}</span>
             <input type="date" required={needsFollowUp} value={followUpOn} onChange={(event) => setFollowUpOn(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
@@ -463,8 +480,130 @@ function CareLeadFollowupDialog({
 
           <div className="flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-slate-500">Denne handlingen sender ingen e-post. Den oppdaterer kun intern Care-oppfølging.</p>
-            <Button type="submit" disabled={saving || (needsFollowUp && !followUpOn) || (needsReason && !note.trim())}>
+            <Button type="submit" disabled={saving || (needsFollowUp && (!followUpOn || !quotePlanId)) || (needsReason && !note.trim())}>
               {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Lagrer …</> : "Lagre oppfølging"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function quoteDefaultDate(days = 14) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function CareQuoteDialog({
+  lead,
+  plans,
+  quote,
+  onClose,
+  onSaved,
+}: {
+  lead: CareLead;
+  plans: CarePlan[];
+  quote: CareQuote | null;
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [planId, setPlanId] = useState(quote?.planId || lead.careQuotePlanId || "");
+  const [validUntil, setValidUntil] = useState(() => quote?.validUntil?.slice(0, 10) || quoteDefaultDate(14));
+  const [notes, setNotes] = useState(quote?.notes || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const selectedPlan = plans.find((plan) => plan.id === planId) || null;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/care/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert",
+          workItemId: lead.id,
+          contactId: lead.contactId,
+          planId,
+          validUntil,
+          notes,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke lagre Care-tilbudet.");
+      await onSaved();
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Kunne ikke lagre Care-tilbudet.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-10 max-w-xl rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Care tilbud</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">{quote ? "Rediger tilbud" : "Opprett tilbud"} · {lead.contactName}</h2>
+            <p className="mt-1 text-sm text-slate-400">{careServiceLabel(lead.serviceIntent)}{lead.preferredArea ? ` · ${lead.preferredArea}` : ""}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Lukk</button>
+        </div>
+        <form onSubmit={submit} className="space-y-5 p-5">
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Care-plan</span>
+            <select required value={planId} onChange={(event) => setPlanId(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+              <option value="">Velg plan</option>
+              {plans.filter((plan) => plan.active).map((plan) => (
+                <option key={plan.id} value={plan.id}>{plan.name} · {moneyFromCents(plan.priceCents, plan.currency)} / mnd</option>
+              ))}
+            </select>
+          </label>
+
+          {selectedPlan && (
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-100">{selectedPlan.name}</p>
+                  <p className="mt-1 text-xs text-cyan-100/70">{selectedPlan.visitsPerMonth} besøk per måned</p>
+                </div>
+                <strong className="text-lg text-white">{moneyFromCents(selectedPlan.priceCents, selectedPlan.currency)}</strong>
+              </div>
+              {selectedPlan.includedServices.length > 0 && (
+                <p className="mt-3 text-xs text-cyan-100/70">{selectedPlan.includedServices.join(" · ")}</p>
+              )}
+            </div>
+          )}
+
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Gyldig til</span>
+            <input type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white" />
+          </label>
+
+          <label className="block space-y-1.5 text-sm text-slate-300">
+            <span>Internt notat <span className="text-slate-500">(valgfritt)</span></span>
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={4} placeholder="Forutsetninger, hva som er avtalt, oppfølging..." className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
+          </label>
+
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100/80">
+            Dette oppretter et internt tilbud i Care. Ingen e-post sendes automatisk. Marker tilbudet som sendt først når du faktisk har sendt det til kunden.
+          </div>
+
+          {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
+
+          <div className="flex justify-end gap-2 border-t border-slate-800 pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Avbryt</Button>
+            <Button type="submit" disabled={saving || !planId}>
+              {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}
+              {quote ? "Lagre tilbud" : "Opprett tilbud"}
             </Button>
           </div>
         </form>
@@ -502,12 +641,38 @@ function CareLeadCard({
   lead,
   onOnboard,
   onFollowUp,
+  onQuote,
+  onChanged,
 }: {
   lead: CareLead;
   onOnboard?: (lead: CareLead) => void;
   onFollowUp?: (lead: CareLead) => void;
+  onQuote?: (lead: CareLead) => void;
+  onChanged?: () => Promise<void> | void;
 }) {
   const open = careLeadOpen(lead);
+  const [quoteBusy, setQuoteBusy] = useState("");
+  const [quoteError, setQuoteError] = useState("");
+
+  async function quoteAction(action: "mark_sent" | "accept" | "decline" | "cancel") {
+    setQuoteBusy(action);
+    setQuoteError("");
+    try {
+      const response = await fetch("/api/care/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, workItemId: lead.id, contactId: lead.contactId }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-tilbudet.");
+      await onChanged?.();
+    } catch (actionError) {
+      setQuoteError(actionError instanceof Error ? actionError.message : "Kunne ikke oppdatere Care-tilbudet.");
+    } finally {
+      setQuoteBusy("");
+    }
+  }
+
   return (
     <article className={`rounded-lg border p-4 transition ${open ? "border-amber-500/20 bg-slate-950/55 hover:border-amber-500/40" : "border-slate-800 bg-slate-950/35 opacity-80"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -522,6 +687,7 @@ function CareLeadCard({
             )}
             {lead.isExistingContact && <span className="text-[11px] text-cyan-300">Eksisterende kontakt</span>}
             {lead.carePropertyId && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">Care-kunde{lead.careContractId ? " + avtale" : ""}</span>}
+            {lead.careQuoteStatus && <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase ${statusClass(lead.careQuoteStatus)}`}>Tilbud {lead.careQuoteStatus}</span>}
           </div>
           <h3 className="mt-3 truncate text-base font-semibold text-white">{lead.contactName}</h3>
           <p className="mt-1 truncate text-xs text-slate-400">
@@ -555,6 +721,27 @@ function CareLeadCard({
         )}
       </div>
 
+      {lead.careQuoteStatus && (
+        <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-100/85">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span><strong className="text-cyan-100">{lead.careQuoteReference || "Care-tilbud"}</strong>{lead.careQuotePlanName ? ` · ${lead.careQuotePlanName}` : ""}</span>
+            <strong className="text-white">{moneyFromCents(lead.careQuoteMonthlyPriceCents, lead.careQuoteCurrency)} / mnd</strong>
+          </div>
+          <div className="mt-1 text-cyan-100/60">
+            Status {lead.careQuoteStatus}{lead.careQuoteValidUntil ? ` · gyldig til ${dateLabel(lead.careQuoteValidUntil)}` : ""}{lead.careQuoteSentAt ? ` · sendt ${dateLabel(lead.careQuoteSentAt)}` : ""}
+          </div>
+        </div>
+      )}
+
+      {quoteError && <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">{quoteError}</div>}
+
+      {lead.quotePlanId && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs">
+          <span className="text-cyan-100"><strong>Tilbud:</strong> {lead.quotePlanName || "Care-plan"}</span>
+          <span className="font-semibold text-white">{moneyFromCents(lead.quotePriceCents, lead.quoteCurrency || "EUR")}/mnd</span>
+        </div>
+      )}
+
       {lead.nextAction && (
         <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
           <span className="font-semibold text-amber-200">Neste steg:</span> {lead.nextAction}
@@ -568,16 +755,35 @@ function CareLeadCard({
           {open && !lead.careContractId && onFollowUp && (
             <button type="button" onClick={() => onFollowUp(lead)} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 font-semibold text-cyan-200 hover:bg-cyan-500/15">Oppfølging</button>
           )}
-          {lead.carePropertyId ? (
+          {!lead.careContractId && onQuote && (!lead.careQuoteStatus || lead.careQuoteStatus === "draft") && (
+            <button type="button" onClick={() => onQuote(lead)} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 font-semibold text-cyan-200 hover:bg-cyan-500/15">
+              {lead.careQuoteStatus === "draft" ? "Rediger tilbud" : "Lag tilbud"}
+            </button>
+          )}
+          {lead.careQuoteStatus === "draft" && (
+            <button type="button" disabled={Boolean(quoteBusy)} onClick={() => quoteAction("mark_sent")} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 font-semibold text-amber-200 disabled:opacity-50">
+              {quoteBusy === "mark_sent" ? "Oppdaterer…" : "Marker sendt"}
+            </button>
+          )}
+          {lead.careQuoteStatus === "sent" && (
             <>
-              <Link href={`/care/customers#care-property-${lead.carePropertyId}`} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
-              {!lead.careContractId && onOnboard && (
-                <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver avtale</button>
-              )}
+              <button type="button" disabled={Boolean(quoteBusy)} onClick={() => quoteAction("accept")} className="rounded-lg bg-emerald-400 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50">
+                {quoteBusy === "accept" ? "Oppdaterer…" : "Marker akseptert"}
+              </button>
+              <button type="button" disabled={Boolean(quoteBusy)} onClick={() => quoteAction("decline")} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 disabled:opacity-50">Avslått</button>
             </>
-          ) : onOnboard ? (
-            <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Opprett Care-kunde</button>
-          ) : null}
+          )}
+          {lead.carePropertyId && (
+            <Link href={`/care/customers#care-property-${lead.carePropertyId}`} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-200">Se Care-kunde</Link>
+          )}
+          {!lead.careContractId && lead.careQuoteStatus === "accepted" && onOnboard && (
+            <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">
+              {lead.carePropertyId ? "Aktiver avtale" : "Opprett Care-kunde"}
+            </button>
+          )}
+          {!lead.careContractId && lead.carePropertyId && !lead.careQuoteStatus && onOnboard && (
+            <button type="button" onClick={() => onOnboard(lead)} className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950 hover:bg-amber-300">Aktiver eksisterende avtale</button>
+          )}
         </div>
       </div>
     </article>
@@ -642,9 +848,9 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
           {[
             ["Krever handling", attentionCount, "prioritert kø nå"],
             ["Åpne leads", dashboard.lifecycle.openLeads, "ikke ferdigbehandlet"],
-            ["Over 24 t", dashboard.summary.staleOpenLeads, "åpne siden i går"],
-            ["Tilbud i løp", dashboard.summary.offersInProgress, "tilbud sendt / venter svar"],
-            ["Oppfølging nå", dashboard.summary.followUpsDue, "dato i dag eller passert"],
+            ["Tilbudsutkast", dashboard.lifecycle.draftQuotes, "må kvalitetssikres"],
+            ["Tilbud sendt", dashboard.lifecycle.sentQuotes, "venter på kundesvar"],
+            ["Akseptert", dashboard.lifecycle.acceptedQuotesAwaitingContract, "må aktiveres"],
             ["Aktivert", dashboard.lifecycle.contractedLeads, `${dashboard.lifecycle.leadToContractPercent}% av målte leads`],
           ].map(([label, value, detail]) => (
             <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
@@ -669,7 +875,7 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
         <EmptyState icon={Inbox} title="Ingen leads i dette filteret" detail="Endre tjenestefilteret eller vis ferdige henvendelser." />
       ) : (
         <section className="grid gap-3 xl:grid-cols-2">
-          {filtered.map((lead) => <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} onFollowUp={setFollowupLead} />)}
+          {filtered.map((lead) => <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} onFollowUp={setFollowupLead} onQuote={setQuoteLead} onChanged={onReload} />)}
         </section>
       )}
 
@@ -684,7 +890,26 @@ function LeadsView({ dashboard, onReload }: { dashboard: CareDashboardData; onRe
       {followupLead && (
         <CareLeadFollowupDialog
           lead={followupLead}
+          plans={dashboard.plans}
           onClose={() => setFollowupLead(null)}
+          onSaved={onReload}
+        />
+      )}
+      {quoteLead && (
+        <CareQuoteDialog
+          lead={quoteLead}
+          plans={dashboard.plans}
+          quote={dashboard.quotes.find((quote) => quote.workItemId === quoteLead.id) || null}
+          onClose={() => setQuoteLead(null)}
+          onSaved={onReload}
+        />
+      )}
+      {quoteLead && (
+        <CareQuoteDialog
+          lead={quoteLead}
+          plans={dashboard.plans}
+          quote={dashboard.quotes.find((quote) => quote.workItemId === quoteLead.id) || null}
+          onClose={() => setQuoteLead(null)}
           onSaved={onReload}
         />
       )}
@@ -700,6 +925,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       || new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   const [onboardingLead, setOnboardingLead] = useState<CareLead | null>(null);
   const [followupLead, setFollowupLead] = useState<CareLead | null>(null);
+  const [quoteLead, setQuoteLead] = useState<CareLead | null>(null);
 
   const propertyById = new Map(dashboard.properties.map((property) => [property.id, property]));
   const sevenDaysFromNow = Date.now() + 7 * 24 * 60 * 60 * 1000;
@@ -761,6 +987,22 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       href: "/care/leads",
       icon: MessageSquareText,
     } : null,
+    dashboard.lifecycle.sentQuotes > 0 ? {
+      id: "quotes",
+      label: "Følg opp sendte Care-tilbud",
+      detail: "Tilbud er sendt og venter på kundens svar.",
+      count: dashboard.lifecycle.sentQuotes,
+      href: "/care/leads",
+      icon: ShieldCheck,
+    } : null,
+    dashboard.lifecycle.acceptedQuotesAwaitingContract > 0 ? {
+      id: "accepted-quotes",
+      label: "Aktiver aksepterte Care-tilbud",
+      detail: "Kunden har akseptert tilbudet, men aktiv Care-avtale mangler.",
+      count: dashboard.lifecycle.acceptedQuotesAwaitingContract,
+      href: "/care/leads",
+      icon: CheckCircle2,
+    } : null,
     dashboard.lifecycle.awaitingProperty > 0 ? {
       id: "new-leads",
       label: "Kvalifiser nye Care-henvendelser",
@@ -809,7 +1051,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Care-flyt</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">Henvendelse → Care-kunde → avtale → besøk → MRR</h2>
+            <h2 className="mt-1 text-lg font-semibold text-white">Henvendelse → tilbud → Care-kunde → avtale → besøk → MRR</h2>
             <p className="mt-1 text-sm text-slate-400">Operativ flyt for de siste registrerte Care-henvendelsene og aktive avtalene.</p>
           </div>
           <p className="text-xs text-slate-500">{dashboard.lifecycle.trackedLeads} Care-leads målt · {dashboard.lifecycle.leadToContractPercent}% har aktivert avtale</p>
@@ -817,9 +1059,10 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
             ["Nye leads", dashboard.lifecycle.awaitingProperty, "må kvalifiseres"],
-            ["Care-eiendom", dashboard.lifecycle.awaitingContract, "venter på avtale"],
+            ["Tilbud sendt", dashboard.lifecycle.sentQuotes, "venter på svar"],
+            ["Akseptert", dashboard.lifecycle.acceptedQuotesAwaitingContract, "må aktiveres"],
+            ["Tilbuds-MRR", moneyFromCents(dashboard.summary.quotedMonthlyRevenueCents), "åpne tilbud per måned"],
             ["Avtale aktivert", dashboard.lifecycle.contractedLeads, "fra Care-leads"],
-            ["Kommende besøk", dashboard.summary.upcomingEvents, "kalenderhendelser"],
             ["MRR", moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), String(dashboard.summary.activeContracts) + " aktive avtaler"],
           ].map(([label, value, detail]) => (
             <article key={String(label)} className="rounded-lg border border-slate-800 bg-slate-950/45 p-4">
@@ -991,7 +1234,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
         ) : (
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
             {attentionLeads.slice(0, 6).map((lead) => (
-              <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} onFollowUp={setFollowupLead} />
+              <CareLeadCard key={lead.id} lead={lead} onOnboard={setOnboardingLead} onFollowUp={setFollowupLead} onQuote={setQuoteLead} onChanged={onReload} />
             ))}
           </div>
         )}
@@ -1062,6 +1305,7 @@ function Overview({ dashboard, onReload }: { dashboard: CareDashboardData; onRel
       {followupLead && (
         <CareLeadFollowupDialog
           lead={followupLead}
+          plans={dashboard.plans}
           onClose={() => setFollowupLead(null)}
           onSaved={onReload}
         />
@@ -1531,7 +1775,7 @@ export function CareDashboard({ initialView = "overview" }: { initialView?: Care
   const summaryCards = useMemo(() => dashboard ? [
     { label: "Åpne Care-leads", value: dashboard.lifecycle.openLeads, icon: Inbox, detail: "nye + leads i oppfølging" },
     { label: "Leads over 24 t", value: dashboard.summary.staleOpenLeads, icon: AlertTriangle, detail: dashboard.summary.staleOpenLeads ? "bør behandles nå" : "ingen gamle åpne leads" },
-    { label: "Tilbud må følges", value: dashboard.summary.followUpsDue, icon: ShieldCheck, detail: `${dashboard.summary.offersInProgress} tilbud / venter svar` },
+    { label: "Tilbud må følges", value: dashboard.lifecycle.sentQuotes + dashboard.lifecycle.acceptedQuotesAwaitingContract, icon: ShieldCheck, detail: `${dashboard.lifecycle.sentQuotes} sendt · ${dashboard.lifecycle.acceptedQuotesAwaitingContract} akseptert` },
     { label: "Tilsyn neste 7 dager", value: dashboard.summary.upcomingEvents7d, icon: CalendarCheck2, detail: `${dashboard.summary.upcomingEvents} kommende totalt` },
     { label: "Åpne avvik", value: dashboard.summary.openIssues + dashboard.summary.openWorkOrders, icon: Wrench, detail: "avvik + arbeidsordre" },
     { label: "MRR Care", value: moneyFromCents(dashboard.summary.monthlyRecurringRevenueCents), icon: CircleDollarSign, detail: `${dashboard.summary.activeContracts} aktive avtaler` },

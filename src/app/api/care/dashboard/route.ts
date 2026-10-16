@@ -13,6 +13,7 @@ type CareSnapshot = {
   kh_checklist_items?: Array<Record<string, unknown>>;
   kh_properties?: Array<Record<string, unknown>>;
   kh_contracts?: Array<Record<string, unknown>>;
+  kh_quotes?: Array<Record<string, unknown>>;
   kh_inspections?: Array<Record<string, unknown>>;
   kh_reports?: Array<Record<string, unknown>>;
   kh_report_deliveries?: Array<Record<string, unknown>>;
@@ -165,6 +166,7 @@ export async function GET(request: NextRequest) {
     properties,
     ownerContacts,
     contracts: rows(snapshot, "kh_contracts"),
+    quotes: rows(snapshot, "kh_quotes"),
     inspections: rows(snapshot, "kh_inspections"),
     reports: rows(snapshot, "kh_reports"),
     reportDeliveries: rows(snapshot, "kh_report_deliveries"),

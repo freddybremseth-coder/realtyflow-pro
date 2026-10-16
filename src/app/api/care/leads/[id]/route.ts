@@ -71,6 +71,7 @@ export async function PATCH(
   const stage = clean(body.stage, 40).toLowerCase();
   const followUpOn = clean(body.followUpOn, 10);
   const note = clean(body.note, 500);
+  const quotePlanId = clean(body.quotePlanId, 80);
 
   if (!SALES_STAGES.has(stage)) {
     return NextResponse.json({ error: "Velg en gyldig Care-salgsstatus." }, { status: 400 });
@@ -80,6 +81,9 @@ export async function PATCH(
   }
   if (FOLLOW_UP_STAGES.has(stage) && !followUpOn) {
     return NextResponse.json({ error: "Sett oppfølgingsdato når tilbud er sendt eller vi venter på kunden." }, { status: 400 });
+  }
+  if (FOLLOW_UP_STAGES.has(stage) && !UUID.test(quotePlanId)) {
+    return NextResponse.json({ error: "Velg Care-planen tilbudet gjelder." }, { status: 400 });
   }
   if (stage === "not_relevant" && !note) {
     return NextResponse.json({ error: "Skriv kort hvorfor henvendelsen ikke er aktuell." }, { status: 400 });
@@ -103,6 +107,24 @@ export async function PATCH(
     return NextResponse.json({ error: "Care-avtalen er allerede aktivert. Bruk kundekortet for videre drift." }, { status: 409 });
   }
 
+  let quotedPlan: Record<string, unknown> | null = null;
+  if (FOLLOW_UP_STAGES.has(stage)) {
+    const care = supabase.schema("care");
+    const { data: plan, error: planError } = await care
+      .from("kh_plans")
+      .select("id,code,name,price_cents,currency,is_active")
+      .eq("id", quotePlanId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (planError) {
+      return NextResponse.json({ error: planError.message }, { status: 400 });
+    }
+    if (!plan) {
+      return NextResponse.json({ error: "Care-planen finnes ikke eller er ikke aktiv." }, { status: 400 });
+    }
+    quotedPlan = plan as Record<string, unknown>;
+  }
+
   const now = new Date().toISOString();
   const metadata = {
     ...existingMetadata,
@@ -113,6 +135,10 @@ export async function PATCH(
     care_last_followup_at: stage === "new"
       ? existingMetadata.care_last_followup_at || null
       : now,
+    care_quote_plan_id: quotedPlan ? String(quotedPlan.id || "") : existingMetadata.care_quote_plan_id || null,
+    care_quote_plan_name: quotedPlan ? String(quotedPlan.name || quotedPlan.code || "") : existingMetadata.care_quote_plan_name || null,
+    care_quote_price_cents: quotedPlan ? Number(quotedPlan.price_cents || 0) : existingMetadata.care_quote_price_cents || null,
+    care_quote_currency: quotedPlan ? String(quotedPlan.currency || "EUR") : existingMetadata.care_quote_currency || null,
     care_quote_sent_at: stage === "quote_sent"
       ? existingMetadata.care_quote_sent_at || now
       : existingMetadata.care_quote_sent_at || null,

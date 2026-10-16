@@ -19,6 +19,7 @@ test("Care lead context joins CRM contacts and passes them to the dashboard mode
   assert.match(route, /pipeline_status,source,brand_id/);
   assert.match(route, /careLeadWorkItems: careLeadContext\.workItems/);
   assert.match(route, /careLeadContacts: careLeadContext\.contacts/);
+  assert.match(route, /quotes: rows\(snapshot, "kh_quotes"\)/);
 });
 
 test("Care overview surfaces source page, service intent and direct customer card navigation", () => {
@@ -33,7 +34,10 @@ test("Care overview surfaces source page, service intent and direct customer car
 
 test("Care overview exposes an operational funnel and daily attention board", () => {
   assert.match(dashboard, /Dette bør du gjøre i dag/);
-  assert.match(dashboard, /Henvendelse → Care-kunde → avtale → besøk → MRR/);
+  assert.match(dashboard, /Henvendelse → tilbud → Care-kunde → avtale → besøk → MRR/);
+  assert.match(dashboard, /dashboard\.lifecycle\.sentQuotes/);
+  assert.match(dashboard, /dashboard\.lifecycle\.acceptedQuotesAwaitingContract/);
+  assert.match(dashboard, /CareQuoteDialog/);
   assert.match(dashboard, /dashboard\.lifecycle\.awaitingProperty/);
   assert.match(dashboard, /dashboard\.lifecycle\.awaitingContract/);
   assert.match(dashboard, /dashboard\.lifecycle\.propertiesWithoutNextVisit/);
