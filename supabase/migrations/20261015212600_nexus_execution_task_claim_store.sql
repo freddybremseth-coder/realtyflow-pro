@@ -155,6 +155,11 @@ begin
   where c.task_id = p_task_id
   for update;
   if found then
+    -- Do not return a successful replay for a claim cancelled after
+    -- reservation. The original receipt still exists for audit only.
+    if v_task.status <> 'executing' then
+      raise exception 'NEXUS_CLAIM_NO_LONGER_ACTIVE' using errcode = '22023';
+    end if;
     if v_existing.idempotency_key = p_idempotency_key
       and v_existing.task_version = p_expected_version
       and v_existing.approval_id = p_approval_id
@@ -550,3 +555,167 @@ comment on view core.nexus_task_board_entries is
   'Minimal internal board projection. No raw evidence, contact, secrets, approval actor, or source payload.';
 comment on view core.nexus_task_board_allowed_readers is
   'Current active brand/user IDs eligible for internal Nexus read; never a direct browser authorization source.';
+
+-- Phase 11: post-claim dispatch revalidation, WITHOUT any external worker.
+-- The result "eligible_now" means only that the stored claim remains valid
+-- at this transaction boundary. It NEVER authorizes a future side effect
+-- without a fresh check / separately reviewed worker execution protocol.
+create table core.nexus_execution_dispatch_events (
+  id uuid primary key default gen_random_uuid(),
+  claim_id uuid not null unique references core.nexus_execution_claims(id) on delete restrict,
+  task_id uuid not null references core.nexus_execution_tasks(id) on delete restrict,
+  brand_id uuid not null references core.brands(id) on delete restrict,
+  actor_user_id uuid not null references auth.users(id) on delete restrict,
+  event_type text not null default 'dispatch_cancelled'
+    check (event_type = 'dispatch_cancelled'),
+  reason text not null check (reason in (
+    'approval_revoked','approval_expired','executor_scope_denied',
+    'reviewer_scope_denied','preflight_stale','task_integrity_changed'
+  )),
+  happened_at timestamptz not null default clock_timestamp()
+);
+alter table core.nexus_execution_dispatch_events enable row level security;
+revoke all on core.nexus_execution_dispatch_events from public,anon,authenticated,service_role;
+grant select on core.nexus_execution_dispatch_events to service_role;
+
+-- Caller supplies an actor UUID derived from the verified server session.
+-- A claim is only inspectable by the original claiming principal; an
+-- unauthorized caller cannot turn another worker's claim into a cancellation.
+create function core.revalidate_nexus_claim_before_dispatch(
+  p_claim_id uuid,
+  p_actor_user_id uuid
+)
+returns table(outcome text, reason text, claim_id uuid)
+language plpgsql
+security definer
+set search_path = ''
+as $revalidate_nexus_claim_before_dispatch$
+declare
+  v_claim core.nexus_execution_claims%rowtype;
+  v_task core.nexus_execution_tasks%rowtype;
+  v_approval core.nexus_execution_approvals%rowtype;
+  v_reason text;
+  v_now timestamptz;
+begin
+  if p_claim_id is null or p_actor_user_id is null then
+    raise exception 'NEXUS_DISPATCH_INVALID_ARGUMENT' using errcode='22023';
+  end if;
+
+  -- Resolve task ID, then lock task FIRST, matching the original claim RPC
+  -- order. Two competing checks/cancellation attempts serialize here.
+  select * into v_claim from core.nexus_execution_claims c
+  where c.id=p_claim_id;
+  if not found or v_claim.claimed_by<>p_actor_user_id then
+    raise exception 'NEXUS_DISPATCH_CLAIM_NOT_FOUND' using errcode='42501';
+  end if;
+  select * into v_task from core.nexus_execution_tasks t
+  where t.id=v_claim.task_id for update;
+  if not found then
+    raise exception 'NEXUS_DISPATCH_TASK_NOT_FOUND' using errcode='22023';
+  end if;
+  select * into v_claim from core.nexus_execution_claims c
+  where c.id=p_claim_id for update;
+  if not found or v_claim.claimed_by<>p_actor_user_id
+     or v_task.brand_id<>v_claim.brand_id then
+    raise exception 'NEXUS_DISPATCH_INTEGRITY_ERROR' using errcode='42501';
+  end if;
+
+  if v_task.status='cancelled' then
+    return query select 'cancelled'::text,e.reason,v_claim.id
+      from core.nexus_execution_dispatch_events e
+      where e.claim_id=v_claim.id;
+    if not found then
+      raise exception 'NEXUS_DISPATCH_CANCEL_AUDIT_MISSING' using errcode='22023';
+    end if;
+    return;
+  end if;
+  if v_task.status<>'executing' then
+    raise exception 'NEXUS_DISPATCH_TASK_NOT_EXECUTABLE' using errcode='22023';
+  end if;
+
+  if v_task.version<>v_claim.task_version+1
+     or v_task.action_type<>v_claim.action_type
+     or v_task.action_digest<>v_claim.action_digest
+     or not v_task.quality_reviewed
+     or cardinality(v_task.evidence_refs)=0
+  then v_reason:='task_integrity_changed';
+  end if;
+
+  -- Acquire the approval lock and the live grant locks before deciding.
+  select * into v_approval from core.nexus_execution_approvals a
+  where a.id=v_claim.approval_id and a.task_id=v_claim.task_id for update;
+  if v_reason is null and (
+    not found or v_approval.brand_id<>v_claim.brand_id
+    or v_approval.task_version<>v_claim.task_version
+    or v_approval.action_type<>v_claim.action_type
+    or v_approval.action_digest<>v_claim.action_digest
+    or v_approval.decision<>'approved'
+    or v_approval.revoked_at is not null
+  ) then v_reason:='approval_revoked';
+  end if;
+
+  -- Lock grants even when an earlier check has failed, keeping the
+  -- lock/check ordering identical for retries and concurrent operators.
+  perform 1 from core.brand_workspace_memberships m
+  join core.nexus_execution_authorizations a
+    on a.brand_id=m.brand_id and a.user_id=m.user_id
+  where m.brand_id=v_claim.brand_id and m.user_id=p_actor_user_id
+    and m.status='active' and 'tasks.joint.write'=any(m.permissions)
+    and a.capability='execute' and a.enabled=true
+  for share of m,a;
+  if v_reason is null and not found then
+    v_reason:='executor_scope_denied';
+  end if;
+
+  perform 1 from core.brand_workspace_memberships m
+  join core.nexus_execution_authorizations a
+    on a.brand_id=m.brand_id and a.user_id=m.user_id
+  where m.brand_id=v_claim.brand_id and m.user_id=v_approval.reviewed_by
+    and m.status='active' and 'tasks.joint.write'=any(m.permissions)
+    and a.capability='review' and a.enabled=true
+  for share of m,a;
+  if v_reason is null and not found then
+    v_reason:='reviewer_scope_denied';
+  end if;
+
+  -- clock_timestamp() must be sampled AFTER the potentially blocking locks,
+  -- never at statement start or prior to lock contention.
+  v_now:=clock_timestamp();
+  if v_reason is null and v_approval.expires_at<=v_now then
+    v_reason:='approval_expired';
+  end if;
+  if v_reason is null and (
+    not v_task.preflight_passed
+    or v_task.preflight_checked_at is null
+    or v_task.preflight_checked_at < v_now-interval '5 minutes'
+    or v_task.preflight_checked_at > v_now+interval '30 seconds'
+  ) then v_reason:='preflight_stale';
+  end if;
+
+  if v_reason is not null then
+    update core.nexus_execution_tasks
+    set status='cancelled',version=version+1,updated_at=v_now
+    where id=v_task.id and status='executing';
+    if not found then
+      raise exception 'NEXUS_DISPATCH_CONCURRENT_STATUS_CHANGE' using errcode='40001';
+    end if;
+    insert into core.nexus_execution_dispatch_events
+      (claim_id,task_id,brand_id,actor_user_id,event_type,reason,happened_at)
+    values (v_claim.id,v_task.id,v_task.brand_id,p_actor_user_id,
+      'dispatch_cancelled',v_reason,v_now);
+    return query select 'cancelled'::text,v_reason,v_claim.id;
+    return;
+  end if;
+
+  -- NO dispatch lease, executor side effect or live provider call exists.
+  -- Callers MUST NOT interpret this as an irrevocable authorization.
+  return query select 'eligible_now'::text,null::text,v_claim.id;
+end;
+$revalidate_nexus_claim_before_dispatch$;
+
+revoke execute on function core.revalidate_nexus_claim_before_dispatch(uuid,uuid)
+  from public,anon,authenticated;
+grant execute on function core.revalidate_nexus_claim_before_dispatch(uuid,uuid)
+  to service_role;
+comment on function core.revalidate_nexus_claim_before_dispatch(uuid,uuid) is
+  'Check an existing claim against current approval and brand grants; atomically cancel and audit invalid claims. Never executes an external action.';
