@@ -7,6 +7,8 @@ on:
       - "src/app/(realty)/altovena/**"
       - "tests/fixtures/altovena_*"
       - "tests/altovena/**"
+      - "src/lib/altovena/**"
+      - "src/lib/altovena/**"
       - ".github/workflows/altovena-internal-command.yml"
   push:
     branches: ["feature/altovena-command-internal"]
@@ -58,5 +60,9 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261016184000_altovena_owner_command_bridge.sql
       - name: Validate service-only, idempotent drafts and audit trail
         run: psql -v ON_ERROR_STOP=1 -f tests/altovena/gateway.sql
+      - name: Install guarded Nexus routing proposals
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261016211500_altovena_command_routing_plans.sql
+      - name: Validate planned routes do not execute or autoapprove
+        run: psql -v ON_ERROR_STOP=1 -f tests/altovena/routing-plan.sql
       - name: Validate HTTP route safeguards
         run: node --test tests/altovena/gateway-contract.test.mjs
