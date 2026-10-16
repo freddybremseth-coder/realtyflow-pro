@@ -179,11 +179,67 @@ export function ChatWidget({
   const [speakReplies, setSpeakReplies] = useState(false);
   const [restored, setRestored] = useState(false);
   const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({});
+  const [developmentOwner, setDevelopmentOwner] = useState(false);
+  const [developmentBusy, setDevelopmentBusy] = useState<Record<number, boolean>>({});
+  const [developmentSaved, setDevelopmentSaved] = useState<Record<number, string>>({});
+  const [developmentTasks, setDevelopmentTasks] = useState<Array<{ id: string; request_text: string; status: string; suggested_repository?: string }>>([]);
+  const [showDevelopmentTasks, setShowDevelopmentTasks] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef("");
   const messagesRef = useRef(messages);
   const storageKey = `nexus-chat:${brandId}:${apiUrl || "default"}`;
+
+  useEffect(() => {
+    if (apiUrl !== "/api/nexus/victoria") return;
+    let live = true;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (live) setDevelopmentOwner(data?.user?.role === "OWNER" && !data?.preview?.active); })
+      .catch(() => { if (live) setDevelopmentOwner(false); });
+    return () => { live = false; };
+  }, [apiUrl]);
+
+  const registerDevelopmentTask = async (message: string, index: number) => {
+    if (developmentBusy[index]) return;
+    setDevelopmentBusy(current => ({ ...current, [index]: true }));
+    try {
+      const res = await fetch("/api/nexus/development-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request: message,
+          scope: "investigation",
+          pagePath: window.location.pathname,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Kunne ikke lagre oppgaven");
+      setDevelopmentSaved(current => ({ ...current, [index]: String(body.task?.id || "registered") }));
+      setDevelopmentTasks(tasks => [body.task, ...tasks].filter(Boolean).slice(0, 50));
+    } catch (error) {
+      setMessages(previous => [...previous, {
+        role: "assistant",
+        content: `Utviklingsoppgaven ble ikke lagret: ${error instanceof Error ? error.message : "ukjent feil"}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } finally {
+      setDevelopmentBusy(current => ({ ...current, [index]: false }));
+    }
+  };
+
+  const loadDevelopmentTasks = async () => {
+    if (showDevelopmentTasks) { setShowDevelopmentTasks(false); return; }
+    try {
+      const response = await fetch("/api/nexus/development-tasks", { cache: "no-store" });
+      if (!response.ok) throw new Error("Kunne ikke hente oppgaver");
+      const data = await response.json();
+      setDevelopmentTasks(Array.isArray(data.tasks) ? data.tasks : []);
+      setShowDevelopmentTasks(true);
+    } catch {
+      setShowDevelopmentTasks(false);
+    }
+  };
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { draftRef.current = input; }, [input]);
@@ -416,6 +472,99 @@ export function ChatWidget({
           </div>
 
           {!minimized && <>
+            {developmentOwner && (
+              <div className="border-b border-slate-700 bg-slate-900 px-4 py-2">
+                <button type="button" onClick={() => void loadDevelopmentTasks()}
+                  className="text-xs font-medium text-cyan-300 hover:text-cyan-100">
+                  {showDevelopmentTasks ? "Skjul utviklingsoppgaver" : "Utviklingsoppgaver"}
+                </button>
+                {showDevelopmentTasks && (
+                  <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+                    {developmentTasks.length === 0 && <p className="text-xs text-slate-400">Ingen lagrede oppgaver.</p>}
+                    {developmentTasks.map(task => (
+                      <div key={task.id} className="rounded-md border border-slate-700 p-2 text-xs text-slate-300">
+                        <p className="line-clamp-2" title={task.request_text}>
+                          <span className="text-cyan-300">[{task.status}]</span> {task.request_text}
+                        </p>
+                        {task.suggested_repository && <p className="mt-1 truncate text-[10px] text-slate-400">Foreslått: {task.suggested_repository}</p>}
+                        <button type="button" className="mt-1 text-cyan-300 underline hover:text-cyan-100"
+                          onClick={() => void (async () => {
+                            try {
+                              const result = await fetch(`/api/nexus/development-tasks/${encodeURIComponent(task.id)}`, { cache: "no-store" });
+                              if (!result.ok) throw new Error("Oppgaven er ikke tilgjengelig");
+                              const details = await result.json();
+                              const current = details.task;
+                              setInput(`Fortsett med utviklingsoppgave ${current.id}: ${current.request_text}. Status: ${current.status}. Foreslått GitHub-prosjekt: ${current.suggested_repository || "ikke bestemt"}. Lag en konkret plan for neste steg; ikke påstå at endringer er utført uten verifisert resultat.`);
+                              setShowDevelopmentTasks(false);
+                              inputRef.current?.focus();
+                            } catch {
+                              setMessages(previous => [...previous, { role: "assistant", content: "Kunne ikke laste oppgaven fra serveren. Ingen utviklingshandling er startet.", timestamp: new Date().toISOString() }]);
+                            }
+                          })()}>
+                          Fortsett i Nexus
+                        </button>
+                        <button type="button" className="ml-3 mt-1 text-cyan-300 underline hover:text-cyan-100"
+                          onClick={() => void (async () => {
+                            try {
+                              const response = await fetch(`/api/nexus/development-tasks/${encodeURIComponent(task.id)}/plan`, { cache: "no-store" });
+                              if (!response.ok) throw new Error("Planen kunne ikke hentes");
+                              const { plan, githubEvidence } = await response.json();
+                              const summary = [
+                                `Utviklingsplan for oppgave ${plan.taskId}`,
+                                `Repository: ${plan.repository}`,
+                                `Mål: ${plan.objective}`,
+                                ...plan.steps.map((step: string, index: number) => `${index + 1}. ${step}`),
+                                `Planhash: ${plan.planHash}`,
+                                githubEvidence?.verified
+                                  ? `GitHub kontrollert: ${githubEvidence.defaultBranch} @ ${githubEvidence.headSha}`
+                                  : "GitHub kunne ikke verifiseres. Planen bygger ikke på kontrollert kildekode.",
+                                "Dette er et planforslag. Ingen kodeendringer er utført.",
+                              ].join("\n");
+                              setMessages(previous => [...previous, { role: "assistant", content: summary, timestamp: new Date().toISOString() }]);
+                              setShowDevelopmentTasks(false);
+                            } catch {
+                              setMessages(previous => [...previous, { role: "assistant", content: "Planen kunne ikke lastes. Ingen endringer er utført.", timestamp: new Date().toISOString() }]);
+                            }
+                          })()}>
+                          Vis utviklingsplan
+                        </button>
+                        <button type="button" className="ml-3 mt-1 text-cyan-300 underline hover:text-cyan-100"
+                          onClick={() => void (async () => {
+                            try {
+                              const planResponse = await fetch(`/api/nexus/development-tasks/${encodeURIComponent(task.id)}/plan`, { cache: "no-store" });
+                              if (!planResponse.ok) throw new Error("Planen er utilgjengelig");
+                              const data = await planResponse.json();
+                              const candidate = data.plan?.repository?.includes("/Altovena")
+                                ? "README.md"
+                                : "src/components/chatbot/chat-widget.tsx";
+                              const sourceResponse = await fetch(
+                                `/api/nexus/development-tasks/${encodeURIComponent(task.id)}/source?path=${encodeURIComponent(candidate)}`,
+                                { cache: "no-store" },
+                              );
+                              if (!sourceResponse.ok) throw new Error("Kilden kunne ikke verifiseres");
+                              const result = await sourceResponse.json();
+                              if (!result.source?.verified) throw new Error(result.source?.warning || "Kilden er ikke verifisert");
+                              setMessages(previous => [...previous, {
+                                role: "assistant",
+                                content: `Kildefil lest fra GitHub: ${result.source.path} ved ${result.source.sha}. Dette er kun innsyn, ikke en analyse eller kodeendring.\n\n${result.source.excerpt}`,
+                                timestamp: new Date().toISOString(),
+                              }]);
+                              setShowDevelopmentTasks(false);
+                            } catch {
+                              setMessages(previous => [...previous, {
+                                role: "assistant", content: "Kildefilen kunne ikke verifiseres. Ingen kodeendring er gjort.",
+                                timestamp: new Date().toISOString(),
+                              }]);
+                            }
+                          })()}>
+                          Inspiser kildefil
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex-1 space-y-3 overflow-y-auto bg-slate-900 p-4" style={{ minHeight: "300px" }}>
               {messages.map((msg, i) => (
                 <div key={i} className={`flex gap-2 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
@@ -424,6 +573,13 @@ export function ChatWidget({
                   </div>
                   <div className="max-w-[80%]">
                     <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${msg.role === "user" ? "rounded-tr-sm bg-slate-700 text-white" : "rounded-tl-sm border border-slate-700/50 bg-slate-800 text-slate-200"}`}>{msg.content}</div>
+                    {msg.role === "user" && developmentOwner && (
+                      <button type="button" disabled={Boolean(developmentBusy[i]) || Boolean(developmentSaved[i])}
+                        onClick={() => void registerDevelopmentTask(msg.content, i)}
+                        className="mt-1 rounded-md border border-slate-600 px-2 py-1 text-[10px] text-cyan-200 hover:border-cyan-400 disabled:opacity-70">
+                        {developmentSaved[i] ? "Registrert · ikke utført" : developmentBusy[i] ? "Registrerer…" : "Lagre som utviklingsoppgave"}
+                      </button>
+                    )}
                     {msg.role === "assistant" && msg.proposedActions && msg.proposedActions.length > 0 && (
                       <div className="mt-2 flex flex-col gap-1.5">
                         {msg.proposedActions.map((action) => (
