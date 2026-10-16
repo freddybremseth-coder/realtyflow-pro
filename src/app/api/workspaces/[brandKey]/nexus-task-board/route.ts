@@ -25,7 +25,7 @@ export async function GET(request:NextRequest,{params}:{params:{brandKey:string}
   if(!context || context.role!=="WORKSPACE_MEMBER" ||
     !["role-profile","owner-preview"].includes(context.source) ||
     !access.value.verifiedUserId) return fail(403,"MEMBER_SESSION_REQUIRED");
-  if(process.env.NEXUS_TASK_BOARD_READ_ENABLED!=="true" ||
+  // Freeze verified workspace scope before passing it across an async callback.\n  const {brandId, verifiedUserId}=access.value;\n  if(!verifiedUserId) return fail(403,"MEMBER_SESSION_REQUIRED");\n  if(process.env.NEXUS_TASK_BOARD_READ_ENABLED!=="true" ||
      process.env.NEXUS_TASK_BOARD_STAFF_READ_ENABLED!=="true") return fail(503,"NEXUS_STAFF_BOARD_DISABLED");
   const value=process.env.NEXUS_TASK_BOARD_DATABASE_URL;
   if(!value)return fail(503,"NEXUS_STAFF_BOARD_UNCONFIGURED");
@@ -35,7 +35,6 @@ export async function GET(request:NextRequest,{params}:{params:{brandKey:string}
   try {
     return await withNexusBoardReader(
       value, "realtyflow-nexus-task-board-staff-readonly", async client=>{
-        const {brandId,verifiedUserId}=access.value!;
         if(!await hasNexusTaskBoardViewGrant(client,brandId,verifiedUserId)) return fail(403,"NEXUS_TASK_BOARD_SCOPE_DENIED");
         const tasks=await loadNexusTaskBoard(client,brandId,verifiedUserId);
         if(tasks.some(task=>task.brandId!==brandId)) return fail(503,"NEXUS_STAFF_BOARD_SCOPE_MISMATCH");
