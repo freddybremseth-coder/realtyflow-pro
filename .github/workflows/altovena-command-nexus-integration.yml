@@ -4,6 +4,8 @@ on:
     paths:
       - "src/lib/altovena/command-nexus-handoff.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
+      - "tests/altovena/command-nexus-integration-bootstrap.sql"
+      - "tests/altovena/command-nexus-coexistence.sql"
       - "src/app/(realty)/altovena/command/page.tsx"
       - "src/app/api/altovena/command/plan/route.ts"
       - "supabase/migrations/*altovena_command_routing_plans.sql"
@@ -25,3 +27,45 @@ jobs:
       - run: npm ci --silent
       - name: Verify that Command planning cannot activate Nexus execution
         run: node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
+
+  verify-shared-postgres-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_only_test_password
+          POSTGRES_DB: altovena_nexus_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d altovena_nexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ci_only_test_password
+      PGDATABASE: altovena_nexus_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare isolated schemas and minimum roles
+        run: psql -v ON_ERROR_STOP=1 -f tests/altovena/command-nexus-integration-bootstrap.sql
+      - name: Install Altovena schema and internal tenant fixture
+        run: |
+          psql -v ON_ERROR_STOP=1 -f tests/fixtures/altovena_platform_base.sql
+          psql -v ON_ERROR_STOP=1 -f tests/fixtures/altovena_internal_tenant.sql
+          # Auth table exists in the combined fixture; insert only the user.
+          psql -v ON_ERROR_STOP=1 -c "INSERT INTO auth.users(id,email,email_confirmed_at) VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc','owner@example.test',now());"
+      - name: Install both proposed migrations (test database only)
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261016184000_altovena_owner_command_bridge.sql
+          psql -v ON_ERROR_STOP=1 -f tests/altovena/gateway.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261016211500_altovena_command_routing_plans.sql
+          psql -v ON_ERROR_STOP=1 -f tests/altovena/routing-plan.sql
+      - name: Validate that both schemas coexist without implicit execution
+        run: psql -v ON_ERROR_STOP=1 -f tests/altovena/command-nexus-coexistence.sql
