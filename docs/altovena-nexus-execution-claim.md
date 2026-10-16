@@ -109,3 +109,9 @@ Staff workflow tests currently mock database responses, while isolated PostgreSQ
 - Contract tests simulate safe and unsafe role proofs and URL downgrade attempts. They are not a substitute for a real TLS handshake and per-role grants check on a dedicated staging Supabase instance.
 
 **Operational note:** The staged PostgreSQL migration defines only the NOLOGIN reader role. A separate **LOGIN** user that receives this role with immediate privilege usage must be created, rotated and audited after approval in staging. If the LOGIN identity cannot inherit the role's SELECT grants without changing the restriction, the API intentionally remains unavailable; do not bypass the role proof.
+
+
+## Phase 7: credential fixture and TS build correction (staged)
+- The actual Next.js build caught a TypeScript narrowing issue: `verifiedUserId` was nullable inside the asynchronous staff reader callback. The verified user ID and brand UUID are now captured and checked before the callback, without loosening access rules.
+- Disposable PostgreSQL CI now creates a temporary `LOGIN INHERIT` role, grants only `nexus_task_board_reader`, proves effective board-view access and refusal of the underlying task table and mutation RPC, then revokes membership and verifies access disappears. This is not a credential or role created in Supabase.
+- Before a real staging credential is configured, require a dedicated staging project/branch, controlled secret rotation, DB privilege/RLS policy audit, valid TLS hostname verification, staff-owner-scoped E2E tests and explicit release review. Never use production as a staging test database.
