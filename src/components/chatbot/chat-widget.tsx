@@ -488,11 +488,19 @@ export function ChatWidget({
                         </p>
                         {task.suggested_repository && <p className="mt-1 truncate text-[10px] text-slate-400">Foreslått: {task.suggested_repository}</p>}
                         <button type="button" className="mt-1 text-cyan-300 underline hover:text-cyan-100"
-                          onClick={() => {
-                            setInput(`Fortsett med utviklingsoppgave ${task.id}: ${task.request_text.slice(0, 2000)}. Status: ${task.status}. Undersøk neste trygge steg og skill mellom forslag og faktisk utførte handlinger.`);
-                            setShowDevelopmentTasks(false);
-                            inputRef.current?.focus();
-                          }}>
+                          onClick={() => void (async () => {
+                            try {
+                              const result = await fetch(`/api/nexus/development-tasks/${encodeURIComponent(task.id)}`, { cache: "no-store" });
+                              if (!result.ok) throw new Error("Oppgaven er ikke tilgjengelig");
+                              const details = await result.json();
+                              const current = details.task;
+                              setInput(`Fortsett med utviklingsoppgave ${current.id}: ${current.request_text}. Status: ${current.status}. Foreslått GitHub-prosjekt: ${current.suggested_repository || "ikke bestemt"}. Lag en konkret plan for neste steg; ikke påstå at endringer er utført uten verifisert resultat.`);
+                              setShowDevelopmentTasks(false);
+                              inputRef.current?.focus();
+                            } catch {
+                              setMessages(previous => [...previous, { role: "assistant", content: "Kunne ikke laste oppgaven fra serveren. Ingen utviklingshandling er startet.", timestamp: new Date().toISOString() }]);
+                            }
+                          })()}>
                           Fortsett i Nexus
                         </button>
                       </div>
