@@ -112,4 +112,29 @@ FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.altovena_internal_command_plan_get(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.altovena_internal_command_plan_propose(text,uuid,jsonb) TO service_role;
 
+
+-- Retrieve only the target internal draft for owner-authenticated planning.
+CREATE OR REPLACE FUNCTION public.altovena_internal_command_plan_input(p_mission_id uuid)
+RETURNS TABLE(id uuid, goal text, state text, created_by uuid)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog
+AS $
+DECLARE v_tenant uuid;
+BEGIN
+ SELECT t.id INTO v_tenant FROM altovena.tenants t
+ JOIN altovena.tenant_products tp ON tp.tenant_id=t.id AND tp.product_slug='command'
+ WHERE t.external_ref='host:realtyflowpro:altovena-internal'
+ AND t.status='active' AND tp.status='active';
+ IF v_tenant IS NULL OR p_mission_id IS NULL THEN
+   RAISE EXCEPTION 'internal_mission_unavailable';
+ END IF;
+ RETURN QUERY SELECT m.id,m.goal,m.state,m.created_by FROM altovena.missions m
+ WHERE m.tenant_id=v_tenant AND m.id=p_mission_id AND m.product_slug='command'
+ AND m.state='draft';
+END;
+$;
+REVOKE ALL ON FUNCTION public.altovena_internal_command_plan_input(uuid)
+ FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.altovena_internal_command_plan_input(uuid)
+ TO service_role;
+
 COMMIT;
