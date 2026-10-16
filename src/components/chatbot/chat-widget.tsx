@@ -503,6 +503,28 @@ export function ChatWidget({
                           })()}>
                           Fortsett i Nexus
                         </button>
+                        <button type="button" className="ml-3 mt-1 text-cyan-300 underline hover:text-cyan-100"
+                          onClick={() => void (async () => {
+                            try {
+                              const response = await fetch(`/api/nexus/development-tasks/${encodeURIComponent(task.id)}/plan`, { cache: "no-store" });
+                              if (!response.ok) throw new Error("Planen kunne ikke hentes");
+                              const { plan } = await response.json();
+                              const summary = [
+                                `Utviklingsplan for oppgave ${plan.taskId}`,
+                                `Repository: ${plan.repository}`,
+                                `Mål: ${plan.objective}`,
+                                ...plan.steps.map((step: string, index: number) => `${index + 1}. ${step}`),
+                                `Planhash: ${plan.planHash}`,
+                                "Dette er et planforslag. Ingen kodeendringer er utført.",
+                              ].join("\n");
+                              setMessages(previous => [...previous, { role: "assistant", content: summary, timestamp: new Date().toISOString() }]);
+                              setShowDevelopmentTasks(false);
+                            } catch {
+                              setMessages(previous => [...previous, { role: "assistant", content: "Planen kunne ikke lastes. Ingen endringer er utført.", timestamp: new Date().toISOString() }]);
+                            }
+                          })()}>
+                          Vis utviklingsplan
+                        </button>
                       </div>
                     ))}
                   </div>
