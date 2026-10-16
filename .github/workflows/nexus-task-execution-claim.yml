@@ -25,6 +25,7 @@ on:
       - "scripts/qa-nexus-board-tenant-postgres.sql"
       - "scripts/qa-nexus-board-node-login.sql"
       - "scripts/qa-nexus-board-node.integration.test.ts"
+      - "scripts/qa-nexus-claim-concurrency.integration.test.ts"
       - ".github/workflows/nexus-task-execution-claim.yml"
   push:
     branches: [main]
@@ -51,6 +52,7 @@ on:
       - "scripts/qa-nexus-board-tenant-postgres.sql"
       - "scripts/qa-nexus-board-node-login.sql"
       - "scripts/qa-nexus-board-node.integration.test.ts"
+      - "scripts/qa-nexus-claim-concurrency.integration.test.ts"
       - ".github/workflows/nexus-task-execution-claim.yml"
 permissions:
   contents: read
@@ -115,3 +117,8 @@ jobs:
         env:
           NEXUS_BOARD_CI_ONLY: "true"
         run: node --import tsx --test scripts/qa-nexus-board-node.integration.test.ts
+      - name: Verify concurrent claims are exactly once
+        env:
+          NEXUS_BOARD_CI_ONLY: "true"
+          NEXUS_CLAIM_CI_ONLY: "true"
+        run: node --import tsx --test scripts/qa-nexus-claim-concurrency.integration.test.ts
