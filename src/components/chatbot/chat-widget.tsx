@@ -528,6 +528,37 @@ export function ChatWidget({
                           })()}>
                           Vis utviklingsplan
                         </button>
+                        <button type="button" className="ml-3 mt-1 text-cyan-300 underline hover:text-cyan-100"
+                          onClick={() => void (async () => {
+                            try {
+                              const planResponse = await fetch(`/api/nexus/development-tasks/${encodeURIComponent(task.id)}/plan`, { cache: "no-store" });
+                              if (!planResponse.ok) throw new Error("Planen er utilgjengelig");
+                              const data = await planResponse.json();
+                              const candidate = data.plan?.repository?.includes("/Altovena")
+                                ? "README.md"
+                                : "src/components/chatbot/chat-widget.tsx";
+                              const sourceResponse = await fetch(
+                                `/api/nexus/development-tasks/${encodeURIComponent(task.id)}/source?path=${encodeURIComponent(candidate)}`,
+                                { cache: "no-store" },
+                              );
+                              if (!sourceResponse.ok) throw new Error("Kilden kunne ikke verifiseres");
+                              const result = await sourceResponse.json();
+                              if (!result.source?.verified) throw new Error(result.source?.warning || "Kilden er ikke verifisert");
+                              setMessages(previous => [...previous, {
+                                role: "assistant",
+                                content: `Kildefil lest fra GitHub: ${result.source.path} ved ${result.source.sha}. Dette er kun innsyn, ikke en analyse eller kodeendring.\n\n${result.source.excerpt}`,
+                                timestamp: new Date().toISOString(),
+                              }]);
+                              setShowDevelopmentTasks(false);
+                            } catch {
+                              setMessages(previous => [...previous, {
+                                role: "assistant", content: "Kildefilen kunne ikke verifiseres. Ingen kodeendring er gjort.",
+                                timestamp: new Date().toISOString(),
+                              }]);
+                            }
+                          })()}>
+                          Inspiser kildefil
+                        </button>
                       </div>
                     ))}
                   </div>
