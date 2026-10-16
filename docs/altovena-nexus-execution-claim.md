@@ -133,3 +133,12 @@ Staff workflow tests currently mock database responses, while isolated PostgreSQ
 - A user authorized in brand A cannot claim a preflight-approved task in brand B; its state and audit are unchanged.
 - This is not a production worker or a live customer operation. CI runs only when `GITHUB_ACTIONS`, `NEXUS_BOARD_CI_ONLY`, and `NEXUS_CLAIM_CI_ONLY` are set and connects only to disposable `127.0.0.1:5432` PostgreSQL.
 - Remaining release gates include real Supabase staging with separate verified identities and grants, checked RLS/privileges, an authenticated server writer rather than trusted caller parameters, and action-specific allowlisted worker execution with post-claim authorization and cancellation.
+
+
+## Phase 10: revocation and approval expiry during database lock waits
+
+- The staged private `core.claim_nexus_execution_task` function now **resamples `clock_timestamp()` after acquiring task, approval, executor and reviewer-grant locks**, immediately before its claim insert. It rechecks approval expiry and preflight freshness at this authoritative time. Without this second check, a task waiting on a lock could proceed on the clock sample taken before a deadline expired.
+- `scripts/qa-nexus-claim-revocation.integration.test.ts` exercises three real PostgreSQL transaction interleavings: (1) revoke the approval while the claim is blocked by the approval row; (2) disable the executor's dedicated capability while the claim waits for the grant row; (3) move the approval expiry while the claim is blocked and verify that it is rejected after the new deadline.
+- The tests use `pg_blocking_pids` to verify **actual** SQL lock contention before releasing the revoker's transaction. They require no real data, do not execute any external action and assert that a rejected attempt leaves zero claim receipts or claim-audit events.
+- If a valid claim commits first and revocation follows, the already-committed claim is not automatically rolled back. This is a separate **post-claim cancellation and worker-side authorization** release requirement. No worker is connected in this PR.
+- Read/write credentials and real user sessions have not been provisioned. All test transactions run only on disposable GitHub Actions PostgreSQL 16; Supabase staging and full release checks remain mandatory.
