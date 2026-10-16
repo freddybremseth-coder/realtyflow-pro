@@ -50,14 +50,14 @@ BEGIN
  IF p_mission_id IS NULL OR p_actor_email IS NULL OR p_plan IS NULL
    OR jsonb_typeof(p_plan)<>'object' OR length(p_plan::text)>18000
  THEN RAISE EXCEPTION 'invalid_plan' USING ERRCODE='22023'; END IF;
- IF p_plan->>'mode' <> 'ROUTING_PROPOSAL_ONLY'
-    OR p_plan->>'source' <> 'realtyflow-nexus-agent-fleet'
-    OR p_plan->>'missionId' <> p_mission_id::text
+ IF p_plan->>'mode' IS DISTINCT FROM 'ROUTING_PROPOSAL_ONLY'
+    OR p_plan->>'source' IS DISTINCT FROM 'realtyflow-nexus-agent-fleet'
+    OR p_plan->>'missionId' IS DISTINCT FROM p_mission_id::text
     OR (p_plan->'controls'->>'approvedForExecution') IS DISTINCT FROM 'false'
     OR (p_plan->'controls'->>'permittedExternalActions') IS DISTINCT FROM 'false'
-    OR p_plan->'controls'->'allowedTools' <> '[]'::jsonb
-    OR p_plan->'controls'->>'requiresHumanReview' <> 'true'
-    OR jsonb_typeof(p_plan->'agents') <> 'array'
+    OR p_plan->'controls'->'allowedTools' IS DISTINCT FROM '[]'::jsonb
+    OR p_plan->'controls'->>'requiresHumanReview' IS DISTINCT FROM 'true'
+    OR jsonb_typeof(p_plan->'agents') IS DISTINCT FROM 'array'
  THEN RAISE EXCEPTION 'unsafe_plan' USING ERRCODE='22023'; END IF;
  IF jsonb_array_length(p_plan->'agents') NOT BETWEEN 1 AND 3
  THEN RAISE EXCEPTION 'invalid_agent_count' USING ERRCODE='22023'; END IF;
