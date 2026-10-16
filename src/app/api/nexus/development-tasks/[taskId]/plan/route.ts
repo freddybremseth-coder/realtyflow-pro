@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { createDevelopmentPlan } from "@/lib/nexus/development-plan";
+import { readDevelopmentRepositoryEvidence } from "@/lib/nexus/development-github-read";
 
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest, context: { params: { taskId: string } }) {
@@ -20,5 +21,9 @@ export async function GET(request: NextRequest, context: { params: { taskId: str
     .eq("id", id).eq("requested_by", actor.email).maybeSingle();
   if (error) return respond({ error: "TASK_LOOKUP_FAILED" }, 503);
   if (!data) return respond({ error: "TASK_NOT_FOUND" }, 404);
-  return respond({ plan: createDevelopmentPlan(data), note: "Planforslag – ingen koding eller publisering utført." });
+  const plan = createDevelopmentPlan(data);
+  const githubEvidence = await readDevelopmentRepositoryEvidence(plan.repository);
+  return respond({ plan, githubEvidence, note: githubEvidence.verified
+    ? "GitHub-versjon kontrollert. Planen er fortsatt generell; ingen kode er endret."
+    : "GitHub kunne ikke verifiseres. Planen er generell; ingen kode er endret." });
 }
