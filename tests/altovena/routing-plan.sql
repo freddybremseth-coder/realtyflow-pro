@@ -43,6 +43,7 @@ BEGIN
    'agents',jsonb_build_array(jsonb_build_object(
      'agentId','business','agentName','Morgan Business Strategist',
      'executionStatus','not_started')),
+   'relatedAutomations',jsonb_build_array(),
    'controls',jsonb_build_object(
      'requiresHumanReview',true,
      'approvedForExecution',false,
