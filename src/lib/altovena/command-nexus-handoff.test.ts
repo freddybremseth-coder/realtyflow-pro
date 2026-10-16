@@ -22,7 +22,7 @@ const safe = () => ({
       requiresHumanReview: true,
       approvedForExecution: false,
       permittedExternalActions: false,
-      allowedTools: [],
+      allowedTools: [] as string[],
     },
   },
 });
