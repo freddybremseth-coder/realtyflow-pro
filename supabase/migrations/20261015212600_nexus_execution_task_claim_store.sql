@@ -237,6 +237,21 @@ begin
     raise exception 'NEXUS_CLAIM_REVIEWER_SCOPE_DENIED' using errcode = '42501';
   end if;
 
+  -- An approval or preflight can expire while this transaction waits for
+  -- the task, approval or membership locks. The earlier clock sample is NOT
+  -- sufficient: re-evaluate time only after ALL authoritative locks are held.
+  -- The write below uses this same refreshed timestamp.
+  v_now := clock_timestamp();
+  if v_approval.expires_at <= v_now then
+    raise exception 'NEXUS_CLAIM_APPROVAL_EXPIRED' using errcode = '22023';
+  end if;
+  if v_task.preflight_checked_at is null
+    or v_task.preflight_checked_at < v_now - interval '5 minutes'
+    or v_task.preflight_checked_at > v_now + interval '30 seconds'
+  then
+    raise exception 'NEXUS_CLAIM_PREFLIGHT_STALE' using errcode = '22023';
+  end if;
+
   insert into core.nexus_execution_claims
     (task_id,brand_id,task_version,approval_id,action_type,action_digest,
      claimed_by,idempotency_key,claimed_at)
