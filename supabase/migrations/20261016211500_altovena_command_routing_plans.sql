@@ -62,8 +62,8 @@ BEGIN
  IF jsonb_array_length(p_plan->'agents') NOT BETWEEN 1 AND 3
  THEN RAISE EXCEPTION 'invalid_agent_count' USING ERRCODE='22023'; END IF;
  IF EXISTS(
-   SELECT 1 FROM jsonb_array_elements(p_plan->'agents') agent
-   WHERE agent->>'executionStatus' IS DISTINCT FROM 'not_started'
+   SELECT 1 FROM jsonb_array_elements(p_plan->'agents') AS agent(value)
+   WHERE agent.value->>'executionStatus' IS DISTINCT FROM 'not_started'
  ) THEN RAISE EXCEPTION 'unsafe_agent_status' USING ERRCODE='22023'; END IF;
 
  SELECT t.id INTO v_tenant FROM altovena.tenants t
