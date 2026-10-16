@@ -1,0 +1,27 @@
+name: Altovena Command to Nexus integration boundary
+on:
+  pull_request:
+    paths:
+      - "src/lib/altovena/command-nexus-handoff.ts"
+      - "src/lib/altovena/command-nexus-handoff.test.ts"
+      - "src/app/(realty)/altovena/command/page.tsx"
+      - "src/app/api/altovena/command/plan/route.ts"
+      - "supabase/migrations/*altovena_command_routing_plans.sql"
+      - "supabase/migrations/*nexus_execution_task_claim_store.sql"
+      - ".github/workflows/altovena-command-nexus-integration.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-read-only-handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --silent
+      - name: Verify that Command planning cannot activate Nexus execution
+        run: node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
