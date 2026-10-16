@@ -128,7 +128,7 @@ BEGIN
  INSERT INTO altovena.mission_analysis_preparations(
   tenant_id,mission_id,prepared_by,routing_digest,agent_count)
  VALUES(v_tenant,p_mission_id,v_actor,v_digest,v_count)
- ON CONFLICT (tenant_id,mission_id) DO NOTHING;
+ ON CONFLICT ON CONSTRAINT mission_analysis_preparations_pkey DO NOTHING;
  GET DIAGNOSTICS v_inserted=ROW_COUNT;
  SELECT * INTO v_existing FROM altovena.mission_analysis_preparations p
  WHERE p.tenant_id=v_tenant AND p.mission_id=p_mission_id;
