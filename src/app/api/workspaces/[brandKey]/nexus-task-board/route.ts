@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { requireBrandWorkspace } from "@/lib/workspaces/require-brand-workspace";
 import { hasNexusTaskBoardViewGrant, loadNexusTaskBoard } from "@/lib/nexus/task-board-read";
+import { parseNexusBoardDatabaseUrl, withNexusBoardReader } from "@/lib/nexus/task-board-connection";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,32 +29,20 @@ export async function GET(request:NextRequest,{params}:{params:{brandKey:string}
      process.env.NEXUS_TASK_BOARD_STAFF_READ_ENABLED!=="true") return fail(503,"NEXUS_STAFF_BOARD_DISABLED");
   const value=process.env.NEXUS_TASK_BOARD_DATABASE_URL;
   if(!value)return fail(503,"NEXUS_STAFF_BOARD_UNCONFIGURED");
-  let url:URL;
-  try{
-    url=new URL(value);
-    if(!["postgres:","postgresql:"].includes(url.protocol) ||
-      (url.searchParams.has("sslmode") && url.searchParams.get("sslmode")!=="verify-full"))
-      throw Error("TLS must be verified");
-  }catch{return fail(503,"NEXUS_STAFF_BOARD_UNCONFIGURED");}
-  let client:{connect():Promise<void>;query(sql:string,values:readonly unknown[]):Promise<{rows:Record<string,unknown>[]}>;end():Promise<void>}|null=null;
-  try{
-    const pg=require("pg") as {Client:new(opts:Record<string,unknown>)=>NonNullable<typeof client>};
-    client=new pg.Client({
-      connectionString:url.toString(),ssl:{rejectUnauthorized:true},
-      connectionTimeoutMillis:4000,statement_timeout:4000,
-      application_name:"realtyflow-nexus-task-board-staff-readonly"
-    });
-    await client.connect();
-    // Grant verification uses DB policy independent of the workspace permission.
-    const {brandId,verifiedUserId}=access.value;
-    if(!await hasNexusTaskBoardViewGrant(client,brandId,verifiedUserId)) return fail(403,"NEXUS_TASK_BOARD_SCOPE_DENIED");
-    // Exact brand + active grant also enforced in the SAME row-read SQL.
-    const tasks=await loadNexusTaskBoard(client,brandId,verifiedUserId);
-    if(tasks.some(task=>task.brandId!==brandId)) return fail(503,"NEXUS_STAFF_BOARD_SCOPE_MISMATCH");
-    return NextResponse.json({ok:true,readOnly:true,brand:brandKey,tasks},{headers});
+  try { parseNexusBoardDatabaseUrl(value); }
+  catch { return fail(503,"NEXUS_STAFF_BOARD_UNCONFIGURED"); }
+
+  try {
+    return await withNexusBoardReader(
+      value, "realtyflow-nexus-task-board-staff-readonly", async client=>{
+        const {brandId,verifiedUserId}=access.value!;
+        if(!await hasNexusTaskBoardViewGrant(client,brandId,verifiedUserId)) return fail(403,"NEXUS_TASK_BOARD_SCOPE_DENIED");
+        const tasks=await loadNexusTaskBoard(client,brandId,verifiedUserId);
+        if(tasks.some(task=>task.brandId!==brandId)) return fail(503,"NEXUS_STAFF_BOARD_SCOPE_MISMATCH");
+        return NextResponse.json({ok:true,readOnly:true,brand:brandKey,tasks},{headers});
+      }
+    );
   }catch{
     return fail(503,"NEXUS_STAFF_BOARD_UNAVAILABLE");
-  }finally{
-    if(client)await client.end().catch(()=>undefined);
   }
 }
