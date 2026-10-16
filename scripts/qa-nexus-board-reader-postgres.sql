@@ -199,8 +199,10 @@ begin
  if pg_catalog.pg_has_role(current_user,'nexus_task_board_reader','USAGE') then
    raise exception 'Revoked reader membership still allowed';
  end if;
- if pg_catalog.has_table_privilege(current_user,'core.nexus_task_board_entries','SELECT') then
-   raise exception 'Revoked reader still sees private board projection';
+ -- After revocation this user cannot even USAGE the private schema.
+ -- A direct table-privilege check may error on the inaccessible schema.
+ if pg_catalog.has_schema_privilege(current_user,'core','USAGE') then
+   raise exception 'Revoked reader still has access to private core schema';
  end if;
 end;
 $login_revoked$;
