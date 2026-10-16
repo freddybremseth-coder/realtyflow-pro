@@ -8,6 +8,8 @@ on:
       - "src/lib/nexus/task-execution-postgres.test.ts"
       - "src/lib/nexus/task-board-read.ts"
       - "src/lib/nexus/task-board-read.test.ts"
+      - "src/lib/nexus/task-board-connection.ts"
+      - "src/lib/nexus/task-board-connection.test.ts"
       - "src/app/api/nexus/task-board/route.ts"
       - "src/app/api/workspaces/[brandKey]/nexus-task-board/route.ts"
       - "src/app/(realty)/workspace/[brandKey]/agent-oppdrag/page.tsx"
@@ -31,6 +33,8 @@ on:
       - "src/lib/nexus/task-execution-postgres.test.ts"
       - "src/lib/nexus/task-board-read.ts"
       - "src/lib/nexus/task-board-read.test.ts"
+      - "src/lib/nexus/task-board-connection.ts"
+      - "src/lib/nexus/task-board-connection.test.ts"
       - "src/app/api/nexus/task-board/route.ts"
       - "src/app/api/workspaces/[brandKey]/nexus-task-board/route.ts"
       - "src/app/(realty)/workspace/[brandKey]/agent-oppdrag/page.tsx"
@@ -58,7 +62,7 @@ jobs:
           cache: npm
       - run: npm ci --silent
       - name: Validate Nexus claim boundaries
-        run: node --import tsx --test src/lib/nexus/task-execution-claim.test.ts src/lib/nexus/task-execution-postgres.test.ts src/lib/nexus/task-board-read.test.ts src/lib/nexus/execution-boundary.test.ts
+        run: node --import tsx --test src/lib/nexus/task-execution-claim.test.ts src/lib/nexus/task-execution-postgres.test.ts src/lib/nexus/task-board-read.test.ts src/lib/nexus/task-board-connection.test.ts src/lib/nexus/execution-boundary.test.ts
 
   verify-claim-postgres:
     runs-on: ubuntu-latest
