@@ -107,7 +107,8 @@ BEGIN
  OR v_plan->'controls'->>'approvedForExecution' IS DISTINCT FROM 'false'
  OR v_plan->'controls'->>'permittedExternalActions' IS DISTINCT FROM 'false'
  OR v_plan->'controls'->'allowedTools' IS DISTINCT FROM '[]'::jsonb
- OR jsonb_typeof(v_plan->'agents') IS DISTINCT FROM 'array' THEN
+ OR jsonb_typeof(v_plan->'agents') IS DISTINCT FROM 'array'
+ OR jsonb_typeof(v_plan->'relatedAutomations') IS DISTINCT FROM 'array' THEN
    RAISE EXCEPTION 'unsafe_routing_plan' USING ERRCODE='22023'; END IF;
  v_count:=jsonb_array_length(v_plan->'agents');
  IF v_count NOT BETWEEN 1 AND 3 OR EXISTS(
@@ -115,6 +116,13 @@ BEGIN
    WHERE agent.value->>'executionStatus' IS DISTINCT FROM 'not_started'
       OR NULLIF(btrim(agent.value->>'agentId'),'') IS NULL
  ) THEN RAISE EXCEPTION 'unsafe_agent_list' USING ERRCODE='22023'; END IF;
+ IF (SELECT count(DISTINCT agent.value->>'agentId')
+     FROM jsonb_array_elements(v_plan->'agents') AS agent(value)) <> v_count
+ OR jsonb_array_length(v_plan->'relatedAutomations') > 3
+ OR EXISTS(
+   SELECT 1 FROM jsonb_array_elements(v_plan->'relatedAutomations') AS automation(value)
+   WHERE automation.value->>'executionStatus' IS DISTINCT FROM 'not_started'
+ ) THEN RAISE EXCEPTION 'unsafe_agent_or_automation_state' USING ERRCODE='22023'; END IF;
  -- PostgreSQL builtin SHA-256. No external crypto extension required.
  v_digest:=encode(sha256(convert_to(v_plan::text,'UTF8')),'hex');
  INSERT INTO altovena.mission_analysis_preparations(
