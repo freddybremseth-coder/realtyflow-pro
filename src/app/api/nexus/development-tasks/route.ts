@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { suggestDevelopmentRepository, resolveDevelopmentRepository } from "@/lib/nexus/development-repository";
 import {
   prepareDevelopmentIntake,
   type DevelopmentWorkScope,
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
     .eq("requested_by", auth.email)
     .order("created_at", { ascending: false }).limit(50);
   if (error) return reply({ error: "TASK_STORE_UNAVAILABLE" }, 503);
-  return reply({ tasks: data ?? [] });
+  return reply({ tasks: (data ?? []).map((task) => ({ ...task, suggested_repository: resolveDevelopmentRepository(suggestDevelopmentRepository({ brandKey: task.brand_key, pagePath: task.source_path, request: task.request_text })) })) });
 }
 export async function POST(request: NextRequest) {
   const auth = await authorize(request);
@@ -67,5 +68,5 @@ export async function POST(request: NextRequest) {
     .select("id,request_text,scope,brand_key,source_path,status,created_at")
     .single();
   if (error) return reply({ error: "TASK_SAVE_FAILED" }, 503);
-  return reply({ task: data, notice: "Oppgaven er registrert, ikke utført." }, 201);
+  return reply({ task: { ...data, suggested_repository: resolveDevelopmentRepository(suggestDevelopmentRepository({ brandKey: task.brandKey, pagePath: task.pagePath, request: task.request })) }, notice: "Oppgaven er registrert, ikke utført." }, 201);
 }
