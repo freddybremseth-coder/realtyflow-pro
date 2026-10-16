@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { inspectCommandNexusHandoff } from "@/lib/altovena/command-nexus-handoff";
 
 type Mission = {
   id: string;
@@ -237,7 +238,11 @@ export default function AltovenaCommandPage() {
                       </div>
                     ))}
                   </div>
-                  <p className="mt-3 text-xs text-amber-200">Planleggingen oppretter ingen agentkjøringer, publiseringer eller kundemeldinger.</p>
+                  <div className="mt-3 rounded-lg border border-amber-800/40 bg-amber-950/20 p-3 text-xs text-amber-100">
+                    <p className="font-semibold">Status for Nexus-overføring</p>
+                    <p className="mt-1">{inspectCommandNexusHandoff(planByMission[mission.id],mission.id).message}</p>
+                    <p className="mt-1 text-amber-200">Neste krav: verifisert kunde-/merkevarekobling, selvstendig analyse, menneskelig godkjenning og autorisasjon ved utførelse.</p>
+                  </div>
                 </div>
               )}
             </article>
