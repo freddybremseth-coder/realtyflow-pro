@@ -39,6 +39,7 @@ BEGIN
    'source','realtyflow-nexus-agent-fleet',
    'mode','ROUTING_PROPOSAL_ONLY',
    'missionId',v_mission::text,
+   'goalDigest',encode(sha256(convert_to('Create research plan','UTF8')),'hex'),
    'agents',jsonb_build_array(jsonb_build_object(
      'agentId','business','agentName','Morgan Business Strategist',
      'executionStatus','not_started')),
