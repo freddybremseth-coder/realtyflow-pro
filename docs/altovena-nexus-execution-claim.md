@@ -123,3 +123,13 @@ Staff workflow tests currently mock database responses, while isolated PostgreSQ
 - The test checks authorized own-brand rows, cross-brand and revoked-member empty results, owner-level read projection, and direct SELECT/UPDATE privilege denial on protected tables. It requires `GITHUB_ACTIONS=true`, `NEXUS_BOARD_CI_ONLY=true`, a fresh generated test password and fixed localhost host/user to avoid accidental execution against Supabase.
 - This **does not test verified TLS**: GitHub's disposable PostgreSQL service uses local TCP without SSL. Live hostname verification, least-privilege Supabase credentials, session-bound browser access, and actual migration application remain strictly staging release gates. It never opens the real production database.
 - Read-only live database metadata verification confirms `core.brands.brand_key` matches the canonical ZenEco (`zeneco`) and Pinoso EcoLife (`pinosoecolife`) workspace identifiers. No customer or task rows were read.
+
+
+## Phase 9: real PostgreSQL parallel-claim and cross-brand race tests
+
+- New `scripts/qa-nexus-claim-concurrency.integration.test.ts` uses **multiple independent PostgreSQL connections**, not a mocked repository, to call `core.claim_nexus_execution_task` simultaneously against the same preflight-approved task in a disposable GitHub Actions PostgreSQL 16 database.
+- Two concurrent attempts with the **same** valid idempotency key must produce exactly one `claimed` result and one `duplicate` carrying the identical durable claim ID. The task status/version and a single immutable claim audit event are verified after commit.
+- Two concurrent attempts with **different** idempotency keys must produce one claim and one conflict. No second claim or audit row may appear.
+- A user authorized in brand A cannot claim a preflight-approved task in brand B; its state and audit are unchanged.
+- This is not a production worker or a live customer operation. CI runs only when `GITHUB_ACTIONS`, `NEXUS_BOARD_CI_ONLY`, and `NEXUS_CLAIM_CI_ONLY` are set and connects only to disposable `127.0.0.1:5432` PostgreSQL.
+- Remaining release gates include real Supabase staging with separate verified identities and grants, checked RLS/privileges, an authenticated server writer rather than trusted caller parameters, and action-specific allowlisted worker execution with post-claim authorization and cancellation.
