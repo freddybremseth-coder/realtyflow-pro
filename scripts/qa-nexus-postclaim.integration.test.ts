@@ -132,11 +132,17 @@ test("revocation and parallel rechecks serialize to a single cancellation event"
   // node-postgres queues queries per connection: resolve backend PIDs
   // BEFORE submitting a claim check which will block on a SQL row lock.
   const waiterPid=await backendPid(w1);
+  const secondWaiterPid=await backendPid(w2);
   const blockerPid=await backendPid(revoker);
   await revoker.query("begin");
   await revoker.query("update core.nexus_execution_approvals set revoked_at=clock_timestamp() where id=$1::uuid",[f.approvalId]);
-  pending1=settled(check(w1,f));pending2=settled(check(w2,f));
+  // Coordinate the lock chain deliberately: w1 must wait on the revoked
+  // approval; w2 must wait on w1's task lock. Launching both before the
+  // first assertion races their task-lock acquisition and creates flaky CI.
+  pending1=settled(check(w1,f));
   await assertBlocked(admin,waiterPid,blockerPid);
+  pending2=settled(check(w2,f));
+  await assertBlocked(admin,secondWaiterPid,waiterPid);
   await revoker.query("commit");
   const [a,b]=await Promise.all([pending1,pending2]);
   assert.equal(a.ok,true);assert.equal(b.ok,true);
