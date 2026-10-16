@@ -162,3 +162,47 @@ begin
   end if;
 end;
 $superuser_identity_proof$;
+
+-- Staging-representative credential inheritance, in an ephemeral DB only.
+-- Verify that a LOGIN role with *only* the Nexus reader grant passes the
+-- very same effective-privilege predicates used by the server adapter.
+create role nexus_task_board_login_ci login inherit;
+grant nexus_task_board_reader to nexus_task_board_login_ci;
+
+set role nexus_task_board_login_ci;
+do $login_inheritance_proof$
+declare
+ v_allowed boolean;
+begin
+ select
+   pg_catalog.pg_has_role(current_user,'nexus_task_board_reader','USAGE')
+   and exists(select 1 from pg_catalog.pg_roles
+      where rolname=current_user and not
+        (rolsuper or rolbypassrls or rolcreatedb or rolcreaterole))
+   and pg_catalog.has_table_privilege(current_user,'core.nexus_task_board_entries','SELECT')
+   and pg_catalog.has_table_privilege(current_user,'core.nexus_task_board_allowed_readers','SELECT')
+   and not pg_catalog.has_table_privilege(current_user,'core.nexus_execution_tasks','SELECT,INSERT,UPDATE,DELETE')
+   and not pg_catalog.has_function_privilege(current_user,
+      'core.claim_nexus_execution_task(uuid,integer,uuid,uuid,text,text,text)','EXECUTE')
+ into v_allowed;
+ if v_allowed is distinct from true then
+   raise exception 'LOGIN identity does not inherit the restricted reader contract';
+ end if;
+end;
+$login_inheritance_proof$;
+reset role;
+
+revoke nexus_task_board_reader from nexus_task_board_login_ci;
+set role nexus_task_board_login_ci;
+do $login_revoked$
+begin
+ if pg_catalog.pg_has_role(current_user,'nexus_task_board_reader','USAGE') then
+   raise exception 'Revoked reader membership still allowed';
+ end if;
+ if pg_catalog.has_table_privilege(current_user,'core.nexus_task_board_entries','SELECT') then
+   raise exception 'Revoked reader still sees private board projection';
+ end if;
+end;
+$login_revoked$;
+reset role;
+drop role nexus_task_board_login_ci;
