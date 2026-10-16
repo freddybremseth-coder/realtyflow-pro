@@ -129,10 +129,14 @@ test("revocation and parallel rechecks serialize to a single cancellation event"
  try{
   await Promise.all([admin,revoker,w1,w2].map(c=>c.connect()));
   const f=await fixture(admin);
+  // node-postgres queues queries per connection: resolve backend PIDs
+  // BEFORE submitting a claim check which will block on a SQL row lock.
+  const waiterPid=await backendPid(w1);
+  const blockerPid=await backendPid(revoker);
   await revoker.query("begin");
   await revoker.query("update core.nexus_execution_approvals set revoked_at=clock_timestamp() where id=$1::uuid",[f.approvalId]);
   pending1=settled(check(w1,f));pending2=settled(check(w2,f));
-  await assertBlocked(admin,await backendPid(w1),await backendPid(revoker));
+  await assertBlocked(admin,waiterPid,blockerPid);
   await revoker.query("commit");
   const [a,b]=await Promise.all([pending1,pending2]);
   assert.equal(a.ok,true);assert.equal(b.ok,true);
