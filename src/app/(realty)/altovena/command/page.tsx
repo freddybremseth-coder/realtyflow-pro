@@ -25,6 +25,11 @@ type PlanProposal = {
   };
 };
 type PlanResponse = { proposal?:PlanProposal|null; error?:string };
+type AnalysisPreparation = {
+  mission_id:string;state:"prepared";agent_count:number;
+  max_model_calls:number;max_cost_cents:number;prepared_at:string;
+};
+type AnalysisResponse = { preparation?:AnalysisPreparation|null;error?:string };
 
 const stateNames: Record<string, string> = {
   draft: "Utkast",
@@ -57,6 +62,8 @@ export default function AltovenaCommandPage() {
   const [notice, setNotice] = useState("");
   const [planByMission, setPlanByMission] = useState<Record<string,PlanProposal|null>>({});
   const [planningMission, setPlanningMission] = useState<string|null>(null);
+  const [preparingMission, setPreparingMission] = useState<string|null>(null);
+  const [preparationByMission, setPreparationByMission] = useState<Record<string,AnalysisPreparation|null>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,6 +148,40 @@ export default function AltovenaCommandPage() {
     } catch(e) {
       setError(e instanceof Error?e.message:"Kunne ikke lage planforslag.");
     } finally { setPlanningMission(null); }
+  };
+
+  const showPreparation = async (missionId:string) => {
+    setPreparingMission(missionId);
+    setError("");
+    try {
+      const res=await fetch(`/api/altovena/command/analysis?missionId=${encodeURIComponent(missionId)}`,{
+        credentials:"same-origin",cache:"no-store",
+      });
+      const data=await res.json() as AnalysisResponse;
+      if(!res.ok) throw Error(data.error||"Kunne ikke hente analyseforberedelsen.");
+      setPreparationByMission(old=>({...old,[missionId]:data.preparation||null}));
+      if(!data.preparation) setNotice("Det finnes ingen lagret analyseforberedelse ennå.");
+    } catch(e) {
+      setError(e instanceof Error?e.message:"Kunne ikke hente analyseforberedelsen.");
+    } finally { setPreparingMission(null); }
+  };
+  const prepareAnalysis = async (missionId:string) => {
+    setPreparingMission(missionId);
+    setNotice("");
+    setError("");
+    try {
+      const res=await fetch("/api/altovena/command/analysis",{
+        method:"POST",credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({missionId}),
+      });
+      const data=await res.json() as AnalysisResponse;
+      if(!res.ok||!data.preparation) throw Error(data.error||"Kunne ikke forberede analysen.");
+      setPreparationByMission(old=>({...old,[missionId]:data.preparation!}));
+      setNotice("Analyseforberedelsen er lagret. Ingen AI-agent eller modell er startet.");
+    } catch(e) {
+      setError(e instanceof Error?e.message:"Kunne ikke forberede analysen.");
+    } finally { setPreparingMission(null); }
   };
 
   return (
@@ -238,6 +279,27 @@ export default function AltovenaCommandPage() {
                       </div>
                     ))}
                   </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button type="button" disabled={preparingMission===mission.id}
+                      onClick={()=>void prepareAnalysis(mission.id)}
+                      className="rounded-lg border border-teal-600 px-3 py-1.5 text-xs text-teal-300 hover:bg-teal-950 disabled:opacity-50">
+                      {preparingMission===mission.id?"Kontrollerer …":"Forbered analyse"}
+                    </button>
+                    <button type="button" disabled={preparingMission===mission.id}
+                      onClick={()=>void showPreparation(mission.id)}
+                      className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-50">
+                      Vis analyseforberedelse
+                    </button>
+                  </div>
+                  {preparationByMission[mission.id] && (
+                    <div className="mt-3 rounded-lg border border-teal-800/50 bg-teal-950/20 p-3 text-xs">
+                      <p className="font-semibold">Analyseforberedelse lagret · ikke startet</p>
+                      <p className="mt-1 text-slate-300">
+                        {preparationByMission[mission.id]?.agent_count} foreslåtte agenter ·
+                        0 modellkall · 0 € forbruk · ingen eksterne handlinger.
+                      </p>
+                    </div>
+                  )}
                   <div className="mt-3 rounded-lg border border-amber-800/40 bg-amber-950/20 p-3 text-xs text-amber-100">
                     <p className="font-semibold">Status for Nexus-overføring</p>
                     <p className="mt-1">{inspectCommandNexusHandoff(planByMission[mission.id],mission.id).message}</p>
