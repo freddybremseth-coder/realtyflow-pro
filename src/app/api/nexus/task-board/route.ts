@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { loadNexusTaskBoard, normalizeTaskBoardBrandFilter } from "@/lib/nexus/task-board-read";
+import { parseNexusBoardDatabaseUrl, withNexusBoardReader } from "@/lib/nexus/task-board-connection";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -38,36 +39,17 @@ export async function GET(request: NextRequest) {
     return reply({error:"INVALID_BRAND_FILTER"},400);
   }
 
-  // Require TLS certificate verification; refuse arbitrary URL schemes.
-  let dbUrl: URL;
-  try {
-    dbUrl=new URL(connectionString);
-    if (!["postgres:","postgresql:"].includes(dbUrl.protocol)) throw Error("invalid scheme");
-    if (dbUrl.searchParams.has("sslmode") && dbUrl.searchParams.get("sslmode") !== "verify-full") {
-      throw Error("unsafe SSL mode");
-    }
-  } catch {
-    return reply({ready:false,state:"unconfigured",message:"Ugyldig eller usikker lesetilkobling."},503);
-  }
+  // Fail closed on unsafe URL options that override node-postgres SSL settings.
+  try { parseNexusBoardDatabaseUrl(connectionString); }
+  catch { return reply({ready:false,state:"unconfigured",message:"Ugyldig eller usikker lesetilkobling."},503); }
 
-  let client: {connect():Promise<void>;query(sql:string,values:readonly unknown[]):Promise<{rows:Record<string,unknown>[]}>;end():Promise<void>}|null=null;
   try {
-    // pg is used only on the server after owner auth + explicit activation.
-    const pg=require("pg") as {Client:new(options:Record<string,unknown>)=>NonNullable<typeof client>};
-    client=new pg.Client({
-      connectionString:dbUrl.toString(),
-      ssl:{rejectUnauthorized:true},
-      connectionTimeoutMillis:4000,
-      statement_timeout:4000,
-      application_name:"realtyflow-nexus-task-board-readonly",
-    });
-    await client.connect();
-    const tasks=await loadNexusTaskBoard(client,brandId);
+    const tasks=await withNexusBoardReader(
+      connectionString,"realtyflow-nexus-task-board-readonly",
+      client=>loadNexusTaskBoard(client,brandId)
+    );
     return reply({ready:true,readOnly:true,tasks},200);
   } catch {
-    // Never leak database diagnostics, credentials or customer record details.
     return reply({ready:false,state:"unavailable",message:"Nexus-databasen kunne ikke leses. Ingen oppdrag er endret."},503);
-  } finally {
-    if (client) await client.end().catch(()=>undefined);
   }
 }
