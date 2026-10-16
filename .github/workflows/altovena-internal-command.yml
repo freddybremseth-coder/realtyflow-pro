@@ -3,21 +3,23 @@ on:
   pull_request:
     paths:
       - "supabase/migrations/*altovena_owner_command_bridge.sql"
+      - "supabase/migrations/*altovena_command_routing_plans.sql"
       - "src/app/api/altovena/**"
       - "src/app/(realty)/altovena/**"
       - "tests/fixtures/altovena_*"
       - "tests/altovena/**"
-      - "src/lib/altovena/**"
       - "src/lib/altovena/**"
       - ".github/workflows/altovena-internal-command.yml"
   push:
-    branches: ["feature/altovena-command-internal"]
+    branches: ["feature/altovena-command-planning-v01"]
     paths:
       - "supabase/migrations/*altovena_owner_command_bridge.sql"
+      - "supabase/migrations/*altovena_command_routing_plans.sql"
       - "src/app/api/altovena/**"
       - "src/app/(realty)/altovena/**"
       - "tests/fixtures/altovena_*"
       - "tests/altovena/**"
+      - "src/lib/altovena/**"
       - ".github/workflows/altovena-internal-command.yml"
 permissions: { contents: read }
 jobs:
@@ -65,4 +67,4 @@ jobs:
       - name: Validate planned routes do not execute or autoapprove
         run: psql -v ON_ERROR_STOP=1 -f tests/altovena/routing-plan.sql
       - name: Validate HTTP route safeguards
-        run: node --test tests/altovena/gateway-contract.test.mjs
+        run: node --test tests/altovena/*.test.mjs
