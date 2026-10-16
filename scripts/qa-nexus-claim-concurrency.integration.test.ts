@@ -35,18 +35,18 @@ async function createApprovedTask(client: pg.Client, brandId: string, proposerId
   const taskId = randomUUID();
   const approvalId = randomUUID();
   await client.query(
-    \`insert into core.nexus_execution_tasks
+    `insert into core.nexus_execution_tasks
       (id,brand_id,status,version,action_type,action_digest,proposed_by,
        quality_reviewed,evidence_refs,preflight_passed,preflight_checked_at)
      values ($1,$2,'approved',1,$3,$4,$5,true,
-       array['ci:independent-evidence'],true,clock_timestamp())\`,
+       array['ci:independent-evidence'],true,clock_timestamp())`,
     [taskId, brandId, ACTION, DIGEST, proposerId],
   );
   await client.query(
-    \`insert into core.nexus_execution_approvals
+    `insert into core.nexus_execution_approvals
       (id,task_id,brand_id,task_version,action_type,action_digest,
        decision,reviewed_by,expires_at)
-     values ($1,$2,$3,1,$4,$5,'approved',$6,clock_timestamp() + interval '10 minutes')\`,
+     values ($1,$2,$3,1,$4,$5,'approved',$6,clock_timestamp() + interval '10 minutes')`,
     [approvalId, taskId, brandId, ACTION, DIGEST, REVIEWER],
   );
   return { taskId, approvalId };
@@ -60,10 +60,10 @@ async function claim(client: pg.Client, task: Task, idempotencyKey: string, acto
 }
 async function proveCommittedOnce(client: pg.Client, task: Task, expected: "claimed" | "not-claimed") {
   const r = await client.query(
-    \`select t.status,t.version,
+    `select t.status,t.version,
          (select count(*)::int from core.nexus_execution_claims c where c.task_id=t.id) as claims,
          (select count(*)::int from core.nexus_execution_claim_events e where e.task_id=t.id) as events
-       from core.nexus_execution_tasks t where t.id=$1::uuid\`,
+       from core.nexus_execution_tasks t where t.id=$1::uuid`,
     [task.taskId],
   );
   assert.equal(r.rowCount, 1);
