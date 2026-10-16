@@ -31,7 +31,7 @@ function connect() {
     connectionTimeoutMillis:4000,statement_timeout:10000,
   });
 }
-async function taskFixture(admin:pg.Client, approvalExpirySql = "clock_timestamp() + interval '10 minutes'"):Promise<Fixture>{
+async function taskFixture(admin:pg.Client):Promise<Fixture>{
   const taskId=randomUUID(),approvalId=randomUUID();
   await admin.query(
     `insert into core.nexus_execution_tasks
@@ -40,13 +40,10 @@ async function taskFixture(admin:pg.Client, approvalExpirySql = "clock_timestamp
      values($1,$2,$3,1,$4,$5,$6,true,array['ci:evidence'],true,clock_timestamp())`,
     [taskId,BRAND,OPEN,ACTION,DIGEST,PROPOSER]
   );
-  // SQL fragment only from the two hard-coded fixture calls in this file.
-  assert.ok(["clock_timestamp() + interval '10 minutes'",
-             "clock_timestamp() + interval '350 milliseconds'"].includes(approvalExpirySql));
   await admin.query(
     `insert into core.nexus_execution_approvals
        (id,task_id,brand_id,task_version,action_type,action_digest,decision,reviewed_by,expires_at)
-     values($1,$2,$3,1,$4,$5,'approved',$6,${approvalExpirySql})`,
+     values($1,$2,$3,1,$4,$5,'approved',$6,clock_timestamp() + interval '10 minutes')`,
     [approvalId,taskId,BRAND,ACTION,DIGEST,REVIEWER]
   );
   return {taskId,approvalId};
@@ -151,7 +148,7 @@ test("approval expiring during a lock wait is rechecked at claim commit boundary
   let pending:Promise<RaceResult>|undefined;
   try{
     await Promise.all([admin.connect(),holder.connect(),worker.connect()]);
-    const f=await taskFixture(admin,"clock_timestamp() + interval '350 milliseconds'");
+    const f=await taskFixture(admin);
     await holder.query("begin");
     await holder.query(
       "select id from core.nexus_execution_approvals where id=$1::uuid for update",[f.approvalId]
@@ -159,9 +156,15 @@ test("approval expiring during a lock wait is rechecked at claim commit boundary
     const waiterPid=await pidOf(worker),blockerPid=await pidOf(holder);
     pending=finished(reserve(worker,f));
     await blockedOn(admin,waiterPid,blockerPid);
-    // Ensure the expiration happens AFTER the claim entered its SQL function,
-    // BEFORE the approval row becomes available to it.
-    await admin.query("select pg_sleep(0.5)");
+    // The holder changes the approved deadline WHILE the worker already
+    // waits for its row lock. This is deterministic even on slow CI machines:
+    // deadline is set relative to the current time only after contention is
+    // confirmed, then we deliberately wait beyond that deadline.
+    await holder.query(
+      "update core.nexus_execution_approvals set expires_at=clock_timestamp() + interval '200 milliseconds' where id=$1::uuid",
+      [f.approvalId],
+    );
+    await holder.query("select pg_sleep(0.35)");
     await holder.query("commit");
     assertDenied(await pending,"22023");
     await assertNoClaim(admin,f);
