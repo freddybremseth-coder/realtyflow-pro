@@ -508,13 +508,16 @@ export function ChatWidget({
                             try {
                               const response = await fetch(`/api/nexus/development-tasks/${encodeURIComponent(task.id)}/plan`, { cache: "no-store" });
                               if (!response.ok) throw new Error("Planen kunne ikke hentes");
-                              const { plan } = await response.json();
+                              const { plan, githubEvidence } = await response.json();
                               const summary = [
                                 `Utviklingsplan for oppgave ${plan.taskId}`,
                                 `Repository: ${plan.repository}`,
                                 `Mål: ${plan.objective}`,
                                 ...plan.steps.map((step: string, index: number) => `${index + 1}. ${step}`),
                                 `Planhash: ${plan.planHash}`,
+                                githubEvidence?.verified
+                                  ? `GitHub kontrollert: ${githubEvidence.defaultBranch} @ ${githubEvidence.headSha}`
+                                  : "GitHub kunne ikke verifiseres. Planen bygger ikke på kontrollert kildekode.",
                                 "Dette er et planforslag. Ingen kodeendringer er utført.",
                               ].join("\n");
                               setMessages(previous => [...previous, { role: "assistant", content: summary, timestamp: new Date().toISOString() }]);
