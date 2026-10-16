@@ -50,7 +50,7 @@ test("owner session, off-by-default activation and zero mutation routes are sour
   assert.match(route,/access\.source !== "owner-session"/);
   assert.match(route,/NEXUS_TASK_BOARD_READ_ENABLED !== "true"/);
   assert.match(route,/NEXUS_TASK_BOARD_DATABASE_URL/);
-  assert.match(route,/rejectUnauthorized:true/);
+  assert.match(route,/withNexusBoardReader/);
   assert.doesNotMatch(route,/export async function (POST|PATCH|PUT|DELETE)/);
   assert.doesNotMatch(route,/process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(route,/console\.log/);
@@ -82,6 +82,7 @@ test("member route remains GET-only, gated and bound to verified user identity",
   assert.match(route,/verifiedUserId/);
   assert.match(route,/hasNexusTaskBoardViewGrant/);
   assert.match(route,/NEXUS_TASK_BOARD_STAFF_READ_ENABLED/);
+  assert.match(route,/withNexusBoardReader/);
   assert.doesNotMatch(route,/export async function (POST|PUT|PATCH|DELETE)/);
   assert.doesNotMatch(route,/process.env.SUPABASE_SERVICE_ROLE_KEY/);
 });
