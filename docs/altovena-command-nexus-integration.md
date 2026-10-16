@@ -14,6 +14,15 @@ This integration branch combines RealtyFlow PR #1423 (Nexus task-claim controls)
 - A clear diagnostic in the Command owner UI instead of suggesting that recommended agents have been launched.
 - Integration boundary tests and a dedicated CI workflow; separate Nexus and Altovena PostgreSQL tests must also pass on the combined PR.
 
+## Added 17 October — analysis preparation, not execution
+
+- New immutable `altovena.mission_analysis_preparations` records the owning Command mission, verified actor, SHA-256 digest of its proposed route and count of candidate agents.
+- Narrow server-only `altovena_internal_command_analysis_get/prepare` RPCs require an owner-validated identity, tenant/product entitlement, draft mission and an unchanged safe routing proposal.
+- The Command owner UI can now **Forbered analyse** and read back a prepared record. This is **not** an active queue or AI analysis result.
+- Maximum model calls = **0**, maximum cost = **0 cents**, no external actions; the table rejects status transitions and updates. Identical requests are idempotent; changed route plans fail closed and emit no second audit event.
+- A new isolated PostgreSQL test exercises both schemas, checks the prepared row and audit event, forged permission flags, mismatched actor, and verifies zero Altovena/Nexus tasks and claims.
+- This prepares the later analysis-only worker contract. It does **not** meet the outstanding worker authorization, true tenant→brand mapping, evidence provenance, expiry, budgets, or human review gates.
+
 ## Planned next, gated milestones
 1. Verify real owner-session identity, tenant identity and brand-scoped capabilities without exposing service-role keys to the client.
 2. Define versioned mission → analysis-request contract, with proof of tenant/brand binding, evidence provenance, budgets, expiry and idempotency.
