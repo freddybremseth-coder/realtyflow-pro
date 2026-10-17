@@ -60,6 +60,12 @@ try {
  assert.equal(await count("kind='NOT_STARTED_24H'"),1);
  assert.equal(await count("kind='NOT_STARTED_15M'"),2);
  assert.equal(await count("state='PENDING'"),3);
+ const heartbeat=(await db.query("select brand_key,queued_count,resolved_count,pending_count,last_scan_at from public.altovena_alert_scan_state")).rows[0];
+ assert.equal(heartbeat.brand_key,"altovena");
+ assert.deepEqual([heartbeat.queued_count,heartbeat.resolved_count,heartbeat.pending_count],[3,0,3]);
+ assert.equal(Number.isFinite(new Date(heartbeat.last_scan_at).getTime()),true);
+ const scanAcl=await db.query("select has_table_privilege('anon','public.altovena_alert_scan_state','SELECT') as anon");
+ assert.equal(scanAcl.rows[0].anon,false);
 
  // Human transitions cause alert resolution, not an outbound notification.
  await db.query("select public.altovena_mark_lead_task($1::uuid,'IN_PROGRESS','owner@example.invalid')",
