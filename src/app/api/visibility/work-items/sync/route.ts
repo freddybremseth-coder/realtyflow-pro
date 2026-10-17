@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import type { SEOControlReport } from "@/services/agents/seo-control-report";
-import { planVisibilityReviewItems } from "@/services/agents/visibility-review-items";
 import { visibilityEvidenceAge } from "@/services/agents/visibility-evidence-age";
-import { planVisibilityWorkItem } from "@/services/agents/visibility-work-queue";
-import { VISIBILITY_BRANDS, type VisibilityFinding } from "@/lib/visibility-product";
+import { syncVisibilityReviewQueue } from "@/services/agents/visibility-queue-sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,22 +31,11 @@ export async function POST(request: NextRequest) {
  // Never create active remediation proposals from aged/unknown evidence.
  const checkedAt=visibilityEvidenceAge(raw.checkedAt);
  if(checkedAt!=="RECENT")return NextResponse.json({error:"Stored SEO report requires refresh",evidenceAge:checkedAt},{status:409});
- const items=planVisibilityReviewItems(raw).filter(x=>visibilityEvidenceAge(x.checkedAt)==="RECENT" && Object.hasOwn(VISIBILITY_BRANDS,x.brandId));
- const created:string[]=[];const errors:string[]=[];
- for(const i of items.slice(0,60)){
-  const f:VisibilityFinding={id:i.key,brandId:i.brandId,title:i.title,category:i.type==="DATA_GAP"?"missing-data":"technical",detail:i.evidence,nextStep:i.nextStep,priority:i.priority==="HIGH"?"high":i.priority==="MEDIUM"?"medium":"unknown",url:i.affectedUrl,updatedAt:i.checkedAt,evidenceAge:"RECENT"};
-  let p;try{p=planVisibilityWorkItem(f);}catch{errors.push(i.key);continue;}
-  const {data:id,error:enqueueError}=await db.rpc("enqueue_visibility_review",{
-   p_brand_id:p.brand_id,p_finding_id:p.metadata.finding_id,p_title:p.title,
-   p_description:p.description,p_next_action:p.next_action,p_priority:p.priority,
-   p_evidence_at:p.metadata.evidence_at,p_evidence_age:p.metadata.evidence_age,
-   p_category:p.metadata.category,p_target_url:p.metadata.target_url
-  });
-  if(enqueueError){errors.push(i.key);break;}
-  created.push(String(id));
- }
- return NextResponse.json({accepted:created.length,work_item_ids:created,errors:errors.length,
+ const synced=await syncVisibilityReviewQueue(db, raw);
+ return NextResponse.json({
+  accepted:synced.accepted, work_item_ids:synced.workItemIds,
+  errors:synced.errors, rejected:synced.rejected,
   state:"PROPOSED",execution_started:false,publication_authorized:false,
-  source:"stored_seo_gsc_live_read",incomplete:items.length>60||errors.length>0},
-  {status:errors.length?503:200,headers:{"Cache-Control":"no-store"}});
+  source:"stored_seo_gsc_live_read",incomplete:synced.truncated || synced.errors>0 || synced.rejected>0,
+ }, {status:synced.errors?503:200,headers:{"Cache-Control":"no-store"}});
 }

@@ -11,6 +11,7 @@ import { evaluateSeoPilotBrand, SEO_AUTOPILOT_BRANDS } from "@/services/agents/s
 import { runZenEcoMetadataPublisher } from "@/services/agents/seo-zeneco-publisher";
 
 import { runSEOControls } from "@/services/agents/seo-controls";
+import { syncVisibilityReviewQueue } from "@/services/agents/visibility-queue-sync";
 import { syncSEOTopicMissions } from "@/services/marketing/seo-topic-missions";
 
 const PATH = "/api/cron/seo-autopilot";
@@ -92,6 +93,16 @@ export async function GET(request: NextRequest) {
     });
     if (storedReadings.error) throw new Error("Cannot store Google readings: " + storedReadings.error.message);
 
+    // Store bounded investigation proposals from this exact server-side audit.
+    // Proposal sync is separate from any publisher and cannot authorize writes.
+    // Failures are visible in the pilot log but must not erase the SEO readings.
+    const visibilityReviewQueue = await syncVisibilityReviewQueue(supabase, controlReport);
+    if (visibilityReviewQueue.errors || visibilityReviewQueue.rejected) {
+      console.warn("[SamSEO] Visibility review queue incomplete", {
+        errors: visibilityReviewQueue.errors, rejected: visibilityReviewQueue.rejected,
+      });
+    }
+
     const [zeneco, brandPublishers] = await publication;
     const published = zeneco.published + brandPublishers.reduce((sum, item) => sum + item.published, 0);
 
@@ -114,6 +125,7 @@ export async function GET(request: NextRequest) {
         } : null,
         website_changes_published: published,
         seo_topic_missions: topicMissions,
+        visibility_review_queue: visibilityReviewQueue,
         public_write_status: zeneco.status === "monitor" ? "armed_evidence_gated"
           : zeneco.status === "pending" ? "pending_site_confirmation"
           : zeneco.status,
@@ -129,6 +141,7 @@ export async function GET(request: NextRequest) {
       publicSitesAudited: audits.length, diagnosticsRecorded: diagnostics.length,
       candidates: assessments.filter(item => item.status === "candidate").length,
       topicMissions,
+      visibilityReviewQueue: visibilityReviewQueue,
       published,
       brandPublishers,
       approvalTasksCreated: 0,
