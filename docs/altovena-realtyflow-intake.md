@@ -148,3 +148,16 @@ A dedicated isolated CI test now exercises the **actual** Next.js `POST /api/pub
 - First successful GitHub test: `Altovena intake validation`, run `39025572023`, job `117375768367`; both HTTP→SQL and existing SQL suites logged PASS.
 
 **What this does NOT establish:** no real request traverses `altovena.com` → protected RealtyFlow preview over the network; no live Vercel shared secret or Turnstile is configured; no Altovena intake migration has been applied to RealtyflowPRO. The production form remains gated off until a separate authorized staging test, verified operator/brand permissions, privacy review, notification delivery and explicit launch approval.
+
+## Owner/operator Altovena lead-task route regression (17 October 2026)
+
+The canonical `GET/PATCH /api/workspaces/altovena/lead-tasks` now has six independently executed tests in `tests/altovena/lead-tasks-authorization.test.ts`. These cover:
+- unsigned and cross-brand denials before privileged work-item reads;
+- owner-only Altovena task scope, with malicious foreign-brand data and malformed IDs excluded from the response;
+- independently verified `WORKSPACE_MEMBER` identity plus active `crm.read` grant, including a revoked grant, missing permission and identity mismatch;
+- `crm.write` for status changes with verified actor passed to audited database RPC;
+- invalid status/unknown brand in PATCH, cross-site requests and read-only owner preview.
+
+**CI testing nuance:** Node/tsx treated a test file under a bracketed `[brandKey]` directory as a glob and silently reported zero tests. The file was moved into `tests/altovena/` and the test script now uses exact-path Node testing. GitHub Actions run [#39034195919](https://github.com/freddybremseth-coder/realtyflow-pro/actions/runs/39034195919) logged **6 tests, 6 passed, 0 failed**, along with successful disposable PostgreSQL HTTP→SQL tests. This proves the mocked role-gate behaviors, **not** Andrea's actual live account permission or a live cross-domain test.
+
+Owner and operator still need to be verified against real Supabase Auth IDs and active Altovena brand grants after approved migration; neither the public form nor real operator access is enabled by these test changes.
