@@ -1,0 +1,87 @@
+/**
+ * Visibility -> Nexus work-items contract.
+ * Planning only: producing a plan NEVER executes a fix or grants publishing consent.
+ * The durable work_items table is the single task ledger.
+ */
+import { createHash } from "node:crypto";
+import type { VisibilityFinding } from "@/lib/visibility-product";
+
+export type VisibilityWorkState =
+  | "PROPOSED" | "QUEUED" | "RUNNING" | "AWAITING_APPROVAL"
+  | "BLOCKED" | "VERIFYING" | "UNVERIFIED" | "FAILED" | "CANCELLED";
+
+export type VisibilityWorkPlan = {
+  source_type: "ai_agent";
+  source_id: string;
+  brand_id: string;
+  title: string;
+  description: string;
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  assigned_agent: "sam";
+  next_action: string;
+  status: "TO_DO";
+  metadata: {
+    product: "altovena_visibility";
+    origin: "visibility_finding";
+    finding_id: string;
+    evidence_at: string | null;
+    evidence_age: VisibilityFinding["evidenceAge"];
+    category: VisibilityFinding["category"];
+    target_url: string | null;
+    execution_state: "PROPOSED";
+    publication_authorized: false;
+    verification_required: true;
+  };
+};
+
+const SAFE_ID = /^visibility:[a-z0-9_-]{1,64}:(?:[A-Z_]+|data-gap)(?::.*)?$/;
+const VALID_BRAND = /^[a-z0-9_-]{1,64}$/;
+
+export function planVisibilityWorkItem(finding: VisibilityFinding): VisibilityWorkPlan {
+  if (!SAFE_ID.test(finding.id) || !VALID_BRAND.test(finding.brandId)) {
+    throw new Error("Invalid visibility finding identity");
+  }
+  // Repeated scans must map the same finding to the same task. The database
+  // writer still needs atomic uniqueness/upsert for true concurrent safety.
+  const stableFindingId = createHash("sha256").update(finding.id).digest("hex").slice(0,40);
+  const sourceId = `visibility:${finding.brandId}:${stableFindingId}`;
+  return {
+    source_type: "ai_agent",
+    source_id: sourceId,
+    brand_id: finding.brandId,
+    title: finding.title,
+    description: finding.detail,
+    priority: finding.priority === "high" ? "HIGH" : finding.priority === "medium" ? "MEDIUM" : "LOW",
+    assigned_agent: "sam",
+    next_action: finding.nextStep,
+    status: "TO_DO",
+    metadata: {
+      product: "altovena_visibility",
+      origin: "visibility_finding",
+      finding_id: stableFindingId,
+      evidence_at: finding.updatedAt,
+      evidence_age: finding.evidenceAge,
+      category: finding.category,
+      target_url: finding.url,
+      execution_state: "PROPOSED",
+      publication_authorized: false,
+      verification_required: true,
+    },
+  };
+}
+
+export function visibilityWorkDisplayState(status: string, metadata?: Record<string, unknown> | null): VisibilityWorkState {
+  const execution = metadata?.execution_state;
+  // No independent verification receipt exists in this phase. A writable metadata
+  // marker can be forged via the generic work-items PATCH route and is NOT proof.
+  if (status === "DONE") return "UNVERIFIED";
+  if (status === "CANCELLED") return "CANCELLED";
+  if (execution === "VERIFYING") return "VERIFYING";
+  if (execution === "AWAITING_APPROVAL") return "AWAITING_APPROVAL";
+  if (execution === "BLOCKED") return "BLOCKED";
+  if (execution === "FAILED") return "FAILED";
+  if (execution === "PROPOSED") return "PROPOSED";
+  if (status === "IN_PROGRESS") return "RUNNING";
+  if (status === "TO_DO" || status === "REVIEW") return "QUEUED";
+  return "PROPOSED";
+}

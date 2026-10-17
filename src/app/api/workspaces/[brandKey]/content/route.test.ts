@@ -10,6 +10,7 @@ const userId = "11111111-1111-4111-8111-111111111111";
 const draftId = "22222222-2222-4222-8222-222222222222";
 const publicationId = "33333333-3333-4333-8333-333333333333";
 let permissions: string[] = ["content.read", "content.edit", "content.publish"];
+let zenGranted = false;
 const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
 const webhookBodies: any[] = [];
 
@@ -85,8 +86,8 @@ function fakeDb() {
         return Promise.resolve({
           data: {
             brand: { id: brand === "pinosoecolife" ? "pinoso-id" : "zen-id", brand_key: brand },
-            grant: brand === "pinosoecolife" ? {
-              brand_id: "pinoso-id", user_id: userId, email: "staff@example.test",
+            grant: (brand === "pinosoecolife" || (zenGranted && brand === "zeneco")) ? {
+              brand_id: brand === "zeneco" ? "zen-id" : "pinoso-id", user_id: userId, email: "staff@example.test",
               status: "active", permissions,
             } : null,
           },
@@ -180,6 +181,7 @@ test.beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://workspace-test.supabase.test";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "workspace-service-key";
   permissions = ["content.read", "content.edit", "content.publish"];
+  zenGranted = false;
   calls.length = 0;
   webhookBodies.length = 0;
   setPlatformSupabaseFactoryForTests(() => fakeDb());
@@ -204,6 +206,38 @@ test.beforeEach(() => {
 test.afterEach(() => {
   setPlatformSupabaseFactoryForTests(null);
   globalThis.fetch = oldFetch;
+});
+
+test("Brand Operations content workflow works for both approved brands, never Soleada", async () => {
+  const cookie = "realtyflow_admin=" + await createAdminSession("staff@example.test", "WORKSPACE_MEMBER");
+  zenGranted = true;
+
+  for (const brand of ["pinosoecolife", "zeneco"]) {
+    const response = await POST(request(brand, "POST", {
+      action: "save", brand_id: "soleada", destinationId: "magasin",
+      title: "New approved brand article", slug: "New approved brand article",
+      summary: "Internal test", markdown: "# Draft in " + brand,
+    }, cookie) as any, { params: { brandKey: brand } });
+    assert.equal(response.status, 200, "save must succeed only for " + brand);
+    const save = calls.filter(call => call.name === "workspace_brand_content_draft_save").at(-1);
+    assert.equal(save?.args?.p_brand_key, brand, "requested body brand cannot override verified workspace");
+    assert.equal(save?.args?.p_destination_path, "/magasin");
+  }
+
+  const unauthorized = await POST(request("soleada", "POST", {
+    action: "save", destinationId: "magasin", title: "Forbidden",
+    slug: "forbidden", markdown: "Should never save",
+  }, cookie) as any, { params: { brandKey: "soleada" } });
+  assert.equal(unauthorized.status, 403);
+  assert.equal(calls.filter(call => call.name === "workspace_brand_content_draft_save").length, 2);
+
+  // Removing a granular publish permission prevents execution even for Brand Operations.
+  permissions = ["content.read", "content.edit"];
+  const denied = await POST(request("zeneco", "POST", {
+    action: "publish", draftId,
+  }, cookie) as any, { params: { brandKey: "zeneco" } });
+  assert.equal(denied.status, 403);
+  assert.equal(webhookBodies.length, 0);
 });
 
 test("content snapshot is exact-brand and never exposes webhook credentials", async () => {

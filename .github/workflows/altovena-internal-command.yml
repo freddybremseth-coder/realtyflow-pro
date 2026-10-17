@@ -1,0 +1,62 @@
+name: Altovena RealtyFlow internal Command gateway
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/*altovena_owner_command_bridge.sql"
+      - "src/app/api/altovena/**"
+      - "src/app/(realty)/altovena/**"
+      - "tests/fixtures/altovena_*"
+      - "tests/altovena/**"
+      - ".github/workflows/altovena-internal-command.yml"
+  push:
+    branches: ["feature/altovena-command-internal"]
+    paths:
+      - "supabase/migrations/*altovena_owner_command_bridge.sql"
+      - "src/app/api/altovena/**"
+      - "src/app/(realty)/altovena/**"
+      - "tests/fixtures/altovena_*"
+      - "tests/altovena/**"
+      - ".github/workflows/altovena-internal-command.yml"
+permissions: { contents: read }
+jobs:
+  gateway-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: altovena_ci
+          POSTGRES_PASSWORD: ci_test_only
+          POSTGRES_DB: altovena_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U altovena_ci -d altovena_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: altovena_ci
+      PGPASSWORD: ci_test_only
+      PGDATABASE: altovena_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create temporary test roles
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE anon NOLOGIN;"
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE authenticated NOLOGIN;"
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE service_role NOLOGIN;"
+      - name: Install isolated Altovena fixture
+        run: psql -v ON_ERROR_STOP=1 -f tests/fixtures/altovena_platform_base.sql
+      - name: Seed internal tenant
+        run: psql -v ON_ERROR_STOP=1 -f tests/fixtures/altovena_internal_tenant.sql
+      - name: Create isolated Auth user fixture
+        run: psql -v ON_ERROR_STOP=1 -f tests/fixtures/altovena_test_auth.sql
+      - name: Install owner-only Command gateway
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261016184000_altovena_owner_command_bridge.sql
+      - name: Validate service-only, idempotent drafts and audit trail
+        run: psql -v ON_ERROR_STOP=1 -f tests/altovena/gateway.sql
+      - name: Validate HTTP route safeguards
+        run: node --test tests/altovena/gateway-contract.test.mjs

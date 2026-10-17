@@ -5,6 +5,7 @@ import { brandPublishingEvidence, patchBrandHtml, patchNextHomepage, publisherFo
   readNextHomepageMetadata, readNextLayoutMetadata, secondVariantForBrand, SEO_BRAND_PUBLISHERS, type BrandEvidence, type BrandMetadata, type BrandPublisher } from "./seo-brand-publishing";
 import { evaluateTrackedSEOChanges, parseTrackedSEOChange } from "./seo-change-monitor";
 import { githubForSite, githubRequest, type GithubRequest } from "./seo-brand-github";
+import { canRunApprovedDonaAnnaMetadata, getVisibilityApproval } from "./visibility-owner-approval";
 
 const ACTION = "seo_brand_publication_v1";
 export type BrandPublicationStatus = {
@@ -67,6 +68,16 @@ export async function runBrandPublisher(
   const loaded = await db.from("automation_logs").select("details").eq("id",id).eq("action",ACTION).maybeSingle();
   if (loaded.error) throw new Error("Publication state unavailable");
   let job: BrandPublicationJob | null = loaded.data?.details as BrandPublicationJob || null;
+  // Direct invocations cannot bypass the exact owner grant. Read-only
+  // verification and rollback must still proceed after consent revocation.
+  const safeExistingPhase = job && (["deploy","done","rolled_back"].includes(job.phase) || job.phase.startsWith("rollback_"));
+  if (site.brandId === "donaanna" && !safeExistingPhase &&
+      !await canRunApprovedDonaAnnaMetadata(db, site, version, now)) {
+    return result("blocked", version === "v2"
+      ? "Metadata-variant V2 krever separat, spesifikk eiergodkjenning."
+      : "Eierens begrensede tillatelse mangler eller er utløpt. Eksisterende kildeavvik må også avklares.");
+  }
+
   const save = async (previous: Phase, next: BrandPublicationJob) => {
     const saved = await db.from("automation_logs").update({ details: next,
       status: ["done","rolled_back"].includes(next.phase) ? "success" : "partial" })
@@ -174,6 +185,10 @@ export async function runBrandPublisher(
       return result("blocked","Forslaget inneholder mer enn den godkjente metadataendringen.",{pullUrl:pull.html_url});
     if (!await gh.green(pull.head.sha)) return result("pending","Venter på grønne GitHub- og Vercel-kontroller.",{pullUrl:pull.html_url});
     if (await gh.main() !== main) return result("pending","Hovedgrenen flyttet seg; ny kontroll kjøres neste gang.");
+    // Recheck consent immediately before the irreversible GitHub merge to
+    // reduce the race if the owner revoked permission during this cron run.
+    if (!rollback && !await canRunApprovedDonaAnnaMetadata(db,site,version,now))
+      return result("blocked","Eierens tillatelse mangler eller ble trukket tilbake før sammenslåing.",{pullUrl:pull.html_url});
     const merged = await gh.call("PUT","/pulls/"+job.pullNumber+"/merge",{sha:pull.head.sha,merge_method:"squash"});
     if (!merged.merged) return result("blocked","GitHub tillot ikke automatisk sammenslåing.",{pullUrl:pull.html_url});
     await save(job.phase,{...job,phase:rollback?"rollback_deploy":"deploy",mergeSha:merged.sha,mergedAt:now.toISOString()});
@@ -249,7 +264,8 @@ export async function runPortfolioPublishers(db: SupabaseClient, snapshots: read
       try {
         const snapshot = snapshots.find(s=>s.brandId===site.brandId)||null;
         const first = await runBrandPublisher(db,site,snapshot,{github,publicHtml:readBrandPublicHtml,now});
-        if (first.status === "verified" && await v1EffectMeasured(db,site,snapshot)) {
+        if (first.status === "verified" && await v1EffectMeasured(db,site,snapshot) &&
+            await canRunApprovedDonaAnnaMetadata(db,site,"v2",now)) {
           results.push(await runBrandPublisher(
             db,site,snapshot,{github,publicHtml:readBrandPublicHtml,now},
             { version:"v2", target:secondVariantForBrand(site.brandId) },
@@ -297,6 +313,9 @@ export async function portfolioPublicationStatuses(db: SupabaseClient, last: unk
   ]);
   const rows = await db.from("automation_logs").select("id,details").eq("action",ACTION).in("id",ids);
   if (rows.error) throw new Error("Publication status unavailable");
+  // A stored in-flight phase does not mean the system is still allowed to run.
+  // If consent was revoked, surface that block rather than promising progress.
+  const donaConsent = await getVisibilityApproval(db).catch(() => ({approved:false}));
   return SEO_BRAND_PUBLISHERS.map(site => {
     const v2 = rows.data?.find(row=>row.id===brandPublicationId(site.brandId,":v2"))?.details as BrandPublicationJob | undefined;
     const v1 = rows.data?.find(row=>row.id===brandPublicationId(site.brandId))?.details as BrandPublicationJob | undefined;
@@ -305,6 +324,13 @@ export async function portfolioPublicationStatuses(db: SupabaseClient, last: unk
     const version = job === v2 ? "v2" : "v1";
     const saved = Array.isArray(last) ? last.find(item=>item?.brandId===site.brandId) as BrandPublicationStatus | undefined : undefined;
     const common = {brandId:site.brandId,page:"/" as const,published:0};
+    const readOnlyOrSafetyPhase=job && (["deploy","done","rolled_back"].includes(job.phase) || job.phase.startsWith("rollback_"));
+    if (site.brandId === "donaanna" && !donaConsent.approved && !readOnlyOrSafetyPhase) {
+      const sourceNote=saved?.reason && /metadata|kilden|kildeavvik/i.test(saved.reason)
+        ? " Sist registrerte kildekontroll: "+saved.reason : "";
+      return {...common,status:"blocked" as const,
+        reason:"Ingen aktiv eiergodkjenning for eksakt metadata-variant. Sam skriver ikke til nettstedet."+sourceNote};
+    }
     if (job) {
       if (job.phase === "rolled_back") return {...common,status:"rollback",reason:`${version.toUpperCase()} er tilbakeført og bekreftet offentlig.`};
       if (job.phase.startsWith("rollback_") && saved?.status === "blocked") return saved;

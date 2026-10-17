@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { trainingArticlesFor } from "./training-content";
+import { trainingArticlesFor, WORKSPACE_TRAINING_ARTICLES } from "./training-content";
+import { applyTrainingOverrides, editableTrainingContent, trainingBaseForBrand, validateTrainingContent } from "./training-overrides";
 
 test("Corporate training is shown only for Zen users with Corporate access", () => {
   const zen = trainingArticlesFor({
@@ -134,4 +135,36 @@ test("Reels guide appears only for supported brands with Reel access", () => {
     permissions: ["reels.read"] as any,
   });
   assert.equal(otherBrand.some(article => article.id === "reels-studio"), false);
+});
+
+test("owner edits training copy but can never broaden audience, scope or staff permissions", () => {
+  const base = trainingArticlesFor({ brandKey: "zeneco", permissions: ["marketing.read"] });
+  const first = base.find(article => article.id === "how-we-work");
+  assert.ok(first);
+  const edited = { ...editableTrainingContent(first), title: "Oppdatert arbeidsflyt",
+    brands: ["soleada"], anyPermissions: [], id: "forged-article" } as any;
+  assert.equal(validateTrainingContent(edited), true);
+  const copy = applyTrainingOverrides(base, "zeneco", [{ article_id: "how-we-work", content: edited }]);
+  assert.equal(copy.find(article => article.id === "how-we-work")?.title, "Oppdatert arbeidsflyt");
+  assert.equal(first.title, WORKSPACE_TRAINING_ARTICLES.find(article => article.id === "how-we-work")?.title);
+  assert.deepEqual(copy.find(article => article.id === "how-we-work")?.anyPermissions, first.anyPermissions);
+  assert.deepEqual(copy.find(article => article.id === "how-we-work")?.brands, first.brands);
+
+  const pinoso = trainingArticlesFor({ brandKey: "pinosoecolife", permissions: ["marketing.read"] });
+  const pinosoCopy = applyTrainingOverrides(pinoso, "pinosoecolife", [{ article_id: "how-we-work", content: edited }]);
+  assert.equal(pinosoCopy.find(article => article.id === "how-we-work")?.title, "Oppdatert arbeidsflyt");
+
+  const otherBrand = applyTrainingOverrides(base, "soleada", [{ article_id: "how-we-work", content: edited }]);
+  assert.equal(otherBrand.find(article => article.id === "how-we-work")?.title, first.title);
+});
+
+test("malformed overrides fall back to shipped text and do not change training policy", () => {
+  const base = trainingBaseForBrand("zeneco");
+  const first = base.find(article => article.id === "how-we-work");
+  assert.ok(first);
+  assert.equal(validateTrainingContent({ ...editableTrainingContent(first), sections: [] }), false);
+  assert.equal(validateTrainingContent({ ...editableTrainingContent(first), readMinutes: "100" }), false);
+  const bad = { ...editableTrainingContent(first), sections: [] } as any;
+  const copy = applyTrainingOverrides(base, "zeneco", [{ article_id: "how-we-work", content: bad }]);
+  assert.equal(copy.find(article => article.id === "how-we-work")?.title, first.title);
 });
