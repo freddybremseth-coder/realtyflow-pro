@@ -76,7 +76,7 @@ export async function investigateVisibilityTasks(
   if (!report || !Array.isArray(report.sites) || visibilityEvidenceAge(report.checkedAt, now) !== "RECENT" ||
       Math.abs(now.getTime() - Date.parse(report.checkedAt)) > 48 * 60 * 60_000) return none;
 
-  const targets = new Map(ALLOWED_TARGETS.map(x => [x.brandId, x]));
+  const targets = new Map<string, {brandId:string; base:string}>(ALLOWED_TARGETS.map(x => [x.brandId, x]));
   const candidates: Array<{item: VisibilityReviewItem; sourceId:string}> = [];
   for (const item of planVisibilityReviewItems(report)) {
     const target = targets.get(item.brandId);
