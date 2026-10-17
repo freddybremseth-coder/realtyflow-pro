@@ -128,8 +128,8 @@ export async function investigateVisibilityTasks(
   const { data: tasks, error: taskError } = await db.from("work_items")
     .select("id,brand_id,source_id,status,metadata")
     .eq("source_type", "ai_agent")
-    .in("source_id", candidates.map(x => x.sourceId).slice(0, 30))
-    .limit(30);
+    .in("source_id", candidates.map(x => x.sourceId).slice(0, 100))
+    .limit(100);
   if (taskError) throw new Error("Visibility work queue unavailable");
   const saved = new Map((tasks || []).filter(x =>
     x.metadata?.product === "altovena_visibility" &&
