@@ -16,8 +16,14 @@ create table if not exists public.altovena_intake_receipts (
   submission_id uuid primary key,
   contact_id uuid not null references public.contacts(id) on delete cascade,
   work_item_id uuid not null references public.work_items(id) on delete cascade,
+  request_digest text,
   received_at timestamptz not null default now()
 );
+-- Nullable only to support a database that may already contain older receipt rows.
+-- New requests ALWAYS include a SHA-256 digest; old undigested receipts fail
+-- closed on retries rather than acknowledging changed content as identical.
+alter table public.altovena_intake_receipts
+  add column if not exists request_digest text;
 create index if not exists altovena_intake_receipts_contact_idx
   on public.altovena_intake_receipts(contact_id);
 alter table public.altovena_intake_receipts enable row level security;
@@ -45,6 +51,8 @@ declare
   v_message text := btrim(coalesce(p_message,''));
   v_contact_id uuid;
   v_work_id uuid;
+  v_previous_digest text;
+  v_request_digest text;
   v_time timestamptz := now();
   v_activity jsonb;
 begin
@@ -63,11 +71,25 @@ begin
     raise exception 'Altovena brand not configured';
   end if;
 
+  -- PostgreSQL built-in SHA-256, canonicalized from the EXACT accepted payload.
+  -- A duplicate UUID may acknowledge only the same request, never edited
+  -- content or an email change. No PII is included in the receipt itself.
+  v_request_digest := pg_catalog.encode(pg_catalog.sha256(
+    pg_catalog.convert_to(
+      pg_catalog.jsonb_build_array(v_name,v_email,v_company,v_message,p_product)::text,
+      'UTF8')
+  ),'hex');
+
   -- Serialize same submission and same-brand address to prevent duplicate records.
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('altovena:submission:'||p_submission_id::text,0));
-  select contact_id,work_item_id into v_contact_id,v_work_id
+  select contact_id,work_item_id,request_digest
+    into v_contact_id,v_work_id,v_previous_digest
     from public.altovena_intake_receipts where submission_id=p_submission_id;
   if v_contact_id is not null and v_work_id is not null then
+    if v_previous_digest is distinct from v_request_digest then
+      raise exception 'Altovena submission ID content mismatch'
+        using errcode='22023';
+    end if;
     return jsonb_build_object('ok',true,'accepted',true,
       'leadId',v_contact_id::text,'workItemId',v_work_id::text,'duplicate',true);
   end if;
@@ -120,8 +142,8 @@ begin
       'product',p_product,'marketing_opt_in',false,'source','altovena.com/contact')
   ) returning id into v_work_id;
 
-  insert into public.altovena_intake_receipts(submission_id,contact_id,work_item_id)
-  values (p_submission_id,v_contact_id,v_work_id);
+  insert into public.altovena_intake_receipts(submission_id,contact_id,work_item_id,request_digest)
+  values (p_submission_id,v_contact_id,v_work_id,v_request_digest);
 
   return jsonb_build_object('ok',true,'accepted',true,
     'leadId',v_contact_id::text,'workItemId',v_work_id::text,'duplicate',false);
