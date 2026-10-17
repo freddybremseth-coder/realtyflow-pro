@@ -12,7 +12,7 @@ type LeadTask = {
   dueDate: string | null;
   nextAction: string | null;
 };
-type Props = { onOpenLeads: () => void; canManage: boolean };
+type Props = { onOpenLeads: (contactId?: string) => void; canManage: boolean };
 
 export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
   const [tasks, setTasks] = useState<LeadTask[]>([]);
@@ -124,8 +124,10 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={onOpenLeads}
-            className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200">Åpne CRM</button>
+          <button type="button" onClick={() => onOpenLeads(task.contactId || undefined)}
+            className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200">
+            {task.contactId ? "Åpne kundekort" : "Åpne CRM"}
+          </button>
           {canManage && task.status !== "IN_PROGRESS" &&
             <button type="button" disabled={Boolean(pendingTaskId)}
               onClick={() => void updateTask(task.id,"IN_PROGRESS")}
