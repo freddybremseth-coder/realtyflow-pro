@@ -74,6 +74,24 @@ jobs:
           ref: ded27cde669e8740e98bfb372de47fba21181133
           path: altovena-website
           persist-credentials: false
+      - name: Checkout current Altovena website contact candidate
+        uses: actions/checkout@v4
+        with:
+          repository: freddybremseth-coder/Altovena
+          ref: feature/v1-3-contact-gate-hardening
+          path: altovena-candidate
+          persist-credentials: false
+      - name: Fail if the tested Altovena contact handler differs from candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in api/contact.js public/contact-form.js; do
+            if ! cmp -s "altovena-website/$file" "altovena-candidate/$file"; then
+              echo "::error file=$file::Altovena source changed; pin the new website PR commit and rerun offline cross-repo CRM validation."
+              exit 1
+            fi
+          done
+          echo "PASS: pinned Altovena site contact handler and browser script match the active candidate"
       - name: Synthetic Altovena website → RealtyFlow → real local PostgreSQL E2E
         run: NODE_OPTIONS=--conditions=react-server node --import tsx scripts/test-altovena-cross-repo-bridge.ts
       - name: Verify real Altovena SQL + RPC in isolated PostgreSQL
