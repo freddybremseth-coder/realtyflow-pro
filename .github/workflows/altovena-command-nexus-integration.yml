@@ -12,6 +12,8 @@ on:
       - "supabase/migrations/*altovena_analysis_budget_ledger.sql"
       - "tests/altovena/analysis-budget-ledger.sql"
       - "tests/altovena/analysis-budget-concurrency.integration.mjs"
+      - "src/lib/altovena/command-analysis-budget-postgres.ts"
+      - "src/lib/altovena/command-analysis-budget-postgres.test.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
       - "src/app/api/altovena/command/analysis/route.ts"
       - "supabase/migrations/*altovena_command_analysis_preparation.sql"
@@ -45,6 +47,7 @@ jobs:
           node --import tsx --test src/lib/altovena/command-analysis-evidence.test.ts
           node --import tsx --test src/lib/altovena/command-analysis-ci-harness.test.ts
           node --import tsx --test src/lib/altovena/command-analysis-openai-adapter.test.ts
+          node --import tsx --test src/lib/altovena/command-analysis-budget-postgres.test.ts
       - name: Verify that Command planning cannot activate Nexus execution
         run: |
           node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
