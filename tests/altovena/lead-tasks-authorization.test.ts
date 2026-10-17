@@ -19,6 +19,9 @@ let permissions=["crm.read","crm.write"];
 let grantStatus="active";
 let operatorVerified=true;
 let taskStatus="TO_DO";
+let totalOpenCount=1;
+let overdueCount=0;
+let countFailed=false;
 let changedStatus:string|null=null;
 const calls:Array<{method:string;args:unknown[]}>=[];
 let restore=()=>{};
@@ -41,24 +44,40 @@ async function memberCookie() {
   return "realtyflow_admin="+await createAdminSession("staff@example.invalid","WORKSPACE_MEMBER");
 }
 function mockBackend(){
-  const selectChain:any={
-    select(...params:unknown[]){calls.push({method:"select",args:params});return selectChain;},
-    eq(...params:unknown[]){calls.push({method:"eq",args:params});return selectChain;},
-    in(...params:unknown[]){calls.push({method:"in",args:params});return selectChain;},
-    order(...params:unknown[]){calls.push({method:"order",args:params});return selectChain;},
-    limit(...params:unknown[]){calls.push({method:"limit",args:params});return selectChain;},
-    then(resolve:(value:unknown)=>unknown){
-      return Promise.resolve({data:[
-        {id:taskId,brand_id:"altovena",source_type:"website_lead",source_id:contactId,
-          title:"Altovena Visibility enquiry",status:taskStatus,priority:"HIGH",
-          created_at:"2026-10-17T08:30:00.000Z",due_date:null,next_action:"Respond personally"},
-        {id:foreignTaskId,brand_id:"zeneco",source_type:"website_lead",source_id:contactId,
-          title:"Another brand private customer",status:"TO_DO",priority:"HIGH"},
-        {id:"not-a-uuid",brand_id:"altovena",source_type:"website_lead",
-          title:"Malformed row",status:"TO_DO",priority:"HIGH"},
-      ],error:null}).then(resolve);
-    },
-  };
+  function makeSelectChain() {
+    let head=false;
+    let overdue=false;
+    const chain:any={
+      select(...params:unknown[]){
+        calls.push({method:"select",args:params});
+        head=(params[1] as {head?:boolean}|undefined)?.head===true;
+        return chain;
+      },
+      eq(...params:unknown[]){calls.push({method:"eq",args:params});return chain;},
+      in(...params:unknown[]){calls.push({method:"in",args:params});return chain;},
+      order(...params:unknown[]){calls.push({method:"order",args:params});return chain;},
+      limit(...params:unknown[]){calls.push({method:"limit",args:params});return chain;},
+      lte(...params:unknown[]){
+        overdue=true;calls.push({method:"lte",args:params});return chain;
+      },
+      then(resolve:(value:unknown)=>unknown){
+        if(head) return Promise.resolve({
+          data:null,count:overdue?overdueCount:totalOpenCount,
+          error:countFailed?{message:"count unavailable"}:null,
+        }).then(resolve);
+        return Promise.resolve({data:[
+          {id:taskId,brand_id:"altovena",source_type:"website_lead",source_id:contactId,
+            title:"Altovena Visibility enquiry",status:taskStatus,priority:"HIGH",
+            created_at:"2026-10-17T08:30:00.000Z",due_date:null,next_action:"Respond personally"},
+          {id:foreignTaskId,brand_id:"zeneco",source_type:"website_lead",source_id:contactId,
+            title:"Another brand private customer",status:"TO_DO",priority:"HIGH"},
+          {id:"not-a-uuid",brand_id:"altovena",source_type:"website_lead",
+            title:"Malformed row",status:"TO_DO",priority:"HIGH"},
+        ],error:null}).then(resolve);
+      },
+    };
+    return chain;
+  }
   setPlatformSupabaseFactoryForTests(()=>({
     rpc:async(name:string,parameters?:Record<string,unknown>)=>{
       calls.push({method:"rpc",args:[name,parameters]});
@@ -72,7 +91,7 @@ function mockBackend(){
       }:{ok:false,error:"TASK_NOT_FOUND_OR_ALREADY_HANDLED"},error:null};
       throw Error("Unexpected RPC: "+name);
     },
-    from:(table:string)=>{calls.push({method:"from",args:[table]});return selectChain;},
+    from:(table:string)=>{calls.push({method:"from",args:[table]});return makeSelectChain();},
     auth:{admin:{getUserById:async(id:string)=>{
       calls.push({method:"getUserById",args:[id]});
       return {data:operatorVerified?{user:{id:operatorId,email:"staff@example.invalid"}}:{user:null},
@@ -93,7 +112,8 @@ test.beforeEach(()=>{
  process.env.SUPABASE_SERVICE_ROLE_KEY="test-only-not-real";
  process.env.REALTYFLOW_WORKSPACE_MEMBERS_ENABLED="true";
  permissions=["crm.read","crm.write"];grantStatus="active";operatorVerified=true;
- changedStatus=null;taskStatus="TO_DO";calls.length=0;
+ changedStatus=null;taskStatus="TO_DO";totalOpenCount=1;overdueCount=0;
+ countFailed=false;calls.length=0;
  mockBackend();
  restore=()=>{
   setPlatformSupabaseFactoryForTests(null);
@@ -117,6 +137,8 @@ test("owner sees only open Altovena lead tasks and cannot leak other-brand rows"
  const payload=await response.json();
  assert.equal(payload.brand,"altovena");
  assert.equal(payload.tasks.length,1);
+ assert.equal(payload.totalOpen,1);
+ assert.equal(payload.overdueNotStarted,0);
  assert.equal(payload.tasks[0].contactId,contactId);
  assert.equal(JSON.stringify(payload).includes("Another brand private customer"),false);
  assert.equal(JSON.stringify(payload).includes("Malformed row"),false);
@@ -134,7 +156,37 @@ test("verified worker with Altovena read grant sees same task, never another bra
  assert.equal(response.status,200);
  const result=await response.json();
  assert.deepEqual(result.tasks.map((row:{id:string})=>row.id),[taskId]);
+ assert.equal(result.totalOpen,1);
+ assert.equal(result.overdueNotStarted,0);
  assert.ok(calls.some(c=>c.method==="getUserById"&&c.args[0]===operatorId));
+});
+
+
+test("server-wide counts see old unstarted leads beyond the newest-40 board",async()=>{
+ totalOpenCount=94;overdueCount=27;
+ const owner=await GET(request(await ownerCookie()),args);
+ const member=await GET(request(await memberCookie()),args);
+ assert.equal(owner.status,200);
+ assert.equal(member.status,200);
+ for(const response of [owner,member]){
+  const payload=await response.json();
+  assert.equal(payload.tasks.length,1,"visible filtered rows are not all rows");
+  assert.equal(payload.totalOpen,94,"must not infer total from latest rows");
+  assert.equal(payload.overdueNotStarted,27,"must count older unstarted enquiries");
+  assert.equal(payload.brand,"altovena");
+ }
+ const headQueries=calls.filter(c=>c.method==="select"&&(c.args[1] as any)?.head===true);
+ assert.equal(headQueries.length,4,"two independently scoped count queries per viewer");
+ assert.ok(calls.some(c=>c.method==="lte"&&c.args[0]==="created_at"));
+ assert.ok(calls.filter(c=>c.method==="eq"&&c.args[0]==="brand_id"&&c.args[1]==="altovena").length>=6);
+ assert.equal(JSON.stringify(await GET(request(await ownerCookie()),args)).includes("Another brand private customer"),false);
+});
+
+test("failed global count fails closed instead of reporting zero overdue",async()=>{
+ countFailed=true;
+ const result=await GET(request(await ownerCookie()),args);
+ assert.equal(result.status,503);
+ assert.deepEqual((await result.json()).error,{code:"LEAD_COUNTS_UNAVAILABLE"});
 });
 
 test("revoked grant, absent crm.read and mismatched identity all fail closed",async()=>{
