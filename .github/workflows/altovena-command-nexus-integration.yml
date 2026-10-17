@@ -9,6 +9,11 @@ on:
       - "src/lib/altovena/command-analysis-ci-harness.test.ts"
       - "src/lib/altovena/command-analysis-openai-adapter.ts"
       - "src/lib/altovena/command-analysis-openai-adapter.test.ts"
+      - "supabase/migrations/*altovena_analysis_budget_ledger.sql"
+      - "tests/altovena/analysis-budget-ledger.sql"
+      - "tests/altovena/analysis-budget-concurrency.integration.mjs"
+      - "src/lib/altovena/command-analysis-budget-postgres.ts"
+      - "src/lib/altovena/command-analysis-budget-postgres.test.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
       - "src/app/api/altovena/command/analysis/route.ts"
       - "supabase/migrations/*altovena_command_analysis_preparation.sql"
@@ -42,6 +47,7 @@ jobs:
           node --import tsx --test src/lib/altovena/command-analysis-evidence.test.ts
           node --import tsx --test src/lib/altovena/command-analysis-ci-harness.test.ts
           node --import tsx --test src/lib/altovena/command-analysis-openai-adapter.test.ts
+          node --import tsx --test src/lib/altovena/command-analysis-budget-postgres.test.ts
       - name: Verify that Command planning cannot activate Nexus execution
         run: |
           node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
@@ -92,3 +98,16 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-preparation.sql
       - name: Validate that both schemas coexist without implicit execution
         run: psql -v ON_ERROR_STOP=1 -f tests/altovena/command-nexus-coexistence.sql
+      - name: Apply private quota/reservation ledger in disposable CI database
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261017090000_altovena_analysis_budget_ledger.sql
+          psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-budget-ledger.sql
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --silent
+      - name: Race two independent AI permits for the same remaining budget
+        env:
+          ALTOVENA_BUDGET_TEST_DB_ONLY: "true"
+        run: node tests/altovena/analysis-budget-concurrency.integration.mjs
