@@ -22,6 +22,12 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
   const [capped,setCapped]=useState(false);
   const [totalOpen,setTotalOpen]=useState(0);
   const [overdueNotStarted,setOverdueNotStarted]=useState(0);
+  const [backgroundCheck,setBackgroundCheck]=useState<{
+    state:"disabled"|"no_scan"|"recent"|"stale";
+    lastScanAt:string|null;
+    pending:number|null;
+  }|null>(null);
+  const [backgroundError,setBackgroundError]=useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -83,6 +89,28 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
     return () => controller.abort();
   }, [refresh]);
 
+  useEffect(()=>{
+    const controller=new AbortController();
+    setBackgroundError("");
+    fetch("/api/workspaces/altovena/lead-alert-status",{
+      cache:"no-store",signal:controller.signal,
+    }).then(async res=>{
+      const body=await res.json().catch(()=>null);
+      if(!res.ok || body?.ok!==true || body?.brand!=="altovena" ||
+         !["disabled","no_scan","recent","stale"].includes(body.state) ||
+         body.deliveryEnabled!==false)
+        throw Error("Bakgrunnsvarsler kan ikke bekreftes.");
+      return body;
+    }).then(body=>{
+      if(!controller.signal.aborted)setBackgroundCheck({
+        state:body.state,lastScanAt:body.lastScanAt,pending:body.pending,
+      });
+    }).catch(()=>{
+      if(!controller.signal.aborted)setBackgroundError("Bakgrunnskontrollens status er utilgjengelig.");
+    });
+    return ()=>controller.abort();
+  },[refresh]);
+
   async function updateTask(taskId: string, nextStatus: "IN_PROGRESS" | "DONE") {
     if (!canManage || pendingTaskId) return;
     setActionError(""); setPendingTaskId(taskId);
@@ -120,6 +148,18 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
           Ingen e-post eller pushvarsler er aktivert.
         </p>
         {lastChecked && <p className="mt-1 text-xs text-slate-500">Sist sjekket kl. {lastChecked}</p>}
+        <p className="mt-2 text-xs text-slate-400" role="status">
+          {backgroundError || (!backgroundCheck
+            ? "Kontrollerer bakgrunnsvarsler…"
+            : backgroundCheck.state==="disabled"
+              ? "Bakgrunnsskanner er deaktivert; varsler oppdateres bare når appen er åpen."
+              : backgroundCheck.state==="no_scan"
+              ? "Bakgrunnsskanner er konfigurert, men ingen vellykket kjøring er registrert."
+              : backgroundCheck.state==="stale"
+              ? "Bakgrunnsskannerens siste kjøring er forsinket. Kontroller driftsstatus."
+              : "Bakgrunnsskanner: sist kjørt "+new Date(backgroundCheck.lastScanAt!).toLocaleString("nb-NO")+
+                " · "+backgroundCheck.pending+" interne, åpne varsler." )}
+        </p>
       </div>
       <button type="button" onClick={() => setRefresh(current => current + 1)}
         className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-cyan-200">Oppdater</button>
