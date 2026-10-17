@@ -11,7 +11,20 @@ type CodeCandidate = {
   url:string;repo:string;pullNumber:number;commitSha:string;recordedAt:string;
   reviewOnly:true;executionStarted:false;publicationAuthorized:false;
 };
-type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null};
+type GithubStatus={
+ state:"OPEN_SAME_COMMIT"|"DRAFT_SAME_COMMIT"|"COMMIT_CHANGED"|"CLOSED"|"MERGED"|"UNAVAILABLE";
+ checkedAt:string;currentHeadSha:string|null;codeUnchanged:boolean;
+ mergeAuthorized:false;publicationAuthorized:false;verifiedAsPublished:false;
+};
+type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null;github_status:GithubStatus|null};
+const githubStateLabels:Record<GithubStatus["state"],string>={
+ OPEN_SAME_COMMIT:"Åpen PR – kodeversjonen stemmer",
+ DRAFT_SAME_COMMIT:"Utkast i GitHub – samme kodeversjon",
+ COMMIT_CHANGED:"Kodeversjonen er endret – ny vurdering nødvendig",
+ CLOSED:"GitHub-PR er lukket uten sammenslåing",
+ MERGED:"GitHub-PR er sammenslått – nettsiden er ikke dermed verifisert",
+ UNAVAILABLE:"GitHub-status kunne ikke bekreftes",
+};
 type RunStatus={
  source:"cron"|"owner";outcome:"COMPLETED"|"SKIPPED"|"FAILED";
  reason:string;recordedAt:string;investigated:number;failed:number;skipped:number;
@@ -148,7 +161,21 @@ export function VisibilityWorkQueue(){
          className="mt-2 inline-block font-semibold text-teal-800 underline">
          Åpne GitHub PR #{item.code_candidate.pullNumber}
        </a>
-       <p className="mt-1 text-slate-600">{item.code_candidate.repo} · Kodeversjon {item.code_candidate.commitSha.slice(0,7)}</p>
+       <p className="mt-1 text-slate-600">{item.code_candidate.repo} · Registrert kodeversjon {item.code_candidate.commitSha.slice(0,7)}</p>
+       <p className="mt-2 font-semibold">{item.github_status
+        ?githubStateLabels[item.github_status.state]
+        :"GitHub-status ikke kontrollert – vurderingen er ikke oppdatert"}</p>
+       {item.github_status&&<p className="mt-1 text-slate-500">
+        Kontrollert: {new Date(item.github_status.checkedAt).toLocaleString("nb-NO")}.
+        {item.github_status.currentHeadSha?` Gjeldende commit: ${item.github_status.currentHeadSha.slice(0,7)}.`:""}
+       </p>}
+       {item.github_status?.state==="COMMIT_CHANGED"&&<p className="mt-1 font-semibold text-amber-800">
+        Det opprinnelige endringsutkastet gjelder ikke lenger den nyeste koden. Ny vurdering kreves.
+       </p>}
+       <button type="button" onClick={()=>refresh().catch(()=>setMessage("GitHub-status er ikke tilgjengelig"))} disabled={busy}
+        className="mt-2 rounded-lg border border-slate-300 px-2 py-1 font-semibold text-slate-800 disabled:opacity-60">
+        Oppdater GitHub-status
+       </button>
        <p className="mt-1 text-slate-500">Registrert: {new Date(item.code_candidate.recordedAt).toLocaleString("nb-NO")}. Status i GitHub må kontrolleres før eventuell godkjenning.</p>
        <p className="mt-1 font-semibold">Ikke publisert eller verifisert gjennom denne handlingen.</p>
       </div>}

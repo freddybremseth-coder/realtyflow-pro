@@ -52,6 +52,14 @@ Nexus bruker nå en særskilt, reviderbar `visibility_code_review_candidate`-log
 
 Det finnes **ikke** en generell kodegenereringsagent, GitHub-installasjon per tenant eller en ferdig reparasjonspipeline. Koblingen er et lesbart spor for vurdering, ikke bevis for publisert eller kontrollert rettelse.
 
+## PR-status fra faktisk GitHub (lesemodus)
+
+Det registrerte Re-Master-utkastet er nå lenket til `remasterfreddy#48` med eksakt commit. Nexus kan lese **gjeldende** pull request-status fra GitHub API når eier åpner arbeidskøen eller bruker «Oppdater GitHub-status». Endringen gjør ikke GitHub-koden til et godkjent eller publisert nettsted.
+
+Pilotens begrensninger: bare det forhåndsgodkjente offentlige `freddybremseth-coder/remasterfreddy`-repoet, høyst to statuskall per køvisning, GET-only og ingen nye tokens eller innsendte URL-er. Avvik mellom lagret commit og GitHub-head blir `COMMIT_CHANGED`, ikke `READY`. Lukket eller sammenslått PR er egne statuser og gir aldri auto-merging, produktion-release eller verifisert reparasjon. GitHub-feil/rate limit vises som `UNAVAILABLE` uten godkjenning.
+
+**Viktig:** GitHub-status og uavhengig SEO-etterkontroll er to adskilte bevis. En PR som er «open / same commit» kan fortsatt ha feilet tester eller mangle visuell godkjenning. En merged PR beviser ikke at Vercel har publisert den eller at feilen er borte.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
 1. **Drift:** Verifiser første faktiske `visibility_independent_investigation`-journal fra planlagt/mannuell kjøring. Ved status null er ikke arbeid utført. Logg hvorfor cron kjøres, hoppes over eller feiler.
