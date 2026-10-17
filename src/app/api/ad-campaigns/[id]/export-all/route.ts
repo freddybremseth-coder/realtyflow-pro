@@ -31,7 +31,13 @@ export async function POST(
     if (error) throw new Error(error.message);
 
     const all = creatives || [];
-    const pending = all.filter((creative) => !creative.pushed_to_hub);
+    const body = await request.json().catch(() => ({}));
+    const requestedIds = Array.isArray(body.creative_ids)
+      ? body.creative_ids.filter((id: unknown): id is string => typeof id === "string").slice(0, 50)
+      : null;
+    const pending = all.filter((creative) =>
+      !creative.pushed_to_hub && (!requestedIds || requestedIds.includes(creative.id))
+    );
     const exported: string[] = [];
     const failed: Array<{ creativeId: string; error: string }> = [];
 
