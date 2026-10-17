@@ -28,5 +28,7 @@ test("lookup route is hard-coded to Altovena, crm.read, and branded contact rows
  assert.match(route,/\.eq\("brand_id","altovena"\)\.eq\("brand","altovena"\)\.eq\("id",id\)/);
  assert.match(route,/cache-control/i);
  assert.doesNotMatch(route,/\.select\("\*"\)/);
- assert.doesNotMatch(route,/commission_amount|interactions/);
+ const selected = route.match(/const columns="([^"]+)"/)?.[1] || "";
+ assert.ok(selected.length>0);
+ assert.doesNotMatch(selected,/commission_amount|interactions|notes|pipeline_value/);
 });
