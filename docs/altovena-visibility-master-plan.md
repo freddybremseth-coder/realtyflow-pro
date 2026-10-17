@@ -44,6 +44,14 @@ Oppgaver og mål-URL fra klienten er aldri egne SEO-bevis. Et redigerbart `work_
 - Eierens arbeidskø viser **siste registrerte kjøring** og **siste bekreftede SEO-bevis** hver for seg, med egne tidspunkter. Hvis journalen mangler, vises «Ingen registrerte kjøringer».
 - **Re-Master:** [PR #48](https://github.com/freddybremseth-coder/remasterfreddy/pull/48) er klar for gjennomgang med grønt CI/preview, men er verken sammenslått eller publisert. Ikke marker oppgaven som løst på grunnlag av denne PR-en.
 
+## Kodeforslag knyttet til faktisk eierforespørsel
+
+17. oktober ble det registrert en reell `visibility_remediation_design_request` for Re-Master fra eier, knyttet til en uavhengig H1-observasjon. Det finnes allerede en separat [Re-Master PR #48](https://github.com/freddybremseth-coder/remasterfreddy/pull/48), med den opprinnelige H1-teksten og noindex for administrasjonssidene. PR er ennå ikke sammenslått.
+
+Nexus bruker nå en særskilt, reviderbar `visibility_code_review_candidate`-logg for **lesbar referanse** fra én tidligere journalført eierforespørsel til én kontrollert GitHub-PR og eksakt kode-commit. Kontroll kontrakten for første pilot tillater kun Re-Master-repoet, krever matchende oppgave, merkevare, kilde-ID, SHA-256-fingeravtrykk og en journalhendelse etter eierforespørselen. Alle rettigheter til utførelse, godkjenning, sammenslåing og publisering forblir **false**.
+
+Det finnes **ikke** en generell kodegenereringsagent, GitHub-installasjon per tenant eller en ferdig reparasjonspipeline. Koblingen er et lesbart spor for vurdering, ikke bevis for publisert eller kontrollert rettelse.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
 1. **Drift:** Verifiser første faktiske `visibility_independent_investigation`-journal fra planlagt/mannuell kjøring. Ved status null er ikke arbeid utført. Logg hvorfor cron kjøres, hoppes over eller feiler.
