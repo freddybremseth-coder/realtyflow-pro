@@ -7,7 +7,7 @@ DECLARE
  mission_id uuid:=gen_random_uuid();
  goal text:='Independent documented analysis proposal test';
  route jsonb;route_digest text; source_digest text:=repeat('c',64);
- permit_id uuid;replay_id uuid;
+ permit_id uuid;
  denied boolean;review_result text;reserve_row record;
  count_events integer;
 BEGIN
@@ -75,9 +75,6 @@ BEGIN
    2,'verified',clock_timestamp()+interval '7 minutes');
  review_result:=altovena.review_analysis_permit(permit_id,reviewer_id,'approve');
  IF review_result<>'approved' THEN RAISE EXCEPTION 'valid review blocked';END IF;
- SELECT count(*) INTO count_events FROM altovena.analysis_permit_review_events
- WHERE permit_id=permit_id;
- -- Use scoped alias to avoid record/output-name ambiguity.
  SELECT count(*) INTO count_events FROM altovena.analysis_permit_review_events e
  WHERE e.permit_id=permit_id;
  IF count_events<>2 THEN RAISE EXCEPTION 'expected request and approval audit';END IF;
