@@ -30,6 +30,11 @@ type AnalysisPreparation = {
   max_model_calls:number;max_cost_cents:number;prepared_at:string;
 };
 type AnalysisResponse = { preparation?:AnalysisPreparation|null;error?:string };
+type AnalysisReadiness = {
+  mission_id:string;preparation_status:string;source_status:string;
+  source_count:number;permit_status:string;review_status:string;execution_enabled:boolean;
+};
+type AnalysisReadinessResponse = { status?:AnalysisReadiness;error?:string };
 
 const stateNames: Record<string, string> = {
   draft: "Utkast",
@@ -64,6 +69,8 @@ export default function AltovenaCommandPage() {
   const [planningMission, setPlanningMission] = useState<string|null>(null);
   const [preparingMission, setPreparingMission] = useState<string|null>(null);
   const [preparationByMission, setPreparationByMission] = useState<Record<string,AnalysisPreparation|null>>({});
+  const [readinessByMission,setReadinessByMission] = useState<Record<string,AnalysisReadiness|null>>({});
+  const [checkingReadiness,setCheckingReadiness] = useState<string|null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -184,6 +191,23 @@ export default function AltovenaCommandPage() {
     } finally { setPreparingMission(null); }
   };
 
+  const showReadiness = async (missionId:string) => {
+    setCheckingReadiness(missionId);
+    setError("");
+    try {
+      const res=await fetch(`/api/altovena/command/analysis/readiness?missionId=${encodeURIComponent(missionId)}`,{
+        credentials:"same-origin",cache:"no-store",
+      });
+      const data=await res.json() as AnalysisReadinessResponse;
+      if(!res.ok || !data.status) throw Error(data.error||"Kunne ikke hente analysestatus.");
+      setReadinessByMission(old=>({...old,[missionId]:data.status!}));
+    } catch(e) {
+      setError(e instanceof Error?e.message:"Kunne ikke hente analysestatus.");
+    } finally {
+      setCheckingReadiness(null);
+    }
+  };
+
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 text-slate-100">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -290,7 +314,30 @@ export default function AltovenaCommandPage() {
                       className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-50">
                       Vis analyseforberedelse
                     </button>
+                    <button type="button" disabled={checkingReadiness===mission.id}
+                      onClick={()=>void showReadiness(mission.id)}
+                      className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-50">
+                      {checkingReadiness===mission.id?"Henter status …":"Se analysestatus"}
+                    </button>
                   </div>
+                  {readinessByMission[mission.id] && (
+                    <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/40 p-3 text-xs">
+                      <p className="font-semibold text-slate-100">Analysestatus · kun innsyn</p>
+                      <p className="mt-1 text-slate-300">
+                        Forberedelse: {readinessByMission[mission.id]?.preparation_status} ·
+                        Lagrede kilder: {readinessByMission[mission.id]?.source_count}
+                      </p>
+                      <p className="mt-1 text-slate-300">
+                        Kildekontroll: {readinessByMission[mission.id]?.source_status} ·
+                        Analysetillatelse: {readinessByMission[mission.id]?.permit_status} ·
+                        Kontrollørens beslutning: {readinessByMission[mission.id]?.review_status}
+                      </p>
+                      <p className="mt-2 text-amber-200">
+                        Ingen AI-analyse eller ekstern handling er startet. Godkjenning må gjøres
+                        av en egen autorisert kontrollør i en senere, separat arbeidsflyt.
+                      </p>
+                    </div>
+                  )}
                   {preparationByMission[mission.id] && (
                     <div className="mt-3 rounded-lg border border-teal-800/50 bg-teal-950/20 p-3 text-xs">
                       <p className="font-semibold">Analyseforberedelse lagret · ikke startet</p>
