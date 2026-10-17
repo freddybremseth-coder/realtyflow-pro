@@ -169,7 +169,10 @@ export default function AdCampaignDetailPage() {
       const response = await fetch(`/api/ad-campaigns/${id}/export-all`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kampanjeeksporten feilet.");
-      setNotice(`${data.exported || 0} nye annonser ble sendt til Content Hub. ${data.alreadyExported || 0} var allerede eksportert.${data.failed?.length ? ` ${data.failed.length} feilet.` : ""}`);
+      setNotice(`${data.exported || 0} nye annonseutkast ble opprettet i Content Hub. ${data.alreadyExported || 0} var allerede eksportert. Ingen annonser er publisert.`);
+      if (data.failed?.length) {
+        setError(`${data.failed.length} kunne ikke eksporteres: ${data.failed.slice(0, 2).map((entry: { error: string }) => entry.error).join("; ")}`);
+      }
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -365,9 +368,9 @@ export default function AdCampaignDetailPage() {
         <CardHeader className="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between">
           <CardTitle className="flex items-center gap-2 text-base"><Send className="h-4 w-4" />4. Leveranse og Content Hub</CardTitle>
           <div className="flex flex-wrap gap-2">
-            {done > 0 && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void exportAll()} className="gap-2">{busy === "export-all" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}Eksporter alle ferdige</Button>}
+            {done > 0 && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void exportAll()} className="gap-2">{busy === "export-all" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}Eksporter ferdige som utkast</Button>}
             {campaign.status === "completed" && !campaign.delivery && <Button size="sm" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/delivery`)} className="gap-2">{busy.includes("delivery") ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}Captions og toppliste</Button>}
-            {campaign.delivery && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/push-to-hub`)} className="gap-2"><Star className="h-3 w-3" />Push toppliste</Button>}
+            {campaign.delivery && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/push-to-hub`)} className="gap-2"><Star className="h-3 w-3" />Overfør toppvalg som utkast</Button>}
           </div>
         </CardHeader>
         <CardContent>
