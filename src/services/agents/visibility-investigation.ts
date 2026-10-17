@@ -13,6 +13,7 @@ import type { VisibilityFinding } from "@/lib/visibility-product";
 
 const ALLOWED_TARGETS = [...SEO_AUDIT_TARGETS, ...SEO_SUPPLEMENTAL_AUDIT_TARGETS];
 export const MAX_INVESTIGATED_SITES = 2;
+export const MAX_INVESTIGATED_TASKS = 4;
 export const INVESTIGATION_ACTION = "visibility_independent_investigation";
 const RECHECK_COOLDOWN_MS = 20 * 60 * 60_000;
 
@@ -29,7 +30,6 @@ export function evaluateInvestigation(item: VisibilityReviewItem, audit: SiteAud
 } {
   const summary = visibilityAuditSummary(audit);
   const originalIssueCode = item.type === "DATA_GAP" ? "DATA_GAP" : item.key.split(":")[2] || "UNKNOWN";
-  const target = new URL(audit.base);
   // The existing bounded SEO audit verifies the homepage and fixed robots/sitemap.
   // Never present a homepage probe as proof for a different path.
   const path = item.affectedUrl ? new URL(item.affectedUrl).pathname : "/";
@@ -108,15 +108,18 @@ export async function investigateVisibilityTasks(
 
   const pending = candidates.filter(x => saved.has(x.sourceId) && !inCooldown.has(x.sourceId));
   const selectedBrands = new Set<string>();
+  const auditCache = new Map<string, SiteAudit>();
   let investigated = 0, failed = 0;
   const results: Array<{brandId:string; result:InvestigationResult}> = [];
   for (const candidate of pending) {
+    if (investigated + failed >= MAX_INVESTIGATED_TASKS) break;
     const { item, sourceId } = candidate;
     if (!selectedBrands.has(item.brandId) && selectedBrands.size >= MAX_INVESTIGATED_SITES) continue;
     const target = targets.get(item.brandId)!;
     selectedBrands.add(item.brandId);
     try {
-      const audit = await auditSite(target);
+      const audit = auditCache.get(item.brandId) ?? await auditSite(target);
+      auditCache.set(item.brandId, audit);
       const check = evaluateInvestigation(item, audit);
       // Independent evidence is stored separately from editable work-item
       // metadata. It is a follow-up observation, NOT proof of resolution.
