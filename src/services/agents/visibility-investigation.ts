@@ -93,6 +93,37 @@ export async function investigateVisibilityTasks(
       candidates.push({ item, sourceId: plan.source_id });
     } catch { continue; }
   }
+  // Open Nexus tasks outlive the finding that originally created them. A
+  // corrected sitemap or H1 makes that finding disappear from a NEW report;
+  // it must not make the OLD task impossible to re-check. Recover ONLY
+  // deterministic, allowlisted homepage identities (not metadata.target_url,
+  // client URLs, or arbitrary historic task titles). Presence of a matching
+  // open work_item is required below before any public request is made.
+  const seen = new Set(candidates.map(x => x.sourceId));
+  for (const site of report.sites) {
+    const target = targets.get(site.brandId);
+    if (!target || visibilityEvidenceAge(site.checkedAt, now) !== "RECENT") continue;
+    const identities: Array<{key:string;type:VisibilityReviewItem["type"];url:string|null}> = [
+      {key:`visibility:${site.brandId}:data-gap`, type:"DATA_GAP", url:null},
+      {key:`visibility:${site.brandId}:HEADING_STRUCTURE:${target.base}`, type:"OBSERVED_SIGNAL", url:target.base},
+      {key:`visibility:${site.brandId}:HEADING_STRUCTURE:${target.base}/`, type:"OBSERVED_SIGNAL", url:target.base+"/"},
+    ];
+    for (const identity of identities) {
+      const item:VisibilityReviewItem = {
+        key:identity.key,brandId:site.brandId,checkedAt:site.checkedAt,
+        affectedUrl:identity.url,type:identity.type,
+        priority:identity.type==="DATA_GAP"?"UNKNOWN":"MEDIUM",
+        title:identity.type==="DATA_GAP"?"Etterkontroller eldre datamangel":"Etterkontroller eldre H1-funn",
+        evidence:"Åpent, tidligere registrert funn trenger en selvstendig ny offentlig måling.",
+        nextStep:"Gjenta den begrensede offentlige kontrollen uten å endre eller lukke oppgaven.",
+        requiresApproval:false,publicationEligible:false,
+      };
+      const sourceId = planVisibilityWorkItem(makeFinding(item)).source_id;
+      if (seen.has(sourceId)) continue;
+      seen.add(sourceId);
+      candidates.push({item,sourceId});
+    }
+  }
   if (!candidates.length) return none;
   const { data: tasks, error: taskError } = await db.from("work_items")
     .select("id,brand_id,source_id,status,metadata")
