@@ -134,3 +134,17 @@ The isolated PostgreSQL 17 test checks:
 - rollback, delete, permission and cross-brand tests remain intact.
 
 **Scope:** This change is on RealtyFlow draft PR #1400 only. The public Altovena website form remains disabled and production RealtyflowPRO has not received this draft intake migration.
+
+## Synthetic HTTP-to-PostgreSQL admission test (17 October 2026)
+
+A dedicated isolated CI test now exercises the **actual** Next.js `POST /api/public/altovena-leads` function through its Supabase-js HTTP transport down to the **actual** `altovena_receive_lead` PostgreSQL routine, including CRM contact and human follow-up task creation.
+
+- Script: `scripts/test-altovena-http-postgres.ts`.
+- GitHub Actions: `.github/workflows/altovena-intake-validation.yml` runs it **before** the existing comprehensive SQL integration test in the same isolated PostgreSQL 17 job.
+- Only `localhost/altovena_ci_test` is allowed. Synthetic `example.invalid` identities, fake keys and an in-process PostgREST transport are used; the test writes nothing to Supabase/production.
+- The fixture/migration and all synthetic leads run inside a transaction that is rolled back even on test failure.
+- Checks: invalid shared key and brand never reach SQL; an accepted request yields a real Altovena CRM contact plus human work item; exact retries return the original receipt; changed message with the same ID fails without another task; malformed success receipt fails closed; foreign-brand contact stays untouched and AI follow-up remains stopped.
+- On a deliberately **fabricated failure response after SQL commit within the test transaction**, the handler rejects the false confirmation. The database may already have accepted that particular request, so a browser retry must reuse the submission UUID; the content-bound receipt ensures recovery without duplication.
+- First successful GitHub test: `Altovena intake validation`, run `39025572023`, job `117375768367`; both HTTP→SQL and existing SQL suites logged PASS.
+
+**What this does NOT establish:** no real request traverses `altovena.com` → protected RealtyFlow preview over the network; no live Vercel shared secret or Turnstile is configured; no Altovena intake migration has been applied to RealtyflowPRO. The production form remains gated off until a separate authorized staging test, verified operator/brand permissions, privacy review, notification delivery and explicit launch approval.
