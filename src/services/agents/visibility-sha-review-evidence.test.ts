@@ -103,7 +103,8 @@ test("manual record endpoint strictly owner only, rechecks GitHub, writes no pub
  assert.match(api,/ctx\.source!=="owner-session"/);
  assert.match(api,/sec-fetch-site/);
  assert.match(api,/checkVisibilityPullStatus\(candidate\)/);
- assert.match(api,/live\.state!=="OPEN_SAME_COMMIT"/);
+ assert.match(api,/\["OPEN_SAME_COMMIT","DRAFT_SAME_COMMIT"\]\.includes\(live\.state\)/);
+ assert.match(api,/live\.codeUnchanged!==true/);
  assert.match(api,/merge_authorized:false/);
  assert.match(api,/publication_authorized:false/);
  assert.doesNotMatch(api,/from\("work_items"\)\.update\(/);
