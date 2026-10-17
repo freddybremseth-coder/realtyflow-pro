@@ -104,7 +104,7 @@ test("Old reports and current recheck cooldown do not trigger public requests",a
 test("previous H1 finding is remeasured even after disappearing from current saved SEO report",async()=>{
  const fresh:SEOControlReport={...report,sites:report.sites.map(site=>({
   ...site,findings:0,visibilityDiagnostic:{...site.visibilityDiagnostic,
-   issues:[],diagnosticStatus:"OK" as const},
+   issues:[],diagnosticStatus:"OBSERVED_NO_BLOCKERS" as const},
  }))};
  const {db,inserted}=dbMock();
  let probes=0;
@@ -134,7 +134,7 @@ test("previous incomplete sitemap task is remeasured even if new source report i
   ...report,sites:report.sites.map(site=>({
    ...site,brandId,findings:0,incomplete:false,visibilityDiagnostic:{
     ...site.visibilityDiagnostic,brandId,issues:[],incomplete:false,
-    diagnosticStatus:"OK" as const,
+    diagnosticStatus:"OBSERVED_NO_BLOCKERS" as const,
    },
   })),
  };
