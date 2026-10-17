@@ -161,5 +161,6 @@ test("no existing matching durable task means no speculative public probes",asyn
  });
  assert.equal(probes,0);
  assert.equal(result.investigated,0);
+ assert.equal(result.skipped,0);
  assert.equal(inserted.length,0);
 });
