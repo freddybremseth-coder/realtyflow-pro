@@ -122,6 +122,16 @@ export default function FocusedWorkspacePage() {
     setRequestedTraining(query.get("training"));
   }, [brandKey, routeSearchParams]);
 
+  // Never retain a focused Altovena contact when the operator changes brand.
+  // Also invalidate any outstanding scoped customer lookup from the old brand.
+  useEffect(() => {
+    altovenaLookupVersion.current += 1;
+    focusedAltovenaContactId.current = "";
+    setFocusedAltovenaContact(null);
+    setFocusedAltovenaError("");
+    setSelectedCustomerId("");
+  }, [brandKey]);
+
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
       .then(body => {
@@ -241,6 +251,7 @@ export default function FocusedWorkspacePage() {
   const showGrowth = showReels || showYoutube || showNexus || showGrowthTools;
 
   async function openAltovenaLeadContact(contactId?: string) {
+    if (brandKey !== "altovena") return;
     setTab("leads");
     if (!contactId) return;
     const requestVersion = ++altovenaLookupVersion.current;
