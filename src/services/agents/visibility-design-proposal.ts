@@ -10,7 +10,7 @@ export const DESIGN_REQUEST_ACTION = "visibility_remediation_design_request";
 export type DesignStatus =
  | "AWAITING_RECHECK" | "INVESTIGATE_ONLY"
  | "SPECIALIST_REVIEW" | "READY_FOR_DESIGN_REVIEW";
-type Evidence = {
+export type VisibilityInvestigationEvidence = {
  work_item_id?: unknown; source_id?: unknown; brand_id?: unknown;
  result?: unknown; issue_code?: unknown; checked_at?: unknown;
  target_origin?: unknown; read_only?: unknown;
@@ -47,7 +47,7 @@ function safeOrigin(brandId:string, origin:unknown):string|null{
  }catch{return null;}
 }
 
-export function createVisibilityDesignProposal(task:DesignTask, evidence:Evidence|null|undefined, now=new Date()):DesignProposal{
+export function createVisibilityDesignProposal(task:DesignTask, evidence:VisibilityInvestigationEvidence|null|undefined, now=new Date()):DesignProposal{
  const base={
   workItemId:task.id,brandId:task.brand_id,sourceId:task.source_id,
   issueCode:null as string|null,evidenceAt:null as string|null,target:null as string|null,
