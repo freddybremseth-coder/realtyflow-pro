@@ -13,6 +13,8 @@ The existing in-app list polls while a human has RealtyFlow open. A durable inte
 - Alerts resolve automatically when their predicate is no longer true, e.g. staff starts or completes the task.
 - Deleting an Altovena contact deletes its source tasks and thus associated queued alerts through `ON DELETE CASCADE`.
 - The service-role-only `altovena_reconcile_lead_alerts()` RPC performs queue bookkeeping, not sending.
+- One-row `altovena_alert_scan_state` records latest successful scan time and counts, so a configured but stopped scheduler is not reported as operational.
+- A read-only, `crm.read`-protected `/api/workspaces/altovena/lead-alert-status` endpoint returns a PII-free heartbeat with `disabled`, `no_scan`, `recent` or `stale` status. The existing CRM panel displays that status to Freddy/Andrea when authorized.
 
 ## Scheduling and access
 
