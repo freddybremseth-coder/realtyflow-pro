@@ -102,3 +102,63 @@ test("oversized sitemap and ordinary HTML remain bounded and fail closed", async
     /exceeded audit size bound/,
   );
 });
+
+test("streaming aborts an oversized public page without Content-Length before downloading remaining chunks", async () => {
+  let canceled = false;
+  let chunksSent = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      chunksSent++;
+      controller.enqueue(new Uint8Array(350_000));
+    },
+    cancel() { canceled = true; },
+  }, { highWaterMark: 0 });
+  const transport = (async () => new Response(body, {
+    status: 200, headers: { "content-type": "text/html" },
+  })) as typeof fetch;
+  await assert.rejects(
+    fetchPublicSnapshot(SITE.base + "/", SITE.base, transport),
+    /Public response exceeded audit size bound/,
+  );
+  assert.equal(canceled, true);
+  assert.ok(chunksSent <= 2, "No unbounded stream download after reaching cap");
+});
+
+test("bounded sitemap streaming correctly reconstructs UTF-8 characters split across chunks", async () => {
+  const xml = '<?xml version="1.0"?><urlset><url><loc>https://www.zenecohomes.com/olivé</loc></url></urlset>';
+  const encoded = new TextEncoder().encode(xml);
+  const accentIndex = encoded.indexOf(0xc3);
+  assert.ok(accentIndex > 0);
+  const chunks = [
+    encoded.slice(0, accentIndex + 1),
+    encoded.slice(accentIndex + 1),
+  ];
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  const transport = (async () => new Response(body, {
+    status: 200, headers: { "content-type": "application/xml" },
+  })) as typeof fetch;
+  const snapshot = await fetchPublicSnapshot(SITE.base + "/sitemap.xml", SITE.base, transport);
+  assert.equal(snapshot.body, xml);
+});
+
+test("a sitemap with a dishonest short Content-Length still stops at the byte cap", async () => {
+  let canceled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) { controller.enqueue(new Uint8Array(400_000)); },
+    cancel() { canceled = true; },
+  }, { highWaterMark: 0 });
+  const transport = (async () => new Response(body, {
+    status: 200,
+    headers: { "content-type": "application/xml", "content-length": "5" },
+  })) as typeof fetch;
+  await assert.rejects(
+    fetchPublicSnapshot(SITE.base + "/sitemap.xml", SITE.base, transport),
+    /Public response exceeded audit size bound/,
+  );
+  assert.equal(canceled, true);
+});

@@ -129,6 +129,35 @@ export function publicAuditBodyCap(url: string): number {
     ? MAX_PUBLIC_SITEMAP_AUDIT_BYTES : MAX_PUBLIC_PAGE_AUDIT_BYTES;
 }
 
+/**
+ * Stream-limit by actual decoded response bytes instead of loading an
+ * untrusted response with response.text() and checking its size afterward.
+ * A missing/misleading Content-Length cannot bypass this hard stop.
+ */
+async function readBoundedPublicResponse(response: Response, limit: number): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const pieces: string[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > limit) {
+        await reader.cancel().catch(() => {});
+        throw new Error("Public response exceeded audit size bound");
+      }
+      pieces.push(decoder.decode(value, { stream: true }));
+    }
+    pieces.push(decoder.decode());
+    return pieces.join("");
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 export async function fetchPublicSnapshot(
   url: string,
   base: string,
@@ -153,8 +182,7 @@ export async function fetchPublicSnapshot(
       const limit = publicAuditBodyCap(current);
       const contentLength = Number(response.headers.get("content-length") || 0);
       if (contentLength > limit) throw new Error("Public response exceeded audit size bound");
-      const text = await response.text();
-      if (text.length > limit) throw new Error("Public response exceeded audit size bound");
+      const text = await readBoundedPublicResponse(response, limit);
       return {
         status: response.status, url: current, body: text,
         contentType: response.headers.get("content-type") || "",
