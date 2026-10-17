@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { visibilityWorkDisplayState } from "@/services/agents/visibility-work-queue";
+import { createVisibilityDesignProposal, DESIGN_REQUEST_ACTION } from "@/services/agents/visibility-design-proposal";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -35,8 +36,23 @@ export async function GET(request: NextRequest) {
   latest.set(d.work_item_id,{result:d.result,checked_at:d.checked_at,
     evidence:d.evidence,issue_code:d.issue_code});
  }
- return NextResponse.json({work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>({
-  ...x,visibility_state:visibilityWorkDisplayState(x.status,x.metadata),
-  investigation:latest.get(x.id)??null,
- }))},{headers:{"Cache-Control":"private, no-store"}});
+ const {data:requests,error:requestError}=await client.from("automation_logs")
+  .select("created_at,details").eq("action",DESIGN_REQUEST_ACTION)
+  .order("created_at",{ascending:false}).limit(200);
+ if(requestError) return NextResponse.json({error:"Design review history unavailable"},{status:503});
+ const requestedFingerprints=new Set((requests||[])
+  .map(x=>x.details?.proposal_fingerprint).filter((x):x is string=>typeof x==="string"));
+ return NextResponse.json({work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>{
+   const plan=createVisibilityDesignProposal(x,latest.get(x.id)?{
+      ...latest.get(x.id),work_item_id:x.id,source_id:x.source_id,brand_id:x.brand_id,
+      read_only:true,publication_authorized:false,resolution_verified:false,
+      target_origin:x.metadata?.target_url??null
+   }:null);
+   return {
+    ...x,visibility_state:visibilityWorkDisplayState(x.status,x.metadata),
+    investigation:latest.get(x.id)??null,
+    design_proposal:plan,
+    design_requested:plan.fingerprint?requestedFingerprints.has(plan.fingerprint):false,
+   };
+ })},{headers:{"Cache-Control":"private, no-store"}});
 }
