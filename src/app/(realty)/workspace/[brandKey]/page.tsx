@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -107,6 +107,10 @@ export default function FocusedWorkspacePage() {
   const [contactError, setContactError] = useState("");
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [focusedAltovenaContact, setFocusedAltovenaContact] = useState<Contact | null>(null);
+  const [focusedAltovenaError, setFocusedAltovenaError] = useState("");
+  const focusedAltovenaContactId = useRef("");
+  const altovenaLookupVersion = useRef(0);
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
   const [socialPropertySeed, setSocialPropertySeed] = useState<WorkspaceSocialPropertySeed | null>(null);
 
@@ -197,7 +201,8 @@ export default function FocusedWorkspacePage() {
       const nextContacts = Array.isArray(body.contacts) ? body.contacts : [];
       setContacts(nextContacts);
       setSelectedCustomerId(current =>
-        current && nextContacts.some((contact: Contact) => contact.id === current) ? current : "");
+        current && (nextContacts.some((contact: Contact) => contact.id === current) ||
+          focusedAltovenaContactId.current === current) ? current : "");
       setCrmHasMore(Boolean(body.hasMore));
       const summary = body.summary && typeof body.summary === "object" ? body.summary : null;
       setCrmSummary(summary ? {
@@ -213,7 +218,8 @@ export default function FocusedWorkspacePage() {
   }
   useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery, crmStatus, crmSource, crmSort]);
   const filtered = contacts;
-  const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
+  const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) ||
+    (focusedAltovenaContact?.id === selectedCustomerId ? focusedAltovenaContact : null);
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
   const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
   const showJointTasks = brandKey === "zeneco" && permissions.includes("crm.joint.read") && permissions.includes("tasks.joint.read");
@@ -233,6 +239,35 @@ export default function FocusedWorkspacePage() {
     "email.read", "email.draft", "email.send",
   ].includes(p));
   const showGrowth = showReels || showYoutube || showNexus || showGrowthTools;
+
+  async function openAltovenaLeadContact(contactId?: string) {
+    setTab("leads");
+    if (!contactId) return;
+    const requestVersion = ++altovenaLookupVersion.current;
+    setFocusedAltovenaError("");
+    focusedAltovenaContactId.current = "";
+    setFocusedAltovenaContact(null);
+    setSelectedCustomerId("");
+    try {
+      // The server re-verifies current crm.read and exact Altovena membership;
+      // never trust an ID supplied by the browser as proof of authorization.
+      const response = await fetch(
+        `/api/workspaces/altovena/lead-contact?contactId=${encodeURIComponent(contactId)}`,
+        {cache:"no-store",credentials:"same-origin"},
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok || body?.ok !== true || body?.brand !== "altovena" ||
+          body?.contact?.id !== contactId || typeof body.contact.name !== "string")
+        throw new Error("Kundekortet kan ikke åpnes med din nåværende tilgang.");
+      if (altovenaLookupVersion.current !== requestVersion) return;
+      focusedAltovenaContactId.current = contactId;
+      setFocusedAltovenaContact(body.contact as Contact);
+      setSelectedCustomerId(contactId);
+    } catch (error) {
+      if (altovenaLookupVersion.current !== requestVersion) return;
+      setFocusedAltovenaError(error instanceof Error ? error.message : "Kunne ikke åpne kundekort.");
+    }
+  }
 
   function resetContactForm() {
     setEditingId(null); setFormName(""); setFormEmail(""); setFormPhone("");
@@ -308,7 +343,7 @@ export default function FocusedWorkspacePage() {
             </div>
             {brandKey === "altovena" && owner && !ownerPreview && <AltovenaLaunchReadiness />}
             {brandKey === "altovena" && permissions.includes("crm.read") &&
-              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={() => setTab("leads")} />}
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={contactId => void openAltovenaLeadContact(contactId)} />}
             <WorkspaceTodayPriorities
               brandKey={brandKey}
               permissions={permissions}
@@ -395,7 +430,9 @@ export default function FocusedWorkspacePage() {
         {!loading && !error && showCrm && tab === "leads" && (
           <section className="space-y-5">
             {brandKey === "altovena" && permissions.includes("crm.read") &&
-              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={() => void loadCrm()} />}
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={contactId => void openAltovenaLeadContact(contactId)} />}
+            {brandKey === "altovena" && focusedAltovenaError &&
+              <p role="alert" className="rounded-lg border border-amber-800 p-3 text-sm text-amber-300">{focusedAltovenaError}</p>}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
