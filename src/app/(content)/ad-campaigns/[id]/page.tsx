@@ -20,6 +20,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { AdCampaignCreativeGallery } from "@/components/ad-campaigns/creative-gallery";
+import { ImageUpload } from "@/components/ui/image-upload";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,7 @@ export default function AdCampaignDetailPage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [referenceDraft, setReferenceDraft] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -167,8 +169,34 @@ export default function AdCampaignDetailPage() {
       const response = await fetch(`/api/ad-campaigns/${id}/export-all`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kampanjeeksporten feilet.");
-      setNotice(`${data.exported || 0} nye annonser ble sendt til Content Hub. ${data.alreadyExported || 0} var allerede eksportert.${data.failed?.length ? ` ${data.failed.length} feilet.` : ""}`);
+      setNotice(`${data.exported || 0} nye annonseutkast ble opprettet i Content Hub. ${data.alreadyExported || 0} var allerede eksportert. Ingen annonser er publisert.`);
+      if (data.failed?.length) {
+        setError(`${data.failed.length} kunne ikke eksporteres: ${data.failed.slice(0, 2).map((entry: { error: string }) => entry.error).join("; ")}`);
+      }
       await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const saveReference = async () => {
+    if (!referenceDraft || !campaign || referenceDraft === campaign.product_image_url) return;
+    setBusy("save-reference");
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/ad-campaigns/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product_image_url: referenceDraft }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Kunne ikke lagre produktreferansen.");
+      await load();
+      setReferenceDraft(null);
+      setNotice("Ny produktreferanse er lagret. Eksisterende genererte bilder er fortsatt merket for etikettkontroll, og endres ikke automatisk.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -196,7 +224,14 @@ export default function AdCampaignDetailPage() {
   const pending = creatives.filter((creative) => creative.status === "pending").length;
   const processing = creatives.filter((creative) => creative.status === "generating").length;
   const percent = total > 0 ? (done / total) * 100 : 0;
-  const canGenerate = Boolean(campaign.matrix && (pending > 0 || processing > 0 || failed > 0));
+  const reviewCount = creatives.filter((creative) =>
+    creative.metadata_json?.creative_image_label_review_required === true
+  ).length;
+  const outdatedPendingPrompts = creatives.filter((creative) =>
+    creative.status === "pending" &&
+    /(?:\b5\s*L\b|\bmetal\s+(?:can|tin)\b)/i.test(creative.prompt || "")
+  ).length;
+  const canGenerate = Boolean(campaign.matrix && (pending > 0 || processing > 0 || failed > 0) && outdatedPendingPrompts === 0);
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-6 p-6">
@@ -221,6 +256,51 @@ export default function AdCampaignDetailPage() {
 
       {error && <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
       {notice && <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{notice}</span></div>}
+
+      {reviewCount > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base text-amber-200">
+            <AlertCircle className="h-4 w-4" /> Produktkontroll – emballasje og publisering
+          </CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-gray-300">
+              {reviewCount} ferdige bilder venter på kontroll av riktig emballasje. Bilder som viser feil volum (f.eks. 5 L),
+              kan brukes som arbeidsutkast, men skal ikke publiseres. Oppgitt korrekt volum er 3 L, uten rabatt.
+            </p>
+            <div className="grid gap-4 md:grid-cols-[minmax(220px,350px)_1fr]">
+              <ImageUpload
+                value={referenceDraft === null ? campaign.product_image_url || "" : referenceDraft}
+                onChange={setReferenceDraft}
+                label="Godkjent produktfoto av 3 L-flasken"
+                hint="Last opp et faktisk foto med riktig og lesbar 3 L-etikett."
+                allowUrlEntry={false}
+                uploadFields={{
+                  save_to_bank: "true",
+                  bank_kind: "product",
+                  bank_owner: campaign.brand_id || "system",
+                  bank_name: campaign.product_name + " 3 L reference",
+                  bank_tags: "cocina-viva,product,3l,reference",
+                }}
+              />
+              <div className="space-y-3">
+                <p className="text-xs leading-relaxed text-gray-400">
+                  Last opp riktig produktfoto her og lagre som referanse for fremtidige bilder.
+                  Dette endrer ikke allerede genererte etiketter eller godkjenner gamle annonser.
+                  Velg deretter de beste motivene for ny produksjon og individuell kontroll.
+                </p>
+                <Button size="sm" variant="outline" disabled={Boolean(busy) || !referenceDraft || referenceDraft === campaign.product_image_url} onClick={() => void saveReference()}>
+                  {busy === "save-reference" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Lagre 3 L-referanse
+                </Button>
+                {outdatedPendingPrompts > 0 && <p className="text-xs text-amber-200">
+                  {outdatedPendingPrompts} ventende varianter har utdaterte instruksjoner om 5 L eller metallkanne.
+                  De må bygges om fra korrekt referanse før generering kan fortsette.
+                </p>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="space-y-4 py-5">
@@ -288,9 +368,9 @@ export default function AdCampaignDetailPage() {
         <CardHeader className="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between">
           <CardTitle className="flex items-center gap-2 text-base"><Send className="h-4 w-4" />4. Leveranse og Content Hub</CardTitle>
           <div className="flex flex-wrap gap-2">
-            {done > 0 && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void exportAll()} className="gap-2">{busy === "export-all" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}Eksporter alle ferdige</Button>}
+            {done > 0 && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void exportAll()} className="gap-2">{busy === "export-all" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}Eksporter ferdige som utkast</Button>}
             {campaign.status === "completed" && !campaign.delivery && <Button size="sm" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/delivery`)} className="gap-2">{busy.includes("delivery") ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}Captions og toppliste</Button>}
-            {campaign.delivery && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/push-to-hub`)} className="gap-2"><Star className="h-3 w-3" />Push toppliste</Button>}
+            {campaign.delivery && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/push-to-hub`)} className="gap-2"><Star className="h-3 w-3" />Overfør toppvalg som utkast</Button>}
           </div>
         </CardHeader>
         <CardContent>
