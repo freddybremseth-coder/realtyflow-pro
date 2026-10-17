@@ -48,7 +48,7 @@ BEGIN
 END;
 $body$;
 
-DO $
+DO $$
 DECLARE v_tenant uuid;v_actor uuid;v_permit uuid;v_receipt uuid;
         v_row record;v_err boolean;v_count bigint;
 BEGIN
@@ -58,7 +58,7 @@ BEGIN
  OR has_table_privilege('authenticated','altovena.analysis_reservations','INSERT')
  OR has_table_privilege('service_role','altovena.analysis_budget_events','SELECT')
  OR has_function_privilege('service_role',
-   'public.altovena_test_reserve(uuid,uuid,uuid,text)','EXECUTE')
+   'altovena.reserve_analysis_budget(uuid,uuid,uuid,text,text,text,text,text,integer,integer,bigint)','EXECUTE')
  THEN RAISE EXCEPTION 'analysis budget grant was broadened'; END IF;
  v_err:=false;
  BEGIN
