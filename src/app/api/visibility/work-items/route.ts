@@ -39,9 +39,25 @@ export async function GET(request: NextRequest) {
   .select("created_at,details").eq("action",DESIGN_REQUEST_ACTION)
   .order("created_at",{ascending:false}).limit(200);
  if(requestError) return NextResponse.json({error:"Design review history unavailable"},{status:503});
+ const {data:source,error:sourceError}=await client.from("automation_logs")
+  .select("created_at").eq("action","seo_gsc_live_read")
+  .in("status",["success","partial"]).order("created_at",{ascending:false})
+  .limit(1).maybeSingle();
+ if(sourceError)return NextResponse.json({error:"SEO source audit status unavailable"},{status:503});
+ const latestIndependent=(logs||[]).find(x=>
+  x.details?.read_only===true&&x.details?.publication_authorized===false&&
+  x.details?.resolution_verified===false&&typeof x.details?.checked_at==="string");
  const requestedFingerprints=new Set((requests||[])
   .map(x=>x.details?.proposal_fingerprint).filter((x):x is string=>typeof x==="string"));
- return NextResponse.json({work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>{
+ return NextResponse.json({audit_status:{
+  latestSourceAuditAt:source?.created_at??null,
+  latestIndependentAt:latestIndependent?.details?.checked_at??null,
+  independentEvidenceLogged:Boolean(latestIndependent),
+  // A missing evidence record cannot distinguish a skipped cron from an
+  // unexecuted route. Never show "completed" without durable evidence.
+  cronOutcome:"NOT_PROVEN",
+  dailyScheduleUtc:"08:15",
+ },work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>{
    const plan=createVisibilityDesignProposal(x,latest.get(x.id)??null);
    return {
     ...x,visibility_state:visibilityWorkDisplayState(x.status,x.metadata),
