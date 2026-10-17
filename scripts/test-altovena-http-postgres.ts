@@ -65,7 +65,7 @@ try {
     const url=String(target);
     assert.equal(url,mockSupabase+"/rest/v1/rpc/altovena_receive_lead");
     assert.equal(String(init?.method).toUpperCase(),"POST");
-    assert.equal((init?.headers as Record<string,string>)?.apikey,process.env.SUPABASE_SERVICE_ROLE_KEY);
+    assert.equal(new Headers(init?.headers).get("apikey"),process.env.SUPABASE_SERVICE_ROLE_KEY);
     databaseRpcCalls++;
     const args=JSON.parse(String(init?.body??"{}"));
     assert.deepEqual(Object.keys(args).sort(),[
