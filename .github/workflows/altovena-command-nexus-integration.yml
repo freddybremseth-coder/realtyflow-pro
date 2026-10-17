@@ -20,6 +20,10 @@ on:
       - "src/lib/altovena/command-analysis-source-postgres.test.ts"
       - "supabase/migrations/*altovena_analysis_source_snapshots.sql"
       - "tests/altovena/analysis-source-snapshots.sql"
+      - "supabase/migrations/*altovena_command_analysis_readiness.sql"
+      - "src/app/api/altovena/command/analysis/readiness/route.ts"
+      - "tests/altovena/analysis-readiness.sql"
+      - "tests/altovena/analysis-readiness-contract.test.mjs"
       - "src/lib/altovena/command-analysis-budget-postgres.ts"
       - "src/lib/altovena/command-analysis-budget-postgres.test.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
@@ -62,6 +66,7 @@ jobs:
         run: |
           node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
           node --test tests/altovena/analysis-preparation-contract.test.mjs
+          node --test tests/altovena/analysis-readiness-contract.test.mjs
 
   verify-shared-postgres-schema:
     runs-on: ubuntu-latest
@@ -129,3 +134,7 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261017144500_altovena_analysis_source_snapshots.sql
           psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-source-snapshots.sql
+      - name: Verify owner-visible read-only analysis readiness diagnostics
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261017154000_altovena_command_analysis_readiness.sql
+          psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-readiness.sql
