@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { digestVerifiedSourceBundle } from "./command-analysis-source-capture";
 import {
   AnalysisEvidenceDenied,
   assertTrustedAnalysisEvidence,
@@ -241,9 +242,7 @@ export async function requestReadOnlyAnalysisCandidate(input: Readonly<{
   const sources=input.sources.map(s=>({
     sourceId:s.id, evidenceText:s.excerpt,
   }));
-  const evidenceDigest=sha(JSON.stringify(input.sources.map(s=>({
-    sourceId:s.id,digest:s.excerptDigest,tenantId:s.tenantId,
-  }))));
+  const evidenceDigest=digestVerifiedSourceBundle(input.scope,input.sources);
   // Provider input is bounded, but this is not a guarantee about tokenizer
   // length. The transactional budget reservation must remain authoritative.
   const modelInput=JSON.stringify({goal:input.goal.trim(),sources});
