@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - "src/lib/altovena/command-nexus-handoff.ts"
+      - "src/lib/altovena/command-analysis-evidence.ts"
+      - "src/lib/altovena/command-analysis-evidence.test.ts"
+      - "src/lib/altovena/command-analysis-ci-harness.ts"
+      - "src/lib/altovena/command-analysis-ci-harness.test.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
       - "src/app/api/altovena/command/analysis/route.ts"
       - "supabase/migrations/*altovena_command_analysis_preparation.sql"
@@ -29,6 +33,12 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --silent
+      - name: Validate evidence provenance and mock analysis budget gates
+        env:
+          ALTOVENA_ANALYSIS_TEST_HARNESS: "true"
+        run: |
+          node --import tsx --test src/lib/altovena/command-analysis-evidence.test.ts
+          node --import tsx --test src/lib/altovena/command-analysis-ci-harness.test.ts
       - name: Verify that Command planning cannot activate Nexus execution
         run: |
           node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
