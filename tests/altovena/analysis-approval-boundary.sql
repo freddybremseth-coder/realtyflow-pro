@@ -1,6 +1,7 @@
 \set ON_ERROR_STOP on
 -- Disposable PostgreSQL CI only; prior budget and concurrency fixtures apply.
 DO $body$
+<<approval_fixture>>
 DECLARE
  t uuid;owner_id uuid:='cccccccc-cccc-cccc-cccc-cccccccccccc';
  reviewer_id uuid:='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
@@ -76,7 +77,7 @@ BEGIN
  review_result:=altovena.review_analysis_permit(permit_id,reviewer_id,'approve');
  IF review_result<>'approved' THEN RAISE EXCEPTION 'valid review blocked';END IF;
  SELECT count(*) INTO count_events FROM altovena.analysis_permit_review_events e
- WHERE e.permit_id=permit_id;
+ WHERE e.permit_id=approval_fixture.permit_id;
  IF count_events<>2 THEN RAISE EXCEPTION 'expected request and approval audit';END IF;
  denied:=false;
  BEGIN
@@ -86,7 +87,7 @@ BEGIN
  denied:=false;
  BEGIN
   UPDATE altovena.analysis_permit_review_events SET event_type='requested'
-  WHERE permit_id=permit_id;
+  WHERE permit_id=approval_fixture.permit_id;
  EXCEPTION WHEN invalid_parameter_value THEN denied:=true;END;
  IF NOT denied THEN RAISE EXCEPTION 'review event audit mutable';END IF;
 
@@ -96,7 +97,7 @@ BEGIN
  IF reserve_row.result_kind<>'reserved' OR reserve_row.result_reservation_id IS NULL
  THEN RAISE EXCEPTION 'reviewed analysis could not reserve once';END IF;
  UPDATE altovena.analysis_evidence_attestations
- SET state='revoked' WHERE tenant_id=t AND mission_id=mission_id;
+ SET state='revoked' WHERE tenant_id=approval_fixture.t AND mission_id=approval_fixture.mission_id;
  denied:=false;
  BEGIN
   -- Direct insertion by a privileged *test* role still must obey source fence.
