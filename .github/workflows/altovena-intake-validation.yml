@@ -13,6 +13,7 @@ on:
       - "docs/altovena-realtyflow-intake.md"
       - "package.json"
       - "scripts/test-altovena-postgres.mjs"
+      - "scripts/test-altovena-http-postgres.ts"
       - "scripts/fixtures/altovena-ci-schema.sql"
       - ".github/workflows/altovena-intake-validation.yml"
   workflow_dispatch:
@@ -63,5 +64,7 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci --ignore-scripts --no-audit
+      - name: Synthetic HTTP handler → real SQL CRM + task in isolated PostgreSQL
+        run: NODE_OPTIONS=--conditions=react-server node --import tsx scripts/test-altovena-http-postgres.ts
       - name: Verify real Altovena SQL + RPC in isolated PostgreSQL
         run: node scripts/test-altovena-postgres.mjs
