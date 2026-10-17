@@ -28,7 +28,7 @@ const candidate=()=>({
     evidence:[{sourceId:"evidence-1",quote:"water flow 8.5 cubic meters"}],
   }],
   limitations:["Independent assessment required."],
-  controls:{approvedForExecution:false,permittedExternalActions:false,toolsUsed:[]},
+  controls:{approvedForExecution:false,permittedExternalActions:false,toolsUsed:[] as string[]},
 });
 const request=(model:(request:any)=>Promise<any>)=>({
   scope:scope(),sources:sources(),goal,now:"2026-10-17T01:00:00Z",
