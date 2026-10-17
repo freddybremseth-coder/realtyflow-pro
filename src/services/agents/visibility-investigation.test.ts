@@ -49,6 +49,11 @@ test("A now-present H1 is NOT_REPRODUCED and is not proof of a published fix",()
  assert.equal(evaluateInvestigation(item,makeAudit(1)).result,"NOT_REPRODUCED");
  assert.equal(evaluateInvestigation(item,makeAudit(1,null)).result,"INCONCLUSIVE");
 });
+test("A missing homepage cannot be mistaken for a resolved heading issue",()=>{
+ const audit=makeAudit(null);
+ audit.home.status=503;
+ assert.equal(evaluateInvestigation(item,audit).result,"INCONCLUSIVE");
+});
 test("A data gap never becomes a website error",()=>{
  const gap={...item,key:"visibility:remasterfreddy:data-gap",type:"DATA_GAP" as const,affectedUrl:null};
  assert.equal(evaluateInvestigation(gap,makeAudit(1,null)).result,"DATA_STILL_INCOMPLETE");
