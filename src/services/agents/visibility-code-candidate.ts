@@ -52,17 +52,18 @@ export function resolveVisibilityCodeCandidate(
   if (!allowedRepo || !work.source_id.startsWith("visibility:" + work.brand_id + ":"))
     return null;
 
-  const requestsById = new Map<string, Record<string, unknown>>();
+  const requestsById = new Map<string, { details: Record<string, unknown>; createdAt: number }>();
   for (const row of designRequests) {
     const d = object(row.details);
-    if (typeof row.id !== "string" || !d ||
+    if (typeof row.id !== "string" || typeof row.created_at !== "string" ||
+        !Number.isFinite(Date.parse(row.created_at)) || !d ||
         d.work_item_id !== work.id || d.brand_id !== work.brand_id ||
         d.source_id !== work.source_id || d.intent !== "design_review_only" ||
         d.approval_granted !== false || d.publication_authorized !== false ||
         d.execution_started !== false ||
         typeof d.proposal_fingerprint !== "string" ||
         !/^[0-9a-f]{64}$/.test(d.proposal_fingerprint)) continue;
-    requestsById.set(row.id, d);
+    requestsById.set(row.id, { details: d, createdAt: Date.parse(row.created_at) });
   }
 
   for (const log of candidateLogs) {
@@ -78,7 +79,8 @@ export function resolveVisibilityCodeCandidate(
         typeof d.design_request_log_id !== "string") continue;
 
     const request = requestsById.get(d.design_request_log_id);
-    if (!request || d.proposal_fingerprint !== request.proposal_fingerprint ||
+    if (!request || Date.parse(log.created_at) < request.createdAt ||
+        d.proposal_fingerprint !== request.details.proposal_fingerprint ||
         d.repo !== allowedRepo || typeof d.url !== "string" ||
         typeof d.commit_sha !== "string" ||
         !/^[0-9a-f]{40}$/.test(d.commit_sha)) continue;
