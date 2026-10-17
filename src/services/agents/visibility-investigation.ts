@@ -35,11 +35,16 @@ export function evaluateInvestigation(item: VisibilityReviewItem, audit: SiteAud
   const path = item.affectedUrl ? new URL(item.affectedUrl).pathname : "/";
   const onHome = path === "/" || path === "";
   const reproduced = onHome && summary.issues.some(issue => issue.code === originalIssueCode);
+  // An unreachable homepage or an unmeasured field cannot establish that an
+  // original issue disappeared. Do not turn fetch failures into false passes.
+  const measurementMissing = audit.home.status !== 200 && originalIssueCode !== "HTTP_ERROR" ||
+    originalIssueCode === "HEADING_STRUCTURE" && audit.home.h1Count === null ||
+    originalIssueCode === "SCHEMA_PARSE_ERROR" && audit.home.jsonLdParseErrors === null;
   const result: InvestigationResult = item.type === "DATA_GAP"
     ? (summary.incomplete ? "DATA_STILL_INCOMPLETE" : "DATA_NOW_AVAILABLE")
     : !onHome ? "INCONCLUSIVE"
     : reproduced ? "OBSERVED_AGAIN"
-    : summary.incomplete ? "INCONCLUSIVE" : "NOT_REPRODUCED";
+    : summary.incomplete || measurementMissing ? "INCONCLUSIVE" : "NOT_REPRODUCED";
   return {
     result, issueCode: originalIssueCode, checkedAt: audit.checkedAt,
     evidence: {
