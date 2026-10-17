@@ -97,6 +97,20 @@ function requireSources(
   return map;
 }
 
+/**
+ * Preflight for a trusted evidence bundle, before an AI provider is invoked.
+ * Do not interpret this as authentication: caller must already have verified
+ * server session, tenant membership and source access.
+ */
+export function assertTrustedAnalysisEvidence(
+  scope: TrustedAnalysisScope,
+  sources: readonly TrustedEvidence[],
+  now: string,
+): void {
+  requireScope(scope);
+  requireSources(sources, scope, now);
+}
+
 /** Rejects invented sources, unsupported quotations and all model-granted permissions. */
 export function verifyCommandAnalysisCandidate(input: Readonly<{
   scope: TrustedAnalysisScope;
