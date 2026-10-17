@@ -1,0 +1,138 @@
+name: Nexus Task Execution Claim
+on:
+  pull_request:
+    paths:
+      - "src/lib/nexus/task-execution-claim.ts"
+      - "src/lib/nexus/task-execution-claim.test.ts"
+      - "src/lib/nexus/task-execution-postgres.ts"
+      - "src/lib/nexus/task-execution-postgres.test.ts"
+      - "src/lib/nexus/task-board-read.ts"
+      - "src/lib/nexus/task-board-read.test.ts"
+      - "src/lib/nexus/task-board-connection.ts"
+      - "src/lib/nexus/task-board-connection.test.ts"
+      - "src/app/api/nexus/task-board/route.ts"
+      - "src/app/api/workspaces/[brandKey]/nexus-task-board/route.ts"
+      - "src/app/(realty)/workspace/[brandKey]/agent-oppdrag/page.tsx"
+      - "src/middleware.ts"
+      - "src/app/(tools)/nexus-os/agent-oppdrag/page.tsx"
+      - "src/lib/navigation.ts"
+      - "docs/altovena-nexus-execution-claim.md"
+      - "supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql"
+      - "scripts/qa-nexus-claim-bootstrap.sql"
+      - "scripts/qa-nexus-claim-postgres.sql"
+      - "scripts/qa-nexus-lifecycle-postgres.sql"
+      - "scripts/qa-nexus-board-reader-postgres.sql"
+      - "scripts/qa-nexus-board-tenant-postgres.sql"
+      - "scripts/qa-nexus-board-node-login.sql"
+      - "scripts/qa-nexus-board-node.integration.test.ts"
+      - "scripts/qa-nexus-claim-concurrency.integration.test.ts"
+      - "scripts/qa-nexus-claim-revocation.integration.test.ts"
+      - "scripts/qa-nexus-postclaim.integration.test.ts"
+      - ".github/workflows/nexus-task-execution-claim.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/lib/nexus/task-execution-claim.ts"
+      - "src/lib/nexus/task-execution-claim.test.ts"
+      - "src/lib/nexus/task-execution-postgres.ts"
+      - "src/lib/nexus/task-execution-postgres.test.ts"
+      - "src/lib/nexus/task-board-read.ts"
+      - "src/lib/nexus/task-board-read.test.ts"
+      - "src/lib/nexus/task-board-connection.ts"
+      - "src/lib/nexus/task-board-connection.test.ts"
+      - "src/app/api/nexus/task-board/route.ts"
+      - "src/app/api/workspaces/[brandKey]/nexus-task-board/route.ts"
+      - "src/app/(realty)/workspace/[brandKey]/agent-oppdrag/page.tsx"
+      - "src/middleware.ts"
+      - "src/app/(tools)/nexus-os/agent-oppdrag/page.tsx"
+      - "src/lib/navigation.ts"
+      - "supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql"
+      - "scripts/qa-nexus-claim-bootstrap.sql"
+      - "scripts/qa-nexus-claim-postgres.sql"
+      - "scripts/qa-nexus-lifecycle-postgres.sql"
+      - "scripts/qa-nexus-board-reader-postgres.sql"
+      - "scripts/qa-nexus-board-tenant-postgres.sql"
+      - "scripts/qa-nexus-board-node-login.sql"
+      - "scripts/qa-nexus-board-node.integration.test.ts"
+      - "scripts/qa-nexus-claim-concurrency.integration.test.ts"
+      - "scripts/qa-nexus-claim-revocation.integration.test.ts"
+      - "scripts/qa-nexus-postclaim.integration.test.ts"
+      - ".github/workflows/nexus-task-execution-claim.yml"
+permissions:
+  contents: read
+jobs:
+  verify-nexus-claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --silent
+      - name: Validate Nexus claim boundaries
+        run: node --import tsx --test src/lib/nexus/task-execution-claim.test.ts src/lib/nexus/task-execution-postgres.test.ts src/lib/nexus/task-board-read.test.ts src/lib/nexus/task-board-connection.test.ts src/lib/nexus/execution-boundary.test.ts
+
+  verify-claim-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL CLI
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Bootstrap empty isolated database
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-claim-bootstrap.sql
+      - name: Apply proposed migration in test only
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261015212600_nexus_execution_task_claim_store.sql
+      - name: Assert deny-by-default and atomic claim receipt
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-claim-postgres.sql
+      - name: Assert server-authorized proposal, review and claim lifecycle
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-lifecycle-postgres.sql
+      - name: Verify least-privilege private board reader
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-board-reader-postgres.sql
+      - name: Verify two-brand isolation and live membership revocation
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/qa-nexus-board-tenant-postgres.sql
+      - name: Generate test-only PostgreSQL password
+        run: echo "NEXUS_BOARD_CI_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+      - name: Create disposable restricted login
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -v "ci_password=$NEXUS_BOARD_CI_PASSWORD" -f scripts/qa-nexus-board-node-login.sql
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --silent
+      - name: Exercise real PostgreSQL connection from TypeScript
+        env:
+          NEXUS_BOARD_CI_ONLY: "true"
+        run: node --import tsx --test scripts/qa-nexus-board-node.integration.test.ts
+      - name: Verify concurrent claims are exactly once
+        env:
+          NEXUS_BOARD_CI_ONLY: "true"
+          NEXUS_CLAIM_CI_ONLY: "true"
+        run: node --import tsx --test scripts/qa-nexus-claim-concurrency.integration.test.ts
+      - name: Verify revocation and clock-expiry lock races
+        env:
+          NEXUS_BOARD_CI_ONLY: "true"
+          NEXUS_CLAIM_CI_ONLY: "true"
+        run: node --import tsx --test scripts/qa-nexus-claim-revocation.integration.test.ts
+      - name: Verify post-claim cancellation and once-only audit
+        env:
+          NEXUS_BOARD_CI_ONLY: "true"
+          NEXUS_CLAIM_CI_ONLY: "true"
+        run: node --import tsx --test scripts/qa-nexus-postclaim.integration.test.ts
