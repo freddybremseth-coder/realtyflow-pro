@@ -226,7 +226,7 @@ export default function AdCampaignDetailPage() {
   ).length;
   const outdatedPendingPrompts = creatives.filter((creative) =>
     creative.status === "pending" &&
-    /(?:\\b5\\s*L\\b|\\bmetal\\s+(?:can|tin)\\b)/i.test(creative.prompt || "")
+    /(?:\b5\s*L\b|\bmetal\s+(?:can|tin)\b)/i.test(creative.prompt || "")
   ).length;
   const canGenerate = Boolean(campaign.matrix && (pending > 0 || processing > 0 || failed > 0) && outdatedPendingPrompts === 0);
 
