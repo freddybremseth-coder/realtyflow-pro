@@ -1,0 +1,31 @@
+name: Altovena product portfolio
+on:
+  pull_request:
+    paths:
+      - "src/app/(realty)/altovena/page.tsx"
+      - "src/lib/altovena/product-register.ts"
+      - "src/lib/navigation.ts"
+      - "src/lib/constants.ts"
+      - "tests/altovena/portfolio-contract.test.mjs"
+      - ".github/workflows/altovena-portfolio.yml"
+  push:
+    branches: ["feature/altovena-product-portfolio-console-v01"]
+    paths:
+      - "src/app/(realty)/altovena/page.tsx"
+      - "src/lib/altovena/product-register.ts"
+      - "src/lib/navigation.ts"
+      - "src/lib/constants.ts"
+      - "tests/altovena/portfolio-contract.test.mjs"
+      - ".github/workflows/altovena-portfolio.yml"
+permissions:
+  contents: read
+jobs:
+  owner-only-product-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test tests/altovena/portfolio-contract.test.mjs
