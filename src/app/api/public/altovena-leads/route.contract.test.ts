@@ -107,7 +107,11 @@ test("Altovena tasks support protected human follow-up and timely in-app attenti
   assert.match(altovenaTaskPanel,/window.setInterval\(tick, 60000\)/);
   assert.match(altovenaTaskPanel,/document.addEventListener\("visibilitychange", onVisible\)/);
   assert.match(altovenaTaskPanel,/assessAltovenaLeadPoll/);
-  assert.match(altovenaTaskPanel,/awaitingMoreThan24h/);
+  // 24-hour follow-up is counted server-side across the complete backlog,
+  // not only the 40 newest tasks rendered in the browser.
+  assert.match(scopedTaskRoute,/overdueNotStarted: overdue.count/);
+  assert.match(scopedTaskRoute,/totalOpen: total.count/);
+  assert.match(altovenaTaskPanel,/setOverdueNotStarted\(body.overdueNotStarted\)/);
   assert.match(altovenaTaskPanel,/capped &&/);
   assert.match(altovenaTaskPanel,/Marker oppfølging utført/);
   assert.match(altovenaTaskPanel,/Ingen e-post eller pushvarsler er aktivert/);

@@ -20,6 +20,8 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
   const previousSuccessfulIds=useRef<Set<string>|null>(null);
   const [newArrivals,setNewArrivals]=useState(0);
   const [capped,setCapped]=useState(false);
+  const [totalOpen,setTotalOpen]=useState(0);
+  const [overdueNotStarted,setOverdueNotStarted]=useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -51,7 +53,9 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
         return res.json();
       })
       .then(body => {
-        if (body.ok !== true || body.brand !== "altovena" || !Array.isArray(body.tasks))
+        if (body.ok !== true || body.brand !== "altovena" || !Array.isArray(body.tasks) ||
+            !Number.isSafeInteger(body.totalOpen) || body.totalOpen < 0 ||
+            !Number.isSafeInteger(body.overdueNotStarted) || body.overdueNotStarted < 0)
           throw new Error("Ugyldig svar fra Altovena-oppfølging.");
         if (!controller.signal.aborted) {
           const nextTasks=(body.tasks as LeadTask[]).slice(0,40);
@@ -63,6 +67,10 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
           previousSuccessfulIds.current=nextIds;
           if(assessment.newArrivals>0)setNewArrivals(current=>current+assessment.newArrivals);
           setCapped(assessment.mightHaveMore);
+          // Server-side exact counts include older leads beyond the 40-row display cap.
+          // A failed count request is shown as an error, never as zero outstanding.
+          setTotalOpen(body.totalOpen);
+          setOverdueNotStarted(body.overdueNotStarted);
           setTasks(nextTasks);
           setLastChecked(new Date().toLocaleTimeString("nb-NO",{hour:"2-digit",minute:"2-digit"}));
         }
@@ -96,9 +104,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
       setRefresh(current => current + 1);
     } finally { setPendingTaskId(""); }
   }
-  const overdue = assessAltovenaLeadPoll({
-    previousIds:null,tasks,capped,nowMs:Date.now(),
-  }).awaitingMoreThan24h;
+  const overdue = overdueNotStarted;
 
   return <section aria-label="Altovena – oppfølging av nye henvendelser"
     className="rounded-2xl border border-cyan-900/60 bg-slate-900/70 p-4 sm:p-5">
@@ -107,7 +113,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">ALTOVENA · HENVENDELSER</p>
         <h3 className="mt-1 text-xl font-semibold" aria-live="polite">
           {loading ? "Henter oppfølgingsoppgaver…" : error ? "Oppfølging må kontrolleres" :
-            tasks.length === 0 ? "Ingen åpne webhenvendelser" : (capped ? "Minst " : "") + tasks.length + " henvendelser til oppfølging"}
+            totalOpen === 0 ? "Ingen åpne webhenvendelser" : totalOpen + " henvendelser til oppfølging"}
         </h3>
         <p className="mt-1 text-sm text-slate-400">
           Bare Altovena. Oppdateres automatisk hvert minutt når fanen er aktiv.
@@ -126,12 +132,13 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
     </div>}
     {!error && !loading && capped && <p role="status"
       className="mt-3 rounded-lg border border-amber-700/70 bg-amber-950/30 p-3 text-sm text-amber-200">
-      Listen har nådd grensen på 40 oppgaver. Flere kan finnes. Bruk CRM for full oversikt; tallet over er ikke nødvendigvis totalen.
+      Listen har nådd grensen på 40 oppgaver. Du ser de nyeste; totalt {totalOpen} åpne.
+      Varselet om 24 timer inkluderer også eldre oppgaver som ikke vises her.
     </p>}
     {!error && !loading && overdue > 0 && <p role="status"
       className="mt-3 rounded-lg border border-amber-700/70 bg-amber-950/40 p-3 text-sm font-medium text-amber-200">
       {overdue} {overdue === 1 ? "henvendelse har" : "henvendelser har"} vært uten startet oppfølging i minst 24 timer.
-      Kontroller oppfølgingen i CRM.
+      Dette inkluderer også henvendelser utenfor de 40 nyeste. Kontroller oppfølgingen i CRM.
     </p>}
     {error && <p role="alert" className="mt-3 text-sm text-amber-300">{error}</p>}
     {actionError && <p role="alert" className="mt-3 text-sm text-amber-300">{actionError}</p>}
@@ -165,7 +172,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
         </div>
       </div>)}
       {tasks.length > 8 && <p className="text-xs text-slate-400">
-        Viser de åtte nyeste av {capped?"minst 40":tasks.length} oppgaver i oversikten. Bruk CRM for full oversikt.
+        Viser de åtte nyeste av {totalOpen} åpne oppgaver i oversikten. Bruk CRM for full oversikt.
       </p>}
     </div>}
     <p className="mt-3 text-xs text-slate-500">
