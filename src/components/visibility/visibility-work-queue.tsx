@@ -8,6 +8,7 @@ type DesignProposal = {
  rollback:string|null;fingerprint:string|null;canRequestDraft:boolean;publicationAuthorized:false;
 };
 type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean};
+type AuditStatus={latestSourceAuditAt:string|null;latestIndependentAt:string|null;independentEvidenceLogged:boolean;cronOutcome:"NOT_PROVEN";dailyScheduleUtc:string};
 const investigationLabels:Record<string,string>={
  OBSERVED_AGAIN:"Observasjonen er gjentatt",NOT_REPRODUCED:"Ikke gjenskapt ved ny kontroll",
  DATA_STILL_INCOMPLETE:"Kontrollen er fortsatt ufullstendig",
@@ -21,12 +22,13 @@ const displayState: Record<string,string> = {
 };
 export function VisibilityWorkQueue(){
  const [items,setItems]=useState<Work[]>([]);
+ const [auditStatus,setAuditStatus]=useState<AuditStatus|null>(null);
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const refresh=useCallback(async()=>{
   const r=await fetch("/api/visibility/work-items",{cache:"no-store",credentials:"same-origin"});
   if(!r.ok)throw new Error("Arbeidskøen er ikke tilgjengelig");
-  const data=await r.json();setItems(data.work_items||[]);
+  const data=await r.json();setItems(data.work_items||[]);setAuditStatus(data.audit_status||null);
  },[]);
  useEffect(()=>{refresh().catch(()=>setMessage("Arbeidskø ikke tilgjengelig. Ingen status er bekreftet."));},[refresh]);
  const investigate=async()=>{
@@ -80,6 +82,13 @@ export function VisibilityWorkQueue(){
       {busy?"Kontrollerer…":"Kontroller nå"}</button>
    </div>
   </div>
+  {auditStatus&&<div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700" aria-label="Sams kontrollstatus">
+    <div className="font-semibold">Dokumentert kontrollstatus</div>
+    <div className="mt-1">Siste lagrede SEO-rapport: {auditStatus.latestSourceAuditAt?new Date(auditStatus.latestSourceAuditAt).toLocaleString("nb-NO"):"Ingen registrert"}</div>
+    <div>Uavhengig etterkontroll: {auditStatus.latestIndependentAt?new Date(auditStatus.latestIndependentAt).toLocaleString("nb-NO"):"Ingen kontrollbevis registrert"}</div>
+    <div className="mt-1 text-slate-600">Planlagt kontroll: {auditStatus.dailyScheduleUtc} UTC daglig. En planlagt kjøring er ikke bevis på gjennomføring.</div>
+    {!auditStatus.independentEvidenceLogged&&<div className="mt-1 font-semibold text-amber-800">Ingen loggført uavhengig kontroll. Eventuelle reparasjonsforslag er fortsatt sperret.</div>}
+   </div>}
   {message&&<p role="status" className="mt-3 text-sm text-slate-700">{message}</p>}
   <div className="mt-4 space-y-2">
    {items.length===0?<p className="text-sm text-slate-500">Ingen lagrede Visibility-oppgaver registrert eller arbeidskøen er ikke tilgjengelig.</p>:
