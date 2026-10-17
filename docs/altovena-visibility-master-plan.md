@@ -80,6 +80,12 @@ Kvalitetsstatusen gir en konkret **neste handling** ved ukjent GitHub-status, en
 - Reel Re-Master-kilde er identifisert og en isolert [PR #48](https://github.com/freddybremseth-coder/remasterfreddy/pull/48) har bestått CI og forhåndsvisning. PR er fortsatt separat og upublisert.
 - Eierforespørsel, kode-PR og manuell testvurdering er separate journalhandlinger. Ingen av disse innebærer fullmakt til nettsideendringer.
 
+## Gjennomgang av GitHub-utkast og robust GitHub API-lesing
+
+Visuell kontroll skal kunne journalføres for både en åpen PR og et GitHub-utkast (**draft**) når live GitHub-status bekrefter nøyaktig registrert commit. Det reparerer en inkonsekvens mellom skjemaet og POST-kontrollen: før dette var skjemaet tilgjengelig for draft, mens serveren avviste rapporten. Et attestert draft gir aldri godkjenning til merge, publisering eller endring av draft-status.
+
+Live PR-status har en eksplisitt **100 KB bytegrense på strømmen**, ikke bare Content-Length, og håndterer ugyldig svar, feilaktig innholdslengde, GitHub-feil og rate limiting som `UNAVAILABLE`. Ingen ny skrivetilgang, token, databaseendring eller nettstedsendring.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
 1. **Drift videre:** Følg med på at nye planlagte undersøkelsesjournaler faktisk blir skrevet, og at eventuell ny avviksmåling er knyttet til riktig åpen oppgave.
