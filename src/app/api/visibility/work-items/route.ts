@@ -20,7 +20,23 @@ export async function GET(request: NextRequest) {
   .eq("source_type","ai_agent").like("source_id","visibility:%")
   .order("updated_at",{ascending:false}).limit(150);
  if(error) return NextResponse.json({error:"Work queue unavailable"},{status:503});
+ // Evidence is stored in separate service-only audit logs, not in editable
+ // work-item metadata. A probe result is a fresh observation, NEVER proof of
+ // a repaired website, an approval to publish, or a closed task.
+ const {data:logs,error:logError}=await client.from("automation_logs")
+  .select("created_at,details").eq("action","visibility_independent_investigation")
+  .order("created_at",{ascending:false}).limit(200);
+ if(logError) return NextResponse.json({error:"Investigation evidence unavailable"},{status:503});
+ const latest=new Map<string, {result:string;checked_at:string;evidence:unknown;issue_code:string}>();
+ for(const log of logs||[]){
+  const d=log.details;
+  if(typeof d?.work_item_id!=="string" || latest.has(d.work_item_id) ||
+    d.read_only!==true || d.publication_authorized!==false) continue;
+  latest.set(d.work_item_id,{result:d.result,checked_at:d.checked_at,
+    evidence:d.evidence,issue_code:d.issue_code});
+ }
  return NextResponse.json({work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>({
   ...x,visibility_state:visibilityWorkDisplayState(x.status,x.metadata),
- }))},{headers:{"Cache-Control":"no-store"}});
+  investigation:latest.get(x.id)??null,
+ }))},{headers:{"Cache-Control":"private, no-store"}});
 }

@@ -307,6 +307,10 @@
     {
       "path": "/api/cron/corporate-intelligence-accounts",
       "schedule": "45 6 * * *"
+    },
+    {
+      "path": "/api/cron/visibility-investigations",
+      "schedule": "15 8 * * *"
     }
   ]
 }
