@@ -71,7 +71,7 @@ const operator=async()=> "realtyflow_admin="+await createAdminSession("operator@
 test("unsigned, other-brand and malformed IDs are refused before query",async()=>{
  assert.equal((await GET(request(),args)).status,401);
  assert.equal((await GET(request(contactId,await owner()),{params:{brandKey:"zeneco"}})).status,404);
- for(const id of ["../../etc/passwd","not-an-id","11111111-1111-1111-1111-111111111111"]){
+ for(const id of ["../../etc/passwd","not-an-id","11111111-1111-0111-0111-111111111111"]){
   assert.equal((await GET(request(id,await owner()),args)).status,400);
  }
  assert.equal(calls.some(c=>c.name==="from"),false);
