@@ -14,6 +14,7 @@ on:
       - "package.json"
       - "scripts/test-altovena-postgres.mjs"
       - "scripts/test-altovena-http-postgres.ts"
+      - "scripts/test-altovena-cross-repo-bridge.ts"
       - "scripts/fixtures/altovena-ci-schema.sql"
       - ".github/workflows/altovena-intake-validation.yml"
   workflow_dispatch:
@@ -66,5 +67,14 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit
       - name: Synthetic HTTP handler → real SQL CRM + task in isolated PostgreSQL
         run: NODE_OPTIONS=--conditions=react-server node --import tsx scripts/test-altovena-http-postgres.ts
+      - name: Checkout pinned Altovena website source for contract test
+        uses: actions/checkout@v4
+        with:
+          repository: freddybremseth-coder/Altovena
+          ref: ded27cde669e8740e98bfb372de47fba21181133
+          path: altovena-website
+          persist-credentials: false
+      - name: Synthetic Altovena website → RealtyFlow → real local PostgreSQL E2E
+        run: NODE_OPTIONS=--conditions=react-server node --import tsx scripts/test-altovena-cross-repo-bridge.ts
       - name: Verify real Altovena SQL + RPC in isolated PostgreSQL
         run: node scripts/test-altovena-postgres.mjs
