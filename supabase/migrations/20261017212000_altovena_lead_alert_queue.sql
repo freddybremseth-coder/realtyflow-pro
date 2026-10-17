@@ -18,6 +18,19 @@ alter table public.altovena_lead_alerts enable row level security;
 revoke all on public.altovena_lead_alerts from public,anon,authenticated;
 grant select,insert,update on public.altovena_lead_alerts to service_role;
 
+-- One non-sensitive heartbeat makes it possible to detect a stalled scheduler;
+-- a configured cron is NOT proof of a completed run.
+create table if not exists public.altovena_alert_scan_state (
+  brand_key text primary key check (brand_key='altovena'),
+  last_scan_at timestamptz not null,
+  queued_count integer not null default 0,
+  resolved_count integer not null default 0,
+  pending_count integer not null default 0
+);
+alter table public.altovena_alert_scan_state enable row level security;
+revoke all on public.altovena_alert_scan_state from public,anon,authenticated;
+grant select,insert,update on public.altovena_alert_scan_state to service_role;
+
 -- Cron credentials and the explicit disabled-by-default application feature flag
 -- are verified BEFORE entering this service-role-only routine.
 -- A transaction-scoped advisory lock prevents concurrent scans from racing.
@@ -82,6 +95,15 @@ begin
   get diagnostics v_resolved = row_count;
   select count(*)::int into v_pending
   from public.altovena_lead_alerts where state='PENDING';
+
+  insert into public.altovena_alert_scan_state(
+    brand_key,last_scan_at,queued_count,resolved_count,pending_count
+  ) values ('altovena',now(),v_added,v_resolved,v_pending)
+  on conflict(brand_key) do update set
+    last_scan_at=excluded.last_scan_at,
+    queued_count=excluded.queued_count,
+    resolved_count=excluded.resolved_count,
+    pending_count=excluded.pending_count;
 
   return pg_catalog.jsonb_build_object(
     'ok',true,'brand','altovena','queued',v_added,
