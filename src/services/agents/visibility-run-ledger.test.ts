@@ -33,7 +33,7 @@ test("skipped and failed runs have explicit bounded reasons and never set VERIFI
   const parsed=parseVisibilityRunStatus({created_at:"2026-10-17T09:00:00Z",details:{
    source:run.source,outcome:run.outcome,reason:run.reason,
    investigated:run.investigated,failed:run.failed,skipped:run.skipped,
-   readOnly:true,executionStarted:false,publicationAuthorized:false,resolutionVerified:false,
+   read_only:true,execution_started:false,publication_authorized:false,resolution_verified:false,
   }});
   assert.equal(parsed?.outcome,outcome);
   assert.equal(parsed?.reason,reason);
@@ -43,15 +43,18 @@ test("skipped and failed runs have explicit bounded reasons and never set VERIFI
 test("untrusted run metadata cannot pretend a repaired website",()=>{
  const basic=makeVisibilityRunEntry("owner","COMPLETED","NONE",{investigated:1});
  assert.equal(parseVisibilityRunStatus({created_at:"2026-10-17T09:00:00Z",details:{
-  ...basic,publicationAuthorized:true,
+  ...basic,read_only:true,execution_started:false,publication_authorized:true,resolution_verified:false,
  }}),null);
  assert.equal(parseVisibilityRunStatus({created_at:"2026-10-17T09:00:00Z",details:{
-  ...basic,resolutionVerified:true,
+  ...basic,read_only:true,execution_started:false,publication_authorized:false,resolution_verified:true,
  }}),null);
  assert.equal(parseVisibilityRunStatus({created_at:"2026-10-17T09:00:00Z",details:{
-  ...basic,source:"untrusted",
+  ...basic,source:"untrusted",read_only:true,execution_started:false,publication_authorized:false,resolution_verified:false,
  }}),null);
  assert.equal(parseVisibilityRunStatus({created_at:"not-a-date",details:basic}),null);
+ const validSnake={...basic,read_only:true,execution_started:false,
+   publication_authorized:false,resolution_verified:false};
+ assert.equal(parseVisibilityRunStatus({created_at:"2026-10-17T09:00:00Z",details:validSnake})?.outcome,"COMPLETED");
  assert.equal(makeVisibilityRunEntry("owner","FAILED","INVESTIGATION_ERROR",
  {investigated:-4,skipped:NaN,failed:Infinity}).investigated,0);
 });
