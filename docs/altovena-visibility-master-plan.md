@@ -36,6 +36,14 @@ Oppgaver og mål-URL fra klienten er aldri egne SEO-bevis. Et redigerbart `work_
 
 **SaaS-viktig:** Altovena Visibility kan samle funn og bevis i RealtyFlow, mens kodeendringer skjer i den enkelte merkevarens faktiske repository. Tilgang til kildekode og publiseringsrettigheter er separate tillatelser og må ikke implisitt arves fra en SEO-observasjon.
 
+## Kjøringsjournal og cron-observasjon (17. oktober 2026)
+
+- Den uavhengige kontrollen er planlagt til **08:15 UTC**. Deploy av #1440 ble opprettet **08:51 UTC** den 17. oktober; den første mulige planlagte kjøringen av denne versjonen er derfor senere. Det var **0** loggførte `visibility_independent_investigation` da dette ble undersøkt. Manglende bevis er ikke automatisk en cron-feil.
+- Ny `visibility_investigation_run`-journal skiller operativt `COMPLETED`, `SKIPPED` og `FAILED` og om starten kom fra `cron` eller `owner`. Den lagrer *ikke* bevis på vellykket SEO-rettelse.
+- Nexus-kontroll og sikkerhetsmodus gjelder også for manuell «Kontroller nå». Hvis Nexus har deaktivert undersøkelsen, skal ikke eierknappen omgå sperren.
+- Eierens arbeidskø viser **siste registrerte kjøring** og **siste bekreftede SEO-bevis** hver for seg, med egne tidspunkter. Hvis journalen mangler, vises «Ingen registrerte kjøringer».
+- **Re-Master:** [PR #48](https://github.com/freddybremseth-coder/remasterfreddy/pull/48) er klar for gjennomgang med grønt CI/preview, men er verken sammenslått eller publisert. Ikke marker oppgaven som løst på grunnlag av denne PR-en.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
 1. **Drift:** Verifiser første faktiske `visibility_independent_investigation`-journal fra planlagt/mannuell kjøring. Ved status null er ikke arbeid utført. Logg hvorfor cron kjøres, hoppes over eller feiler.
