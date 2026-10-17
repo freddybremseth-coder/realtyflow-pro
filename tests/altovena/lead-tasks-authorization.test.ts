@@ -179,7 +179,8 @@ test("server-wide counts see old unstarted leads beyond the newest-40 board",asy
  assert.equal(headQueries.length,4,"two independently scoped count queries per viewer");
  assert.ok(calls.some(c=>c.method==="lte"&&c.args[0]==="created_at"));
  assert.ok(calls.filter(c=>c.method==="eq"&&c.args[0]==="brand_id"&&c.args[1]==="altovena").length>=6);
- assert.equal(JSON.stringify(await GET(request(await ownerCookie()),args)).includes("Another brand private customer"),false);
+ const redacted=await (await GET(request(await ownerCookie()),args)).json();
+ assert.equal(JSON.stringify(redacted).includes("Another brand private customer"),false);
 });
 
 test("failed global count fails closed instead of reporting zero overdue",async()=>{
