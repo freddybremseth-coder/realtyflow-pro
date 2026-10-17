@@ -60,9 +60,11 @@ function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidt
 
 async function downloadComposite(creative: AdCreative, campaign: AdCampaign) {
   if (!creative.image_url) return;
+  // Fetch the stored campaign image through the authenticated, same-origin
+  // endpoint. Direct Supabase/OpenArt URLs can render in <img> but taint the
+  // canvas when the remote host does not return CORS headers.
   const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.src = creative.image_url;
+  image.src = `/api/ad-campaigns/${encodeURIComponent(campaign.id)}/creatives/${encodeURIComponent(creative.id)}/download`;
   await image.decode();
 
   const canvas = document.createElement("canvas");
