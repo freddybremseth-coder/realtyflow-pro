@@ -46,6 +46,8 @@ export async function POST(
     brand_voice: campaign.brand_voice ?? brand?.tone ?? null,
     target_markets: campaign.target_markets ?? [],
     offer: campaign.offer,
+    product_facts: campaign.label_description,
+    off_limits: campaign.off_limits,
     angles,
   });
 
