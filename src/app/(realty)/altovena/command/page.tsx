@@ -36,6 +36,24 @@ type AnalysisReadiness = {
 };
 type AnalysisReadinessResponse = { status?:AnalysisReadiness;error?:string };
 
+const analysisStatusNames: Record<string,string> = {
+  not_prepared:"Ikke forberedt",
+  prepared:"Forberedt – ikke startet",
+  no_stored_sources:"Ingen kilder lagret",
+  stored_awaiting_source_review:"Kilder lagret – venter kontroll",
+  independently_attested:"Kildegrunnlaget er attestert",
+  attestation_inactive:"Kildebekreftelsen er utløpt eller tilbakekalt",
+  not_requested:"Ingen analyseforespørsel",
+  pending:"Venter på uavhengig kontrollør",
+  approved_for_read_only_analysis:"Godkjent for avgrenset analyse – ikke startet",
+  revoked:"Avvist eller tilbakekalt",
+  no_decision:"Ingen beslutning registrert",
+  requested:"Forespørsel registrert",
+  approved:"Godkjent av kontrollør",
+  rejected:"Avvist av kontrollør",
+};
+const analysisLabel=(state?:string)=>analysisStatusNames[state||""]||state||"Ikke registrert";
+
 const stateNames: Record<string, string> = {
   draft: "Utkast",
   planned: "Planlagt",
@@ -324,13 +342,13 @@ export default function AltovenaCommandPage() {
                     <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/40 p-3 text-xs">
                       <p className="font-semibold text-slate-100">Analysestatus · kun innsyn</p>
                       <p className="mt-1 text-slate-300">
-                        Forberedelse: {readinessByMission[mission.id]?.preparation_status} ·
+                        Forberedelse: {analysisLabel(readinessByMission[mission.id]?.preparation_status)} ·
                         Lagrede kilder: {readinessByMission[mission.id]?.source_count}
                       </p>
                       <p className="mt-1 text-slate-300">
-                        Kildekontroll: {readinessByMission[mission.id]?.source_status} ·
-                        Analysetillatelse: {readinessByMission[mission.id]?.permit_status} ·
-                        Kontrollørens beslutning: {readinessByMission[mission.id]?.review_status}
+                        Kildekontroll: {analysisLabel(readinessByMission[mission.id]?.source_status)} ·
+                        Analysetillatelse: {analysisLabel(readinessByMission[mission.id]?.permit_status)} ·
+                        Kontrollørens beslutning: {analysisLabel(readinessByMission[mission.id]?.review_status)}
                       </p>
                       <p className="mt-2 text-amber-200">
                         Ingen AI-analyse eller ekstern handling er startet. Godkjenning må gjøres
