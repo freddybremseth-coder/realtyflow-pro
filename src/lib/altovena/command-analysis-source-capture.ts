@@ -56,7 +56,7 @@ export function digestVerifiedSourceBundle(
   if (!UUID.test(scope.tenantId) || !UUID.test(scope.missionId) ||
       !Array.isArray(sources) || sources.length < 1 || sources.length > 12)
     return fail("invalid_bundle_identity");
-  const sorted = [...sources].sort((a,b) => a.id.localeCompare(b.id,"en"));
+  const sorted = [...sources].sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   if (sorted.some((s,i)=>!SOURCE.test(s.id) ||
       !/^[a-f0-9]{64}$/.test(s.excerptDigest) ||
       (i>0 && s.id === sorted[i-1].id))) fail("invalid_bundle_manifest");
