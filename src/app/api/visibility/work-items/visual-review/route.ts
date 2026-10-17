@@ -44,9 +44,12 @@ export async function POST(request:NextRequest){
  if(!candidate||candidate.commitSha!==input.commitSha)
   return NextResponse.json({error:"Review commit has changed or is not linked to the owner request"},{status:409});
  const live=await checkVisibilityPullStatus(candidate);
- if(live.state!=="OPEN_SAME_COMMIT" || live.currentHeadSha!==input.commitSha)
+ if(!["OPEN_SAME_COMMIT","DRAFT_SAME_COMMIT"].includes(live.state) ||
+    live.currentHeadSha!==input.commitSha || live.codeUnchanged!==true)
   return NextResponse.json({error:"GitHub PR is unavailable or no longer at the reviewed commit"},{status:409});
 
+ // An unchanged draft can be visually inspected too. A draft visual report
+ // is not permission to mark the PR ready, merge it, or deploy it.
  // Owner input is human attestation, never a screenshot or independently
  // validated browser result. No visual checks are inferred from GitHub CI.
  const {error:insertError}=await db.from("automation_logs").insert({
