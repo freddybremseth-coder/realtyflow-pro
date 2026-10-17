@@ -56,7 +56,7 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-
 const HEX = /^[a-f0-9]{64}$/;
 const AGENT = /^[A-Za-z0-9:_-]{1,128}$/;
 const SOURCE_ID = /^[A-Za-z0-9:_-]{1,80}$/;
-const fail = (reason: string): never => { throw new AnalysisEvidenceDenied(reason); };
+function fail(reason: string): never { throw new AnalysisEvidenceDenied(reason); }
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
