@@ -253,7 +253,7 @@ export async function requestReadOnlyAnalysisCandidate(input: Readonly<{
   const claim=await input.repository.reserve({
     permit:input.permit,scope:input.scope,evidenceDigest,
   });
-  if (claim.kind!=="reserved") fail("analysis_reservation_denied");
+  if (!claim || claim.kind!=="reserved") fail("analysis_reservation_denied");
   if (!UUID.test(claim.reservationId)) fail("invalid_reservation_receipt");
 
   const abort=new AbortController();
@@ -268,7 +268,7 @@ export async function requestReadOnlyAnalysisCandidate(input: Readonly<{
     const response=await fetcher("https://api.openai.com/v1/responses",{
       method:"POST",
       headers:{
-        "Authorization":\`Bearer \${apiKey}\`,
+        "Authorization":`Bearer ${apiKey}`,
         "Content-Type":"application/json",
       },
       body:JSON.stringify({
