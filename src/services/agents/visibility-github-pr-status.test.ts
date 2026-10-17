@@ -84,6 +84,17 @@ test("wrong GitHub repository, PR number, URL, malformed payload or rate limit f
  const broken=(async()=>{throw new Error("GitHub inaccessible")}) as typeof fetch;
  assert.equal((await checkVisibilityPullStatus(candidate,broken,now)).state,"UNAVAILABLE");
 });
+test("oversized GitHub metadata fails closed even with misleading Content-Length",async()=>{
+ const declared=(async()=>new Response(JSON.stringify(body),{
+  headers:{"content-length":"100001"},
+ })) as typeof fetch;
+ assert.equal((await checkVisibilityPullStatus(candidate,declared,now)).state,"UNAVAILABLE");
+ const largePayload=JSON.stringify(body)+" ".repeat(100_100);
+ const streamed=(async()=>new Response(new ReadableStream<Uint8Array>({
+  start(controller){controller.enqueue(new TextEncoder().encode(largePayload));controller.close();}
+ }))) as typeof fetch;
+ assert.equal((await checkVisibilityPullStatus(candidate,streamed,now)).state,"UNAVAILABLE");
+});
 test("live GitHub status route is owner-only, capped and does not merge or publish",()=>{
  const read=(path:string)=>readFileSync(new URL("../../../"+path,import.meta.url),"utf8");
  const api=read("src/app/api/visibility/work-items/route.ts");
