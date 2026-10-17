@@ -25,6 +25,17 @@ export function VisibilityWorkQueue(){
   const data=await r.json();setItems(data.work_items||[]);
  },[]);
  useEffect(()=>{refresh().catch(()=>setMessage("Arbeidskø ikke tilgjengelig. Ingen status er bekreftet."));},[refresh]);
+ const investigate=async()=>{
+  setBusy(true);setMessage("");
+  try{
+   const r=await fetch("/api/visibility/investigations/run",{method:"POST",credentials:"same-origin"});
+   const data=await r.json();
+   if(!r.ok)throw new Error(data.error||"Uavhengig kontroll kunne ikke fullføres");
+   await refresh();
+   setMessage(`Sam undersøkte ${data.investigated} oppgave(r), ${data.skipped} ble hoppet over (f.eks. nylig kontrollert). Ingen nettsider ble endret.`);
+  }catch(e){setMessage(e instanceof Error?e.message:"Kontrollen kunne ikke fullføres");}
+  finally{setBusy(false);}
+ };
  const sync=async()=>{
   setBusy(true);setMessage("");
   try{
@@ -40,9 +51,14 @@ export function VisibilityWorkQueue(){
   <div className="flex flex-wrap items-start justify-between gap-3">
    <div><h2 className="text-lg font-bold text-slate-900">Nexus arbeidskø</h2>
     <p className="mt-1 text-sm text-slate-600">Registrerte undersøkelser fra Sams lagrede SEO-kontroll. Oppgavene er forslag, ikke arbeid som utføres automatisk.</p></div>
-   <button type="button" onClick={sync} disabled={busy}
-    className="rounded-xl bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-    {busy?"Registrerer…":"Registrer funn som oppgaver"}</button>
+   <div className="flex flex-wrap gap-2">
+    <button type="button" onClick={sync} disabled={busy}
+      className="rounded-xl bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+      {busy?"Arbeider…":"Registrer funn som oppgaver"}</button>
+    <button type="button" onClick={investigate} disabled={busy}
+      className="rounded-xl border border-teal-800 px-4 py-2 text-sm font-semibold text-teal-900 disabled:opacity-60">
+      {busy?"Kontrollerer…":"Kontroller nå"}</button>
+   </div>
   </div>
   {message&&<p role="status" className="mt-3 text-sm text-slate-700">{message}</p>}
   <div className="mt-4 space-y-2">
