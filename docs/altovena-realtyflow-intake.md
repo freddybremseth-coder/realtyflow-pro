@@ -161,3 +161,18 @@ The canonical `GET/PATCH /api/workspaces/altovena/lead-tasks` now has six indepe
 **CI testing nuance:** Node/tsx treated a test file under a bracketed `[brandKey]` directory as a glob and silently reported zero tests. The file was moved into `tests/altovena/` and the test script now uses exact-path Node testing. GitHub Actions run [#39034195919](https://github.com/freddybremseth-coder/realtyflow-pro/actions/runs/39034195919) logged **6 tests, 6 passed, 0 failed**, along with successful disposable PostgreSQL HTTP→SQL tests. This proves the mocked role-gate behaviors, **not** Andrea's actual live account permission or a live cross-domain test.
 
 Owner and operator still need to be verified against real Supabase Auth IDs and active Altovena brand grants after approved migration; neither the public form nor real operator access is enabled by these test changes.
+
+## Task → exact CRM customer card (17 October 2026)
+
+The Altovena lead attention panel now opens the *specific* customer card associated with its work item, rather than only switching to a general CRM list. A task already contains a server-filtered `contactId`; the UI sends this opaque ID to the new `GET /api/workspaces/altovena/lead-contact?contactId=<uuid>` endpoint.
+
+Security properties:
+- Exact UUID validation and query-key allowlist; no arbitrary search or global CRM lookup.
+- `requireBrandWorkspace(..., "altovena", "crm.read")` checks current signed session, membership/verified user identity and grant for each lookup. No owner-preview write permissions are introduced.
+- Database query requires matching `brand_id`, `brand`, and `id` simultaneously. The response filters unexpected foreign-brand, spam or malformed rows and allows only basic CRM display columns, never interactions, notes, financial figures or customer dossiers.
+- Page rejects mismatched contact IDs and brand labels in API responses. The focused card is discarded when switching brands; outstanding reads from the previous brand are invalidated.
+- Old generic CRM navigation remains available for a task without a verified customer ID. There is no new standalone CRM or client-side access bypass.
+
+Security tests: `tests/altovena/lead-contact-authorization.test.ts` tests real route handler behavior with mocked current grants, owner/member sessions, revocation, exact brand filters, safe response shape and malformed input. `tests/altovena/task-to-customer-ui.test.mjs` protects task-click → exact scoped contact lookup → selected customer card navigation and the brand-switch reset. All use synthetic records; no production customer contact was opened.
+
+This remains part of **draft PR #1400** and not a live product release. Only after an approved Altovena migration and verified human access can it be tested with real brand data.
