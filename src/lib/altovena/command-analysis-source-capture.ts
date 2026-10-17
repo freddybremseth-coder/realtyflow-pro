@@ -28,6 +28,14 @@ export interface AuthorizedSourceConnector {
     scope: SourceCaptureScope;
     sourceId: string;
   }>): Promise<AuthorizedSourceMaterial | null>;
+  /** Recheck live source access after all reads and before snapshot storage. */
+  revalidateForMission(input: Readonly<{
+    scope: SourceCaptureScope;
+    sourceId: string;
+    sourceRef: string;
+    excerptDigest: string;
+    capturedAt: string;
+  }>): Promise<boolean>;
 }
 export interface PrivateEvidenceSnapshotStore {
   /** Atomic, default-deny insert: never silently replace a stored snapshot. */
@@ -116,6 +124,21 @@ export async function captureAuthorizedCommandSources(input: Readonly<{
       capturedAt:value.capturedAt,excerpt:value.excerpt,
       excerptDigest:createHash("sha256").update(value.excerpt,"utf8").digest("hex"),
     }));
+  }
+  // Permission may expire or be revoked during multi-source capture.
+  // Reject the entire bundle rather than persist any unauthorized snapshot.
+  if (typeof input.connector.revalidateForMission !== "function")
+    fail("source_revalidation_required");
+  for (const snapshot of snapshots) {
+    let authorized:boolean;
+    try {
+      authorized=await input.connector.revalidateForMission({
+        scope:input.scope,sourceId:snapshot.id,
+        sourceRef:snapshot.sourceRef,
+        excerptDigest:snapshot.excerptDigest,capturedAt:snapshot.capturedAt,
+      });
+    } catch { return fail("source_revalidation_unavailable"); }
+    if (authorized !== true) fail("source_access_revoked_after_read");
   }
   const evidenceDigest=digestVerifiedSourceBundle(input.scope,snapshots);
   const saved=await input.store.save({
