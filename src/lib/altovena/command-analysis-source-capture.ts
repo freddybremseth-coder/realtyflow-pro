@@ -44,7 +44,7 @@ export class SourceCaptureDenied extends Error {
     this.name = "SourceCaptureDenied";
   }
 }
-const fail = (reason: string): never => { throw new SourceCaptureDenied(reason); };
+function fail(reason: string): never { throw new SourceCaptureDenied(reason); }
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const SOURCE = /^[a-z0-9_-]{3,64}$/;
 const INTERNAL_REF = /^internal:[a-z0-9/_:.-]{3,200}$/;
@@ -95,7 +95,8 @@ export async function captureAuthorizedCommandSources(input: Readonly<{
     const value=await input.connector.readForMission({
       scope:input.scope,sourceId,
     });
-    if (!value || value.access!=="authorized_for_this_mission" ||
+    if (value === null) throw new SourceCaptureDenied("unauthorized_or_invalid_source");
+    if (value.access!=="authorized_for_this_mission" ||
       value.id!==sourceId || value.tenantId!==input.scope.tenantId ||
       value.missionId!==input.scope.missionId ||
       value.authorizedActorId!==input.scope.verifiedActorId ||
