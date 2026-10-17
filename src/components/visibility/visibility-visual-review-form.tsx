@@ -39,7 +39,7 @@ export function VisibilityVisualReviewForm({workItemId,sha,onRecorded,onMessage}
  }
  return <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-800">
    <div className="font-semibold">Manuell visuell kontroll – ingen publisering</div>
-   <p className="mt-1 text-slate-600">Undersøk først PR-forhåndsvisningen i en ekte nettleser. Ikke kryss av noe som ikke er testet. Kontroll gjelder bare commit {sha.slice(0,7)}.</p>
+   <p className="mt-1 text-slate-600">Undersøk først PR-forhåndsvisningen i en ekte nettleser. Du kan kontrollere et GitHub-utkast, men kontrollen gjør det ikke klart for sammenslåing. Ikke kryss av noe som ikke er testet. Kontroll gjelder bare commit {sha.slice(0,7)}.</p>
    <div className="mt-2 space-y-2">
     {reviewItems.map(item=><label key={item.key} className="flex items-start gap-2">
       <input type="checkbox" checked={checks[item.key]}

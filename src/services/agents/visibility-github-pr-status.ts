@@ -20,6 +20,8 @@ export type VisibilityPullStatus = {
 };
 
 const PUBLIC_REPOS = new Set(["freddybremseth-coder/remasterfreddy"]);
+// Prevent an oversized/malformed remote response from consuming unbounded memory.
+const MAX_GITHUB_PR_RESPONSE_BYTES = 100_000;
 
 function unavailable(now: Date): VisibilityPullStatus {
   return {
@@ -79,8 +81,34 @@ export async function checkVisibilityPullStatus(
       signal: AbortSignal.timeout(5000),
       redirect: "error",
     });
-    if (!response.ok) return unavailable(now);
-    const body = await response.json() as GitHubPull | null;
+    if (!response.ok ||
+        Number(response.headers.get("content-length") || 0) > MAX_GITHUB_PR_RESPONSE_BYTES ||
+        !response.body) return unavailable(now);
+    // The Content-Length header is untrusted: cap bytes while streaming as well.
+    const reader = response.body.getReader();
+    let size = 0;
+    const chunks: Uint8Array[] = [];
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_GITHUB_PR_RESPONSE_BYTES) {
+          await reader.cancel().catch(() => {});
+          return unavailable(now);
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as GitHubPull | null;
     if (!body || body.number !== candidate.pullNumber ||
         body.html_url !== candidate.url ||
         body.base?.repo?.full_name !== candidate.repo ||
