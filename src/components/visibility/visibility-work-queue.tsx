@@ -8,7 +8,27 @@ type DesignProposal = {
  rollback:string|null;fingerprint:string|null;canRequestDraft:boolean;publicationAuthorized:false;
 };
 type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean};
-type AuditStatus={latestSourceAuditAt:string|null;latestIndependentAt:string|null;independentEvidenceLogged:boolean;cronOutcome:"NOT_PROVEN";dailyScheduleUtc:string};
+type RunStatus={
+ source:"cron"|"owner";outcome:"COMPLETED"|"SKIPPED"|"FAILED";
+ reason:string;recordedAt:string;investigated:number;failed:number;skipped:number;
+};
+type AuditStatus={
+ latestSourceAuditAt:string|null;latestIndependentAt:string|null;
+ independentEvidenceLogged:boolean;cronOutcome:"NOT_PROVEN"|"COMPLETED"|"SKIPPED"|"FAILED";
+ dailyScheduleUtc:string;lastRun:RunStatus|null;lastCronRun:RunStatus|null;
+};
+const runStatusLabels:Record<string,string>={
+ COMPLETED:"Gjennomført",SKIPPED:"Hoppet over",FAILED:"Feilet",
+};
+const runReasonLabels:Record<string,string>={
+ SAFE_MODE:"Stanset av Nexus eller sikkerhetsmodus",
+ MISSING_DATABASE:"Database ikke tilgjengelig",
+ SOURCE_REPORT_UNAVAILABLE:"SEO-rapporten kunne ikke leses",
+ SOURCE_REPORT_STALE:"Ingen fersk SEO-rapport",
+ NO_ELIGIBLE_TASKS:"Ingen aktuelle oppgaver (eller nylig undersøkt)",
+ INVESTIGATION_ERROR:"Undersøkelsen feilet",
+ NONE:"",
+};
 const investigationLabels:Record<string,string>={
  OBSERVED_AGAIN:"Observasjonen er gjentatt",NOT_REPRODUCED:"Ikke gjenskapt ved ny kontroll",
  DATA_STILL_INCOMPLETE:"Kontrollen er fortsatt ufullstendig",
@@ -87,6 +107,17 @@ export function VisibilityWorkQueue(){
     <div className="mt-1">Siste lagrede SEO-rapport: {auditStatus.latestSourceAuditAt?new Date(auditStatus.latestSourceAuditAt).toLocaleString("nb-NO"):"Ingen registrert"}</div>
     <div>Uavhengig etterkontroll: {auditStatus.latestIndependentAt?new Date(auditStatus.latestIndependentAt).toLocaleString("nb-NO"):"Ingen kontrollbevis registrert"}</div>
     <div className="mt-1 text-slate-600">Planlagt kontroll: {auditStatus.dailyScheduleUtc} UTC daglig. En planlagt kjøring er ikke bevis på gjennomføring.</div>
+    <div className="mt-2 font-medium">Siste registrerte kjøring: {auditStatus.lastRun
+      ? `${runStatusLabels[auditStatus.lastRun.outcome]} (${auditStatus.lastRun.source==="cron"?"automatisk":"manuelt"}) – ${new Date(auditStatus.lastRun.recordedAt).toLocaleString("nb-NO")}`
+      : "Ingen registrerte kjøringer"}</div>
+    {auditStatus.lastRun&&<div>
+      {runReasonLabels[auditStatus.lastRun.reason]||"Kontroll utført"}.
+      Undersøkt: {auditStatus.lastRun.investigated}, feil: {auditStatus.lastRun.failed}, hoppet over: {auditStatus.lastRun.skipped}.
+    </div>}
+    {auditStatus.lastCronRun&&<div className="mt-1 text-slate-600">
+      Siste automatiske kjøring: {runStatusLabels[auditStatus.lastCronRun.outcome]||"Ukjent"} –
+      {new Date(auditStatus.lastCronRun.recordedAt).toLocaleString("nb-NO")}.
+    </div>}
     {!auditStatus.independentEvidenceLogged&&<div className="mt-1 font-semibold text-amber-800">Ingen loggført uavhengig kontroll. Eventuelle reparasjonsforslag er fortsatt sperret.</div>}
    </div>}
   {message&&<p role="status" className="mt-3 text-sm text-slate-700">{message}</p>}
