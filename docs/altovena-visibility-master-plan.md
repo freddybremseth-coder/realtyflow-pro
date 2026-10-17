@@ -60,6 +60,14 @@ Pilotens begrensninger: bare det forhåndsgodkjente offentlige `freddybremseth-c
 
 **Viktig:** GitHub-status og uavhengig SEO-etterkontroll er to adskilte bevis. En PR som er «open / same commit» kan fortsatt ha feilet tester eller mangle visuell godkjenning. En merged PR beviser ikke at Vercel har publisert den eller at feilen er borte.
 
+## Testbevis og manuell kvalitetskontroll bundet til én commit
+
+Nexus Visibility skal hente offentlig, skrivebeskyttet GitHub CI-evidens fra eksakt lagret PR-commit, ikke fra en generell nettside- eller branchtittel. Første pilot er `freddybremseth-coder/remasterfreddy` med obligatorisk GitHub check-job `build-test`. Status skiller `PASSED`, `FAILED`, `PENDING`, `COMMIT_CHANGED` og `UNVERIFIED`. Ingen check-runs, GitHub-feil, ufullstendige svar eller endret SHA betyr **ikke verifisert**. API-kall er begrenset til kjent offentlig GitHub-repo, 30 check-runs, 300 KB svar og 5 sekunder.
+
+En direkte eierøkt kan også sende en **manuell visuell kontrollrapport** for den samme åpne PR-committen. Skjemaet ber om konkret test av desktop, mobil, admin/noindex, H1 etter React-lasting og fravær av synlige regresjoner, samt faktiske observasjoner. For `VISUALLY_PASSED` må alle fem punktene være bekreftet; `ISSUES_FOUND` tillater uferdige kontroller. Dette er en **selvrapportert gjennomgang**, ikke skjermbildebevis eller automatisk nettlesertest. Journalen lagres separat i `automation_logs` med `approval_granted=false`, `merge_authorized=false` og `publication_authorized=false`; ingen endring av nettstedet.
+
+Disse to bevisene kan vises samlet ved Nexus-oppgaven, men **CI-bestått + visuelt bestått gir heller ingen publiseringstillatelse**. En senere autorisasjonsprosess for eksakt diff/release er en egen milepæl.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
 1. **Drift:** Verifiser første faktiske `visibility_independent_investigation`-journal fra planlagt/mannuell kjøring. Ved status null er ikke arbeid utført. Logg hvorfor cron kjøres, hoppes over eller feiler.
