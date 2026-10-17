@@ -59,8 +59,11 @@ test("untrusted run metadata cannot pretend a repaired website",()=>{
  {investigated:-4,skipped:NaN,failed:Infinity}).investigated,0);
 });
 test("failed telemetry insert cannot silently become a success log",async()=>{
- const db={from:()=>({insert:async()=>({error:{message:"Database not available"}})})}
-  as unknown as SupabaseClient;
+ const db = {
+   from: () => ({
+     insert: async () => ({ error: { message: "Database not available" } }),
+   }),
+ } as unknown as SupabaseClient;
  const ok=await recordVisibilityRun(db,makeVisibilityRunEntry("owner","FAILED","INVESTIGATION_ERROR"));
  assert.equal(ok,false);
  const thrown={from:()=>({insert:async()=>{throw new Error("connection lost")}})} as unknown as SupabaseClient;
