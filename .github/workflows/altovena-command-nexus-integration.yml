@@ -14,6 +14,12 @@ on:
       - "tests/altovena/analysis-budget-concurrency.integration.mjs"
       - "supabase/migrations/*altovena_analysis_review_boundary.sql"
       - "tests/altovena/analysis-approval-boundary.sql"
+      - "src/lib/altovena/command-analysis-source-capture.ts"
+      - "src/lib/altovena/command-analysis-source-capture.test.ts"
+      - "src/lib/altovena/command-analysis-source-postgres.ts"
+      - "src/lib/altovena/command-analysis-source-postgres.test.ts"
+      - "supabase/migrations/*altovena_analysis_source_snapshots.sql"
+      - "tests/altovena/analysis-source-snapshots.sql"
       - "src/lib/altovena/command-analysis-budget-postgres.ts"
       - "src/lib/altovena/command-analysis-budget-postgres.test.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
@@ -50,6 +56,8 @@ jobs:
           node --import tsx --test src/lib/altovena/command-analysis-ci-harness.test.ts
           node --import tsx --test src/lib/altovena/command-analysis-openai-adapter.test.ts
           node --import tsx --test src/lib/altovena/command-analysis-budget-postgres.test.ts
+          node --import tsx --test src/lib/altovena/command-analysis-source-capture.test.ts
+          node --import tsx --test src/lib/altovena/command-analysis-source-postgres.test.ts
       - name: Verify that Command planning cannot activate Nexus execution
         run: |
           node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
@@ -117,3 +125,7 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261017130000_altovena_analysis_review_boundary.sql
           psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-approval-boundary.sql
+      - name: Verify immutable source snapshots and approved source bundle digest
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261017144500_altovena_analysis_source_snapshots.sql
+          psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-source-snapshots.sql
