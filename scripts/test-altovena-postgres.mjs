@@ -67,11 +67,27 @@ try {
   assert.equal(await count("public.altovena_intake_receipts"),1);
   assert.equal(await count("public.work_items","brand_id='altovena' and source_type='website_lead'"),1);
 
-  const dup=(await receive(ids[0],"Altered Name","other@example.invalid","Other","Should not be recorded")).rows[0].answer;
+  // Retry of the exact request must be idempotent and reuse its receipt.
+  const dup=(await receive(ids[0],"Canonical Example","shared@example.invalid","Canonical Ltd","Please explain Offer Intelligence.")).rows[0].answer;
   assert.equal(dup.duplicate,true);
   assert.equal(dup.leadId,first.leadId);
   assert.equal(dup.workItemId,first.workItemId);
+  // A reused UUID with edited content MUST NOT silently acknowledge an old
+  // enquiry. This can happen with a browser retry, not just deliberate abuse.
+  await assert.rejects(
+    receive(ids[0],"Altered Name","other@example.invalid","Other","Should not be recorded"),
+    /Altovena submission ID content mismatch/
+  );
+  await assert.rejects(
+    receive(ids[0],"Canonical Example","shared@example.invalid","Canonical Ltd","Changed follow-up request"),
+    /Altovena submission ID content mismatch/
+  );
+  const receipt=await client.query(
+    "select request_digest from public.altovena_intake_receipts where submission_id=$1",[ids[0]]
+  );
+  assert.match(receipt.rows[0].request_digest,/^[a-f0-9]{64}$/);
   assert.equal(await count("public.work_items","brand_id='altovena'"),1);
+  assert.equal(await count("public.contacts","email='other@example.invalid'"),0);
 
   const second=(await receive(ids[1],"Spoofed Name","shared@example.invalid","Spoofed Ltd","A second question","visibility")).rows[0].answer;
   assert.equal(second.leadId,first.leadId);
@@ -177,5 +193,5 @@ try {
   assert.equal(removeTask.rowCount,1);
   assert.equal(await count("public.altovena_intake_receipts","work_item_id=$1",[pair[0].workItemId]),0);
   assert.equal(await count("public.contacts","id=$1",[pair[0].leadId]),1);
-  console.log("PASS: real Altovena SQL migration, role restrictions, brand isolation, atomicity, consent, identity, duplicate/concurrent leads and audited status history and safe contact erasure.");
+  console.log("PASS: real Altovena SQL migration, role restrictions, brand isolation, atomicity, consent, identity, content-bound retry receipts, duplicate/concurrent leads and audited status history and safe contact erasure.");
 }finally{await client.end();}
