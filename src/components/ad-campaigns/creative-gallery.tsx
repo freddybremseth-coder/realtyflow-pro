@@ -273,6 +273,7 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {group.items.map((creative) => {
               const showOverlay = campaign.overlay_mode === "automatic" || creative.overlay_applied;
+              const requiresLabelReview = creative.metadata_json?.creative_image_label_review_required === true;
               return (
                 <article key={creative.id} className="overflow-hidden rounded-xl border border-gray-800 bg-gray-950/40">
                   <div className={`relative overflow-hidden bg-gray-900 ${creative.aspect_ratio === "9:16" ? "aspect-[9/16]" : creative.aspect_ratio === "4:5" ? "aspect-[4/5]" : creative.aspect_ratio === "1.91:1" ? "aspect-[1.91/1]" : "aspect-square"}`}>
@@ -299,7 +300,11 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
                       <Badge variant="outline" className={providerBadge(creative.provider)}>{providerLabel(creative.provider)}</Badge>
                       <Badge variant="outline" className="border-black/30 bg-black/55 text-white">{creative.aspect_ratio}</Badge>
                     </div>
-                    {creative.status === "completed" && <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-emerald-400 drop-shadow" />}
+                    {requiresLabelReview
+                      ? <span className="absolute bottom-2 left-2 right-2 rounded-md bg-amber-950/95 px-2 py-1.5 text-center text-[11px] font-semibold text-amber-200">
+                          Kontroller 3 L-etikett før publisering
+                        </span>
+                      : creative.status === "completed" && <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-emerald-400 drop-shadow" />}
                   </div>
 
                   <div className="space-y-3 p-3">
@@ -307,6 +312,10 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
                       <span className="font-medium text-gray-200">Variant {creative.variant_index || 1}</span>
                       <span className="text-gray-500">{creative.scene_id}</span>
                     </div>
+
+                    {requiresLabelReview && <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] leading-relaxed text-amber-100">
+                      Bildet er lagret, men produktetiketten er ikke godkjent. PNG kan lastes ned for kontroll; Content Hub er kun et utkast.
+                    </p>}
 
                     <div className="grid grid-cols-2 gap-1.5">
                       <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => openEditor(creative)}><Pencil className="h-3 w-3" />Tekst</Button>
