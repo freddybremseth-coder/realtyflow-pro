@@ -46,25 +46,25 @@ try {
     await setup.query(
       "insert into altovena.mission_route_plans(tenant_id,mission_id,proposed_by,plan)"+
       " values($1,$2,$3,$4::jsonb)",
-      [tenant,missionId,owner,JSON.stringify({mode:"ROUTING_PROPOSAL_ONLY",missionId})]);
+      [tenant,missionId,owner,JSON.stringify({mode:"ROUTING_PROPOSAL_ONLY",missionId,agents:[{agentId:"business",executionStatus:"not_started"}]})]);
     await setup.query(
       "insert into altovena.mission_analysis_preparations("+
       "tenant_id,mission_id,prepared_by,routing_digest,agent_count)"+
       " values($1,$2,$3,$4,1)",
       [tenant,missionId,owner,digest]);
     await setup.query(
-      "insert into altovena.analysis_permits(id,tenant_id,mission_id,actor_id,reviewer_id,"+
+      "insert into altovena.analysis_permits(id,tenant_id,mission_id,actor_id,agent_id,reviewer_id,"+
       "approved_at,state,model,goal_digest,routing_digest,evidence_digest,"+
       "max_input_tokens,max_output_tokens,reserved_cost_cents,expires_at)"+
       " values($1,$2,$3,$4,$5,clock_timestamp(),'approved_for_read_only_analysis',"+
       "'gpt-5.6',$6,$7,$7,1200,600,12,clock_timestamp()+interval '8 minutes')",
       [permitId,tenant,missionId,owner,reviewer,goalDigest(goal),digest]);
-    permits.push(permitId);
+    permits.push({id:permitId,goalDigest:goalDigest(goal)});
   }
   const jobs=await Promise.allSettled([a,b].map((client,i)=>
     client.query(
-      "select result_kind,result_reservation_id from altovena.reserve_analysis_budget($1,$2,$3,$4)",
-      [permits[i],tenant,owner,digest]),
+      "select result_kind,result_reservation_id from altovena.reserve_analysis_budget($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+      [permits[i].id,tenant,owner,digest,"business","gpt-5.6",permits[i].goalDigest,digest,1200,600,12]),
   ));
   const passed=jobs.filter(x=>x.status==="fulfilled");
   const denied=jobs.filter(x=>x.status==="rejected");
