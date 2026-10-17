@@ -17,8 +17,7 @@ CREATE TABLE altovena.analysis_source_snapshots (
   mission_id uuid NOT NULL,
   source_id text NOT NULL CHECK (source_id ~ '^[a-z0-9_-]{3,64}$'),
   source_ref text NOT NULL CHECK (source_ref ~ '^internal:[a-z0-9/_:.-]{3,200}$'),
-  excerpt text NOT NULL CHECK (length(excerpt) BETWEEN 12 AND 4000
-    AND position(chr(0) IN excerpt)=0),
+  excerpt text NOT NULL CHECK (length(excerpt) BETWEEN 12 AND 4000),
   excerpt_digest text NOT NULL CHECK (excerpt_digest ~ '^[a-f0-9]{64}$'
     AND excerpt_digest=encode(sha256(convert_to(excerpt,'UTF8')),'hex')),
   captured_at timestamptz NOT NULL,
@@ -103,7 +102,6 @@ BEGIN
    IF v_id IS NULL OR v_id !~ '^[a-z0-9_-]{3,64}$'
     OR v_ref IS NULL OR v_ref !~ '^internal:[a-z0-9/_:.-]{3,200}$'
     OR v_excerpt IS NULL OR length(v_excerpt) NOT BETWEEN 12 AND 4000
-    OR position(chr(0) IN v_excerpt)<>0
     OR v_hash IS NULL OR v_hash !~ '^[a-f0-9]{64}$'
     OR v_hash<>encode(sha256(convert_to(v_excerpt,'UTF8')),'hex')
     OR v_time_str IS NULL
