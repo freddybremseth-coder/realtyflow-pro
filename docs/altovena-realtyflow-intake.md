@@ -119,3 +119,18 @@ All website-side settings, legal review, domain HTTPS, test delivery and notific
 The owner preflight screen verifies Andrea's **Supabase Auth user ID independently** of whether the Altovena brand has been provisioned. This allows an active employee account to show **Verified** even if the `altovena` brand is not created. The separate permissions row remains **Blocked** until a matching, active Altovena-only grant satisfies all supported operative permissions. A matching identity never implies authorisation.
 
 A missing or invalid configured user ID is `not_configured`; an unresolved account is `blocked`. A database/Auth outage is `503` (fail-closed). No user ID, email or personal data is returned to the owner checklist. Runtime tests cover both pre-provisioning identity and valid identity without a brand grant.
+
+## Payload-bound idempotency (17 October 2026)
+
+The initial receipt key deduplicated solely by `submission_id`. This allowed a client to resubmit **different** content using an existing UUID and receive success for the older request without recording the new details. The website normally regenerates its UUID when fields change, but a true server-side invariant must not depend on client code.
+
+The pending migration now stores a server-calculated SHA-256 digest of the canonical accepted request fields (name, lowercase email, company, message and product) alongside each receipt. An **exact** retry with the same UUID returns the original lead and work-item IDs, while any changed content with that UUID fails closed before CRM mutations. No raw personal details are added to the receipt. Existing receipts without a digest, if any, also fail closed on retry. The privileged response continues to hide database error details.
+
+The isolated PostgreSQL 17 test checks:
+- exact retry creates no duplicate work item;
+- changed sender, company, or message with an existing submission UUID raises an error and creates no new CRM record;
+- every newly created receipt contains a 64-character lowercase SHA-256 digest;
+- concurrent duplicate requests still converge on one receipt;
+- rollback, delete, permission and cross-brand tests remain intact.
+
+**Scope:** This change is on RealtyFlow draft PR #1400 only. The public Altovena website form remains disabled and production RealtyflowPRO has not received this draft intake migration.
