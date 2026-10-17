@@ -223,20 +223,17 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
   };
 
   const exportOne = async (creative: AdCreative) => {
-    if (!creative.output_asset_id) {
-      onError("Denne annonsen er ikke koblet til Media Library ennå.");
-      return;
-    }
     setBusy(`export-${creative.id}`);
     onError("");
     try {
-      const response = await fetch(`/api/media/assets/${creative.output_asset_id}/export`, {
+      const response = await fetch(`/api/ad-campaigns/${campaign.id}/export-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ creative_ids: [creative.id] }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Eksporten feilet.");
+      if (data.failed?.length) throw new Error(data.failed[0].error || "Eksporten feilet.");
       await onRefresh();
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
@@ -330,7 +327,7 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
 
                     <div className="flex flex-wrap gap-1.5">
                       {creative.image_url && <Button asChild size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]"><a href={creative.image_url} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" />Åpne</a></Button>}
-                      {creative.output_asset_id && <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" disabled={Boolean(busy) || creative.pushed_to_hub} onClick={() => void exportOne(creative)}>{busy === `export-${creative.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : creative.pushed_to_hub ? <CheckCircle2 className="h-3 w-3" /> : <Send className="h-3 w-3" />}{creative.pushed_to_hub ? "I Hub" : "Content Hub"}</Button>}
+                      {creative.image_url && <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" disabled={Boolean(busy) || creative.pushed_to_hub} onClick={() => void exportOne(creative)}>{busy === `export-${creative.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : creative.pushed_to_hub ? <CheckCircle2 className="h-3 w-3" /> : <Send className="h-3 w-3" />}{creative.pushed_to_hub ? "I Hub" : "Content Hub"}</Button>}
                     </div>
                   </div>
                 </article>
