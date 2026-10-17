@@ -142,7 +142,9 @@ export async function investigateVisibilityTasks(
     Number.isFinite(Date.parse(x.created_at)) && now.getTime()-Date.parse(x.created_at) < RECHECK_COOLDOWN_MS)
     .map(x => x.details?.source_id).filter(Boolean));
 
-  const pending = candidates.filter(x => saved.has(x.sourceId) && !inCooldown.has(x.sourceId));
+  const eligible = candidates.filter(x => saved.has(x.sourceId));
+  // Candidate identities without a persisted open task are not skipped work.
+  const pending = eligible.filter(x => !inCooldown.has(x.sourceId));
   const selectedBrands = new Set<string>();
   const auditCache = new Map<string, SiteAudit>();
   let investigated = 0, failed = 0;
@@ -180,6 +182,6 @@ export async function investigateVisibilityTasks(
     }
   }
   return { investigated, failed,
-    skipped: candidates.length - investigated - failed,
+    skipped: eligible.length - investigated - failed,
     results, publicationAuthorized: false };
 }
