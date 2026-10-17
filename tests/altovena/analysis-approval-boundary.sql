@@ -86,8 +86,8 @@ BEGIN
  IF NOT denied THEN RAISE EXCEPTION 'approved permit reviewed twice';END IF;
  denied:=false;
  BEGIN
-  UPDATE altovena.analysis_permit_review_events SET event_type='requested'
-  WHERE permit_id=approval_fixture.permit_id;
+  UPDATE altovena.analysis_permit_review_events AS e SET event_type='requested'
+  WHERE e.permit_id=approval_fixture.permit_id;
  EXCEPTION WHEN invalid_parameter_value THEN denied:=true;END;
  IF NOT denied THEN RAISE EXCEPTION 'review event audit mutable';END IF;
 
@@ -96,8 +96,8 @@ BEGIN
    encode(sha256(convert_to(goal,'UTF8')),'hex'),route_digest,900,500,10);
  IF reserve_row.result_kind<>'reserved' OR reserve_row.result_reservation_id IS NULL
  THEN RAISE EXCEPTION 'reviewed analysis could not reserve once';END IF;
- UPDATE altovena.analysis_evidence_attestations
- SET state='revoked' WHERE tenant_id=approval_fixture.t AND mission_id=approval_fixture.mission_id;
+ UPDATE altovena.analysis_evidence_attestations AS a
+ SET state='revoked' WHERE a.tenant_id=approval_fixture.t AND a.mission_id=approval_fixture.mission_id;
  denied:=false;
  BEGIN
   -- Direct insertion by a privileged *test* role still must obey source fence.
