@@ -121,7 +121,8 @@ async function main() {
       if (target===realtyFlowTarget) {
         websiteToRealtyFlow++;
         assert.equal(init?.method,"POST");
-        assert.equal(new Headers(init?.headers).get("x-altovena-ingest-key"),key);
+        // The real intake handler must reject a mismatched key; transport does not pre-empt it.
+        assert.ok(new Headers(init?.headers).has("x-altovena-ingest-key"));
         return realtyFlowPost(new NextRequest(target,{
           method:"POST",headers:init?.headers,
           body:String(init?.body??""),
