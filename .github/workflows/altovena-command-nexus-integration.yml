@@ -7,6 +7,8 @@ on:
       - "src/lib/altovena/command-analysis-evidence.test.ts"
       - "src/lib/altovena/command-analysis-ci-harness.ts"
       - "src/lib/altovena/command-analysis-ci-harness.test.ts"
+      - "src/lib/altovena/command-analysis-openai-adapter.ts"
+      - "src/lib/altovena/command-analysis-openai-adapter.test.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
       - "src/app/api/altovena/command/analysis/route.ts"
       - "supabase/migrations/*altovena_command_analysis_preparation.sql"
@@ -39,6 +41,7 @@ jobs:
         run: |
           node --import tsx --test src/lib/altovena/command-analysis-evidence.test.ts
           node --import tsx --test src/lib/altovena/command-analysis-ci-harness.test.ts
+          node --import tsx --test src/lib/altovena/command-analysis-openai-adapter.test.ts
       - name: Verify that Command planning cannot activate Nexus execution
         run: |
           node --import tsx --test src/lib/altovena/command-nexus-handoff.test.ts
