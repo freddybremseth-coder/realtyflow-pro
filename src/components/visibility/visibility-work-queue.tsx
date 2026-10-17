@@ -1,7 +1,15 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 
-type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null};
+type Investigation = {result:string;checked_at:string;issue_code:string;
+ evidence?:{homepageStatus:number|null;h1Count:number|null;robotsStatus:number|null;sitemapStatus:number|null;issues:string[];incomplete:boolean}};
+type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null};
+const investigationLabels:Record<string,string>={
+ OBSERVED_AGAIN:"Observasjonen er gjentatt",NOT_REPRODUCED:"Ikke gjenskapt ved ny kontroll",
+ DATA_STILL_INCOMPLETE:"Kontrollen er fortsatt ufullstendig",
+ DATA_NOW_AVAILABLE:"Ny kontroll ga tilgjengelige data",
+ INCONCLUSIVE:"Kontrollen gir ikke sikkert svar",
+};
 const displayState: Record<string,string> = {
  PROPOSED:"Foreslått",QUEUED:"I kø",RUNNING:"Pågår",AWAITING_APPROVAL:"Venter på godkjenning",
  BLOCKED:"Blokkert",VERIFYING:"Kontrolleres",UNVERIFIED:"Avsluttet uten verifisering",
@@ -42,7 +50,18 @@ export function VisibilityWorkQueue(){
     items.slice(0,30).map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-3">
      <div><div className="text-sm font-semibold text-slate-900">{item.title}</div>
       <div className="text-xs text-slate-500">{item.brand_id} · {item.next_action||"Ingen neste handling registrert"}</div></div>
-     <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{displayState[item.visibility_state] || "Ukjent status"}</span>
+     <div className="text-right">
+      <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{displayState[item.visibility_state] || "Ukjent status"}</span>
+      {item.investigation&&<div className="mt-2 text-xs text-slate-700">
+       <strong>{investigationLabels[item.investigation.result]||"Undersøkt"}</strong>
+       <div className="text-slate-500">Offentlig kontroll: {new Date(item.investigation.checked_at).toLocaleString("nb-NO")}</div>
+       {item.investigation.evidence&&<div className="text-slate-500">
+        HTTP: {item.investigation.evidence.homepageStatus??"ukjent"} · H1: {item.investigation.evidence.h1Count??"ukjent"}
+       </div>}
+       <div className="text-slate-500">Ingen reparasjon eller publisering utført</div>
+      </div>}
+      {!item.investigation&&<div className="mt-2 text-xs text-slate-500">Venter på uavhengig kontroll</div>}
+     </div>
     </div>)}
   </div>
  </section>;
