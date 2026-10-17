@@ -49,6 +49,7 @@ export async function recordVisibilityRun(
   db: SupabaseClient,
   entry: VisibilityRunEntry,
 ): Promise<boolean> {
+  try {
   const { error } = await db.from("automation_logs").insert({
     action: VISIBILITY_RUN_ACTION,
     agent_name: "Sam SEO Expert",
@@ -67,6 +68,9 @@ export async function recordVisibilityRun(
     },
   });
   return !error;
+  } catch {
+    return false;
+  }
 }
 
 export function parseVisibilityRunStatus(
