@@ -120,13 +120,26 @@ function safePublicUrl(url: string, base: string) {
   return parsed.href;
 }
 
-export async function fetchPublicSnapshot(url: string, base: string): Promise<ResponseSnapshot> {
+// Keep page reads small. Public XML sitemaps are frequently larger than HTML
+// and are bounded separately, without opening arbitrary domains or routes.
+export const MAX_PUBLIC_PAGE_AUDIT_BYTES = 600_000;
+export const MAX_PUBLIC_SITEMAP_AUDIT_BYTES = 1_200_000;
+export function publicAuditBodyCap(url: string): number {
+  return new URL(url).pathname === "/sitemap.xml"
+    ? MAX_PUBLIC_SITEMAP_AUDIT_BYTES : MAX_PUBLIC_PAGE_AUDIT_BYTES;
+}
+
+export async function fetchPublicSnapshot(
+  url: string,
+  base: string,
+  transport: typeof fetch = fetch,
+): Promise<ResponseSnapshot> {
   let current = safePublicUrl(url, base);
   for (let hop = 0; hop <= 2; hop++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
     try {
-      const response = await fetch(current, {
+      const response = await transport(current, {
         method: "GET", redirect: "manual", cache: "no-store",
         headers: { Accept: "text/html,application/xml,text/plain;q=0.8", "User-Agent": "RealtyFlow-SEO-Public-Audit/1.0" },
         signal: controller.signal,
@@ -137,10 +150,11 @@ export async function fetchPublicSnapshot(url: string, base: string): Promise<Re
         current = safePublicUrl(location, base);
         continue;
       }
+      const limit = publicAuditBodyCap(current);
       const contentLength = Number(response.headers.get("content-length") || 0);
-      if (contentLength > 600000) throw new Error("Public response exceeded audit size bound");
+      if (contentLength > limit) throw new Error("Public response exceeded audit size bound");
       const text = await response.text();
-      if (text.length > 600000) throw new Error("Public response exceeded audit size bound");
+      if (text.length > limit) throw new Error("Public response exceeded audit size bound");
       return {
         status: response.status, url: current, body: text,
         contentType: response.headers.get("content-type") || "",

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { visibilityWorkDisplayState } from "@/services/agents/visibility-work-queue";
 import { createVisibilityDesignProposal, DESIGN_REQUEST_ACTION, type VisibilityInvestigationEvidence } from "@/services/agents/visibility-design-proposal";
+import { VISIBILITY_RUN_ACTION, parseVisibilityRunStatus } from "@/services/agents/visibility-run-ledger";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -47,6 +48,14 @@ export async function GET(request: NextRequest) {
  const latestIndependent=(logs||[]).find(x=>
   x.details?.read_only===true&&x.details?.publication_authorized===false&&
   x.details?.resolution_verified===false&&typeof x.details?.checked_at==="string");
+ const {data:runLogs,error:runLogError}=await client.from("automation_logs")
+  .select("created_at,details").eq("action",VISIBILITY_RUN_ACTION)
+  .order("created_at",{ascending:false}).limit(40);
+ if(runLogError)return NextResponse.json({error:"Visibility operation status unavailable"},{status:503});
+ const acceptedRunLogs=(runLogs||[])
+  .map(row=>parseVisibilityRunStatus(row)).filter((value)=>value!==null);
+ const lastRun=acceptedRunLogs[0]??null;
+ const lastCronRun=acceptedRunLogs.find(row=>row.source==="cron")??null;
  const requestedFingerprints=new Set((requests||[])
   .map(x=>x.details?.proposal_fingerprint).filter((x):x is string=>typeof x==="string"));
  return NextResponse.json({audit_status:{
@@ -55,7 +64,9 @@ export async function GET(request: NextRequest) {
   independentEvidenceLogged:Boolean(latestIndependent),
   // A missing evidence record cannot distinguish a skipped cron from an
   // unexecuted route. Never show "completed" without durable evidence.
-  cronOutcome:"NOT_PROVEN",
+  cronOutcome:lastCronRun?.outcome??"NOT_PROVEN",
+  lastRun,
+  lastCronRun,
   dailyScheduleUtc:"08:15",
  },work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>{
    const plan=createVisibilityDesignProposal(x,latest.get(x.id)??null);

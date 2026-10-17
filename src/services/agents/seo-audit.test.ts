@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { auditOneSite, SEO_AUDIT_TARGETS, SEO_SUPPLEMENTAL_AUDIT_TARGETS } from "./seo-audit";
+import { auditOneSite, fetchPublicSnapshot, publicAuditBodyCap,
+  MAX_PUBLIC_PAGE_AUDIT_BYTES, MAX_PUBLIC_SITEMAP_AUDIT_BYTES,
+  SEO_AUDIT_TARGETS, SEO_SUPPLEMENTAL_AUDIT_TARGETS } from "./seo-audit";
 
 const SITE = SEO_AUDIT_TARGETS[0];
 
@@ -65,4 +67,38 @@ test("Freddy Art is a first-class search target while Care remains technical-onl
   ]);
   const origins = [...SEO_AUDIT_TARGETS, ...SEO_SUPPLEMENTAL_AUDIT_TARGETS].map(item => item.base);
   assert.equal(new Set(origins).size, 9);
+});
+
+test("large but bounded XML sitemap can be measured without relaxing page size guard", async () => {
+  const xml='<?xml version="1.0"?><urlset>'+ '<url><loc>https://www.zenecohomes.com/a</loc></url>'.repeat(17000)+'</urlset>';
+  assert.ok(xml.length > MAX_PUBLIC_PAGE_AUDIT_BYTES);
+  assert.ok(xml.length < MAX_PUBLIC_SITEMAP_AUDIT_BYTES);
+  assert.equal(publicAuditBodyCap(SITE.base + "/sitemap.xml"), MAX_PUBLIC_SITEMAP_AUDIT_BYTES);
+  assert.equal(publicAuditBodyCap(SITE.base + "/"), MAX_PUBLIC_PAGE_AUDIT_BYTES);
+  assert.equal(publicAuditBodyCap(SITE.base + "/robots.txt"), MAX_PUBLIC_PAGE_AUDIT_BYTES);
+  const transport = (async () => new Response(xml,{
+    status:200,headers:{"content-type":"application/xml","content-length":String(xml.length)},
+  })) as typeof fetch;
+  const snap=await fetchPublicSnapshot(SITE.base+"/sitemap.xml", SITE.base, transport);
+  assert.equal(snap.status,200);
+  assert.ok(snap.body.includes("<urlset>"));
+});
+
+test("oversized sitemap and ordinary HTML remain bounded and fail closed", async () => {
+  const overXml="<?xml version='1.0'?><urlset>"+"x".repeat(MAX_PUBLIC_SITEMAP_AUDIT_BYTES)+"</urlset>";
+  const oversized = (async()=>new Response(overXml,{
+    status:200,headers:{"content-type":"application/xml","content-length":String(overXml.length)},
+  })) as typeof fetch;
+  await assert.rejects(
+    fetchPublicSnapshot(SITE.base+"/sitemap.xml",SITE.base,oversized),
+    /exceeded audit size bound/,
+  );
+  const html="<html><body>"+"x".repeat(MAX_PUBLIC_PAGE_AUDIT_BYTES)+"</body></html>";
+  const htmlFetch=(async()=>new Response(html,{
+    status:200,headers:{"content-type":"text/html"},
+  })) as typeof fetch;
+  await assert.rejects(
+    fetchPublicSnapshot(SITE.base+"/",SITE.base,htmlFetch),
+    /exceeded audit size bound/,
+  );
 });

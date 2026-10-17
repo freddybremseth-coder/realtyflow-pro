@@ -10,7 +10,7 @@ test("owner work queue displays scheduled versus observed investigation separate
  assert.match(api,/ctx\.source!=="owner-session"/);
  assert.match(api,/latestSourceAuditAt/);
  assert.match(api,/latestIndependentAt/);
- assert.match(api,/cronOutcome:"NOT_PROVEN"/);
+ assert.match(api,/cronOutcome:lastCronRun\?\.outcome\?\?"NOT_PROVEN"/);
  assert.match(ui,/Ingen kontrollbevis registrert/);
  assert.match(ui,/En planlagt kjøring er ikke bevis på gjennomføring/);
  assert.match(ui,/Eventuelle reparasjonsforslag er fortsatt sperret/);
