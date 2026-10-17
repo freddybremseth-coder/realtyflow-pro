@@ -70,7 +70,7 @@ export class AnalysisProviderDenied extends Error {
     this.name = "AnalysisProviderDenied";
   }
 }
-const fail = (reason: string): never => { throw new AnalysisProviderDenied(reason); };
+function fail(reason: string): never { throw new AnalysisProviderDenied(reason); }
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const HEX = /^[a-f0-9]{64}$/;
 
@@ -253,7 +253,7 @@ export async function requestReadOnlyAnalysisCandidate(input: Readonly<{
   const claim=await input.repository.reserve({
     permit:input.permit,scope:input.scope,evidenceDigest,
   });
-  if (!claim || claim.kind!=="reserved") fail("analysis_reservation_denied");
+  if (!claim || claim.kind!=="reserved") throw new AnalysisProviderDenied("analysis_reservation_denied");
   if (!UUID.test(claim.reservationId)) fail("invalid_reservation_receipt");
 
   const abort=new AbortController();
