@@ -78,14 +78,17 @@ export function parseVisibilityRunStatus(
 ): VisibilityRunStatus | null {
   if (!row || typeof row.created_at !== "string" ||
       !Number.isFinite(Date.parse(row.created_at))) return null;
-  const d = row.details as Partial<VisibilityRunEntry> | null;
+  const d = row.details as (Partial<VisibilityRunEntry> & {
+    read_only?: unknown; execution_started?: unknown;
+    publication_authorized?: unknown; resolution_verified?: unknown;
+  }) | null;
   if (!d || (d.source !== "cron" && d.source !== "owner") ||
       !["COMPLETED", "SKIPPED", "FAILED"].includes(String(d.outcome)) ||
       !["SAFE_MODE", "MISSING_DATABASE", "SOURCE_REPORT_UNAVAILABLE",
         "SOURCE_REPORT_STALE", "NO_ELIGIBLE_TASKS", "INVESTIGATION_ERROR",
         "NONE"].includes(String(d.reason)) ||
-      d.readOnly !== true || d.publicationAuthorized !== false ||
-      d.resolutionVerified !== false || d.executionStarted !== false) return null;
+      d.read_only !== true || d.publication_authorized !== false ||
+      d.resolution_verified !== false || d.execution_started !== false) return null;
   const n = (value: unknown) =>
     typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
   return {
