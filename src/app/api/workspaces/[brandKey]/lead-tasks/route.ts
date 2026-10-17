@@ -32,6 +32,31 @@ export async function GET(
     { ok: false, error: { code: "LEAD_TASKS_UNAVAILABLE" } },
     { status: 503, headers: noStore },
   );
+  // The visible board is capped at 40 newest items, but the warning must NOT
+  // silently ignore older unstarted enquiries. Both counts are independently
+  // derived on the server after current brand membership/permission validation.
+  const overdueCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [total, overdue] = await Promise.all([
+    access.value.supabase.from("work_items")
+      .select("id", { count: "exact", head: true })
+      .eq("brand_id", "altovena")
+      .eq("source_type", "website_lead")
+      .in("status", allowedStatuses),
+    access.value.supabase.from("work_items")
+      .select("id", { count: "exact", head: true })
+      .eq("brand_id", "altovena")
+      .eq("source_type", "website_lead")
+      .in("status", ["TO_DO", "REVIEW"])
+      .lte("created_at", overdueCutoff),
+  ]);
+  // Unknown counts are NOT equivalent to zero outstanding follow-ups.
+  if (total.error || overdue.error || !Number.isSafeInteger(total.count) ||
+      !Number.isSafeInteger(overdue.count) || total.count! < 0 || overdue.count! < 0) {
+    return NextResponse.json(
+      { ok: false, error: { code: "LEAD_COUNTS_UNAVAILABLE" } },
+      { status: 503, headers: noStore },
+    );
+  }
   const tasks = data.flatMap(row => {
     if (!row || row.brand_id !== "altovena" || row.source_type !== "website_lead" ||
         !allowedStatuses.includes(row.status) || typeof row.id !== "string" || !uuid.test(row.id)) return [];
@@ -46,7 +71,10 @@ export async function GET(
       nextAction: typeof row.next_action === "string" ? row.next_action.slice(0, 220) : null,
     }];
   });
-  return NextResponse.json({ ok: true, brand: "altovena", tasks, capped: data.length === 40 }, { headers: noStore });
+  return NextResponse.json({
+    ok: true, brand: "altovena", tasks, capped: data.length === 40,
+    totalOpen: total.count, overdueNotStarted: overdue.count,
+  }, { headers: noStore });
 }
 
 
