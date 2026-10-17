@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { visibilityWorkDisplayState } from "@/services/agents/visibility-work-queue";
-import { createVisibilityDesignProposal, DESIGN_REQUEST_ACTION } from "@/services/agents/visibility-design-proposal";
+import { createVisibilityDesignProposal, DESIGN_REQUEST_ACTION, type VisibilityInvestigationEvidence } from "@/services/agents/visibility-design-proposal";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,13 +28,12 @@ export async function GET(request: NextRequest) {
   .select("created_at,details").eq("action","visibility_independent_investigation")
   .order("created_at",{ascending:false}).limit(200);
  if(logError) return NextResponse.json({error:"Investigation evidence unavailable"},{status:503});
- const latest=new Map<string, {result:string;checked_at:string;evidence:unknown;issue_code:string}>();
+ const latest=new Map<string, VisibilityInvestigationEvidence>();
  for(const log of logs||[]){
   const d=log.details;
   if(typeof d?.work_item_id!=="string" || latest.has(d.work_item_id) ||
-    d.read_only!==true || d.publication_authorized!==false) continue;
-  latest.set(d.work_item_id,{result:d.result,checked_at:d.checked_at,
-    evidence:d.evidence,issue_code:d.issue_code});
+    d.read_only!==true || d.publication_authorized!==false || d.resolution_verified!==false) continue;
+  latest.set(d.work_item_id,d);
  }
  const {data:requests,error:requestError}=await client.from("automation_logs")
   .select("created_at,details").eq("action",DESIGN_REQUEST_ACTION)
@@ -43,11 +42,7 @@ export async function GET(request: NextRequest) {
  const requestedFingerprints=new Set((requests||[])
   .map(x=>x.details?.proposal_fingerprint).filter((x):x is string=>typeof x==="string"));
  return NextResponse.json({work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>{
-   const plan=createVisibilityDesignProposal(x,latest.get(x.id)?{
-      ...latest.get(x.id),work_item_id:x.id,source_id:x.source_id,brand_id:x.brand_id,
-      read_only:true,publication_authorized:false,resolution_verified:false,
-      target_origin:x.metadata?.target_url??null
-   }:null);
+   const plan=createVisibilityDesignProposal(x,latest.get(x.id)??null);
    return {
     ...x,visibility_state:visibilityWorkDisplayState(x.status,x.metadata),
     investigation:latest.get(x.id)??null,
