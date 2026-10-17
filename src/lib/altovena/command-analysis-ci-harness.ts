@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   AnalysisEvidenceDenied,
   assertTrustedAnalysisEvidence,
@@ -64,6 +65,8 @@ export async function runCommandAnalysisTestHarness(input: Readonly<{
   if (input.preparedState !== "prepared" ||
       typeof input.goal !== "string" || !input.goal.trim() ||
       input.goal.length > 4000) fail("preparation_or_goal_invalid");
+  if (createHash("sha256").update(input.goal.trim(),"utf8").digest("hex")
+       !== input.scope.goalDigest) fail("mission_goal_digest_mismatch");
   assertTrustedAnalysisEvidence(input.scope, input.sources, input.now);
 
   const evidence = Object.freeze(input.sources.map(item => Object.freeze({
