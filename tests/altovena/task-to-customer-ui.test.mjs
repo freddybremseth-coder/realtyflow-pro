@@ -19,6 +19,9 @@ test("page refuses unauthenticated or cross-brand lookup replies and selects exa
  assert.match(workspace,/setFocusedAltovenaContact\(body\.contact as Contact\)/);
  assert.match(workspace,/setSelectedCustomerId\(contactId\)/);
  assert.match(workspace,/focusedAltovenaError/);
+ assert.match(workspace,/if \(brandKey !== "altovena"\) return/);
+ assert.match(workspace,/altovenaLookupVersion\.current \+= 1/);
+ assert.match(workspace,/focusedAltovenaContactId\.current = ""/);
 });
 test("lookup route is hard-coded to Altovena, crm.read, and branded contact rows",()=>{
  assert.match(route,/requireBrandWorkspace\(request,"altovena","crm\.read"\)/);
