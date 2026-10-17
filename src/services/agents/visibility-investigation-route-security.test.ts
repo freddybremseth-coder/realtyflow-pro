@@ -8,16 +8,16 @@ test("independent cron requires secret, Nexus safe mode and server-side report o
  assert.match(route,/requireCronApi\(request\)/);
  assert.match(route,/evaluateCronSafeMode\(PATH\)/);
  assert.match(route,/seo_gsc_live_read/);
- assert.match(route,/investigateVisibilityTasks\(db, report\)/);
+ assert.match(route,/investigateVisibilityTasks\(db, report, now\)/);
  assert.doesNotMatch(route,/request\.json\(/);
  assert.match(route,/resolutionVerified: false/);
 });
 test("owner control cannot work in a preview role or cross-site",()=>{
  const route=file("src/app/api/visibility/investigations/run/route.ts");
- assert.match(route,/ctx\?\.role!=="OWNER"/);
- assert.match(route,/ctx\.source!=="owner-session"/);
+ assert.match(route,/ctx\?\.role\s*!==\s*"OWNER"/);
+ assert.match(route,/ctx\.source\s*!==\s*"owner-session"/);
  assert.match(route,/sec-fetch-site/);
- assert.match(route,/investigateVisibilityTasks\(db,report\)/);
+ assert.match(route,/investigateVisibilityTasks\(db, report, now\)/);
  assert.doesNotMatch(route,/request\.json\(/);
 });
 test("read-only evidence is separate from editable work item metadata",()=>{
