@@ -3,7 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 
 type Investigation = {result:string;checked_at:string;issue_code:string;
  evidence?:{homepageStatus:number|null;h1Count:number|null;robotsStatus:number|null;sitemapStatus:number|null;issues:string[];incomplete:boolean}};
-type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null};
+type DesignProposal = {
+ status:string;reason:string;target:string|null;change:string|null;verification:string[];
+ rollback:string|null;fingerprint:string|null;canRequestDraft:boolean;publicationAuthorized:false;
+};
+type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean};
 const investigationLabels:Record<string,string>={
  OBSERVED_AGAIN:"Observasjonen er gjentatt",NOT_REPRODUCED:"Ikke gjenskapt ved ny kontroll",
  DATA_STILL_INCOMPLETE:"Kontrollen er fortsatt ufullstendig",
@@ -34,6 +38,22 @@ export function VisibilityWorkQueue(){
    await refresh();
    setMessage(`Sam undersøkte ${data.investigated} oppgave(r), ${data.skipped} ble hoppet over (f.eks. nylig kontrollert). Ingen nettsider ble endret.`);
   }catch(e){setMessage(e instanceof Error?e.message:"Kontrollen kunne ikke fullføres");}
+  finally{setBusy(false);}
+ };
+ const requestDesign=async(item:Work)=>{
+  if(!item.design_proposal?.canRequestDraft||!item.design_proposal.fingerprint)return;
+  setBusy(true);setMessage("");
+  try{
+   const r=await fetch("/api/visibility/work-items/design-request",{
+    method:"POST",credentials:"same-origin",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({workItemId:item.id,fingerprint:item.design_proposal.fingerprint}),
+   });
+   const data=await r.json();
+   if(!r.ok)throw new Error(data.error||"Kunne ikke registrere forespørselen");
+   await refresh();
+   setMessage("Et konkret endringsutkast er etterspurt og journalført. Ingen implementering eller publisering er startet.");
+  }catch(e){setMessage(e instanceof Error?e.message:"Kunne ikke registrere endringsutkast");}
   finally{setBusy(false);}
  };
  const sync=async()=>{
@@ -77,6 +97,22 @@ export function VisibilityWorkQueue(){
        <div className="text-slate-500">Ingen reparasjon eller publisering utført</div>
       </div>}
       {!item.investigation&&<div className="mt-2 text-xs text-slate-500">Venter på uavhengig kontroll</div>}
+      {item.design_proposal&&<div className="mt-3 max-w-md rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800">
+       <div className="font-semibold">Endringsforslag – kun plan</div>
+       <p className="mt-1">{item.design_proposal.reason}</p>
+       {item.design_proposal.change&&<>
+         <p className="mt-2 font-semibold">Foreslått endring</p><p>{item.design_proposal.change}</p>
+         <p className="mt-2 font-semibold">Kontrollpunkter før og etter</p>
+         <ul className="ml-4 mt-1 list-disc space-y-1">{item.design_proposal.verification.map((check,i)=><li key={i}>{check}</li>)}</ul>
+         <p className="mt-2 font-semibold">Tilbakeføring</p><p>{item.design_proposal.rollback}</p>
+       </>}
+       {item.design_requested?<p className="mt-2 font-semibold">Endringsutkast er etterspurt – ingen publisering godkjent.</p>
+       :item.design_proposal.canRequestDraft&&<button type="button" disabled={busy}
+         onClick={()=>requestDesign(item)}
+         className="mt-3 rounded-lg border border-teal-800 px-3 py-2 font-semibold text-teal-900 disabled:opacity-60">
+         Be om endringsutkast
+        </button>}
+      </div>}
      </div>
     </div>)}
   </div>
