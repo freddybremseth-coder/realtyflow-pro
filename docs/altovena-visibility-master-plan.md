@@ -26,6 +26,16 @@ Oppgaver og mål-URL fra klienten er aldri egne SEO-bevis. Et redigerbart `work_
 - `/api/visibility/work-items`: eierbegrenset visning av oppgaver og uavhengige revisjonsbevis.
 - `/api/visibility/work-items/design-request` (#1440): eierbegrenset forespørsel om et *utkast*, bundet til hash av ferskt bevis. `approval_granted=false` og `publication_authorized=false` forblir harde invarianter.
 
+## Gjennomgått kildekode og reell kode-PR (17. oktober 2026)
+
+**Re-Master / H1:** Den faktiske nettkoden ligger i `freddybremseth-coder/remasterfreddy` (Vite + React), ikke i RealtyFlow. I `src/App.tsx` finnes allerede `<h1>RE-MASTER FREDDY</h1>` i den synlige helteseksjonen, mens `index.html` på `main` leverer en tom `<div id="root"></div>` før React starter. Dette forklarer et server-HTML-funn, men erstatter **ikke** en fersk offentlig kontroll etter utgivelse.
+
+- **Kandidatrettelse:** [Re-Master PR #48](https://github.com/freddybremseth-coder/remasterfreddy/pull/48), egen gren. Den legger inn eksisterende H1 og eksisterende beskrivelse i den statiske HTML-fallbacken, og tester `index.html` samt generert Vite-`dist/index.html`. Kode-PR er **ikke slått sammen** og **ikke publisert**.
+- **Kontroll før sammenslåing:** GitHub + eksakt Vercel-preview grønt, mobil/skrivebordskontroll for layout og flicker, /admin-oppførsel, ett H1 etter React-mount, og at eventuell spesialruting ikke får en misvisende offentlig H1.
+- **Etter eventuell publisering:** kjør en ny uavhengig offentlig kontroll på eksakt mål-URL og sammenlign kildeversjon, server-HTML og visuell H1. Ikke sett `DONE` eller `VERIFIED` ut fra at PR-en finnes.
+
+**SaaS-viktig:** Altovena Visibility kan samle funn og bevis i RealtyFlow, mens kodeendringer skjer i den enkelte merkevarens faktiske repository. Tilgang til kildekode og publiseringsrettigheter er separate tillatelser og må ikke implisitt arves fra en SEO-observasjon.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
 1. **Drift:** Verifiser første faktiske `visibility_independent_investigation`-journal fra planlagt/mannuell kjøring. Ved status null er ikke arbeid utført. Logg hvorfor cron kjøres, hoppes over eller feiler.
