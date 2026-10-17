@@ -20,15 +20,27 @@ const material=(id="internal_one"):AuthorizedSourceMaterial=>({
 const build=(override:Partial<AuthorizedSourceMaterial>={},saveOverride?:Partial<{
   kind:"stored",evidenceDigest:string,sourceCount:number
 }>)=>{
-  let calls=0,storeCalls=0;
+  let calls=0,storeCalls=0,revalidationCalls=0;
+  let currentAccess=true;
   const connector:AuthorizedSourceConnector={
     async readForMission({sourceId}){calls++;return {...material(sourceId),...override};},
+    async revalidateForMission({scope,sourceId,sourceRef,excerptDigest,capturedAt}){
+      revalidationCalls++;
+      return currentAccess &&
+        scope.tenantId===tenantId && scope.missionId===missionId &&
+        scope.verifiedActorId===verifiedActorId &&
+        sourceId.length>0 && sourceRef.startsWith("internal:") &&
+        /^[a-f0-9]{64}$/.test(excerptDigest) && capturedAt.includes("T");
+    },
   };
   const store:PrivateEvidenceSnapshotStore={
     async save(input){storeCalls++;return {kind:"stored",evidenceDigest:input.evidenceDigest,
       sourceCount:input.snapshots.length,...saveOverride};},
   };
-  return {connector,store,getCalls:()=>calls,getStoreCalls:()=>storeCalls};
+  return {connector,store,getCalls:()=>calls,getStoreCalls:()=>storeCalls,
+    getRevalidationCalls:()=>revalidationCalls,
+    revoke:()=>{currentAccess=false;},
+  };
 };
 test("only server-authorized source material can produce a stable audit digest",async()=>{
   const mock=build();
@@ -119,4 +131,52 @@ test("changing source bytes or source order changes content digest correctly",as
     {id:"aaa",excerptDigest:"a".repeat(64)},
     {id:"bbb",excerptDigest:"b".repeat(64)},
   ]));
+});
+
+test("revoked source after successful read is NEVER saved",async()=>{
+  const mock=build();
+  const originalRead=mock.connector.readForMission.bind(mock.connector);
+  mock.connector.readForMission=async (input)=>{
+    const row=await originalRead(input);
+    mock.revoke();
+    return row;
+  };
+  await assert.rejects(captureAuthorizedCommandSources({
+    scope,sourceIds:["internal_one"],now,connector:mock.connector,store:mock.store,
+  }),/source_access_revoked_after_read/);
+  assert.equal(mock.getCalls(),1);
+  assert.equal(mock.getRevalidationCalls(),1);
+  assert.equal(mock.getStoreCalls(),0);
+});
+
+test("all captured sources must pass a fresh ACL check before the bundle is saved",async()=>{
+  const mock=build();
+  const original=mock.connector.revalidateForMission.bind(mock.connector);
+  mock.connector.revalidateForMission=async input=>{
+    if(input.sourceId==="internal_two") return false;
+    return original(input);
+  };
+  await assert.rejects(captureAuthorizedCommandSources({
+    scope,sourceIds:["internal_one","internal_two"],now,
+    connector:mock.connector,store:mock.store,
+  }),/source_access_revoked_after_read/);
+  assert.equal(mock.getCalls(),2);
+  assert.equal(mock.getStoreCalls(),0);
+});
+
+test("missing ACL recheck or a connector outage fail closed",async()=>{
+  const one=build();
+  const noRevalidation=one.connector as unknown as Record<string,unknown>;
+  delete noRevalidation.revalidateForMission;
+  await assert.rejects(captureAuthorizedCommandSources({
+    scope,sourceIds:["internal_one"],now,connector:one.connector,store:one.store,
+  }),/source_revalidation_required/);
+  assert.equal(one.getStoreCalls(),0);
+
+  const two=build();
+  two.connector.revalidateForMission=async()=>{throw Error("private ACL outage");};
+  await assert.rejects(captureAuthorizedCommandSources({
+    scope,sourceIds:["internal_one"],now,connector:two.connector,store:two.store,
+  }),/source_revalidation_unavailable/);
+  assert.equal(two.getStoreCalls(),0);
 });
