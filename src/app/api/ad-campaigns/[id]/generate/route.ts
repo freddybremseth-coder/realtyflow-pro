@@ -98,6 +98,27 @@ export async function POST(
     return NextResponse.json({ error: "Campaign image URL missing" }, { status: 400 });
   }
 
+  // A stored prompt containing old product packaging must never be submitted
+  // again merely because the campaign header was corrected. This also avoids
+  // charging the image provider for another 5 L image after the 3 L correction.
+  if (campaign.brand_id === "donaanna" && /cocina viva/i.test(campaign.product_name || "")) {
+    const { data: unfinished, error: unfinishedError } = await supabase
+      .from("ad_creatives")
+      .select("id,prompt")
+      .eq("campaign_id", params.id)
+      .in("status", ["pending", "generating"])
+      .limit(200);
+    if (unfinishedError) {
+      return NextResponse.json({ error: "Kunne ikke kontrollere bildeinstruksjonene." }, { status: 503 });
+    }
+    if ((unfinished || []).some(row => /(?:\b5\s*L\b|\bmetal\s+(?:can|tin)\b)/i.test(row.prompt || ""))) {
+      return NextResponse.json({
+        error: "Kampanjen har ventende bildeinstruksjoner for 5 L eller metallkanne. Last opp et verifisert produktfoto av 3 L-flasken og bygg nye varianter før du genererer flere bilder.",
+        code: "PRODUCT_REFERENCE_REVIEW_REQUIRED",
+      }, { status: 409 });
+    }
+  }
+
   const stuckThreshold = new Date(Date.now() - STUCK_AFTER_MS).toISOString();
   await supabase
     .from("ad_creatives")
