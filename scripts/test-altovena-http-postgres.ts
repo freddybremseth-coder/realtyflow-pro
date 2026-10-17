@@ -45,6 +45,7 @@ const request=(payload:Record<string,unknown>,key=secret)=>new NextRequest(endpo
   body:JSON.stringify(payload),
 });
 
+async function main() {
 await db.connect();
 let inTransaction=false;
 try {
@@ -159,3 +160,6 @@ try {
     else process.env[key]=saved[key];
   }
 }
+
+}
+void main().catch(error=>{ console.error(error); process.exitCode=1; });
