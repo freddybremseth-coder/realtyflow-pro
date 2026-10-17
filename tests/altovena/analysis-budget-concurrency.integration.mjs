@@ -56,7 +56,7 @@ try {
       "insert into altovena.analysis_permits(id,tenant_id,mission_id,actor_id,agent_id,reviewer_id,"+
       "approved_at,state,model,goal_digest,routing_digest,evidence_digest,"+
       "max_input_tokens,max_output_tokens,reserved_cost_cents,expires_at)"+
-      " values($1,$2,$3,$4,$5,clock_timestamp(),'approved_for_read_only_analysis',"+
+      " values($1,$2,$3,$4,'business',$5,clock_timestamp(),'approved_for_read_only_analysis',"+
       "'gpt-5.6',$6,$7,$7,1200,600,12,clock_timestamp()+interval '8 minutes')",
       [permitId,tenant,missionId,owner,reviewer,goalDigest(goal),digest]);
     permits.push({id:permitId,goalDigest:goalDigest(goal)});
