@@ -13,31 +13,105 @@ export async function POST(
     const context = await getMediaApiContext(request);
     if ("error" in context) return context.error;
 
+    const { data: campaign, error: campaignError } = await context.supabase
+      .from("ad_campaigns")
+      .select("name,brand_id,product_name")
+      .eq("id", params.id)
+      .maybeSingle();
+    if (campaignError) throw new Error(campaignError.message);
+    if (!campaign) {
+      return NextResponse.json({ error: "Kampanjen ble ikke funnet." }, { status: 404 });
+    }
+
     const { data: creatives, error } = await context.supabase
       .from("ad_creatives")
-      .select("id,output_asset_id,pushed_to_hub")
+      .select("id,output_asset_id,pushed_to_hub,hub_content_id,image_url,thumbnail_url,angle,scene_id,aspect_ratio,caption_primary,caption_secondary,hashtags")
       .eq("campaign_id", params.id)
-      .eq("status", "completed")
-      .not("output_asset_id", "is", null);
+      .eq("status", "completed");
     if (error) throw new Error(error.message);
 
-    const pending = (creatives || []).filter((creative) => creative.output_asset_id && !creative.pushed_to_hub);
+    const all = creatives || [];
+    const pending = all.filter((creative) => !creative.pushed_to_hub);
     const exported: string[] = [];
     const failed: Array<{ creativeId: string; error: string }> = [];
 
     for (let index = 0; index < pending.length; index += 5) {
       const batch = pending.slice(index, index + 5);
       const results = await Promise.allSettled(batch.map(async (creative) => {
-        await exportMediaAssetToContentHub(context.supabase, {
-          organizationId: context.scope.organizationId,
-          actorEmail: context.scope.actorEmail,
-          assetId: String(creative.output_asset_id),
-        });
-        await context.supabase
+        if (!creative.image_url) throw new Error("Ferdig annonse mangler bildeadresse.");
+
+        let publicationId: string;
+        if (creative.hub_content_id) {
+          // Recover an export whose previous status update was interrupted.
+          const { data: existing, error: existingError } = await context.supabase
+            .from("content_publications")
+            .select("id")
+            .eq("id", creative.hub_content_id)
+            .maybeSingle();
+          if (existingError) throw new Error(existingError.message);
+          if (existing) publicationId = String(existing.id);
+          else publicationId = "";
+        } else {
+          publicationId = "";
+        }
+
+        if (!publicationId) {
+          // A completed image can predate Media Studio's asset linkage.
+          // Look up the existing draft first so retries never duplicate it.
+          const { data: existing, error: lookupError } = await context.supabase
+            .from("content_publications")
+            .select("id")
+            .eq("campaign_id", params.id)
+            .eq("ai_image_url", creative.image_url)
+            .limit(1)
+            .maybeSingle();
+          if (lookupError) throw new Error(lookupError.message);
+          if (existing) publicationId = String(existing.id);
+        }
+
+        if (!publicationId && creative.output_asset_id) {
+          const publication = await exportMediaAssetToContentHub(context.supabase, {
+            organizationId: context.scope.organizationId,
+            actorEmail: context.scope.actorEmail,
+            assetId: String(creative.output_asset_id),
+          });
+          publicationId = String(publication.id);
+        }
+
+        if (!publicationId) {
+          // Legacy fallback: keep the user-generated image, create only a
+          // reviewable draft; do not schedule or publish anything.
+          const title = `${campaign.name} · ${creative.angle || creative.scene_id} · ${creative.aspect_ratio}`;
+          const { data: draft, error: draftError } = await context.supabase
+            .from("content_publications")
+            .insert({
+              brand_id: campaign.brand_id || "media-studio",
+              content_type: "image_post",
+              title,
+              description: creative.caption_primary || `Produkt: ${campaign.product_name}`,
+              tags: ["ad-campaign", campaign.product_name, creative.angle, creative.scene_id, creative.aspect_ratio].filter(Boolean),
+              status: "draft",
+              ai_generated: true,
+              ai_title: title,
+              ai_description: creative.caption_primary || "",
+              ai_tags: creative.hashtags || [],
+              ai_image_url: creative.image_url,
+              thumbnail_url: creative.thumbnail_url || null,
+              media_urls: [creative.image_url],
+              campaign_id: params.id,
+            })
+            .select("id")
+            .single();
+          if (draftError || !draft) throw new Error(draftError?.message || "Content Hub-utkastet ble ikke lagret.");
+          publicationId = String(draft.id);
+        }
+
+        const { error: syncError } = await context.supabase
           .from("ad_creatives")
-          .update({ pushed_to_hub: true })
+          .update({ pushed_to_hub: true, hub_content_id: publicationId })
           .eq("campaign_id", params.id)
           .eq("id", creative.id);
+        if (syncError) throw new Error(`Utkast opprettet, men synkronisering feilet: ${syncError.message}`);
         return creative.id;
       }));
 
@@ -53,9 +127,9 @@ export async function POST(
 
     return NextResponse.json({
       exported: exported.length,
-      alreadyExported: (creatives || []).filter((creative) => creative.pushed_to_hub).length,
+      alreadyExported: all.filter((creative) => creative.pushed_to_hub).length,
       failed,
-      totalAssets: creatives?.length || 0,
+      totalAssets: all.length,
     });
   } catch (error) {
     return jsonError(error);

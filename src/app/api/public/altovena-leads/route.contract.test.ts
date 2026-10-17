@@ -106,7 +106,9 @@ test("Altovena tasks support protected human follow-up and timely in-app attenti
   assert.match(altovenaTaskPanel,/canManage: boolean/);
   assert.match(altovenaTaskPanel,/window.setInterval\(tick, 60000\)/);
   assert.match(altovenaTaskPanel,/document.addEventListener\("visibilitychange", onVisible\)/);
-  assert.match(altovenaTaskPanel,/24 \* 60 \* 60 \* 1000/);
+  assert.match(altovenaTaskPanel,/assessAltovenaLeadPoll/);
+  assert.match(altovenaTaskPanel,/awaitingMoreThan24h/);
+  assert.match(altovenaTaskPanel,/capped &&/);
   assert.match(altovenaTaskPanel,/Marker oppfølging utført/);
   assert.match(altovenaTaskPanel,/Ingen e-post eller pushvarsler er aktivert/);
   assert.match(workspacePage,/canManage=\{permissions\.includes\("crm.write"\)\}/);

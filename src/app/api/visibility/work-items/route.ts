@@ -4,6 +4,7 @@ import { getRequestAccessContext } from "@/lib/api-admin";
 import { visibilityWorkDisplayState } from "@/services/agents/visibility-work-queue";
 import { createVisibilityDesignProposal, DESIGN_REQUEST_ACTION, type VisibilityInvestigationEvidence } from "@/services/agents/visibility-design-proposal";
 import { VISIBILITY_RUN_ACTION, parseVisibilityRunStatus } from "@/services/agents/visibility-run-ledger";
+import { VISIBILITY_CODE_CANDIDATE_ACTION, resolveVisibilityCodeCandidate } from "@/services/agents/visibility-code-candidate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -37,9 +38,15 @@ export async function GET(request: NextRequest) {
   latest.set(d.work_item_id,d);
  }
  const {data:requests,error:requestError}=await client.from("automation_logs")
-  .select("created_at,details").eq("action",DESIGN_REQUEST_ACTION)
+  .select("id,created_at,details").eq("action",DESIGN_REQUEST_ACTION)
   .order("created_at",{ascending:false}).limit(200);
  if(requestError) return NextResponse.json({error:"Design review history unavailable"},{status:503});
+ // Review-only GitHub candidates have to be linked to a *real*, earlier
+ // owner design request. None of these rows grants merge or publish access.
+ const {data:codeLogs,error:codeError}=await client.from("automation_logs")
+  .select("created_at,details").eq("action",VISIBILITY_CODE_CANDIDATE_ACTION)
+  .order("created_at",{ascending:false}).limit(200);
+ if(codeError)return NextResponse.json({error:"Code review provenance unavailable"},{status:503});
  const {data:source,error:sourceError}=await client.from("automation_logs")
   .select("created_at").eq("action","seo_gsc_live_read")
   .in("status",["success","partial"]).order("created_at",{ascending:false})
@@ -75,6 +82,7 @@ export async function GET(request: NextRequest) {
     investigation:latest.get(x.id)??null,
     design_proposal:plan,
     design_requested:plan.fingerprint?requestedFingerprints.has(plan.fingerprint):false,
+    code_candidate:resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]),
    };
  })},{headers:{"Cache-Control":"private, no-store"}});
 }

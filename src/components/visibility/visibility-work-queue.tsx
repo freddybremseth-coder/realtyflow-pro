@@ -7,7 +7,11 @@ type DesignProposal = {
  status:string;reason:string;target:string|null;change:string|null;verification:string[];
  rollback:string|null;fingerprint:string|null;canRequestDraft:boolean;publicationAuthorized:false;
 };
-type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean};
+type CodeCandidate = {
+  url:string;repo:string;pullNumber:number;commitSha:string;recordedAt:string;
+  reviewOnly:true;executionStarted:false;publicationAuthorized:false;
+};
+type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null};
 type RunStatus={
  source:"cron"|"owner";outcome:"COMPLETED"|"SKIPPED"|"FAILED";
  reason:string;recordedAt:string;investigated:number;failed:number;skipped:number;
@@ -137,6 +141,17 @@ export function VisibilityWorkQueue(){
        <div className="text-slate-500">Ingen reparasjon eller publisering utført</div>
       </div>}
       {!item.investigation&&<div className="mt-2 text-xs text-slate-500">Venter på uavhengig kontroll</div>}
+      {item.code_candidate&&<div className="mt-3 max-w-md rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-800">
+       <div className="font-semibold">Kodeforslag til gjennomgang</div>
+       <p className="mt-1">Knyttet til din registrerte forespørsel om endringsutkast. Ingen sammenslåing eller publisering er godkjent.</p>
+       <a href={item.code_candidate.url} target="_blank" rel="noopener noreferrer"
+         className="mt-2 inline-block font-semibold text-teal-800 underline">
+         Åpne GitHub PR #{item.code_candidate.pullNumber}
+       </a>
+       <p className="mt-1 text-slate-600">{item.code_candidate.repo} · Kodeversjon {item.code_candidate.commitSha.slice(0,7)}</p>
+       <p className="mt-1 text-slate-500">Registrert: {new Date(item.code_candidate.recordedAt).toLocaleString("nb-NO")}. Status i GitHub må kontrolleres før eventuell godkjenning.</p>
+       <p className="mt-1 font-semibold">Ikke publisert eller verifisert gjennom denne handlingen.</p>
+      </div>}
       {item.design_proposal&&<div className="mt-3 max-w-md rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800">
        <div className="font-semibold">Endringsforslag – kun plan</div>
        <p className="mt-1">{item.design_proposal.reason}</p>

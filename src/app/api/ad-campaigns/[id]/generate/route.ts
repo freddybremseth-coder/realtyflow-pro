@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
-import { getMediaAccessScope } from "@/services/media/organization";
+import { getDefaultMediaOrganizationId, getMediaAccessScope } from "@/services/media/organization";
 import {
   ensureAdCampaignMediaProject,
   persistAdCreativeImage,
@@ -66,8 +66,13 @@ async function resolveMediaIdentity(req: NextRequest, supabase: ReturnType<typeo
       // Ad generation may still complete even if Media Library scope is unavailable.
     }
   }
+  // Campaign generation may run without an interactive admin session.
+  // Still resolve the canonical tenant, otherwise completed images get no
+  // media_assets row and the Content Hub export silently skips them.
+  const organizationId = await getDefaultMediaOrganizationId(supabase)
+    .catch(() => campaign.tenant_id ? String(campaign.tenant_id) : null);
   return {
-    organizationId: campaign.tenant_id ? String(campaign.tenant_id) : null,
+    organizationId,
     actorEmail: access?.email || "ad-campaign-generator",
   };
 }

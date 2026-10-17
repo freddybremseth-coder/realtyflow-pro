@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { assessAltovenaLeadPoll } from "@/lib/altovena/lead-attention-assessment";
 
 type LeadTask = {
   id: string;
@@ -16,6 +17,9 @@ type Props = { onOpenLeads: (contactId?: string) => void; canManage: boolean };
 
 export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
   const [tasks, setTasks] = useState<LeadTask[]>([]);
+  const previousSuccessfulIds=useRef<Set<string>|null>(null);
+  const [newArrivals,setNewArrivals]=useState(0);
+  const [capped,setCapped]=useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -50,7 +54,16 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
         if (body.ok !== true || body.brand !== "altovena" || !Array.isArray(body.tasks))
           throw new Error("Ugyldig svar fra Altovena-oppfølging.");
         if (!controller.signal.aborted) {
-          setTasks(body.tasks.slice(0, 40));
+          const nextTasks=(body.tasks as LeadTask[]).slice(0,40);
+          const nextIds=new Set(nextTasks.map(task=>task.id));
+          const assessment=assessAltovenaLeadPoll({
+            previousIds:previousSuccessfulIds.current,
+            tasks:nextTasks,capped:body.capped===true,nowMs:Date.now(),
+          });
+          previousSuccessfulIds.current=nextIds;
+          if(assessment.newArrivals>0)setNewArrivals(current=>current+assessment.newArrivals);
+          setCapped(assessment.mightHaveMore);
+          setTasks(nextTasks);
           setLastChecked(new Date().toLocaleTimeString("nb-NO",{hour:"2-digit",minute:"2-digit"}));
         }
       })
@@ -83,9 +96,9 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
       setRefresh(current => current + 1);
     } finally { setPendingTaskId(""); }
   }
-  const overdue = tasks.filter(task =>
-    task.createdAt && Number.isFinite(Date.parse(task.createdAt)) &&
-    Date.now() - Date.parse(task.createdAt) >= 24 * 60 * 60 * 1000).length;
+  const overdue = assessAltovenaLeadPoll({
+    previousIds:null,tasks,capped,nowMs:Date.now(),
+  }).awaitingMoreThan24h;
 
   return <section aria-label="Altovena – oppfølging av nye henvendelser"
     className="rounded-2xl border border-cyan-900/60 bg-slate-900/70 p-4 sm:p-5">
@@ -94,7 +107,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
         <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">ALTOVENA · HENVENDELSER</p>
         <h3 className="mt-1 text-xl font-semibold" aria-live="polite">
           {loading ? "Henter oppfølgingsoppgaver…" : error ? "Oppfølging må kontrolleres" :
-            tasks.length === 0 ? "Ingen åpne webhenvendelser" : tasks.length + " henvendelser til oppfølging"}
+            tasks.length === 0 ? "Ingen åpne webhenvendelser" : (capped ? "Minst " : "") + tasks.length + " henvendelser til oppfølging"}
         </h3>
         <p className="mt-1 text-sm text-slate-400">
           Bare Altovena. Oppdateres automatisk hvert minutt når fanen er aktiv.
@@ -105,9 +118,19 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
       <button type="button" onClick={() => setRefresh(current => current + 1)}
         className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-cyan-200">Oppdater</button>
     </div>
+    {!error && !loading && newArrivals>0 && <div role="status"
+      className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-700/70 bg-cyan-950/30 p-3 text-sm text-cyan-100">
+      <span>{newArrivals} {newArrivals===1?"ny henvendelse er":"nye henvendelser er"} oppdaget mens denne siden har vært åpen. Kontroller oppfølgingen.</span>
+      <button type="button" onClick={()=>setNewArrivals(0)}
+        className="rounded-md border border-cyan-700 px-3 py-1 text-xs">Skjul beskjed</button>
+    </div>}
+    {!error && !loading && capped && <p role="status"
+      className="mt-3 rounded-lg border border-amber-700/70 bg-amber-950/30 p-3 text-sm text-amber-200">
+      Listen har nådd grensen på 40 oppgaver. Flere kan finnes. Bruk CRM for full oversikt; tallet over er ikke nødvendigvis totalen.
+    </p>}
     {!error && !loading && overdue > 0 && <p role="status"
       className="mt-3 rounded-lg border border-amber-700/70 bg-amber-950/40 p-3 text-sm font-medium text-amber-200">
-      {overdue} {overdue === 1 ? "henvendelse har" : "henvendelser har"} ventet i mer enn 24 timer.
+      {overdue} {overdue === 1 ? "henvendelse har" : "henvendelser har"} vært uten startet oppfølging i minst 24 timer.
       Kontroller oppfølgingen i CRM.
     </p>}
     {error && <p role="alert" className="mt-3 text-sm text-amber-300">{error}</p>}
@@ -124,7 +147,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => onOpenLeads(task.contactId || undefined)}
+          <button type="button" onClick={() => { setNewArrivals(0); onOpenLeads(task.contactId || undefined); }}
             className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200">
             {task.contactId ? "Åpne kundekort" : "Åpne CRM"}
           </button>
@@ -142,7 +165,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
         </div>
       </div>)}
       {tasks.length > 8 && <p className="text-xs text-slate-400">
-        Viser de åtte nyeste av inntil 40 åpne oppgaver. Bruk CRM for full oversikt.
+        Viser de åtte nyeste av {capped?"minst 40":tasks.length} oppgaver i oversikten. Bruk CRM for full oversikt.
       </p>}
     </div>}
     <p className="mt-3 text-xs text-slate-500">
