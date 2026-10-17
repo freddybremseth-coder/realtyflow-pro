@@ -8,6 +8,7 @@ import { VISIBILITY_CODE_CANDIDATE_ACTION, resolveVisibilityCodeCandidate } from
 import { checkVisibilityPullStatus, MAX_GITHUB_PR_STATUS_CHECKS } from "@/services/agents/visibility-github-pr-status";
 import { checkVisibilityPullCi } from "@/services/agents/visibility-github-ci";
 import { VISIBILITY_VISUAL_REVIEW_ACTION,latestVisualReviewForCandidate } from "@/services/agents/visibility-visual-review";
+import { summarizePrReviewReadiness } from "@/services/agents/visibility-pr-review-readiness";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -98,18 +99,21 @@ export async function GET(request: NextRequest) {
   dailyScheduleUtc:"08:15",
  },work_items:(data||[]).filter(x=>x.metadata?.product==="altovena_visibility").map(x=>{
    const plan=createVisibilityDesignProposal(x,latest.get(x.id)??null);
+   const codeCandidate=resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]);
+   const visualReview=codeCandidate
+    ?latestVisualReviewForCandidate(x.id,codeCandidate.commitSha,visualLogs||[]):null;
+   const reviewReadiness=summarizePrReviewReadiness(codeCandidate,
+     githubStatusByWork.get(x.id)??null,githubCiByWork.get(x.id)??null,visualReview);
    return {
     ...x,visibility_state:visibilityWorkDisplayState(x.status,x.metadata),
     investigation:latest.get(x.id)??null,
     design_proposal:plan,
     design_requested:plan.fingerprint?requestedFingerprints.has(plan.fingerprint):false,
-    code_candidate:resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]),
+    code_candidate:codeCandidate,
     github_status:githubStatusByWork.get(x.id)??null,
     github_ci:githubCiByWork.get(x.id)??null,
-    visual_review:(()=>{
-      const candidate=resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]);
-      return candidate ? latestVisualReviewForCandidate(x.id,candidate.commitSha,visualLogs||[]) : null;
-    })(),
+    visual_review:visualReview,
+    review_readiness:reviewReadiness,
    };
  })},{headers:{"Cache-Control":"private, no-store"}});
 }

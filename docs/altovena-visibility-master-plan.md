@@ -68,10 +68,22 @@ En direkte eierøkt kan også sende en **manuell visuell kontrollrapport** for d
 
 Disse to bevisene kan vises samlet ved Nexus-oppgaven, men **CI-bestått + visuelt bestått gir heller ingen publiseringstillatelse**. En senere autorisasjonsprosess for eksakt diff/release er en egen milepæl.
 
+## Samlet PR-kvalitetsstatus – skilt fra SEO-score
+
+For den enkelte eierregistrerte kode-PR-en beregner Nexus nå en **rent informativ** status fra fire separate kilder: opprinnelig kodekandidat, fersk GitHub-status for eksakt SHA, GitHub CI-jobben `build-test` for denne SHA-en og eventuell manuell visuell kontrollrapport for den samme SHA-en.
+
+Kvalitetsstatusen gir en konkret **neste handling** ved ukjent GitHub-status, endret commit, lukket PR, feilende/ufullstendige tester eller manglende visuell gjennomgang. Hvis alle bevis stemmer, vises «Kvalitetsbevis dokumentert – ikke publiseringsgodkjent». Funksjonen har **ingen mutasjon**, gir aldri tillatelse til merge/deploy/publisering og kan ikke merke en SEO-oppgave som løst. Gamle attestasjoner vises som historiske hvis PR-head endres.
+
+### Gjennomført i arbeidsflyten
+
+- Sam har utført uavhengige undersøkelser og lagret `visibility_independent_investigation` i produksjonsdatabasen (to oppgaver observert 17. oktober 2026). Det er **ikke** bevis for publisert reparasjon.
+- Reel Re-Master-kilde er identifisert og en isolert [PR #48](https://github.com/freddybremseth-coder/remasterfreddy/pull/48) har bestått CI og forhåndsvisning. PR er fortsatt separat og upublisert.
+- Eierforespørsel, kode-PR og manuell testvurdering er separate journalhandlinger. Ingen av disse innebærer fullmakt til nettsideendringer.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
-1. **Drift:** Verifiser første faktiske `visibility_independent_investigation`-journal fra planlagt/mannuell kjøring. Ved status null er ikke arbeid utført. Logg hvorfor cron kjøres, hoppes over eller feiler.
-2. **P2 kodeutkast:** Finn *eksakt* kildefil og synlig tekst; lag isolert PR, forhåndsvisning og test. Ingen LLM-oppdiktet H1.
+1. **Drift videre:** Følg med på at nye planlagte undersøkelsesjournaler faktisk blir skrevet, og at eventuell ny avviksmåling er knyttet til riktig åpen oppgave.
+2. **Re-Master før release:** Gjennomfør faktisk desktop- og mobilgjennomgang på den testede forhåndsvisningen, journalfør fakta og kontroller nyeste commit.
 3. **P3 autorisasjon:** Fersk, konkret eiergodkjenning av en *eksakt diff/commit*, ikke generell brand-tillatelse. Streng rolle-/brand-grense.
 4. **P4 verifikasjon:** Publisering bare via eksisterende avgrensede godkjente skrivere med før-versjon, rollback og uavhengig offentlig bevis; avvik må kunne stanses.
 5. **SaaS-ekstraksjon:** Når dette virker i RealtyFlow, skill tenant-scoped skjema/data/tilganger og kundeinstallerte skrivere fra dagens interne owner-operasjoner. Ingen offentlig SaaS har automatisk RealtyFlow production/DB-tilgang.

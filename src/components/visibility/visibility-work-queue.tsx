@@ -27,7 +27,21 @@ type VisualReview={
  outcome:"VISUALLY_PASSED"|"ISSUES_FOUND";
  checks:Record<string,boolean>;notes:string;publishingApproved:false;mergingApproved:false;
 };
-type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null;github_status:GithubStatus|null;github_ci:GithubCi|null;visual_review:VisualReview|null};
+type ReviewReadiness={
+ stage:"NO_PR"|"GITHUB_UNKNOWN"|"PR_CHANGED"|"PR_CLOSED"|"CI_FAILED"|"CI_PENDING"|"CI_UNKNOWN"|"NEEDS_VISUAL"|"VISUAL_ISSUES"|"REVIEW_EVIDENCE_COMPLETE";
+ nextStep:string;reviewedSha:string|null;
+ technicalChecksPassed:boolean;humanVisualReviewPassed:boolean;
+ requiresSeparateReleaseApproval:true;mergeAuthorized:false;publicationAuthorized:false;verifiedAsPublished:false;
+};
+type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null;github_status:GithubStatus|null;github_ci:GithubCi|null;visual_review:VisualReview|null;review_readiness:ReviewReadiness};
+const readinessNames:Record<ReviewReadiness["stage"],string>={
+ NO_PR:"Kodeutkast mangler",GITHUB_UNKNOWN:"GitHub-status ukjent",
+ PR_CHANGED:"PR-versjonen er endret",PR_CLOSED:"PR er lukket eller sammenslått",
+ CI_FAILED:"GitHub-testene feilet",CI_PENDING:"Testene kjører fortsatt",
+ CI_UNKNOWN:"Testene er ikke verifisert",NEEDS_VISUAL:"Mangler manuell visuell kontroll",
+ VISUAL_ISSUES:"Visuelle feil gjenstår",
+ REVIEW_EVIDENCE_COMPLETE:"Kvalitetsbevis dokumentert – ikke publiseringsgodkjent",
+};
 const githubCiLabels:Record<GithubCi["state"],string>={
  PASSED:"GitHub-testene er bestått for denne committen",
  FAILED:"GitHub-testene feilet – korrigering nødvendig",
@@ -172,6 +186,16 @@ export function VisibilityWorkQueue(){
        <div className="text-slate-500">Ingen reparasjon eller publisering utført</div>
       </div>}
       {!item.investigation&&<div className="mt-2 text-xs text-slate-500">Venter på uavhengig kontroll</div>}
+      {item.review_readiness&&<div className="mt-3 max-w-md rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800">
+        <p className="font-semibold">Samlet kvalitetssjekk – ingen automatisk publisering</p>
+        <p className="mt-1 font-medium">{readinessNames[item.review_readiness.stage]}</p>
+        <p className="mt-1">Neste steg: {item.review_readiness.nextStep}</p>
+        <p className="mt-1 text-slate-600">
+          GitHub-tester: {item.review_readiness.technicalChecksPassed?"Bestått":"Ikke fullstendig bekreftet"} ·
+          Manuell visuell kontroll: {item.review_readiness.humanVisualReviewPassed?"Attestert":"Ikke godkjent"}
+        </p>
+        <p className="mt-1 font-semibold">Separat release-godkjenning kreves alltid. Ingen nettsideendring er autorisert.</p>
+      </div>}
       {item.code_candidate&&<div className="mt-3 max-w-md rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-800">
        <div className="font-semibold">Kodeforslag til gjennomgang</div>
        <p className="mt-1">Knyttet til din registrerte forespørsel om endringsutkast. Ingen sammenslåing eller publisering er godkjent.</p>
@@ -200,9 +224,11 @@ export function VisibilityWorkQueue(){
          <p className="mt-1 text-slate-500">GitHub-tester er ikke visuell kvalitetssikring eller tillatelse til publisering.</p>
        </div>
        {item.visual_review&&<div className="mt-2 rounded-lg bg-slate-50 p-2">
-         <p className="font-semibold">{item.visual_review.outcome==="VISUALLY_PASSED"
-          ?"Visuell kontroll er manuelt registrert som bestått"
-          :"Visuell kontroll har åpne punkter eller feil"}</p>
+         <p className="font-semibold">{item.github_status?.state==="COMMIT_CHANGED"
+          ?"Historisk visuell kontroll: PR-versjonen er endret"
+          :item.visual_review.outcome==="VISUALLY_PASSED"
+            ?"Visuell kontroll er manuelt registrert som bestått"
+            :"Visuell kontroll har åpne punkter eller feil"}</p>
          <p className="mt-1 text-slate-600">Gjennomgang:
           {new Date(item.visual_review.recordedAt).toLocaleString("nb-NO")} ·
           Commit {item.visual_review.commitSha.slice(0,7)}</p>
