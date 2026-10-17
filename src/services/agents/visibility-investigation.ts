@@ -119,6 +119,8 @@ export async function investigateVisibilityTasks(
   for (const candidate of pending) {
     if (investigated + failed >= MAX_INVESTIGATED_TASKS) break;
     const { item, sourceId } = candidate;
+    const workItem = saved.get(sourceId);
+    if (!workItem) continue;
     if (!selectedBrands.has(item.brandId) && selectedBrands.size >= MAX_INVESTIGATED_SITES) continue;
     const target = targets.get(item.brandId)!;
     selectedBrands.add(item.brandId);
@@ -131,7 +133,7 @@ export async function investigateVisibilityTasks(
       const { error } = await db.from("automation_logs").insert({
         action: INVESTIGATION_ACTION, agent_name: "Sam SEO Expert",
         status: check.result === "INCONCLUSIVE" || check.result === "DATA_STILL_INCOMPLETE" ? "partial" : "success",
-        details: { work_item_id: saved.get(sourceId).id, brand_id: item.brandId,
+        details: { work_item_id: workItem.id, brand_id: item.brandId,
           source_id: sourceId, checked_at: check.checkedAt,
           result: check.result, issue_code: check.issueCode,
           evidence: check.evidence, target_origin: target.base,
