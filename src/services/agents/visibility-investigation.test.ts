@@ -59,14 +59,14 @@ test("A data gap never becomes a website error",()=>{
  assert.equal(evaluateInvestigation(gap,makeAudit(1,null)).result,"DATA_STILL_INCOMPLETE");
  assert.equal(evaluateInvestigation(gap,makeAudit(1)).result,"DATA_NOW_AVAILABLE");
 });
-function dbMock(recent:any[]=[]){
+function dbMock(recent:any[]=[], savedTasks:any[]=[{id:"00000000-0000-4000-8000-000000000001",brand_id:"remasterfreddy",
+ source_id:plan.source_id,status:"TO_DO",metadata:{product:"altovena_visibility"}}]){
  const inserted:any[]=[];
  const chain=(table:string)=>({
   select:()=>({
    eq:()=>({
     in:()=>({
-      limit:async()=>({data:[{id:"00000000-0000-4000-8000-000000000001",brand_id:"remasterfreddy",
-       source_id:plan.source_id,status:"TO_DO",metadata:{product:"altovena_visibility"}}],error:null}),
+      limit:async()=>({data:savedTasks,error:null}),
       order:()=>({limit:async()=>({data:recent,error:null})}),
     }),
     order:()=>({limit:async()=>({data:recent,error:null})}),
@@ -99,4 +99,68 @@ test("Old reports and current recheck cooldown do not trigger public requests",a
  assert.equal(stale.investigated,0);
  assert.equal(probes,0);
  assert.equal(MAX_INVESTIGATED_SITES,2);
+});
+
+test("previous H1 finding is remeasured even after disappearing from current saved SEO report",async()=>{
+ const fresh:SEOControlReport={...report,sites:report.sites.map(site=>({
+  ...site,findings:0,visibilityDiagnostic:{...site.visibilityDiagnostic,
+   issues:[],diagnosticStatus:"OBSERVED_NO_BLOCKERS" as const},
+ }))};
+ const {db,inserted}=dbMock();
+ let probes=0;
+ const result=await investigateVisibilityTasks(db,fresh,now,async(target)=>{
+  probes++;
+  return makeAudit(1);
+ });
+ assert.equal(probes,1);
+ assert.equal(result.investigated,1);
+ assert.deepEqual(result.results,[{brandId:"remasterfreddy",result:"NOT_REPRODUCED"}]);
+ assert.equal(inserted[0].row.details.result,"NOT_REPRODUCED");
+ assert.equal(inserted[0].row.details.resolution_verified,false);
+ assert.equal(inserted[0].table,"automation_logs");
+});
+
+test("previous incomplete sitemap task is remeasured even if new source report is complete",async()=>{
+ const brandId="zeneco";
+ const key=`visibility:${brandId}:data-gap`;
+ const gapId=planVisibilityWorkItem({
+  id:key,brandId,title:"Fullfør teknisk kontroll",detail:"older incomplete run",
+  nextStep:"Run a fresh bounded public audit",priority:"unknown",url:null,
+  category:"missing-data",updatedAt:date,evidenceAge:"RECENT",
+ }).source_id;
+ const saved=[{id:"00000000-0000-4000-8000-000000000002",brand_id:brandId,
+  source_id:gapId,status:"TO_DO",metadata:{product:"altovena_visibility"}}];
+ const fresh:SEOControlReport={
+  ...report,sites:report.sites.map(site=>({
+   ...site,brandId,findings:0,incomplete:false,visibilityDiagnostic:{
+    ...site.visibilityDiagnostic,brandId,issues:[],incomplete:false,
+    diagnosticStatus:"OBSERVED_NO_BLOCKERS" as const,
+   },
+  })),
+ };
+ const {db,inserted}=dbMock([],saved);
+ let probes=0;
+ const result=await investigateVisibilityTasks(db,fresh,now,async(target)=>{
+  probes++;
+  return {...makeAudit(1),brandId:target.brandId,base:target.base};
+ });
+ assert.equal(probes,1);
+ assert.equal(result.investigated,1);
+ assert.equal(result.results[0].result,"DATA_NOW_AVAILABLE");
+ assert.equal(inserted[0].row.details.resolution_verified,false);
+});
+
+test("no existing matching durable task means no speculative public probes",async()=>{
+ const fresh:SEOControlReport={...report,sites:report.sites.map(site=>({
+  ...site,visibilityDiagnostic:{...site.visibilityDiagnostic,issues:[]},
+ }))};
+ const {db,inserted}=dbMock([],[]);
+ let probes=0;
+ const result=await investigateVisibilityTasks(db,fresh,now,async()=>{
+  probes++;return makeAudit(1);
+ });
+ assert.equal(probes,0);
+ assert.equal(result.investigated,0);
+ assert.equal(result.skipped,0);
+ assert.equal(inserted.length,0);
 });
