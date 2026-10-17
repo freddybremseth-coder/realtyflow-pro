@@ -6,6 +6,8 @@ import { createVisibilityDesignProposal, DESIGN_REQUEST_ACTION, type VisibilityI
 import { VISIBILITY_RUN_ACTION, parseVisibilityRunStatus } from "@/services/agents/visibility-run-ledger";
 import { VISIBILITY_CODE_CANDIDATE_ACTION, resolveVisibilityCodeCandidate } from "@/services/agents/visibility-code-candidate";
 import { checkVisibilityPullStatus, MAX_GITHUB_PR_STATUS_CHECKS } from "@/services/agents/visibility-github-pr-status";
+import { checkVisibilityPullCi } from "@/services/agents/visibility-github-ci";
+import { VISIBILITY_VISUAL_REVIEW_ACTION,latestVisualReviewForCandidate } from "@/services/agents/visibility-visual-review";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -48,6 +50,10 @@ export async function GET(request: NextRequest) {
   .select("created_at,details").eq("action",VISIBILITY_CODE_CANDIDATE_ACTION)
   .order("created_at",{ascending:false}).limit(200);
  if(codeError)return NextResponse.json({error:"Code review provenance unavailable"},{status:503});
+ const {data:visualLogs,error:visualError}=await client.from("automation_logs")
+  .select("created_at,details").eq("action",VISIBILITY_VISUAL_REVIEW_ACTION)
+  .order("created_at",{ascending:false}).limit(200);
+ if(visualError)return NextResponse.json({error:"Visual review history unavailable"},{status:503});
  const {data:source,error:sourceError}=await client.from("automation_logs")
   .select("created_at").eq("action","seo_gsc_live_read")
   .in("status",["success","partial"]).order("created_at",{ascending:false})
@@ -73,10 +79,13 @@ export async function GET(request: NextRequest) {
   .map(x=>({workId:x.id,candidate:resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[])}))
   .filter((x):x is {workId:string;candidate:NonNullable<typeof x.candidate>}=>x.candidate!==null)
   .slice(0,MAX_GITHUB_PR_STATUS_CHECKS);
- const githubChecks=await Promise.all(reviewCandidates.map(async x=>({
-  workId:x.workId,status:await checkVisibilityPullStatus(x.candidate),
- })));
+ const githubChecks=await Promise.all(reviewCandidates.map(async x=>{
+  const status=await checkVisibilityPullStatus(x.candidate);
+  const ci=await checkVisibilityPullCi(x.candidate,status);
+  return {workId:x.workId,status,ci};
+ }));
  const githubStatusByWork=new Map(githubChecks.map(x=>[x.workId,x.status]));
+ const githubCiByWork=new Map(githubChecks.map(x=>[x.workId,x.ci]));
  return NextResponse.json({audit_status:{
   latestSourceAuditAt:source?.created_at??null,
   latestIndependentAt:latestIndependent?.details?.checked_at??null,
@@ -96,6 +105,11 @@ export async function GET(request: NextRequest) {
     design_requested:plan.fingerprint?requestedFingerprints.has(plan.fingerprint):false,
     code_candidate:resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]),
     github_status:githubStatusByWork.get(x.id)??null,
+    github_ci:githubCiByWork.get(x.id)??null,
+    visual_review:(()=>{
+      const candidate=resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]);
+      return candidate ? latestVisualReviewForCandidate(x.id,candidate.commitSha,visualLogs||[]) : null;
+    })(),
    };
  })},{headers:{"Cache-Control":"private, no-store"}});
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { VisibilityVisualReviewForm } from "./visibility-visual-review-form";
 
 type Investigation = {result:string;checked_at:string;issue_code:string;
  evidence?:{homepageStatus:number|null;h1Count:number|null;robotsStatus:number|null;sitemapStatus:number|null;issues:string[];incomplete:boolean}};
@@ -16,7 +17,24 @@ type GithubStatus={
  checkedAt:string;currentHeadSha:string|null;codeUnchanged:boolean;
  mergeAuthorized:false;publicationAuthorized:false;verifiedAsPublished:false;
 };
-type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null;github_status:GithubStatus|null};
+type GithubCi={
+ state:"PASSED"|"FAILED"|"PENDING"|"UNVERIFIED"|"COMMIT_CHANGED";
+ checkedAt:string;reviewedSha:string;requiredJob:string;observedJobs:number;
+ publicationAuthorized:false;mergeAuthorized:false;visualReviewCompleted:false;
+};
+type VisualReview={
+ workItemId:string;commitSha:string;recordedAt:string;
+ outcome:"VISUALLY_PASSED"|"ISSUES_FOUND";
+ checks:Record<string,boolean>;notes:string;publishingApproved:false;mergingApproved:false;
+};
+type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null;github_status:GithubStatus|null;github_ci:GithubCi|null;visual_review:VisualReview|null};
+const githubCiLabels:Record<GithubCi["state"],string>={
+ PASSED:"GitHub-testene er bestått for denne committen",
+ FAILED:"GitHub-testene feilet – korrigering nødvendig",
+ PENDING:"GitHub-testene pågår",
+ UNVERIFIED:"GitHub-testene kan ikke verifiseres",
+ COMMIT_CHANGED:"Commit endret – testresultatet gjelder ikke lenger",
+};
 const githubStateLabels:Record<GithubStatus["state"],string>={
  OPEN_SAME_COMMIT:"Åpen PR – kodeversjonen stemmer",
  DRAFT_SAME_COMMIT:"Utkast i GitHub – samme kodeversjon",
@@ -169,6 +187,31 @@ export function VisibilityWorkQueue(){
         Kontrollert: {new Date(item.github_status.checkedAt).toLocaleString("nb-NO")}.
         {item.github_status.currentHeadSha?` Gjeldende commit: ${item.github_status.currentHeadSha.slice(0,7)}.`:""}
        </p>}
+       <div className="mt-2 rounded-lg bg-slate-50 p-2">
+         <div className="font-semibold">Teknisk testbevis</div>
+         <p className="mt-1">{item.github_ci
+           ?githubCiLabels[item.github_ci.state]
+           :"Ingen verifiserte GitHub-testresultater"}</p>
+         {item.github_ci&&<p className="mt-1 text-slate-600">
+           Sjekket {new Date(item.github_ci.checkedAt).toLocaleString("nb-NO")} ·
+           Krevd jobb: {item.github_ci.requiredJob} ·
+           Commit: {item.github_ci.reviewedSha.slice(0,7)}.
+         </p>}
+         <p className="mt-1 text-slate-500">GitHub-tester er ikke visuell kvalitetssikring eller tillatelse til publisering.</p>
+       </div>
+       {item.visual_review&&<div className="mt-2 rounded-lg bg-slate-50 p-2">
+         <p className="font-semibold">{item.visual_review.outcome==="VISUALLY_PASSED"
+          ?"Visuell kontroll er manuelt registrert som bestått"
+          :"Visuell kontroll har åpne punkter eller feil"}</p>
+         <p className="mt-1 text-slate-600">Gjennomgang:
+          {new Date(item.visual_review.recordedAt).toLocaleString("nb-NO")} ·
+          Commit {item.visual_review.commitSha.slice(0,7)}</p>
+         <p className="mt-1">{item.visual_review.notes}</p>
+         <p className="mt-1">Ingen sammenslåing eller publisering er godkjent.</p>
+       </div>}
+       {(item.github_status?.state==="OPEN_SAME_COMMIT" || item.github_status?.state==="DRAFT_SAME_COMMIT")&&
+        <VisibilityVisualReviewForm workItemId={item.id} sha={item.code_candidate.commitSha}
+          onRecorded={refresh} onMessage={setMessage}/>}
        {item.github_status?.state==="COMMIT_CHANGED"&&<p className="mt-1 font-semibold text-amber-800">
         Det opprinnelige endringsutkastet gjelder ikke lenger den nyeste koden. Ny vurdering kreves.
        </p>}
