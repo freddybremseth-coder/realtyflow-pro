@@ -7,6 +7,7 @@ import { VISIBILITY_RUN_ACTION, parseVisibilityRunStatus } from "@/services/agen
 import { VISIBILITY_CODE_CANDIDATE_ACTION, resolveVisibilityCodeCandidate } from "@/services/agents/visibility-code-candidate";
 import { checkVisibilityPullStatus, MAX_GITHUB_PR_STATUS_CHECKS } from "@/services/agents/visibility-github-pr-status";
 import { checkVisibilityPullCi } from "@/services/agents/visibility-github-ci";
+import { VISIBILITY_VISUAL_REVIEW_ACTION,latestVisualReviewForCandidate } from "@/services/agents/visibility-visual-review";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -49,6 +50,10 @@ export async function GET(request: NextRequest) {
   .select("created_at,details").eq("action",VISIBILITY_CODE_CANDIDATE_ACTION)
   .order("created_at",{ascending:false}).limit(200);
  if(codeError)return NextResponse.json({error:"Code review provenance unavailable"},{status:503});
+ const {data:visualLogs,error:visualError}=await client.from("automation_logs")
+  .select("created_at,details").eq("action",VISIBILITY_VISUAL_REVIEW_ACTION)
+  .order("created_at",{ascending:false}).limit(200);
+ if(visualError)return NextResponse.json({error:"Visual review history unavailable"},{status:503});
  const {data:source,error:sourceError}=await client.from("automation_logs")
   .select("created_at").eq("action","seo_gsc_live_read")
   .in("status",["success","partial"]).order("created_at",{ascending:false})
@@ -101,6 +106,10 @@ export async function GET(request: NextRequest) {
     code_candidate:resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]),
     github_status:githubStatusByWork.get(x.id)??null,
     github_ci:githubCiByWork.get(x.id)??null,
+    visual_review:(()=>{
+      const candidate=resolveVisibilityCodeCandidate(x,requests||[],codeLogs||[]);
+      return candidate ? latestVisualReviewForCandidate(x.id,candidate.commitSha,visualLogs||[]) : null;
+    })(),
    };
  })},{headers:{"Cache-Control":"private, no-store"}});
 }
