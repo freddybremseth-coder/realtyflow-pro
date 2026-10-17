@@ -25,7 +25,7 @@ export async function POST(
 
     const { data: creatives, error } = await context.supabase
       .from("ad_creatives")
-      .select("id,output_asset_id,pushed_to_hub,hub_content_id,image_url,thumbnail_url,angle,scene_id,aspect_ratio,caption_primary,caption_secondary,hashtags")
+      .select("id,output_asset_id,pushed_to_hub,hub_content_id,image_url,thumbnail_url,angle,scene_id,aspect_ratio,caption_primary,caption_secondary,hashtags,metadata_json")
       .eq("campaign_id", params.id)
       .eq("status", "completed");
     if (error) throw new Error(error.message);
@@ -39,6 +39,12 @@ export async function POST(
       const batch = pending.slice(index, index + 5);
       const results = await Promise.allSettled(batch.map(async (creative) => {
         if (!creative.image_url) throw new Error("Ferdig annonse mangler bildeadresse.");
+        const requiresLabelReview = creative.metadata_json?.creative_image_label_review_required === true;
+        const title = `${campaign.name} · ${creative.angle || creative.scene_id} · ${creative.aspect_ratio}`;
+        const caption = creative.caption_primary || `Produkt: ${campaign.product_name}`;
+        const description = [caption, ...(creative.hashtags?.length ? [creative.hashtags.join(" ")] : [])].join("\n");
+        const tags = ["ad-campaign", campaign.product_name, creative.angle, creative.scene_id, creative.aspect_ratio,
+          ...(requiresLabelReview ? ["needs-product-label-review"] : [])].filter(Boolean);
 
         let publicationId: string;
         if (creative.hub_content_id) {
@@ -81,30 +87,70 @@ export async function POST(
         if (!publicationId) {
           // Legacy fallback: keep the user-generated image, create only a
           // reviewable draft; do not schedule or publish anything.
-          const title = `${campaign.name} · ${creative.angle || creative.scene_id} · ${creative.aspect_ratio}`;
           const { data: draft, error: draftError } = await context.supabase
             .from("content_publications")
             .insert({
               brand_id: campaign.brand_id || "media-studio",
               content_type: "image_post",
               title,
-              description: creative.caption_primary || `Produkt: ${campaign.product_name}`,
-              tags: ["ad-campaign", campaign.product_name, creative.angle, creative.scene_id, creative.aspect_ratio].filter(Boolean),
+              description,
+              tags,
               status: "draft",
               ai_generated: true,
               ai_title: title,
-              ai_description: creative.caption_primary || "",
+              ai_description: caption,
               ai_tags: creative.hashtags || [],
               ai_image_url: creative.image_url,
               thumbnail_url: creative.thumbnail_url || null,
               media_urls: [creative.image_url],
               campaign_id: params.id,
+              content_features: {
+                requires_label_review: requiresLabelReview,
+                ...(requiresLabelReview ? { label_approval_pending: true, product_volume: "3 L" } : {}),
+                source_ad_creative_id: creative.id,
+                secondary_caption: creative.caption_secondary || null,
+              },
             })
             .select("id")
             .single();
           if (draftError || !draft) throw new Error(draftError?.message || "Content Hub-utkastet ble ikke lagret.");
           publicationId = String(draft.id);
         }
+
+        // Normalize both Media Library and legacy draft paths. Preserving the
+        // review flag in content_features means draft editors can show the
+        // correct readiness state, while the publisher also rechecks sources.
+        const { data: existingDraft, error: existingDraftError } = await context.supabase
+          .from("content_publications")
+          .select("content_features,status")
+          .eq("id", publicationId)
+          .eq("brand_id", campaign.brand_id || "media-studio")
+          .maybeSingle();
+        if (existingDraftError || !existingDraft) throw new Error(existingDraftError?.message || "Utkastet mangler.");
+        if (existingDraft.status !== "draft") {
+          throw new Error("Et tidligere eksportert innlegg er ikke lenger et utkast. Kontrollér det manuelt.");
+        }
+        const { error: draftUpdateError } = await context.supabase
+          .from("content_publications")
+          .update({
+            title,
+            description,
+            ai_title: title,
+            ai_description: caption,
+            ai_tags: creative.hashtags || [],
+            tags,
+            campaign_id: params.id,
+            content_features: {
+              ...(existingDraft.content_features || {}),
+              requires_label_review: requiresLabelReview,
+              ...(requiresLabelReview ? { label_approval_pending: true, product_volume: "3 L" } : {}),
+              source_ad_creative_id: creative.id,
+              secondary_caption: creative.caption_secondary || null,
+            },
+          })
+          .eq("id", publicationId)
+          .eq("brand_id", campaign.brand_id || "media-studio");
+        if (draftUpdateError) throw new Error(draftUpdateError.message);
 
         const { error: syncError } = await context.supabase
           .from("ad_creatives")
