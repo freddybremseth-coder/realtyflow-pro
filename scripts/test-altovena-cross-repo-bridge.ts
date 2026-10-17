@@ -23,8 +23,7 @@ if (!["127.0.0.1", "localhost"].includes(databaseUrl.hostname) ||
   throw Error("Cross-repo E2E requires the isolated local altovena_ci_test database.");
 
 const websiteFile = resolve("altovena-website/api/contact.js");
-const { default: websiteHandler } = await import(pathToFileURL(websiteFile).href);
-assert.equal(typeof websiteHandler, "function", "Pinned Altovena website handler missing");
+let websiteHandler: (request:unknown,response:unknown)=>Promise<unknown>;
 
 const websiteOrigin = "https://altovena.com";
 const realtyFlowTarget = "https://realtyflow.chatgenius.pro/api/public/altovena-leads";
@@ -84,6 +83,9 @@ async function submit(payload=form as Record<string,unknown>,extraHeaders:Record
   return response;
 }
 async function main() {
+  const loaded = await import(pathToFileURL(websiteFile).href);
+  websiteHandler=loaded.default;
+  assert.equal(typeof websiteHandler, "function", "Pinned Altovena website handler missing");
   await db.connect();
   let transactionOpen=false;
   try {
