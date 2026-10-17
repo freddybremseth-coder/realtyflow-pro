@@ -121,7 +121,8 @@ export function verifyCommandAnalysisCandidate(input: Readonly<{
   requireScope(input.scope);
   const sources = requireSources(input.sources, input.scope, input.now);
   const candidate = record(input.candidate);
-  if (!candidate || !onlyKeys(candidate, [
+  if (candidate === null) fail("candidate_scope_or_schema_mismatch");
+  if (!onlyKeys(candidate, [
     "schemaVersion","mode","tenantId","missionId","agentId","goalDigest",
     "routingDigest","findings","limitations","controls",
   ]) || candidate.schemaVersion !== 1 || candidate.mode !== "ANALYSIS_DRAFT_ONLY"
