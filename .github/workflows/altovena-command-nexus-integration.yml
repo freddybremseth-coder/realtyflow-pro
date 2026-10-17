@@ -12,6 +12,8 @@ on:
       - "supabase/migrations/*altovena_analysis_budget_ledger.sql"
       - "tests/altovena/analysis-budget-ledger.sql"
       - "tests/altovena/analysis-budget-concurrency.integration.mjs"
+      - "supabase/migrations/*altovena_analysis_review_boundary.sql"
+      - "tests/altovena/analysis-approval-boundary.sql"
       - "src/lib/altovena/command-analysis-budget-postgres.ts"
       - "src/lib/altovena/command-analysis-budget-postgres.test.ts"
       - "src/lib/altovena/command-nexus-handoff.test.ts"
@@ -111,3 +113,7 @@ jobs:
         env:
           ALTOVENA_BUDGET_TEST_DB_ONLY: "true"
         run: node tests/altovena/analysis-budget-concurrency.integration.mjs
+      - name: Apply private reviewer approval and attested evidence fences
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261017130000_altovena_analysis_review_boundary.sql
+          psql -v ON_ERROR_STOP=1 -f tests/altovena/analysis-approval-boundary.sql
