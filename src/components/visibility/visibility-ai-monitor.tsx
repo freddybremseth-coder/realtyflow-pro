@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { VisibilityAiManualEntry } from "./visibility-ai-manual-entry";
+import { summarizeAiVisibilityLedger, type AiVisibilityLedgerRow } from "@/services/agents/visibility-ai-summary";
 
 const services = [
   {name:"ChatGPT Search",detail:"Omtale eller kildehenvisning i dokumentert AI-svar"},
@@ -12,6 +13,7 @@ export function VisibilityAiMonitor() {
   const [observations,setObservations]=useState<Array<{id:string;provider:string;prompt:string;observed_at:string;evidence_state:string;captured_by:string;cited_urls:string[];verification_state:string}>>([]);
   const [status,setStatus]=useState("Henter registrerte observasjoner …");
   useEffect(()=>{const controller=new AbortController();fetch("/api/visibility/ai-observations",{credentials:"same-origin",cache:"no-store",signal:controller.signal}).then(async r=>{if(!r.ok)throw new Error("Observasjoner er ikke tilgjengelige.");return r.json();}).then(data=>{if(!controller.signal.aborted){setObservations(data.observations||[]);setStatus("");}}).catch(()=>{if(!controller.signal.aborted)setStatus("Kunne ikke hente observasjoner. Ingen AI-synlighet er bekreftet.");});return ()=>controller.abort();},[revision]);
+  const summaries=summarizeAiVisibilityLedger(observations as AiVisibilityLedgerRow[]);
   return <section className="rounded-2xl border border-slate-200 bg-white p-5" aria-label="AI Visibility Monitor">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h3 className="text-lg font-bold text-slate-950">AI Visibility Monitor</h3>
@@ -19,10 +21,10 @@ export function VisibilityAiMonitor() {
       <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">Innsamling ikke koblet til</span>
     </div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-      {services.map(service=><div key={service.name} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      {services.map((service,index)=><div key={service.name} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
         <h4 className="font-semibold text-slate-900">{service.name}</h4>
         <p className="mt-1 text-xs text-slate-600">{service.detail}</p>
-        <div className="mt-3 text-xs font-semibold text-amber-800">Ingen verifiserte observasjoner hentet</div>
+        <div className="mt-3 text-xs font-semibold text-slate-700">Registrert: {summaries[index].recorded} · Uavhengig verifiserte siteringer: {summaries[index].verifiedCitations}</div><div className="mt-1 text-xs text-amber-800">Ikke verifisert: {summaries[index].manualUnverified} · Ingen representativ dekning målt</div>
       </div>)}
     </div>
     <VisibilityAiManualEntry onSaved={()=>setRevision(x=>x+1)}/>
