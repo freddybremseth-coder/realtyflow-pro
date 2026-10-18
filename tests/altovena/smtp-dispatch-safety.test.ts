@@ -11,6 +11,7 @@ const secret="isolated-only-HMAC-key-do-not-ever-use-live-2026";
 let revoked=false,claimed=false,claimError=false,finishError=false,tryCalls=0;
 let sendMode:"accepted"|"failed"|"throws"="accepted";
 let verifications=0;
+let revokeAt=0;
 const smtpCalls:string[]=[];
 const finishRecords:Record<string,unknown>[]=[];
 function deps(){
@@ -18,6 +19,7 @@ function deps(){
   rpc:async(name:string,args:Record<string,unknown>)=>{
    if(name==="workspace_brand_grant"){
     verifications++;
+    if(revokeAt>0 && verifications>=revokeAt)revoked=true;
     return {data:{
       brand:{id:brandId,brand_key:"altovena"},
       grant:{brand_id:brandId,user_id:userId,email:staff,
@@ -57,7 +59,8 @@ function deps(){
 }
 test.beforeEach(()=>{
  revoked=false;claimed=false;claimError=false;finishError=false;tryCalls=0;
- sendMode="accepted";verifications=0;smtpCalls.length=0;finishRecords.length=0;
+ sendMode="accepted";verifications=0;revokeAt=0;
+ smtpCalls.length=0;finishRecords.length=0;
 });
 test("after DB claim, acceptance is recorded but delivered stays FALSE",async()=>{
  const result=await runStagingOperatorSmtp(deps());
@@ -98,6 +101,19 @@ test("revoked member before first claim blocks BOTH operator senders",async()=>{
  assert.equal(smtpCalls.length,0);
  assert.equal(tryCalls,0);
 });
+test("revocation AFTER durable claim, just before network send, burns attempt without sending",async()=>{
+ revokeAt=5;
+ const result=await runStagingOperatorSmtp(deps());
+ assert.equal(result.ok,true);
+ if(result.ok){
+   assert.equal(result.claimed,1);
+   assert.equal(result.unknown,1);
+   assert.equal(result.smtpAccepted,0);
+ }
+ assert.equal(smtpCalls.length,0,"revalidation must block network call");
+ assert.equal(finishRecords[0].p_outcome,"OUTCOME_UNKNOWN");
+});
+
 test("DB claim failure or outcome write failure cannot be called success",async()=>{
  claimError=true;
  let outcome=await runStagingOperatorSmtp(deps());
