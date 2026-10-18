@@ -19,6 +19,9 @@ const FAIL_CLOSED_CONTROL_PATHS = new Set([
   // Preparing operator email candidates must have an explicit enabled Nexus
   // runtime control; a missing control is not permission to run.
   "/api/cron/altovena-delivery-preflight",
+  // Preview-only actual mail sends require an independently enabled Nexus
+  // runtime control. Missing controls must never authorize SMTP.
+  "/api/cron/altovena-smtp-staging",
 ]);
 
 function parseCsv(value?: string): string[] {
