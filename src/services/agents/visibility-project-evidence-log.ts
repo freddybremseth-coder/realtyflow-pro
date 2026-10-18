@@ -25,7 +25,7 @@ export function prepareProjectEvidenceLog(event: ProjectEvidenceEvent, authentic
   return {
     action: PROJECT_EVIDENCE_ACTION,
     agent_name: "altovena_visibility",
-    status: "recorded",
+    status: "success",
     details: {
       event_id: event.eventId, brand_id: event.brandId, project_url: url.href,
       claim_key: event.claimKey, event: event.event, actor_id: authenticatedActorId,
