@@ -433,7 +433,7 @@ export async function getGSCRankingInventory(brandId: string): Promise<GSCRankin
   }
   const rows = collected.filter(row =>
     row.keys?.length === 2 && allowedHost(row.keys[1], target) &&
-    row.keys[0].length <= 150 && !/[\\r\\n@]/.test(row.keys[0]) &&
+    row.keys[0].length <= 150 && !/[\r\n@]/.test(row.keys[0]) &&
     Number.isFinite(Number(row.position)) && Number(row.position) > 0)
     .map(row => ({
       query: row.keys![0], page: new URL(row.keys![1]).pathname,
