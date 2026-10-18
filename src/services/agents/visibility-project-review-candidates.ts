@@ -8,7 +8,7 @@ import type { SiteAudit } from "./seo-audit";
 export function projectReviewCandidates(audit: SiteAudit) {
   if (audit.brandId !== "zeneco") return [];
   return audit.samples.filter(page =>
-    /^\/(?:eiendommer|properties|immobilien|propiedades)\/[^/]+\/?$/i.test(page.path)
+    new RegExp("^/(?:eiendommer|properties|immobilien|propiedades)/[^/]+/?$", "i").test(page.path)
   ).slice(0, 3).map(page => ({
     url: new URL(page.path, audit.base).href,
     status: "NOT_REVIEWED" as const,
