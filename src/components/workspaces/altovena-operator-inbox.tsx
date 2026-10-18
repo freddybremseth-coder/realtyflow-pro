@@ -22,6 +22,7 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
   const [unread,setUnread]=useState(0);
   const [enabled,setEnabled]=useState(false);
   const [busy,setBusy]=useState("");
+  const [showMore,setShowMore]=useState(false);
   const [refresh,setRefresh]=useState(0);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
@@ -111,7 +112,7 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
     </p>}
     {!error && !loading && enabled && alerts.length>0 &&
       <div className="mt-3 space-y-2">
-        {alerts.slice(0,6).map(alert=><div key={alert.id}
+        {alerts.slice(0,showMore?20:6).map(alert=><div key={alert.id}
           className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 p-3">
           <div>
             <p className="text-sm font-medium text-slate-100">{description[alert.kind]}</p>
@@ -132,8 +133,14 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
             </button>}
           </div>
         </div>)}
+        {alerts.length>6 && <button type="button"
+          onClick={()=>setShowMore(value=>!value)}
+          className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-cyan-200">
+          {showMore?"Vis færre varsler":"Vis flere varsler"}
+        </button>}
         {total>alerts.length && <p className="text-xs text-slate-400">
-          Viser de nyeste varslene. Totalt {total} aktive varsler.
+          Viser de {alerts.length} høyest prioriterte av {total} aktive varsler.
+          Uleste varsler prioriteres. Marker som lest for å få frem flere.
         </p>}
       </div>}
     <p className="mt-3 text-xs text-slate-500">
