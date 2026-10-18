@@ -25,3 +25,10 @@
 - The isolated PostgreSQL suite applies the real unmerged queue migration twice, checks RLS/ACL, independent read/unread state, idempotent repeated read acknowledgement, unchanged task status and per-contact erasure cascade.
 - Release remains blocked on live, independently verified Freddy and Andrea sessions, brand workspace provisioning in **isolated staging**, current-head GitHub CI, preview/mobile UX validation, personvern/gdpr review, and explicit owner production approval.
 - All migrations and scheduled tasks remain uninstalled/deactivated in production.
+
+## Verified repository and deployment boundary (18 October)
+
+- Current test-covered PR stack still sits on a base branch **five commits behind `main`**. Reconcile and rerun full combined CI before any merge.
+- A read-only check of the production RealtyflowPRO Supabase database still found **zero Altovena brand rows** and **no alert/read-receipt tables or inbox RPC**.
+- No Vercel preview deployment was found for this PR branch or head commit at the time of inspection. A green GitHub build is not a live desktop/mobile session test.
+- Human acceptance test after a separate staging deployment: verify both owner and actual Andrea login independently see the same alert; mark read for one only; revoke Andrea brand grant and confirm immediate 403; confirm another brand cannot query the alerts; confirm safe disabled behavior and no network e-mail/push.
