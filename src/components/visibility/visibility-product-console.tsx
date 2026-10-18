@@ -255,7 +255,7 @@ export function VisibilityProductConsole(){
             </article>;})}</div>:<Empty title="Ingen klassifiserte funn" body="Ingen forslag finnes i det lagrede utvalget. Dette betyr ikke at en full SEO-audit er bestått."/>}
           </>}
           {tab==="measurement"&&<>
-            {mode==="live" && <VisibilityAiMonitor/>}
+            {mode==="live" && brand==="zeneco" && <VisibilityAiMonitor/>}
             {mode==="live" && <VisibilityImpactLifecycle/>}
             {mode==="live" && brand!=="all" && <VisibilityGoogleRankings brandId={brand}/>}
             <div><h2 className="text-2xl font-extrabold">Synlighet og måling</h2><p className="mt-1 text-sm text-slate-600">Verifiserte Google Search Console-data. Ingen estimerte AI-siteringer, leads eller plasseringer.</p></div>
