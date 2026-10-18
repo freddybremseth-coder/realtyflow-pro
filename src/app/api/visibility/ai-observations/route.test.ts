@@ -38,3 +38,61 @@ it("rejects actual unauthenticated GET and POST requests before any database acc
  }));
  assert.equal(postResponse.status,403);
 });
+
+it("allows a signed test owner to read and insert against a local mocked Supabase REST gateway",async()=>{
+ const keys=["REALTYFLOW_SESSION_SECRET","REALTYFLOW_ADMIN_EMAILS","NEXT_PUBLIC_SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY"] as const;
+ const oldEnv=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+ const oldFetch=globalThis.fetch;
+ const calls:{method:string;body:unknown}[]=[];
+ try {
+  // These are deliberately synthetic values. This test never connects to a live database.
+  process.env.REALTYFLOW_SESSION_SECRET="visibility-ci-local-only-signing-key";
+  process.env.REALTYFLOW_ADMIN_EMAILS="visibility-ci-owner@example.test";
+  process.env.NEXT_PUBLIC_SUPABASE_URL="https://visibility-ci.invalid";
+  process.env.SUPABASE_SERVICE_ROLE_KEY="visibility-ci-fake-service-key";
+  globalThis.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
+   const url=typeof input==="string"?input:input instanceof URL?input.href:input.url;
+   assert.match(url,/^https:\/\/visibility-ci\.invalid\/rest\/v1\/visibility_ai_observations(?:\?|$)/);
+   const method=String(init?.method||"GET").toUpperCase();
+   const body=init?.body ? JSON.parse(String(init.body)) : null;
+   calls.push({method,body});
+   if(method==="POST") {
+    assert.equal(body.brand_id,"zeneco");
+    assert.equal(body.evidence_state,"CITED");
+    assert.equal(body.verification_state,"UNVERIFIED");
+    assert.equal(body.captured_by,"manual");
+    return new Response(JSON.stringify({id:"00000000-0000-4000-8000-000000000001"}),{status:201,headers:{"content-type":"application/json"}});
+   }
+   return new Response(JSON.stringify([]),{status:200,headers:{"content-type":"application/json"}});
+  };
+  const {createAdminSession}=await import("@/lib/admin-auth");
+  const {NextRequest}=await import("next/server");
+  const {GET,POST}=await import("./route");
+  const cookie="realtyflow_admin="+await createAdminSession("visibility-ci-owner@example.test");
+  const endpoint="https://realtyflow.test/api/visibility/ai-observations";
+  const read=await GET(new NextRequest(endpoint,{headers:{cookie}}));
+  assert.equal(read.status,200);
+  assert.deepEqual((await read.json()).observations,[]);
+  const write=await POST(new NextRequest(endpoint,{
+   method:"POST",headers:{cookie,origin:"https://realtyflow.test","content-type":"application/json"},
+   body:JSON.stringify({brandId:"zeneco",provider:"chatgpt",prompt:"Guide to Albir?",
+    locale:"en-GB",responseExcerpt:"Sample manual answer",
+    citedUrls:["https://www.zenecohomes.com/guide/example"],brandMentioned:true,
+    capturedBy:"manual",observedAt:new Date().toISOString()})
+  }));
+  assert.equal(write.status,201);
+  const json=await write.json();
+  assert.equal(json.state,"CITED");
+  assert.equal(json.verification_state,"UNVERIFIED");
+  assert.deepEqual(calls.map(call=>call.method),["GET","POST"]);
+  const denied=await POST(new NextRequest(endpoint,{
+   method:"POST",headers:{cookie,origin:"https://attacker.example","content-type":"application/json"},
+   body:JSON.stringify({brandId:"zeneco"})
+  }));
+  assert.equal(denied.status,403);
+  assert.equal(calls.length,2,"Cross-site requests must not reach database gateway");
+ } finally {
+  globalThis.fetch=oldFetch;
+  for(const key of keys){const value=oldEnv[key];if(value===undefined)delete process.env[key];else process.env[key]=value;}
+ }
+});
