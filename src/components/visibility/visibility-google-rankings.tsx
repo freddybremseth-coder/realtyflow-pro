@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type Bucket = "1-10" | "11-20" | "21-50" | "51+";
 type Row = { query: string; page: string; clicks: number; impressions: number; ctr: number; position: number; bucket: Bucket };
+type Trend = {period:{currentStart:string;currentEnd:string;previousStart:string;previousEnd:string};totals:{currentClicks:number;previousClicks:number;currentImpressions:number;previousImpressions:number;currentCtr:number|null;previousCtr:number|null};dataQuality:{truncated:boolean;note:string}};
 type Inventory = {
   collectedAt: string; period: { start: string; end: string };
   rows: Row[]; bucketCounts: Record<Bucket, number>;
@@ -14,6 +15,7 @@ const fmt = (value: number) => new Intl.NumberFormat("nb-NO").format(value);
 
 export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
+  const [trend, setTrend] = useState<Trend | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [bucket, setBucket] = useState<Bucket | "all">("all");
@@ -25,7 +27,7 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
   const [reviewStatus, setReviewStatus] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    setInventory(null); setError(null); setLoading(true); setBucket("all"); setQuery(""); setOffset(0); setReview(null); setReviewStatus("");
+    setInventory(null); setTrend(null); setError(null); setLoading(true); setBucket("all"); setQuery(""); setOffset(0); setReview(null); setReviewStatus("");
     fetch("/api/agents/seo-search-console?brand=" + encodeURIComponent(brandId) + "&view=rankings", {
       cache: "no-store", credentials: "same-origin", signal: controller.signal,
     }).then(async response => {
@@ -35,6 +37,14 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
     }).then(setInventory).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Ukjent feil");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    fetch("/api/agents/seo-search-console?brand=" + encodeURIComponent(brandId), {
+      cache: "no-store", credentials: "same-origin", signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) return null;
+      const data = await response.json() as { snapshot?: Trend };
+      return data.snapshot || null;
+    }).then(value => { if (!controller.signal.aborted) setTrend(value); })
+      .catch(() => { /* Trend is optional; don't replace a successful ranking inventory. */ });
     return () => controller.abort();
   }, [brandId, revision]);
   const filtered = useMemo(() => (inventory?.rows || []).filter(row =>
@@ -103,6 +113,16 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
     {error && <p role="alert" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{error}</p>}
     {inventory && <>
       <p className="mt-3 text-xs text-slate-500">Periode: {inventory.period.start}–{inventory.period.end} · hentet {new Date(inventory.collectedAt).toLocaleString("nb-NO")}</p>
+      {trend && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <h4 className="font-bold text-slate-900">Utvikling · siste to 30-dagersperioder</h4>
+        <p className="mt-1 text-xs text-slate-600">{trend.period.previousStart}–{trend.period.previousEnd} mot {trend.period.currentStart}–{trend.period.currentEnd}</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div><div className="text-xs text-slate-500">Google-klikk</div><div className="font-bold">{fmt(trend.totals.previousClicks)} → {fmt(trend.totals.currentClicks)}</div></div>
+          <div><div className="text-xs text-slate-500">Søkevisninger</div><div className="font-bold">{fmt(trend.totals.previousImpressions)} → {fmt(trend.totals.currentImpressions)}</div></div>
+          <div><div className="text-xs text-slate-500">Klikkrate</div><div className="font-bold">{trend.totals.previousCtr === null ? "Ukjent" : (trend.totals.previousCtr * 100).toFixed(1) + "%"} → {trend.totals.currentCtr === null ? "Ukjent" : (trend.totals.currentCtr * 100).toFixed(1) + "%"}</div></div>
+        </div>
+        <p className="mt-2 text-xs text-slate-600">Dette er en periodeendring, ikke bevis på at et bestemt SEO-tiltak har virket.{trend.dataQuality.truncated ? " Datagrunnlaget er avkortet." : ""}</p>
+      </div>}
       <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
         {buckets.map(b => <button key={b} type="button" aria-pressed={bucket === b}
           onClick={() => { setBucket(b); setOffset(0); }}
