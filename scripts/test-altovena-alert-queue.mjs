@@ -96,7 +96,8 @@ try {
  assert.equal(b0.unreadTotal,3);
  assert.deepEqual(a0.alerts.map(x=>x.id),b0.alerts.map(x=>x.id));
  assert.equal(JSON.stringify(a0).includes("example.invalid"),false);
- const alertId=a0.alerts[0].id;
+ const alertId=a0.alerts.find(x=>x.contactId===first.leadId)?.id;
+ assert.ok(alertId,"select a receipt that belongs to the contact erased below");
  const seen=await ack(alertId,operatorA);
  assert.equal(seen.ok,true);
  assert.equal(seen.id,alertId);
