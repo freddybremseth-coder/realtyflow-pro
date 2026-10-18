@@ -6,8 +6,9 @@ import type { ProjectEvidenceEvent } from "./visibility-project-evidence-history
  * server caller can supply a writer. This does NOT grant approval or publishing.
  */
 export type EvidenceLogWriter = {
-  insert: (row: { action: string; agent_name: string; status: string; details: Record<string, unknown> }) =>
-    Promise<{ error: { message: string } | null }>;
+  /** Must be implemented by a DB transaction or unique event-id constraint. A preflight SELECT then INSERT is NOT atomic. */
+  insertIfAbsent: (row: { action: string; agent_name: string; status: string; details: Record<string, unknown> }, eventId: string) =>
+    Promise<{ outcome: "inserted" | "already_exists"; error: { message: string } | null }>;
 };
 export const PROJECT_EVIDENCE_ACTION = "visibility_project_claim_event";
 
@@ -44,7 +45,8 @@ export async function appendProjectEvidenceLog(writer: EvidenceLogWriter, event:
   authenticatedActorId: string, authorizationConfirmed: boolean) {
   if (!authorizationConfirmed) throw new Error("AUTHORIZATION_REQUIRED");
   const row = prepareProjectEvidenceLog(event, authenticatedActorId);
-  const {error} = await writer.insert(row);
-  if (error) throw new Error("EVIDENCE_WRITE_FAILED");
-  return { recorded: true as const, approvalGranted: false as const, publicationEligible: false as const };
+  const result = await writer.insertIfAbsent(row, event.eventId);
+  if (result.error) throw new Error("EVIDENCE_WRITE_FAILED");
+  return { recorded: true as const, alreadyRecorded: result.outcome === "already_exists",
+    approvalGranted: false as const, publicationEligible: false as const };
 }
