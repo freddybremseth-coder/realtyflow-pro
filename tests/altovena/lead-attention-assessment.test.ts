@@ -54,6 +54,6 @@ test("component renders scoped in-app notice only, has no email/push mutations",
   assert.match(text,/setCapped\(assessment\.mightHaveMore\)/);
   assert.match(text,/newArrivals>0/);
   assert.match(text,/grensen på 40 oppgaver/);
-  assert.match(text,/Ingen e-post eller pushvarsler er aktivert/);
+  assert.match(text,/Automatiske kundesvar er ikke aktivert/);
   assert.doesNotMatch(text,/Notification\.requestPermission|new Notification|sendEmail\(|sendPush\(/);
 });

@@ -146,7 +146,7 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
         </h3>
         <p className="mt-1 text-sm text-slate-400">
           Bare Altovena. Oppdateres automatisk hvert minutt når fanen er aktiv.
-          Ingen e-post eller pushvarsler er aktivert.
+          Automatiske kundesvar er ikke aktivert. Status for interne SMTP-tester vises i varslingssenteret.
         </p>
         {lastChecked && <p className="mt-1 text-xs text-slate-500">Sist sjekket kl. {lastChecked}</p>}
         <p className="mt-2 text-xs text-slate-400" role="status">
