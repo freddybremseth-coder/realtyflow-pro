@@ -25,3 +25,16 @@ it("migration denies public read and enables RLS without altering existing recor
  assert.match(migration,/revoke all on public\.visibility_ai_observations from anon, authenticated;/);
  assert.doesNotMatch(migration,/drop table|truncate table|delete from/i);
 });
+
+it("rejects actual unauthenticated GET and POST requests before any database access",async()=>{
+ const {NextRequest}=await import("next/server");
+ const {GET,POST}=await import("./route");
+ const url="https://realtyflow.test/api/visibility/ai-observations";
+ const getResponse=await GET(new NextRequest(url,{method:"GET"}));
+ assert.equal(getResponse.status,403);
+ const postResponse=await POST(new NextRequest(url,{
+  method:"POST",headers:{"origin":"https://realtyflow.test","content-type":"application/json"},
+  body:JSON.stringify({brandId:"zeneco",provider:"chatgpt",prompt:"Test",locale:"nb-NO",responseExcerpt:"Test",citedUrls:[],brandMentioned:false,capturedBy:"manual",observedAt:"2026-10-18T19:00:00.000Z"})
+ }));
+ assert.equal(postResponse.status,403);
+});
