@@ -57,6 +57,15 @@ export async function runStagingOperatorSmtp(inputs:Inputs):Promise<Outcome>{
     let state:"SMTP_ACCEPTED"|"OUTCOME_UNKNOWN"="OUTCOME_UNKNOWN";
     let messageId:string|null=null;
     try{
+      // Race guard: a grant might be revoked after the DB claim but before
+      // the network request. Consume this claim as UNKNOWN and do not send.
+      const beforeNetwork=await resolveAltovenaDeliveryRecipients(
+        inputs.rawAllowlist,inputs.hmacSecret,{
+          supabase:inputs.db,isOwnerEmail:inputs.isOwnerEmail,
+        });
+      if(!beforeNetwork.ok ||
+         beforeNetwork.recipients[i].operatorKey!==operatorKey)
+        throw Error("recipient revalidation failed");
       const result=await inputs.send(addresses[i],claim.kind);
       if(result.success && typeof result.messageId==="string" &&
          result.messageId.length>=3 && result.messageId.length<=255 &&
