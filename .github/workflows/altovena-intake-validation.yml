@@ -7,6 +7,10 @@ on:
       - "src/app/api/workspaces/altovena/**"
       - "src/app/api/workspaces/[brandKey]/lead-tasks/**"
       - "src/app/api/cron/altovena-lead-alerts/**"
+      - "src/app/api/cron/altovena-delivery-preflight/**"
+      - "src/lib/altovena/verified-delivery-recipients.ts"
+      - "src/lib/cron/safe-mode.ts"
+      - "scripts/test-altovena-delivery-preflight.mjs"
       - "tests/altovena/**"
       - "supabase/migrations/*altovena_lead_alert_queue.sql"
       - "scripts/test-altovena-alert-queue.mjs"
@@ -101,5 +105,7 @@ jobs:
         run: NODE_OPTIONS=--conditions=react-server node --import tsx scripts/test-altovena-cross-repo-bridge.ts
       - name: Verify idempotent Altovena operator alert ledger in isolated PostgreSQL
         run: node scripts/test-altovena-alert-queue.mjs
+      - name: Verify Altovena delivery candidates without SMTP in isolated PostgreSQL
+        run: node scripts/test-altovena-delivery-preflight.mjs
       - name: Verify real Altovena SQL + RPC in isolated PostgreSQL
         run: node scripts/test-altovena-postgres.mjs
