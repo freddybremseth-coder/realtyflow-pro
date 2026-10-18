@@ -97,7 +97,16 @@ export function VisibilityOverview({ report, publishingStatuses = [] }: {
             <p className="text-xs font-semibold text-slate-700">{names[site.brandId] ?? site.brandId} · Ikke faktakontrollert</p>
             <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-sm font-medium text-cyan-800 underline">{candidate.url}</a>
             <p className="mt-2 text-sm">Teknisk HTTP-observasjon: {candidate.hasHttpEvidence ? "HTTP 200 observert" : "Ikke bekreftet"}</p>
-            <p className="mt-1 text-sm"><strong>Pris og øvrige fakta:</strong> Ikke kontrollert</p>
+            <p className="mt-1 text-sm"><strong>Pris og øvrige fakta:</strong> Ikke kildeverifisert</p>
+            {candidate.claimMentions ? <p className="mt-2 text-sm">
+              <strong>Omtalt i offentlig HTML (ikke verifisert):</strong>{" "}
+              {[
+                candidate.claimMentions.priceMention && "pris",
+                candidate.claimMentions.deliveryMention && "leveringstid",
+                candidate.claimMentions.energyMention && "energiklasse",
+                candidate.claimMentions.taxMention && "avgifter",
+              ].filter(Boolean).join(", ") || "Ingen av de fire kategoriene funnet i utvalget"}
+            </p> : <p className="mt-2 text-sm text-slate-700">Ingen lesbare faktasignaler fra nettsideutvalget.</p>}
             <p className="mt-2 text-xs text-slate-600">Neste steg: Samle dokumentasjon fra utbygger og la ansvarlig person kontrollere opplysningene.</p>
             <p className="mt-1 text-xs text-slate-600">Ingen publiseringstillatelse · Sist registrert teknisk kontroll: {visibilityEvidenceAge(site.checkedAt) !== "UNKNOWN" ? new Date(site.checkedAt).toLocaleString("nb-NO") : "Ukjent"}</p>
           </article>
