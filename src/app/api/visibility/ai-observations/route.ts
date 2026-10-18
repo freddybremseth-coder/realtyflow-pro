@@ -8,10 +8,10 @@ async function owner(request:NextRequest){const ctx=await getRequestAccessContex
 export async function GET(request:NextRequest){
  if(!await owner(request))return NextResponse.json({error:"Owner session required"},{status:403});
  const db=database();if(!db)return NextResponse.json({error:"Database unavailable"},{status:503});
- const {data,error}=await db.from("visibility_ai_observations").select("id,brand_id,provider,prompt,locale,observed_at,response_excerpt,cited_urls,brand_mentioned,captured_by,evidence_state")
+ const {data,error}=await db.from("visibility_ai_observations").select("id,brand_id,provider,prompt,locale,observed_at,response_excerpt,cited_urls,brand_mentioned,captured_by,evidence_state,verification_state")
   .eq("brand_id","zeneco").order("observed_at",{ascending:false}).limit(100);
  if(error)return NextResponse.json({error:"Observations unavailable"},{status:503});
- return NextResponse.json({observations:data||[],source:"stored_verified_observations",automatedCollectionConnected:false},{headers:{"Cache-Control":"private, no-store"}});
+ return NextResponse.json({observations:data||[],source:"stored_manual_observations_unverified",automatedCollectionConnected:false},{headers:{"Cache-Control":"private, no-store"}});
 }
 export async function POST(request:NextRequest){
  if(!await owner(request))return NextResponse.json({error:"Owner session required"},{status:403});
@@ -22,7 +22,9 @@ export async function POST(request:NextRequest){
  typeof input.prompt!=="string"||input.prompt.length>2000||typeof input.locale!=="string"||input.locale.length>40||
  typeof input.responseExcerpt!=="string"||input.responseExcerpt.length>4000||typeof input.observedAt!=="string"||
  !Array.isArray(input.citedUrls)||input.citedUrls.length>20||input.citedUrls.some(u=>typeof u!=="string"||u.length>2048)||
- typeof input.brandMentioned!=="boolean"||input.capturedBy!=="manual")
+ typeof input.brandMentioned!=="boolean"||input.capturedBy!=="manual"||
+ !Number.isFinite(Date.parse(input.observedAt))||Date.parse(input.observedAt)>Date.now()||
+ Date.parse(input.observedAt)<Date.now()-366*86400000)
  return NextResponse.json({error:"Invalid observation"},{status:400});
  const observation=input as AiVisibilityObservation;
  const assessment=assessAiVisibilityObservation(observation,"zenecohomes.com");
@@ -30,8 +32,8 @@ export async function POST(request:NextRequest){
  const db=database();if(!db)return NextResponse.json({error:"Database unavailable"},{status:503});
  const {data,error}=await db.from("visibility_ai_observations").insert({
  brand_id:"zeneco",provider:observation.provider,prompt:observation.prompt,locale:observation.locale,observed_at:observation.observedAt,
- response_excerpt:observation.responseExcerpt,cited_urls:observation.citedUrls,brand_mentioned:observation.brandMentioned,captured_by:"manual",evidence_state:assessment.state,
+ response_excerpt:observation.responseExcerpt,cited_urls:observation.citedUrls,brand_mentioned:observation.brandMentioned,captured_by:"manual",evidence_state:assessment.state,verification_state:"UNVERIFIED",
  }).select("id").single();
  if(error||!data)return NextResponse.json({error:"Observation not stored"},{status:503});
- return NextResponse.json({id:data.id,state:assessment.state,automatedCollectionConnected:false},{status:201,headers:{"Cache-Control":"private, no-store"}});
+ return NextResponse.json({id:data.id,state:assessment.state,verification_state:"UNVERIFIED",automatedCollectionConnected:false},{status:201,headers:{"Cache-Control":"private, no-store"}});
 }
