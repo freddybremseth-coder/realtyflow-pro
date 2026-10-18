@@ -381,6 +381,84 @@ async function getGSCBrandSnapshotForAccess(
 }
 
 /**
+ * Bounded 90-day Google rankings inventory for Altovena Visibility.
+ * This is GSC average position, NOT a live, localized SERP rank.
+ * Search Console can anonymize queries and cap result rows.
+ */
+export type GSCRankingInventory = {
+  brandId: string; property: string; collectedAt: string;
+  period: { start: string; end: string };
+  measurement: "Google Search Console web average position";
+  rows: Array<{ query: string; page: string; clicks: number; impressions: number; ctr: number; position: number; bucket: "1-10" | "11-20" | "21-50" | "51+" }>;
+  bucketCounts: Record<"1-10" | "11-20" | "21-50" | "51+", number>;
+  dataQuality: { truncated: boolean; sampled: boolean; note: string };
+};
+export function rankingBucket(position: number): "1-10" | "11-20" | "21-50" | "51+" {
+  if (position <= 10) return "1-10";
+  if (position <= 20) return "11-20";
+  if (position <= 50) return "21-50";
+  return "51+";
+}
+
+export async function getGSCRankingInventory(brandId: string): Promise<GSCRankingInventory | null> {
+  const target = targetForBrand(brandId);
+  if (!target) throw new Error("Unknown public SEO brand");
+  const access = await authorizedAccessToken(brandId);
+  if (!access) return null;
+  const now = Date.now();
+  const end = periodDay(now, 3);
+  const start = periodDay(now, 92);
+  const maxRows = 10000;
+  const pageSize = 1000;
+  const collected: RawRow[] = [];
+  let exhausted = false;
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const response = await fetch(
+      "https://www.googleapis.com/webmasters/v3/sites/" + encodeURIComponent(access.property) + "/searchAnalytics/query",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer " + access.token, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate: start, endDate: end, dimensions: ["query", "page"],
+          type: "web", dataState: "final", rowLimit: pageSize, startRow: offset,
+        }),
+        cache: "no-store", signal: AbortSignal.timeout(13000),
+      },
+    );
+    if (!response.ok) throw new Error("Search Console ranking inventory failed: HTTP " + response.status);
+    const data = await response.json() as { rows?: RawRow[] };
+    const batch = Array.isArray(data.rows) ? data.rows : [];
+    collected.push(...batch);
+    if (batch.length < pageSize) { exhausted = true; break; }
+  }
+  const rows = collected.filter(row =>
+    row.keys?.length === 2 && allowedHost(row.keys[1], target) &&
+    row.keys[0].length <= 150 && !/[\\r\\n@]/.test(row.keys[0]) &&
+    Number.isFinite(Number(row.position)) && Number(row.position) > 0)
+    .map(row => ({
+      query: row.keys![0], page: new URL(row.keys![1]).pathname,
+      clicks: Math.max(0, Number(row.clicks) || 0),
+      impressions: Math.max(0, Number(row.impressions) || 0),
+      ctr: rounded(Number(row.ctr) || 0), position: rounded(Number(row.position) || 0),
+      bucket: rankingBucket(Number(row.position)),
+    }))
+    .sort((a, b) => a.position - b.position || b.impressions - a.impressions);
+  const bucketCounts: GSCRankingInventory["bucketCounts"] = {
+    "1-10": 0, "11-20": 0, "21-50": 0, "51+": 0,
+  };
+  for (const row of rows) bucketCounts[row.bucket]++;
+  return {
+    brandId, property: access.property, collectedAt: new Date(now).toISOString(),
+    period: { start, end }, measurement: "Google Search Console web average position",
+    rows, bucketCounts,
+    dataQuality: {
+      truncated: !exhausted, sampled: true,
+      note: "Positions are average across Google search impressions, not exact page-one rankings for a particular country/device. Google omits anonymized queries and may truncate rows. This is NOT an AI citation measurement.",
+    },
+  };
+}
+
+/**
  * One snapshot per configured public host. The Freddy Domain property may be
  * shared for ownership/consent, but results must always be host-filtered and
  * a site must never be counted twice in portfolio reports or automation.
