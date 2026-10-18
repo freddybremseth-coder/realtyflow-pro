@@ -26,6 +26,9 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
   const [refresh,setRefresh]=useState(0);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
+  const [deliveryPreview,setDeliveryPreview]=useState<{state:"disabled"|"prepared_only";
+    prepared:number;cancelled:number}|null>(null);
+  const [deliveryStatusError,setDeliveryStatusError]=useState("");
 
   useEffect(()=>{
     const tick=()=>{if(!document.hidden)setRefresh(x=>x+1);};
@@ -63,6 +66,31 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
       }).catch(cause=>{
         if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:"Kunne ikke hente varsler.");
       }).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    return ()=>controller.abort();
+  },[refresh]);
+
+  useEffect(()=>{
+    const controller=new AbortController();
+    setDeliveryStatusError("");
+    fetch("/api/workspaces/altovena/delivery-preflight-status",{
+      cache:"no-store",signal:controller.signal,
+    }).then(async response=>{
+      const body=await response.json().catch(()=>null);
+      if(!response.ok || body?.ok!==true || body.brand!=="altovena" ||
+         !["disabled","prepared_only"].includes(body.state) ||
+         body.emailSent!==false || !Number.isSafeInteger(body.prepared) ||
+         !Number.isSafeInteger(body.cancelled) ||
+         body.prepared<0 || body.cancelled<0)
+        throw Error("Leveringsforberedelse kan ikke bekreftes.");
+      return body;
+    }).then(body=>{
+      if(!controller.signal.aborted)setDeliveryPreview({
+        state:body.state,prepared:body.prepared,cancelled:body.cancelled,
+      });
+    }).catch(()=>{
+      if(!controller.signal.aborted)setDeliveryStatusError(
+        "Status for e-postforberedelse er ikke tilgjengelig.");
+    });
     return ()=>controller.abort();
   },[refresh]);
 
@@ -143,6 +171,15 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
           Uleste varsler prioriteres. Marker som lest for å få frem flere.
         </p>}
       </div>}
+    <p className="mt-3 text-xs text-slate-400" role="status">
+      {deliveryStatusError || (!deliveryPreview
+        ? "Kontrollerer e-postforberedelse…"
+        : deliveryPreview.state==="disabled"
+          ? "E-postforberedelse er deaktivert. Ingen e-post er sendt."
+          : "Kun forberedt: "+deliveryPreview.prepared+
+            " e-postkandidater til deg. "+deliveryPreview.cancelled+
+            " kansellert. Ingen e-post er sendt.")}
+    </p>
     <p className="mt-3 text-xs text-slate-500">
       En lesekvittering er personlig og avslutter ikke en kundeoppgave. Varsler
       vises i appen; e-post og push er ikke aktivert.
