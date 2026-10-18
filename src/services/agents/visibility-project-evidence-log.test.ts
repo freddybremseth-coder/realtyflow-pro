@@ -26,3 +26,16 @@ test("atomic writer duplicate result is not mistaken for a new write",async()=>{
  assert.equal(result.alreadyRecorded,true);
  assert.equal(result.publicationEligible,false);
 });
+
+test("event id reused for a different payload is a conflict, not idempotent success", async () => {
+ await assert.rejects(
+   () => appendProjectEvidenceLog({
+     insertIfAbsent: async () => ({outcome:"conflict" as const,error:null}),
+   },e,"staff-1",true),
+   /EVENT_ID_PAYLOAD_CONFLICT/
+ );
+});
+test("event row uses the allowed automation log status", () => {
+ const row = prepareProjectEvidenceLog(e,"staff-1");
+ assert.equal(row.status,"success");
+});
