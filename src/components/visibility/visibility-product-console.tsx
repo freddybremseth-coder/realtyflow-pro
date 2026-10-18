@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { DonaAnnaVisibilityApproval } from "./dona-anna-approval";
 import { VisibilityWorkQueue } from "./visibility-work-queue";
+import { VisibilityProjectReviewPanel } from "./visibility-project-review-panel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, ArrowRight, ArrowUpRight, BarChart3, CheckCircle2, ChevronRight,
@@ -15,11 +16,12 @@ import {
   type VisibilitySource, type VisibilitySite, type VisibilityFinding
 } from "@/lib/visibility-product";
 
-type Tab = "overview" | "sites" | "findings" | "measurement" | "workflow" | "product";
+type Tab = "overview" | "sites" | "findings" | "projects" | "measurement" | "workflow" | "product";
 const tabItems: Array<{id: Tab; label: string; icon: typeof LayoutGrid}> = [
   {id:"overview",label:"Oversikt",icon:LayoutGrid},
   {id:"sites",label:"Nettsteder",icon:Globe2},
   {id:"findings",label:"Funn og tiltak",icon:FileSearch},
+  {id:"projects",label:"Prosjektfakta",icon:ShieldCheck},
   {id:"measurement",label:"Måling",icon:BarChart3},
   {id:"workflow",label:"Arbeidsflyt",icon:Workflow},
   {id:"product",label:"Produktet",icon:Sparkles},
@@ -251,6 +253,7 @@ export function VisibilityProductConsole(){
               </div>
             </article>;})}</div>:<Empty title="Ingen klassifiserte funn" body="Ingen forslag finnes i det lagrede utvalget. Dette betyr ikke at en full SEO-audit er bestått."/>}
           </>}
+          {tab==="projects"&&<VisibilityProjectReviewPanel report={data?.controlReport} brand={brand} demo={mode==="demo"}/>}
           {tab==="measurement"&&<>
             <div><h2 className="text-2xl font-extrabold">Synlighet og måling</h2><p className="mt-1 text-sm text-slate-600">Verifiserte Google Search Console-data. Ingen estimerte AI-siteringer, leads eller plasseringer.</p></div>
             <div className="grid gap-3 sm:grid-cols-3">
