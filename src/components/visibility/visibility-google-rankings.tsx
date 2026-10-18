@@ -21,9 +21,11 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
   const [review, setReview] = useState<{query: string; page: string} | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    setInventory(null); setError(null); setLoading(true); setBucket("all"); setQuery(""); setOffset(0); setReview(null);
+    setInventory(null); setError(null); setLoading(true); setBucket("all"); setQuery(""); setOffset(0); setReview(null); setReviewStatus("");
     fetch("/api/agents/seo-search-console?brand=" + encodeURIComponent(brandId) + "&view=rankings", {
       cache: "no-store", credentials: "same-origin", signal: controller.signal,
     }).then(async response => {
@@ -72,6 +74,22 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
     "Krev menneskelig godkjenning før endringer; mål effekt etter 30 dager.",
   ].join("\\n") : "";
 
+  const submitReview = async () => {
+    if (!selectedReview || submitting) return;
+    setSubmitting(true); setReviewStatus("");
+    try {
+      const response = await fetch("/api/visibility/ranking-reviews", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, query: selectedReview.query, page: selectedReview.page }),
+      });
+      const result = await response.json() as {error?: string; work_item_id?: string};
+      if (!response.ok || !result.work_item_id) throw new Error(result.error || "Oppgaven kunne ikke registreres.");
+      setReviewStatus("Undersøkelse registrert i Nexus: " + result.work_item_id + ". Ingen nettsideendring er utført.");
+    } catch (cause) {
+      setReviewStatus(cause instanceof Error ? cause.message : "Kunne ikke registrere undersøkelsen.");
+    } finally { setSubmitting(false); }
+  };
   return <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6" aria-label="Google-rangeringer">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -115,8 +133,11 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
         <p className="mt-1 break-all text-xs text-slate-700">{selectedReview.page}</p>
         <p className="mt-3 text-sm text-slate-800">Undersøk søkeintensjon, konkurrerende resultater, tittel, innhold og interne lenker. Finn årsaken før et endringsforslag godkjennes.</p>
         <p className="mt-2 text-xs text-slate-600">Dette er kun et dokumenterbart utkast basert på måledata. Ingen Nexus-oppgave, publisering eller etterkontroll er opprettet.</p>
+        <button type="button" disabled={submitting} onClick={() => void submitReview()}
+          className="mt-3 mr-2 rounded-lg border border-teal-800 bg-white px-3 py-2 text-xs font-bold text-teal-900 disabled:opacity-50">{submitting ? "Registrerer …" : "Registrer undersøkelse i Nexus"}</button>
         <button type="button" onClick={() => { if (navigator.clipboard) void navigator.clipboard.writeText(reviewBrief); }}
           className="mt-3 rounded-lg bg-teal-900 px-3 py-2 text-xs font-bold text-white">Kopier vurderingsutkast</button>
+        {reviewStatus && <p role="status" className="mt-3 text-xs text-teal-950">{reviewStatus}</p>}
       </div>}
       <label htmlFor="visibility-ranking-search" className="mt-4 block text-xs font-semibold text-slate-700">Søk etter søkeord eller landingsside</label>
       <input id="visibility-ranking-search" value={query} onChange={event => { setQuery(event.target.value); setOffset(0); }}
