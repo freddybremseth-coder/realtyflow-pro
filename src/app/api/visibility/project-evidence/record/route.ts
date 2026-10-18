@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 /**
  * Owner-only experimental evidence ingestion. DISABLED unless enabled explicitly
  * after index deployment, source checks, preflight and production approval.
- * This route does not accept attestation/revocation or authorize publication.
+ * This route accepts REVIEW_REQUESTED only. It cannot claim a source was recorded
+ * without server-validated provenance, nor attest/revoke or authorize publication.
  */
 export async function POST(request:NextRequest) {
   if(process.env.ALTOVENA_PROJECT_EVIDENCE_WRITES !== "enabled")
@@ -31,7 +32,7 @@ export async function POST(request:NextRequest) {
   if(typeof body.eventId!=="string" || typeof body.projectUrl!=="string" ||
     typeof body.claimKey!=="string" ||
     !["price","construction","delivery","energyClass","included","taxes","location"].includes(body.claimKey) ||
-    !["SOURCE_RECORDED","REVIEW_REQUESTED"].includes(String(body.event)))
+    !["REVIEW_REQUESTED"].includes(String(body.event)))
     return NextResponse.json({error:"Invalid evidence reference"},{status:400});
 
   // Actor, timestamp and scope are trusted-server values; not client input.
