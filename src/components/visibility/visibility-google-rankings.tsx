@@ -41,6 +41,21 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
       row.page.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
   ), [inventory, bucket, query]);
   const displayed = filtered.slice(offset, offset + 50);
+  // Explainable, non-executing review candidates. No jobs or changes are created.
+  const opportunities = useMemo(() => (inventory?.rows || [])
+    .filter(row => row.impressions >= 20 && (
+      (row.position > 5 && row.position <= 20) ||
+      (row.position <= 10 && row.ctr < 0.02 && row.impressions >= 100)
+    ))
+    .map(row => ({
+      ...row,
+      reason: row.position > 10 ? "Nær førstesiden" :
+        row.position > 5 ? "Mulighet for høyere plassering" : "Lav klikkrate – undersøk søkeintensjon og resultatvisning",
+      priority: row.position > 10 ? 0 : row.position > 5 ? 1 : 2,
+    }))
+    .sort((a, b) => a.priority - b.priority || b.impressions - a.impressions)
+    .slice(0, 10), [inventory]);
+
   const selectedReview = opportunities.find(item => item.query === review?.query && item.page === review?.page) || null;
   const reviewBrief = selectedReview ? [
     "Sam SEO – vurderingsutkast (ikke utført eller godkjent)",
@@ -56,21 +71,6 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
     "Kontroller før tiltak: søkeintensjon, innhold, konkurrent-URLer, tittel/metabeskrivelse, internlenker og evt. kannibalisering.",
     "Krev menneskelig godkjenning før endringer; mål effekt etter 30 dager.",
   ].join("\\n") : "";
-
-  // Explainable, non-executing review candidates. No jobs or changes are created.
-  const opportunities = useMemo(() => (inventory?.rows || [])
-    .filter(row => row.impressions >= 20 && (
-      (row.position > 5 && row.position <= 20) ||
-      (row.position <= 10 && row.ctr < 0.02 && row.impressions >= 100)
-    ))
-    .map(row => ({
-      ...row,
-      reason: row.position > 10 ? "Nær førstesiden" :
-        row.position > 5 ? "Mulighet for høyere plassering" : "Lav klikkrate – undersøk søkeintensjon og resultatvisning",
-      priority: row.position > 10 ? 0 : row.position > 5 ? 1 : 2,
-    }))
-    .sort((a, b) => a.priority - b.priority || b.impressions - a.impressions)
-    .slice(0, 10), [inventory]);
 
   return <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6" aria-label="Google-rangeringer">
     <div className="flex flex-wrap items-start justify-between gap-3">
