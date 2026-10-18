@@ -24,7 +24,7 @@ export function VisibilityAiMonitor() {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h3 className="text-lg font-bold text-slate-950">AI Visibility Monitor</h3>
         <p className="mt-1 text-sm text-slate-600">Dokumenterbare omtaler og kildehenvisninger i AI-svar. Separate data fra Google Search Console.</p></div>
-      <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">Innsamling ikke koblet til</span>
+      <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">Automatisk innsamling av · API-prøver separat</span>
     </div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2">
       {services.map((service,index)=><div key={service.name} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -53,6 +53,6 @@ export function VisibilityAiMonitor() {
     <VisibilityAiProviderSamples/>
     {storageReady?<VisibilityAiManualEntry onSaved={()=>setRevision(x=>x+1)}/>:<p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Registrering er sperret inntil AI-datalagringen er kontrollert og tilgjengelig.</p>}
     <div className="mt-4 rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">Registrerte enkeltobservasjoner</h4>{status&&<p role="status" className="mt-2 text-sm text-slate-600">{status}</p>}{!status&&!observations.length&&<p className="mt-2 text-sm text-slate-600">Ingen observasjoner registrert.</p>}{observations.slice(0,20).map(item=><div key={item.id} className="mt-3 border-t border-slate-100 pt-3 text-sm"><div className="font-semibold">{item.provider} · {item.verification_state==="INDEPENDENTLY_VERIFIED" ? item.evidence_state : item.evidence_state==="CITED" ? "Kildehenvisning oppgitt, ikke verifisert" : item.evidence_state==="MENTIONED_NOT_CITED" ? "Omtale oppgitt, ikke verifisert" : "Ingen omtale oppgitt, ikke verifisert"} · {item.verification_state==="INDEPENDENTLY_VERIFIED"?"Uavhengig verifisert":"Manuell observasjon"}</div><div className="text-xs text-slate-600">{item.prompt} · {item.observed_at} · {item.captured_by==="manual"?"Manuelt oppgitt":"API-observasjon"}</div><p className="mt-1 text-xs text-slate-500">Ingen uavhengig autentisering av AI-leverandørens svar er utført.</p></div>)}</div>
-    <p className="mt-4 text-xs leading-5 text-slate-600">Ingen målt omtale betyr ikke at AI-tjenesten aldri nevner nettstedet. Klassifisering av enkeltobservasjoner er kodet; automatisert innhenting, lagring, tilgangskontroll og kildebevis må ferdigstilles før vi kan vise reelle AI-resultater.</p>
+    <p className="mt-4 text-xs leading-5 text-slate-600">Ingen registrert omtale betyr ikke at AI-tjenesten aldri nevner nettstedet. Manuelle observasjoner er uavhengig uverifiserte. OpenAI API-websøkeprøver lagres separat og representerer ikke ChatGPT Search; automatiske kjøringer er ennå ikke aktivert.</p>
   </section>;
 }
