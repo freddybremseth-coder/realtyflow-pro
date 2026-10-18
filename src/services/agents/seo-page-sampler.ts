@@ -123,7 +123,7 @@ export function inspectPublicSample(
   }
   const html = snapshot.body;
   result.quality = inspectPageQuality(html);
-  if (/^\\/(?:eiendommer|properties|immobilien|propiedades)\\/[^/]+\\/?$/i.test(path)) {
+  if (new RegExp("^/(?:eiendommer|properties|immobilien|propiedades)/[^/]+/?$", "i").test(path)) {
     result.projectClaimSignals = inspectProjectClaimSignals(html);
   }
   result.titlePresent = /<title(?:\s[^>]*)?>[\s\S]*?\S[\s\S]*?<\/title>/i.test(html);
