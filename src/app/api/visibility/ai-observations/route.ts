@@ -10,7 +10,7 @@ export async function GET(request:NextRequest){
  const db=database();if(!db)return NextResponse.json({error:"Database unavailable"},{status:503});
  const {data,error}=await db.from("visibility_ai_observations").select("id,brand_id,provider,prompt,locale,observed_at,response_excerpt,cited_urls,brand_mentioned,captured_by,evidence_state,verification_state")
   .eq("brand_id","zeneco").order("observed_at",{ascending:false}).limit(100);
- if(error)return NextResponse.json({error:"Observations unavailable"},{status:503});
+ if(error)return NextResponse.json({error:["42P01","PGRST205"].includes(error.code||"")?"AI observation storage is not installed":"Observations unavailable",code:["42P01","PGRST205"].includes(error.code||"")?"STORAGE_NOT_INSTALLED":"OBSERVATIONS_UNAVAILABLE"},{status:503});
  return NextResponse.json({observations:data||[],source:"stored_manual_observations_unverified",automatedCollectionConnected:false},{headers:{"Cache-Control":"private, no-store"}});
 }
 export async function POST(request:NextRequest){
