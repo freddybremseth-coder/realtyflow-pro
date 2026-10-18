@@ -20,9 +20,10 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
+  const [review, setReview] = useState<{query: string; page: string} | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    setInventory(null); setError(null); setLoading(true); setBucket("all"); setQuery(""); setOffset(0);
+    setInventory(null); setError(null); setLoading(true); setBucket("all"); setQuery(""); setOffset(0); setReview(null);
     fetch("/api/agents/seo-search-console?brand=" + encodeURIComponent(brandId) + "&view=rankings", {
       cache: "no-store", credentials: "same-origin", signal: controller.signal,
     }).then(async response => {
@@ -40,6 +41,22 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
       row.page.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
   ), [inventory, bucket, query]);
   const displayed = filtered.slice(offset, offset + 50);
+  const selectedReview = opportunities.find(item => item.query === review?.query && item.page === review?.page) || null;
+  const reviewBrief = selectedReview ? [
+    "Sam SEO – vurderingsutkast (ikke utført eller godkjent)",
+    "Søkeord: " + selectedReview.query,
+    "Side: " + selectedReview.page,
+    "Måleperiode: " + inventory?.period.start + " til " + inventory?.period.end,
+    "Datakilde: Google Search Console (gjennomsnitt, ikke eksakt lokal rangering)",
+    "Gjennomsnittlig posisjon: " + selectedReview.position,
+    "Visninger: " + selectedReview.impressions,
+    "Klikk: " + selectedReview.clicks,
+    "CTR: " + (selectedReview.ctr * 100).toFixed(2) + "%",
+    "Hypotese: " + selectedReview.reason,
+    "Kontroller før tiltak: søkeintensjon, innhold, konkurrent-URLer, tittel/metabeskrivelse, internlenker og evt. kannibalisering.",
+    "Krev menneskelig godkjenning før endringer; mål effekt etter 30 dager.",
+  ].join("\\n") : "";
+
   // Explainable, non-executing review candidates. No jobs or changes are created.
   const opportunities = useMemo(() => (inventory?.rows || [])
     .filter(row => row.impressions >= 20 && (
@@ -84,9 +101,23 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
             <div className="font-semibold text-slate-900">{item.query}</div>
             <div className="mt-1 text-xs text-slate-600">{item.reason} · gjennomsnitt {item.position.toFixed(1)} · {fmt(item.impressions)} visninger</div>
             <div className="mt-1 break-all text-xs text-slate-500">{item.page}</div>
+            <button type="button" onClick={() => setReview({query: item.query, page: item.page})}
+              className="mt-2 rounded-lg border border-teal-300 px-3 py-1.5 text-xs font-semibold text-teal-900">Se vurderingsgrunnlag</button>
           </li>)}
         </ul> : <p className="mt-3 text-sm text-slate-600">Ingen kandidater oppfyller minimumskravene i datagrunnlaget.</p>}
       </div>
+      {selectedReview && <div className="mt-3 rounded-xl border border-teal-200 bg-teal-50 p-4">
+        <div className="flex flex-wrap justify-between gap-2">
+          <h4 className="font-bold text-teal-950">Vurderingsgrunnlag for Sam SEO</h4>
+          <button type="button" onClick={() => setReview(null)} className="text-xs font-semibold text-teal-900 underline">Lukk</button>
+        </div>
+        <p className="mt-2 text-sm font-semibold text-slate-900">{selectedReview.query}</p>
+        <p className="mt-1 break-all text-xs text-slate-700">{selectedReview.page}</p>
+        <p className="mt-3 text-sm text-slate-800">Undersøk søkeintensjon, konkurrerende resultater, tittel, innhold og interne lenker. Finn årsaken før et endringsforslag godkjennes.</p>
+        <p className="mt-2 text-xs text-slate-600">Dette er kun et dokumenterbart utkast basert på måledata. Ingen Nexus-oppgave, publisering eller etterkontroll er opprettet.</p>
+        <button type="button" onClick={() => { if (navigator.clipboard) void navigator.clipboard.writeText(reviewBrief); }}
+          className="mt-3 rounded-lg bg-teal-900 px-3 py-2 text-xs font-bold text-white">Kopier vurderingsutkast</button>
+      </div>}
       <label htmlFor="visibility-ranking-search" className="mt-4 block text-xs font-semibold text-slate-700">Søk etter søkeord eller landingsside</label>
       <input id="visibility-ranking-search" value={query} onChange={event => { setQuery(event.target.value); setOffset(0); }}
         className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="For eksempel Finestrat, boligkjøp, guide …"/>
