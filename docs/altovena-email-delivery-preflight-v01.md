@@ -13,6 +13,16 @@
 - Recipients are configured solely as **two explicit internal operator emails** in server-only `ALTOVENA_ALERT_RECIPIENT_EMAILS` (comma separated); a matching active owner admin email plus a separate active Altovena `crm.read` employee grant with independently verified Supabase Auth identity is required. All-or-nothing validation: **any invalid/missing or revoked grant prevents all preparation**. Never print recipient addresses, HMAC secret or per-user keys to logs. `ALTOVENA_ALERT_RECEIPT_HMAC_KEY` must be a secret available on the server only.
 - Candidate state never claims delivered, accepted, opened, or sent. A provider receipt is not equivalent to a user reading the in-app notification. Personal in-app read receipts remain independent from this queue.
 
+## Operator UI
+
+- An additional `crm.read`-protected, real-human-only read endpoint
+  `GET /api/workspaces/altovena/delivery-preflight-status` returns only
+  this operator's prepared and cancelled counts. Owner preview, remaster
+  proxy and revoked employee credentials are not allowed.
+- The internal operator inbox shows the status as **"Kun forberedt … Ingen e-post er sendt"**
+  or **"E-postforberedelse er deaktivert"**. Failed status lookups display an
+  explicit error rather than fabricating a successful send.
+
 ## Explicitly NOT done
 
 **No actual out-of-app notification delivery exists yet.** This PR does not send any operator email, SMS, WhatsApp or push. It does not activate the public form, add user grants, provision production schema or alter customer data. No provider message ID, SMTP sending acknowledgement, retry execution or bounce handling is implemented.
