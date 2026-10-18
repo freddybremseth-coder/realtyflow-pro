@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { assessAltovenaLeadPoll } from "@/lib/altovena/lead-attention-assessment";
+import { AltovenaOperatorInbox } from "./altovena-operator-inbox";
 
 type LeadTask = {
   id: string;
@@ -218,5 +219,6 @@ export function AltovenaLeadAttention({ onOpenLeads, canManage }: Props) {
     <p className="mt-3 text-xs text-slate-500">
       Statusknappene endrer kun intern oppgave, ikke kundestatus og sender ingen melding.
     </p>
+    <AltovenaOperatorInbox onOpenLeads={onOpenLeads} />
   </section>;
 }
