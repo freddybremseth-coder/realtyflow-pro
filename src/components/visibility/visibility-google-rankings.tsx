@@ -40,6 +40,21 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
       row.page.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
   ), [inventory, bucket, query]);
   const displayed = filtered.slice(offset, offset + 50);
+  // Explainable, non-executing review candidates. No jobs or changes are created.
+  const opportunities = useMemo(() => (inventory?.rows || [])
+    .filter(row => row.impressions >= 20 && (
+      (row.position > 5 && row.position <= 20) ||
+      (row.position <= 10 && row.ctr < 0.02 && row.impressions >= 100)
+    ))
+    .map(row => ({
+      ...row,
+      reason: row.position > 10 ? "Nær førstesiden" :
+        row.position > 5 ? "Mulighet for høyere plassering" : "Lav klikkrate – undersøk søkeintensjon og resultatvisning",
+      priority: row.position > 10 ? 0 : row.position > 5 ? 1 : 2,
+    }))
+    .sort((a, b) => a.priority - b.priority || b.impressions - a.impressions)
+    .slice(0, 10), [inventory]);
+
   return <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6" aria-label="Google-rangeringer">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -60,6 +75,17 @@ export function VisibilityGoogleRankings({ brandId }: { brandId: string }) {
           <span className="block font-semibold">{b === "all" ? "Alle" : b}</span>
           <strong className="mt-1 block text-xl">{fmt(b === "all" ? inventory.rows.length : inventory.bucketCounts[b])}</strong>
         </button>)}
+      </div>
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <h4 className="font-bold text-slate-900">Sams muligheter til vurdering</h4>
+        <p className="mt-1 text-xs text-slate-600">Regelbaserte hypoteser fra faktiske Google-observasjoner – ikke AI-siteringer, kvalitetssikrede årsaker eller utførte oppgaver. Ingen endring opprettes automatisk.</p>
+        {opportunities.length ? <ul className="mt-3 space-y-2">
+          {opportunities.map(item => <li key={item.query + "|" + item.page} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+            <div className="font-semibold text-slate-900">{item.query}</div>
+            <div className="mt-1 text-xs text-slate-600">{item.reason} · gjennomsnitt {item.position.toFixed(1)} · {fmt(item.impressions)} visninger</div>
+            <div className="mt-1 break-all text-xs text-slate-500">{item.page}</div>
+          </li>)}
+        </ul> : <p className="mt-3 text-sm text-slate-600">Ingen kandidater oppfyller minimumskravene i datagrunnlaget.</p>}
       </div>
       <label htmlFor="visibility-ranking-search" className="mt-4 block text-xs font-semibold text-slate-700">Søk etter søkeord eller landingsside</label>
       <input id="visibility-ranking-search" value={query} onChange={event => { setQuery(event.target.value); setOffset(0); }}
