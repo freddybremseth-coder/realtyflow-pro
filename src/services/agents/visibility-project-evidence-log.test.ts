@@ -9,12 +9,20 @@ test("actor spoofing is rejected",()=>assert.throws(()=>prepareProjectEvidenceLo
 test("external target is rejected",()=>assert.throws(()=>prepareProjectEvidenceLog({...e,projectUrl:"https://evil.example/eiendommer/1"},"staff-1"),/UNSUPPORTED_PROJECT_URL/));
 test("unauthorized actor never writes",async()=>{
  let calls=0;
- await assert.rejects(()=>appendProjectEvidenceLog({insert:async()=>{calls++;return {error:null};}},e,"staff-1",false),/AUTHORIZATION_REQUIRED/);
+ await assert.rejects(()=>appendProjectEvidenceLog({insertIfAbsent:async()=>{calls++;return {outcome:"inserted" as const,error:null};}},e,"staff-1",false),/AUTHORIZATION_REQUIRED/);
  assert.equal(calls,0);
 });
 test("authorized stub write preserves nonpublishing status",async()=>{
  let saved: unknown;
- const result=await appendProjectEvidenceLog({insert:async row=>{saved=row;return {error:null};}},e,"staff-1",true);
+ const result=await appendProjectEvidenceLog({insertIfAbsent:async row=>{saved=row;return {outcome:"inserted" as const,error:null};}},e,"staff-1",true);
  assert.equal(result.publicationEligible,false);
  assert.equal((saved as {details:{approval_granted:boolean}}).details.approval_granted,false);
+});
+
+test("atomic writer duplicate result is not mistaken for a new write",async()=>{
+ const result=await appendProjectEvidenceLog({
+   insertIfAbsent:async()=>({outcome:"already_exists" as const,error:null})
+ },e,"staff-1",true);
+ assert.equal(result.alreadyRecorded,true);
+ assert.equal(result.publicationEligible,false);
 });
