@@ -115,3 +115,124 @@ revoke execute on function public.altovena_reconcile_lead_alerts()
 grant execute on function public.altovena_reconcile_lead_alerts() to service_role;
 comment on function public.altovena_reconcile_lead_alerts() is
   'Service role only. Idempotent, brand-scoped internal alert ledger; absolutely no outbound delivery.';
+
+
+-- Operator-specific, in-app READ receipts (NOT provider delivery receipts).
+-- No email address or customer message is persisted in this table. The server
+-- derives a recipient key using HMAC from an independently verified session;
+-- browsers never choose recipients and never see the server's HMAC secret.
+create table if not exists public.altovena_alert_reads (
+  alert_id uuid not null references public.altovena_lead_alerts(id) on delete cascade,
+  operator_key text not null check (operator_key ~ '^[a-f0-9]{64}$'),
+  read_at timestamptz not null default now(),
+  primary key(alert_id,operator_key)
+);
+create index if not exists altovena_alert_reads_operator_idx
+  on public.altovena_alert_reads(operator_key,read_at desc);
+alter table public.altovena_alert_reads enable row level security;
+revoke all on public.altovena_alert_reads from public,anon,authenticated;
+grant select,insert on public.altovena_alert_reads to service_role;
+
+-- This service-role-only function is called ONLY after the API independently
+-- verified a current brand grant (or true owner session) and derived the
+-- server-secret HMAC. A caller-supplied operator key must never reach it.
+create or replace function public.altovena_operator_alert_inbox(
+  p_operator_key text, p_limit integer default 20
+) returns jsonb language plpgsql security invoker set search_path=''
+as $$
+declare
+  v_alerts jsonb := '[]'::jsonb;
+  v_total integer := 0;
+  v_unread integer := 0;
+begin
+  if p_operator_key is null or p_operator_key !~ '^[a-f0-9]{64}$'
+    or p_limit is null or p_limit not between 1 and 30
+  then raise exception 'Invalid operator inbox request'; end if;
+
+  select count(*)::int,
+         count(*) filter (where r.alert_id is null)::int
+    into v_total,v_unread
+    from public.altovena_lead_alerts a
+    join public.work_items w on w.id=a.work_item_id
+    left join public.altovena_alert_reads r
+      on r.alert_id=a.id and r.operator_key=p_operator_key
+    where a.state='PENDING' and w.brand_id='altovena'
+      and w.source_type='website_lead';
+
+  select coalesce(pg_catalog.jsonb_agg(
+    pg_catalog.jsonb_build_object(
+      'id',s.alert_id,'kind',s.alert_kind,
+      'createdAt',s.created_at,
+      'contactId',s.contact_id,
+      'readAt',s.read_at
+    ) order by s.created_at desc,s.alert_id
+  ),'[]'::jsonb) into v_alerts
+  from (
+    select a.id as alert_id,a.kind as alert_kind,
+      a.created_at,
+      case when w.source_id ~* '^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'
+        then w.source_id else null end as contact_id,
+      r.read_at
+    from public.altovena_lead_alerts a
+    join public.work_items w on w.id=a.work_item_id
+    left join public.altovena_alert_reads r
+      on r.alert_id=a.id and r.operator_key=p_operator_key
+    where a.state='PENDING' and w.brand_id='altovena'
+      and w.source_type='website_lead'
+    order by a.created_at desc,a.id
+    limit p_limit
+  ) s;
+
+  return pg_catalog.jsonb_build_object(
+    'ok',true,'brand','altovena','alerts',v_alerts,
+    'totalPending',v_total,'unreadTotal',v_unread,
+    'emailSent',false,'externalDelivery',false
+  );
+end $$;
+revoke execute on function public.altovena_operator_alert_inbox(text,integer)
+  from public,anon,authenticated;
+grant execute on function public.altovena_operator_alert_inbox(text,integer)
+  to service_role;
+
+-- Explicit user click only. This marks a specific alert READ for the caller,
+-- never closes the shared lead task or marks it read for any other operator.
+create or replace function public.altovena_ack_operator_alert(
+  p_alert_id uuid,p_operator_key text
+) returns jsonb language plpgsql security invoker set search_path=''
+as $$
+declare
+  v_read_at timestamptz;
+begin
+  if p_alert_id is null or p_operator_key is null
+    or p_operator_key !~ '^[a-f0-9]{64}$'
+  then raise exception 'Invalid operator acknowledgement'; end if;
+
+  insert into public.altovena_alert_reads(alert_id,operator_key)
+    select a.id,p_operator_key
+    from public.altovena_lead_alerts a
+    join public.work_items w on w.id=a.work_item_id
+    where a.id=p_alert_id and a.state='PENDING'
+      and w.brand_id='altovena' and w.source_type='website_lead'
+  on conflict (alert_id,operator_key) do nothing;
+
+  select r.read_at into v_read_at
+    from public.altovena_alert_reads r
+    join public.altovena_lead_alerts a on a.id=r.alert_id
+    join public.work_items w on w.id=a.work_item_id
+    where r.alert_id=p_alert_id and r.operator_key=p_operator_key
+      and a.state='PENDING'
+      and w.brand_id='altovena' and w.source_type='website_lead';
+  if v_read_at is null then
+    return pg_catalog.jsonb_build_object(
+      'ok',false,'error','ALERT_NOT_PENDING_OR_NOT_FOUND'
+    );
+  end if;
+  return pg_catalog.jsonb_build_object(
+    'ok',true,'brand','altovena','id',p_alert_id,'readAt',v_read_at,
+    'emailSent',false,'externalDelivery',false
+  );
+end $$;
+revoke execute on function public.altovena_ack_operator_alert(uuid,text)
+  from public,anon,authenticated;
+grant execute on function public.altovena_ack_operator_alert(uuid,text)
+  to service_role;
