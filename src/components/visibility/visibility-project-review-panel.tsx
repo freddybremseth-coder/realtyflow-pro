@@ -1,3 +1,4 @@
+import React from "react";
 import type { SEOControlReport } from "@/services/agents/seo-control-report";
 
 type Props = { report: SEOControlReport | null | undefined; brand: string; demo: boolean };
