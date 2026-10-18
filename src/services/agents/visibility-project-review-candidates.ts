@@ -14,6 +14,7 @@ export function projectReviewCandidates(audit: SiteAudit) {
     status: "NOT_REVIEWED" as const,
     hasHttpEvidence: page.status === 200,
     factsVerified: false as const,
+    claimMentions: page.projectClaimSignals ?? null,
     publicationEligible: false as const,
     nextAction: "Collect actual project claims and authoritative provenance before invoking project review",
   }));
