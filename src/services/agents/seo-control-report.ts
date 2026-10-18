@@ -1,4 +1,5 @@
 import type { SiteAudit } from "./seo-audit";
+import { projectReviewCandidates } from "./visibility-project-review-candidates";
 import { visibilityAuditSummary } from "./visibility-audit-adapter";
 import type { ReferralPreflightCheck } from "./seo-referral-health";
 
@@ -10,6 +11,7 @@ export type SEOControlReport = {
     accessibilityFindings: number; invalidStructuredData: number;
     pagesWithContactOrForm: number; qualityPagesChecked: number;
     visibilityDiagnostic: ReturnType<typeof visibilityAuditSummary>;
+    projectReviewCandidates: ReturnType<typeof projectReviewCandidates>;
   }>;
   referralsAvailable: boolean;
   leadsAvailable: boolean;
@@ -36,6 +38,7 @@ export function buildSEOControlReport(input: {
       return {
         brandId: audit.brandId, checkedAt: audit.checkedAt,
         visibilityDiagnostic: visibilityAuditSummary(audit),
+        projectReviewCandidates: projectReviewCandidates(audit),
         pagesChecked: Number(audit.home.status !== null) + audit.samples.filter(page => page.status !== null).length,
         findings: audit.observations.length,
         incomplete: audit.home.status === null || audit.robots.status === null || audit.sitemap.status === null ||
