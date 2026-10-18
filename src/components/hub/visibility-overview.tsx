@@ -88,6 +88,22 @@ export function VisibilityOverview({ report, publishingStatuses = [] }: {
         </article>;
       })}
     </div>}
+    {report && filtered.some(site => (site.projectReviewCandidates?.length ?? 0) > 0) && <section aria-label="Visibility – prosjektkandidater til faktakontroll" className="mt-6 border-t border-slate-200 pt-4">
+      <h4 className="font-bold">Prosjektsider som trenger faktakontroll</h4>
+      <p className="mt-1 text-sm text-slate-700">Kandidatene er hentet fra Sams begrensede offentlige nettsideutvalg. Ingen prosjektpris, leveringstid eller energiklasse er kontrollert mot primærkilder. Sider som ikke er med i utvalget er ikke friskmeldt.</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {filtered.flatMap(site => (site.projectReviewCandidates ?? []).map(candidate =>
+          <article key={site.brandId + candidate.url} className="rounded-lg border border-amber-200 bg-white p-4">
+            <p className="text-xs font-semibold text-slate-700">{names[site.brandId] ?? site.brandId} · Ikke faktakontrollert</p>
+            <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-sm font-medium text-cyan-800 underline">{candidate.url}</a>
+            <p className="mt-2 text-sm">Teknisk HTTP-observasjon: {candidate.hasHttpEvidence ? "HTTP 200 observert" : "Ikke bekreftet"}</p>
+            <p className="mt-1 text-sm"><strong>Pris og øvrige fakta:</strong> Ikke kontrollert</p>
+            <p className="mt-2 text-xs text-slate-600">Neste steg: Samle dokumentasjon fra utbygger og la ansvarlig person kontrollere opplysningene.</p>
+            <p className="mt-1 text-xs text-slate-600">Ingen publiseringstillatelse · Sist registrert teknisk kontroll: {visibilityEvidenceAge(site.checkedAt) !== "UNKNOWN" ? new Date(site.checkedAt).toLocaleString("nb-NO") : "Ukjent"}</p>
+          </article>
+        ))}
+      </div>
+    </section>}
     {visibleBlocks.length > 0 && <section aria-label="Visibility – blokkert metadata-publisering" className="mt-6 border-t border-slate-200 pt-4">
       <h4 className="font-bold">Publiseringsblokkeringer · {visibleBlocks.length}</h4>
       <p className="mt-1 text-sm text-slate-700">
