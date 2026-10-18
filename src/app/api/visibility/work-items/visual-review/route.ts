@@ -4,6 +4,7 @@ import { getRequestAccessContext } from "@/lib/api-admin";
 import { DESIGN_REQUEST_ACTION } from "@/services/agents/visibility-design-proposal";
 import { VISIBILITY_CODE_CANDIDATE_ACTION,resolveVisibilityCodeCandidate } from "@/services/agents/visibility-code-candidate";
 import { checkVisibilityPullStatus } from "@/services/agents/visibility-github-pr-status";
+import { checkVisibilityPullCi } from "@/services/agents/visibility-github-ci";
 import { parseVisualReviewInput,VISIBILITY_VISUAL_REVIEW_ACTION } from "@/services/agents/visibility-visual-review";
 
 export const dynamic="force-dynamic";
@@ -47,6 +48,14 @@ export async function POST(request:NextRequest){
  if(live.state!=="OPEN_SAME_COMMIT" || live.currentHeadSha!==input.commitSha)
   return NextResponse.json({error:"GitHub PR is unavailable or no longer at the reviewed commit"},{status:409});
 
+ // A self-attested PASS must never be registered while the exact commit
+ // has failing, missing or unverified CI. A reviewer can always report ISSUES.
+ const ci=await checkVisibilityPullCi(candidate,live);
+ if(input.outcome==="VISUALLY_PASSED" && ci.state!=="PASSED")
+  return NextResponse.json({
+   error:"GitHub-testene for denne committen er ikke bekreftet bestått. Registrer eventuelle feil eller kontroller testene igjen.",
+   ciState:ci.state,
+  },{status:409,headers:{"Cache-Control":"private, no-store"}});
  // Owner input is human attestation, never a screenshot or independently
  // validated browser result. No visual checks are inferred from GitHub CI.
  const {error:insertError}=await db.from("automation_logs").insert({
@@ -59,6 +68,8 @@ export async function POST(request:NextRequest){
    candidate_url:candidate.url,
    review_kind:"manual_visual_review_only",
    recorded_by:ctx.email,outcome:input.outcome,
+   github_ci_state:ci.state,github_ci_checked_at:ci.checkedAt,
+   github_ci_reviewed_sha:ci.reviewedSha,
    checks:input.checks,notes:input.notes,
    approval_granted:false,merge_authorized:false,
    publication_authorized:false,execution_started:false,
