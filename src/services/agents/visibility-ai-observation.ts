@@ -25,7 +25,7 @@ export function assessAiVisibilityObservation(
   });
   if (!observation.prompt.trim() || !observation.locale.trim() ||
       !observation.responseExcerpt.trim() || !Number.isFinite(Date.parse(observation.observedAt)) ||
-      observation.citedUrls.length > 20 || !Array.isArray(observation.citedUrls) ||
+      !Array.isArray(observation.citedUrls) || observation.citedUrls.length > 20 ||
       !["manual","authorized_api"].includes(observation.capturedBy))
     return invalid();
   const pages: string[] = [];
