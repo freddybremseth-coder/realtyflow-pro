@@ -15,7 +15,8 @@ function fingerprint(details:Record<string,unknown>) {
   return createHash("sha256").update(JSON.stringify({
     event_id:details.event_id,brand_id:details.brand_id,project_url:details.project_url,
     claim_key:details.claim_key,event:details.event,actor_id:details.actor_id,
-    recorded_at:details.recorded_at,document_id:details.document_id,
+    // Server timestamps change across retries and are not part of event identity.
+    document_id:details.document_id,
     source_title:details.source_title,source_kind:details.source_kind,
     independently_verified:false,publication_authorized:false,approval_granted:false,
   })).digest("hex");
