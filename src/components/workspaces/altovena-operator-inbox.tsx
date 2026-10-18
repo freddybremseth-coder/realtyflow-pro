@@ -29,6 +29,9 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
   const [deliveryPreview,setDeliveryPreview]=useState<{state:"disabled"|"prepared_only";
     prepared:number;cancelled:number}|null>(null);
   const [deliveryStatusError,setDeliveryStatusError]=useState("");
+  const [smtpStatus,setSmtpStatus]=useState<{state:"disabled"|"staging";
+    attempting:number;smtpAccepted:number;outcomeUnknown:number}|null>(null);
+  const [smtpStatusError,setSmtpStatusError]=useState("");
 
   useEffect(()=>{
     const tick=()=>{if(!document.hidden)setRefresh(x=>x+1);};
@@ -94,6 +97,32 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
     return ()=>controller.abort();
   },[refresh]);
 
+  useEffect(()=>{
+    const controller=new AbortController();
+    setSmtpStatusError("");
+    fetch("/api/workspaces/altovena/smtp-attempt-status",{
+      cache:"no-store",signal:controller.signal,
+    }).then(async response=>{
+      const body=await response.json().catch(()=>null);
+      if(!response.ok || body?.ok!==true || body.brand!=="altovena" ||
+         !["disabled","staging"].includes(body.state) ||
+         body.deliveryConfirmed!==false ||
+         ![body.attempting,body.smtpAccepted,body.outcomeUnknown].every(
+           n=>Number.isSafeInteger(n) && n>=0
+         ))throw Error("Status for SMTP-forsøk er utilgjengelig.");
+      return body;
+    }).then(body=>{
+      if(!controller.signal.aborted)setSmtpStatus({
+        state:body.state,attempting:body.attempting,
+        smtpAccepted:body.smtpAccepted,outcomeUnknown:body.outcomeUnknown,
+      });
+    }).catch(()=>{
+      if(!controller.signal.aborted)setSmtpStatusError(
+        "SMTP-status kunne ikke bekreftes.");
+    });
+    return ()=>controller.abort();
+  },[refresh]);
+
   async function markRead(id:string){
     if(busy)return;
     setBusy(id);setError("");
@@ -136,7 +165,7 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
       Personlige lesekvitteringer og varselvisning blir tilgjengelig etter sikker aktivering.
     </p>}
     {!error && !loading && enabled && alerts.length===0 && <p className="mt-3 text-sm text-slate-400">
-      Ingen aktive varsler. Ingen e-post eller push er sendt.
+      Ingen aktive interne varsler i appen. Se egen SMTP-status nedenfor.
     </p>}
     {!error && !loading && enabled && alerts.length>0 &&
       <div className="mt-3 space-y-2">
@@ -175,14 +204,25 @@ export function AltovenaOperatorInbox({onOpenLeads}: Props) {
       {deliveryStatusError || (!deliveryPreview
         ? "Kontrollerer e-postforberedelse…"
         : deliveryPreview.state==="disabled"
-          ? "E-postforberedelse er deaktivert. Ingen e-post er sendt."
+          ? "E-postforberedelse er deaktivert."
           : "Kun forberedt: "+deliveryPreview.prepared+
             " e-postkandidater til deg. "+deliveryPreview.cancelled+
-            " kansellert. Ingen e-post er sendt.")}
+            " kansellert. Dette er ikke en sendekvittering.")}
+    </p>
+    <p className="mt-2 text-xs text-slate-400" role="status">
+      {smtpStatusError || (!smtpStatus
+        ? "Kontrollerer SMTP-status…"
+        : smtpStatus.state==="disabled"
+          ? "SMTP-testutsendelse er deaktivert. Produksjonsutsendelse er sperret."
+          : "SMTP-test: "+smtpStatus.smtpAccepted+
+            " akseptert av server, "+smtpStatus.outcomeUnknown+
+            " med ukjent resultat, "+smtpStatus.attempting+
+            " startet uten avsluttende kvittering. Ingen endelig levering er bekreftet.")}
     </p>
     <p className="mt-3 text-xs text-slate-500">
-      En lesekvittering er personlig og avslutter ikke en kundeoppgave. Varsler
-      vises i appen; e-post og push er ikke aktivert.
+      Lesekvittering er personlig og avslutter ikke en kundeoppgave.
+      SMTP-aksept er ikke dokumentasjon på at mottakeren har fått e-posten.
+      Automatisk utsendelse i produksjon er ikke aktivert.
     </p>
   </section>;
 }
