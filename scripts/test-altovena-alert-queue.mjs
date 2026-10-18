@@ -93,6 +93,7 @@ try {
  assert.equal(a0.totalPending,3);
  assert.equal(a0.unreadTotal,3);
  assert.equal(a0.alerts.length,3);
+ assert.equal(a0.alerts[0].kind,"NOT_STARTED_24H","high severity appears first");
  assert.equal(b0.unreadTotal,3);
  assert.deepEqual(a0.alerts.map(x=>x.id),b0.alerts.map(x=>x.id));
  assert.equal(JSON.stringify(a0).includes("example.invalid"),false);
@@ -106,6 +107,13 @@ try {
  assert.equal(againSeen.readAt,seen.readAt,"duplicate click keeps first read time");
  const a1=await inbox(operatorA),b1=await inbox(operatorB);
  assert.equal(a1.unreadTotal,2);
+ assert.equal(a1.alerts.at(-1)?.id,alertId,"read alert moves behind unread alerts");
+ const topAfterRead=(await db.query(
+   "select public.altovena_operator_alert_inbox($1::text,1) as response",
+   [operatorA])).rows[0].response;
+ assert.equal(topAfterRead.alerts.length,1);
+ assert.notEqual(topAfterRead.alerts[0].id,alertId,
+   "capped inbox must surface unread alerts instead of an already read alert");
  assert.equal(b1.unreadTotal,3,"employee B receipt independent of A");
  assert.equal(a1.totalPending,3);
  assert.equal(await count("state='PENDING'"),3,"read receipt does not resolve lead");
