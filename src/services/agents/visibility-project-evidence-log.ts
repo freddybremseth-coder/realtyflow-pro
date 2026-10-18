@@ -19,7 +19,7 @@ export function prepareProjectEvidenceLog(event: ProjectEvidenceEvent, authentic
   if (!/^[a-zA-Z0-9-]{8,80}$/.test(event.eventId)) throw new Error("INVALID_EVENT_ID");
   const url = new URL(event.projectUrl);
   if (url.protocol !== "https:" || !["www.zenecohomes.com", "zenecohomes.com"].includes(url.hostname) ||
-      !/^\/(?:eiendommer|properties|immobilien|propiedades)\/[^/]+\/?$/i.test(url.pathname) ||
+      !new RegExp("^/(?:eiendommer|properties|immobilien|propiedades)/[^/]+/?$", "i").test(url.pathname) ||
       url.search || url.hash || url.username || url.password || url.port) throw new Error("UNSUPPORTED_PROJECT_URL");
   if (!event.recordedAt || !Number.isFinite(Date.parse(event.recordedAt))) throw new Error("INVALID_TIME");
   return {
