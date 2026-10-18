@@ -14,7 +14,12 @@ type SafeModeDependencies = {
   cronEnabledCheck?: CronEnabledCheck;
 };
 
-const FAIL_CLOSED_CONTROL_PATHS = new Set(["/api/cron/marketing-autopilot"]);
+const FAIL_CLOSED_CONTROL_PATHS = new Set([
+  "/api/cron/marketing-autopilot",
+  // Preparing operator email candidates must have an explicit enabled Nexus
+  // runtime control; a missing control is not permission to run.
+  "/api/cron/altovena-delivery-preflight",
+]);
 
 function parseCsv(value?: string): string[] {
   if (!value) return [];
