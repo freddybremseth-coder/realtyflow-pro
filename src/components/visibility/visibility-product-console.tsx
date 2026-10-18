@@ -5,6 +5,7 @@ import { DonaAnnaVisibilityApproval } from "./dona-anna-approval";
 import { VisibilityWorkQueue } from "./visibility-work-queue";
 import { VisibilityGoogleRankings } from "./visibility-google-rankings";
 import { VisibilityImpactLifecycle } from "./visibility-impact-lifecycle";
+import { VisibilityAiMonitor } from "./visibility-ai-monitor";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, ArrowRight, ArrowUpRight, BarChart3, CheckCircle2, ChevronRight,
@@ -254,6 +255,7 @@ export function VisibilityProductConsole(){
             </article>;})}</div>:<Empty title="Ingen klassifiserte funn" body="Ingen forslag finnes i det lagrede utvalget. Dette betyr ikke at en full SEO-audit er bestått."/>}
           </>}
           {tab==="measurement"&&<>
+            {mode==="live" && <VisibilityAiMonitor/>}
             {mode==="live" && <VisibilityImpactLifecycle/>}
             {mode==="live" && brand!=="all" && <VisibilityGoogleRankings brandId={brand}/>}
             <div><h2 className="text-2xl font-extrabold">Synlighet og måling</h2><p className="mt-1 text-sm text-slate-600">Verifiserte Google Search Console-data. Ingen estimerte AI-siteringer, leads eller plasseringer.</p></div>
