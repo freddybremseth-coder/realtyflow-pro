@@ -11,6 +11,7 @@ test("write endpoint is disabled by default and owner-only",()=>{
 test("server controls actor and recorded time and excludes attestations",()=>{
  assert.match(route,/actorId:ctx\.email/);
  assert.match(route,/recordedAt:new Date\(\)\.toISOString/);
- assert.match(route,/\["SOURCE_RECORDED","REVIEW_REQUESTED"\]/);
+ assert.match(route,/\["REVIEW_REQUESTED"\]/);
+ assert.doesNotMatch(route,/\["SOURCE_RECORDED","REVIEW_REQUESTED"\]/);
  assert.doesNotMatch(route,/publicationAuthorized:true/);
 });
