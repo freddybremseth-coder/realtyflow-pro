@@ -11,6 +11,9 @@ on:
       - "src/app/api/cron/altovena-smtp-staging/**"
       - "src/lib/altovena/dispatch-staging-operator-email.ts"
       - "scripts/test-altovena-smtp-boundary.mjs"
+      - "supabase/migrations/*altovena_smtp_attempt_boundary.sql"
+      - "src/lib/altovena/dispatch-staging-operator-email.ts"
+      - "scripts/test-altovena-smtp-boundary.mjs"
       - "src/lib/altovena/verified-delivery-recipients.ts"
       - "src/lib/cron/safe-mode.ts"
       - "scripts/test-altovena-delivery-preflight.mjs"
@@ -111,6 +114,8 @@ jobs:
       - name: Verify Altovena delivery candidates without SMTP in isolated PostgreSQL
         run: node scripts/test-altovena-delivery-preflight.mjs
       - name: Verify irreversible Altovena SMTP attempts in isolated PostgreSQL
+        run: node scripts/test-altovena-smtp-boundary.mjs
+      - name: Verify no-retry SMTP attempt ledger against real isolated PostgreSQL
         run: node scripts/test-altovena-smtp-boundary.mjs
       - name: Verify real Altovena SQL + RPC in isolated PostgreSQL
         run: node scripts/test-altovena-postgres.mjs
