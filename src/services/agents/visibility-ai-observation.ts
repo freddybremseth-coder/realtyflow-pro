@@ -25,13 +25,16 @@ export function assessAiVisibilityObservation(
   });
   if (!observation.prompt.trim() || !observation.locale.trim() ||
       !observation.responseExcerpt.trim() || !Number.isFinite(Date.parse(observation.observedAt)) ||
+      observation.citedUrls.length > 20 || !Array.isArray(observation.citedUrls) ||
       !["manual","authorized_api"].includes(observation.capturedBy))
     return invalid();
   const pages: string[] = [];
   for (const value of observation.citedUrls) {
     try {
+      if (typeof value !== "string" || value.length > 2048) return invalid();
       const url = new URL(value);
-      if (url.protocol !== "https:" || url.username || url.password) return invalid();
+      if (url.protocol !== "https:" || url.username || url.password || url.hostname.endsWith(".") ||
+          /[\\u0000-\\u001f]/.test(value)) return invalid();
       const host = url.hostname.toLowerCase();
       if (host === verifiedHost || host === "www." + verifiedHost ||
           ("www." + host) === verifiedHost) pages.push(url.toString());
