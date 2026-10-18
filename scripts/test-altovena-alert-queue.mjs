@@ -69,6 +69,58 @@ try {
  const scanAcl=await db.query("select has_table_privilege('anon','public.altovena_alert_scan_state','SELECT') as anon");
  assert.equal(scanAcl.rows[0].anon,false);
 
+ // The in-app inbox is service-role-only. These are synthetic per-operator HMAC
+ // keys, never customer emails and never a real production account.
+ const inboxACL=await db.query(`select
+   has_function_privilege('anon','public.altovena_operator_alert_inbox(text,integer)','EXECUTE') as read_anon,
+   has_function_privilege('authenticated','public.altovena_ack_operator_alert(uuid,text)','EXECUTE') as ack_auth,
+   has_function_privilege('service_role','public.altovena_operator_alert_inbox(text,integer)','EXECUTE') as read_service,
+   has_table_privilege('anon','public.altovena_alert_reads','SELECT') as table_anon`);
+ assert.deepEqual(inboxACL.rows[0],{
+   read_anon:false,ack_auth:false,read_service:true,table_anon:false,
+ });
+ const operatorA="a".repeat(64), operatorB="b".repeat(64);
+ const inbox=async key=>(await db.query(
+   "select public.altovena_operator_alert_inbox($1::text,20) as response",[key]
+ )).rows[0].response;
+ const ack=async(id,key)=>(await db.query(
+   "select public.altovena_ack_operator_alert($1::uuid,$2::text) as response",[id,key]
+ )).rows[0].response;
+ const a0=await inbox(operatorA),b0=await inbox(operatorB);
+ assert.equal(a0.brand,"altovena");
+ assert.equal(a0.emailSent,false);
+ assert.equal(a0.externalDelivery,false);
+ assert.equal(a0.totalPending,3);
+ assert.equal(a0.unreadTotal,3);
+ assert.equal(a0.alerts.length,3);
+ assert.equal(a0.alerts[0].kind,"NOT_STARTED_24H","high severity appears first");
+ assert.equal(b0.unreadTotal,3);
+ assert.deepEqual(a0.alerts.map(x=>x.id),b0.alerts.map(x=>x.id));
+ assert.equal(JSON.stringify(a0).includes("example.invalid"),false);
+ const alertId=a0.alerts.find(x=>x.contactId===first.leadId)?.id;
+ assert.ok(alertId,"select a receipt that belongs to the contact erased below");
+ const seen=await ack(alertId,operatorA);
+ assert.equal(seen.ok,true);
+ assert.equal(seen.id,alertId);
+ assert.equal(seen.externalDelivery,false);
+ const againSeen=await ack(alertId,operatorA);
+ assert.equal(againSeen.readAt,seen.readAt,"duplicate click keeps first read time");
+ const a1=await inbox(operatorA),b1=await inbox(operatorB);
+ assert.equal(a1.unreadTotal,2);
+ assert.equal(a1.alerts.at(-1)?.id,alertId,"read alert moves behind unread alerts");
+ const topAfterRead=(await db.query(
+   "select public.altovena_operator_alert_inbox($1::text,1) as response",
+   [operatorA])).rows[0].response;
+ assert.equal(topAfterRead.alerts.length,1);
+ assert.notEqual(topAfterRead.alerts[0].id,alertId,
+   "capped inbox must surface unread alerts instead of an already read alert");
+ assert.equal(b1.unreadTotal,3,"employee B receipt independent of A");
+ assert.equal(a1.totalPending,3);
+ assert.equal(await count("state='PENDING'"),3,"read receipt does not resolve lead");
+ const foreignAck=await ack(foreign.rows[0].id,operatorA);
+ assert.equal(foreignAck.ok,false);
+ assert.equal((await db.query("select count(*)::int as n from public.altovena_alert_reads")).rows[0].n,1);
+
  // Human transitions cause alert resolution, not an outbound notification.
  await db.query("select public.altovena_mark_lead_task($1::uuid,'IN_PROGRESS','owner@example.invalid')",
    [first.workItemId]);
@@ -93,6 +145,8 @@ try {
  await db.query("delete from public.contacts where id=$1 and brand_id='altovena'",[first.leadId]);
  assert.equal(await count("work_item_id=$1",[first.workItemId]),0);
  assert.equal(await count("work_item_id=$1",[second.workItemId]),1);
+ assert.equal((await db.query("select count(*)::int as n from public.altovena_alert_reads")).rows[0].n,0,
+   "contact erasure cascades the operator receipt via alert task");
  assert.equal((await db.query("select count(*)::int as n from public.work_items where id=$1",
   [foreign.rows[0].id])).rows[0].n,1);
  console.log("PASS altovena durable alert outbox: exact 15m/24h/48h, idempotency, grant isolation, resolution, erasure; no outbound delivery");
