@@ -23,7 +23,7 @@ const PROVIDERS: AiSearchProvider[] = ["chatgpt", "google_ai", "perplexity", "co
 export function planZenecoAiSample(provider: AiSearchProvider, promptId: string, scheduledDate: string): AiSamplingPlan {
   const prompt = findZenecoAiPrompt(promptId);
   if (!prompt || !PROVIDERS.includes(provider) || !DATE.test(scheduledDate) ||
-      new Date(scheduledDate).toISOString().slice(0, 10) !== scheduledDate)
+      !Number.isFinite(Date.parse(scheduledDate)) || new Date(scheduledDate).toISOString().slice(0, 10) !== scheduledDate)
     throw new Error("Invalid AI sampling parameters");
   const id = createHash("sha256").update(["zeneco", provider, prompt.id, prompt.locale, scheduledDate].join("\u0000")).digest("hex");
   return {
