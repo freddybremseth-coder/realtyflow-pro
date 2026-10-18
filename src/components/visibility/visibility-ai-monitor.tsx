@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { VisibilityAiManualEntry } from "./visibility-ai-manual-entry";
 import { summarizeAiVisibilityLedger, type AiVisibilityLedgerRow } from "@/services/agents/visibility-ai-summary";
 import { aiVisibilityMonthlyHistory } from "@/services/agents/visibility-ai-history";
+import { ZENECO_AI_PROMPT_PANEL } from "@/services/agents/visibility-ai-prompt-panel";
 
 const services = [
   {name:"ChatGPT Search",detail:"Omtale eller kildehenvisning i dokumentert AI-svar"},
@@ -37,6 +38,14 @@ export function VisibilityAiMonitor() {
         <thead><tr className="border-b"><th className="py-2">Måned</th><th className="py-2 text-right">Registrert</th><th className="py-2 text-right">Uavhengig verifiserte siteringer</th><th className="py-2 text-right">Ikke verifisert</th></tr></thead>
         <tbody>{history.map(item=><tr key={item.month} className="border-b border-slate-100"><td className="py-2">{item.month}</td><td className="py-2 text-right">{item.recorded}</td><td className="py-2 text-right">{item.verifiedCitations}</td><td className="py-2 text-right">{item.unverified}</td></tr>)}</tbody>
       </table></div>}
+    </div>
+    <div className="mt-4 rounded-xl border border-slate-200 p-4">
+      <h4 className="font-bold">Standardiserte AI-søkespørsmål</h4>
+      <p className="mt-1 text-xs text-slate-600">Faste, nøytrale spørsmål for fremtidige sammenligninger. Listen betyr ikke at søkene er kjørt eller at resultatene er kontrollert.</p>
+      <ul className="mt-3 space-y-2">{ZENECO_AI_PROMPT_PANEL.map(item=><li key={item.id} className="rounded-lg bg-slate-50 p-3 text-sm">
+        <div className="font-medium">{item.prompt}</div>
+        <div className="mt-1 text-xs text-slate-500">{item.id} · {item.locale} · {item.intent}</div>
+      </li>)}</ul>
     </div>
     <VisibilityAiManualEntry onSaved={()=>setRevision(x=>x+1)}/>
     <div className="mt-4 rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">Registrerte enkeltobservasjoner</h4>{status&&<p role="status" className="mt-2 text-sm text-slate-600">{status}</p>}{!status&&!observations.length&&<p className="mt-2 text-sm text-slate-600">Ingen observasjoner registrert.</p>}{observations.slice(0,20).map(item=><div key={item.id} className="mt-3 border-t border-slate-100 pt-3 text-sm"><div className="font-semibold">{item.provider} · {item.evidence_state} · {item.verification_state==="INDEPENDENTLY_VERIFIED"?"Uavhengig verifisert":"Ikke uavhengig verifisert"}</div><div className="text-xs text-slate-600">{item.prompt} · {item.observed_at} · {item.captured_by==="manual"?"Manuelt oppgitt":"API-observasjon"}</div><p className="mt-1 text-xs text-slate-500">Ingen uavhengig autentisering av AI-leverandørens svar er utført.</p></div>)}</div>
