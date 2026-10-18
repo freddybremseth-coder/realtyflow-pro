@@ -6,7 +6,7 @@ function safePropertyUrl(value: string): string | null {
     const url = new URL(value);
     if (url.protocol !== "https:" || !["zenecohomes.com", "www.zenecohomes.com"].includes(url.hostname)
       || url.username || url.password || url.port
-      || !/^\/(eiendommer|properties|immobilien|propiedades)\/[^/]+\/?$/i.test(url.pathname)) return null;
+      || !new RegExp("^/(?:eiendommer|properties|immobilien|propiedades)/[^/]+/?$", "i").test(url.pathname)) return null;
     return url.href;
   } catch { return null; }
 }
