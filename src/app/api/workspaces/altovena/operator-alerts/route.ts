@@ -26,6 +26,10 @@ async function operator(request: NextRequest) {
   if (scope.verifiedEmail.trim().toLowerCase() !== context.email.trim().toLowerCase())
     return { response: reply({ ok: false, error: "INVALID_OPERATOR_SESSION" }, 403) };
 
+  // With the feature OFF, permit an authorized "disabled" display even
+  // before provisioning the inbox-only HMAC key.
+  if (process.env.ALTOVENA_ALERT_INBOX_ENABLED !== "true")
+    return { scope, key: null };
   const secret = process.env.ALTOVENA_ALERT_RECEIPT_HMAC_KEY;
   if (!secret || secret.length < 32)
     return { response: reply({ ok: false, error: "ALERT_RECEIPTS_NOT_CONFIGURED" }, 503) };
