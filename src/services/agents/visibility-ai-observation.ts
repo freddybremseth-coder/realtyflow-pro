@@ -34,7 +34,7 @@ export function assessAiVisibilityObservation(
       if (typeof value !== "string" || value.length > 2048) return invalid();
       const url = new URL(value);
       if (url.protocol !== "https:" || url.username || url.password || url.hostname.endsWith(".") ||
-          /[\\u0000-\\u001f]/.test(value)) return invalid();
+          /[\u0000-\u001f]/.test(value)) return invalid();
       const host = url.hostname.toLowerCase();
       if (host === verifiedHost || host === "www." + verifiedHost ||
           ("www." + host) === verifiedHost) pages.push(url.toString());
