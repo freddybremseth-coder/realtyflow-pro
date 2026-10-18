@@ -78,7 +78,8 @@ test("pending Altovena website tasks remain in the same verified brand workspace
   assert.match(scopedTaskRoute,/\.in\("status", allowedStatuses\)/);
   assert.doesNotMatch(scopedTaskRoute,/\.from\("contacts"\)|\.from\("brand_settings"\)/);
   assert.match(altovenaTaskPanel,/\/api\/workspaces\/altovena\/lead-tasks/);
-  assert.match(altovenaTaskPanel,/Ingen e-post eller pushvarsler er aktivert/);
+  assert.match(altovenaTaskPanel,/Automatiske kundesvar er ikke aktivert/);
+  assert.match(altovenaTaskPanel,/Status for interne SMTP-tester vises i varslingssenteret/);
   assert.match(workspacePage,/brandKey === "altovena" && permissions\.includes\("crm.read"\)/);
   assert.match(workspacePage,/AltovenaLeadAttention/);
 });
@@ -114,7 +115,8 @@ test("Altovena tasks support protected human follow-up and timely in-app attenti
   assert.match(altovenaTaskPanel,/setOverdueNotStarted\(body.overdueNotStarted\)/);
   assert.match(altovenaTaskPanel,/capped &&/);
   assert.match(altovenaTaskPanel,/Marker oppfølging utført/);
-  assert.match(altovenaTaskPanel,/Ingen e-post eller pushvarsler er aktivert/);
+  assert.match(altovenaTaskPanel,/Automatiske kundesvar er ikke aktivert/);
+  assert.match(altovenaTaskPanel,/Status for interne SMTP-tester vises i varslingssenteret/);
   assert.match(workspacePage,/canManage=\{permissions\.includes\("crm.write"\)\}/);
 });
 
