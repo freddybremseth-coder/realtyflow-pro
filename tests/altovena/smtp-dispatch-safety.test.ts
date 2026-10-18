@@ -104,8 +104,9 @@ test("revoked member before first claim blocks BOTH operator senders",async()=>{
 test("revocation AFTER durable claim, just before network send, burns attempt without sending",async()=>{
  revokeAt=5;
  const result=await runStagingOperatorSmtp(deps());
- assert.equal(result.ok,true);
- if(result.ok){
+ assert.equal(result.ok,false,"remaining delivery must stop after revocation");
+ if(!result.ok){
+   assert.equal(result.code,"RECIPIENT_IDENTITY_UNVERIFIED");
    assert.equal(result.claimed,1);
    assert.equal(result.unknown,1);
    assert.equal(result.smtpAccepted,0);
