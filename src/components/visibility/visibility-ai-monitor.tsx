@@ -13,6 +13,7 @@ const services = [
 ];
 export function VisibilityAiMonitor() {
   const [observations,setObservations]=useState<Array<{id:string;provider:string;prompt:string;observed_at:string;evidence_state:string;captured_by:string;cited_urls:string[];verification_state:string}>>([]);
+  const [revision,setRevision]=useState(0);
   const [status,setStatus]=useState("Henter registrerte observasjoner …");
   useEffect(()=>{const controller=new AbortController();fetch("/api/visibility/ai-observations",{credentials:"same-origin",cache:"no-store",signal:controller.signal}).then(async r=>{if(!r.ok)throw new Error("Observasjoner er ikke tilgjengelige.");return r.json();}).then(data=>{if(!controller.signal.aborted){setObservations(data.observations||[]);setStatus("");}}).catch(()=>{if(!controller.signal.aborted)setStatus("Kunne ikke hente observasjoner. Ingen AI-synlighet er bekreftet.");});return ()=>controller.abort();},[revision]);
   const summaries=summarizeAiVisibilityLedger(observations as AiVisibilityLedgerRow[]);
