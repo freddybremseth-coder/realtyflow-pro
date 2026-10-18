@@ -165,21 +165,27 @@ begin
       'createdAt',s.created_at,
       'contactId',s.contact_id,
       'readAt',s.read_at
-    ) order by s.created_at desc,s.alert_id
+    ) order by s.is_read,s.severity,s.created_at,s.alert_id
   ),'[]'::jsonb) into v_alerts
   from (
     select a.id as alert_id,a.kind as alert_kind,
       a.created_at,
       case when w.source_id ~* '^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'
         then w.source_id else null end as contact_id,
-      r.read_at
+      r.read_at,
+      case when r.read_at is null then 0 else 1 end as is_read,
+      case a.kind when 'NOT_STARTED_24H' then 0
+        when 'IN_PROGRESS_48H' then 1 else 2 end as severity
     from public.altovena_lead_alerts a
     join public.work_items w on w.id=a.work_item_id
     left join public.altovena_alert_reads r
       on r.alert_id=a.id and r.operator_key=p_operator_key
     where a.state='PENDING' and w.brand_id='altovena'
       and w.source_type='website_lead'
-    order by a.created_at desc,a.id
+    order by case when r.read_at is null then 0 else 1 end,
+      case a.kind when 'NOT_STARTED_24H' then 0
+        when 'IN_PROGRESS_48H' then 1 else 2 end,
+      a.created_at,a.id
     limit p_limit
   ) s;
 
