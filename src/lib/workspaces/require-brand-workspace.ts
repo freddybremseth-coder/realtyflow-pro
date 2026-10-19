@@ -1,3 +1,4 @@
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
@@ -41,6 +42,10 @@ export async function requireBrandWorkspace(
   permission: WorkspacePermission,
 ): Promise<Access | Rejection> {
   if (!isCanonicalBrandKey(brandKey)) return reject(404, "WORKSPACE_NOT_FOUND");
+  // This restriction is Altovena-only: never read production CRM/Auth in a
+  // shared-database Vercel preview. Other brands remain unchanged.
+  if (brandKey === "altovena" && !assessAltovenaDatabaseIsolation().allowed)
+    return reject(503, "ALTOVENA_PREVIEW_DATABASE_NOT_ISOLATED");
   const context = await getRequestAccessContext(request);
   if (!context) return reject(401, "AUTH_REQUIRED");
   // Owner preview mirrors the selected employee's current scope but is deliberately
