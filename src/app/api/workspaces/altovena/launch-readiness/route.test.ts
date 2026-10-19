@@ -139,7 +139,8 @@ test("Owner readiness never activates a contact form, reports real migration and
 test("owner preview readiness reports a staging blocker without touching live Supabase Auth",async()=>{
  const temporary=["VERCEL_ENV","ALTOVENA_STAGING_ISOLATION_ENABLED",
   "ALTOVENA_STAGING_SUPABASE_PROJECT_REF","NEXT_PUBLIC_SUPABASE_URL",
-  "REALTYFLOW_SESSION_SECRET","REALTYFLOW_ADMIN_EMAILS"];
+  "REALTYFLOW_SESSION_SECRET","REALTYFLOW_ADMIN_EMAILS",
+  "ALTOVENA_STAGING_SUPABASE_URL","ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY"];
  const previous=Object.fromEntries(temporary.map(key=>[key,process.env[key]]));
  try{
   process.env.REALTYFLOW_SESSION_SECRET="synthetic-isolation-preview-session";
