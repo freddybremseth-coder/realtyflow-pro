@@ -35,6 +35,23 @@ non-Altovena brand operations may continue using platform services. This is
 A full system-wide staging clone would require a separate deployment and auth
 design; do not claim this branch achieves that.
 
+## Staff workspace discovery (isolated staging)
+
+The employee workspace selector `GET /api/workspaces/available` normally
+reads RealtyFlow's shared platform grants for existing brands. In preview it
+must **never advertise a production Altovena grant**, even after production
+provisions Altovena. It now filters the platform's Altovena rows and, *only if
+isolated staging is configured*, separately checks the Altovena staging
+`workspace_brand_grant` and Auth identity. The staged, actively verified
+employee can then see an `Altovena · testmiljø` entry with only explicitly
+granted brand permissions. A revoked grant, invalid identity or missing
+staging configuration hides Altovena rather than falling back to the
+platform grant. All other existing brands retain their platform list.
+
+These controls protect brand data and UI discovery; the shared RealtyFlow
+session admission mechanism still uses the platform identity system. A
+standalone SaaS tenant needs a separately designed account/session boundary.
+
 ## What the gate can and cannot prove
 
 The gate proves a canonical staging **endpoint configured against a different project reference than RealtyflowPRO production**. It does **not** cryptographically confirm that the configured service-role key corresponds to the staging project, and it cannot replace a true staging Auth/grant and database permissions test. A wrong secret will fail when the staging RPCs run; the app should report unavailable, not try the production database.
