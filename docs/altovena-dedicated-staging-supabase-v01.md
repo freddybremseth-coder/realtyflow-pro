@@ -66,3 +66,45 @@ The owner readiness panel returns a no-PII blocker if the staging connection is 
 - **No staging database is created in this PR**; Supabase preview branches/projects may generate compute, disk and egress charges. Obtain explicit cost approval before provisioning.
 - Once approved: create independent staging database, apply only reviewed migrations, assign two synthetic test identities and verified Altovena brand grants, configure the four branch-scoped server-side variables, build/redeploy preview, test real CRM + revocation + erasure and disabled email flags, then review provider acceptance testing and independent delivery-receipt design.
 - Never enable actual production intake, migrations or outbound emails without a separate explicit release authorization.
+
+
+## Operator acceptance matrix (required before enabling staging actions)
+
+Keep a signed evidence record with **environment**, **exact Git commit SHA**, **Vercel deployment ID**, **staging Supabase project ref (not secrets)**, tester, timestamp and the actual observed outcome for each row. A screenshot without commit/environment identity is not sufficient release evidence.
+
+| Scenario | Expected observation | Acceptance |
+| --- | --- | --- |
+| No dedicated staging variables | Altovena preview reads fail closed; no fallback to shared platform Supabase | Mandatory |
+| Wrong staging project ref / mismatched URL | Altovena preview rejects configuration before database access | Mandatory |
+| Wrong staging service-role key | Staging-only RPC fails; no retry against production | Mandatory |
+| Owner with valid staging Auth identity and brand grant | Only explicitly granted Altovena capabilities are visible | Mandatory |
+| Andrea with active staging member grant | Only intended Altovena workspace and permitted actions are visible | Mandatory |
+| Andrea's staging grant revoked | Altovena disappears from workspace selector and Altovena APIs deny access on a new request | Mandatory |
+| Staging grant absent but production grant present | Preview must not expose Altovena via production-derived grants | Mandatory |
+| PinosoEcolife or Zen Eco Homes in same RealtyFlow preview | Unchanged platform-backed behavior; no Altovena staging reads | Mandatory |
+| Synthetic lead submission with intake flag OFF | No new contact, notification or task | Mandatory |
+| Approved, synthetic staging lead with isolated flags ON | Exactly one staging contact and corresponding task; no writes to production | Future, separately gated |
+| Email/scheduled alert flags OFF | No outbound provider call or scheduled action | Mandatory |
+| Operator email test | Separately authorized, staging-only recipients and sender; provider evidence required | Future, separately gated |
+
+**Evidence status conventions:** `NOT_RUN` (not attempted), `BLOCKED` (prerequisite missing), `FAILED` (observed contrary to expected result), `PASSED` (observed on exact deployment). Never turn `BLOCKED` into `PASSED` based on unit tests, GitHub CI or the presence of environment-variable names. A change of commit SHA or target environment invalidates prior acceptance for the changed candidate.
+
+## Staging activation sequence and stop conditions
+
+1. **Cost approval first:** record the separately authorized staging project/branch and its expected cost envelope. No resource creation, paid branch or environment-variable change is implied by a green PR.
+2. **Isolate identities:** create synthetic, non-production Auth identities, explicit Altovena-only grants and reviewed schema in the dedicated staging resource. Do not copy live customer records, shared service-role keys or production credentials.
+3. **Scope preview configuration:** apply the four `ALTOVENA_STAGING_*` variables exclusively to the intended preview branch. Confirm they are **not** exposed to production, generic preview branches or `NEXT_PUBLIC_*` outputs. Keep all mail and public intake switches off.
+4. **Verify exact deployment:** independently match Vercel's `READY` deployment source SHA to the PR head; run the matrix above, preserving actual evidence and failures.
+5. **Exercise revocation and boundaries:** test fresh owner/employee requests after staff grant revocation; confirm the workspace selector, capabilities, CRM endpoints and other brands behave correctly. An existing browser session alone is not proof of revoked access.
+6. **Require separate release decision:** record human approval for an explicit release candidate **after** all mandatory checks pass, plus data protection, deletion/retention and rollback reviews. This decision does not authorize automatic GitHub merge, production migrations, website publishing or customer emails.
+
+**Immediate STOP:** unexpected live customer data, any Altovena RPC reaching the platform production project, a staging grant sourced from production, any outbound email without explicit authorization, a wrong or changed commit, an unreviewed migration, or evidence of staging secrets in client bundles/logs. Disable the attempted staging action, preserve non-secret audit details and investigate before another test. Do not attempt fallback routing.
+
+## Change ownership and separation of approvals
+
+- **Technical owner:** confirms deployment SHA, isolation, migration review, automated test evidence and rollback.
+- **Workspace owner:** signs off intended capabilities, visual QA, staff revocation, lead-flow outcomes and manual readiness.
+- **Privacy/website owner:** approves synthetic-data policy, retention/deletion, domains, Turnstile and public-facing legal text.
+- **Release approver:** separately authorizes an exact production release after all gates; review-only records never confer that power.
+
+This is a **runbook and acceptance contract**, not a claim that staging resources or tests exist. Any missing row remains `NOT_RUN` or `BLOCKED` until observed evidence exists.
