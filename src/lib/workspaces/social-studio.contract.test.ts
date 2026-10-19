@@ -13,6 +13,7 @@ const marketing = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspac
 const propertyRenderer = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/property-social-card.ts"), "utf8");
 const contentHubDrafts = fs.readFileSync(path.join(process.cwd(), "src/app/api/content-hub/drafts/route.ts"), "utf8");
 const contentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(content)/content-hub/page.tsx"), "utf8");
+const scopedContentHubPage = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/content-hub/page.tsx"), "utf8");
 const globalsCss = fs.readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
 const advisorPhotoAnalysis = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-photo-analysis.ts"), "utf8");
 const advisorPropertyReference = fs.readFileSync(path.join(process.cwd(), "src/services/marketing/advisor-property-reference.ts"), "utf8");
@@ -741,4 +742,7 @@ test("SoMe Studio overview has a prominent direct Content Hub link filtered by b
   assert.match(marketingPanel, /aria-label="Åpne Content Hub og utkast for denne merkevaren"/);
   assert.match(contentHubPage, /requestedOrigin === "social-studio" && requestedBrand/);
   assert.match(contentHubPage, /setActiveContentTab\("utkast"\)/);
+  assert.match(scopedContentHubPage, /"\/api\/workspaces\/" \+ encodeURIComponent\(brandKey\) \+ "\/marketing"/);
+  assert.match(scopedContentHubPage, /\["zeneco", "pinosoecolife", "altovena"\]\.includes\(brandKey\)/);
+  assert.match(scopedContentHubPage, /brandKey === "pinosoecolife" \? "Pinoso EcoLife" : "Altovena"/);
 });

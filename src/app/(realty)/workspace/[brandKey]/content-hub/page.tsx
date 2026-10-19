@@ -41,7 +41,7 @@ export default function ScopedContentHubPage() {
   const [itemsError, setItemsError] = useState("");
 
   useEffect(() => {
-    if (!["zeneco", "pinosoecolife"].includes(brandKey)) {
+    if (!["zeneco", "pinosoecolife", "altovena"].includes(brandKey)) {
       setError("Merkevaren er ikke tilgjengelig."); setLoading(false); return;
     }
     const controller = new AbortController();
@@ -103,7 +103,7 @@ export default function ScopedContentHubPage() {
       <Link className="text-sm text-cyan-300 underline" href={"/workspace/" + encodeURIComponent(brandKey) + "?tab=growth&focus=social"}>
         ← Tilbake til arbeidsområdet
       </Link>
-      <h1 className="text-3xl font-bold">Content Hub · {brandKey === "zeneco" ? "Zen Eco Homes" : "PinosoEcolife"}</h1>
+      <h1 className="text-3xl font-bold">Content Hub · {brandKey === "zeneco" ? "Zen Eco Homes" : brandKey === "pinosoecolife" ? "Pinoso EcoLife" : "Altovena"}</h1>
       <p className="max-w-3xl text-sm leading-relaxed text-slate-300">
         Arbeid med innhold og publikasjoner for denne merkevaren. Artikler, guider og SoMe bruker egne,
         sikre merkevaretilganger. Ingen systeminnstillinger, økonomi eller andre merkevarers innhold er tilgjengelig her.

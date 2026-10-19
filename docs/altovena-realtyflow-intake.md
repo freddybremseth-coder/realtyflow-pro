@@ -1,0 +1,189 @@
+# Altovena → RealtyFlow: brand intake and operating model
+
+**Status:** Preview implementation. No production migration, credential, staff grant, contact-form activation or public posting is enabled by this PR.
+
+## Ownership and boundaries
+
+Altovena.com is a public presentation and enquiry website. RealtyFlow owns the Altovena brand workspace, CRM contacts, follow-up tasks, newsletters, editorial plans, social media and reporting. The Altovena website does not store a separate lead database.
+
+- Canonical brand key: `altovena` (never guessed from the referring domain; never default to `zeneco`).
+- API: `POST /api/public/altovena-leads` on the trusted RealtyFlow host. Server-to-server only; shared secret `ALTOVENA_INTAKE_KEY`, separate from Zen/Care keys.
+- Required enable switch: `ALTOVENA_INTAKE_ENABLED=true` on RealtyFlow, **only after migration and access checks**.
+- Request: `brandKey:"altovena"`, `source:"altovena.com/contact"`, `requestType:"product-enquiry"`, UUID `submissionId`, name, company, email, message, product from fixed set, and `consent:{purpose:"respond_to_request",marketing:false}`.
+- Atomic PostgreSQL service-role RPC creates/reuses only an **Altovena** CRM contact and creates a new `work_items` task for prompt **human** follow-up. Receipt UUID makes retries safe. If any DB operation fails, the transaction rolls back; the API reports failure.
+- No self-reported pipeline value, no invented lead score, no auto reply, no newsletter opt-in, no sharing with other brands.
+- The website may say “request sent” only after `ok:true, accepted:true, leadId, workItemId` are confirmed. It remains email-draft-only until configured.
+
+## Staff permissions
+
+Freddy (platform OWNER) and Andrea (independently verified workspace identity with an explicit **Altovena** brand grant) should both have operational access to this brand’s permitted modules. Do **not** infer permissions from name/email or grant global tenant access. Existing brand workspace grants are audited; the owner can review the `partner` access preset and enable `crm.read`, `crm.write`, `marketing.read`, `marketing.draft`, `marketing.publish`, `content.read/edit/publish`, `email.read/draft/send`, `nexus.read` and other brand-supported permissions.
+
+Real publishing must also check connected destinations, verified sender identity, suppression lists, and human approvals. The Altovena Growth OS brand is present in the registry but pilot channels are **empty** until connected and reviewed. Existing restrictions for video/social modules must not be bypassed silently.
+
+## Production activation checklist
+
+1. **Database:** Review and apply `20261014210000_altovena_brand_intake.sql` in the correct Supabase project; verify `core.brands` with `brand_key='altovena'` and service-role RPC permissions. No staff grants are created by the migration.
+2. **Secrets:** Set high-entropy `ALTOVENA_INTAKE_KEY` and `ALTOVENA_INTAKE_ENABLED=true` server-side only in RealtyFlow. Set corresponding `REALTYFLOW_ALTOVENA_INTAKE_KEY`, HTTPS `REALTYFLOW_ALTOVENA_INTAKE_URL` and safe form/Turnstile variables in Altovena; never expose these keys as `NEXT_PUBLIC_` values.
+3. **Identity:** Verify legal data controller, privacy contact, retention instructions, actual provider agreements and cookies before enabling the website form.
+4. **Users:** Confirm Freddy's owner account and Andrea's existing Supabase Auth identity; activate an audited **Altovena-only** membership and test both accounts. Do not add automatic access to other brand data.
+5. **Test:** Submit a permitted synthetic enquiry through Altovena **preview** with test configuration. Confirm exactly one branded contact, one new work item, correct source and follow-up visibility. Retry the exact same submission UUID and confirm no duplicate task. Confirm invalid keys, spoofed brands, missing Turnstile and failed DB paths do not create records or show “sent”.
+6. **Verify notification:** A visible work item is not the same as a push alert. Configure and test the RealtyFlow alert workflow for Freddy and Andrea; otherwise do not claim notification delivery.
+7. **Publish:** Only after a real authorised end-to-end test and owner approval, set the form enable flags, then check production domain HTTPS and rollback plan.
+
+## Privacy and customer journey
+
+Contact requests are used to respond to that request only. Newsletter enrolment must use a separate positive opt-in, with its own proof, suppression and unsubscribe flow, all owned by RealtyFlow. Editorial copy follows Andrea and Erlend's SEO/AEO/GEO and customer-journey manual; no fabricated statistics, no fake AI recommendations, and product demos must be labelled honestly.
+
+## Privacy and identity safeguards verified against the live schema (15 October 2026)
+
+- The existing `public.contacts.nurture_status` defaults to `eligible`. This integration **overrides that default to `stopped` for brand-new Altovena web enquiries**, and sets `ai_auto_followup=false`. Existing independent opt-in preferences remain untouched when an existing contact makes another enquiry.
+- An unauthenticated web form **never overwrites the canonical name or company** of an existing contact with a matching email. The new submission's provided details are marked `identity_verified:false` inside the recorded interaction pending human verification.
+- Intake receipt and brand-scoped follow-up task are written in one database function call and no success is acknowledged before both exist.
+- `getBrandWorkspace` staff authorization is checked before the Altovena task endpoint reads the specific brand's tasks. The UI is an in-app attention surface; email/push notifications require a separate verified path.
+- Live project schema/constraints were examined with **read-only** SQL to confirm receipt foreign keys, lead source types, task priorities and nurture values. No live data was inserted or mutated.
+- Production activation still requires verified legal controller, email/notification delivery, both brand grants and an approved test via a dedicated safe environment before turning on real submissions.
+
+## Verified CI PostgreSQL acceptance test (15 October 2026)
+
+`npm run test:altovena-intake` checks endpoint contracts and mocked RPC responses. In addition, the `Altovena intake validation` workflow runs `node scripts/test-altovena-postgres.mjs` on a **temporary PostgreSQL 17 service** with explicit schema-faithful fixtures. The script checks its connection hostname and exact disposable database name before any schema execution.
+
+This exercises the actual `20261014210000_altovena_brand_intake.sql` file and confirms:
+- two consecutive applications of the migration are idempotent
+- only `service_role` can execute the intake function; `anon` and `authenticated` cannot
+- a same-email contact from another brand is never merged
+- every new Altovena contact is excluded from nurture by default and has `ai_auto_followup=false`
+- anonymous repeat submissions cannot overwrite an existing canonical contact identity
+- a repeated submission UUID returns the existing contact/task receipt without making duplicates
+- invalid products fail without creating a receipt
+- a forced work-item constraint failure rolls back the contact and receipt transaction
+- simultaneous requests for one email create one brand contact and separate tasks; simultaneous retries of one UUID create only one task
+
+**Verified in GitHub Actions:** both focused contract and isolated PostgreSQL jobs passed. This does not certify production credentials, the live database, emails, notifications, frontend browsers or legal processing details.
+
+The production database and real users are unchanged. The Altovena contact form must remain disabled until all activation checks in this document are explicitly completed.
+
+## In-app attention and manual task resolution (15 October 2026)
+
+- The brand-scoped Altovena lead panel on **I dag** and **Kunder & leads** refreshes every 60 seconds while the browser tab is visible and on focus. It shows last-checked time and highlights tasks older than 24 hours. This is **in-app awareness**, not external email/push delivery.
+- Users with an independently verified `crm.read` grant can only view Altovena's currently open website-lead tasks. No cross-brand fallback is possible.
+- Only users with an independently verified `crm.write` grant can use **Start oppfølging** (`IN_PROGRESS`) or **Marker oppfølging utført** (`DONE`) quick actions. These actions require same-origin JSON and update only an existing `altovena`/`website_lead` task by UUID, with an allowed prior status.
+- Task resolution **does not** automatically send email, mark a customer as contacted, alter CRM customer details or imply newsletter consent. The human user must complete the follow-up before marking a task done.
+- These controls and their permission boundaries are covered by `Altovena intake validation` contract tests. The features remain in a draft PR until reviewed and deployed.
+
+## Privacy erasure semantics (15 October 2026)
+
+- Intake receipts reference both the canonical CRM contact and its associated follow-up work item. Their foreign keys use `ON DELETE CASCADE` so a verified, authorised erasure is not blocked by historic ingestion receipts.
+- When a contact with **both** `brand_id='altovena'` and `brand='altovena'` is deleted through a permitted administrative flow, a narrowly scoped `BEFORE DELETE` trigger removes only `altovena`/`website_lead` work items whose `source_id` is that contact UUID. All corresponding receipts disappear automatically. Other-brand work items and contacts are never touched by the trigger.
+- These are infrastructure safeguards, **not** a public self-service deletion endpoint. Identity checks, retention rules, audit requirements and an approved legal-erasure workflow are still required; do not erase contacts solely on the basis of an unverified website request.
+- The isolated PostgreSQL integration test deletes a test contact and verifies related receipt/task removal, preserving foreign-brand data; it also checks task-deletion receipt cleanup. Never run this fixture against production.
+
+## Owner-side launch readiness (15 October 2026)
+
+The RealtyFlow brand workspace now has a **read-only Altovena activation checklist** under **I dag**, visible only for a real OWNER session (never owner-preview). It calls `GET /api/workspaces/altovena/launch-readiness`, which independently requires `context.role === 'OWNER'` and `context.source === 'owner-session'` and does not allow mutations. No credentials or personal details are returned to the browser.
+
+The checklist checks:
+- whether the Altovena brand exists in RealtyFlow's brand/workspace registry
+- an authenticated Freddy owner session
+- the actual Andrea account, configured by the **verified Supabase Auth UUID** in `ALTOVENA_ANDREA_AUTH_USER_ID` (never guessed from a name/email), and a live brand-specific grant against the necessary set of currently supported business permissions
+- whether the RealtyFlow server-side intake enable switch, sufficiently long secret and database credentials are present
+- **separately unverified** website-level Turnstile/form configuration, legal controller/retention notice, domain/HTTPS, real E2E delivery and external alerts
+
+The result deliberately stays `readyForPublicForm=false` until a future separately approved release and a real end-to-end review. **Do not use this status display to bypass the disabled contact form.**
+
+As of 15 October 2026, read-only checks of production Supabase found no `altovena` brand and no deployed Altovena intake/task RPCs. The Altovena Vercel project had no configured environment variables. Therefore all real lead receipt, staff brand grant and external notification claims remain pending; successful CI in a disposable PostgreSQL service does not change this.
+
+The `partner` preset is appropriate for broad Andrea access to available scoped CRM, content, email, marketing, ads and Visibility modules, subject to owner approval and staff security readiness. Existing Reels/YouTube APIs are currently hard-scoped to other brands and must not be advertised as active Altovena functionality without separate adaptation, channel verification and permission checks.
+
+## Pre-provisioning activation screen (15 October 2026)
+
+The authenticated RealtyFlow OWNER can access **`/altovena-launch`** directly or via **RealtyFlow Platform → Merkevarearbeidsflater → Altovena · aktivering**. This page does not need an already provisioned Altovena brand and does not create one. It redirects unauthenticated users to login, rejects non-owners and owner-preview sessions, and uses the protected read-only readiness API.
+
+**Configuration for operator verification:** Set `ALTOVENA_ANDREA_AUTH_USER_ID` to Andrea's **independently verified** Supabase Auth user UUID on the RealtyFlow backend. The readiness API looks up that exact Auth identity and checks a live, active `altovena` brand grant for supported `crm`, `marketing`, `content`, `email`, `visibility`, `ads`, `events` and `nexus` rights. It neither creates a user nor grants permissions and does not return account identity or secret values in JSON.
+
+The owner Freddy uses an owner session and does not need a redundant employee-style brand grant. The operator’s approved grant must remain specific to `altovena`. Features not yet implemented for Altovena (such as Zen-only YouTube and property-based Reels) are not counted as missing permissions and must not be silently enabled.
+
+All website-side settings, legal review, domain HTTPS, test delivery and notifications require an independent verification step. The checklist permanently reports the public form as **not ready** until a deliberate, separately reviewed go-live release; this dashboard cannot enable customer collection.
+
+**Status before production activation:** RealtyFlow's live Altovena brand and both intake/status RPCs were absent, and Altovena's Vercel project had no configured environment variables in the last read-only check. It is incorrect to describe the new lead or task workflow as publicly active at this point.
+
+## Live database health as a release gate (15 October 2026)
+
+- Added `public.altovena_intake_health()`, a read-only, **service-role-only** function in the Altovena migration. It verifies the current Altovena brand, intake receipts table, and that both the intake and task-status functions exist and are callable by service role **but not** by `anon` or `authenticated`. It returns only booleans and a schema version, never customer or credential data.
+- The owner launch readiness API now requires the **live** health function to return the expected `altovena-intake-v1` version and all positive safety booleans. A missing migration is marked blocked rather than treating configured environment variables as proof that the database is ready. Unexpected RPC failures return HTTP 503, also blocking launch.
+- The server-side intake configuration is marked verified only when the live migration is healthy, a sufficiently long key is present and the RealtyFlow enable switch is deliberately on. **Actual form delivery, Turnstile, legal approval, full-domain HTTPS and notification routing remain independent checks.** Public-form readiness is still forced false.
+- The disposable PostgreSQL 17 job now tests the real health function's values and its service-role-only execute grants. The owner API has executable session/role tests for no login, staff login, owner-preview, missing and broken migrations, valid but unapproved configuration, verified operator grants and secret-free output.
+- These checks must be re-run and recorded against the final PR commit before any production merge. There is **no live Supabase migration or customer write** in this change.
+
+## Identity and brand grant shown separately (15 October 2026)
+
+The owner preflight screen verifies Andrea's **Supabase Auth user ID independently** of whether the Altovena brand has been provisioned. This allows an active employee account to show **Verified** even if the `altovena` brand is not created. The separate permissions row remains **Blocked** until a matching, active Altovena-only grant satisfies all supported operative permissions. A matching identity never implies authorisation.
+
+A missing or invalid configured user ID is `not_configured`; an unresolved account is `blocked`. A database/Auth outage is `503` (fail-closed). No user ID, email or personal data is returned to the owner checklist. Runtime tests cover both pre-provisioning identity and valid identity without a brand grant.
+
+## Payload-bound idempotency (17 October 2026)
+
+The initial receipt key deduplicated solely by `submission_id`. This allowed a client to resubmit **different** content using an existing UUID and receive success for the older request without recording the new details. The website normally regenerates its UUID when fields change, but a true server-side invariant must not depend on client code.
+
+The pending migration now stores a server-calculated SHA-256 digest of the canonical accepted request fields (name, lowercase email, company, message and product) alongside each receipt. An **exact** retry with the same UUID returns the original lead and work-item IDs, while any changed content with that UUID fails closed before CRM mutations. No raw personal details are added to the receipt. Existing receipts without a digest, if any, also fail closed on retry. The privileged response continues to hide database error details.
+
+The isolated PostgreSQL 17 test checks:
+- exact retry creates no duplicate work item;
+- changed sender, company, or message with an existing submission UUID raises an error and creates no new CRM record;
+- every newly created receipt contains a 64-character lowercase SHA-256 digest;
+- concurrent duplicate requests still converge on one receipt;
+- rollback, delete, permission and cross-brand tests remain intact.
+
+**Scope:** This change is on RealtyFlow draft PR #1400 only. The public Altovena website form remains disabled and production RealtyflowPRO has not received this draft intake migration.
+
+## Synthetic HTTP-to-PostgreSQL admission test (17 October 2026)
+
+A dedicated isolated CI test now exercises the **actual** Next.js `POST /api/public/altovena-leads` function through its Supabase-js HTTP transport down to the **actual** `altovena_receive_lead` PostgreSQL routine, including CRM contact and human follow-up task creation.
+
+- Script: `scripts/test-altovena-http-postgres.ts`.
+- GitHub Actions: `.github/workflows/altovena-intake-validation.yml` runs it **before** the existing comprehensive SQL integration test in the same isolated PostgreSQL 17 job.
+- Only `localhost/altovena_ci_test` is allowed. Synthetic `example.invalid` identities, fake keys and an in-process PostgREST transport are used; the test writes nothing to Supabase/production.
+- The fixture/migration and all synthetic leads run inside a transaction that is rolled back even on test failure.
+- Checks: invalid shared key and brand never reach SQL; an accepted request yields a real Altovena CRM contact plus human work item; exact retries return the original receipt; changed message with the same ID fails without another task; malformed success receipt fails closed; foreign-brand contact stays untouched and AI follow-up remains stopped.
+- On a deliberately **fabricated failure response after SQL commit within the test transaction**, the handler rejects the false confirmation. The database may already have accepted that particular request, so a browser retry must reuse the submission UUID; the content-bound receipt ensures recovery without duplication.
+- First successful GitHub test: `Altovena intake validation`, run `39025572023`, job `117375768367`; both HTTP→SQL and existing SQL suites logged PASS.
+
+**What this does NOT establish:** no real request traverses `altovena.com` → protected RealtyFlow preview over the network; no live Vercel shared secret or Turnstile is configured; no Altovena intake migration has been applied to RealtyflowPRO. The production form remains gated off until a separate authorized staging test, verified operator/brand permissions, privacy review, notification delivery and explicit launch approval.
+
+## Owner/operator Altovena lead-task route regression (17 October 2026)
+
+The canonical `GET/PATCH /api/workspaces/altovena/lead-tasks` now has six independently executed tests in `tests/altovena/lead-tasks-authorization.test.ts`. These cover:
+- unsigned and cross-brand denials before privileged work-item reads;
+- owner-only Altovena task scope, with malicious foreign-brand data and malformed IDs excluded from the response;
+- independently verified `WORKSPACE_MEMBER` identity plus active `crm.read` grant, including a revoked grant, missing permission and identity mismatch;
+- `crm.write` for status changes with verified actor passed to audited database RPC;
+- invalid status/unknown brand in PATCH, cross-site requests and read-only owner preview.
+
+**CI testing nuance:** Node/tsx treated a test file under a bracketed `[brandKey]` directory as a glob and silently reported zero tests. The file was moved into `tests/altovena/` and the test script now uses exact-path Node testing. GitHub Actions run [#39034195919](https://github.com/freddybremseth-coder/realtyflow-pro/actions/runs/39034195919) logged **6 tests, 6 passed, 0 failed**, along with successful disposable PostgreSQL HTTP→SQL tests. This proves the mocked role-gate behaviors, **not** Andrea's actual live account permission or a live cross-domain test.
+
+Owner and operator still need to be verified against real Supabase Auth IDs and active Altovena brand grants after approved migration; neither the public form nor real operator access is enabled by these test changes.
+
+## Task → exact CRM customer card (17 October 2026)
+
+The Altovena lead attention panel now opens the *specific* customer card associated with its work item, rather than only switching to a general CRM list. A task already contains a server-filtered `contactId`; the UI sends this opaque ID to the new `GET /api/workspaces/altovena/lead-contact?contactId=<uuid>` endpoint.
+
+Security properties:
+- Exact UUID validation and query-key allowlist; no arbitrary search or global CRM lookup.
+- `requireBrandWorkspace(..., "altovena", "crm.read")` checks current signed session, membership/verified user identity and grant for each lookup. No owner-preview write permissions are introduced.
+- Database query requires matching `brand_id`, `brand`, and `id` simultaneously. The response filters unexpected foreign-brand, spam or malformed rows and allows only basic CRM display columns, never interactions, notes, financial figures or customer dossiers.
+- Page rejects mismatched contact IDs and brand labels in API responses. The focused card is discarded when switching brands; outstanding reads from the previous brand are invalidated.
+- Old generic CRM navigation remains available for a task without a verified customer ID. There is no new standalone CRM or client-side access bypass.
+
+Security tests: `tests/altovena/lead-contact-authorization.test.ts` tests real route handler behavior with mocked current grants, owner/member sessions, revocation, exact brand filters, safe response shape and malformed input. `tests/altovena/task-to-customer-ui.test.mjs` protects task-click → exact scoped contact lookup → selected customer card navigation and the brand-switch reset. All use synthetic records; no production customer contact was opened.
+
+This remains part of **draft PR #1400** and not a live product release. Only after an approved Altovena migration and verified human access can it be tested with real brand data.
+
+## Actionable launch-readiness control (19 October 2026)
+
+The existing read-only owner route `GET /api/workspaces/altovena/launch-readiness` and its owner console now provide a server-owned action guide:
+- Each technical or manual gate includes an **owner role, next concrete action and verification type**. The interface displays the first three outstanding actions before the full list.
+- Green technical states only reflect current server checks. Website, privacy, live network/Turnstile, domain and human follow-up gates always remain `needs_external_verification` until separately assessed. The route **always returns `readyForPublicForm:false`**.
+- No environment secrets, personal identities, API credentials, contact records, action links or write controls are returned. Refresh only reads status.
+- This helps the owner understand *why* launch is blocked and who must verify each item; it does not approve a release or replace a real two-account staging test.
+- Existing owner-only and preview restrictions remain unchanged; the route regression suite now verifies the first unverified action and confirms manual gates remain pending even when all technical checks are simulated as healthy.
+
+This is an internal UX improvement under PR #1400 and remains unavailable to general public website visitors while the draft PR is unmerged.
