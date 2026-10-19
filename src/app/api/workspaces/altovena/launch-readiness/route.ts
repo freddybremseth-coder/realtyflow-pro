@@ -1,7 +1,7 @@
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
-import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { hasVerifiedBrandGrant, type WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     ],
   });
 
-  const supabase = getPlatformSupabase();
+  const supabase = getAltovenaSupabase();
   if (!supabase) return reply({ ok: false, error: "WORKSPACE_UNAVAILABLE" }, 503);
 
   const { data: snapshot, error: snapshotError } = await supabase.rpc("workspace_access_snapshot");
