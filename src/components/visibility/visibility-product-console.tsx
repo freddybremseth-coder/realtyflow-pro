@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { DonaAnnaVisibilityApproval } from "./dona-anna-approval";
 import { VisibilityWorkQueue } from "./visibility-work-queue";
+import { VisibilityProjectReviewPanel } from "./visibility-project-review-panel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, ArrowRight, ArrowUpRight, BarChart3, CheckCircle2, ChevronRight,
@@ -15,11 +16,12 @@ import {
   type VisibilitySource, type VisibilitySite, type VisibilityFinding
 } from "@/lib/visibility-product";
 
-type Tab = "overview" | "sites" | "findings" | "measurement" | "workflow" | "product";
+type Tab = "overview" | "sites" | "findings" | "projects" | "measurement" | "workflow" | "product";
 const tabItems: Array<{id: Tab; label: string; icon: typeof LayoutGrid}> = [
   {id:"overview",label:"Oversikt",icon:LayoutGrid},
   {id:"sites",label:"Nettsteder",icon:Globe2},
   {id:"findings",label:"Funn og tiltak",icon:FileSearch},
+  {id:"projects",label:"Prosjektfakta",icon:ShieldCheck},
   {id:"measurement",label:"Måling",icon:BarChart3},
   {id:"workflow",label:"Arbeidsflyt",icon:Workflow},
   {id:"product",label:"Produktet",icon:Sparkles},
@@ -157,8 +159,8 @@ export function VisibilityProductConsole(){
           <Icon size={17}/>{t.label}</button>;})}
       </div>
       <div className="space-y-6 p-4 sm:p-8">
-        {noData&&tab!=="workflow"&&tab!=="product"&&<Empty title="Ingen kontroller tilgjengelig" body="Live-data kunne ikke hentes eller er ikke lagret. Produktdemonstrasjonen viser hele grensesnittet med illustrative data. Ingen live-status blir erstattet av demotall."/>}
-        {(!noData||tab==="workflow"||tab==="product")&&<>
+        {noData&&tab!=="workflow"&&tab!=="product"&&tab!=="projects"&&<Empty title="Ingen kontroller tilgjengelig" body="Live-data kunne ikke hentes eller er ikke lagret. Produktdemonstrasjonen viser hele grensesnittet med illustrative data. Ingen live-status blir erstattet av demotall."/>}
+        {(!noData||tab==="workflow"||tab==="product"||tab==="projects")&&<>
           {tab==="overview"&&<>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div><h2 className="text-2xl font-extrabold">Din synlighet, samlet</h2><p className="mt-1 text-sm text-slate-600">Bare dokumenterte observasjoner. Ingen poengscore som later som alt er kontrollert.</p></div>
@@ -251,6 +253,7 @@ export function VisibilityProductConsole(){
               </div>
             </article>;})}</div>:<Empty title="Ingen klassifiserte funn" body="Ingen forslag finnes i det lagrede utvalget. Dette betyr ikke at en full SEO-audit er bestått."/>}
           </>}
+          {tab==="projects"&&<VisibilityProjectReviewPanel report={data?.controlReport} brand={brand} demo={mode==="demo"}/>}
           {tab==="measurement"&&<>
             <div><h2 className="text-2xl font-extrabold">Synlighet og måling</h2><p className="mt-1 text-sm text-slate-600">Verifiserte Google Search Console-data. Ingen estimerte AI-siteringer, leads eller plasseringer.</p></div>
             <div className="grid gap-3 sm:grid-cols-3">

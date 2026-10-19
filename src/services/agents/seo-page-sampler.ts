@@ -1,3 +1,4 @@
+import { inspectProjectClaimSignals } from "./visibility-project-claim-signals";
 import { inspectPageQuality, type SEOPageQuality } from "./seo-page-quality";
 
 /**
@@ -100,6 +101,7 @@ export function choosePublicSitemapPages(xml: string, siteBase: string, limit = 
 
 export type SampledPage = {
   quality?: SEOPageQuality;
+  projectClaimSignals?: ReturnType<typeof inspectProjectClaimSignals>;
   path: string; status: number | null; titlePresent: boolean | null;
   descriptionPresent: boolean | null; canonical: string | null;
   h1Count: number | null; noindex: boolean | null; issue: string | null;
@@ -121,6 +123,9 @@ export function inspectPublicSample(
   }
   const html = snapshot.body;
   result.quality = inspectPageQuality(html);
+  if (new RegExp("^/(?:eiendommer|properties|immobilien|propiedades)/[^/]+/?$", "i").test(path)) {
+    result.projectClaimSignals = inspectProjectClaimSignals(html);
+  }
   result.titlePresent = /<title(?:\s[^>]*)?>[\s\S]*?\S[\s\S]*?<\/title>/i.test(html);
   result.descriptionPresent = [...html.matchAll(/<meta\b[^>]*>/gi)].some(match =>
     /\bname\s*=\s*(?:"description"|'description'|description)(?:\s|>)/i.test(match[0]) &&
