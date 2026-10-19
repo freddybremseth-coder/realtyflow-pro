@@ -15,7 +15,8 @@ const keys=["REALTYFLOW_SESSION_SECRET","REALTYFLOW_ADMIN_EMAILS",
 "SUPABASE_SERVICE_ROLE_KEY","VERCEL_ENV","ALTOVENA_EMAIL_STAGING_SEND_ENABLED",
 "ALTOVENA_ALERT_RECEIPT_HMAC_KEY",
  "ALTOVENA_STAGING_ISOLATION_ENABLED",
- "ALTOVENA_STAGING_SUPABASE_PROJECT_REF"];
+ "ALTOVENA_STAGING_SUPABASE_PROJECT_REF",
+ "ALTOVENA_STAGING_SUPABASE_URL","ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY"];
 let original:Record<string,string|undefined>={};
 let grantStatus="active",rpcError=false,rpcBrand="altovena";
 const lookups:string[]=[];
@@ -32,6 +33,8 @@ test.beforeEach(()=>{
  process.env.NEXT_PUBLIC_SUPABASE_URL="https://abcdefghijklmnopqrst.supabase.co";
  process.env.ALTOVENA_STAGING_ISOLATION_ENABLED="true";
  process.env.ALTOVENA_STAGING_SUPABASE_PROJECT_REF="abcdefghijklmnopqrst";
+ process.env.ALTOVENA_STAGING_SUPABASE_URL="https://abcdefghijklmnopqrst.supabase.co";
+ process.env.ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY="synthetic-preview-test-server-key";
  process.env.SUPABASE_SERVICE_ROLE_KEY="fake-key";
  process.env.VERCEL_ENV="preview";
  process.env.ALTOVENA_EMAIL_STAGING_SEND_ENABLED="true";
