@@ -73,3 +73,26 @@ test("production continues to use exactly the existing platform Supabase factory
  assert.equal(getAltovenaSupabase(),fake);
  assert.equal(getPlatformSupabase(),fake);
 });
+
+
+test("mismatched or production staging URL refuses a client without calling platform or network",()=>{
+ let networkCalls=0;
+ globalThis.fetch=(async()=>{networkCalls++;throw Error("No network expected");}) as typeof fetch;
+ setPlatformSupabaseFactoryForTests(()=>{
+  throw Error("No production fallback allowed");
+ });
+ for(const [ref,url] of [
+  [production,`https://${production}.supabase.co`],
+  [stage,`https://${production}.supabase.co`],
+  [stage,`http://${stage}.supabase.co`],
+  [stage,`https://${stage}.supabase.co.evil.example`],
+  [stage,`https://${stage}.supabase.co/rest/v1`],
+  [stage,`https://${stage}.supabase.co:8443/`],
+  [stage,`https://${stage}.supabase.co/?key=leak`],
+ ]) {
+  process.env.ALTOVENA_STAGING_SUPABASE_PROJECT_REF=ref;
+  process.env.ALTOVENA_STAGING_SUPABASE_URL=url;
+  assert.equal(getAltovenaSupabase(),null,`must reject ${url}`);
+ }
+ assert.equal(networkCalls,0);
+});
