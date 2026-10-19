@@ -22,6 +22,7 @@ const keys=[
 ];
 let previous:Record<string,string|undefined>={};
 let active=true,stageCalls:string[]=[],platformCalls:string[]=[];
+let stagingPermissions=["crm.read","nexus.read"];
 const request=async()=>{
  const cookie=await createAdminSession(staff,"WORKSPACE_MEMBER");
  return new NextRequest("https://realtyflow.test/api/workspaces/available",{
@@ -31,6 +32,7 @@ const request=async()=>{
 test.beforeEach(()=>{
  previous=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
  active=true;stageCalls=[];platformCalls=[];
+ stagingPermissions=["crm.read","nexus.read"];
  process.env.VERCEL_ENV="preview";
  process.env.REALTYFLOW_SESSION_SECRET="isolated-available-brand-list-test";
  process.env.REALTYFLOW_ADMIN_EMAILS="owner@example.invalid";
@@ -63,7 +65,7 @@ test.beforeEach(()=>{
    return {data:{brand:{id:brandId,brand_key:"altovena"},
     grant:{brand_id:brandId,user_id:uid,email:staff,
       status:active?"active":"revoked",
-      permissions:["crm.read","nexus.read"]}},error:null};
+      permissions:stagingPermissions}},error:null};
   },
   auth:{admin:{getUserById:async()=>{
    stageCalls.push("staging-auth");
@@ -108,6 +110,17 @@ test("missing staging config hides Altovena even if production has a live grant"
  assert.deepEqual((await res.json()).workspaces.map((w:{brandKey:string})=>w.brandKey),
   ["pinosoecolife"]);
  assert.deepEqual(stageCalls,[]);
+});
+test("incomplete staging publish and email grants are never advertised",async()=>{
+ stagingPermissions=["crm.read","marketing.publish","email.send",
+  "content.publish","ads.draft","visibility.plan"];
+ const res=await GET(await request());
+ assert.equal(res.status,200);
+ const body=await res.json();
+ const staged=body.workspaces.find((w:{brandKey:string})=>w.brandKey==="altovena");
+ assert.deepEqual(staged.permissions,["crm.read"]);
+ assert.equal(JSON.stringify(staged).includes("marketing.publish"),false);
+ assert.equal(JSON.stringify(staged).includes("email.send"),false);
 });
 test("production brand selection is not changed by Altovena preview isolation",async()=>{
  process.env.VERCEL_ENV="production";
