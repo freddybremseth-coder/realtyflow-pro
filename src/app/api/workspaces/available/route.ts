@@ -106,10 +106,24 @@ export async function GET(request: NextRequest) {
         const { data: identity, error: identityError } = await staging.auth.admin
           .getUserById(scope.grant.user_id);
         if (!identityError && identity?.user) {
+          const granted = new Set<string>(Array.isArray(scope.grant.permissions)
+            ? scope.grant.permissions.filter((p:unknown):p is string=>typeof p==="string")
+            : []);
           const permissions = WORKSPACE_PERMISSIONS.filter(permission =>
             !["crm.joint.read", "crm.joint.write", "tasks.joint.read",
               "tasks.joint.write", "corporate.read", "corporate.plan"].includes(permission) &&
             !permission.startsWith("reels.") && !permission.startsWith("youtube.") &&
+            (permission !== "marketing.draft" || granted.has("marketing.read")) &&
+            (permission !== "marketing.publish" ||
+              (granted.has("marketing.read") && granted.has("marketing.draft"))) &&
+            (permission !== "visibility.plan" || granted.has("visibility.read")) &&
+            (permission !== "ads.draft" || granted.has("ads.read")) &&
+            (permission !== "content.edit" || granted.has("content.read")) &&
+            (permission !== "content.publish" ||
+              (granted.has("content.read") && granted.has("content.edit"))) &&
+            (permission !== "email.draft" || granted.has("email.read")) &&
+            (permission !== "email.send" ||
+              (granted.has("email.read") && granted.has("email.draft"))) &&
             hasVerifiedBrandGrant({
               grant: scope.grant, brandId: scope.brand.id,
               sessionEmail: context.email, verifiedUserId: identity.user.id,
