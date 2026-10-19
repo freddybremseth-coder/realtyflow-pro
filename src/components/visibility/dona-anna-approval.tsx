@@ -53,11 +53,11 @@ export function DonaAnnaVisibilityApproval(){
     {message&&<p role="status" className="mt-3 text-sm text-teal-900">{message}</p>}
     {data&&<div className="mt-3">
       {data.approved?<>
-        <p className="inline-flex items-center gap-2 text-sm font-semibold text-teal-800"><CheckCircle2 size={17}/> Eierens tillatelse er lagret – ikke bekreftet publisert</p>
-        <p className="mt-2 text-xs text-slate-600">Gyldig til {data.expiresAt?new Date(data.expiresAt).toLocaleDateString("nb-NO"):"ukjent"}. Sam fortsetter bare ved bestått teknisk preflight.</p>
+        <p className="inline-flex items-center gap-2 text-sm font-semibold text-teal-800"><CheckCircle2 size={17}/> Tillatelse lagret – ingen reparasjonsjobb er bekreftet startet</p>
+        <p className="mt-2 text-xs text-slate-600">Gyldig til {data.expiresAt?new Date(data.expiresAt).toLocaleDateString("nb-NO"):"ukjent"}. Dette setter ikke automatisk en kodeendring i gang. Sam kan bare gå videre dersom den separate publiseringsmotoren har tilstrekkelig kildegrunnlag og bestått teknisk preflight.</p>
         <button type="button" disabled={saving} onClick={()=>void save("revoke")} className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40">Trekk tilbake tillatelsen</button>
       </>:!confirm?<>
-        <button type="button" onClick={()=>setConfirm(true)} className="rounded-lg bg-teal-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-900">Gi begrenset publiseringstillatelse</button>
+        <button type="button" onClick={()=>setConfirm(true)} className="rounded-lg bg-teal-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-900">Godkjenn mulig fremtidig metadataendring</button>
         <p className="mt-2 text-xs text-slate-500">Ingen endring utføres når du åpner dette skjemaet.</p>
       </>:<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <h5 className="font-bold text-slate-950">Kontroller endringsomfanget</h5>
@@ -73,6 +73,6 @@ export function DonaAnnaVisibilityApproval(){
         </div>
       </div>}
     </div>}
-    <p className="mt-3 flex gap-2 text-xs leading-5 text-amber-800"><AlertTriangle size={14} className="mt-0.5 shrink-0"/> Lagret godkjenning er ikke det samme som fullført oppgave. Ferdig-status krever verifisert offentlig publisering.</p>
+    <p className="mt-3 flex gap-2 text-xs leading-5 text-amber-800"><AlertTriangle size={14} className="mt-0.5 shrink-0"/> Denne knappen lagrer kun tillatelse. Den oppretter ikke en kode-PR, starter ikke Vercel-deploy og innebærer ikke at en feil er rettet. Først når en separat publiseringsjobb er gjennomført og den offentlige siden verifisert, kan saken markeres ferdig.</p>
   </section>;
 }
