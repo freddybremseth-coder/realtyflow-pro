@@ -107,13 +107,70 @@ export async function GET(request: NextRequest) {
     { id: "e2e", label: "Syntetisk ende-til-ende-test og oppfølgingsvarsel", state: "needs_external_verification" },
     { id: "domain", label: "Altovena.com og HTTPS", state: "needs_external_verification" },
   ] as const;
+  // A visible explanation and owner of each missing item. This is a FIXED
+  // server-side checklist, not instructions generated from secrets/PII.
+  // Review-required steps must never be silently marked done by CI.
+  const actionGuide: Record<string, { owner: string; verification: "automatic" | "manual"; nextAction: string }> = {
+    brand: {
+      owner: "Teknisk ansvarlig", verification: "automatic",
+      nextAction: "Kontroller at Altovena er registrert som egen merkevare i et godkjent testmiljø. Ikke opprett eller endre kundedata fra denne siden.",
+    },
+    migration: {
+      owner: "Teknisk ansvarlig", verification: "automatic",
+      nextAction: "Test den versjonerte CRM-migreringen i et isolert miljø, inkludert RLS og rollebegrensning på mottaksfunksjonene. Produksjonsmigrering krever separat godkjenning.",
+    },
+    owner: {
+      owner: "Eier", verification: "automatic",
+      nextAction: "Bruk en verifisert eierøkt ved gjennomgang. Andre kontroller er fortsatt nødvendige.",
+    },
+    operator_identity: {
+      owner: "Eier / systemadministrator", verification: "automatic",
+      nextAction: "Knytt Andreas bekreftede Supabase Auth-bruker-ID til en beskyttet konfigurasjon. Bekreft identiteten uten å vise e-post eller ID her.",
+    },
+    operator_grants: {
+      owner: "Eier / systemadministrator", verification: "automatic",
+      nextAction: "Bekreft aktive, Altovena-spesifikke arbeidsrettigheter for riktig bruker. Kontroller også at tilbakekalt tilgang blir avvist.",
+    },
+    receiver: {
+      owner: "Teknisk ansvarlig", verification: "automatic",
+      nextAction: "Kontroller databasefunksjon, servernøkkel og sperret offentlig API først i testmiljø. Ingen nøkkel eller aktiveringsknapp vises her.",
+    },
+    website: {
+      owner: "Nettsideansvarlig", verification: "manual",
+      nextAction: "Kontroller kontaktskjema, samtykketekst, Cloudflare Turnstile og respons ved feil i Altovena-forhåndsvisningen. Lokal CI alene er ikke tilstrekkelig.",
+    },
+    legal: {
+      owner: "Eier / personvernansvarlig", verification: "manual",
+      nextAction: "Godkjenn behandlingsansvarlig, formål, personvernerklæring, lagringstid, sletting og rutiner for henvendelser.",
+    },
+    e2e: {
+      owner: "Eier / testansvarlig", verification: "manual",
+      nextAction: "Send én syntetisk henvendelse via godkjent staging-nettverk. Verifiser samme kontakt og oppgave i to reelle, rettighetsstyrte økter og kontroller opprydding.",
+    },
+    domain: {
+      owner: "Nettsideansvarlig", verification: "manual",
+      nextAction: "Bekreft korrekt domene, HTTPS, serverruting og at nettstedet ikke sender data til feil miljø.",
+    },
+  };
+  const detailedChecks = checks.map(check => ({
+    ...check,
+    ...actionGuide[check.id],
+  }));
+  // The oldest blocking prerequisite is displayed first, not an inferred
+  // green light for publish. Manual gates always stay externally unverified.
+  const nextSteps = detailedChecks
+    .filter(check => check.state !== "verified")
+    .map(check => ({id: check.id, label: check.label,
+      owner: check.owner, nextAction: check.nextAction,
+      verification: check.verification, state: check.state}));
   const readyForPublicForm = false; // Only a separately audited operator release may change this.
   return reply({
     ok: true,
     brand: "altovena",
     readyForPublicForm,
     summary: "Kun statuskontroll – aktiverer ikke kontaktskjema eller kundedata.",
-    checks,
+    checks: detailedChecks,
+    nextSteps,
     checkedAt: new Date().toISOString(),
   });
 }
