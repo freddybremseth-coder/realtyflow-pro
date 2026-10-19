@@ -134,3 +134,37 @@ test("Owner readiness never activates a contact form, reports real migration and
     for(const k of watchEnv)if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];
   }
 });
+
+
+test("owner preview readiness reports a staging blocker without touching live Supabase Auth",async()=>{
+ const temporary=["VERCEL_ENV","ALTOVENA_STAGING_ISOLATION_ENABLED",
+  "ALTOVENA_STAGING_SUPABASE_PROJECT_REF","NEXT_PUBLIC_SUPABASE_URL",
+  "REALTYFLOW_SESSION_SECRET","REALTYFLOW_ADMIN_EMAILS"];
+ const previous=Object.fromEntries(temporary.map(key=>[key,process.env[key]]));
+ try{
+  process.env.REALTYFLOW_SESSION_SECRET="synthetic-isolation-preview-session";
+  process.env.REALTYFLOW_ADMIN_EMAILS="owner@example.invalid";
+  process.env.VERCEL_ENV="preview";
+  delete process.env.ALTOVENA_STAGING_ISOLATION_ENABLED;
+  delete process.env.ALTOVENA_STAGING_SUPABASE_PROJECT_REF;
+  process.env.NEXT_PUBLIC_SUPABASE_URL="https://ereapsfcsqtdmzosgnnn.supabase.co";
+  setPlatformSupabaseFactoryForTests(()=>{
+   throw Error("DATABASE_ACCESS_FORBIDDEN_UNTIL_STAGING_ISOLATION");
+  });
+  const owner=await createAdminSession("owner@example.invalid");
+  const res=await GET(req(owner));
+  assert.equal(res.status,200);
+  const body=await res.json();
+  assert.equal(body.readyForPublicForm,false);
+  assert.equal(body.checks.find((entry:{id:string})=>
+   entry.id==="staging_database")?.state,"blocked");
+  assert.equal(JSON.stringify(body).includes("ereapsfcsqtdmzosgnnn"),false);
+  assert.match(body.summary,/Ingen CRM- eller Auth-data er lest/);
+ }finally{
+  setPlatformSupabaseFactoryForTests(null);
+  for(const [key,value] of Object.entries(previous)){
+   if(value===undefined)delete process.env[key];
+   else process.env[key]=value;
+  }
+ }
+});
