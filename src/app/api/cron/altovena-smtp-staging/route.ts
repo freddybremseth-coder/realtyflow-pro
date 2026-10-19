@@ -1,7 +1,7 @@
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest,NextResponse } from "next/server";
-import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { isAdminEmail } from "@/lib/admin-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
@@ -53,7 +53,7 @@ export async function GET(request:NextRequest){
      throw Error("invalid");
  }catch{return reply({ok:false,error:"PORTAL_URL_UNAVAILABLE"},503);}
 
- const db=getPlatformSupabase();
+ const db=getAltovenaSupabase();
  if(!db)return reply({ok:false,error:"DATABASE_UNAVAILABLE"},503);
  // Existing brand-specific SMTP transport honours CRM suppression and requires
  // an active brand account. It returns SMTP acceptance, not actual delivery.

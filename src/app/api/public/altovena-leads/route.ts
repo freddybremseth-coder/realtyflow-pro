@@ -1,7 +1,7 @@
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,8 +32,7 @@ export async function POST(request: NextRequest) {
     return respond(503, "ALTOVENA_PREVIEW_DATABASE_NOT_ISOLATED");
   const cfg = process.env;
   if (cfg.ALTOVENA_INTAKE_ENABLED !== "true" ||
-      !cfg.ALTOVENA_INTAKE_KEY || !cfg.NEXT_PUBLIC_SUPABASE_URL ||
-      !cfg.SUPABASE_SERVICE_ROLE_KEY) return respond(503, "INTAKE_NOT_CONFIGURED");
+      !cfg.ALTOVENA_INTAKE_KEY) return respond(503, "INTAKE_NOT_CONFIGURED");
   if (!matchKey(request.headers.get("x-altovena-ingest-key") || "", cfg.ALTOVENA_INTAKE_KEY))
     return respond(401, "UNAUTHORIZED");
 
@@ -78,9 +77,8 @@ export async function POST(request: NextRequest) {
       (typeof input.pageUrl !== "string" || input.pageUrl.length > 300))
     return respond(422, "INVALID_PAGE");
 
-  const supabase = createClient(cfg.NEXT_PUBLIC_SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const supabase = getAltovenaSupabase();
+  if (!supabase) return respond(503, "INTAKE_NOT_CONFIGURED");
   try {
     const { data, error } = await supabase.rpc("altovena_receive_lead", {
       p_submission_id: value(input.submissionId).toLowerCase(),

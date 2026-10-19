@@ -1,7 +1,7 @@
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest,NextResponse } from "next/server";
-import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { isAdminEmail } from "@/lib/admin-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { resolveAltovenaDeliveryRecipients } from "@/lib/altovena/verified-delivery-recipients";
@@ -36,7 +36,7 @@ export async function GET(request:NextRequest){
   if(safety.skip)return reply({ok:true,skipped:true,reason:"RUNTIME_CONTROL_DISABLED",
     emailSent:false,deliveryAttempted:false});
 
-  const db=getPlatformSupabase();
+  const db=getAltovenaSupabase();
   if(!db)return reply({ok:false,error:"DATABASE_UNAVAILABLE"},503);
   const recipients=await resolveAltovenaDeliveryRecipients(
     process.env.ALTOVENA_ALERT_RECIPIENT_EMAILS,

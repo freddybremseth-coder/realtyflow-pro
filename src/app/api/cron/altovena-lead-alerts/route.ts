@@ -1,7 +1,7 @@
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 
 // Server-only durable alert evaluation, never external delivery.
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   if (control.skip) return reply({ ok: true, skipped: true,
     reason: "NEXUS_OR_CRON_SAFE_MODE", deliveryEnabled: false });
 
-  const db = getPlatformSupabase();
+  const db = getAltovenaSupabase();
   if (!db) return reply({ ok: false, error: "WORKSPACE_UNAVAILABLE" }, 503);
   // Only the service-role-only RPC can generate/resolve entries. Never accept
   // caller-supplied brand, time, recipients, task IDs or email destinations.

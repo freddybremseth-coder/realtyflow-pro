@@ -3,16 +3,22 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const route = readFileSync("src/app/api/public/altovena-leads/route.ts","utf8");
+const dedicatedClient = readFileSync("src/lib/altovena/supabase.ts","utf8");
 const sql = readFileSync("supabase/migrations/20261014210000_altovena_brand_intake.sql","utf8");
 const registry = readFileSync("src/lib/marketing/brand-registry.ts","utf8");
 const centralBrands=readFileSync("src/lib/constants.ts","utf8");
 
 test("Altovena intake remains off until secret, brand and database are configured", () => {
   for (const item of [
-    "ALTOVENA_INTAKE_ENABLED", "ALTOVENA_INTAKE_KEY", "NEXT_PUBLIC_SUPABASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY", "x-altovena-ingest-key", "matchKey",
+    "ALTOVENA_INTAKE_ENABLED", "ALTOVENA_INTAKE_KEY",
+    "x-altovena-ingest-key", "matchKey",
     "WRONG_BRAND", "INTAKE_NOT_CONFIGURED",
   ]) assert.ok(route.includes(item),item);
+  assert.match(route,/getAltovenaSupabase/);
+  assert.match(dedicatedClient,/ALTOVENA_STAGING_SUPABASE_URL/);
+  assert.match(dedicatedClient,/ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(dedicatedClient,/getPlatformSupabase/);
+  assert.doesNotMatch(route,/NEXT_PUBLIC_SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY/);
   assert.match(route,/timingSafeEqual/);
   assert.match(route,/request\.headers\.get\("content-type"\)/);
   assert.match(route,/12000/);

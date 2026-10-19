@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import {
   hasVerifiedBrandGrant, isCanonicalBrandKey, WORKSPACE_PERMISSIONS, type WorkspacePermission,
 } from "@/lib/workspaces/brand-policy";
@@ -21,10 +23,16 @@ export async function GET(
 ) {
   const { brandKey } = params;
   if (!isCanonicalBrandKey(brandKey)) return fail(404, "WORKSPACE_NOT_FOUND");
+  // Capabilities is the first API requested by the workspace UI. Prevent
+  // reading live brand grants/Auth when Altovena Preview is not isolated.
+  if (brandKey === "altovena" && !assessAltovenaDatabaseIsolation().allowed)
+    return fail(503, "ALTOVENA_PREVIEW_DATABASE_NOT_ISOLATED");
   const context = await getRequestAccessContext(request);
   if (!context) return fail(401, "AUTH_REQUIRED");
   if (context.source === "remaster-proxy") return fail(403, "ACCESS_DENIED");
-  const supabase = getPlatformSupabase();
+  const supabase = brandKey === "altovena"
+    ? getAltovenaSupabase()
+    : getPlatformSupabase();
   if (!supabase) return fail(503, "WORKSPACE_UNAVAILABLE");
   const { data: scope, error: scopeError } = await supabase.rpc("workspace_brand_grant", {
     p_brand_key: brandKey, p_email: context.email,

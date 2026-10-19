@@ -4,6 +4,7 @@ import {NextRequest} from "next/server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSession,createWorkspacePreviewSession,WORKSPACE_PREVIEW_COOKIE} from
   "@/lib/admin-auth";
+import {setAltovenaPreviewClientFactoryForTests} from "@/lib/altovena/supabase";
 import {setPlatformSupabaseFactoryForTests} from "@/lib/platform/supabase";
 import {GET} from "../../src/app/api/workspaces/altovena/smtp-attempt-status/route";
 
@@ -15,7 +16,8 @@ const keys=["REALTYFLOW_SESSION_SECRET","REALTYFLOW_ADMIN_EMAILS",
 "SUPABASE_SERVICE_ROLE_KEY","VERCEL_ENV","ALTOVENA_EMAIL_STAGING_SEND_ENABLED",
 "ALTOVENA_ALERT_RECEIPT_HMAC_KEY",
  "ALTOVENA_STAGING_ISOLATION_ENABLED",
- "ALTOVENA_STAGING_SUPABASE_PROJECT_REF"];
+ "ALTOVENA_STAGING_SUPABASE_PROJECT_REF",
+ "ALTOVENA_STAGING_SUPABASE_URL","ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY"];
 let original:Record<string,string|undefined>={};
 let grantStatus="active",rpcError=false,rpcBrand="altovena";
 const lookups:string[]=[];
@@ -32,12 +34,14 @@ test.beforeEach(()=>{
  process.env.NEXT_PUBLIC_SUPABASE_URL="https://abcdefghijklmnopqrst.supabase.co";
  process.env.ALTOVENA_STAGING_ISOLATION_ENABLED="true";
  process.env.ALTOVENA_STAGING_SUPABASE_PROJECT_REF="abcdefghijklmnopqrst";
+ process.env.ALTOVENA_STAGING_SUPABASE_URL="https://abcdefghijklmnopqrst.supabase.co";
+ process.env.ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY="synthetic-preview-test-server-key";
  process.env.SUPABASE_SERVICE_ROLE_KEY="fake-key";
  process.env.VERCEL_ENV="preview";
  process.env.ALTOVENA_EMAIL_STAGING_SEND_ENABLED="true";
  process.env.ALTOVENA_ALERT_RECEIPT_HMAC_KEY="isolated-smtp-status-hmac-key-for-tests";
  grantStatus="active";rpcError=false;rpcBrand="altovena";lookups.length=0;
- setPlatformSupabaseFactoryForTests(()=>({
+ const fakeBackend=()=>({
   rpc:async(name:string,args:Record<string,unknown>)=>{
     lookups.push(name);
     if(name==="workspace_brand_grant")return {data:{
@@ -54,9 +58,14 @@ test.beforeEach(()=>{
   auth:{admin:{getUserById:async()=>({
     data:{user:{id:userId,email:"staff@example.invalid"}},error:null,
   })}},
- } as unknown as SupabaseClient));
+ } as unknown as SupabaseClient);
+ setAltovenaPreviewClientFactoryForTests(fakeBackend);
+ // The same mocked backend is also needed for this file's explicit
+ // production-path compatibility check. Preview routing never falls back.
+ setPlatformSupabaseFactoryForTests(fakeBackend);
 });
 test.afterEach(()=>{
+ setAltovenaPreviewClientFactoryForTests(null);
  setPlatformSupabaseFactoryForTests(null);
  for(const [key,value] of Object.entries(original))
   if(value===undefined)delete process.env[key];else process.env[key]=value;

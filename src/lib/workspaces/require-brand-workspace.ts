@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { type AccessRole } from "@/lib/access-control";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { hasVerifiedBrandGrant, isCanonicalBrandKey, type WorkspacePermission } from "./brand-policy";
 
 type Rejection = { value: null; response: NextResponse };
@@ -64,7 +65,9 @@ export async function requireBrandWorkspace(
     (permission === "crm.read" || permission === "crm.write")) {
     return reject(403, "ZEN_NEW_LEADS_COHORT_REQUIRED");
   }
-  const supabase = getPlatformSupabase();
+  const supabase = brandKey === "altovena"
+    ? getAltovenaSupabase()
+    : getPlatformSupabase();
   if (!supabase) return reject(503, "WORKSPACE_UNAVAILABLE");
 
   // The public-schema RPC is service-role-only; core is NOT exposed to PostgREST clients.

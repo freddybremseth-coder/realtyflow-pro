@@ -21,7 +21,7 @@ export function assessAltovenaDatabaseIsolation(
   env: Partial<Pick<NodeJS.ProcessEnv,
     "VERCEL_ENV" | "NODE_ENV" | "ALTOVENA_STAGING_ISOLATION_ENABLED" |
     "ALTOVENA_STAGING_SUPABASE_PROJECT_REF" |
-    "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">> = process.env,
+    "ALTOVENA_STAGING_SUPABASE_URL" | "ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY">> = process.env,
 ): AltovenaDatabaseIsolation {
   if (env.VERCEL_ENV === "production")
     return {allowed: true,state:"production",reason:"NOT_A_PREVIEW"};
@@ -39,11 +39,11 @@ export function assessAltovenaDatabaseIsolation(
   if (ref === REALTYFLOW_PRODUCTION_SUPABASE_REF)
     return blocked("PRODUCTION_PROJECT_FORBIDDEN");
   try {
-    const url = new URL(env.NEXT_PUBLIC_SUPABASE_URL||"");
+    const url = new URL(env.ALTOVENA_STAGING_SUPABASE_URL||"");
     if (url.protocol!=="https:" || url.username || url.password ||
         url.port || url.pathname!=="/" || url.search || url.hash ||
         url.hostname!==`${ref}.supabase.co` ||
-        !env.SUPABASE_SERVICE_ROLE_KEY)
+        !env.ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY)
       return blocked("STAGING_DATABASE_MISMATCH");
   } catch {
     return blocked("STAGING_DATABASE_MISMATCH");
