@@ -176,3 +176,14 @@ Security properties:
 Security tests: `tests/altovena/lead-contact-authorization.test.ts` tests real route handler behavior with mocked current grants, owner/member sessions, revocation, exact brand filters, safe response shape and malformed input. `tests/altovena/task-to-customer-ui.test.mjs` protects task-click → exact scoped contact lookup → selected customer card navigation and the brand-switch reset. All use synthetic records; no production customer contact was opened.
 
 This remains part of **draft PR #1400** and not a live product release. Only after an approved Altovena migration and verified human access can it be tested with real brand data.
+
+## Actionable launch-readiness control (19 October 2026)
+
+The existing read-only owner route `GET /api/workspaces/altovena/launch-readiness` and its owner console now provide a server-owned action guide:
+- Each technical or manual gate includes an **owner role, next concrete action and verification type**. The interface displays the first three outstanding actions before the full list.
+- Green technical states only reflect current server checks. Website, privacy, live network/Turnstile, domain and human follow-up gates always remain `needs_external_verification` until separately assessed. The route **always returns `readyForPublicForm:false`**.
+- No environment secrets, personal identities, API credentials, contact records, action links or write controls are returned. Refresh only reads status.
+- This helps the owner understand *why* launch is blocked and who must verify each item; it does not approve a release or replace a real two-account staging test.
+- Existing owner-only and preview restrictions remain unchanged; the route regression suite now verifies the first unverified action and confirms manual gates remain pending even when all technical checks are simulated as healthy.
+
+This is an internal UX improvement under PR #1400 and remains unavailable to general public website visitors while the draft PR is unmerged.
