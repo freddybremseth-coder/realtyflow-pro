@@ -157,8 +157,10 @@ test("owner preview readiness reports a staging blocker without touching live Su
   assert.equal(res.status,200);
   const body=await res.json();
   assert.equal(body.readyForPublicForm,false);
+  assert.equal(body.stagingReadyForHumanTest,false);
+  assert.match(body.nextAction,/kostnadsgodkjenning/i);
   assert.equal(body.checks.find((entry:{id:string})=>
-   entry.id==="staging_database")?.state,"blocked");
+   entry.id==="staging_database")?.state,"not_configured");
   assert.equal(JSON.stringify(body).includes("ereapsfcsqtdmzosgnnn"),false);
   assert.match(body.summary,/Ingen CRM- eller Auth-data er lest/);
  }finally{
