@@ -96,6 +96,11 @@ export default function WorkspacesPage() {
                 <div className="flex items-center gap-2 font-semibold"><Building2 size={17} className="text-cyan-400"/> Pinoso EcoLife</div>
                 <span className="mt-2 inline-flex items-center gap-1 text-sm text-cyan-300">Åpne workspace <ArrowRight size={14}/></span>
               </Link>
+              <Link href="/altovena-launch" className="group rounded-xl border border-teal-900/70 p-4 hover:border-teal-500 hover:bg-slate-800/70">
+                <div className="flex items-center gap-2 font-semibold"><Settings size={17} className="text-teal-400"/> Altovena · aktivering</div>
+                <p className="mt-1 text-xs text-slate-400">Kontroller merkevare, Freddy og Andrea, personvern og skjemamottak før lansering.</p>
+                <span className="mt-2 inline-flex items-center gap-1 text-sm text-teal-300">Åpne aktiveringskontroll <ArrowRight size={14}/></span>
+              </Link>
             </div>
           </div>
 

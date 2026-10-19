@@ -311,6 +311,14 @@
     {
       "path": "/api/cron/visibility-investigations",
       "schedule": "15 8 * * *"
+    },
+    {
+      "path": "/api/cron/altovena-lead-alerts",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/altovena-delivery-preflight",
+      "schedule": "7,22,37,52 * * * *"
     }
   ]
 }
