@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 
 type GateState = "verified" | "blocked" | "not_configured" | "needs_external_verification";
 type Checklist = { id: string; label: string; state: GateState };
-type Result = { ok: true; brand: "altovena"; readyForPublicForm: false; checks: Checklist[]; checkedAt: string };
+type Result = { ok: true; brand: "altovena"; readyForPublicForm: false;
+  stagingReadyForHumanTest: false; nextAction: string;
+  checks: Checklist[]; checkedAt: string };
 const stateLabel: Record<GateState,string> = {
   verified: "Verifisert",
   blocked: "Blokkert",
@@ -27,7 +29,10 @@ export function AltovenaLaunchReadiness() {
       return r.json();
     }).then(body=>{
       if(body.ok!==true||body.brand!=="altovena"||!Array.isArray(body.checks)||
-         body.readyForPublicForm!==false)throw Error("Ugyldig aktiveringsstatus.");
+         body.readyForPublicForm!==false ||
+         body.stagingReadyForHumanTest!==false ||
+         typeof body.nextAction!=="string" ||
+         body.nextAction.length>250)throw Error("Ugyldig aktiveringsstatus.");
       if(!controller.signal.aborted)setData(body);
     }).catch(e=>{
       if(!controller.signal.aborted)setError(e instanceof Error?e.message:"Status utilgjengelig");
@@ -52,6 +57,14 @@ export function AltovenaLaunchReadiness() {
     </div>
     {error&&<p role="alert" className="mt-3 text-sm text-amber-300">{error}</p>}
     {loading&&!data&&<p className="mt-3 text-sm text-slate-400">Henter teknisk status…</p>}
+    {data&&<div className="mt-4 rounded-xl border border-amber-700/60 bg-slate-950/60 p-4"
+      role="status" aria-label="Neste handling">
+      <p className="text-xs font-semibold uppercase tracking-wider text-amber-200">Neste handling</p>
+      <p className="mt-2 text-sm text-slate-200">{data.nextAction}</p>
+      <p className="mt-2 text-xs text-slate-400">
+        Staging er ikke godkjent for reelle brukertester. Denne kontrollen endrer ingen innstillinger.
+      </p>
+    </div>}
     {data&&<ul className="mt-4 grid gap-2 sm:grid-cols-2">
       {data.checks.map(check=><li key={check.id}
         className="flex items-center justify-between gap-3 rounded-lg border border-slate-700/70 p-3 text-sm">
