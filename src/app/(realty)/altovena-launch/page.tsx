@@ -35,6 +35,23 @@ export default async function AltovenaLaunchPage() {
           <h2 className="text-xl font-semibold">Ikke klar for offentlig aktivering</h2>
           <p className="mt-2 text-sm text-slate-300">Alle punktene nedenfor vises som uavklarte til de er kontrollert separat. Eksisterende RealtyFlow-funksjoner påvirkes ikke.</p>
         </section>
+        <section aria-labelledby="technical-evidence" className="rounded-xl border border-slate-700 bg-slate-900 p-5">
+          <h2 id="technical-evidence" className="text-xl font-semibold">Dokumenterte tekniske kontroller</h2>
+          <p className="mt-2 text-sm text-slate-300">Kontrollert 19. oktober 2026. Dette er et historisk bevis for lanseringsoversikten, ikke en sanntidskontroll av Altovenas CRM, stagingdatabase eller offentlige kontaktskjema.</p>
+          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-700 p-4">
+              <dt className="font-semibold">RealtyFlow · produksjonsversjon</dt>
+              <dd className="mt-2 text-sm text-slate-300">PR #1468 ble slått sammen til main. Vercel-deployen for commit 8ebdfe2 ble bekreftet READY.</dd>
+              <a className="mt-3 inline-block text-sm text-cyan-300 underline" href="https://github.com/freddybremseth-coder/realtyflow-pro/commit/8ebdfe2666c25cb8b1875530dbb55843c2c350fa" target="_blank" rel="noopener noreferrer">Se GitHub-commit</a>
+            </div>
+            <div className="rounded-lg border border-slate-700 p-4">
+              <dt className="font-semibold">Altovena Launch · isolert kontrollside</dt>
+              <dd className="mt-2 text-sm text-slate-300">PR #1467 bestod fire GitHub-kontroller og har en READY produksjonsdeploy fra commit 62f6ce4.</dd>
+              <a className="mt-3 inline-block text-sm text-cyan-300 underline" href="https://github.com/freddybremseth-coder/realtyflow-pro/pull/1467" target="_blank" rel="noopener noreferrer">Se testet PR</a>
+            </div>
+          </dl>
+          <p className="mt-4 text-sm text-amber-200">Ikke verifisert: isolert Supabase staging, begge operatørinnlogginger, personvern/Turnstile, ende-til-ende-test med ekte nettverk og eiers lanseringsgodkjenning.</p>
+        </section>
         <section aria-labelledby="next-actions" className="space-y-4">
           <h2 id="next-actions" className="text-2xl font-semibold">De tre første oppgavene</h2>
           <div className="grid gap-4">
