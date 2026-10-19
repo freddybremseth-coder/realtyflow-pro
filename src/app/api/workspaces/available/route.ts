@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { WORKSPACE_PERMISSIONS, hasVerifiedBrandGrant, type WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import { roleAllowsWorkspacePermission } from "@/lib/workspaces/require-brand-workspace";
 
@@ -29,6 +31,10 @@ export async function GET(request: NextRequest) {
     const brand = entry?.brand;
     const grant = entry?.grant;
     if (!brand?.id || !brand?.brand_key || !grant?.user_id) continue;
+    // Never advertise Altovena from *production* grants in a preview.
+    // A preview-only Altovena entry is separately verified below.
+    if (process.env.VERCEL_ENV === "preview" && brand.brand_key === "altovena")
+      continue;
     const { data: authResult, error: authError } = await supabase.auth.admin.getUserById(grant.user_id);
     if (authError || !authResult?.user) continue;
     const permissions = WORKSPACE_PERMISSIONS.filter(permission =>
@@ -82,6 +88,38 @@ export async function GET(request: NextRequest) {
           ["zeneco", "pinosoecolife"].includes(brand.brand_key)
           ? { operationalRole: "BRAND_OPERATIONS" as const } : {}),
       });
+    }
+  }
+  if (process.env.VERCEL_ENV === "preview" &&
+      assessAltovenaDatabaseIsolation().allowed) {
+    const staging = getAltovenaSupabase();
+    if (staging) {
+      // Altovena permissions must originate in its isolated staging Auth
+      // and brand grant, never from another brand's production credentials.
+      const { data: scope, error: grantError } = await staging.rpc(
+        "workspace_brand_grant", {
+          p_brand_key: "altovena", p_email: context.email,
+        },
+      );
+      if (!grantError && scope?.brand?.brand_key === "altovena" &&
+          typeof scope.brand.id === "string" && scope.grant?.user_id) {
+        const { data: identity, error: identityError } = await staging.auth.admin
+          .getUserById(scope.grant.user_id);
+        if (!identityError && identity?.user) {
+          const permissions = WORKSPACE_PERMISSIONS.filter(permission =>
+            !["crm.joint.read", "crm.joint.write", "tasks.joint.read",
+              "tasks.joint.write", "corporate.read", "corporate.plan"].includes(permission) &&
+            !permission.startsWith("reels.") && !permission.startsWith("youtube.") &&
+            hasVerifiedBrandGrant({
+              grant: scope.grant, brandId: scope.brand.id,
+              sessionEmail: context.email, verifiedUserId: identity.user.id,
+              verifiedUserEmail: identity.user.email || "", permission,
+            }),
+          );
+          if (permissions.length)
+            workspaces.push({brandKey:"altovena",name:"Altovena · testmiljø",permissions});
+        }
+      }
     }
   }
   return NextResponse.json({ ok: true, owner: false, workspaces }, { headers: noStore });
