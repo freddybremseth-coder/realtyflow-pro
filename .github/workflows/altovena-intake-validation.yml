@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "src/app/api/public/altovena-leads/**"
+      - "src/lib/altovena/preview-database-isolation.ts"
+      - "src/lib/workspaces/require-brand-workspace.ts"
+      - "src/app/api/workspaces/altovena/launch-readiness/**"
       - "src/app/api/workspaces/altovena/**"
       - "src/app/api/workspaces/[brandKey]/lead-tasks/**"
       - "src/app/api/cron/altovena-lead-alerts/**"
@@ -69,6 +72,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      NODE_ENV: test
       ALTOVENA_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/altovena_ci_test
       SUPABASE_DB_URL: ""
       POSTGRES_URL: ""
