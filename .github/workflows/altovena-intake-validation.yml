@@ -5,6 +5,9 @@ on:
     paths:
       - "src/app/api/public/altovena-leads/**"
       - "src/lib/altovena/preview-database-isolation.ts"
+      - "src/lib/altovena/supabase.ts"
+      - "src/lib/platform/supabase.ts"
+      - "src/lib/workspaces/require-brand-workspace.ts"
       - "src/lib/workspaces/require-brand-workspace.ts"
       - "src/app/api/workspaces/altovena/launch-readiness/**"
       - "src/app/api/workspaces/altovena/**"
