@@ -7,7 +7,7 @@
  * secret is valid for the project. Separate staged Auth/grant E2E is required.
  */
 const REALTYFLOW_PRODUCTION_SUPABASE_REF = "ereapsfcsqtdmzosgnnn";
-const refPattern = /^[a-z]{20}$/;
+const refPattern = /^[a-z0-9]{20}$/;
 
 export type AltovenaDatabaseIsolation = {
   allowed: boolean;
