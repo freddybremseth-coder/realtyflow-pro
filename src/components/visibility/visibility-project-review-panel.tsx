@@ -6,7 +6,7 @@ function safePropertyUrl(value: string): string | null {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" || !["zenecohomes.com", "www.zenecohomes.com"].includes(url.hostname)
-      || url.username || url.password || url.port
+      || url.username || url.password || url.port || url.search || url.hash
       || !new RegExp("^/(?:eiendommer|properties|immobilien|propiedades)/[^/]+/?$", "i").test(url.pathname)) return null;
     return url.href;
   } catch { return null; }
@@ -71,6 +71,20 @@ export function VisibilityProjectReviewPanel({ report, brand, demo }: Props) {
             </article>;
           })}
         </div>}
+    <section aria-label="Slik bruker du prosjektfaktakontrollen" className="rounded-2xl border border-slate-200 bg-white p-5">
+      <h3 className="text-base font-bold text-slate-950">Hva skal jeg gjøre nå?</h3>
+      <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
+        <li>Se om Sam har lagret en fersk kontrollrapport for Zen Eco Homes.</li>
+        <li>Åpne den aktuelle prosjektsiden og sammenlign hver viktig påstand med datert dokumentasjon fra en ansvarlig kilde.</li>
+        <li>Noter hvilke opplysninger som må rettes. En endring må senere vurderes og godkjennes særskilt før publisering.</li>
+      </ol>
+      <a href="/growth-hub" className="mt-4 inline-flex rounded-lg border border-teal-300 px-3 py-2 text-sm font-semibold text-teal-900 underline">
+        Gå til Sam SEO og kontrollrapporter
+      </a>
+      <p className="mt-3 text-xs text-slate-500">
+        Denne lenken åpner eksisterende SEO-verktøy. Den starter ikke en skanning, oppretter ikke en jobb og publiserer ingenting.
+      </p>
+    </section>
     <p className="text-xs text-slate-500">
       Registrering, attestering, tilbakekalling og publisering er ikke tilgjengelig fra denne visningen.
     </p>
