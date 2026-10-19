@@ -76,11 +76,15 @@ export async function GET(request: NextRequest) {
 
   // This is RealtyFlow-side intake readiness only. The independent Altovena
   // deployment, verified Turnstile, privacy review and a real test are separate gates.
+  const databaseSecretsConfigured = isolation.state === "isolated_preview"
+    ? Boolean(process.env.ALTOVENA_STAGING_SUPABASE_URL &&
+        process.env.ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY)
+    : Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL &&
+        process.env.SUPABASE_SERVICE_ROLE_KEY);
   const intakeConfigured = migrationHealthy && process.env.ALTOVENA_INTAKE_ENABLED === "true" &&
     Boolean(process.env.ALTOVENA_INTAKE_KEY &&
       process.env.ALTOVENA_INTAKE_KEY.length >= 32 &&
-      process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.SUPABASE_SERVICE_ROLE_KEY);
+      databaseSecretsConfigured);
 
   const id = (process.env.ALTOVENA_ANDREA_AUTH_USER_ID || "").trim();
   const operatorConfigured = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
