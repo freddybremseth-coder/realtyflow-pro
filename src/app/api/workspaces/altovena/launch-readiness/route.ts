@@ -1,3 +1,4 @@
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
@@ -31,6 +32,23 @@ export async function GET(request: NextRequest) {
   if (!context) return reply({ ok: false, error: "AUTH_REQUIRED" }, 401);
   if (context.role !== "OWNER" || context.source !== "owner-session")
     return reply({ ok: false, error: "OWNER_REQUIRED" }, 403);
+
+  // This gate is deliberately checked BEFORE reading workspace grants or
+  // Supabase Auth. A preview still bound to RealtyflowPRO must not query live
+  // customer or employee identities merely to render a readiness checklist.
+  const isolation = assessAltovenaDatabaseIsolation();
+  if (!isolation.allowed) return reply({
+    ok:true,brand:"altovena",readyForPublicForm:false,
+    summary:"Forhåndsvisningen har ingen verifisert separat database. Ingen CRM- eller Auth-data er lest.",
+    checkedAt:new Date().toISOString(),
+    checks:[
+      {id:"staging_database",label:"Separat Supabase-database for forhåndsvisning",state:"blocked"},
+      {id:"brand",label:"Altovena-merkevare i isolert testdatabase",state:"not_configured"},
+      {id:"operator_identity",label:"Verifiserte testbrukere uten produksjonstilgang",state:"not_configured"},
+      {id:"intake",label:"Syntetisk henvendelse i isolert miljø",state:"needs_external_verification"},
+      {id:"smtp",label:"Kontrollert e-posttest uten produksjonsutsendelse",state:"needs_external_verification"},
+    ],
+  });
 
   const supabase = getPlatformSupabase();
   if (!supabase) return reply({ ok: false, error: "WORKSPACE_UNAVAILABLE" }, 503);
