@@ -8,6 +8,8 @@ on:
       - "src/lib/altovena/supabase.ts"
       - "src/lib/platform/supabase.ts"
       - "src/lib/workspaces/require-brand-workspace.ts"
+      - "src/app/api/workspaces/[brandKey]/capabilities/route.ts"
+      - "tests/altovena/staging-capabilities-isolation.test.ts"
       - "src/lib/workspaces/require-brand-workspace.ts"
       - "src/app/api/workspaces/altovena/launch-readiness/**"
       - "src/app/api/workspaces/altovena/**"
