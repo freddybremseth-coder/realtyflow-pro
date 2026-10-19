@@ -1,4 +1,5 @@
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
+import { getAltovenaStagingChecklist } from "@/lib/altovena/staging-readiness";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { getAltovenaSupabase } from "@/lib/altovena/supabase";
@@ -37,12 +38,15 @@ export async function GET(request: NextRequest) {
   // Supabase Auth. A preview still bound to RealtyflowPRO must not query live
   // customer or employee identities merely to render a readiness checklist.
   const isolation = assessAltovenaDatabaseIsolation();
+  const stagingChecklist = getAltovenaStagingChecklist();
   if (!isolation.allowed) return reply({
     ok:true,brand:"altovena",readyForPublicForm:false,
     summary:"Forhåndsvisningen har ingen verifisert separat database. Ingen CRM- eller Auth-data er lest.",
     checkedAt:new Date().toISOString(),
+    nextAction:stagingChecklist.nextAction,
+    stagingReadyForHumanTest:false,
     checks:[
-      {id:"staging_database",label:"Separat Supabase-database for forhåndsvisning",state:"blocked"},
+      ...stagingChecklist.checks,
       {id:"brand",label:"Altovena-merkevare i isolert testdatabase",state:"not_configured"},
       {id:"operator_identity",label:"Verifiserte testbrukere uten produksjonstilgang",state:"not_configured"},
       {id:"intake",label:"Syntetisk henvendelse i isolert miljø",state:"needs_external_verification"},
@@ -137,5 +141,9 @@ export async function GET(request: NextRequest) {
     summary: "Kun statuskontroll – aktiverer ikke kontaktskjema eller kundedata.",
     checks,
     checkedAt: new Date().toISOString(),
+    nextAction: isolation.state === "isolated_preview"
+      ? stagingChecklist.nextAction
+      : "Kontroller testmiljø og Auth før eventuell offentlig aktivering.",
+    stagingReadyForHumanTest:false,
   });
 }
