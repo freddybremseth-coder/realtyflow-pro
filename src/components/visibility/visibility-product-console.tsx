@@ -159,8 +159,8 @@ export function VisibilityProductConsole(){
           <Icon size={17}/>{t.label}</button>;})}
       </div>
       <div className="space-y-6 p-4 sm:p-8">
-        {noData&&tab!=="workflow"&&tab!=="product"&&<Empty title="Ingen kontroller tilgjengelig" body="Live-data kunne ikke hentes eller er ikke lagret. Produktdemonstrasjonen viser hele grensesnittet med illustrative data. Ingen live-status blir erstattet av demotall."/>}
-        {(!noData||tab==="workflow"||tab==="product")&&<>
+        {noData&&tab!=="workflow"&&tab!=="product"&&tab!=="projects"&&<Empty title="Ingen kontroller tilgjengelig" body="Live-data kunne ikke hentes eller er ikke lagret. Produktdemonstrasjonen viser hele grensesnittet med illustrative data. Ingen live-status blir erstattet av demotall."/>}
+        {(!noData||tab==="workflow"||tab==="product"||tab==="projects")&&<>
           {tab==="overview"&&<>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div><h2 className="text-2xl font-extrabold">Din synlighet, samlet</h2><p className="mt-1 text-sm text-slate-600">Bare dokumenterte observasjoner. Ingen poengscore som later som alt er kontrollert.</p></div>
