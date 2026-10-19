@@ -17,6 +17,24 @@ Never put the staging service-role key in a `NEXT_PUBLIC_` variable. Values belo
 
 The Vercel production flow and all existing other-brand routes remain unchanged. Isolated offline tests use their existing injected mocks and disposable local PostgreSQL. Personal data must NOT be copied from production into staging.
 
+## First workspace request audit
+
+The first HTTP request from the focused `/workspace/altovena` client is
+`GET /api/workspaces/altovena/capabilities`. The initial #1466 implementation
+still used the **shared platform Supabase client** in that route, despite
+isolating the follow-on CRM routes. That discrepancy has now been corrected:
+capabilities performs the Altovena staging gate before any Auth/CRM lookup and
+uses `getAltovenaSupabase()`. Owner and independently verified staff must
+obtain their capabilities solely from staging; revoked staff must not fall
+back to production grants. Synthetic tests assert that selecting
+`pinosoecolife` still uses the unchanged platform route.
+
+**Scope boundary:** Shared RealtyFlow login/session, global navigation, and
+non-Altovena brand operations may continue using platform services. This is
+*brand-data isolation*, not a new independently hosted RealtyFlow installation.
+A full system-wide staging clone would require a separate deployment and auth
+design; do not claim this branch achieves that.
+
 ## What the gate can and cannot prove
 
 The gate proves a canonical staging **endpoint configured against a different project reference than RealtyflowPRO production**. It does **not** cryptographically confirm that the configured service-role key corresponds to the staging project, and it cannot replace a true staging Auth/grant and database permissions test. A wrong secret will fail when the staging RPCs run; the app should report unavailable, not try the production database.
