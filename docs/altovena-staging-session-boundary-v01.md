@@ -22,6 +22,10 @@ has deliberately NOT been wired into shared RealtyFlow global auth,
 middleware, workspace routing or role-based permissions. It must not be
 used to access non-Altovena modules.
 
+## Staging Auth admission (not an HTTP login)
+
+A separate `staging-admission.ts` helper authenticates against the isolated staging Supabase publishable-key Auth client. It requires exact Auth UUID/email and a current active Altovena `crm.read` grant verified independently by the staging admin. Wrong-brand, revoked, missing CRM permissions, or mismatched identity fail closed. No HTTP login route or cookie issuer calls this helper yet. All tests use synthetic dependencies; no account or production access is created.
+
 ## Next implementation before real login is enabled
 
 1. Add a staging-only Auth admission route that authenticates against
