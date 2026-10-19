@@ -562,6 +562,38 @@ export async function executePublishForDraft(
     publication.ai_image_url || "",
     ...carouselUrls,
   ].filter((url): url is string => typeof url === "string" && /^https:\/\//i.test(url)))];
+  // Human label approval is required for campaigns whose legacy image has
+  // the wrong container size. Re-check persisted media/creative provenance as
+  // well as the draft flag so stripping draft metadata cannot bypass review.
+  const draftNeedsLabelReview = publication.content_features?.requires_label_review === true;
+  let assetNeedsLabelReview = false;
+  let creativeNeedsLabelReview = false;
+  if (candidateImages.length) {
+    const [assetCheck, creativeCheck] = await Promise.all([
+      supabase.from("media_assets")
+        .select("id").in("public_url", candidateImages)
+        .contains("metadata_json", { requires_label_review: true }).limit(1),
+      supabase.from("ad_creatives")
+        .select("id").in("image_url", candidateImages)
+        .contains("metadata_json", { creative_image_label_review_required: true }).limit(1),
+    ]);
+    if (assetCheck.error || creativeCheck.error) {
+      throw new Error("Kunne ikke kontrollere godkjenning av produktetiketten.");
+    }
+    assetNeedsLabelReview = (assetCheck.data?.length || 0) > 0;
+    creativeNeedsLabelReview = (creativeCheck.data?.length || 0) > 0;
+  }
+  if (draftNeedsLabelReview || assetNeedsLabelReview || creativeNeedsLabelReview) {
+    const reason = "PRODUCT_LABEL_REVIEW_REQUIRED: Verifiser 3 L-etikett og godkjenn riktig produktbilde før publisering.";
+    await supabase.from("content_publications")
+      .update({ status: "draft", scheduled_at: null, last_publish_error: reason })
+      .eq("id", draftId).eq("brand_id", brandId);
+    return {
+      results: platforms.map(platform => ({ platform, success: false, error: reason })),
+      anySuccess: false,
+    };
+  }
+
   const approvalResults = await Promise.all(candidateImages.map(url =>
     advisorCompositeApprovalStatus(supabase, url, brandId)
   ));

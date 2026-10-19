@@ -117,6 +117,8 @@ async function searchMedia(supabase: MarketingSupabaseLike, input: ResolverInput
     .in("media_type", ["image", "video"])
     .limit(50);
   return (data ?? [])
+    // Unapproved package labels must never enter autonomous content reuse.
+    .filter((r: any) => r.metadata_json?.requires_label_review !== true)
     .filter((r: any) => !input.propertyIds?.length || (r.property_id && input.propertyIds.includes(r.property_id)))
     .map((r: any) => {
       const autopilotGenerated = r.ai_generated === true
@@ -159,12 +161,12 @@ async function searchAdCreatives(supabase: MarketingSupabaseLike, input: Resolve
 
   const { data } = await supabase
     .from("ad_creatives")
-    .select("id, campaign_id, aspect_ratio, image_url, caption_primary, hashtags, status, is_top_pick, created_at")
+    .select("id, campaign_id, aspect_ratio, image_url, caption_primary, hashtags, status, is_top_pick, metadata_json, created_at")
     .in("campaign_id", ownedCampaignIds)
     .eq("status", "completed")
     .limit(50);
   return (data ?? [])
-    .filter((r: any) => !!r.image_url && ownedCampaignIds.includes(String(r.campaign_id)))
+    .filter((r: any) => !!r.image_url && r.metadata_json?.creative_image_label_review_required !== true && ownedCampaignIds.includes(String(r.campaign_id)))
     .map((r: any) => ({
       source: "ad_creative" as const,
       contentId: `ad_creative:${r.id}`,

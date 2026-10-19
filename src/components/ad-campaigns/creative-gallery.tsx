@@ -223,20 +223,17 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
   };
 
   const exportOne = async (creative: AdCreative) => {
-    if (!creative.output_asset_id) {
-      onError("Denne annonsen er ikke koblet til Media Library ennå.");
-      return;
-    }
     setBusy(`export-${creative.id}`);
     onError("");
     try {
-      const response = await fetch(`/api/media/assets/${creative.output_asset_id}/export`, {
+      const response = await fetch(`/api/ad-campaigns/${campaign.id}/export-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ creative_ids: [creative.id] }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Eksporten feilet.");
+      if (data.failed?.length) throw new Error(data.failed[0].error || "Eksporten feilet.");
       await onRefresh();
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
@@ -273,6 +270,7 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {group.items.map((creative) => {
               const showOverlay = campaign.overlay_mode === "automatic" || creative.overlay_applied;
+              const requiresLabelReview = creative.metadata_json?.creative_image_label_review_required === true;
               return (
                 <article key={creative.id} className="overflow-hidden rounded-xl border border-gray-800 bg-gray-950/40">
                   <div className={`relative overflow-hidden bg-gray-900 ${creative.aspect_ratio === "9:16" ? "aspect-[9/16]" : creative.aspect_ratio === "4:5" ? "aspect-[4/5]" : creative.aspect_ratio === "1.91:1" ? "aspect-[1.91/1]" : "aspect-square"}`}>
@@ -299,7 +297,11 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
                       <Badge variant="outline" className={providerBadge(creative.provider)}>{providerLabel(creative.provider)}</Badge>
                       <Badge variant="outline" className="border-black/30 bg-black/55 text-white">{creative.aspect_ratio}</Badge>
                     </div>
-                    {creative.status === "completed" && <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-emerald-400 drop-shadow" />}
+                    {requiresLabelReview
+                      ? <span className="absolute bottom-2 left-2 right-2 rounded-md bg-amber-950/95 px-2 py-1.5 text-center text-[11px] font-semibold text-amber-200">
+                          Kontroller 3 L-etikett før publisering
+                        </span>
+                      : creative.status === "completed" && <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-emerald-400 drop-shadow" />}
                   </div>
 
                   <div className="space-y-3 p-3">
@@ -307,6 +309,10 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
                       <span className="font-medium text-gray-200">Variant {creative.variant_index || 1}</span>
                       <span className="text-gray-500">{creative.scene_id}</span>
                     </div>
+
+                    {requiresLabelReview && <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] leading-relaxed text-amber-100">
+                      Bildet er lagret, men produktetiketten er ikke godkjent. PNG kan lastes ned for kontroll; Content Hub er kun et utkast.
+                    </p>}
 
                     <div className="grid grid-cols-2 gap-1.5">
                       <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => openEditor(creative)}><Pencil className="h-3 w-3" />Tekst</Button>
@@ -321,7 +327,7 @@ export function AdCampaignCreativeGallery({ campaign, creatives, onRefresh, onEr
 
                     <div className="flex flex-wrap gap-1.5">
                       {creative.image_url && <Button asChild size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]"><a href={creative.image_url} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" />Åpne</a></Button>}
-                      {creative.output_asset_id && <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" disabled={Boolean(busy) || creative.pushed_to_hub} onClick={() => void exportOne(creative)}>{busy === `export-${creative.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : creative.pushed_to_hub ? <CheckCircle2 className="h-3 w-3" /> : <Send className="h-3 w-3" />}{creative.pushed_to_hub ? "I Hub" : "Content Hub"}</Button>}
+                      {creative.image_url && <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" disabled={Boolean(busy) || creative.pushed_to_hub} onClick={() => void exportOne(creative)}>{busy === `export-${creative.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : creative.pushed_to_hub ? <CheckCircle2 className="h-3 w-3" /> : <Send className="h-3 w-3" />}{creative.pushed_to_hub ? "I Hub" : "Content Hub"}</Button>}
                     </div>
                   </div>
                 </article>
