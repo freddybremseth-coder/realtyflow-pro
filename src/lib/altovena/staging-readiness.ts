@@ -28,9 +28,9 @@ export function getAltovenaStagingChecklist(
   const bindingVerified = isolation.state === "isolated_preview";
 
   const checks: AltovenaStagingCheck[] = [
-    { id:"staging_database",label:"Separat Supabase-testprosjekt (kostnad må godkjennes)",
+    { id:"staging_database",label:"Separat Supabase-testprosjekt (må verifiseres og kostnadsgodkjennes)",
       state:!projectConfigured?"not_configured":blockedProject?"blocked":
-        bindingVerified?"verified":"needs_external_verification" },
+        "needs_external_verification" },
     { id:"staging_opt_in",label:"Staging-tilgang eksplisitt aktivert",
       state:stagingEnabled?"verified":"not_configured" },
     { id:"staging_endpoint",label:"Egen Altovena staging-adresse (server)",
