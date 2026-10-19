@@ -148,6 +148,10 @@ export interface CaptionGenerationInput {
   brand_voice?: string | null;
   target_markets: string[];      // e.g. ['ES', 'NO']
   offer?: string | null;
+  /** Canonical product packaging and other verified facts. */
+  product_facts?: string | null;
+  /** Explicit prohibited claims and marketing restrictions. */
+  off_limits?: string | null;
   angles: string[];
 }
 
@@ -163,8 +167,9 @@ export async function generateCaptions(
   const tmpl = getBrandTemplate(input.brand_type);
   const langPrimary = input.target_markets[0] || "EN";
   const langSecondary = input.target_markets[1];
+  const verifiedOffer = input.offer?.trim() || null;
 
-  const systemPrompt = `You are a senior copywriter writing native Instagram captions for paid ads. Each caption is short (12-25 words), sensory, on-brand, and ends with a clear CTA referencing the offer. Write natively in each language — never translate word-for-word. Always respond with valid JSON.`;
+  const systemPrompt = `You are a senior copywriter writing native Instagram captions for paid ads. Each caption is short (12-25 words), sensory, on-brand, and ends with a clear CTA. ${verifiedOffer ? "Mention only the explicitly verified offer, never invent additional discounts." : "NO promotional offer is active: do not invent discounts, percentage savings, coupon codes, or special prices. Use an informational CTA instead."} All product facts and restrictions below are mandatory. Write natively in each language — never translate word-for-word. Always respond with valid JSON.`;
 
   const prompt = `Write captions for an IG ad campaign.
 
@@ -172,7 +177,9 @@ Product: ${input.product_name}
 Brand: ${input.brand_name} (${input.brand_type})
 Brand voice: ${input.brand_voice || "(infer from brand type)"}
 Style hint: ${tmpl.caption_style_hint}
-Offer/CTA: ${input.offer || "shop now"}
+Offer/CTA: ${verifiedOffer || "No promotional offer; ask about availability or invite contact."}
+Verified product facts: ${input.product_facts || "(none provided; do not invent facts)"}
+Prohibited claims: ${input.off_limits || "(none provided; never invent certification, awards, quantities, health claims, or endorsements)"}
 Primary language: ${langPrimary}${langSecondary ? `\nSecondary language: ${langSecondary}` : ""}
 
 For each of these ${input.angles.length} angles, write a caption pack:

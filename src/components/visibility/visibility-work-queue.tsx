@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { VisibilityVisualReviewForm } from "./visibility-visual-review-form";
 
 type Investigation = {result:string;checked_at:string;issue_code:string;
  evidence?:{homepageStatus:number|null;h1Count:number|null;robotsStatus:number|null;sitemapStatus:number|null;issues:string[];incomplete:boolean}};
@@ -11,7 +12,51 @@ type CodeCandidate = {
   url:string;repo:string;pullNumber:number;commitSha:string;recordedAt:string;
   reviewOnly:true;executionStarted:false;publicationAuthorized:false;
 };
-type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null};
+type GithubStatus={
+ state:"OPEN_SAME_COMMIT"|"DRAFT_SAME_COMMIT"|"COMMIT_CHANGED"|"CLOSED"|"MERGED"|"UNAVAILABLE";
+ checkedAt:string;currentHeadSha:string|null;codeUnchanged:boolean;
+ mergeAuthorized:false;publicationAuthorized:false;verifiedAsPublished:false;
+};
+type GithubCi={
+ state:"PASSED"|"FAILED"|"PENDING"|"UNVERIFIED"|"COMMIT_CHANGED";
+ checkedAt:string;reviewedSha:string;requiredJob:string;observedJobs:number;
+ publicationAuthorized:false;mergeAuthorized:false;visualReviewCompleted:false;
+};
+type VisualReview={
+ workItemId:string;commitSha:string;recordedAt:string;
+ outcome:"VISUALLY_PASSED"|"ISSUES_FOUND";
+ checks:Record<string,boolean>;notes:string;publishingApproved:false;mergingApproved:false;
+};
+type ReviewReadiness={
+ stage:"NO_PR"|"GITHUB_UNKNOWN"|"PR_CHANGED"|"PR_CLOSED"|"CI_FAILED"|"CI_PENDING"|"CI_UNKNOWN"|"NEEDS_VISUAL"|"VISUAL_ISSUES"|"REVIEW_EVIDENCE_COMPLETE";
+ nextStep:string;reviewedSha:string|null;
+ technicalChecksPassed:boolean;humanVisualReviewPassed:boolean;
+ requiresSeparateReleaseApproval:true;mergeAuthorized:false;publicationAuthorized:false;verifiedAsPublished:false;
+};
+type Work = {id:string;title:string;brand_id:string;visibility_state:string;updated_at:string;next_action:string|null;investigation:Investigation|null;design_proposal:DesignProposal|null;design_requested:boolean;code_candidate:CodeCandidate|null;github_status:GithubStatus|null;github_ci:GithubCi|null;visual_review:VisualReview|null;review_readiness:ReviewReadiness};
+const readinessNames:Record<ReviewReadiness["stage"],string>={
+ NO_PR:"Kodeutkast mangler",GITHUB_UNKNOWN:"GitHub-status ukjent",
+ PR_CHANGED:"PR-versjonen er endret",PR_CLOSED:"PR er lukket eller sammenslått",
+ CI_FAILED:"GitHub-testene feilet",CI_PENDING:"Testene kjører fortsatt",
+ CI_UNKNOWN:"Testene er ikke verifisert",NEEDS_VISUAL:"Mangler manuell visuell kontroll",
+ VISUAL_ISSUES:"Visuelle feil gjenstår",
+ REVIEW_EVIDENCE_COMPLETE:"Kvalitetsbevis dokumentert – ikke publiseringsgodkjent",
+};
+const githubCiLabels:Record<GithubCi["state"],string>={
+ PASSED:"GitHub-testene er bestått for denne committen",
+ FAILED:"GitHub-testene feilet – korrigering nødvendig",
+ PENDING:"GitHub-testene pågår",
+ UNVERIFIED:"GitHub-testene kan ikke verifiseres",
+ COMMIT_CHANGED:"Commit endret – testresultatet gjelder ikke lenger",
+};
+const githubStateLabels:Record<GithubStatus["state"],string>={
+ OPEN_SAME_COMMIT:"Åpen PR – kodeversjonen stemmer",
+ DRAFT_SAME_COMMIT:"Utkast i GitHub – samme kodeversjon",
+ COMMIT_CHANGED:"Kodeversjonen er endret – ny vurdering nødvendig",
+ CLOSED:"GitHub-PR er lukket uten sammenslåing",
+ MERGED:"GitHub-PR er sammenslått – nettsiden er ikke dermed verifisert",
+ UNAVAILABLE:"GitHub-status kunne ikke bekreftes",
+};
 type RunStatus={
  source:"cron"|"owner";outcome:"COMPLETED"|"SKIPPED"|"FAILED";
  reason:string;recordedAt:string;investigated:number;failed:number;skipped:number;
@@ -141,6 +186,16 @@ export function VisibilityWorkQueue(){
        <div className="text-slate-500">Ingen reparasjon eller publisering utført</div>
       </div>}
       {!item.investigation&&<div className="mt-2 text-xs text-slate-500">Venter på uavhengig kontroll</div>}
+      {item.review_readiness&&<div className="mt-3 max-w-md rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800">
+        <p className="font-semibold">Samlet kvalitetssjekk – ingen automatisk publisering</p>
+        <p className="mt-1 font-medium">{readinessNames[item.review_readiness.stage]}</p>
+        <p className="mt-1">Neste steg: {item.review_readiness.nextStep}</p>
+        <p className="mt-1 text-slate-600">
+          GitHub-tester: {item.review_readiness.technicalChecksPassed?"Bestått":"Ikke fullstendig bekreftet"} ·
+          Manuell visuell kontroll: {item.review_readiness.humanVisualReviewPassed?"Attestert":"Ikke godkjent"}
+        </p>
+        <p className="mt-1 font-semibold">Separat release-godkjenning kreves alltid. Ingen nettsideendring er autorisert.</p>
+      </div>}
       {item.code_candidate&&<div className="mt-3 max-w-md rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-800">
        <div className="font-semibold">Kodeforslag til gjennomgang</div>
        <p className="mt-1">Knyttet til din registrerte forespørsel om endringsutkast. Ingen sammenslåing eller publisering er godkjent.</p>
@@ -148,7 +203,48 @@ export function VisibilityWorkQueue(){
          className="mt-2 inline-block font-semibold text-teal-800 underline">
          Åpne GitHub PR #{item.code_candidate.pullNumber}
        </a>
-       <p className="mt-1 text-slate-600">{item.code_candidate.repo} · Kodeversjon {item.code_candidate.commitSha.slice(0,7)}</p>
+       <p className="mt-1 text-slate-600">{item.code_candidate.repo} · Registrert kodeversjon {item.code_candidate.commitSha.slice(0,7)}</p>
+       <p className="mt-2 font-semibold">{item.github_status
+        ?githubStateLabels[item.github_status.state]
+        :"GitHub-status ikke kontrollert – vurderingen er ikke oppdatert"}</p>
+       {item.github_status&&<p className="mt-1 text-slate-500">
+        Kontrollert: {new Date(item.github_status.checkedAt).toLocaleString("nb-NO")}.
+        {item.github_status.currentHeadSha?` Gjeldende commit: ${item.github_status.currentHeadSha.slice(0,7)}.`:""}
+       </p>}
+       <div className="mt-2 rounded-lg bg-slate-50 p-2">
+         <div className="font-semibold">Teknisk testbevis</div>
+         <p className="mt-1">{item.github_ci
+           ?githubCiLabels[item.github_ci.state]
+           :"Ingen verifiserte GitHub-testresultater"}</p>
+         {item.github_ci&&<p className="mt-1 text-slate-600">
+           Sjekket {new Date(item.github_ci.checkedAt).toLocaleString("nb-NO")} ·
+           Krevd jobb: {item.github_ci.requiredJob} ·
+           Commit: {item.github_ci.reviewedSha.slice(0,7)}.
+         </p>}
+         <p className="mt-1 text-slate-500">GitHub-tester er ikke visuell kvalitetssikring eller tillatelse til publisering.</p>
+       </div>
+       {item.visual_review&&<div className="mt-2 rounded-lg bg-slate-50 p-2">
+         <p className="font-semibold">{item.github_status?.state==="COMMIT_CHANGED"
+          ?"Historisk visuell kontroll: PR-versjonen er endret"
+          :item.visual_review.outcome==="VISUALLY_PASSED"
+            ?"Visuell kontroll er manuelt registrert som bestått"
+            :"Visuell kontroll har åpne punkter eller feil"}</p>
+         <p className="mt-1 text-slate-600">Gjennomgang:
+          {new Date(item.visual_review.recordedAt).toLocaleString("nb-NO")} ·
+          Commit {item.visual_review.commitSha.slice(0,7)}</p>
+         <p className="mt-1">{item.visual_review.notes}</p>
+         <p className="mt-1">Ingen sammenslåing eller publisering er godkjent.</p>
+       </div>}
+       {(item.github_status?.state==="OPEN_SAME_COMMIT" || item.github_status?.state==="DRAFT_SAME_COMMIT")&&
+        <VisibilityVisualReviewForm workItemId={item.id} sha={item.code_candidate.commitSha}
+          onRecorded={refresh} onMessage={setMessage}/>}
+       {item.github_status?.state==="COMMIT_CHANGED"&&<p className="mt-1 font-semibold text-amber-800">
+        Det opprinnelige endringsutkastet gjelder ikke lenger den nyeste koden. Ny vurdering kreves.
+       </p>}
+       <button type="button" onClick={()=>refresh().catch(()=>setMessage("GitHub-status er ikke tilgjengelig"))} disabled={busy}
+        className="mt-2 rounded-lg border border-slate-300 px-2 py-1 font-semibold text-slate-800 disabled:opacity-60">
+        Oppdater GitHub-status
+       </button>
        <p className="mt-1 text-slate-500">Registrert: {new Date(item.code_candidate.recordedAt).toLocaleString("nb-NO")}. Status i GitHub må kontrolleres før eventuell godkjenning.</p>
        <p className="mt-1 font-semibold">Ikke publisert eller verifisert gjennom denne handlingen.</p>
       </div>}

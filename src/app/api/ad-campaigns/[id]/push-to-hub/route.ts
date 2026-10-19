@@ -4,14 +4,16 @@
 //
 // Body: { creative_ids?: string[]  (default: all top picks) }
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { getMediaApiContext } from "@/services/media/api-context";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const context = await getMediaApiContext(req);
+  if ("error" in context) return context.error;
   const body = await req.json().catch(() => ({}));
-  const supabase = createServerClient();
+  const supabase = context.supabase;
 
   const { data: campaign } = await supabase
     .from("ad_campaigns")
@@ -41,7 +43,8 @@ export async function POST(
 
   const drafts = creatives.map((c) => ({
     brand_id: campaign.brand_id || "zeneco",
-    content_type: c.aspect_ratio === "9:16" ? "reel" : "post",
+    // These are still photographs; a 9:16 aspect ratio does not create a reel.
+    content_type: "image_post",
     title: `${campaign.name} · ${c.angle} (${c.scene_id} ${c.aspect_ratio})`,
     description: [
       `Product: ${campaign.product_name}`,
@@ -59,6 +62,7 @@ export async function POST(
       c.scene_id,
       c.aspect_ratio,
       ...(c.hashtags || []).map((tag: string) => tag.replace(/^#/, "")),
+      ...(c.metadata_json?.creative_image_label_review_required === true ? ["needs-product-label-review"] : []),
     ].filter(Boolean),
     status: "draft",
     ai_generated: true,
@@ -68,6 +72,14 @@ export async function POST(
     ai_image_url: c.image_url,
     thumbnail_url: c.thumbnail_url || null,
     campaign_id: params.id,
+    media_urls: c.image_url ? [c.image_url] : [],
+    content_features: {
+      requires_label_review: c.metadata_json?.creative_image_label_review_required === true,
+      label_approval_pending: c.metadata_json?.creative_image_label_review_required === true,
+      source_ad_creative_id: c.id,
+      secondary_caption: c.caption_secondary || null,
+      ...(c.metadata_json?.creative_image_label_review_required === true ? { product_volume: "3 L" } : {}),
+    },
     scheduled_platforms: c.aspect_ratio === "9:16" ? ["instagram", "facebook"] : ["facebook", "instagram", "linkedin"],
   }));
 

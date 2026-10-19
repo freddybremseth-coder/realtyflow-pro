@@ -52,10 +52,38 @@ Nexus bruker nå en særskilt, reviderbar `visibility_code_review_candidate`-log
 
 Det finnes **ikke** en generell kodegenereringsagent, GitHub-installasjon per tenant eller en ferdig reparasjonspipeline. Koblingen er et lesbart spor for vurdering, ikke bevis for publisert eller kontrollert rettelse.
 
+## PR-status fra faktisk GitHub (lesemodus)
+
+Det registrerte Re-Master-utkastet er nå lenket til `remasterfreddy#48` med eksakt commit. Nexus kan lese **gjeldende** pull request-status fra GitHub API når eier åpner arbeidskøen eller bruker «Oppdater GitHub-status». Endringen gjør ikke GitHub-koden til et godkjent eller publisert nettsted.
+
+Pilotens begrensninger: bare det forhåndsgodkjente offentlige `freddybremseth-coder/remasterfreddy`-repoet, høyst to statuskall per køvisning, GET-only og ingen nye tokens eller innsendte URL-er. Avvik mellom lagret commit og GitHub-head blir `COMMIT_CHANGED`, ikke `READY`. Lukket eller sammenslått PR er egne statuser og gir aldri auto-merging, produktion-release eller verifisert reparasjon. GitHub-feil/rate limit vises som `UNAVAILABLE` uten godkjenning.
+
+**Viktig:** GitHub-status og uavhengig SEO-etterkontroll er to adskilte bevis. En PR som er «open / same commit» kan fortsatt ha feilet tester eller mangle visuell godkjenning. En merged PR beviser ikke at Vercel har publisert den eller at feilen er borte.
+
+## Testbevis og manuell kvalitetskontroll bundet til én commit
+
+Nexus Visibility skal hente offentlig, skrivebeskyttet GitHub CI-evidens fra eksakt lagret PR-commit, ikke fra en generell nettside- eller branchtittel. Første pilot er `freddybremseth-coder/remasterfreddy` med obligatorisk GitHub check-job `build-test`. Status skiller `PASSED`, `FAILED`, `PENDING`, `COMMIT_CHANGED` og `UNVERIFIED`. Ingen check-runs, GitHub-feil, ufullstendige svar eller endret SHA betyr **ikke verifisert**. API-kall er begrenset til kjent offentlig GitHub-repo, 30 check-runs, 300 KB svar og 5 sekunder.
+
+En direkte eierøkt kan også sende en **manuell visuell kontrollrapport** for den samme åpne PR-committen. Skjemaet ber om konkret test av desktop, mobil, admin/noindex, H1 etter React-lasting og fravær av synlige regresjoner, samt faktiske observasjoner. For `VISUALLY_PASSED` må alle fem punktene være bekreftet; `ISSUES_FOUND` tillater uferdige kontroller. Dette er en **selvrapportert gjennomgang**, ikke skjermbildebevis eller automatisk nettlesertest. Journalen lagres separat i `automation_logs` med `approval_granted=false`, `merge_authorized=false` og `publication_authorized=false`; ingen endring av nettstedet.
+
+Disse to bevisene kan vises samlet ved Nexus-oppgaven, men **CI-bestått + visuelt bestått gir heller ingen publiseringstillatelse**. En senere autorisasjonsprosess for eksakt diff/release er en egen milepæl.
+
+## Samlet PR-kvalitetsstatus – skilt fra SEO-score
+
+For den enkelte eierregistrerte kode-PR-en beregner Nexus nå en **rent informativ** status fra fire separate kilder: opprinnelig kodekandidat, fersk GitHub-status for eksakt SHA, GitHub CI-jobben `build-test` for denne SHA-en og eventuell manuell visuell kontrollrapport for den samme SHA-en.
+
+Kvalitetsstatusen gir en konkret **neste handling** ved ukjent GitHub-status, endret commit, lukket PR, feilende/ufullstendige tester eller manglende visuell gjennomgang. Hvis alle bevis stemmer, vises «Kvalitetsbevis dokumentert – ikke publiseringsgodkjent». Funksjonen har **ingen mutasjon**, gir aldri tillatelse til merge/deploy/publisering og kan ikke merke en SEO-oppgave som løst. Gamle attestasjoner vises som historiske hvis PR-head endres.
+
+### Gjennomført i arbeidsflyten
+
+- Sam har utført uavhengige undersøkelser og lagret `visibility_independent_investigation` i produksjonsdatabasen (to oppgaver observert 17. oktober 2026). Det er **ikke** bevis for publisert reparasjon.
+- Reel Re-Master-kilde er identifisert og en isolert [PR #48](https://github.com/freddybremseth-coder/remasterfreddy/pull/48) har bestått CI og forhåndsvisning. PR er fortsatt separat og upublisert.
+- Eierforespørsel, kode-PR og manuell testvurdering er separate journalhandlinger. Ingen av disse innebærer fullmakt til nettsideendringer.
+
 ## Gjenstående arbeid (ikke lov å tolke som ferdig)
 
-1. **Drift:** Verifiser første faktiske `visibility_independent_investigation`-journal fra planlagt/mannuell kjøring. Ved status null er ikke arbeid utført. Logg hvorfor cron kjøres, hoppes over eller feiler.
-2. **P2 kodeutkast:** Finn *eksakt* kildefil og synlig tekst; lag isolert PR, forhåndsvisning og test. Ingen LLM-oppdiktet H1.
+1. **Drift videre:** Følg med på at nye planlagte undersøkelsesjournaler faktisk blir skrevet, og at eventuell ny avviksmåling er knyttet til riktig åpen oppgave.
+2. **Re-Master før release:** Gjennomfør faktisk desktop- og mobilgjennomgang på den testede forhåndsvisningen, journalfør fakta og kontroller nyeste commit.
 3. **P3 autorisasjon:** Fersk, konkret eiergodkjenning av en *eksakt diff/commit*, ikke generell brand-tillatelse. Streng rolle-/brand-grense.
 4. **P4 verifikasjon:** Publisering bare via eksisterende avgrensede godkjente skrivere med før-versjon, rollback og uavhengig offentlig bevis; avvik må kunne stanses.
 5. **SaaS-ekstraksjon:** Når dette virker i RealtyFlow, skill tenant-scoped skjema/data/tilganger og kundeinstallerte skrivere fra dagens interne owner-operasjoner. Ingen offentlig SaaS har automatisk RealtyFlow production/DB-tilgang.
