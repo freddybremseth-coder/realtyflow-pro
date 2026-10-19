@@ -3,7 +3,7 @@ export const maxDuration = 90;
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { getGSCBrandSnapshot, getGSCConnectionStatus, targetForBrand } from "@/services/agents/seo-search-console";
+import { getGSCBrandSnapshot, getGSCRankingInventory, getGSCConnectionStatus, targetForBrand } from "@/services/agents/seo-search-console";
 
 /** Admin-only, read-only live Search Console access. No cached fake ranks. */
 export async function GET(request: NextRequest) {
@@ -19,6 +19,11 @@ export async function GET(request: NextRequest) {
       }, { headers: { "Cache-Control": "private, no-store" } });
     }
     if (!targetForBrand(brandId)) return NextResponse.json({ error: "Unknown SEO brand" }, { status: 400 });
+    if (request.nextUrl.searchParams.get("view") === "rankings") {
+      const inventory = await getGSCRankingInventory(brandId);
+      if (!inventory) return NextResponse.json({ connected: false, error: "Google Search Console is not connected for this brand." }, { status: 409 });
+      return NextResponse.json({ connected: true, inventory }, { headers: { "Cache-Control": "private, no-store" } });
+    }
     const snapshot = await getGSCBrandSnapshot(brandId);
     if (!snapshot) {
       return NextResponse.json({ connected: false, error: "Google Search Console is not connected for this brand." }, { status: 409 });

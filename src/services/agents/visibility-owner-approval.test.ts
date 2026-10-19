@@ -46,7 +46,8 @@ test("route is owner-only and scoped; product has no demo publish action",()=>{
   assert.match(api,/expectedFingerprint/);
   assert.doesNotMatch(ui,/VISIBILITY_DEMO/); // Parent gates live-only rendering.
   assert.match(product,/mode==="live" && f\.category==="publishing"/);
-  assert.match(ui,/Gi begrenset publiseringstillatelse/);
+  assert.match(ui,/Godkjenn mulig fremtidig metadataendring/);
+  assert.match(ui,/Denne knappen lagrer kun tillatelse/);
   assert.match(ui,/Trekk tilbake tillatelsen/);
   assert.match(publisher,/canRunApprovedDonaAnnaMetadata\(db, site, version, now\)/);
 });

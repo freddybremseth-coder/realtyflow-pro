@@ -12,6 +12,8 @@ on:
       - 'src/components/hub/sam-seo-*.tsx'
       - 'src/middleware.ts'
       - 'src/middleware.test.ts'
+      - 'src/app/api/visibility/ai-observations/**'
+      - 'src/app/api/visibility/ai-search-samples/**'
       - 'src/app/api/agents/seo-*/**'
       - 'src/app/api/cron/seo-growth-review/**'
       - 'src/app/api/cron/seo-autopilot/**'
@@ -51,4 +53,4 @@ jobs:
       - name: Check Sam SEO evidence and public audit contracts
         run: node --import tsx --test src/services/agents/seo-*.test.ts src/services/agents/visibility-*.test.ts src/components/hub/visibility-*.test.tsx src/lib/visibility-product.test.ts
       - name: Verify public discovery admission and private route boundaries
-        run: NODE_OPTIONS=--conditions=react-server node --import tsx --test src/middleware.test.ts src/app/api/public/search-discovery/route.test.ts src/app/api/public/conversion-event/route.test.ts src/app/api/agents/seo-brand-publishing/route.test.ts
+        run: NODE_OPTIONS=--conditions=react-server node --import tsx --test src/middleware.test.ts src/app/api/public/search-discovery/route.test.ts src/app/api/public/conversion-event/route.test.ts src/app/api/agents/seo-brand-publishing/route.test.ts src/app/api/visibility/ai-observations/route.test.ts src/app/api/visibility/ai-search-samples/route.test.ts

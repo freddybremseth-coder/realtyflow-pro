@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { DonaAnnaVisibilityApproval } from "./dona-anna-approval";
 import { VisibilityWorkQueue } from "./visibility-work-queue";
+import { VisibilityGoogleRankings } from "./visibility-google-rankings";
+import { VisibilityImpactLifecycle } from "./visibility-impact-lifecycle";
+import { VisibilityAiMonitor } from "./visibility-ai-monitor";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, ArrowRight, ArrowUpRight, BarChart3, CheckCircle2, ChevronRight,
@@ -170,6 +173,25 @@ export function VisibilityProductConsole(){
               <Metric value={blocked} label="Publiseringsblokkeringer" foot="Basert på sist registrerte status"/>
               <Metric value={pending} label="Mangelfulle / eldre kontroller" foot="Nytt bevis kreves før beslutning"/>
             </div>
+            <section className="rounded-2xl border-2 border-teal-300 bg-white p-5" aria-label="Dette bør du gjøre nå">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><h3 className="text-lg font-extrabold text-slate-950">Dette bør du gjøre nå</h3>
+                  <p className="mt-1 text-sm text-slate-600">Et tydelig neste steg – uten at du trenger å tolke tekniske kontrollrapporter.</p></div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Ingen generell automatisk reparasjon ennå</span>
+              </div>
+              {findings.length>0?<div className="mt-4 rounded-xl bg-teal-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-teal-900">Prioritert undersøkelse</p>
+                <p className="mt-1 font-semibold text-slate-950">{findings[0].title} · {VISIBILITY_BRANDS[findings[0].brandId]?.name??findings[0].brandId}</p>
+                <p className="mt-2 text-sm text-slate-700">Dette er et registrert signal, ikke en bekreftet feil eller aktiv reparasjonsjobb. Først må vi undersøke kilden. Eiergodkjenning alene publiserer ikke en endring.</p>
+                <button type="button" onClick={()=>{setTab("findings");setSelected(null);}} className="mt-3 rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900">Se problemet og neste steg →</button>
+                <button type="button" onClick={()=>setTab("workflow")} className="ml-2 mt-3 rounded-lg border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-900 hover:bg-white">Åpne Nexus arbeidskø →</button>
+              </div>:<p className="mt-3 text-sm text-slate-700">Ingen undersøkelser registrert i det valgte utvalget. Velg et nettsted eller kjør en ny kontroll for oppdaterte data.</p>}
+              <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 p-3"><strong>1. Finn</strong><p className="mt-1 text-slate-600">Sam kontrollerer og dokumenterer et mulig problem.</p></div>
+                <div className="rounded-lg border border-slate-200 p-3"><strong>2. Gjør</strong><p className="mt-1 text-slate-600">Et konkret kodeforslag må opprettes, testes og eventuelt godkjennes for publisering. Dette skjer ennå ikke automatisk for alle funn.</p></div>
+                <div className="rounded-lg border border-slate-200 p-3"><strong>3. Bekreft</strong><p className="mt-1 text-slate-600">Først når den offentlige nettsiden er kontrollert, kan vi markere saken som løst.</p></div>
+              </div>
+            </section>
             <div className="rounded-2xl border border-teal-200 bg-white p-5">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-950"><Workflow size={17} className="text-teal-700"/> Hva arbeider systemet faktisk med?</div>
               <div className="mt-3 grid gap-3 text-sm md:grid-cols-3">
@@ -252,6 +274,9 @@ export function VisibilityProductConsole(){
             </article>;})}</div>:<Empty title="Ingen klassifiserte funn" body="Ingen forslag finnes i det lagrede utvalget. Dette betyr ikke at en full SEO-audit er bestått."/>}
           </>}
           {tab==="measurement"&&<>
+            {mode==="live" && brand==="zeneco" && <VisibilityAiMonitor/>}
+            {mode==="live" && <VisibilityImpactLifecycle/>}
+            {mode==="live" && brand!=="all" && <VisibilityGoogleRankings brandId={brand}/>}
             <div><h2 className="text-2xl font-extrabold">Synlighet og måling</h2><p className="mt-1 text-sm text-slate-600">Verifiserte Google Search Console-data. Ingen estimerte AI-siteringer, leads eller plasseringer.</p></div>
             <div className="grid gap-3 sm:grid-cols-3">
               <Metric value={measured.length} label="Nettsteder målt" foot="Google Search Console"/>
