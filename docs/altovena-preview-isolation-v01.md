@@ -11,7 +11,7 @@ The Vercel project `realtyflow-pro` currently contains `NEXT_PUBLIC_SUPABASE_URL
 A shared `assessAltovenaDatabaseIsolation()` check guards Altovena operations before any Supabase client or RPC:
 
 - In Vercel **Preview**, by default it is **blocked**.
-- The owner must explicitly configure `ALTOVENA_STAGING_ISOLATION_ENABLED=true` and `ALTOVENA_STAGING_SUPABASE_PROJECT_REF=<separate 20-letter project ref>`.
+- The owner must explicitly configure `ALTOVENA_STAGING_ISOLATION_ENABLED=true` and `ALTOVENA_STAGING_SUPABASE_PROJECT_REF=<separate 20-character lowercase alphanumeric project ref>`.
 - The actually configured `NEXT_PUBLIC_SUPABASE_URL` must be an exact canonical `https://<separate-ref>.supabase.co/` URL, with no credentials, custom host, unexpected path or query, and a nonempty server-role key. The confirmed RealtyflowPRO production project `ereapsfcsqtdmzosgnnn` is always forbidden as a staging ref.
 - When any part is missing, all Altovena-scoped CRM access (including read access), public intake, scheduled alert scan, delivery preflight and preview-only SMTP route fail closed. A real owner opening the launch-readiness route gets a **non-PII blocker checklist** without triggering CRM/Auth RPCs against the shared database.
 - The helper deliberately leaves the existing Vercel Production flows of other brands alone. Preview restrictions apply only to Altovena, not the whole RealtyFlow platform. Test-runner actions explicitly use `NODE_ENV=test` and the isolated PostgreSQL 17 fixture.
