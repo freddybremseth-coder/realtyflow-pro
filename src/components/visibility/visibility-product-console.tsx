@@ -184,6 +184,7 @@ export function VisibilityProductConsole(){
                 <p className="mt-1 font-semibold text-slate-950">{findings[0].title} · {VISIBILITY_BRANDS[findings[0].brandId]?.name??findings[0].brandId}</p>
                 <p className="mt-2 text-sm text-slate-700">Dette er et registrert signal, ikke en bekreftet feil eller aktiv reparasjonsjobb. Først må vi undersøke kilden. Eiergodkjenning alene publiserer ikke en endring.</p>
                 <button type="button" onClick={()=>{setTab("findings");setSelected(null);}} className="mt-3 rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900">Se problemet og neste steg →</button>
+                <button type="button" onClick={()=>setTab("workflow")} className="ml-2 mt-3 rounded-lg border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-900 hover:bg-white">Åpne Nexus arbeidskø →</button>
               </div>:<p className="mt-3 text-sm text-slate-700">Ingen undersøkelser registrert i det valgte utvalget. Velg et nettsted eller kjør en ny kontroll for oppdaterte data.</p>}
               <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
                 <div className="rounded-lg border border-slate-200 p-3"><strong>1. Finn</strong><p className="mt-1 text-slate-600">Sam kontrollerer og dokumenterer et mulig problem.</p></div>
