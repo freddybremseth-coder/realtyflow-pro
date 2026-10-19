@@ -68,6 +68,16 @@ export default function WorkspacesPage() {
         </section>
       )}
 
+      {user.role === "OWNER" && (
+        <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
+          <h2 className="text-xl font-semibold">Altovena · lanseringsoversikt</h2>
+          <p className="mt-2 text-sm text-slate-400">Se de åpne lanseringskravene, hvem som har ansvar og hva som må godkjennes manuelt. Oversikten er skrivebeskyttet og viser ikke sanntidskontroller ennå.</p>
+          <Link href="/altovena-launch" className="mt-4 inline-flex items-center gap-2 rounded-xl border border-cyan-700 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-slate-800">
+            Åpne Altovena Launch <ArrowRight size={16}/>
+          </Link>
+        </section>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         {visibleApps.map((app) => {
           const Icon = iconMap[app.icon];
