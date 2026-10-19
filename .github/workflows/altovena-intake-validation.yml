@@ -81,6 +81,17 @@ jobs:
           ref: feature/v1-3-contact-gate-hardening
           path: altovena-candidate
           persist-credentials: false
+      - name: Fail when active Altovena website commit differs from tested pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned="$(git -C altovena-website rev-parse HEAD)"
+          candidate="$(git -C altovena-candidate rev-parse HEAD)"
+          if [[ "$candidate" != "$pinned" ]]; then
+            echo "::error::Website source advanced since the tested pin. Current: $candidate; tested: $pinned. Review new website PR changes and deliberately update the pinned SHA."
+            exit 1
+          fi
+          echo "PASS: current Altovena website candidate matches pinned commit $pinned"
       - name: Fail if the tested Altovena contact handler differs from candidate
         shell: bash
         run: |
