@@ -3,8 +3,19 @@
 import { useEffect, useState } from "react";
 
 type GateState = "verified" | "blocked" | "not_configured" | "needs_external_verification";
-type Checklist = { id: string; label: string; state: GateState };
-type Result = { ok: true; brand: "altovena"; readyForPublicForm: false; checks: Checklist[]; checkedAt: string };
+type Checklist = {
+  id: string;
+  label: string;
+  state: GateState;
+  owner: string;
+  verification: "automatic" | "manual";
+  nextAction: string;
+};
+type Result = {
+  ok: true; brand: "altovena"; readyForPublicForm: false;
+  checks: Checklist[]; nextSteps: Checklist[];
+  checkedAt: string;
+};
 const stateLabel: Record<GateState,string> = {
   verified: "Verifisert",
   blocked: "Blokkert",
@@ -27,7 +38,7 @@ export function AltovenaLaunchReadiness() {
       return r.json();
     }).then(body=>{
       if(body.ok!==true||body.brand!=="altovena"||!Array.isArray(body.checks)||
-         body.readyForPublicForm!==false)throw Error("Ugyldig aktiveringsstatus.");
+         !Array.isArray(body.nextSteps)||body.readyForPublicForm!==false)throw Error("Ugyldig aktiveringsstatus.");
       if(!controller.signal.aborted)setData(body);
     }).catch(e=>{
       if(!controller.signal.aborted)setError(e instanceof Error?e.message:"Status utilgjengelig");
@@ -52,13 +63,39 @@ export function AltovenaLaunchReadiness() {
     </div>
     {error&&<p role="alert" className="mt-3 text-sm text-amber-300">{error}</p>}
     {loading&&!data&&<p className="mt-3 text-sm text-slate-400">Henter teknisk status…</p>}
+    {data&&data.nextSteps.length>0&&<section aria-label="Neste handlinger"
+      className="mt-4 space-y-3 rounded-xl border border-cyan-900/70 bg-cyan-950/20 p-4">
+      <h4 className="font-semibold text-cyan-100">Dette må gjøres videre</h4>
+      <p className="text-xs text-slate-300">
+        Ingen oppgaver godkjennes eller utføres av denne listen.
+        Automatiske kontroller er kun en teknisk status; manuelle kontroller krever egen gjennomgang.
+      </p>
+      <ol className="space-y-3">
+        {data.nextSteps.slice(0,3).map((step,index)=><li key={step.id}
+          className="rounded-lg border border-slate-700/70 p-3 text-sm">
+          <p className="font-medium text-slate-100">{index+1}. {step.label}</p>
+          <p className="mt-1 text-slate-300">{step.nextAction}</p>
+          <p className="mt-2 text-xs text-slate-400">Ansvar: {step.owner} ·
+            {step.verification==="manual"?" Manuell kontroll":" Systemkontroll"}
+          </p>
+        </li>)}
+      </ol>
+      {data.nextSteps.length>3&&<p className="text-xs text-slate-400">
+        {data.nextSteps.length-3} flere krav står i oversikten nedenfor.
+      </p>}
+    </section>}
     {data&&<ul className="mt-4 grid gap-2 sm:grid-cols-2">
       {data.checks.map(check=><li key={check.id}
-        className="flex items-center justify-between gap-3 rounded-lg border border-slate-700/70 p-3 text-sm">
-        <span>{check.label}</span>
-        <span className={check.state==="verified"?"shrink-0 text-teal-300":"shrink-0 text-amber-300"}>
-          {stateLabel[check.state]||"Ukjent"}
-        </span>
+        className="rounded-lg border border-slate-700/70 p-3 text-sm">
+        <div className="flex items-start justify-between gap-3">
+          <span>{check.label}</span>
+          <span className={check.state==="verified"?"shrink-0 text-teal-300":"shrink-0 text-amber-300"}>
+            {stateLabel[check.state]||"Ukjent"}
+          </span>
+        </div>
+        {check.state!=="verified"&&<p className="mt-2 text-xs leading-5 text-slate-400">
+          {check.nextAction} Ansvar: {check.owner}.
+        </p>}
       </li>)}
     </ul>}
     <p className="mt-3 text-xs text-slate-400">
