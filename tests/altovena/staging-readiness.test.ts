@@ -52,6 +52,8 @@ test("mismatched staging URL is blocked; no secret or host appears in response",
 test("configured URL NEVER marks real users, public release or SMTP as verified",()=>{
   const result=getAltovenaStagingChecklist(config);
   assert.equal(check(result,"staging_endpoint")?.state,"verified");
+  // Matching URLs do NOT prove that a separate database actually exists.
+  assert.equal(check(result,"staging_database")?.state,"needs_external_verification");
   assert.equal(check(result,"staging_opt_in")?.state,"verified");
   assert.equal(check(result,"staging_auth")?.state,"needs_external_verification");
   assert.equal(check(result,"staging_e2e")?.state,"needs_external_verification");
