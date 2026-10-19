@@ -8,6 +8,8 @@ on:
       - "src/lib/altovena/supabase.ts"
       - "src/lib/altovena/staging-readiness.ts"
       - "src/lib/altovena/staging-session.ts"
+      - "src/lib/altovena/staging-admission.ts"
+      - "tests/altovena/staging-admission.test.ts"
       - "tests/altovena/staging-session-boundary.test.ts"
       - "src/components/workspaces/altovena-launch-readiness.tsx"
       - "tests/altovena/staging-readiness.test.ts"
