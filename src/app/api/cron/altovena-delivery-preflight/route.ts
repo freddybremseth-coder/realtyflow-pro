@@ -1,3 +1,4 @@
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest,NextResponse } from "next/server";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
@@ -28,6 +29,9 @@ export async function GET(request:NextRequest){
      process.env.ALTOVENA_LEAD_ALERT_SCAN_ENABLED!=="true")
     return reply({ok:true,skipped:true,reason:"DELIVERY_PREFLIGHT_DISABLED",
       emailSent:false,deliveryAttempted:false});
+  if (!assessAltovenaDatabaseIsolation().allowed)
+    return reply({ok:false,error:"ALTOVENA_PREVIEW_DATABASE_NOT_ISOLATED",
+      emailSent:false,deliveryAttempted:false},503);
   const safety=await evaluateCronSafeMode(PATH);
   if(safety.skip)return reply({ok:true,skipped:true,reason:"RUNTIME_CONTROL_DISABLED",
     emailSent:false,deliveryAttempted:false});
