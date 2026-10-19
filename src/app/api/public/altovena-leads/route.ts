@@ -1,3 +1,4 @@
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -27,6 +28,8 @@ function matchKey(given: string, expected: string) {
  * directly, never use the generic property-leads fallback, never rebrand another lead.
  */
 export async function POST(request: NextRequest) {
+  if (!assessAltovenaDatabaseIsolation().allowed)
+    return respond(503, "ALTOVENA_PREVIEW_DATABASE_NOT_ISOLATED");
   const cfg = process.env;
   if (cfg.ALTOVENA_INTAKE_ENABLED !== "true" ||
       !cfg.ALTOVENA_INTAKE_KEY || !cfg.NEXT_PUBLIC_SUPABASE_URL ||
