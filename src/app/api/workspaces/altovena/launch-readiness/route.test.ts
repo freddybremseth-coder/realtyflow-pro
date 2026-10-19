@@ -80,6 +80,13 @@ test("Owner readiness never activates a contact form, reports real migration and
     assert.equal(initial.status,200);
     const first=await initial.json();
     assert.equal(first.readyForPublicForm,false);
+    assert.ok(Array.isArray(first.nextSteps));
+    assert.ok(first.nextSteps.length>0);
+    assert.equal(first.nextSteps[0].id,"brand");
+    assert.equal(first.nextSteps[0].verification,"automatic");
+    assert.match(first.nextSteps[0].nextAction,/testmiljø/i);
+    assert.equal(first.nextSteps.some((item:{id:string})=>item.id==="owner"),false);
+    assert.equal(first.nextSteps.find((item:{id:string})=>item.id==="legal").verification,"manual");
     assert.equal(first.checks.find((c:{id:string})=>c.id==="brand").state,"blocked");
     assert.equal(first.checks.find((c:{id:string})=>c.id==="migration").state,"blocked");
     assert.equal(first.checks.find((c:{id:string})=>c.id==="receiver").state,"blocked");
@@ -121,6 +128,11 @@ test("Owner readiness never activates a contact form, reports real migration and
     assert.equal(answer.checks.find((c:{id:string})=>c.id==="operator_identity").state,"verified");
     assert.equal(answer.checks.find((c:{id:string})=>c.id==="operator_grants").state,"verified");
     assert.equal(answer.readyForPublicForm,false);
+    assert.deepEqual(answer.nextSteps.map((step:{id:string})=>step.id),
+      ["website","legal","e2e","domain"]);
+    assert.ok(answer.nextSteps.every((step:{verification:string})=>step.verification==="manual"));
+    assert.ok(answer.nextSteps.every((step:{nextAction:string;owner:string})=>
+      step.nextAction.length>30 && step.owner.length>0));
     assert.ok(!JSON.stringify(answer).includes(partnerEmail));
     assert.ok(!JSON.stringify(answer).includes(operatorId));
 
