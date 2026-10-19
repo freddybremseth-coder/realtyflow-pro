@@ -18,10 +18,10 @@ export type AltovenaDatabaseIsolation = {
 };
 
 export function assessAltovenaDatabaseIsolation(
-  env: Pick<NodeJS.ProcessEnv,
+  env: Partial<Pick<NodeJS.ProcessEnv,
     "VERCEL_ENV" | "NODE_ENV" | "ALTOVENA_STAGING_ISOLATION_ENABLED" |
     "ALTOVENA_STAGING_SUPABASE_PROJECT_REF" |
-    "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY"> = process.env,
+    "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">> = process.env,
 ): AltovenaDatabaseIsolation {
   if (env.VERCEL_ENV === "production")
     return {allowed: true,state:"production",reason:"NOT_A_PREVIEW"};
