@@ -5,6 +5,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSession,createWorkspacePreviewSession,WORKSPACE_PREVIEW_COOKIE} from
   "@/lib/admin-auth";
 import {setAltovenaPreviewClientFactoryForTests} from "@/lib/altovena/supabase";
+import {setPlatformSupabaseFactoryForTests} from "@/lib/platform/supabase";
 import {GET} from "../../src/app/api/workspaces/altovena/smtp-attempt-status/route";
 
 const url="https://realtyflow.test/api/workspaces/altovena/smtp-attempt-status";
@@ -40,7 +41,7 @@ test.beforeEach(()=>{
  process.env.ALTOVENA_EMAIL_STAGING_SEND_ENABLED="true";
  process.env.ALTOVENA_ALERT_RECEIPT_HMAC_KEY="isolated-smtp-status-hmac-key-for-tests";
  grantStatus="active";rpcError=false;rpcBrand="altovena";lookups.length=0;
- setAltovenaPreviewClientFactoryForTests(()=>({
+ const fakeBackend=()=>({
   rpc:async(name:string,args:Record<string,unknown>)=>{
     lookups.push(name);
     if(name==="workspace_brand_grant")return {data:{
@@ -57,10 +58,15 @@ test.beforeEach(()=>{
   auth:{admin:{getUserById:async()=>({
     data:{user:{id:userId,email:"staff@example.invalid"}},error:null,
   })}},
- } as unknown as SupabaseClient));
+ } as unknown as SupabaseClient);
+ setAltovenaPreviewClientFactoryForTests(fakeBackend);
+ // The same mocked backend is also needed for this file's explicit
+ // production-path compatibility check. Preview routing never falls back.
+ setPlatformSupabaseFactoryForTests(fakeBackend);
 });
 test.afterEach(()=>{
  setAltovenaPreviewClientFactoryForTests(null);
+ setPlatformSupabaseFactoryForTests(null);
  for(const [key,value] of Object.entries(original))
   if(value===undefined)delete process.env[key];else process.env[key]=value;
 });
