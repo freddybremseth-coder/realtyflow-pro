@@ -20,11 +20,12 @@ test("preview is blocked by default even if a production Supabase key exists",()
  assert.deepEqual(r,{allowed:false,state:"blocked",reason:"STAGING_DISABLED"});
 });
 test("shared RealtyFlow Supabase variables may remain production-bound while Altovena staging is isolated",()=>{
- const r=assessAltovenaDatabaseIsolation({
+ const environment={
   ...good,
   NEXT_PUBLIC_SUPABASE_URL:`https://${prod}.supabase.co`,
   SUPABASE_SERVICE_ROLE_KEY:"production-like-key-not-used-by-altovena",
- });
+ };
+ const r=assessAltovenaDatabaseIsolation(environment);
  assert.deepEqual(r,{allowed:true,state:"isolated_preview",reason:"STAGING_BINDING_VERIFIED"});
 });
 test("the confirmed RealtyflowPRO production project is forbidden as staging",()=>{
