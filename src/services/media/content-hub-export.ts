@@ -34,6 +34,9 @@ export async function exportMediaAssetToContentHub(
   const description = params.description || String(asset.description || asset.prompt || "");
   const mediaType = String(asset.media_type || "image");
   const isImage = mediaType === "image";
+  const assetMetadata = asset.metadata_json && typeof asset.metadata_json === "object"
+    ? asset.metadata_json as Record<string, unknown> : {};
+  const requiresLabelReview = assetMetadata.requires_label_review === true;
 
   const { data: publication, error } = await supabase
     .from("content_publications")
@@ -42,7 +45,10 @@ export async function exportMediaAssetToContentHub(
       content_type: contentTypeForAsset(asset),
       title,
       description,
-      tags: Array.isArray(asset.tags) ? asset.tags : [],
+      tags: [
+        ...(Array.isArray(asset.tags) ? asset.tags : []),
+        ...(requiresLabelReview ? ["needs-product-label-review"] : []),
+      ],
       status: "draft",
       ai_generated: Boolean(asset.ai_generated),
       ai_title: title,
@@ -51,6 +57,15 @@ export async function exportMediaAssetToContentHub(
       ai_image_url: isImage ? assetUrl : null,
       media_urls: [assetUrl],
       campaign_id: asset.campaign_id || null,
+      content_features: requiresLabelReview
+        ? {
+          requires_label_review: true,
+          label_approval_pending: true,
+          source_asset_id: asset.id,
+          product_volume: assetMetadata.product_volume || null,
+          label_validation_reason: assetMetadata.label_validation_reason || "Kontroller produktetiketten før publisering.",
+        }
+        : {},
       thumbnail_url: asset.thumbnail_url || null,
     })
     .select("id, title, status")
