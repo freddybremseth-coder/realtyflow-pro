@@ -1022,7 +1022,10 @@ export function WorkspaceSocialStudio({
       throw new Error("Instagram trenger et godkjent bilde. RealtyFlow forsøkte å lage et, men fikk ikke et ferdig resultat.");
     }
 
-    const baseText = captionWithSourceLink(channel === "facebook" ? variant.facebookText : variant.instagramText, source);
+    // Organic Instagram captions do not have clickable URLs. Keep direct source links for Facebook only.
+    const baseText = channel === "facebook"
+      ? captionWithSourceLink(variant.facebookText, source)
+      : variant.instagramText.replace(/https?:\/\/[^\s<>]+/gi, "").replace(/\n{3,}/g, "\n\n").trim();
     const hasAdvisorComposite = Boolean(advisorApproved[variant.id] || options.containsAdvisorComposite);
     const advisorAssetIdsForDraft = (options.containsAdvisorComposite ? variants : [variant])
       .filter(item => Boolean(advisorApproved[item.id]))
