@@ -1,4 +1,5 @@
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
+import { allowAltovenaProductionWorkspace } from "@/lib/altovena/production-workspace-gate";
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
@@ -43,6 +44,8 @@ export async function requireBrandWorkspace(
   permission: WorkspacePermission,
 ): Promise<Access | Rejection> {
   if (!isCanonicalBrandKey(brandKey)) return reject(404, "WORKSPACE_NOT_FOUND");
+  if (brandKey === "altovena" && !allowAltovenaProductionWorkspace())
+    return reject(503, "ALTOVENA_PRODUCTION_WORKSPACE_DISABLED");
   // This restriction is Altovena-only: never read production CRM/Auth in a
   // shared-database Vercel preview. Other brands remain unchanged.
   if (brandKey === "altovena" && !assessAltovenaDatabaseIsolation().allowed)
