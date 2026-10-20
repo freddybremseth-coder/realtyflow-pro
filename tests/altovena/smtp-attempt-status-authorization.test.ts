@@ -92,11 +92,12 @@ test("active owner and verified staff get separate HMAC-scoped counts, not recip
  }
  assert.equal(lookups.filter(n=>n==="altovena_operator_smtp_status").length,2);
 });
-test("production always reports staging dispatch disabled",async()=>{
+test("production staging dispatch is blocked before database access unless Altovena workspace approved",async()=>{
  process.env.VERCEL_ENV="production";
+ delete process.env.ALTOVENA_PRODUCTION_WORKSPACE_ENABLED;
  const r=await GET(request(await session("OWNER")));
- assert.deepEqual(await r.json(),{ok:true,brand:"altovena",state:"disabled",
-  attempting:0,smtpAccepted:0,outcomeUnknown:0,deliveryConfirmed:false});
+ assert.equal(r.status,503);
+ assert.deepEqual(await r.json(),{ok:false,error:{code:"ALTOVENA_PRODUCTION_WORKSPACE_DISABLED"}});
  assert.equal(lookups.includes("altovena_operator_smtp_status"),false);
 });
 test("wrong-brand RPC or database failure refuses invented success",async()=>{
