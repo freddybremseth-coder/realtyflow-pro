@@ -5,8 +5,8 @@
  * workspace/API capabilities visible without an explicit separate approval.
  */
 export function allowAltovenaProductionWorkspace(
-  env: Pick<NodeJS.ProcessEnv,
-    "VERCEL_ENV" | "ALTOVENA_PRODUCTION_WORKSPACE_ENABLED"> = process.env,
+  env: Partial<Pick<NodeJS.ProcessEnv,
+    "VERCEL_ENV" | "ALTOVENA_PRODUCTION_WORKSPACE_ENABLED">> = process.env,
 ): boolean {
   return env.VERCEL_ENV !== "production" ||
     env.ALTOVENA_PRODUCTION_WORKSPACE_ENABLED === "true";
