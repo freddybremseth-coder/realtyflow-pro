@@ -9,6 +9,21 @@
 - Supabase RealtyflowPRO currently exposes no development branches.
 - An exact-commit, protected Vercel preview is requested at https://realtyflow-pz9hx8q5f-freddy-bremseths-projects.vercel.app; request alone does not establish READY, working Auth or DB isolation.
 
+## Additional production workspace lock (20 October)
+
+Altovena workspace API/capabilities and employee workspace discovery now require
+`ALTOVENA_PRODUCTION_WORKSPACE_ENABLED=true` **only in Vercel production**.
+This is an independent, default-off approval boundary. An active tenant or
+brand row created later by migration does not itself authorize access to
+the Altovena workspace; requests stop **before** production Auth/CRM RPCs.
+Other RealtyFlow brands retain their existing access routes.
+
+This flag has **not** been configured in Vercel. It is distinct from the
+separate opt-ins for public lead intake, preview staging login, alert
+processing, crons and outbound email. It does NOT license those activities.
+Regression tests enforce absence of any database query on disabled production
+Altovena capabilities. CI must pass on the exact new commit before merge.
+
 ## NOT verified / DO NOT CLAIM READY FOR PRODUCTION
 - No separately provisioned Altovena staging project or branch, no externally verified staging service credential, no approved database costs.
 - No real two-operator Auth/grant/revocation/E2E acceptance, no separate outbound email provider test, no privacy review for live lead data.
