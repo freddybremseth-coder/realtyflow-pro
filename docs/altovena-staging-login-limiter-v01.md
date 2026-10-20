@@ -1,0 +1,8 @@
+# Altovena staging login – distributed attempts and revocation work
+20 October 2026. Draft only, based on #1474 and Altovena integrated stack.
+
+The staging-only login endpoint now refuses every password verification unless it first consumes a server-side PostgreSQL budget. The service-role-only function `altovena_consume_login_limit` performs a single atomic INSERT ON CONFLICT update, maintaining a 15-minute window. Limits are **300 attempts globally** and **5 per normalized email** per window. All identifiers are server-side HMAC SHA-256 digests using `ALTOVENA_STAGING_LOGIN_LIMIT_HMAC_KEY`; no raw email, password or IP is stored. The HMAC key must differ from service-role and session keys.
+
+A missing limiter migration, service credential, network connectivity or budget returns an unavailable response and **no Supabase Auth password call is made**. Staging login remains default OFF, Preview-only, with dedicated Auth/brand grants and separate session cookie. Never register the login route as a cron or enable it on production.
+
+**Limits and release blockers:** Global attempt exhaustion may temporarily block all staged staff; operator runbooks must handle this. The limiter does not by itself prove the staging database is isolated, and it does not provide MFA, CAPTCHA, audit retention, cookie revocation or per-action access checks. Before enabling actual staging logins, migrate and test SQL with disposable PostgreSQL, verify service-only privileges and monotonic attempt count under concurrency, add independently tested revocation enforcement on each permitted staging request, and conduct actual preview origin/proxy validation. No costs, secrets or mail activation have been changed.

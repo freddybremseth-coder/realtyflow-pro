@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {NextRequest} from "next/server";
-import {POST,DELETE} from "../../src/app/api/altovena/staging-auth/route";
+import {POST,GET,DELETE} from "../../src/app/api/altovena/staging-auth/route";
 import {ALTOVENA_STAGING_COOKIE} from "../../src/lib/altovena/staging-session";
 
 const address="https://realtyflow-preview.test/api/altovena/staging-auth";
@@ -82,4 +82,24 @@ test("preview logout clears only the Altovena-scoped cookie",async()=>{
  assert.ok(cookie.includes("SameSite=strict")||cookie.includes("SameSite=Strict"));
  assert.ok(cookie.includes("Path=/api/altovena/staging-auth"));
  assert.ok(!cookie.includes("realtyflow_admin"));
+});
+
+test("staging session status is always disabled without isolated config",async()=>{
+ const r=await GET(new NextRequest(address,{headers:{
+  cookie:ALTOVENA_STAGING_COOKIE+"=forged",
+ }}));
+ assert.equal(r.status,503);
+ assert.equal(r.headers.get("set-cookie"),null);
+});
+test("an isolated staging environment rejects forged session without DB access",async()=>{
+ process.env.ALTOVENA_STAGING_LOGIN_ENABLED="true";
+ process.env.ALTOVENA_STAGING_ISOLATION_ENABLED="true";
+ process.env.ALTOVENA_STAGING_SUPABASE_PROJECT_REF="abcdefghijklmnopqrst";
+ process.env.ALTOVENA_STAGING_SUPABASE_URL="https://abcdefghijklmnopqrst.supabase.co";
+ process.env.ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY="synthetic-staging-key";
+ const r=await GET(new NextRequest(address,{headers:{
+  cookie:ALTOVENA_STAGING_COOKIE+"=forged",
+ }}));
+ assert.equal(r.status,401);
+ assert.equal((await r.json()).error,"STAGING_SESSION_INVALID");
 });
