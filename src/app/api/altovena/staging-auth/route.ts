@@ -2,6 +2,7 @@ import {NextRequest,NextResponse} from "next/server";
 import {assessAltovenaDatabaseIsolation} from "@/lib/altovena/preview-database-isolation";
 import {getAltovenaStagingAdmissionDependencies,admitAltovenaStagingUser} from "@/lib/altovena/staging-admission";
 import {ALTOVENA_STAGING_COOKIE,issueAltovenaStagingSession} from "@/lib/altovena/staging-session";
+import {consumeAltovenaStagingLoginBudget} from "@/lib/altovena/staging-login-limit";
 
 export const dynamic="force-dynamic";
 export const revalidate=0;
@@ -41,6 +42,10 @@ export async function POST(request:NextRequest){
  if(typeof values.email!=="string" || typeof values.password!=="string" ||
     values.email.length>254 || values.password.length>1024)
   return response({ok:false,error:"INVALID_REQUEST"},400);
+ // A missing limiter, migration, secret or connectivity MUST block admission.
+ // Never authenticate a password first and count the attempt afterwards.
+ if(!await consumeAltovenaStagingLoginBudget(values.email))
+  return response({ok:false,error:"STAGING_LOGIN_UNAVAILABLE"},503);
  const deps=getAltovenaStagingAdmissionDependencies();
  if(!deps)return response({ok:false,error:"STAGING_LOGIN_UNAVAILABLE"},503);
  const admitted=await admitAltovenaStagingUser(values.email,values.password,deps);
