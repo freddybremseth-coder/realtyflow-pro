@@ -45,6 +45,10 @@ test("production hard block even if all staging flags are enabled",async()=>{
 });
 test("CSRF origin mismatch, missing origin and forwarded host mismatch are rejected before Auth",async()=>{
  process.env.ALTOVENA_STAGING_LOGIN_ENABLED="true";
+ process.env.ALTOVENA_STAGING_ISOLATION_ENABLED="true";
+ process.env.ALTOVENA_STAGING_SUPABASE_PROJECT_REF="abcdefghijklmnopqrst";
+ process.env.ALTOVENA_STAGING_SUPABASE_URL="https://abcdefghijklmnopqrst.supabase.co";
+ process.env.ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY="synthetic-test-only";
  const rejected=[
   submit("https://attacker.example"),
   submit("http://realtyflow-preview.test"),
