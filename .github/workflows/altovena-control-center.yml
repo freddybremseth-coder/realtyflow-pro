@@ -1,0 +1,21 @@
+name: Altovena Control Center contract
+on:
+  pull_request:
+    paths:
+      - 'src/app/(realty)/altovena-launch/page.tsx'
+      - 'tests/altovena/control-center-contract.test.mjs'
+      - '.github/workflows/altovena-control-center.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/app/(realty)/altovena-launch/page.tsx'
+      - 'tests/altovena/control-center-contract.test.mjs'
+      - '.github/workflows/altovena-control-center.yml'
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify owner gate, honest snapshot and register references
+        run: node --test tests/altovena/control-center-contract.test.mjs

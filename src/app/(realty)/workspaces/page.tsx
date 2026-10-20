@@ -68,6 +68,16 @@ export default function WorkspacesPage() {
         </section>
       )}
 
+      {user.role === "OWNER" && (
+        <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
+          <h2 className="text-xl font-semibold">Altovena · lanseringsoversikt</h2>
+          <p className="mt-2 text-sm text-slate-400">Se de åpne lanseringskravene, hvem som har ansvar og hva som må godkjennes manuelt. Oversikten er skrivebeskyttet og viser ikke sanntidskontroller ennå.</p>
+          <Link href="/altovena-launch" className="mt-4 inline-flex items-center gap-2 rounded-xl border border-cyan-700 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-slate-800">
+            Åpne Altovena Launch <ArrowRight size={16}/>
+          </Link>
+        </section>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         {visibleApps.map((app) => {
           const Icon = iconMap[app.icon];
@@ -95,11 +105,6 @@ export default function WorkspacesPage() {
               <Link href="/workspace/pinosoecolife" className="group rounded-xl border border-slate-700 p-4 hover:border-cyan-600 hover:bg-slate-800/70">
                 <div className="flex items-center gap-2 font-semibold"><Building2 size={17} className="text-cyan-400"/> Pinoso EcoLife</div>
                 <span className="mt-2 inline-flex items-center gap-1 text-sm text-cyan-300">Åpne workspace <ArrowRight size={14}/></span>
-              </Link>
-              <Link href="/altovena-launch" className="group rounded-xl border border-teal-900/70 p-4 hover:border-teal-500 hover:bg-slate-800/70">
-                <div className="flex items-center gap-2 font-semibold"><Settings size={17} className="text-teal-400"/> Altovena · aktivering</div>
-                <p className="mt-1 text-xs text-slate-400">Kontroller merkevare, Freddy og Andrea, personvern og skjemamottak før lansering.</p>
-                <span className="mt-2 inline-flex items-center gap-1 text-sm text-teal-300">Åpne aktiveringskontroll <ArrowRight size={14}/></span>
               </Link>
             </div>
           </div>
