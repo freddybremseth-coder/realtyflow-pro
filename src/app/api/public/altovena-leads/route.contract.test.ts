@@ -163,7 +163,7 @@ test("Altovena launch checklist is owner-only, read-only and cannot activate a f
 const launchPage=readFileSync("src/app/(realty)/altovena-launch/page.tsx","utf8");
 const ownerHome=readFileSync("src/app/(realty)/workspaces/page.tsx","utf8");
 test("standalone launch page works before brand provisioning but requires owner session",()=>{
-  assert.match(launchPage,/verifyAdminSession\(token\)/);
+  assert.match(launchPage,/verifyAdminSession\(jar\.get\("realtyflow_admin"\)\?\.value\)/);
   assert.match(launchPage,/session\.role !== "OWNER"/);
   assert.match(launchPage,/isAdminEmail\(session\.email\)/);
   assert.match(launchPage,/verifyWorkspacePreviewSession/);
