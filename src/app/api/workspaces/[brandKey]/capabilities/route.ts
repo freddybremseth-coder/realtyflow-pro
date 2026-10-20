@@ -3,6 +3,7 @@ import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
+import { allowAltovenaProductionWorkspace } from "@/lib/altovena/production-workspace-gate";
 import {
   hasVerifiedBrandGrant, isCanonicalBrandKey, WORKSPACE_PERMISSIONS, type WorkspacePermission,
 } from "@/lib/workspaces/brand-policy";
@@ -23,6 +24,8 @@ export async function GET(
 ) {
   const { brandKey } = params;
   if (!isCanonicalBrandKey(brandKey)) return fail(404, "WORKSPACE_NOT_FOUND");
+  if (brandKey === "altovena" && !allowAltovenaProductionWorkspace())
+    return fail(503, "ALTOVENA_PRODUCTION_WORKSPACE_DISABLED");
   // Capabilities is the first API requested by the workspace UI. Prevent
   // reading live brand grants/Auth when Altovena Preview is not isolated.
   if (brandKey === "altovena" && !assessAltovenaDatabaseIsolation().allowed)
