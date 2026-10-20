@@ -9,11 +9,13 @@ const conn=url.toString();
 const client=async()=>{const c=new pg.Client({connectionString:conn});await c.connect();return c;};
 const owner=await client();
 try{
+ // Disposable CI Postgres can start with no Supabase roles because prior
+ // test suites roll back their fixtures. Create only missing synthetic roles.
+ for(const role of ["anon","authenticated","service_role"]){
+  const existing=await owner.query("select 1 from pg_roles where rolname=$1",[role]);
+  if(!existing.rowCount)await owner.query('create role "'+role+'" nologin');
+ }
  await owner.query("BEGIN");
- // The shared CI fixture already has service_role/anon/authenticated.
- // Do not recreate its roles or any business data.
- const roles=await owner.query("select rolname from pg_roles where rolname in ('service_role','anon','authenticated')");
- assert.equal(roles.rows.length,3,"CI role fixture must already exist");
  await owner.query(readFileSync("supabase/migrations/20261020124500_altovena_staging_login_limiter.sql","utf8"));
  const acl=(await owner.query(`select
  has_function_privilege('anon','public.altovena_consume_login_limit(text,integer,integer)','execute') as anon,
