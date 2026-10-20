@@ -8,12 +8,16 @@ if(!["127.0.0.1","localhost"].includes(url.hostname) ||
 const conn=url.toString();
 const client=async()=>{const c=new pg.Client({connectionString:conn});await c.connect();return c;};
 const owner=await client();
+const createdRoles=[];
 try{
  // Disposable CI Postgres can start with no Supabase roles because prior
  // test suites roll back their fixtures. Create only missing synthetic roles.
  for(const role of ["anon","authenticated","service_role"]){
   const existing=await owner.query("select 1 from pg_roles where rolname=$1",[role]);
-  if(!existing.rowCount)await owner.query('create role "'+role+'" nologin');
+  if(!existing.rowCount){
+   await owner.query('create role "'+role+'" nologin');
+   createdRoles.push(role);
+  }
  }
  // The real Supabase service_role is BYPASSRLS. Recreate that permission
  // in this disposable test database; never run this against cloud DB.
@@ -53,4 +57,9 @@ try{
  await owner.query("drop function public.altovena_consume_login_limit(text,integer,integer)");
  await owner.query("drop table public.altovena_staging_login_limits");
  console.log("PASS durable staging limiter: ACL + 12 concurrent calls; no database data persists");
-}finally{await owner.end();}
+}finally{
+ for(const role of createdRoles.reverse()){
+  await owner.query('drop role if exists "'+role+'"').catch(()=>{});
+ }
+ await owner.end();
+}
