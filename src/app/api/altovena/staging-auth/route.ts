@@ -1,7 +1,9 @@
 import {NextRequest,NextResponse} from "next/server";
 import {assessAltovenaDatabaseIsolation} from "@/lib/altovena/preview-database-isolation";
 import {getAltovenaStagingAdmissionDependencies,admitAltovenaStagingUser} from "@/lib/altovena/staging-admission";
-import {ALTOVENA_STAGING_COOKIE,issueAltovenaStagingSession} from "@/lib/altovena/staging-session";
+import {ALTOVENA_STAGING_COOKIE,issueAltovenaStagingSession,verifyAltovenaStagingSession} from "@/lib/altovena/staging-session";
+import {getAltovenaSupabase} from "@/lib/altovena/supabase";
+import {hasVerifiedBrandGrant} from "@/lib/workspaces/brand-policy";
 import {consumeAltovenaStagingLoginBudget} from "@/lib/altovena/staging-login-limit";
 
 export const dynamic="force-dynamic";
@@ -73,4 +75,35 @@ export async function DELETE(request:NextRequest){
   path:"/api/altovena/staging-auth",maxAge:0,
  });
  return res;
+}
+
+/** This endpoint is the only consumer of the staging cookie so far.
+ * Neither possession of the token nor this response authorizes platform APIs.
+ */
+export async function GET(request:NextRequest){
+ if(process.env.VERCEL_ENV!=="preview" ||
+    process.env.ALTOVENA_STAGING_LOGIN_ENABLED!=="true" ||
+    !assessAltovenaDatabaseIsolation().allowed)
+   return response({ok:false,error:"STAGING_LOGIN_DISABLED"},503);
+ const identity=verifyAltovenaStagingSession(
+   request.cookies.get(ALTOVENA_STAGING_COOKIE)?.value,
+ );
+ if(!identity)return response({ok:false,error:"STAGING_SESSION_INVALID"},401);
+ const db=getAltovenaSupabase();
+ if(!db)return response({ok:false,error:"STAGING_SESSION_UNAVAILABLE"},503);
+ try{
+   const grant=await db.rpc("workspace_brand_grant",{
+     p_brand_key:"altovena",p_email:identity.email,
+   });
+   if(grant.error || grant.data?.brand?.brand_key!=="altovena" ||
+      typeof grant.data.brand.id!=="string" || !grant.data.grant)
+     return response({ok:false,error:"STAGING_SESSION_REVOKED"},403);
+   const auth=await db.auth.admin.getUserById(identity.userId);
+   if(auth.error || !auth.data.user || !hasVerifiedBrandGrant({
+     grant:grant.data.grant,brandId:grant.data.brand.id,
+     sessionEmail:identity.email,verifiedUserId:identity.userId,
+     verifiedUserEmail:auth.data.user.email||"",permission:"crm.read",
+   }))return response({ok:false,error:"STAGING_SESSION_REVOKED"},403);
+   return response({ok:true,brand:"altovena",scope:"staging-only",active:true});
+ }catch{return response({ok:false,error:"STAGING_SESSION_UNAVAILABLE"},503);}
 }
