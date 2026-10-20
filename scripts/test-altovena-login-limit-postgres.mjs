@@ -10,7 +10,10 @@ const client=async()=>{const c=new pg.Client({connectionString:conn});await c.co
 const owner=await client();
 try{
  await owner.query("BEGIN");
- await owner.query(readFileSync("scripts/fixtures/altovena-ci-schema.sql","utf8"));
+ // The shared CI fixture already has service_role/anon/authenticated.
+ // Do not recreate its roles or any business data.
+ const roles=await owner.query("select rolname from pg_roles where rolname in ('service_role','anon','authenticated')");
+ assert.equal(roles.rows.length,3,"CI role fixture must already exist");
  await owner.query(readFileSync("supabase/migrations/20261020124500_altovena_staging_login_limiter.sql","utf8"));
  const acl=(await owner.query(`select
  has_function_privilege('anon','public.altovena_consume_login_limit(text,integer,integer)','execute') as anon,
@@ -28,7 +31,6 @@ try{
  assert.equal(bad.rows[0].n,1);
  // Concurrent independent connection requests require committed fixtures.
  await owner.query("ROLLBACK");
- await owner.query(readFileSync("scripts/fixtures/altovena-ci-schema.sql","utf8"));
  await owner.query(readFileSync("supabase/migrations/20261020124500_altovena_staging_login_limiter.sql","utf8"));
  const b="b".repeat(64);
  const attempts=await Promise.all(Array.from({length:12},async()=>{
