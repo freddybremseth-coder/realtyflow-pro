@@ -122,12 +122,13 @@ test("incomplete staging publish and email grants are never advertised",async()=
  assert.equal(JSON.stringify(staged).includes("marketing.publish"),false);
  assert.equal(JSON.stringify(staged).includes("email.send"),false);
 });
-test("production brand selection is not changed by Altovena preview isolation",async()=>{
+test("production Altovena remains hidden until separate owner-approved opt-in",async()=>{
  process.env.VERCEL_ENV="production";
+ delete process.env.ALTOVENA_PRODUCTION_WORKSPACE_ENABLED;
  const res=await GET(await request());
  assert.equal(res.status,200);
  const body=await res.json();
  assert.deepEqual(body.workspaces.map((w:{brandKey:string})=>w.brandKey),
-  ["pinosoecolife","altovena"]);
+  ["pinosoecolife"]);
  assert.equal(stageCalls.length,0);
 });
