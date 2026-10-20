@@ -15,6 +15,9 @@ try{
   const existing=await owner.query("select 1 from pg_roles where rolname=$1",[role]);
   if(!existing.rowCount)await owner.query('create role "'+role+'" nologin');
  }
+ // The real Supabase service_role is BYPASSRLS. Recreate that permission
+ // in this disposable test database; never run this against cloud DB.
+ await owner.query("alter role service_role bypassrls");
  await owner.query("BEGIN");
  await owner.query(readFileSync("supabase/migrations/20261020124500_altovena_staging_login_limiter.sql","utf8"));
  const acl=(await owner.query(`select
