@@ -3,6 +3,7 @@ import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
 import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
+import { allowAltovenaProductionWorkspace } from "@/lib/altovena/production-workspace-gate";
 import { WORKSPACE_PERMISSIONS, hasVerifiedBrandGrant, type WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import { roleAllowsWorkspacePermission } from "@/lib/workspaces/require-brand-workspace";
 
@@ -31,6 +32,8 @@ export async function GET(request: NextRequest) {
     const brand = entry?.brand;
     const grant = entry?.grant;
     if (!brand?.id || !brand?.brand_key || !grant?.user_id) continue;
+    if (brand.brand_key === "altovena" && !allowAltovenaProductionWorkspace())
+      continue;
     // Never advertise Altovena from *production* grants in a preview.
     // A preview-only Altovena entry is separately verified below.
     if (process.env.VERCEL_ENV === "preview" && brand.brand_key === "altovena")
