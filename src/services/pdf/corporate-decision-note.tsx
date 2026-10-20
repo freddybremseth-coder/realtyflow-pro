@@ -563,7 +563,7 @@ function IntroPage({ report, logoSource }: { report: CorporateDecisionNoteReport
             <View style={styles.kpi}>
               <Text style={styles.kpiLabel}>Kjøpesum</Text>
               <Text style={styles.kpiValue}>{eur(calc.property_price_eur)}</Text>
-              <Text style={styles.kpiNote}>Valgt i kalkulatoren</Text>
+              <Text style={styles.kpiNote}>Beregnet ut fra totalbudsjettet</Text>
             </View>
             <View style={styles.kpi}>
               <Text style={styles.kpiLabel}>Årlig kostnad før verdiendring</Text>
@@ -572,8 +572,8 @@ function IntroPage({ report, logoSource }: { report: CorporateDecisionNoteReport
             </View>
             <View style={styles.kpi}>
               <Text style={styles.kpiLabel}>Alternativ hotellovernatting</Text>
-              <Text style={styles.kpiValue}>{eur(calc.hotel_alternative_annual_eur)}</Text>
-              <Text style={styles.kpiNote}>{number(calc.participant_nights)} personnetter per år</Text>
+              <Text style={styles.kpiValue}>{calc.stays.length ? eur(calc.hotel_alternative_annual_eur) : "Ikke beregnet"}</Text>
+              <Text style={styles.kpiNote}>{calc.stays.length ? `${number(calc.participant_nights)} personnetter per år` : "Valgfritt sammenligningsgrunnlag"}</Text>
             </View>
             <View style={styles.kpi}>
               <Text style={styles.kpiLabel}>Scenarioverdi etter {calc.holding_years} år</Text>
@@ -668,7 +668,7 @@ function EconomicsPage({ report, logoSource }: { report: CorporateDecisionNoteRe
         <View style={styles.row}><Text style={styles.rowLabel}>Årlig drift</Text><Text style={styles.rowValue}>{eur(calc.annual_operating_eur)}</Text></View>
         <View style={styles.row}><Text style={styles.rowLabel}>Kjøpskostnader ({calc.acquisition_pct} %)</Text><Text style={styles.rowValue}>{eur(calc.acquisition_cost_eur)}</Text></View>
         <View style={styles.row}><Text style={styles.rowLabel}>Kjøpskostnader fordelt over {calc.holding_years} år</Text><Text style={styles.rowValue}>{eur(calc.annualized_acquisition_cost_eur)} / år</Text></View>
-        <View style={styles.row}><Text style={styles.rowLabel}>Kapitalkostnad ({calc.capital_pct} % av kjøpesum + kjøpskostnader)</Text><Text style={styles.rowValue}>{eur(calc.annual_capital_cost_eur)} / år</Text></View>
+        <View style={styles.row}><Text style={styles.rowLabel}>Alternativ kapitalkostnad ({calc.capital_pct} % av kjøpesum + kjøpskostnader)</Text><Text style={styles.rowValue}>{eur(calc.annual_capital_cost_eur)} / år</Text></View>
         <View style={styles.row}><Text style={styles.rowLabel}>Samlet årskostnad før verdiendring</Text><Text style={styles.rowValue}>{eur(calc.annual_cost_before_value_eur)}</Text></View>
       </View>
 
