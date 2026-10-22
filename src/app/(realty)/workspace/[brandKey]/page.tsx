@@ -347,17 +347,17 @@ export default function FocusedWorkspacePage() {
                     : "E-post, SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."}
                 </p>
               </button>}
-              {showReels && <button onClick={() => setTab("growth")} className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5 text-left hover:border-cyan-500">
+              {showReels && <button onClick={() => { setRequestedFocus("reels"); setTab("growth"); }} className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5 text-left hover:border-cyan-500">
                 <Clapperboard size={25} className="text-cyan-400"/>
                 <h3 className="mt-3 text-lg font-semibold">Lag en Reel</h3>
                 <p className="mt-1 text-sm text-slate-400">Velg musikk og boligtype. Re-Master lager videoen, og du forhåndsviser før publisering.</p>
               </button>}
-              {showYoutube && <button onClick={() => setTab("growth")} className="rounded-2xl border border-red-900/60 bg-red-950/10 p-5 text-left hover:border-red-500">
+              {showYoutube && <button onClick={() => { setRequestedFocus("youtube"); setTab("growth"); }} className="rounded-2xl border border-red-900/60 bg-red-950/10 p-5 text-left hover:border-red-500">
                 <Youtube size={25} className="text-red-400"/>
                 <h3 className="mt-3 text-lg font-semibold">Publiser til YouTube</h3>
                 <p className="mt-1 text-sm text-slate-400">Velg en ferdig Zen Reel, forhåndsvis den og publiser som YouTube Short til verifisert Zen-kanal.</p>
               </button>}
-              {showNexus && <button onClick={() => setTab("growth")} className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5 text-left hover:border-violet-500">
+              {showNexus && <button onClick={() => { setRequestedFocus("nexus"); setTab("growth"); }} className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5 text-left hover:border-violet-500">
                 <BrainCircuit size={25} className="text-violet-300"/>
                 <h3 className="mt-3 text-lg font-semibold">Se hva Nexus lærer</h3>
                 <p className="mt-1 text-sm text-slate-400">Brand-avgrenset innsikt om kilder, læring, vekstplan og hva som faktisk trenger oppmerksomhet.</p>
@@ -526,7 +526,7 @@ export default function FocusedWorkspacePage() {
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Ring</a>}
                 {showProperties && <button type="button" onClick={() => setTab("properties")}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Finn bolig</button>}
-                {permissions.includes("email.read") && <button type="button" onClick={() => setTab("growth")}
+                {permissions.includes("email.read") && <button type="button" onClick={() => { setRequestedFocus("email"); setRequestedArea("email"); setTab("growth"); }}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">E-post / Reach</button>}
               </div>
 
@@ -617,6 +617,7 @@ export default function FocusedWorkspacePage() {
                 id: property.id, ref: property.ref, title: property.title,
                 town: property.town, location: property.location, primary_image: property.primary_image,
               });
+               setRequestedFocus("social");
               setTab("growth");
             }}
             onCreateReel={(property: WorkspacePropertyCard) => {
@@ -624,6 +625,7 @@ export default function FocusedWorkspacePage() {
                 id: property.id, ref: property.ref, title: property.title,
                 town: property.town, location: property.location,
               });
+               setRequestedFocus("reels");
               setTab("growth");
             }}
           />}
