@@ -10,6 +10,19 @@ type JointTask = {
 };
 
 const endpoint = "/api/workspaces/zeneco/joint-tasks";
+const closingSteps = [
+  "Bekreft boligvalg og avklar åpne spørsmål",
+  "Bekreft reservasjon og neste milepæl",
+  "Kontroller at nødvendige dokumenter er mottatt",
+  "Avtal dato og plan for overtakelse",
+  "Bekreft overtakelse og videre oppfølging",
+] as const;
+const dueStatus = (value: string | null) => {
+  if (!value) return "none";
+  const today = new Date();
+  const todayLocal = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+  return value < todayLocal ? "overdue" : value === todayLocal ? "today" : "future";
+};
 
 /**
  * Separate NEW-only task ledger. It never calls the global /api/revenue/execution,
@@ -20,11 +33,13 @@ export function ZenJointTasks({
   canWrite,
   selectedContactId,
   hideContactSelector = false,
+  closingMode = false,
 }: {
   contacts: Contact[];
   canWrite: boolean;
   selectedContactId?: string;
   hideContactSelector?: boolean;
+  closingMode?: boolean;
 }) {
   const [contactId, setContactId] = useState(selectedContactId || "");
   const [tasks, setTasks] = useState<JointTask[]>([]);
@@ -37,6 +52,9 @@ export function ZenJointTasks({
   const [revision, setRevision] = useState(0);
   const selected = contacts.find(contact => contact.id === contactId);
   const activeId = selected?.id || "";
+  const completed = tasks.filter(task => task.status === "done").length;
+  const outstanding = tasks.length - completed;
+  const overdue = tasks.filter(task => task.status === "open" && dueStatus(task.due_on) === "overdue").length;
 
   useEffect(() => {
     if (selectedContactId === undefined) return;
@@ -120,6 +138,24 @@ export function ZenJointTasks({
       </select>
     </label>}
     {!contacts.length && <p className="text-sm text-amber-300">Ingen godkjente felleskunder på denne CRM-siden. Åpne eller søk etter en kunde først.</p>}
+    {activeId && closingMode && <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/15 p-4">
+      <h3 className="font-semibold text-cyan-200">Fremdrift mot overtakelse</h3>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
+        <div className="rounded-lg bg-slate-950 p-2"><span className="block text-xl font-semibold">{completed}</span>Fullført</div>
+        <div className="rounded-lg bg-slate-950 p-2"><span className="block text-xl font-semibold">{outstanding}</span>Åpne</div>
+        <div className="rounded-lg bg-slate-950 p-2"><span className="block text-xl font-semibold text-amber-300">{overdue}</span>Forfalt</div>
+      </div>
+      {tasks.length > 0 && <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800" aria-label={`${completed} av ${tasks.length} oppgaver fullført`}>
+        <div className="h-full bg-emerald-500" style={{ width: `${Math.round(completed * 100 / tasks.length)}%` }} />
+      </div>}
+      {canWrite && <div className="mt-4">
+        <p className="text-xs text-slate-400">Forslag til oppgaver. Velg ett steg og opprett det nedenfor med frist. Ingen oppgaver opprettes automatisk.</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {closingSteps.filter(step => !tasks.some(task => task.title === step)).map(step => <button key={step} type="button"
+            onClick={() => setTitle(step)} className="rounded-lg border border-cyan-800 px-3 py-2 text-left text-xs text-cyan-200 hover:bg-cyan-950/50">{step}</button>)}
+        </div>
+      </div>}
+    </div>}
     {activeId && canWrite && <form className="grid gap-3 sm:grid-cols-[1fr_auto]" onSubmit={event => {
       event.preventDefault(); void createTask();
     }}>
@@ -146,7 +182,10 @@ export function ZenJointTasks({
       {tasks.map(task => <article key={task.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-950 p-3">
         <div className="min-w-0 flex-1">
           <div className={task.status === "done" ? "text-sm text-slate-400 line-through" : "text-sm font-medium"}>{task.title}</div>
-          <p className="mt-1 text-xs text-slate-400">Frist: {task.due_on || "Ingen"} · {task.status === "done" ? "Fullført" : "Åpen"}</p>
+          <p className="mt-1 text-xs text-slate-400">Frist: {task.due_on || "Ingen"} · {task.status === "done" ? "Fullført" : "Åpen"}
+            {task.created_by_email ? ` · Opprettet av: ${task.created_by_email}` : ""}</p>
+          {task.status === "open" && dueStatus(task.due_on) === "overdue" && <p className="mt-1 text-xs font-semibold text-amber-300">Forfalt – må følges opp</p>}
+          {task.status === "open" && dueStatus(task.due_on) === "today" && <p className="mt-1 text-xs font-semibold text-cyan-200">Frist i dag</p>}
         </div>
         {task.status === "open" && canWrite && <button type="button" disabled={busy}
           onClick={() => void finishTask(task.id)}
