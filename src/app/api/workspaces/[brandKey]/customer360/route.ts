@@ -295,26 +295,8 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
     }, { headers: noStore });
   }
 
-  return NextResponse.json({
-    ok: true,
-    generatedAt: new Date().toISOString(),
-    brand: params.brandKey,
-    assignment: access.value.boundary,
-    contact,
-    completeness,
-    buyerProfiles: profiles,
-    activeBuyerProfile: activeProfile,
-    criteria: activeCriteria,
-    shortlists: shortlistsWithItems,
-    workItems,
-    revenueEvents,
-    nurtureEvents,
-    portalMessages,
-    communicationDialogue,
-    salesIntelligence,
-    timeline,
-    warnings,
-  }, { headers: noStore });
+  // Require an explicitly allowlisted response view for every caller.
+  return fail(400, "VIEW_REQUIRED");
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { brandKey: string } }) {
@@ -369,7 +351,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
     return fail(400, "INVALID_UPDATE");
   }
 
-  if (!changed.length) return NextResponse.json({ ok: true, unchanged: true, contact: current }, { headers: noStore });
+  if (!changed.length) return NextResponse.json({ ok: true, unchanged: true, changed: [] }, { headers: noStore });
 
   const at = new Date().toISOString();
   const interaction = {
@@ -394,7 +376,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
   if (error || !data || data.brand_id !== params.brandKey || data.brand !== params.brandKey) {
     return fail(409, "CUSTOMER360_UPDATE_FAILED");
   }
-  return NextResponse.json({ ok: true, contact: data, changed }, { headers: noStore });
+  return NextResponse.json({ ok: true, contactId: data.id, changed }, { headers: noStore });
 }
 /** Manual, explicitly confirmed email from an approved brand customer card. */
 export async function POST(request: NextRequest, { params }: { params: { brandKey: string } }) {
