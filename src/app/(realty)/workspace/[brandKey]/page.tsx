@@ -30,7 +30,7 @@ type Contact = {
 };
 type StaffCustomer360 = {
   contactId: string;
-  contact?: { notes?: string | null; property_interest?: string | null; preferred_location?: string | null; next_followup?: string | null };
+  contact?: { notes?: string | null; property_interest?: string | null; preferred_location?: string | null; next_followup?: string | null; pipeline_status?: string | null };
   buyerProfiles?: Array<{ id: string; status?: string; summary?: string | null }>;
   criteria?: Array<Record<string, unknown>>;
   shortlists?: Array<{ id: string; title?: string; status?: string }>;
@@ -126,6 +126,14 @@ export default function FocusedWorkspacePage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailNotice, setEmailNotice] = useState("");
   const [emailRevision, setEmailRevision] = useState(0);
+  const [customerEditOpen, setCustomerEditOpen] = useState(false);
+  const [customerEditStatus, setCustomerEditStatus] = useState("NEW");
+  const [customerEditInterest, setCustomerEditInterest] = useState("");
+  const [customerEditLocation, setCustomerEditLocation] = useState("");
+  const [customerEditNotes, setCustomerEditNotes] = useState("");
+  const [customerEditFollowup, setCustomerEditFollowup] = useState("");
+  const [customerEditBusy, setCustomerEditBusy] = useState(false);
+  const [customerEditNotice, setCustomerEditNotice] = useState("");
   const [closingMode, setClosingMode] = useState(false);
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
   const [socialPropertySeed, setSocialPropertySeed] = useState<WorkspaceSocialPropertySeed | null>(null);
@@ -250,13 +258,22 @@ export default function FocusedWorkspacePage() {
         : "Kunne ikke hente utvidet kundeoversikt.");
       return response.json();
     }).then((data: StaffCustomer360) => {
-      if (!controller.signal.aborted && data.contactId === selectedCustomerId) setCustomer360(data);
+      if (!controller.signal.aborted && data.contactId === selectedCustomerId) {
+        setCustomer360(data);
+        if (!customerEditOpen) {
+          setCustomerEditStatus(data.contact?.pipeline_status || "NEW");
+          setCustomerEditInterest(data.contact?.property_interest || "");
+          setCustomerEditLocation(data.contact?.preferred_location || "");
+          setCustomerEditNotes(data.contact?.notes || "");
+          setCustomerEditFollowup(data.contact?.next_followup?.slice(0, 10) || "");
+        }
+      }
     }).catch(cause => {
       if (!controller.signal.aborted) setCustomer360Error(cause instanceof Error ? cause.message : "Kunne ikke hente kundeoversikt.");
     }).finally(() => { if (!controller.signal.aborted) setCustomer360Busy(false); });
     return () => controller.abort();
   }, [brandKey, selectedCustomerId, permissions, emailRevision]);
-  useEffect(() => { setEmailSubject(""); setEmailBody(""); setEmailNotice(""); }, [selectedCustomerId]);
+  useEffect(() => { setEmailSubject(""); setEmailBody(""); setEmailNotice(""); setCustomerEditOpen(false); setCustomerEditNotice(""); }, [selectedCustomerId]);
 
   async function sendCustomerEmail() {
     if (!selectedCustomerId || !customer360 || emailSending ||
@@ -280,6 +297,28 @@ export default function FocusedWorkspacePage() {
       setEmailRevision(value => value + 1);
     } catch (cause) { setEmailNotice(cause instanceof Error ? cause.message : "Kunne ikke sende e-post."); }
     finally { setEmailSending(false); }
+  }
+  async function saveCustomerFollowup() {
+    if (!selectedCustomerId || !customer360 || !canEditCrm || customerEditBusy) return;
+    setCustomerEditBusy(true); setCustomerEditNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactId: selectedCustomerId, pipeline_status: customerEditStatus,
+          property_interest: customerEditInterest, preferred_location: customerEditLocation,
+          notes: customerEditNotes, next_followup: customerEditFollowup || null,
+        }),
+      });
+      if (!response.ok) throw new Error(response.status === 403
+        ? "Du har ikke tilgang til å endre denne kunden."
+        : "Kunne ikke lagre kundeoppfølging. Kontroller feltene og prøv igjen.");
+      setCustomerEditOpen(false); setCustomerEditNotice("Kundeoppfølgingen er lagret.");
+      setEmailRevision(value => value + 1);
+      await loadCrm();
+    } catch (cause) {
+      setCustomerEditNotice(cause instanceof Error ? cause.message : "Kunne ikke lagre kundeoppfølging.");
+    } finally { setCustomerEditBusy(false); }
   }
   const filtered = contacts;
   const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
@@ -617,7 +656,50 @@ export default function FocusedWorkspacePage() {
               </div>
 
               <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                <h4 className="font-semibold text-cyan-200">Customer 360 · komplett kundedialog</h4>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="font-semibold text-cyan-200">Customer 360 · komplett kundedialog</h4>
+                  {canEditCrm && customer360 && <button type="button" onClick={() => { setCustomerEditOpen(value => !value); setCustomerEditNotice(""); }}
+                    className="rounded-lg border border-cyan-700 px-3 py-2 text-xs text-cyan-200">
+                    {customerEditOpen ? "Lukk redigering" : "Rediger kundeoppfølging"}
+                  </button>}
+                </div>
+                {customerEditNotice && <p role="status" className="mt-2 text-sm text-cyan-200">{customerEditNotice}</p>}
+                {customerEditOpen && canEditCrm && customer360 && <form onSubmit={event => { event.preventDefault(); void saveCustomerFollowup(); }}
+                  className="mt-3 space-y-3 rounded-lg border border-cyan-900/60 bg-slate-900 p-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs text-slate-300">Salgsstatus
+                      <select value={customerEditStatus} onChange={event => setCustomerEditStatus(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                        {crmStatuses.map(status => <option key={status} value={status}>{crmStatusLabels[status]}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-300">Neste oppfølging
+                      <input type="date" value={customerEditFollowup} onChange={event => setCustomerEditFollowup(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                    </label>
+                    <label className="text-xs text-slate-300">Boliginteresse
+                      <input maxLength={300} value={customerEditInterest} onChange={event => setCustomerEditInterest(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                    </label>
+                    <label className="text-xs text-slate-300">Foretrukket område
+                      <input maxLength={300} value={customerEditLocation} onChange={event => setCustomerEditLocation(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                    </label>
+                  </div>
+                  <label className="block text-xs text-slate-300">Kundenotater
+                    <textarea rows={5} maxLength={12000} value={customerEditNotes}
+                      onChange={event => setCustomerEditNotes(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="submit" disabled={customerEditBusy}
+                      className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold disabled:opacity-40">
+                      {customerEditBusy ? "Lagrer…" : "Lagre oppfølging"}
+                    </button>
+                    <button type="button" disabled={customerEditBusy} onClick={() => setCustomerEditOpen(false)}
+                      className="rounded-lg border border-slate-700 px-4 py-2 text-sm">Avbryt</button>
+                  </div>
+                </form>}
                 {customer360Busy && <p className="mt-2 text-sm text-slate-400">Henter oversikt…</p>}
                 {customer360Error && <p className="mt-2 text-sm text-amber-300" role="status">{customer360Error}</p>}
                 {customer360 && <>
@@ -701,7 +783,7 @@ export default function FocusedWorkspacePage() {
 
             {canEditCrm && (canCreateCrm || editingId) && <form className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
               <h3 className="font-semibold">{editingId ? "Rediger kunde" : "Legg til kunde"}</h3>
-              <p className="text-xs text-slate-400">Kontaktfeltene kan redigeres her. Pipeline-status, private notater og økonomi endres ikke fra medarbeiderflaten.</p>
+              <p className="text-xs text-slate-400">Kontaktfeltene kan redigeres her. Pipeline-status og kundenotater oppdateres i Customer 360. Økonomi er ikke tilgjengelig fra medarbeiderflaten.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-xs text-slate-300">Navn *<input required maxLength={140} value={formName} onChange={e => setFormName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"/></label>
                 <label className="text-xs text-slate-300">E-post<input type="email" maxLength={254} value={formEmail} onChange={e => setFormEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"/></label>
