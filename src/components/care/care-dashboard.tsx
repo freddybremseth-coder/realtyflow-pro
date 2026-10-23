@@ -291,13 +291,6 @@ function CareOnboardingDialog({
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke opprette Care-kunden.");
-      if (offerFile) {
-        const upload = new FormData();
-        upload.append("file", offerFile);
-        const uploaded = await fetch(`/api/care/leads/${lead.id}/offer`, { method: "POST", body: upload });
-        const uploadBody = await uploaded.json().catch(() => null);
-        if (!uploaded.ok) throw new Error(uploadBody?.error || "Tilbudsdata er lagret, men PDF-opplasting feilet.");
-      }
       await onSaved();
       onClose();
     } catch (saveError) {
@@ -436,6 +429,13 @@ function CareLeadFollowupDialog({
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-oppfølgingen.");
+      if (offerFile) {
+        const upload = new FormData();
+        upload.append("file", offerFile);
+        const uploaded = await fetch(`/api/care/leads/${lead.id}/offer`, { method: "POST", body: upload });
+        const uploadBody = await uploaded.json().catch(() => null);
+        if (!uploaded.ok) throw new Error(uploadBody?.error || "Tilbudsdata er lagret, men PDF-opplasting feilet.");
+      }
       await onSaved();
       onClose();
     } catch (saveError) {
