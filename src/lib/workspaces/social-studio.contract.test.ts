@@ -720,7 +720,8 @@ test("Property and editorial drafts always preserve the exact verified source UR
   assert.match(route, /sourceUrl = article\.url/);
   assert.match(studio, /function captionWithSourceLink\(text: string, source: GeneratedSource \| null\)/);
   assert.match(studio, /\["property", "article"\]\.includes\(source\.type\)/);
-  assert.match(studio, /captionWithSourceLink\(channel === "facebook" \? variant\.facebookText : variant\.instagramText, source\)/);
+  assert.match(studio, /captionWithSourceLink\(variant\.facebookText, source\)/);
+  assert.match(studio, /variant\.instagramText\.replace\(\/https\?:/);
   assert.match(studio, /Utkastet mangler direkte lenke til boligen eller artikkelen/);
   assert.match(studio, /source\.url/);
 });
