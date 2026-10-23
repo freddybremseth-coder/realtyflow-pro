@@ -149,6 +149,12 @@ export default function ScopedContentHubPage() {
         })}
       </nav>
 
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 pb-4 text-sm">
+        {permissions.includes("ads.read") && <Link href={"/workspace/" + encodeURIComponent(brandKey) + "?tab=growth&area=ads&focus=ads"} className="text-cyan-300 underline">Kampanjer</Link>}
+        {permissions.includes("nexus.read") && <Link href={"/workspace/" + encodeURIComponent(brandKey) + "?tab=growth&focus=nexus"} className="text-cyan-300 underline">AI-strategi</Link>}
+        <span className="text-xs text-slate-500">Kunde-PDF blir tilgjengelig når en merkevaresikker eksport er klar.</span>
+      </div>
+
       {section === "articles" && permissions.includes("content.read") &&
         <WorkspaceWebsiteContentStudio
           brandKey={brandKey}
