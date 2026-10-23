@@ -138,16 +138,20 @@ export function GrowthCorporatePanel({
     if (!allowedKinds.includes(kind)) setKind(allowedKinds[0] || "");
   }, [allowedKinds, kind]);
 
+  // Only a new external navigation request should change the selected area.
+  // Keeping initialArea in the selection effect used to reset every button click
+  // back to "corporate" when the incoming URL retained ?area=corporate.
   useEffect(() => {
-    if (initialArea && ["corporate","content","email","visibility","ads","plan"].includes(initialArea) &&
-        availableAreas.includes(initialArea as WorkArea)) {
+    if (initialArea && availableAreas.includes(initialArea as WorkArea)) {
       setArea(initialArea as WorkArea);
-      return;
     }
-    if (!availableAreas.includes(area)) {
-      setArea(availableAreas[0] || "plan");
-    }
-  }, [availableAreas, area, initialArea]);
+  }, [initialArea, availableAreas]);
+
+  useEffect(() => {
+    setArea(current => availableAreas.includes(current)
+      ? current
+      : availableAreas[0] || "plan");
+  }, [availableAreas]);
 
   const needsGrowthSnapshot = permissions.some(permission => [
     "corporate.read", "corporate.plan", "visibility.read", "visibility.plan",

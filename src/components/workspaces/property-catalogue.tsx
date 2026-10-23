@@ -85,12 +85,14 @@ export function WorkspacePropertyCatalogue({
   const [matchedCount, setMatchedCount] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
 
   const activeCount = useMemo(() => activeFilterCount(filters), [filters]);
 
   useEffect(() => {
     const abort = new AbortController();
     setBusy(true); setError("");
+    setExpandedPropertyId(null);
     const params = new URLSearchParams({ page: String(page) });
     for (const [key, value] of Object.entries(filters)) {
       if (!value || value === "any" || (key === "sort" && value === "newest")) continue;
@@ -255,15 +257,21 @@ export function WorkspacePropertyCatalogue({
         {items.map(item => {
           const canMarketHere = item.can_market_on_workspace_brand;
           return <article key={item.id} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
-            {item.primary_image && <div className="relative">
-              <img src={item.primary_image} alt="" className="aspect-video w-full object-cover" />
+            {item.primary_image && <button type="button" onClick={() => setExpandedPropertyId(current => current === item.id ? null : item.id)}
+              aria-label={`Se boliginformasjon for ${item.title || item.ref || "boligen"}`}
+              className="relative block w-full text-left">
+              <img src={item.primary_image} alt={item.title || "Boligfoto"} className="aspect-video w-full object-cover" />
               {item.ref && <span className="absolute left-3 top-3 rounded-md border border-slate-500/60 bg-slate-950/80 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">Ref {item.ref}</span>}
-            </div>}
+            </button>}
             <div className="p-4">
               <div className="flex items-start gap-3">
                 <Building2 size={22} className="mt-1 shrink-0 text-cyan-400" />
                 <div>
-                  <h3 className="font-semibold">{item.title || item.property_type || "Bolig"}</h3>
+                  <h3 className="font-semibold"><button type="button" aria-expanded={expandedPropertyId === item.id}
+                    aria-controls={`workspace-property-details-${item.id}`}
+                    onClick={() => setExpandedPropertyId(current => current === item.id ? null : item.id)}
+                    className="text-left hover:text-cyan-300 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400">
+                    {item.title || item.property_type || "Bolig"}</button></h3>
                   <p className="text-xs text-slate-400">{item.town || item.location || "Ukjent område"} · {item.ref || "Uten referanse"}</p>
                 </div>
               </div>
@@ -284,6 +292,40 @@ export function WorkspacePropertyCatalogue({
                 {item.marketable_by_brands.length > 0 && <span className="rounded-full border border-slate-700 px-2 py-1">
                   Markedsføres av: {item.marketable_by_brands.join(", ")}
                 </span>}
+              </div>
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                <button type="button" aria-expanded={expandedPropertyId === item.id}
+                  aria-controls={`workspace-property-details-${item.id}`}
+                  onClick={() => setExpandedPropertyId(current => current === item.id ? null : item.id)}
+                  className="rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-cyan-200 hover:bg-slate-800">
+                  {expandedPropertyId === item.id ? "Skjul boliginformasjon" : "Se boliginformasjon"}
+                </button>
+                {expandedPropertyId === item.id && <div id={`workspace-property-details-${item.id}`}
+                  className="mt-4 space-y-3 rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                  <h4 className="font-semibold text-slate-100">{item.title || "Boligdetaljer"}</h4>
+                  <dl className="grid grid-cols-2 gap-3 text-sm">
+                    {([
+                      ["Referanse", item.ref || "–"],
+                      ["Område", item.town || item.location || "–"],
+                      ["Boligtype", item.property_type || "–"],
+                      ["Pris", price(item.price)],
+                      ["Soverom", item.bedrooms ?? "–"],
+                      ["Bad", item.bathrooms ?? "–"],
+                      ["Boligareal", item.area_m2 != null ? `${item.area_m2} m²` : "–"],
+                      ["Tomt", item.plot_size != null ? `${item.plot_size} m²` : "–"],
+                      ["Basseng", item.pool == null ? "Ikke oppgitt" : item.pool ? "Ja" : "Nei"],
+                    ] as Array<[string, string | number]>).map(([label, value]) => <div key={label}>
+                      <dt className="text-xs text-slate-400">{label}</dt>
+                      <dd className="mt-1 font-medium">{value}</dd>
+                    </div>)}
+                  </dl>
+                  <p className="text-xs text-slate-400">
+                    Dette er offentlig kataloginformasjon. Interne prisnotater, provisjoner og importdata vises ikke.
+                  </p>
+                  {!canMarketHere && <p role="status" className="text-sm text-amber-300">
+                    Boligen kan brukes til matching, men er foreløpig ikke godkjent for SoMe i denne merkevaren.
+                  </p>}
+                </div>}
               </div>
               {canMarketHere && ((canCreateMarketing && onCreateSocial) || (canCreateReel && onCreateReel)) && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
                 {canCreateMarketing && onCreateSocial && <button type="button"
