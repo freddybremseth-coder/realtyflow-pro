@@ -291,6 +291,13 @@ function CareOnboardingDialog({
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke opprette Care-kunden.");
+      if (offerFile) {
+        const upload = new FormData();
+        upload.append("file", offerFile);
+        const uploaded = await fetch(`/api/care/leads/${lead.id}/offer`, { method: "POST", body: upload });
+        const uploadBody = await uploaded.json().catch(() => null);
+        if (!uploaded.ok) throw new Error(uploadBody?.error || "Tilbudsdata er lagret, men PDF-opplasting feilet.");
+      }
       await onSaved();
       onClose();
     } catch (saveError) {
@@ -399,6 +406,13 @@ function CareLeadFollowupDialog({
   const [stage, setStage] = useState<Exclude<CareSalesStage, "activated">>(initialStage as Exclude<CareSalesStage, "activated">);
   const [followUpOn, setFollowUpOn] = useState(lead.followUpOn || "");
   const [note, setNote] = useState(lead.salesNote || "");
+  const [offerReference, setOfferReference] = useState(lead.offerReference || "");
+  const [offerPackage, setOfferPackage] = useState(lead.offerPackage || "");
+  const [offerWeather, setOfferWeather] = useState(lead.offerWeather || "pending");
+  const [offerAcceptance, setOfferAcceptance] = useState(lead.offerAcceptance || "pending");
+  const [offerStartsOn, setOfferStartsOn] = useState(lead.offerStartsOn || "");
+  const [offerAcceptedOn, setOfferAcceptedOn] = useState(lead.offerAcceptedOn || "");
+  const [offerFile, setOfferFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const needsFollowUp = stage === "quote_sent" || stage === "waiting_customer";
@@ -412,7 +426,13 @@ function CareLeadFollowupDialog({
       const response = await fetch(`/api/care/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage, followUpOn: followUpOn || null, note }),
+        body: JSON.stringify({
+          stage, followUpOn: followUpOn || null, note,
+          offer: {
+            reference: offerReference, package: offerPackage, weather: offerWeather,
+            acceptance: offerAcceptance, startsOn: offerStartsOn, acceptedOn: offerAcceptedOn,
+          },
+        }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke oppdatere Care-oppfølgingen.");
@@ -459,11 +479,53 @@ function CareLeadFollowupDialog({
             <textarea required={needsReason} value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={4} placeholder={needsReason ? "Hvorfor er henvendelsen ikke aktuell?" : "Kort notat om samtalen eller tilbudet"} className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600" />
           </label>
 
+          <div className="space-y-3 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+            <h3 className="text-sm font-semibold text-cyan-200">Care-tilbud</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block space-y-1 text-xs text-slate-300">
+                <span>Tilbudsnummer</span>
+                <input value={offerReference} onChange={(e) => setOfferReference(e.target.value)} maxLength={40} placeholder="F.eks. 26101" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+              </label>
+              <label className="block space-y-1 text-xs text-slate-300">
+                <span>Planlagt start</span>
+                <input type="date" value={offerStartsOn} onChange={(e) => setOfferStartsOn(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+              </label>
+              <label className="block space-y-1 text-xs text-slate-300">
+                <span>Valgt pakke (kun ved bekreftelse)</span>
+                <select value={offerPackage} onChange={(e) => setOfferPackage(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                  <option value="">Ikke valgt</option><option value="basic">Basic</option><option value="standard">Standard</option><option value="premium">Premium</option>
+                </select>
+              </label>
+              <label className="block space-y-1 text-xs text-slate-300">
+                <span>Uværsberedskap</span>
+                <select value={offerWeather} onChange={(e) => setOfferWeather(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                  <option value="pending">Ikke avklart</option><option value="yes">Ja</option><option value="no">Nei</option>
+                </select>
+              </label>
+              <label className="block space-y-1 text-xs text-slate-300">
+                <span>Akseptstatus</span>
+                <select value={offerAcceptance} onChange={(e) => setOfferAcceptance(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                  <option value="pending">Avventer svar</option><option value="accepted">Akseptert</option><option value="declined">Avslått</option>
+                </select>
+              </label>
+              <label className="block space-y-1 text-xs text-slate-300">
+                <span>Akseptdato</span>
+                <input type="date" value={offerAcceptedOn} onChange={(e) => setOfferAcceptedOn(e.target.value)} disabled={offerAcceptance !== "accepted"} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-50" />
+              </label>
+            </div>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>Tilbuds-PDF (privat, maks 8 MB)</span>
+              <input type="file" accept="application/pdf,.pdf" onChange={(e) => setOfferFile(e.target.files?.[0] || null)} className="block w-full text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-white" />
+            </label>
+            {lead.offerPdfName && <p className="text-xs text-emerald-300">Lagret PDF: {lead.offerPdfName}</p>}
+            <p className="text-xs text-slate-500">Registrering av aksept oppretter ikke avtale eller sender e-post. Aktivering gjøres separat.</p>
+          </div>
+
           {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
 
           <div className="flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-slate-500">Denne handlingen sender ingen e-post. Den oppdaterer kun intern Care-oppfølging.</p>
-            <Button type="submit" disabled={saving || (needsFollowUp && !followUpOn) || (needsReason && !note.trim())}>
+            <Button type="submit" disabled={saving || (needsFollowUp && !followUpOn) || (needsReason && !note.trim()) || (offerAcceptance === "accepted" && (!offerPackage || offerWeather === "pending" || !offerAcceptedOn))}>
               {saving ? <><Loader2 size={16} className="mr-2 animate-spin" />Lagrer …</> : "Lagre oppfølging"}
             </Button>
           </div>
@@ -496,6 +558,13 @@ function MetricCard({ label, value, icon: Icon, detail }: { label: string; value
 
 function StatusBadge({ value }: { value: string }) {
   return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase ${statusClass(value)}`}>{value}</span>;
+}
+
+async function openCareOfferPdf(id: string) {
+  const response = await fetch(`/api/care/leads/${id}/offer`);
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.url) throw new Error(body?.error || "Kunne ikke åpne tilbud.");
+  window.open(body.url, "_blank", "noopener,noreferrer");
 }
 
 function CareLeadCard({
@@ -547,6 +616,8 @@ function CareLeadCard({
         </p>
         <p className="truncate"><span className="text-slate-400">Kilde:</span> {lead.source || "Care webskjema"}</p>
         <p className="truncate"><span className="text-slate-400">Oppfølging:</span> {lead.followUpOn ? dateLabel(lead.followUpOn) : "Ikke satt"}</p>
+        {lead.offerReference && <p className="truncate"><span className="text-slate-400">Tilbud:</span> {lead.offerReference} · {lead.offerAcceptance === "accepted" ? "Akseptert" : lead.offerAcceptance === "declined" ? "Avslått" : "Avventer svar"}</p>}
+        {lead.offerPackage && <p className="truncate"><span className="text-slate-400">Pakke:</span> {lead.offerPackage}</p>}
         {(lead.utmSource || lead.utmCampaign) && (
           <p className="truncate"><span className="text-slate-400">Kampanje:</span> {[lead.utmSource, lead.utmMedium, lead.utmCampaign].filter(Boolean).join(" / ")}</p>
         )}
@@ -565,6 +636,7 @@ function CareLeadCard({
         <span className="text-slate-500">{lead.priority} prioritet{lead.careReference ? ` · ${lead.careReference}` : ""}</span>
         <div className="flex flex-wrap gap-2">
           <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
+          {lead.offerPdfName && <button type="button" onClick={() => { void openCareOfferPdf(lead.id).catch((error) => window.alert(error instanceof Error ? error.message : "Kunne ikke åpne tilbud.")); }} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-cyan-200 hover:bg-slate-800">Vis tilbuds-PDF</button>}
           {open && !lead.careContractId && onFollowUp && (
             <button type="button" onClick={() => onFollowUp(lead)} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 font-semibold text-cyan-200 hover:bg-cyan-500/15">Oppfølging</button>
           )}
