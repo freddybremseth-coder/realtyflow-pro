@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, BookOpen, CalendarDays, FileText, Megaphone, RefreshCw, Send } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, FileText, Images, Megaphone, RefreshCw, Send } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
 import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
-type Section = "articles" | "studio" | "drafts" | "publish" | "calendar" | "analytics";
+type Section = "articles" | "studio" | "drafts" | "publish" | "calendar" | "analytics" | "images";
 type Publication = {
   id: string;
   title: string | null;
@@ -35,6 +35,7 @@ const sections: Array<{
   { id: "publish", title: "Publiser", permission: "marketing.publish", icon: Send },
   { id: "calendar", title: "Innholdskalender", permission: "marketing.read", icon: CalendarDays },
   { id: "analytics", title: "Analytics", permission: "marketing.read", icon: BarChart3 },
+  { id: "images", title: "Bildebibliotek", permission: "marketing.read", icon: Images },
 ];
 
 export default function ScopedContentHubPage() {
@@ -102,7 +103,7 @@ export default function ScopedContentHubPage() {
   }
 
   useEffect(() => {
-    if (!canReadMarketing || !["drafts", "calendar", "analytics"].includes(section)) return;
+    if (!canReadMarketing || !["drafts", "calendar", "analytics", "images"].includes(section)) return;
     const controller = new AbortController();
     void loadPublications(controller.signal);
     return () => controller.abort();
@@ -114,6 +115,8 @@ export default function ScopedContentHubPage() {
     const date = item.scheduledAt || item.publishedAt;
     return date && !Number.isNaN(new Date(date).getTime()) && date.slice(0, 7) === calendarMonth;
   }).sort((a, b) => String(a.scheduledAt || a.publishedAt).localeCompare(String(b.scheduledAt || b.publishedAt)));
+  const images = publications.filter(item => item.thumbnailUrl && /^https:\/\//i.test(item.thumbnailUrl))
+    .filter((item, index, items) => items.findIndex(other => other.thumbnailUrl === item.thumbnailUrl) === index);
   const total = (key: "views" | "likes" | "comments" | "shares") => publications.reduce((sum, item) => sum + (item[key] || 0), 0);
 
   return <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 text-slate-100">
@@ -221,6 +224,27 @@ export default function ScopedContentHubPage() {
             <button type="button" onClick={() => { setSelectedPublication(item.id); setSection("drafts"); }} className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200">Åpne innlegg</button>
           </div>)}
         </div>
+      </section>}
+
+      {section === "images" && canReadMarketing && <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Bildebibliotek fra innhold</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            Bilder knyttet til de siste opptil 60 innleggene for denne merkevaren. Velg et bilde for å åpne innlegget det er brukt i.
+            Dette er en oversikt over innholdsbilder, ikke hele mediearkivet eller en opplastingsfunksjon.
+          </p>
+        </div>
+        {itemsLoading && <p role="status">Henter bilder…</p>}
+        {itemsError && <p role="alert">{itemsError}</p>}
+        {!itemsLoading && !itemsError && images.length === 0 && <p className="rounded-lg border border-slate-700 p-4">Ingen bilder registrert i denne innholdsoversikten.</p>}
+        {!itemsLoading && !itemsError && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {images.map(item => <button key={item.id} type="button" onClick={() => { setSelectedPublication(item.id); setSection("drafts"); }}
+              className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900 text-left hover:border-cyan-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400">
+            <img src={item.thumbnailUrl || ""} alt={item.title || "Innholdsbilde"} loading="lazy" className="h-44 w-full object-cover"/>
+            <div className="p-3"><p className="truncate text-sm font-semibold">{item.title || "Uten tittel"}</p>
+              <p className="mt-1 text-xs text-slate-400">{item.status} · Åpne tilknyttet innlegg</p></div>
+          </button>)}
+        </div>}
       </section>}
 
       {section === "analytics" && canReadMarketing && <section className="space-y-4">
