@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Building2, FileText, Mail, Megaphone, RefreshCw, Search, Video } from "lucide-react";
+import { Building2, Megaphone, RefreshCw, Video } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
 import { WorkspaceEmailReachPanel, type WorkspaceEmailHandoff } from "@/components/workspaces/email-reach-panel";
 import { corporateOutreachTemplates, personalizeCorporateOutreach } from "@/lib/corporate-outreach";
@@ -33,7 +33,9 @@ type Visibility = {
 };
 type AdRow = {
   id: string; name: string; productName: string; status: string; growthGoal?: string | null;
-  targetMarkets?: string[] | null; totalCreatives?: number | null; estimatedCostUsd?: number | null;
+  targetMarkets?: string[] | null; audienceSegments?: string[] | null;
+  funnelStage?: string | null; offer?: string | null;
+  totalCreatives?: number | null; estimatedCostUsd?: number | null;
 };
 type Planned = {
   id: string; kind: string; title: string; status: string; priority: string;
@@ -370,41 +372,6 @@ export function GrowthCorporatePanel({
     {error && <p role="alert" className="rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">{error}</p>}
     {notice && <p role="status" className="rounded-xl border border-emerald-800 bg-emerald-950/25 p-4 text-sm text-emerald-200">{notice}</p>}
 
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-      <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Velg hva du vil gjøre</p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {availableAreas.includes("corporate") && <button type="button" onClick={() => setArea("corporate")}
-          className={`rounded-xl border p-4 text-left ${area === "corporate" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
-          <Building2 size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Finn og jobb med bedrifter</strong>
-          <span className="mt-1 block text-xs text-slate-500">Corporate Homes og partnerkanaler</span>
-        </button>}
-        {availableAreas.includes("content") && <button type="button" onClick={() => setArea("content")}
-          className={`rounded-xl border p-4 text-left ${area === "content" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
-          <FileText size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Lag eller forbedre nettsideinnhold</strong>
-          <span className="mt-1 block text-xs text-slate-500">Artikler, guider, søkeord og publisering</span>
-        </button>}
-        {availableAreas.includes("email") && <button type="button" onClick={() => setArea("email")}
-          className={`rounded-xl border p-4 text-left ${area === "email" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
-          <Mail size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Nyhetsbrev, e-post & Reach</strong>
-          <span className="mt-1 block text-xs text-slate-500">Én-til-én, nyhetsbrevutkast og kampanjer</span>
-        </button>}
-        {availableAreas.includes("visibility") && <button type="button" onClick={() => setArea("visibility")}
-          className={`rounded-xl border p-4 text-left ${area === "visibility" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
-          <Search size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Forbedre Google & AI-søk</strong>
-          <span className="mt-1 block text-xs text-slate-500">SEO, GEO, AEO, søkeord og tekster</span>
-        </button>}
-        {availableAreas.includes("ads") && <button type="button" onClick={() => setArea("ads")}
-          className={`rounded-xl border p-4 text-left ${area === "ads" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
-          <Megaphone size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Jobb med annonser</strong>
-          <span className="mt-1 block text-xs text-slate-500">Se kampanjer og lag neste annonsebrief</span>
-        </button>}
-        {availableAreas.includes("plan") && <button type="button" onClick={() => setArea("plan")}
-          className={`rounded-xl border p-4 text-left ${area === "plan" ? "border-cyan-500 bg-cyan-950/30" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}>
-          <Video size={20} className="text-cyan-400"/><strong className="mt-2 block text-sm">Planlegg neste aktivitet</strong>
-          <span className="mt-1 block text-xs text-slate-500">Video, webinar, møte, SEO eller Corporate</span>
-        </button>}
-      </div>
-    </div>
 
     {area === "corporate" && data?.corporate && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <div className="flex items-center justify-between gap-3">
@@ -575,17 +542,31 @@ export function GrowthCorporatePanel({
 
     {area === "ads" && data?.ads && <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="flex items-center gap-2 text-xl font-semibold"><Megaphone size={19}/> Annonser</h2>
-      <p className="mt-1 text-xs text-slate-400">Kampanjeoversikt. Denne medarbeiderflaten kan ikke starte spend eller publisering.</p>
+      <p className="mt-1 text-sm text-slate-400">Registrerte annonseplaner og utkast for denne merkevaren. «Fullført» betyr ikke nødvendigvis at en annonse kjører. Resultater som visninger, klikk og annonseforbruk krever tilkoblede annonsekontoer.</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 p-3"><p className="text-xs text-slate-400">Registrerte kampanjer</p><p className="text-xl font-semibold">{data.ads.length}</p></div>
+        <div className="rounded-lg border border-slate-800 p-3"><p className="text-xs text-slate-400">Utkast under arbeid</p><p className="text-xl font-semibold">{data.ads.filter(row => ["generating","draft","planning","in_progress"].includes(row.status.toLowerCase())).length}</p></div>
+        <div className="rounded-lg border border-slate-800 p-3"><p className="text-xs text-slate-400">Med annonsevarianter</p><p className="text-xl font-semibold">{data.ads.filter(row => Number(row.totalCreatives || 0) > 0).length}</p></div>
+      </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">{data.ads.map(row =>
         <article key={row.id} className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
-          <div className="flex justify-between gap-3"><strong>{row.name}</strong><span className="text-xs text-cyan-300">{row.status}</span></div>
-          <p className="mt-1 text-xs text-slate-400">{row.productName}{row.growthGoal ? ` · ${row.growthGoal}` : ""}</p>
-          {permissions.includes("ads.draft") && <button type="button" className="mt-2 text-xs text-cyan-300 underline"
-            onClick={() => { setKind("ads"); setSourceId(row.id); setTitle(`Annonse · ${row.name}`); setArea("plan"); }}>
-            Lag ny annonseoppgave
+          <div className="flex items-start justify-between gap-3"><strong>{row.name}</strong><span className="shrink-0 text-xs text-cyan-300">{row.status}</span></div>
+          <p className="mt-2 text-sm text-slate-300">{row.productName || "Uten produkt"}</p>
+          <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+            <div><dt className="text-slate-500">Mål</dt><dd className="mt-1 text-slate-200">{row.growthGoal || "Ikke definert"}</dd></div>
+            <div><dt className="text-slate-500">Marked</dt><dd className="mt-1 text-slate-200">{row.targetMarkets?.length ? row.targetMarkets.join(", ") : "Ikke valgt"}</dd></div>
+            <div><dt className="text-slate-500">Målgruppe</dt><dd className="mt-1 text-slate-200">{row.audienceSegments?.length ? row.audienceSegments.join(", ") : "Ikke definert"}</dd></div>
+            <div><dt className="text-slate-500">Annonsevarianter</dt><dd className="mt-1 text-slate-200">{row.totalCreatives ?? "Ikke registrert"}</dd></div>
+            <div><dt className="text-slate-500">Planlagt estimat</dt><dd className="mt-1 text-slate-200">{row.estimatedCostUsd == null ? "Ikke beregnet" : row.estimatedCostUsd.toLocaleString("nb-NO", { style: "currency", currency: "USD" })}</dd></div>
+            <div><dt className="text-slate-500">Trinn</dt><dd className="mt-1 text-slate-200">{row.funnelStage || "Ikke definert"}</dd></div>
+          </dl>
+          {row.offer && <p className="mt-3 text-xs text-slate-300">Tilbud: {row.offer}</p>}
+          {permissions.includes("ads.draft") && <button type="button" className="mt-4 text-xs font-semibold text-cyan-300 underline"
+            onClick={() => { setKind("ads"); setSourceId(row.id); setTitle(`Annonse · ${row.name}`); setDescription(row.offer || row.growthGoal || ""); setArea("plan"); }}>
+            Opprett annonseoppgave
           </button>}
         </article>)}
-        {data.ads.length === 0 && <p className="text-sm text-slate-500">Ingen kampanjer for denne merkevaren.</p>}
+        {data.ads.length === 0 && <p className="text-sm text-slate-500">Ingen annonseplaner registrert. Bruk aktivitetsplanlegging for å lage en annonsebrief.</p>}
       </div>
     </div>}
 
