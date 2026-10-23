@@ -165,6 +165,44 @@ export async function GET(
   const access = await requireBrandWorkspace(request, params.brandKey, "marketing.read");
   if (!access.value) return access.response;
 
+  // Full history is loaded in bounded pages. Every page repeats the existing
+  // workspace authorization and the database RPC checks the same membership.
+  if (request.nextUrl.searchParams.get("history") === "1") {
+    const rawPage = request.nextUrl.searchParams.get("page") || "0";
+    if (!/^(0|[1-9][0-9]{0,2})$/.test(rawPage) || Number(rawPage) > 100) {
+      return fail(400, "INVALID_HISTORY_PAGE");
+    }
+    const page = Number(rawPage);
+    let rows: unknown[] = [];
+    if (!access.value.verifiedUserId) {
+      const { data, error } = await access.value.supabase.from("content_publications")
+        .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
+        .eq("brand_id", params.brandKey)
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: true })
+        .range(page * 100, page * 100 + 99);
+      if (error) return fail(503, "MARKETING_HISTORY_UNAVAILABLE");
+      rows = data || [];
+    } else {
+      const { data, error } = await access.value.supabase.rpc("workspace_brand_marketing_history", {
+        p_brand_key: params.brandKey,
+        p_user_id: access.value.verifiedUserId,
+        p_email: access.value.verifiedEmail,
+        p_page: page,
+      });
+      if (error || !data || !Array.isArray(data.publications)) {
+        return fail(503, "MARKETING_HISTORY_UNAVAILABLE");
+      }
+      rows = data.publications;
+    }
+    const publications = rows.flatMap(row => {
+      const publication = safePublication(row, params.brandKey);
+      return publication ? [publication] : [];
+    });
+    return NextResponse.json({ ok: true, brand: params.brandKey, page,
+      hasMore: publications.length === 100, publications }, { headers: noStore });
+  }
+
   let snapshot: any = null;
   if (!access.value.verifiedUserId) {
     snapshot = await ownerMarketingSnapshot(access.value.supabase, params.brandKey);
