@@ -71,6 +71,14 @@ export async function PATCH(
   const stage = clean(body.stage, 40).toLowerCase();
   const followUpOn = clean(body.followUpOn, 10);
   const note = clean(body.note, 500);
+  const offer = body.offer && typeof body.offer === "object" && !Array.isArray(body.offer)
+    ? body.offer as Record<string, unknown> : null;
+  const offerReference = clean(offer?.reference, 40);
+  const offerPackage = clean(offer?.package, 20).toLowerCase();
+  const offerWeather = clean(offer?.weather, 20).toLowerCase();
+  const offerAcceptance = clean(offer?.acceptance, 20).toLowerCase();
+  const offerStartsOn = clean(offer?.startsOn, 10);
+  const offerAcceptedOn = clean(offer?.acceptedOn, 10);
 
   if (!SALES_STAGES.has(stage)) {
     return NextResponse.json({ error: "Velg en gyldig Care-salgsstatus." }, { status: 400 });
@@ -83,6 +91,19 @@ export async function PATCH(
   }
   if (stage === "not_relevant" && !note) {
     return NextResponse.json({ error: "Skriv kort hvorfor henvendelsen ikke er aktuell." }, { status: 400 });
+  }
+
+  if (offer && (
+    (offerPackage && !["basic", "standard", "premium"].includes(offerPackage))
+    || (offerWeather && !["yes", "no", "pending"].includes(offerWeather))
+    || (offerAcceptance && !["pending", "accepted", "declined"].includes(offerAcceptance))
+    || (offerStartsOn && !validDate(offerStartsOn))
+    || (offerAcceptedOn && !validDate(offerAcceptedOn))
+  )) {
+    return NextResponse.json({ error: "Ugyldige tilbudsopplysninger." }, { status: 400 });
+  }
+  if (offerAcceptance === "accepted" && (!offerPackage || !["yes", "no"].includes(offerWeather) || !offerAcceptedOn)) {
+    return NextResponse.json({ error: "Registrer valgt pakke, uværsberedskap og akseptdato før tilbudet markeres akseptert." }, { status: 400 });
   }
 
   const { data: existing, error: fetchError } = await supabase
@@ -107,6 +128,14 @@ export async function PATCH(
   const metadata = {
     ...existingMetadata,
     care_sales_stage: stage,
+    ...(offer ? {
+      care_offer_reference: offerReference || null,
+      care_offer_package: offerPackage || null,
+      care_offer_weather: offerWeather || "pending",
+      care_offer_acceptance_status: offerAcceptance || "pending",
+      care_offer_start_on: offerStartsOn || null,
+      care_offer_accepted_on: offerAcceptance === "accepted" ? offerAcceptedOn : null,
+    } : {}),
     care_follow_up_on: followUpOn || null,
     care_sales_note: note || null,
     care_stage_updated_at: now,
