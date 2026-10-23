@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Megaphone, RefreshCw, Video } from "lucide-react";
+import { Building2, Megaphone, RefreshCw, Search, Video } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
 import { WorkspaceEmailReachPanel, type WorkspaceEmailHandoff } from "@/components/workspaces/email-reach-panel";
 import { corporateOutreachTemplates, personalizeCorporateOutreach } from "@/lib/corporate-outreach";
