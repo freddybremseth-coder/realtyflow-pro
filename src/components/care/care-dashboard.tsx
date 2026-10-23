@@ -560,13 +560,6 @@ function StatusBadge({ value }: { value: string }) {
   return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase ${statusClass(value)}`}>{value}</span>;
 }
 
-async function openCareOfferPdf(id: string) {
-  const response = await fetch(`/api/care/leads/${id}/offer`);
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.url) throw new Error(body?.error || "Kunne ikke åpne tilbud.");
-  window.open(body.url, "_blank", "noopener,noreferrer");
-}
-
 function CareLeadCard({
   lead,
   onOnboard,
@@ -636,7 +629,7 @@ function CareLeadCard({
         <span className="text-slate-500">{lead.priority} prioritet{lead.careReference ? ` · ${lead.careReference}` : ""}</span>
         <div className="flex flex-wrap gap-2">
           <Link href={lead.customerHref} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800">Åpne kundekort</Link>
-          {lead.offerPdfName && <button type="button" onClick={() => { void openCareOfferPdf(lead.id).catch((error) => window.alert(error instanceof Error ? error.message : "Kunne ikke åpne tilbud.")); }} className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-cyan-200 hover:bg-slate-800">Vis tilbuds-PDF</button>}
+          {lead.offerPdfName && <a href={`/api/care/leads/${lead.id}/offer`} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-cyan-200 hover:bg-slate-800">Vis tilbuds-PDF</a>}
           {open && !lead.careContractId && onFollowUp && (
             <button type="button" onClick={() => onFollowUp(lead)} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 font-semibold text-cyan-200 hover:bg-cyan-500/15">Oppfølging</button>
           )}
