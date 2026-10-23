@@ -421,7 +421,7 @@ export async function POST(request: NextRequest, { params }: { params: { brandKe
   const email = normalizeEmail(contact.email);
   if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return fail(409, "INVALID_RECIPIENT");
   const suppression = await checkCrmEmailSuppression(supabase, [email]);
-  if (suppression.error || suppression.blocked || (suppression.hardBlockedEmails || []).length > 0)
+  if (suppression.error || (suppression.hardBlockedEmails || []).length > 0)
     return fail(409, "EMAIL_SUPPRESSED");
   const eligibility = evaluateManualCustomerOutreach(contact, { awaitingReply: false });
   if (!eligibility.allowed) return fail(409, "CUSTOMER_OUTREACH_BLOCKED", eligibility.blockedReason || undefined);
