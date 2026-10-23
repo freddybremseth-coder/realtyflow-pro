@@ -30,11 +30,15 @@ type Contact = {
 };
 type StaffCustomer360 = {
   contactId: string;
+  contact?: { notes?: string | null; property_interest?: string | null; preferred_location?: string | null; next_followup?: string | null };
+  buyerProfiles?: Array<{ id: string; status?: string; summary?: string | null }>;
+  criteria?: Array<Record<string, unknown>>;
+  shortlists?: Array<{ id: string; title?: string; status?: string }>;
   profileCount: number;
   criteriaCount: number;
   shortlistCount: number;
   activityCount: number;
-  dialogue: { sentCount: number; replyCount: number; lastSentAt: string | null; lastReplyAt: string | null; awaitingReply: boolean; emailBlocked: boolean };
+  dialogue: { sentCount: number; replyCount: number; lastSentAt: string | null; lastReplyAt: string | null; awaitingReply: boolean; emailBlocked: boolean; messages?: Array<{ id: string; direction: string; from_address?: string; to_addresses?: string[]; subject?: string; body_text?: string; received_at?: string | null; created_at?: string | null }> };
   activity: Array<{ id: string; kind: string; occurredAt: string }>;
 };
 type CrmSummary = {
@@ -117,6 +121,11 @@ export default function FocusedWorkspacePage() {
   const [customer360, setCustomer360] = useState<StaffCustomer360 | null>(null);
   const [customer360Busy, setCustomer360Busy] = useState(false);
   const [customer360Error, setCustomer360Error] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailNotice, setEmailNotice] = useState("");
+  const [emailRevision, setEmailRevision] = useState(0);
   const [closingMode, setClosingMode] = useState(false);
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
   const [socialPropertySeed, setSocialPropertySeed] = useState<WorkspaceSocialPropertySeed | null>(null);
@@ -233,7 +242,7 @@ export default function FocusedWorkspacePage() {
       return () => controller.abort();
     }
     setCustomer360Busy(true);
-    fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360?contactId=${encodeURIComponent(selectedCustomerId)}&view=staff`, {
+    fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360?contactId=${encodeURIComponent(selectedCustomerId)}&view=collaborator`, {
       cache: "no-store", signal: controller.signal,
     }).then(async response => {
       if (!response.ok) throw new Error(response.status === 403
@@ -246,7 +255,32 @@ export default function FocusedWorkspacePage() {
       if (!controller.signal.aborted) setCustomer360Error(cause instanceof Error ? cause.message : "Kunne ikke hente kundeoversikt.");
     }).finally(() => { if (!controller.signal.aborted) setCustomer360Busy(false); });
     return () => controller.abort();
-  }, [brandKey, selectedCustomerId, permissions]);
+  }, [brandKey, selectedCustomerId, permissions, emailRevision]);
+  useEffect(() => { setEmailSubject(""); setEmailBody(""); setEmailNotice(""); }, [selectedCustomerId]);
+
+  async function sendCustomerEmail() {
+    if (!selectedCustomerId || !customer360 || emailSending ||
+        !permissions.includes("email.send") || customer360.dialogue.emailBlocked ||
+        !emailSubject.trim() || !emailBody.trim()) return;
+    const recipient = selectedCustomerId === customer360.contactId
+      ? contacts.find(contact => contact.id === selectedCustomerId)?.email : null;
+    if (!recipient || !window.confirm(`Send e-post til ${recipient}?\\n\\nEmne: ${emailSubject}\\n\\nE-posten sendes umiddelbart fra merkevarens e-postkonto.`)) return;
+    setEmailSending(true); setEmailNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId: selectedCustomerId, subject: emailSubject.trim(),
+          bodyText: emailBody.trim(), confirmReviewed: true }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error?.message ||
+        (response.status === 409 ? "E-posten kan ikke sendes på grunn av kundens kontaktstatus eller avsenderoppsett."
+          : "Kunne ikke sende e-post."));
+      setEmailSubject(""); setEmailBody(""); setEmailNotice("E-posten er sendt.");
+      setEmailRevision(value => value + 1);
+    } catch (cause) { setEmailNotice(cause instanceof Error ? cause.message : "Kunne ikke sende e-post."); }
+    finally { setEmailSending(false); }
+  }
   const filtered = contacts;
   const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
@@ -579,11 +613,11 @@ export default function FocusedWorkspacePage() {
 
               <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/35 p-3 text-xs text-slate-400">
                 Kontaktdata: {selectedCustomer.email ? "e-post ✓" : "e-post mangler"} · {selectedCustomer.phone ? "telefon ✓" : "telefon mangler"}.
-                RealtyFlow holder arbeidet innenfor {title}; økonomi, private notater og andre merkevarer er ikke eksponert.
+                RealtyFlow holder arbeidet innenfor {title}. Økonomi og andre merkevarer er ikke eksponert.
               </div>
 
               <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                <h4 className="font-semibold text-cyan-200">Customer 360 · oppfølging</h4>
+                <h4 className="font-semibold text-cyan-200">Customer 360 · komplett kundedialog</h4>
                 {customer360Busy && <p className="mt-2 text-sm text-slate-400">Henter oversikt…</p>}
                 {customer360Error && <p className="mt-2 text-sm text-amber-300" role="status">{customer360Error}</p>}
                 {customer360 && <>
@@ -597,6 +631,48 @@ export default function FocusedWorkspacePage() {
                     {customer360.dialogue.awaitingReply ? " · Venter på svar" : ""}
                     {customer360.dialogue.emailBlocked ? " · E-postkontakt sperret" : ""}</p>
                   <p className="mt-1 text-xs text-slate-400">Siste sendte: {crmDate(customer360.dialogue.lastSentAt)} · siste svar: {crmDate(customer360.dialogue.lastReplyAt)}</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-800 p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-400">Kjøperprofil og behov</p>
+                      <p className="mt-2 text-sm">Interessert i: {customer360.contact?.property_interest || "Ikke registrert"}</p>
+                      <p className="mt-1 text-sm">Område: {customer360.contact?.preferred_location || "Ikke registrert"}</p>
+                      <p className="mt-1 text-sm">Neste oppfølging: {crmDate(customer360.contact?.next_followup)}</p>
+                      {(customer360.buyerProfiles || []).map(profile => <p key={profile.id} className="mt-2 text-sm text-slate-300">{profile.status || "Profil"}: {profile.summary || "Ingen oppsummering"}</p>)}
+                      {(customer360.shortlists || []).map(list => <p key={list.id} className="mt-1 text-xs text-cyan-200">Boligliste: {list.title || "Uten navn"} · {list.status || "Utkast"}</p>)}
+                    </div>
+                    <div className="rounded-lg border border-slate-800 p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-400">Kundenotater</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-300">{customer360.contact?.notes || "Ingen notater registrert."}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 border-t border-slate-800 pt-4">
+                    <h5 className="font-semibold text-cyan-200">E-posthistorikk med innhold</h5>
+                    {(customer360.dialogue.messages || []).length === 0 ? <p className="mt-2 text-sm text-slate-400">Ingen tilknyttede e-poster.</p>
+                      : <div className="mt-3 max-h-[600px] space-y-3 overflow-y-auto">
+                          {(customer360.dialogue.messages || []).map(message => <article key={message.id} className="rounded-lg border border-slate-700 bg-slate-900 p-3">
+                            <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-400">
+                              <span>{message.direction === "outbound" ? "Sendt" : "Mottatt"} · {message.from_address || "Ukjent avsender"}</span>
+                              <span>{crmDate(message.received_at || message.created_at)}</span>
+                            </div>
+                            <p className="mt-2 font-semibold">{message.subject || "(Uten emne)"}</p>
+                            <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-300">{message.body_text || "Ingen tekst tilgjengelig."}</p>
+                          </article>)}
+                        </div>}
+                  </div>
+                  {permissions.includes("email.send") && <form className="mt-4 space-y-3 rounded-xl border border-cyan-900/50 bg-cyan-950/10 p-4"
+                    onSubmit={event => { event.preventDefault(); void sendCustomerEmail(); }}>
+                    <h5 className="font-semibold text-cyan-200">Ny e-post til kunden</h5>
+                    <p className="text-xs text-slate-400">Sendes manuelt etter bekreftelse fra merkevarens aktive e-postkonto. Ingen automatisk sending.</p>
+                    <input aria-label="Emne" placeholder="Emne" value={emailSubject} maxLength={240}
+                      onChange={event => setEmailSubject(event.target.value)} required disabled={emailSending || customer360.dialogue.emailBlocked}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" />
+                    <textarea aria-label="E-posttekst" placeholder="Skriv e-posten…" value={emailBody} maxLength={16000} rows={7}
+                      onChange={event => setEmailBody(event.target.value)} required disabled={emailSending || customer360.dialogue.emailBlocked}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" />
+                    <button type="submit" disabled={emailSending || customer360.dialogue.emailBlocked || !emailSubject.trim() || !emailBody.trim()}
+                      className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{emailSending ? "Sender…" : "Send e-post"}</button>
+                    {emailNotice && <p role="status" className="text-sm text-slate-300">{emailNotice}</p>}
+                  </form>}
                   <div className="mt-3 border-t border-slate-800 pt-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Aktivitetshistorikk</p>
                     {customer360.activity.length ? <ul className="mt-2 space-y-1 text-sm text-slate-300">
