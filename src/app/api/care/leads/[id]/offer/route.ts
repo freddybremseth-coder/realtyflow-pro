@@ -76,7 +76,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
     const { data, error } = await db.storage.from(BUCKET).createSignedUrl(path, 60);
     if (error || !data?.signedUrl) return NextResponse.json({ error: error?.message || "Kunne ikke åpne PDF." }, { status: 400 });
-    return NextResponse.json({ url: data.signedUrl });
+    return NextResponse.redirect(data.signedUrl, { status: 303 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Kunne ikke hente tilbud." }, { status: 400 });
   }
