@@ -426,6 +426,16 @@ export function localeFromSource(source?: string | null): "no" | "de" | "en" {
 
 /** Velg sekvens ut fra merke + kilde (språk). Faller tilbake til merkets standard. */
 export function resolveSequence(brandId: string, source?: string | null): NurtureSequence | null {
+  // Care requests are service enquiries from existing property owners, not
+  // buyer leads. This guard applies on every cron run, including contacts
+  // already enrolled in a buyer sequence, without changing their CRM records.
+  const normalizedSource = String(source || "").trim().toLowerCase();
+  if (brandId === "zeneco" && (
+    normalizedSource.startsWith("zeneco-care-") ||
+    normalizedSource.startsWith("care-") ||
+    normalizedSource === "zeneco-care"
+  )) return null;
+
   const locale = localeFromSource(source);
   if (locale !== "no" && NURTURE_SEQUENCES[`${brandId}:${locale}`]) {
     return NURTURE_SEQUENCES[`${brandId}:${locale}`];
