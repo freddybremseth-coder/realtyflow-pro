@@ -92,14 +92,24 @@ export default function ScopedContentHubPage() {
     setItemsLoading(true);
     setItemsError("");
     try {
-      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/marketing", {
-        cache: "no-store", signal,
-      });
-      if (!response.ok) throw new Error("SoMe-utkastene kunne ikke hentes.");
-      const body = await response.json();
-      if (!signal?.aborted) { setPublications(Array.isArray(body.publications) ? body.publications : []); setPublicationsLoaded(true); }
+      const all: Publication[] = [];
+      // Fetch every page, but keep each authenticated request bounded to 100 rows.
+      // The API/RPC revalidates the selected brand and marketing.read per page.
+      for (let page = 0; page <= 100; page += 1) {
+        const response = await fetch(
+          "/api/workspaces/" + encodeURIComponent(brandKey) + "/marketing?history=1&page=" + page,
+          { cache: "no-store", signal },
+        );
+        if (!response.ok) throw new Error("Innleggshistorikken kunne ikke hentes.");
+        const body = await response.json();
+        if (!Array.isArray(body.publications)) throw new Error("Ugyldig svar fra innholdsarkivet.");
+        all.push(...body.publications);
+        if (!body.hasMore) break;
+        if (page === 100) throw new Error("Historikken er større enn arkivgrensen. Kontakt administrator.");
+      }
+      if (!signal?.aborted) { setPublications(all); setPublicationsLoaded(true); }
     } catch (cause) {
-      if (!signal?.aborted) setItemsError(cause instanceof Error ? cause.message : "Feil ved henting av utkast.");
+      if (!signal?.aborted) setItemsError(cause instanceof Error ? cause.message : "Feil ved henting av historikken.");
     } finally {
       if (!signal?.aborted) setItemsLoading(false);
     }
@@ -111,7 +121,7 @@ export default function ScopedContentHubPage() {
     void loadPublications(controller.signal);
     return () => controller.abort();
     // Updated when selecting the drafts area or changing the selected brand.
-  }, [brandKey, canReadMarketing, section]);
+  }, [brandKey, canReadMarketing]);
 
   const filteredPublications = publications.filter(item => statusFilter === "all" || item.status === statusFilter);
   const calendarItems = publications.filter(item => {
@@ -170,7 +180,7 @@ export default function ScopedContentHubPage() {
     {!loading && !error && available.length > 0 && <>
       {canReadMarketing && publicationsLoaded && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {([
-          ["Registrerte innlegg", publications.length, "De siste opptil 60 innleggene"],
+          ["Registrerte innlegg", publications.length, "Hele merkevarens innholdshistorikk"],
           ["Publisert", statusCounts.published, "Bekreftet publiserte"],
           ["Utkast", statusCounts.draft, "Ikke publisert ennå"],
           ["Planlagt", statusCounts.scheduled, "Venter på publisering"],
@@ -333,14 +343,14 @@ export default function ScopedContentHubPage() {
           <p className="text-xs text-slate-500">Velg et innlegg i kalenderen for å åpne detaljene, inkludert status og publiseringsstatistikk.</p>
         </>}
         {!itemsLoading && !itemsError && calendarItems.length === 0 && calendarView === "month" &&
-          <p className="text-sm text-slate-400">Ingen daterte innlegg i denne måneden innenfor den tilgjengelige historikken.</p>}
+          <p className="text-sm text-slate-400">Ingen daterte innlegg i denne måneden.</p>}
       </section>}
 
       {section === "images" && canReadMarketing && <section className="space-y-4">
         <div>
           <h2 className="text-xl font-semibold">Bildebibliotek fra innhold</h2>
           <p className="mt-2 text-sm text-slate-400">
-            Bilder knyttet til de siste opptil 60 innleggene for denne merkevaren. Velg et bilde for å åpne innlegget det er brukt i.
+            Bilder knyttet til alle registrerte innlegg for denne merkevaren. Velg et bilde for å åpne innlegget det er brukt i.
             Dette er en oversikt over innholdsbilder, ikke hele mediearkivet eller en opplastingsfunksjon.
           </p>
         </div>
@@ -359,7 +369,7 @@ export default function ScopedContentHubPage() {
 
       {section === "analytics" && canReadMarketing && <section className="space-y-4">
         <h2 className="text-xl font-semibold">Analyseoversikt for innhold</h2>
-        <p className="text-sm text-slate-400">Statistikk fra de siste opptil 60 innleggene i denne merkevaren. Dette er ikke en komplett historisk kanal- eller leadrapport; eldre innlegg kan mangle.</p>
+        <p className="text-sm text-slate-400">Samlet historisk innholdsstatistikk for denne merkevaren. Dette er ikke en full kanal- eller leadrapport.</p>
         {itemsLoading && <p role="status">Henter statistikk…</p>}
         {itemsError && <p role="alert">{itemsError}</p>}
         {!itemsLoading && !itemsError && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
