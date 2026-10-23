@@ -47,3 +47,23 @@ test("historical Casaverano source is internal and never appears in outward ZenE
   assert.doesNotMatch(rendered, /casaverano/i);
   assert.match(rendered, /Zen Eco Homes/i);
 });
+
+test("Care keyholding leads never enter property buyer sequences, even with a persona", () => {
+  for (const source of [
+    "zeneco-care-keyholding",
+    "zeneco-care-boligtilsyn",
+    "zeneco-care-nokkeloppbevaring",
+    "zeneco-care-klargjoring",
+    "zeneco-care-uvaer",
+    "care-keyholding",
+    " ZENECO-CARE-KEYHOLDING ",
+  ]) {
+    assert.equal(resolveNurtureSequenceWithPersona("zeneco", source, null), null, source);
+    assert.equal(resolveNurtureSequenceWithPersona("zeneco", source, "holiday_home"), null, source);
+  }
+});
+
+test("regular ZenEco property enquiries still use buyer sequences", () => {
+  assert.equal(resolveNurtureSequenceWithPersona("zeneco", "zenecohomes-no", null)?.id, "zeneco-buyer-v1");
+  assert.equal(resolveNurtureSequenceWithPersona("zeneco", "zenecohomes-en", null)?.id, "zeneco-buyer-en-v1");
+});
