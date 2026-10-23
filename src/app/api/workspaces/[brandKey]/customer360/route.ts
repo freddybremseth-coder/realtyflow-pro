@@ -235,7 +235,7 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
       profileCount: profiles.length,
       criteriaCount: activeCriteria.length,
       shortlistCount: shortlists.length,
-      taskCount: workItems.length,
+      activityCount: timeline.length,
       dialogue: {
         sentCount: communicationDialogue.sentCount,
         replyCount: communicationDialogue.replyCount,
