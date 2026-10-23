@@ -613,12 +613,13 @@ export default function FocusedWorkspacePage() {
                   <li>Følg opp reservasjon, dokumentasjon og ansvarlig rådgiver.</li>
                   <li>Avtal neste kontakt og kontroller status før overtakelse.</li>
                 </ol>
-                <p className="mt-2 text-xs text-slate-500">Sjekklisten er veiledende og lagres ikke som fullførte oppgaver.</p>
+                {showJointTasks ? <p className="mt-2 text-xs text-slate-400">Velg et forslag nedenfor for å lage en lagret oppgave med frist. Oppgavens fullføring vises i fremdriftsoversikten.</p>
+                  : <p className="mt-2 text-xs text-slate-500">Denne sjekklisten er foreløpig veiledende. Oppgaveadministrasjon er ennå ikke åpnet for denne merkevaren.</p>}
               </div>}
 
               {showJointTasks && <div className="mt-5 border-t border-slate-800 pt-5">
                 <ZenJointTasks contacts={[selectedCustomer]} canWrite={canWriteJointTasks}
-                  selectedContactId={selectedCustomer.id} hideContactSelector />
+                  selectedContactId={selectedCustomer.id} hideContactSelector closingMode={closingMode} />
               </div>}
             </div>}
 
