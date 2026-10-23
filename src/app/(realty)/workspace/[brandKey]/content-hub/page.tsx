@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, BookOpen, CalendarDays, FileText, Images, Megaphone, RefreshCw, Send } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, FileText, Images, Megaphone, RefreshCw } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
-import { WorkspaceSocialPublishPanel } from "@/components/workspaces/social-publish-panel";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
-type Section = "articles" | "studio" | "drafts" | "publish" | "calendar" | "analytics" | "images";
+type Section = "articles" | "studio" | "drafts" | "calendar" | "analytics" | "images";
 type Publication = {
   id: string;
   title: string | null;
@@ -32,7 +31,6 @@ const sections: Array<{
   { id: "articles", title: "Artikler og guider", permission: "content.read", icon: BookOpen },
   { id: "studio", title: "Lag SoMe-innhold", permission: "marketing.read", icon: Megaphone },
   { id: "drafts", title: "Innlegg og historikk", permission: "marketing.read", icon: FileText },
-  { id: "publish", title: "Publiser", permission: "marketing.publish", icon: Send },
   { id: "calendar", title: "Tidshjul og kalender", permission: "marketing.read", icon: CalendarDays },
   { id: "analytics", title: "Analytics", permission: "marketing.read", icon: BarChart3 },
   { id: "images", title: "Bildebibliotek", permission: "marketing.read", icon: Images },
@@ -211,7 +209,7 @@ export default function ScopedContentHubPage() {
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 pb-4 text-sm">
         {permissions.includes("ads.read") && <Link href={"/workspace/" + encodeURIComponent(brandKey) + "?tab=growth&area=ads&focus=ads"} className="text-cyan-300 underline">Kampanjer</Link>}
         {permissions.includes("nexus.read") && <Link href={"/workspace/" + encodeURIComponent(brandKey) + "?tab=growth&focus=nexus"} className="text-cyan-300 underline">AI-strategi</Link>}
-        <span className="text-xs text-slate-500">Kunde-PDF blir tilgjengelig når en merkevaresikker eksport er klar.</span>
+        <span className="text-xs text-slate-500">Kunde-PDF kommer når en merkevaresikker eksport er klar.</span>
       </div>
 
       {section === "articles" && permissions.includes("content.read") &&
@@ -224,15 +222,12 @@ export default function ScopedContentHubPage() {
       {section === "studio" && canReadMarketing &&
         <WorkspaceMarketingPanel brandKey={brandKey} canDraft={permissions.includes("marketing.draft")} />}
 
-      {section === "publish" && permissions.includes("marketing.publish") &&
-        <WorkspaceSocialPublishPanel brandKey={brandKey}/>}
-
       {section === "drafts" && canReadMarketing && <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold">Innlegg · produsert, planlagt og publisert</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Faktiske innlegg fra denne merkevaren. Utkast opprettes i SoMe Studio og godkjent innhold publiseres under «Publiser».
+              Faktiske innlegg fra denne merkevaren. SoMe Studio er hovedverktøyet for å lage og håndtere innlegg.
             </p>
           </div>
           <button type="button" onClick={() => void loadPublications()} disabled={itemsLoading}
@@ -268,7 +263,7 @@ export default function ScopedContentHubPage() {
               <p>Planlagt: {item.scheduledAt ? new Date(item.scheduledAt).toLocaleString("nb-NO") : "Ikke planlagt"}</p>
               <p>Publisert: {item.publishedAt ? new Date(item.publishedAt).toLocaleString("nb-NO") : "Ikke publisert"}</p>
               <p>Visninger: {item.views || 0} · Liker: {item.likes || 0} · Kommentarer: {item.comments || 0} · Delinger: {item.shares || 0}</p>
-              {item.status === "draft" && permissions.includes("marketing.publish") && <button type="button" onClick={() => setSection("publish")} className="mt-3 rounded bg-cyan-700 px-3 py-2 font-semibold text-white">Gå til publisering</button>}
+              {item.status === "draft" && permissions.includes("marketing.publish") && <button type="button" onClick={() => setSection("studio")} className="mt-3 rounded bg-cyan-700 px-3 py-2 font-semibold text-white">Åpne SoMe Studio</button>}
             </div>}
             <p className="mt-3 text-xs text-slate-400">
               {(item.scheduledPlatforms || []).join(" · ") || "Kanal ikke valgt"}
