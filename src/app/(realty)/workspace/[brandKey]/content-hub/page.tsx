@@ -31,9 +31,9 @@ const sections: Array<{
 }> = [
   { id: "articles", title: "Artikler og guider", permission: "content.read", icon: BookOpen },
   { id: "studio", title: "Lag SoMe-innhold", permission: "marketing.read", icon: Megaphone },
-  { id: "drafts", title: "SoMe-utkast og historikk", permission: "marketing.read", icon: FileText },
+  { id: "drafts", title: "Innlegg og historikk", permission: "marketing.read", icon: FileText },
   { id: "publish", title: "Publiser", permission: "marketing.publish", icon: Send },
-  { id: "calendar", title: "Innholdskalender", permission: "marketing.read", icon: CalendarDays },
+  { id: "calendar", title: "Tidshjul og kalender", permission: "marketing.read", icon: CalendarDays },
   { id: "analytics", title: "Analytics", permission: "marketing.read", icon: BarChart3 },
   { id: "images", title: "Bildebibliotek", permission: "marketing.read", icon: Images },
 ];
@@ -47,10 +47,13 @@ export default function ScopedContentHubPage() {
   const [section, setSection] = useState<Section>("articles");
   const [publications, setPublications] = useState<Publication[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [publicationsLoaded, setPublicationsLoaded] = useState(false);
   const [itemsError, setItemsError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedPublication, setSelectedPublication] = useState<string | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [calendarView, setCalendarView] = useState<"week" | "month" | "year">("month");
+  const [weekAnchor, setWeekAnchor] = useState(() => new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     if (!["zeneco", "pinosoecolife"].includes(brandKey)) {
@@ -70,7 +73,7 @@ export default function ScopedContentHubPage() {
       const allowed: WorkspacePermission[] = Array.isArray(result.permissions) ? result.permissions : [];
       setPermissions(allowed);
       const fromSocial = new URLSearchParams(window.location.search).get("from") === "social-studio";
-      const preferred: Section = fromSocial ? "drafts" : "articles";
+      const preferred: Section = fromSocial || allowed.includes("marketing.read") ? "drafts" : "articles";
       if (sections.some(entry => entry.id === preferred && allowed.includes(entry.permission))) setSection(preferred);
       else setSection(sections.find(entry => allowed.includes(entry.permission))?.id || "articles");
     }).catch(cause => {
@@ -94,7 +97,7 @@ export default function ScopedContentHubPage() {
       });
       if (!response.ok) throw new Error("SoMe-utkastene kunne ikke hentes.");
       const body = await response.json();
-      if (!signal?.aborted) setPublications(Array.isArray(body.publications) ? body.publications : []);
+      if (!signal?.aborted) { setPublications(Array.isArray(body.publications) ? body.publications : []); setPublicationsLoaded(true); }
     } catch (cause) {
       if (!signal?.aborted) setItemsError(cause instanceof Error ? cause.message : "Feil ved henting av utkast.");
     } finally {
@@ -103,7 +106,7 @@ export default function ScopedContentHubPage() {
   }
 
   useEffect(() => {
-    if (!canReadMarketing || !["drafts", "calendar", "analytics", "images"].includes(section)) return;
+    if (!canReadMarketing) return;
     const controller = new AbortController();
     void loadPublications(controller.signal);
     return () => controller.abort();
@@ -118,13 +121,42 @@ export default function ScopedContentHubPage() {
   const images = publications.filter(item => item.thumbnailUrl && /^https:\/\//i.test(item.thumbnailUrl))
     .filter((item, index, items) => items.findIndex(other => other.thumbnailUrl === item.thumbnailUrl) === index);
   const total = (key: "views" | "likes" | "comments" | "shares") => publications.reduce((sum, item) => sum + (item[key] || 0), 0);
+  const statusCounts = {
+    draft: publications.filter(item => item.status === "draft").length,
+    scheduled: publications.filter(item => item.status === "scheduled").length,
+    published: publications.filter(item => item.status === "published").length,
+    failed: publications.filter(item => item.status === "failed").length,
+  };
+  const year = Number(calendarMonth.slice(0, 4));
+  const monthNumber = Number(calendarMonth.slice(5, 7)) - 1;
+  const dateKey = (date: Date) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+  const calendarDates = (calendarView === "week" ? (() => {
+    const monday = new Date(weekAnchor + "T12:00:00");
+    monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+    return Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(monday); day.setDate(day.getDate() + index); return day;
+    });
+  })() : (() => {
+    const first = new Date(year, monthNumber, 1, 12);
+    first.setDate(first.getDate() - (first.getDay() + 6) % 7);
+    return Array.from({ length: 42 }, (_, index) => {
+      const day = new Date(first); day.setDate(day.getDate() + index); return day;
+    });
+  })());
+  const eventsOn = (day: Date) => publications.filter(item =>
+    (item.scheduledAt || item.publishedAt || "").slice(0, 10) === dateKey(day));
+  const monthTotals = Array.from({ length: 12 }, (_, index) => ({
+    month: index,
+    items: publications.filter(item => (item.scheduledAt || item.publishedAt || "").slice(0, 7) ===
+      year + "-" + String(index + 1).padStart(2, "0")),
+  }));
 
   return <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 text-slate-100">
     <header className="space-y-3">
       <Link className="text-sm text-cyan-300 underline" href={"/workspace/" + encodeURIComponent(brandKey) + "?tab=growth&focus=social"}>
         ← Tilbake til arbeidsområdet
       </Link>
-      <h1 className="text-3xl font-bold">Content Hub · {brandKey === "zeneco" ? "Zen Eco Homes" : "PinosoEcolife"}</h1>
+      <h1 className="text-3xl font-bold">Innhold og innlegg · {brandKey === "zeneco" ? "Zen Eco Homes" : "PinosoEcolife"}</h1>
       <p className="max-w-3xl text-sm leading-relaxed text-slate-300">
         Arbeid med innhold og publikasjoner for denne merkevaren. Artikler, guider og SoMe bruker egne,
         sikre merkevaretilganger. Ingen systeminnstillinger, økonomi eller andre merkevarers innhold er tilgjengelig her.
@@ -136,6 +168,19 @@ export default function ScopedContentHubPage() {
     {!loading && !error && available.length === 0 && <p role="alert">Ingen innholdstilgang registrert.</p>}
 
     {!loading && !error && available.length > 0 && <>
+      {canReadMarketing && publicationsLoaded && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {([
+          ["Registrerte innlegg", publications.length, "De siste opptil 60 innleggene"],
+          ["Publisert", statusCounts.published, "Bekreftet publiserte"],
+          ["Utkast", statusCounts.draft, "Ikke publisert ennå"],
+          ["Planlagt", statusCounts.scheduled, "Venter på publisering"],
+        ] as const).map(([label, value, note]) => <div key={label}
+          className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+          <p className="text-sm text-slate-400">{label}</p>
+          <p className="mt-1 text-2xl font-bold">{value.toLocaleString("nb-NO")}</p>
+          <p className="text-xs text-slate-500">{note}</p>
+        </div>)}
+      </div>}
       <nav aria-label="Content Hub-verktøy" className="flex flex-wrap gap-2">
         {available.map(entry => {
           const Icon = entry.icon;
@@ -171,9 +216,9 @@ export default function ScopedContentHubPage() {
       {section === "drafts" && canReadMarketing && <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">SoMe-utkast og historikk</h2>
+            <h2 className="text-xl font-semibold">Innlegg · produsert, planlagt og publisert</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Utkastene kan opprettes i SoMe Studio. Godkjente workspace-utkast kan publiseres under «Publiser SoMe».
+              Faktiske innlegg fra denne merkevaren. Utkast opprettes i SoMe Studio og godkjent innhold publiseres under «Publiser».
             </p>
           </div>
           <button type="button" onClick={() => void loadPublications()} disabled={itemsLoading}
@@ -185,6 +230,12 @@ export default function ScopedContentHubPage() {
         {itemsError && <p role="alert" className="rounded-xl border border-amber-800 p-4 text-amber-200">{itemsError}</p>}
         {!itemsLoading && !itemsError && publications.length === 0 &&
           <p className="rounded-xl border border-slate-700 p-5">Ingen SoMe-utkast eller publikasjoner ennå.</p>}
+        <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+          <span className="rounded-full border border-slate-700 px-3 py-1">Publisert: {statusCounts.published}</span>
+          <span className="rounded-full border border-slate-700 px-3 py-1">Utkast: {statusCounts.draft}</span>
+          <span className="rounded-full border border-slate-700 px-3 py-1">Planlagt: {statusCounts.scheduled}</span>
+          <span className="rounded-full border border-slate-700 px-3 py-1">Feilet: {statusCounts.failed}</span>
+        </div>
         <label className="flex items-center gap-2 text-sm">Vis
           <select aria-label="Filtrer innlegg etter status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-900 p-2">
             <option value="all">Alle</option><option value="draft">Utkast</option><option value="scheduled">Planlagt</option><option value="processing">Behandles</option><option value="published">Publisert</option><option value="failed">Feilet</option>
@@ -214,22 +265,75 @@ export default function ScopedContentHubPage() {
       </section>}
 
       {section === "calendar" && canReadMarketing && <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Innholdskalender</h2>
-        <p className="text-sm text-slate-400">Viser innlegg som har en registrert planlagt eller faktisk publiseringsdato. Utkast uten dato vises i Innhold.</p>
-        <label className="flex items-center gap-2 text-sm">Måned
-          <input type="month" value={calendarMonth} onChange={event => setCalendarMonth(event.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-900 p-2"/>
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-xl font-semibold">Tidshjul og innholdskalender</h2>
+            <p className="mt-1 text-sm text-slate-400">Samme uke- og månedsstruktur som i hoved-Content Hub, med en årsoversikt. Viser daterte innlegg for denne merkevaren.</p>
+          </div>
+          <div className="flex gap-2">
+            {(["week", "month", "year"] as const).map(view => <button key={view} type="button"
+              onClick={() => setCalendarView(view)}
+              aria-pressed={calendarView === view}
+              className={"rounded-lg border px-3 py-2 text-sm " + (calendarView === view ? "border-cyan-500 bg-cyan-950 text-cyan-100" : "border-slate-700 text-slate-300")}>
+              {view === "week" ? "Uke" : view === "month" ? "Måned" : "Årshjul"}
+            </button>)}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {calendarView === "week" ? <>
+            <button type="button" aria-label="Forrige uke" onClick={() => {
+              const date = new Date(weekAnchor + "T12:00:00"); date.setDate(date.getDate() - 7); setWeekAnchor(dateKey(date));
+            }} className="rounded-lg border border-slate-700 px-3 py-2">←</button>
+            <label className="text-sm">Uke fra <input type="date" value={weekAnchor}
+              onChange={event => setWeekAnchor(event.target.value)} className="ml-2 rounded-lg border border-slate-700 bg-slate-900 p-2"/></label>
+            <button type="button" aria-label="Neste uke" onClick={() => {
+              const date = new Date(weekAnchor + "T12:00:00"); date.setDate(date.getDate() + 7); setWeekAnchor(dateKey(date));
+            }} className="rounded-lg border border-slate-700 px-3 py-2">→</button>
+          </> : <>
+            <label className="text-sm">{calendarView === "year" ? "År" : "Måned"}
+              <input type="month" value={calendarMonth} onChange={event => setCalendarMonth(event.target.value)}
+                className="ml-2 rounded-lg border border-slate-700 bg-slate-900 p-2"/>
+            </label>
+          </>}
+          <button type="button" onClick={() => void loadPublications()} disabled={itemsLoading}
+            className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Oppdater</button>
+        </div>
         {itemsLoading && <p role="status">Henter kalender…</p>}
         {itemsError && <p role="alert">{itemsError}</p>}
-        {!itemsLoading && !itemsError && calendarItems.length === 0 && <p className="rounded-lg border border-slate-700 p-4">Ingen daterte innlegg denne måneden.</p>}
-        <div className="space-y-2">
-          {calendarItems.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900 p-4">
-            <div><p className="text-xs text-cyan-300">{new Date(item.scheduledAt || item.publishedAt || "").toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
-              <strong>{item.title || "Uten tittel"}</strong><p className="text-xs text-slate-400">{item.status} · {(item.scheduledPlatforms || []).join(", ")}</p></div>
-            <button type="button" onClick={() => { setSelectedPublication(item.id); setSection("drafts"); }} className="rounded-lg border border-cyan-700 px-3 py-2 text-sm text-cyan-200">Åpne innlegg</button>
-          </div>)}
-        </div>
+        {!itemsLoading && !itemsError && calendarView === "year" && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {monthTotals.map(({ month, items }) => <button key={month} type="button"
+            onClick={() => { setCalendarMonth(year + "-" + String(month + 1).padStart(2, "0")); setCalendarView("month"); }}
+            className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-left hover:border-cyan-600">
+            <p className="font-semibold">{new Date(year, month, 1).toLocaleDateString("nb-NO", { month: "long", year: "numeric" })}</p>
+            <p className="mt-2 text-2xl font-bold text-cyan-200">{items.length}</p>
+            <p className="text-xs text-slate-400">daterte innlegg · {items.filter(item => item.status === "published").length} publisert</p>
+          </button>)}
+        </div>}
+        {!itemsLoading && !itemsError && calendarView !== "year" && <>
+          <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
+            {["Man", "Tir", "Ons", "Tor", "Fre", "Lør", "Søn"].map(day => <span key={day}>{day}</span>)}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDates.map(day => {
+              const events = eventsOn(day);
+              const inMonth = day.getMonth() === monthNumber;
+              return <div key={dateKey(day)} className={"min-h-24 rounded-lg border p-1.5 sm:p-2 " +
+                (dateKey(day) === dateKey(new Date()) ? "border-cyan-600 bg-cyan-950/30" : "border-slate-800 bg-slate-900") +
+                (calendarView === "month" && !inMonth ? " opacity-45" : "")}>
+                <p className="mb-1 text-xs font-semibold text-slate-300">{day.getDate()}</p>
+                <div className="space-y-1">{events.slice(0, 3).map(item => <button key={item.id} type="button"
+                  onClick={() => { setSelectedPublication(item.id); setSection("drafts"); }}
+                  title={item.title || "Åpne innlegg"}
+                  className="block w-full truncate rounded bg-slate-800 px-1.5 py-1 text-left text-[10px] text-cyan-200 hover:bg-slate-700">
+                  {item.title || "Uten tittel"}
+                </button>)}
+                {events.length > 3 && <p className="text-[10px] text-slate-400">+{events.length - 3} flere</p>}</div>
+              </div>;
+            })}
+          </div>
+          <p className="text-xs text-slate-500">Velg et innlegg i kalenderen for å åpne detaljene, inkludert status og publiseringsstatistikk.</p>
+        </>}
+        {!itemsLoading && !itemsError && calendarItems.length === 0 && calendarView === "month" &&
+          <p className="text-sm text-slate-400">Ingen daterte innlegg i denne måneden innenfor den tilgjengelige historikken.</p>}
       </section>}
 
       {section === "images" && canReadMarketing && <section className="space-y-4">
@@ -255,7 +359,7 @@ export default function ScopedContentHubPage() {
 
       {section === "analytics" && canReadMarketing && <section className="space-y-4">
         <h2 className="text-xl font-semibold">Analyseoversikt for innhold</h2>
-        <p className="text-sm text-slate-400">Registrerte summer fra de siste opptil 60 innleggene i denne merkevaren. Dette er ikke en komplett kanal- eller leadrapport.</p>
+        <p className="text-sm text-slate-400">Statistikk fra de siste opptil 60 innleggene i denne merkevaren. Dette er ikke en komplett historisk kanal- eller leadrapport; eldre innlegg kan mangle.</p>
         {itemsLoading && <p role="status">Henter statistikk…</p>}
         {itemsError && <p role="alert">{itemsError}</p>}
         {!itemsLoading && !itemsError && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
