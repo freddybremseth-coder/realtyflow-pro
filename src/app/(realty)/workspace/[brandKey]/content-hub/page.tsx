@@ -50,6 +50,7 @@ export default function ScopedContentHubPage() {
   const [publicationsLoaded, setPublicationsLoaded] = useState(false);
   const [itemsError, setItemsError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [analyticsSort, setAnalyticsSort] = useState<"views" | "likes" | "comments" | "shares">("views");
   const [selectedPublication, setSelectedPublication] = useState<string | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [calendarView, setCalendarView] = useState<"week" | "month" | "year">("month");
@@ -131,6 +132,9 @@ export default function ScopedContentHubPage() {
   const images = publications.filter(item => item.thumbnailUrl && /^https:\/\//i.test(item.thumbnailUrl))
     .filter((item, index, items) => items.findIndex(other => other.thumbnailUrl === item.thumbnailUrl) === index);
   const total = (key: "views" | "likes" | "comments" | "shares") => publications.reduce((sum, item) => sum + (item[key] || 0), 0);
+  const rankedPublications = [...publications].filter(item => item.status === "published")
+    .sort((a, b) => (b[analyticsSort] || 0) - (a[analyticsSort] || 0) ||
+      String(b.publishedAt || b.updatedAt).localeCompare(String(a.publishedAt || a.updatedAt)));
   const statusCounts = {
     draft: publications.filter(item => item.status === "draft").length,
     scheduled: publications.filter(item => item.status === "scheduled").length,
@@ -376,6 +380,41 @@ export default function ScopedContentHubPage() {
           {([["Visninger", total("views")], ["Liker", total("likes")], ["Kommentarer", total("comments")], ["Delinger", total("shares")]] as const).map(([name, count]) =>
             <div key={name} className="rounded-xl border border-slate-700 bg-slate-900 p-4"><p className="text-sm text-slate-400">{name}</p><p className="mt-2 text-2xl font-bold">{count.toLocaleString("nb-NO")}</p></div>)}
         </div>}
+        {!itemsLoading && !itemsError && <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold">Resultater per publisert innlegg</h3>
+            <label className="text-sm text-slate-300">Sorter etter
+              <select value={analyticsSort} onChange={event => setAnalyticsSort(event.target.value as typeof analyticsSort)}
+                className="ml-2 rounded-lg border border-slate-700 bg-slate-900 p-2">
+                <option value="views">Visninger</option><option value="likes">Liker</option>
+                <option value="comments">Kommentarer</option><option value="shares">Delinger</option>
+              </select>
+            </label>
+          </div>
+          <p className="text-xs text-slate-400">Klikk på lenker registreres foreløpig ikke som eget måltall i innholdsarkivet. Visninger, likerklikk, kommentarer og delinger vises når kanaldata er lagret.</p>
+          {rankedPublications.length === 0 ? <p className="text-sm text-slate-400">Ingen publiserte innlegg med tilgjengelig historikk.</p> :
+            <div className="overflow-x-auto rounded-xl border border-slate-700">
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead className="bg-slate-900 text-slate-300"><tr>
+                  <th scope="col" className="p-3">Innlegg</th>
+                  <th scope="col" className="p-3 text-right">Visninger</th>
+                  <th scope="col" className="p-3 text-right">Liker</th>
+                  <th scope="col" className="p-3 text-right">Kommentarer</th>
+                  <th scope="col" className="p-3 text-right">Delinger</th>
+                </tr></thead>
+                <tbody className="divide-y divide-slate-800">{rankedPublications.map(item => <tr key={item.id} className="bg-slate-950/50">
+                  <td className="p-3"><button type="button"
+                    onClick={() => { setSelectedPublication(item.id); setStatusFilter("all"); setSection("drafts"); }}
+                    className="max-w-sm text-left font-semibold text-cyan-300 underline hover:text-cyan-100">
+                    {item.title || item.description?.slice(0, 70) || "Uten tittel"}</button>
+                    <p className="mt-1 text-xs text-slate-500">{item.publishedAt ? new Date(item.publishedAt).toLocaleDateString("nb-NO") : "Dato ikke registrert"}</p>
+                  </td>
+                  {(["views", "likes", "comments", "shares"] as const).map(metric =>
+                    <td key={metric} className="p-3 text-right tabular-nums">{(item[metric] || 0).toLocaleString("nb-NO")}</td>)}
+                </tr>)}</tbody>
+              </table>
+            </div>}
+        </section>}
         {!itemsLoading && !itemsError && <p className="text-sm text-slate-300">Utkast: {publications.filter(item => item.status === "draft").length} · Planlagt: {publications.filter(item => item.status === "scheduled").length} · Publisert: {publications.filter(item => item.status === "published").length} · Feilet: {publications.filter(item => item.status === "failed").length}</p>}
       </section>}
     </>}
