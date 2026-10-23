@@ -225,6 +225,31 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
     now: new Date(),
   });
 
+  // Staff summary is intentionally allowlisted: never return notes, email bodies,
+  // revenue, price/budget, raw work items or unreviewed AI excerpts.
+  if (new URL(request.url).searchParams.get("view") === "staff") {
+    return NextResponse.json({
+      ok: true,
+      brand: params.brandKey,
+      contactId: contact.id,
+      profileCount: profiles.length,
+      criteriaCount: activeCriteria.length,
+      shortlistCount: shortlists.length,
+      activityCount: timeline.length,
+      dialogue: {
+        sentCount: communicationDialogue.sentCount,
+        replyCount: communicationDialogue.replyCount,
+        lastSentAt: communicationDialogue.lastSentAt,
+        lastReplyAt: communicationDialogue.lastReplyAt,
+        awaitingReply: communicationDialogue.awaitingReply,
+        emailBlocked: communicationDialogue.emailBlocked,
+      },
+      activity: timeline.slice(0, 8).map(event => ({
+        id: event.id, kind: event.kind, occurredAt: event.occurredAt,
+      })),
+    }, { headers: noStore });
+  }
+
   return NextResponse.json({
     ok: true,
     generatedAt: new Date().toISOString(),

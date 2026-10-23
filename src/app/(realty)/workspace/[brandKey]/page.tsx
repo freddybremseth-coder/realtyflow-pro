@@ -28,6 +28,15 @@ type Contact = {
   created_at?: string | null;
   updated_at?: string | null;
 };
+type StaffCustomer360 = {
+  contactId: string;
+  profileCount: number;
+  criteriaCount: number;
+  shortlistCount: number;
+  activityCount: number;
+  dialogue: { sentCount: number; replyCount: number; lastSentAt: string | null; lastReplyAt: string | null; awaitingReply: boolean; emailBlocked: boolean };
+  activity: Array<{ id: string; kind: string; occurredAt: string }>;
+};
 type CrmSummary = {
   matchedCount: number;
   staleCount: number;
@@ -35,10 +44,10 @@ type CrmSummary = {
 };
 type Tab = "today" | "leads" | "growth" | "properties";
 
-const crmStatuses = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "WON", "ON_HOLD", "LOST"] as const;
+const crmStatuses = ["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "WON", "ON_HOLD", "LOST"] as const;
 const crmStatusLabels: Record<string, string> = {
-  NEW: "Ny", CONTACT: "Kontakt", QUALIFIED: "Kvalifisert", VIEWING: "Visning",
-  NEGOTIATION: "Forhandling", WON: "Vunnet", ON_HOLD: "På vent", LOST: "Tapt", UNSET: "Uten status",
+  NEW: "Ny", CONTACT: "Kontakt", QUALIFIED: "Kvalifisert", MATCHING: "Boligmatch", VIEWING: "Visning",
+  NEGOTIATION: "Forhandling", RESERVED: "Reservert", WON: "Vunnet", ON_HOLD: "På vent", LOST: "Tapt", UNSET: "Uten status",
 };
 function crmDate(value?: string | null) {
   if (!value) return "Ukjent";
@@ -105,6 +114,10 @@ export default function FocusedWorkspacePage() {
   const [contactError, setContactError] = useState("");
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customer360, setCustomer360] = useState<StaffCustomer360 | null>(null);
+  const [customer360Busy, setCustomer360Busy] = useState(false);
+  const [customer360Error, setCustomer360Error] = useState("");
+  const [closingMode, setClosingMode] = useState(false);
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
   const [socialPropertySeed, setSocialPropertySeed] = useState<WorkspaceSocialPropertySeed | null>(null);
 
@@ -114,6 +127,8 @@ export default function FocusedWorkspacePage() {
     setRequestedArea(query.get("area"));
     setRequestedFocus(query.get("focus"));
     setRequestedTraining(query.get("training"));
+    setClosingMode(query.get("closing") === "1");
+    if (query.get("closing") === "1") { setCrmStatus("NEGOTIATION"); setCrmPage(1); }
   }, [brandKey, routeSearchParams]);
 
   useEffect(() => {
@@ -210,6 +225,28 @@ export default function FocusedWorkspacePage() {
     finally { setCrmBusy(false); }
   }
   useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery, crmStatus, crmSource, crmSort]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setCustomer360(null); setCustomer360Error("");
+    if (!selectedCustomerId || !permissions.some(permission => permission === "crm.read" || permission === "crm.joint.read")) {
+      setCustomer360Busy(false);
+      return () => controller.abort();
+    }
+    setCustomer360Busy(true);
+    fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360?contactId=${encodeURIComponent(selectedCustomerId)}&view=staff`, {
+      cache: "no-store", signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error(response.status === 403
+        ? "Denne kundens utvidede oversikt er ikke tilgjengelig med din tilgang."
+        : "Kunne ikke hente utvidet kundeoversikt.");
+      return response.json();
+    }).then((data: StaffCustomer360) => {
+      if (!controller.signal.aborted && data.contactId === selectedCustomerId) setCustomer360(data);
+    }).catch(cause => {
+      if (!controller.signal.aborted) setCustomer360Error(cause instanceof Error ? cause.message : "Kunne ikke hente kundeoversikt.");
+    }).finally(() => { if (!controller.signal.aborted) setCustomer360Busy(false); });
+    return () => controller.abort();
+  }, [brandKey, selectedCustomerId, permissions]);
   const filtered = contacts;
   const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
@@ -393,7 +430,7 @@ export default function FocusedWorkspacePage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">CRM-arbeidsflate</p>
-                  <h2 className="mt-1 text-xl font-semibold">Kunder & leads · {title}</h2>
+                  <h2 className="mt-1 text-xl font-semibold">{closingMode ? "Closing Workspace" : "Kunder & leads"} · {title}</h2>
                   <p className="mt-1 max-w-3xl text-sm text-slate-400">
                     Søk, filtrer og prioriter kundene du faktisk har tilgang til. RealtyFlow viser oppfølgingsbehov og status uten å åpne økonomi eller private CRM-data.
                   </p>
@@ -403,6 +440,16 @@ export default function FocusedWorkspacePage() {
                 </button>
               </div>
 
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setClosingMode(false); setCrmStatus(""); setCrmPage(1); }}
+                  className={`rounded-lg border px-3 py-2 text-sm ${!closingMode ? "border-cyan-600 text-cyan-200" : "border-slate-700"}`}>Alle kunder / Customer 360</button>
+                <button type="button" onClick={() => { setClosingMode(true); setCrmStatus("NEGOTIATION"); setCrmPage(1); }}
+                  className={`rounded-lg border px-3 py-2 text-sm ${closingMode ? "border-cyan-600 text-cyan-200" : "border-slate-700"}`}>Closing Workspace</button>
+              </div>
+              {closingMode && <div className="mt-3 rounded-xl border border-cyan-900 bg-cyan-950/15 p-4 text-sm text-slate-300">
+                <p className="font-medium text-cyan-200">Følg kunden frem til overtakelse</p>
+                <p className="mt-1">Velg Forhandling, Reservert eller Vunnet i statusfilteret. Åpne kundekortet for kontakt, aktivitet og oppgaver. Denne arbeidsflaten viser ikke kontraktsdokumenter eller økonomi.</p>
+              </div>}
               {crmSummary && <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Matcher filter</p>
@@ -534,6 +581,40 @@ export default function FocusedWorkspacePage() {
                 Kontaktdata: {selectedCustomer.email ? "e-post ✓" : "e-post mangler"} · {selectedCustomer.phone ? "telefon ✓" : "telefon mangler"}.
                 RealtyFlow holder arbeidet innenfor {title}; økonomi, private notater og andre merkevarer er ikke eksponert.
               </div>
+
+              <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                <h4 className="font-semibold text-cyan-200">Customer 360 · oppfølging</h4>
+                {customer360Busy && <p className="mt-2 text-sm text-slate-400">Henter oversikt…</p>}
+                {customer360Error && <p className="mt-2 text-sm text-amber-300" role="status">{customer360Error}</p>}
+                {customer360 && <>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Kjøperprofiler</p><p className="text-xl font-semibold">{customer360.profileCount}</p></div>
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Boligkriterier</p><p className="text-xl font-semibold">{customer360.criteriaCount}</p></div>
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Boliglister</p><p className="text-xl font-semibold">{customer360.shortlistCount}</p></div>
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Nylig aktivitet</p><p className="text-xl font-semibold">{customer360.activityCount}</p></div>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-300">E-post: {customer360.dialogue.sentCount} sendt · {customer360.dialogue.replyCount} mottatt
+                    {customer360.dialogue.awaitingReply ? " · Venter på svar" : ""}
+                    {customer360.dialogue.emailBlocked ? " · E-postkontakt sperret" : ""}</p>
+                  <p className="mt-1 text-xs text-slate-400">Siste sendte: {crmDate(customer360.dialogue.lastSentAt)} · siste svar: {crmDate(customer360.dialogue.lastReplyAt)}</p>
+                  <div className="mt-3 border-t border-slate-800 pt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Aktivitetshistorikk</p>
+                    {customer360.activity.length ? <ul className="mt-2 space-y-1 text-sm text-slate-300">
+                      {customer360.activity.map(item => <li key={item.id}>{crmDate(item.occurredAt)} · {item.kind === "mail" ? "E-post" : item.kind === "task" ? "Oppgave" : item.kind === "portal" ? "Kundeportal" : "Kontaktaktivitet"}</li>)}
+                    </ul> : <p className="mt-2 text-sm text-slate-500">Ingen registrert aktivitet.</p>}
+                  </div>
+                </>}
+              </div>
+
+              {closingMode && <div className="mt-5 rounded-xl border border-cyan-900/60 p-4">
+                <h4 className="font-semibold text-cyan-200">Neste steg i salgsprosessen</h4>
+                <ol className="mt-2 list-inside list-decimal space-y-1 text-sm text-slate-300">
+                  <li>Bekreft kundens valg og avklar åpne spørsmål.</li>
+                  <li>Følg opp reservasjon, dokumentasjon og ansvarlig rådgiver.</li>
+                  <li>Avtal neste kontakt og kontroller status før overtakelse.</li>
+                </ol>
+                <p className="mt-2 text-xs text-slate-500">Sjekklisten er veiledende og lagres ikke som fullførte oppgaver.</p>
+              </div>}
 
               {showJointTasks && <div className="mt-5 border-t border-slate-800 pt-5">
                 <ZenJointTasks contacts={[selectedCustomer]} canWrite={canWriteJointTasks}
