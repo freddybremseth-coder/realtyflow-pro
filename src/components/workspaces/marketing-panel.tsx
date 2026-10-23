@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, FilePlus2, Megaphone, RefreshCw } from "lucide-react";
 import { WorkspaceSocialStudio, type WorkspaceSocialPropertySeed } from "@/components/workspaces/social-studio-panel";
+import { ReferenceMediaPicker } from "@/components/media-studio/reference-media-picker";
 
 type Channel = { platform: string; name: string };
 type Publication = {
@@ -95,7 +96,7 @@ export function WorkspaceMarketingPanel({
   async function createDraft() {
     if (!canDraft || !description.trim() || busy) return;
     if (platforms.includes("instagram") && !imageUrl.trim()) {
-      setError("Instagram krever et brand-godkjent bilde. Legg inn en bildeadresse fra en synlig eiendom/RealtyFlow-media eller fjern Instagram som målkanal.");
+      setError("Instagram krever et godkjent bilde. Last opp et bilde, velg fra bildebiblioteket eller fjern Instagram som målkanal.");
       return;
     }
     setBusy(true);
@@ -222,11 +223,20 @@ export function WorkspaceMarketingPanel({
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="pinoso, villa, costa blanca"/>
         </label>
-        <label className="text-xs text-slate-300">Bildeadresse
+        <ReferenceMediaPicker
+          workspaceBrandKey={brandKey}
+          brandId={brandKey}
+          usage="social_post"
+          value={imageUrl}
+          onChange={setImageUrl}
+          title="Bilde til innlegget"
+          description="Last opp fra datamaskinen eller velg et bilde fra merkevarens bildebibliotek."
+        />
+        <label className="text-xs text-slate-300">Eller bruk bildeadresse
           <input type="url" value={imageUrl} onChange={event => setImageUrl(event.target.value)} maxLength={2000}
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             placeholder="https://…"/>
-          <span className="mt-1 block text-[11px] text-slate-500">Valgfritt for Facebook. Påkrevd for Instagram. Adressen må finnes på en synlig eiendom eller en godkjent mediefil for denne merkevaren.</span>
+          <span className="mt-1 block text-[11px] text-slate-500">Valgfritt for Facebook. Påkrevd for Instagram. Eksterne bilder må være godkjent for denne merkevaren.</span>
         </label>
         <div>
           <div className="text-xs text-slate-300">Målkanaler</div>
