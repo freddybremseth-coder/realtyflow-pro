@@ -1994,6 +1994,25 @@ export default function InventoryPage() {
                         e.currentTarget.value = "";
                       }} />
                     </label>
+                    <label className="block text-xs text-cyan-300 mb-2">
+                      Last opp plantegning (JPG, PNG, WebP – maks 8 MB)
+                      <input type="file" className="block mt-1 text-xs" accept="image/jpeg,image/png,image/webp" onChange={async e => {
+                        const input = e.currentTarget;
+                        const file = input.files?.[0];
+                        if (!file) return;
+                        const form = new FormData();
+                        form.set("file", file);
+                        form.set("propertyId", m.id);
+                        try {
+                          const response = await fetch("/api/properties/floorplans/upload", { method: "POST", body: form });
+                          const data = await response.json();
+                          if (!response.ok || !data.url) throw new Error(data.error || "Opplasting feilet");
+                          setShowEditModal(current => current?.id === m.id ? { ...current, floorplans: [...new Set([...(current.floorplans || []), data.url])] } : current);
+                        } catch (error) {
+                          window.alert(error instanceof Error ? error.message : "Opplasting feilet");
+                        } finally { input.value = ""; }
+                      }} />
+                    </label>
                     <div className="grid grid-cols-2 gap-3">
                       <Column title="Galleri" items={galleryAll} accept="gallery" hint="Slipp bilder her" />
                       <Column title="Plantegninger" items={floorplansAll} accept="floorplans" hint="Dra plantegninger hit" />
