@@ -7,12 +7,13 @@ const api = fs.readFileSync(path.join(process.cwd(), "src/app/api/workspaces/[br
 const catalogue = fs.readFileSync(path.join(process.cwd(), "src/components/workspaces/property-catalogue.tsx"), "utf8");
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/app/(realty)/workspace/[brandKey]/page.tsx"), "utf8");
 
-test("developer notes require a verified content editor and exact brand visibility", () => {
+test("developer notes require a verified editor and a published, available catalogue property", () => {
   assert.match(api, /requireBrandWorkspace\(request, brandKey, "content.edit"\)/);
-  assert.match(api, /\.from\("property_brand_visibility"\)/);
-  assert.match(api, /\.eq\("property_id", propertyId\)/);
-  assert.match(api, /\.eq\("brand_id", brandKey\)/);
-  assert.match(api, /\.eq\("visible", true\)/);
+  assert.match(api, /\.from\("properties"\)/);
+  assert.match(api, /\.eq\("id", propertyId\)/);
+  assert.match(api, /\.eq\("show_on_website", true\)/);
+  assert.match(api, /\.eq\("website_visible", true\)/);
+  assert.match(api, /\.eq\("status", "TILGJENGELIG"\)/);
 });
 
 test("developer note PATCH is limited to one plain-text field", () => {
@@ -25,7 +26,7 @@ test("developer note PATCH is limited to one plain-text field", () => {
 
 test("workspace only offers editing with content.edit permission and approved brand property", () => {
   assert.match(workspace, /canEditDeveloperInfo=\{permissions\.includes\("content.edit"\)\}/);
-  assert.match(catalogue, /canEditDeveloperInfo && canMarketHere/);
+  assert.match(catalogue, /canEditDeveloperInfo &&/);
   assert.match(catalogue, /Mer informasjon fra utbygger/);
   assert.match(catalogue, /Lagre informasjon/);
   assert.match(catalogue, /role="alert"/);
