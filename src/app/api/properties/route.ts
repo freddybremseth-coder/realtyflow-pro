@@ -53,6 +53,10 @@ const PUBLIC_PROPERTY_SELECT = [
 ].join(",");
 
 
+// Full raw source is returned only for one explicitly requested public listing,
+// not for bulk catalogue searches or summaries.
+const PUBLIC_PROPERTY_DETAIL_SELECT = PUBLIC_PROPERTY_SELECT + ",source_description";
+
 const PUBLIC_PROPERTY_SUMMARY_SELECT = [
   "id",
   "title",
@@ -382,7 +386,8 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const summaryView = !authenticated && searchParams.get("view") === "summary";
-  const selectColumns = authenticated ? "*" : summaryView ? PUBLIC_PROPERTY_SUMMARY_SELECT : PUBLIC_PROPERTY_SELECT;
+  const singleProperty = Boolean(searchParams.get("id") || searchParams.get("ref"));
+  const selectColumns = authenticated ? "*" : summaryView ? PUBLIC_PROPERTY_SUMMARY_SELECT : singleProperty ? PUBLIC_PROPERTY_DETAIL_SELECT : PUBLIC_PROPERTY_SELECT;
   const id = searchParams.get("id");
   const ref = searchParams.get("ref");
   const brandId = searchParams.get("brandId") || searchParams.get("brand_id");
