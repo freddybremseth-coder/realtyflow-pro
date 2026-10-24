@@ -215,13 +215,13 @@ export default function FocusedWorkspacePage() {
     if (brandKey !== "altovena") return;
     setTab("leads");
     if (!contactId) return;
-    const version = ++altovenaLookupVersion.current;
+    const version = (altovenaLookupVersion.current += 1);
     setFocusedAltovenaError("");
     setFocusedAltovenaContact(null);
     setSelectedCustomerId("");
     try {
       const response = await fetch(
-        "/api/workspaces/altovena/lead-contact?contactId=" + encodeURIComponent(contactId),
+        `/api/workspaces/altovena/lead-contact?contactId=${encodeURIComponent(contactId)}`,
         {cache:"no-store",credentials:"same-origin"},
       );
       const body = await response.json().catch(() => null);
