@@ -155,6 +155,7 @@ function isOverdue(value: unknown) {
 export default function CustomersPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
   const [tab, setTab] = useState<CrmTab>("all");
   const [stageFilter, setStageFilter] = useState("all");
   const [mailFilter, setMailFilter] = useState<MailStatus>("ALL");
@@ -186,26 +187,30 @@ export default function CustomersPage() {
     const contactId = params.get("contactId");
     const requestedTab = params.get("tab") as CrmTab | null;
     const requestedStage = params.get("stage");
+    const requestedBrand = params.get("brand");
     const requestedMail = params.get("mail") as MailStatus | null;
     if (contactId) setSelectedContactId(contactId);
     if (requestedTab && ["leads", "pipeline", "customers", "all"].includes(requestedTab)) setTab(requestedTab);
     if (requestedStage) setStageFilter(normalizeStatus(requestedStage));
+    if (requestedBrand) setBrandFilter(requestedBrand);
     if (requestedMail && MAIL_FILTERS.some((item) => item.id === requestedMail)) setMailFilter(requestedMail);
     if (params.get("action") === "1") setActionOnly(true);
   }, []);
 
-  function syncUrl(next: { contactId?: string | null; tab?: CrmTab; actionOnly?: boolean; stage?: string; mail?: MailStatus }) {
+  function syncUrl(next: { contactId?: string | null; tab?: CrmTab; actionOnly?: boolean; stage?: string; mail?: MailStatus; brand?: string }) {
     const params = new URLSearchParams(window.location.search);
     const nextTab = next.tab ?? tab;
     const nextActionOnly = next.actionOnly ?? actionOnly;
     const nextStage = next.stage ?? stageFilter;
     const nextMail = next.mail ?? mailFilter;
+    const nextBrand = next.brand ?? brandFilter;
     params.set("tab", nextTab);
     if (next.contactId === null) params.delete("contactId");
     else if (next.contactId) params.set("contactId", next.contactId);
     if (nextActionOnly) params.set("action", "1"); else params.delete("action");
     if (nextStage && nextStage !== "all") params.set("stage", nextStage); else params.delete("stage");
     if (nextMail !== "ALL") params.set("mail", nextMail); else params.delete("mail");
+    if (nextBrand) params.set("brand", nextBrand); else params.delete("brand");
     const suffix = params.toString();
     window.history.replaceState(null, "", suffix ? `/customers?${suffix}` : "/customers");
   }
@@ -281,6 +286,7 @@ export default function CustomersPage() {
       .map((contact) => ({ contact, action: buildCustomerListAction(contact) }))
       .filter(({ contact, action }) => {
         const status = normalizeStatus(contact.pipeline_status);
+        if (brandFilter && String(contact.brand_id || contact.brand || "").trim() !== brandFilter) return false;
         if (tab !== "all" && !TAB_STAGES[tab].has(status)) return false;
         if (stageFilter !== "all" && status !== stageFilter) return false;
         if (mailFilter !== "ALL" && contact.communication?.status !== mailFilter) return false;
@@ -290,7 +296,7 @@ export default function CustomersPage() {
           .filter(Boolean).join(" ").toLowerCase().includes(query);
       })
       .sort((a, b) => b.action.score - a.action.score || Number(b.contact.pipeline_value || 0) - Number(a.contact.pipeline_value || 0));
-  }, [contacts, search, tab, stageFilter, mailFilter, actionOnly]);
+  }, [contacts, search, tab, stageFilter, mailFilter, actionOnly, brandFilter]);
 
   const counts = useMemo(() => ({
     leads: contacts.filter((item) => normalizeStatus(item.pipeline_status) === "NEW").length,
@@ -345,6 +351,7 @@ export default function CustomersPage() {
 
       <CrmCommandMenu
         brands={brandOptions}
+        onSelectBrand={(nextBrand) => { setBrandFilter(nextBrand); syncUrl({ brand: nextBrand }); }}
         onShowReady={() => applyCommandView({ mail: "READY_NOT_STARTED" })}
         onShowReplied={() => applyCommandView({ mail: "REPLIED" })}
         onShowStopped={() => applyCommandView({ mail: "STOPPED" })}
