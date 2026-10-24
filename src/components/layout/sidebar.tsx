@@ -483,6 +483,25 @@ export function Sidebar() {
               </Link>
             </div>
           </div>
+          <div className="mb-3 rounded-xl border border-violet-800/60 bg-violet-950/20 p-2">
+            <p className="px-2 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-violet-200">
+              Altovena
+            </p>
+            <div className="space-y-1">
+              <Link href="/altovena/command" onClick={closeMobile}
+                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-100 hover:bg-violet-900/40">
+                <Bot size={15} className="text-violet-300"/> Command · Mitt arbeidsområde
+              </Link>
+              <Link href="/altovena/collaboration" onClick={closeMobile}
+                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-100 hover:bg-violet-900/40">
+                <Users size={15} className="text-violet-300"/> Samarbeid med Andrea
+              </Link>
+              <Link href="/altovena-launch" onClick={closeMobile}
+                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-300 hover:bg-violet-900/40">
+                <Rocket size={15} className="text-violet-300"/> Lanseringsoversikt
+              </Link>
+            </div>
+          </div>
           <Link href="/hjelp" onClick={closeMobile}
             className="mb-3 flex items-center gap-2 rounded-lg border border-cyan-900/60 bg-cyan-950/20 px-3 py-2.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-950/40">
             <BookOpen size={16}/> Hjelp og opplæring
