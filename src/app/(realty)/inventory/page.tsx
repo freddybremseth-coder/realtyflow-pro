@@ -19,6 +19,7 @@ import {
 import { BRANDS } from "@/lib/constants";
 import { DomainWorkItems } from "@/components/hub/domain-work-items";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
+import { PropertyCurationEditor } from "@/components/workspaces/property-curation-editor";
 
 interface Property {
   id: string;
@@ -1915,6 +1916,10 @@ export default function InventoryPage() {
                   <option value="SOLGT">Solgt</option>
                 </select>
               </div>
+
+              {["zeneco", "pinosoecolife"].includes(selectedBrand) && (
+                <PropertyCurationEditor key={`${selectedBrand}:${showEditModal.id}`} brandKey={selectedBrand} propertyId={showEditModal.id} canMarket={true} />
+              )}
 
               {/* ── Bilder & Plantegninger ──
                   Two side-by-side columns: Galleri (incl. primary) and

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PropertyCurationEditor } from "@/components/workspaces/property-curation-editor";
 import {
   Building2, ChevronLeft, ChevronRight, Clapperboard,
   Filter, RotateCcw, Search, SlidersHorizontal, Sparkles,
@@ -87,8 +88,23 @@ export function WorkspacePropertyCatalogue({
   const [busy, setBusy] = useState(true);
   const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
   const [openProperty, setOpenProperty] = useState<WorkspacePropertyCard | null>(null);
+  const [recommendedOnly, setRecommendedOnly] = useState(false);
+  const [recommendedItems, setRecommendedItems] = useState<WorkspacePropertyCard[]>([]);
+  const [recommendedError, setRecommendedError] = useState("");
+  const [recommendedVersion, setRecommendedVersion] = useState(0);
+  useEffect(() => {
+    if (!recommendedOnly) return;
+    let active = true;
+    fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/properties/curation?list=recommended`, { cache: "no-store" })
+      .then(async response => { if (!response.ok) throw Error("Kunne ikke hente anbefalte boliger"); return response.json(); })
+      .then(body => { if (active) { setRecommendedItems(body.properties || []); setRecommendedError(""); } })
+      .catch(error => { if (active) setRecommendedError(error instanceof Error ? error.message : "Feil"); });
+    return () => { active = false; };
+  }, [brandKey, recommendedOnly, recommendedVersion]);
+
 
   const activeCount = useMemo(() => activeFilterCount(filters), [filters]);
+  const displayedItems = recommendedOnly ? recommendedItems : items;
 
   useEffect(() => {
     const abort = new AbortController();
@@ -145,6 +161,12 @@ export function WorkspacePropertyCatalogue({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Eiendommer · felles katalog</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className={`rounded-lg px-3 py-2 text-sm ${recommendedOnly ? "border border-slate-700" : "bg-cyan-800 text-white"}`} onClick={() => setRecommendedOnly(false)}>Alle boliger</button>
+            <button type="button" className={`rounded-lg px-3 py-2 text-sm ${recommendedOnly ? "bg-cyan-800 text-white" : "border border-slate-700"}`} onClick={() => { setRecommendedOnly(true); setRecommendedVersion(value => value + 1); }}>★ Anbefalte boliger</button>
+          </div>
+          {recommendedOnly && recommendedError && <p role="alert" className="mt-2 text-sm text-red-300">{recommendedError}</p>}
+
           <p className="mt-1 max-w-3xl text-sm text-slate-400">
             Fullt søk i den offentlige boligkatalogen med filter på område, boligtype, pris, soverom, bad,
             basseng, boligareal og tomtestørrelse. Alle treff kan brukes til kundematching; markedsføring følger fortsatt merkevarens synlighetsregler.
@@ -255,7 +277,7 @@ export function WorkspacePropertyCatalogue({
       {error && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-950/30 p-4 text-amber-100">{error}</p>}
 
       {!busy && !error && <div className="grid gap-3 md:grid-cols-2">
-        {items.map(item => {
+        {displayedItems.map(item => {
           const canMarketHere = item.can_market_on_workspace_brand;
           return <article key={item.id} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
             {item.primary_image && <button type="button" onClick={() => setOpenProperty(item)}
@@ -342,7 +364,7 @@ export function WorkspacePropertyCatalogue({
             </div>
           </article>;
         })}
-        {items.length === 0 && <p className="rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-400">
+        {displayedItems.length === 0 && <p className="rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-400">
           Ingen tilgjengelige boliger matcher filtrene. Prøv å utvide pris, område eller boligtype.
         </p>}
       </div>}
@@ -380,6 +402,7 @@ export function WorkspacePropertyCatalogue({
               {canCreateReel && onCreateReel && <button type="button" onClick={() => { onCreateReel(openProperty); setOpenProperty(null); }}
                 className="inline-flex items-center gap-2 rounded-xl border border-cyan-700 px-4 py-3 text-sm font-semibold text-cyan-200"><Clapperboard size={17}/> Lag Reel fra boligen</button>}
             </div> : <p className="rounded-lg border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">Denne boligen er tilgjengelig for kundematching, men ikke godkjent for markedsføring i {brandKey === "zeneco" ? "Zen Eco Homes" : "PinosoEcolife"}.</p>}
+            <PropertyCurationEditor key={`${brandKey}:${openProperty.id}`} brandKey={brandKey} propertyId={openProperty.id} canMarket={openProperty.can_market_on_workspace_brand} />
             <p className="text-xs text-slate-500">Visningen bruker kun godkjente katalogfelt. Flere boligbilder og eksport krever en separat kontrollert utvidelse av eiendoms-API-et.</p>
           </div>
         </div>
