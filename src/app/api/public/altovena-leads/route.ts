@@ -6,7 +6,7 @@ import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const products = new Set(["offer", "visibility", "realtyflow", "olivia", "other"]);
+const products = new Set(["offer", "visibility", "realtyflow", "olivia", "command", "intelligence", "chatgenius", "ai_consulting", "custom_development", "saas", "training", "other"]);
 const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 const emailPattern = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const headers = { "Cache-Control": "no-store" };

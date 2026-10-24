@@ -63,7 +63,7 @@ begin
     or length(v_company)>160
     or length(v_message) not between 1 and 2500
     or p_product is null
-    or p_product not in ('offer','visibility','realtyflow','olivia','other')
+    or p_product not in ('offer','visibility','realtyflow','olivia','command','intelligence','chatgenius','ai_consulting','custom_development','saas','training','other')
     then raise exception 'Invalid Altovena enquiry';
   end if;
 

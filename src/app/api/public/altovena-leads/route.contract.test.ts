@@ -29,6 +29,7 @@ test("Altovena API accepts only its own bounded enquiries, not marketing or cros
   for (const item of ["altovena.com/contact","product-enquiry","respond_to_request",
     "marketing", "submissionId", "INVALID_SUBMISSION_ID", "UNKNOWN_FIELDS",
     "p_submission_id","p_product","altovena_receive_lead"]) assert.ok(route.includes(item),item);
+  for (const product of ["command","intelligence","chatgenius","ai_consulting","custom_development","saas","training"]) { assert.ok(route.includes(product),product); assert.ok(sql.includes(product),product); }
   assert.match(route,/\.marketing !== false/);
   assert.match(route,/data\?\.accepted !== true/);
   assert.match(route,/workItemId/);

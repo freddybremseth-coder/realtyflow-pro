@@ -61,6 +61,18 @@ test("Altovena endpoint rejects invalid callers and confirms an isolated CRM+tas
     assert.match(calls[0].url,/\/rest\/v1\/rpc\/altovena_receive_lead$/);
     assert.equal((calls[0].body as Record<string,unknown>).p_submission_id,submissionId);
 
+    const command=await POST(make({...payload,product:"command"}));
+    assert.equal(command.status,200);
+    const intelligence=await POST(make({...payload,product:"intelligence"}));
+    assert.equal(intelligence.status,200);
+    const consulting=await POST(make({...payload,product:"ai_consulting"}));
+    assert.equal(consulting.status,200);
+    const chatgenius=await POST(make({...payload,product:"chatgenius"}));
+    assert.equal(chatgenius.status,200);
+    const unknown=await POST(make({...payload,product:"unlisted-product"}));
+    assert.equal(unknown.status,422);
+    assert.equal(calls.length,5);
+
     const get=GET();
     assert.equal(get.status,405);
   }finally{
