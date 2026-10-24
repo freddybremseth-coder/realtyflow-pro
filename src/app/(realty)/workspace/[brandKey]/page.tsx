@@ -15,6 +15,8 @@ import { WorkspaceReelsPanel, type WorkspaceReelPropertySeed } from "@/component
 import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
 import { WorkspaceNexusInsightsPanel } from "@/components/workspaces/nexus-insights-panel";
 import { WorkspaceTodayPriorities } from "@/components/workspaces/today-priorities";
+import { AltovenaLeadAttention } from "@/components/workspaces/altovena-lead-attention";
+import { AltovenaLaunchReadiness } from "@/components/workspaces/altovena-launch-readiness";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import type { WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 
@@ -414,6 +416,9 @@ export default function FocusedWorkspacePage() {
                 Du trenger ikke velge modul først. RealtyFlow prioriterer arbeid ut fra rollen din, merkevaren og tilgjengelige signaler.
               </p>
             </div>
+            {brandKey === "altovena" && owner && !ownerPreview && <AltovenaLaunchReadiness />}
+            {brandKey === "altovena" && permissions.includes("crm.read") &&
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={() => setTab("leads")} />}
             <WorkspaceTodayPriorities
               brandKey={brandKey}
               permissions={permissions}
@@ -499,6 +504,8 @@ export default function FocusedWorkspacePage() {
         )}
         {!loading && !error && showCrm && tab === "leads" && (
           <section className="space-y-5">
+            {brandKey === "altovena" && permissions.includes("crm.read") &&
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={() => setTab("leads")} />}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
