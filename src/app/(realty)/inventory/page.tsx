@@ -931,11 +931,24 @@ export default function InventoryPage() {
     e.target.value = "";
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!showEditModal) return;
-    setProperties(prev => prev.map(p => p.id === showEditModal.id ? showEditModal : p));
-    apiUpdateProperty(showEditModal);
-    setShowEditModal(null);
+    const property = showEditModal;
+    try {
+      const response = await fetch(`/api/properties?id=${encodeURIComponent(property.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(propertyToDbRow(property)),
+      });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.error || "Kunne ikke lagre endringene");
+      }
+      setProperties(prev => prev.map(p => p.id === property.id ? property : p));
+      setShowEditModal(null);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Kunne ikke lagre endringene");
+    }
   };
 
   const togglePropertyPublication = async (propertyId: string, brandId: string) => {
