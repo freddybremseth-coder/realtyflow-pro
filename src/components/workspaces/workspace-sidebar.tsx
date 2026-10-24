@@ -92,8 +92,6 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
           permissions: ["visibility.read"] },
         { label: "Annonser", href: `${root}?tab=growth&area=ads&focus=ads`, icon: BarChart3,
           permissions: ["ads.read"] },
-        { label: "Publisering", href: `${root}?tab=growth&focus=publish`, icon: Megaphone,
-          permissions: ["marketing.publish"] },
       ],
     },
     {
