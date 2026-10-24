@@ -1,0 +1,192 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const route = readFileSync("src/app/api/public/altovena-leads/route.ts","utf8");
+const dedicatedClient = readFileSync("src/lib/altovena/supabase.ts","utf8");
+const sql = readFileSync("supabase/migrations/20261014210000_altovena_brand_intake.sql","utf8");
+const registry = readFileSync("src/lib/marketing/brand-registry.ts","utf8");
+const centralBrands=readFileSync("src/lib/constants.ts","utf8");
+
+test("Altovena intake remains off until secret, brand and database are configured", () => {
+  for (const item of [
+    "ALTOVENA_INTAKE_ENABLED", "ALTOVENA_INTAKE_KEY",
+    "x-altovena-ingest-key", "matchKey",
+    "WRONG_BRAND", "INTAKE_NOT_CONFIGURED",
+  ]) assert.ok(route.includes(item),item);
+  assert.match(route,/getAltovenaSupabase/);
+  assert.match(dedicatedClient,/ALTOVENA_STAGING_SUPABASE_URL/);
+  assert.match(dedicatedClient,/ALTOVENA_STAGING_SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(dedicatedClient,/getPlatformSupabase/);
+  assert.doesNotMatch(route,/NEXT_PUBLIC_SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(route,/timingSafeEqual/);
+  assert.match(route,/request\.headers\.get\("content-type"\)/);
+  assert.match(route,/12000/);
+  assert.doesNotMatch(route,/process\.env\.ZENECO_API_KEY|resolvePublicLeadBrand|REALTYFLOW_PUBLIC_LEAD_KEY/);
+});
+
+test("Altovena API accepts only its own bounded enquiries, not marketing or cross-brand writes", () => {
+  for (const item of ["altovena.com/contact","product-enquiry","respond_to_request",
+    "marketing", "submissionId", "INVALID_SUBMISSION_ID", "UNKNOWN_FIELDS",
+    "p_submission_id","p_product","altovena_receive_lead"]) assert.ok(route.includes(item),item);
+  for (const product of ["command","intelligence","chatgenius","ai_consulting","custom_development","saas","training"]) { assert.ok(route.includes(product),product); assert.ok(sql.includes(product),product); }
+  assert.match(route,/\.marketing !== false/);
+  assert.match(route,/data\?\.accepted !== true/);
+  assert.match(route,/workItemId/);
+  assert.doesNotMatch(route,/sendBrandEmail|newsletter|auto.*follow.*up|reply_to/i);
+});
+
+test("The DB migration creates an isolated brand and atomic CRM + work-item path", () => {
+  assert.match(sql,/insert into core\.brands[\s\S]*'altovena'/i);
+  assert.match(sql,/create or replace function public\.altovena_receive_lead\(/i);
+  assert.match(sql,/security invoker/i);
+  assert.match(sql,/revoke execute on function public\.altovena_receive_lead[\s\S]*from public,anon,authenticated/i);
+  assert.match(sql,/grant execute on function public\.altovena_receive_lead[\s\S]*to service_role/i);
+  assert.match(sql,/from public\.contacts[\s\S]*brand_id='altovena' and brand='altovena'/i);
+  assert.match(sql,/insert into public\.work_items/i);
+  assert.match(sql,/'altovena','website_lead'/i);
+  assert.match(sql,/insert into public\.altovena_intake_receipts/i);
+  assert.match(sql,/pg_advisory_xact_lock/);
+  assert.match(sql,/notes,interactions,ai_auto_followup,nurture_status,created_at/);
+  assert.match(sql,/false,'stopped',v_time/);
+  assert.match(sql,/marketing_opt_in',false/);
+  assert.match(sql,/Keep any independently-established prior subscription preferences intact/);
+  // An anonymous form must never update an existing contact's canonical identity.
+  assert.match(sql,/identity_verified',false/);
+  assert.match(sql,/Public submissions are NOT identity verification/);
+  const contactUpdate = sql.slice(sql.indexOf("update public.contacts"), sql.indexOf("where id=v_contact_id"));
+  assert.doesNotMatch(contactUpdate,/set\s+name\s*=|company\s*=/i);
+
+
+  assert.doesNotMatch(sql,/insert into core\.brand_workspace_memberships/i);
+  assert.doesNotMatch(sql,/subscribe|sendmail|notify.*external/i);
+});
+
+test("Altovena marketing brand is separate and has no pilot publishing routes enabled", () => {
+  assert.match(registry,/\| "altovena"/);
+  const segment=registry.slice(registry.indexOf('id: "altovena"'),registry.indexOf('id: "freddyb"'));
+  assert.match(segment,/pilotChannels: \[\]/);
+  assert.match(segment,/website: "https:\/\/altovena\.com"/);
+  assert.match(segment,/RealtyFlow is the sole CRM/);
+  assert.doesNotMatch(segment,/pilotChannels: \["instagram"/);
+  assert.match(centralBrands, /id: "altovena", name: "Altovena", type: "saas"/);
+  assert.match(centralBrands, /"Offer Intelligence".*"Visibility".*"RealtyFlow".*"Olivia OS"/);
+});
+
+const scopedTaskRoute=readFileSync("src/app/api/workspaces/[brandKey]/lead-tasks/route.ts","utf8");
+const altovenaTaskPanel=readFileSync("src/components/workspaces/altovena-lead-attention.tsx","utf8");
+const workspacePage=readFileSync("src/app/(realty)/workspace/[brandKey]/page.tsx","utf8");
+
+test("pending Altovena website tasks remain in the same verified brand workspace",()=>{
+  assert.match(scopedTaskRoute,/params\.brandKey !== "altovena"/);
+  assert.match(scopedTaskRoute,/requireBrandWorkspace\(request, "altovena", "crm.read"\)/);
+  assert.match(scopedTaskRoute,/\.eq\("brand_id", "altovena"\)/);
+  assert.match(scopedTaskRoute,/\.eq\("source_type", "website_lead"\)/);
+  assert.match(scopedTaskRoute,/\.in\("status", allowedStatuses\)/);
+  assert.doesNotMatch(scopedTaskRoute,/\.from\("contacts"\)|\.from\("brand_settings"\)/);
+  assert.match(altovenaTaskPanel,/\/api\/workspaces\/altovena\/lead-tasks/);
+  assert.match(altovenaTaskPanel,/Automatiske kundesvar er ikke aktivert/);
+  assert.match(altovenaTaskPanel,/Status for interne SMTP-tester vises i varslingssenteret/);
+  assert.match(workspacePage,/brandKey === "altovena" && permissions\.includes\("crm.read"\)/);
+  assert.match(workspacePage,/AltovenaLeadAttention/);
+});
+
+
+test("Altovena tasks support protected human follow-up and timely in-app attention", () => {
+  assert.match(scopedTaskRoute,/export async function PATCH/);
+  assert.match(scopedTaskRoute,/requireBrandWorkspace\(request, "altovena", "crm.write"\)/);
+  assert.match(scopedTaskRoute,/request.headers.get\("origin"\)/);
+  assert.match(scopedTaskRoute,/INVALID_REQUEST_ORIGIN/);
+  assert.match(scopedTaskRoute,/p_task_id: id/);
+  assert.match(scopedTaskRoute,/\.eq\("brand_id", "altovena"\)/);
+  assert.match(scopedTaskRoute,/\.eq\("source_type", "website_lead"\)/);
+  assert.match(scopedTaskRoute,/\.in\("status", allowedStatuses\)/);
+  assert.match(scopedTaskRoute,/!\["IN_PROGRESS", "DONE"\]\.includes\(status\)/);
+  assert.match(scopedTaskRoute,/\.rpc\("altovena_mark_lead_task"/);
+  assert.match(scopedTaskRoute,/p_actor_email: access\.value\.verifiedEmail/);
+  assert.match(sql,/create or replace function public\.altovena_mark_lead_task/);
+  assert.match(sql,/brand_id='altovena'/);
+  assert.match(sql,/source_type='website_lead'/);
+  assert.match(sql,/status_history/);
+  assert.match(sql,/verified_altovena_workspace/);
+  assert.match(sql,/grant execute on function public\.altovena_mark_lead_task[\s\S]*to service_role/);
+  assert.doesNotMatch(scopedTaskRoute,/\.from\("contacts"\)|\.rpc\("sendBrandEmail"/);
+  assert.match(altovenaTaskPanel,/canManage: boolean/);
+  assert.match(altovenaTaskPanel,/window.setInterval\(tick, 60000\)/);
+  assert.match(altovenaTaskPanel,/document.addEventListener\("visibilitychange", onVisible\)/);
+  assert.match(altovenaTaskPanel,/assessAltovenaLeadPoll/);
+  // 24-hour follow-up is counted server-side across the complete backlog,
+  // not only the 40 newest tasks rendered in the browser.
+  assert.match(scopedTaskRoute,/overdueNotStarted: overdue.count/);
+  assert.match(scopedTaskRoute,/totalOpen: total.count/);
+  assert.match(altovenaTaskPanel,/setOverdueNotStarted\(body.overdueNotStarted\)/);
+  assert.match(altovenaTaskPanel,/capped &&/);
+  assert.match(altovenaTaskPanel,/Marker oppfølging utført/);
+  assert.match(altovenaTaskPanel,/Automatiske kundesvar er ikke aktivert/);
+  assert.match(altovenaTaskPanel,/Status for interne SMTP-tester vises i varslingssenteret/);
+  assert.match(workspacePage,/canManage=\{permissions\.includes\("crm.write"\)\}/);
+});
+
+
+test("Altovena right-to-erasure cleanup cannot leave branded task or intake receipts", () => {
+  assert.match(sql,/contact_id uuid not null references public\.contacts\(id\) on delete cascade/);
+  assert.match(sql,/work_item_id uuid not null references public\.work_items\(id\) on delete cascade/);
+  assert.match(sql,/create or replace function public\.altovena_delete_contact_related_tasks\(/);
+  assert.match(sql,/if old\.brand_id='altovena' and old\.brand='altovena'/);
+  assert.match(sql,/delete from public\.work_items[\s\S]*where brand_id='altovena'[\s\S]*and source_type='website_lead'[\s\S]*and source_id=old\.id::text/);
+  assert.match(sql,/create trigger altovena_contact_erasure_cleanup[\s\S]*before delete on public\.contacts/);
+});
+
+
+const launchApi=readFileSync("src/app/api/workspaces/altovena/launch-readiness/route.ts","utf8");
+const launchCard=readFileSync("src/components/workspaces/altovena-launch-readiness.tsx","utf8");
+
+test("Altovena launch checklist is owner-only, read-only and cannot activate a form",()=>{
+  assert.match(launchApi,/export async function GET\(/);
+  assert.match(launchApi,/getRequestAccessContext\(request\)/);
+  assert.match(launchApi,/context\.role !== "OWNER" \|\| context\.source !== "owner-session"/);
+  assert.match(launchApi,/workspace_access_snapshot/);
+  assert.match(launchApi,/ALTOVENA_ANDREA_AUTH_USER_ID/);
+  assert.match(launchApi,/auth\.admin\.getUserById\(id\)/);
+  assert.match(launchApi,/workspace_user_brand_grants/);
+  assert.match(launchApi,/hasVerifiedBrandGrant/);
+  assert.match(launchApi,/OPERATIVE_PERMISSIONS\.every/);
+  assert.match(launchApi,/readyForPublicForm = false/);
+  assert.match(launchApi,/needs_external_verification/);
+  assert.doesNotMatch(launchApi,/export async function POST|export async function PATCH|\.insert\(|\.update\(|\.upsert\(/);
+  assert.doesNotMatch(launchApi,/return reply\(\{\s*[\s\S]*ALTOVENA_INTAKE_KEY:/);
+  assert.match(launchCard,/\/api\/workspaces\/altovena\/launch-readiness/);
+  assert.match(launchCard,/Denne kontrollen aktiverer ingenting/);
+  assert.match(workspacePage,/brandKey === "altovena" && owner && !ownerPreview && <AltovenaLaunchReadiness/);
+});
+
+
+const launchPage=readFileSync("src/app/(realty)/altovena-launch/page.tsx","utf8");
+const ownerHome=readFileSync("src/app/(realty)/workspaces/page.tsx","utf8");
+test("standalone launch page works before brand provisioning but requires owner session",()=>{
+  assert.match(launchPage,/verifyAdminSession\(jar\.get\("realtyflow_admin"\)\?\.value\)/);
+  assert.match(launchPage,/session\.role !== "OWNER"/);
+  assert.match(launchPage,/isAdminEmail\(session\.email\)/);
+  assert.match(launchPage,/verifyWorkspacePreviewSession/);
+  assert.match(launchPage,/AltovenaLaunchReadiness/);
+  assert.match(ownerHome,/user\.role === "OWNER"/);
+  assert.match(ownerHome,/href="\/altovena-launch"/);
+  assert.doesNotMatch(launchPage,/getPlatformSupabase\(\)|SUPABASE_SERVICE_ROLE_KEY|ALTOVENA_INTAKE_KEY/);
+});
+
+
+test("Launch health checks live migration, not merely server environment settings",()=>{
+  assert.match(sql,/create or replace function public\.altovena_intake_health\(\)/);
+  assert.match(sql,/security invoker[\s\S]*altovena_intake_health/); // health is a restricted invoker
+  assert.match(sql,/grant execute on function public\.altovena_intake_health\(\) to service_role/);
+  assert.match(sql,/revoke execute on function public\.altovena_intake_health\(\)[\s\S]*from public,anon,authenticated/);
+  assert.match(launchApi,/\.rpc\("altovena_intake_health"\)/);
+  assert.match(launchApi,/schema_version === "altovena-intake-v1"/);
+  assert.match(launchApi,/receipts_present === true/);
+  assert.match(launchApi,/intake_rpc_secured === true/);
+  assert.match(launchApi,/task_rpc_secured === true/);
+  assert.match(launchApi,/const intakeConfigured = migrationHealthy &&/);
+  assert.match(launchApi,/migrationMissing/);
+  assert.match(launchApi,/INTAKE_HEALTH_UNAVAILABLE/);
+  assert.match(launchApi,/readyForPublicForm = false/);
+});

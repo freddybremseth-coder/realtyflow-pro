@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -15,6 +15,8 @@ import { WorkspaceReelsPanel, type WorkspaceReelPropertySeed } from "@/component
 import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
 import { WorkspaceNexusInsightsPanel } from "@/components/workspaces/nexus-insights-panel";
 import { WorkspaceTodayPriorities } from "@/components/workspaces/today-priorities";
+import { AltovenaLeadAttention } from "@/components/workspaces/altovena-lead-attention";
+import { AltovenaLaunchReadiness } from "@/components/workspaces/altovena-launch-readiness";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import type { WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 
@@ -118,6 +120,10 @@ export default function FocusedWorkspacePage() {
   const [contactError, setContactError] = useState("");
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [focusedAltovenaContact, setFocusedAltovenaContact] = useState<Contact | null>(null);
+  const [focusedAltovenaError, setFocusedAltovenaError] = useState("");
+  const altovenaLookupVersion = useRef(0);
+  const focusedAltovenaContactId = useRef("");
   const [customer360, setCustomer360] = useState<StaffCustomer360 | null>(null);
   const [customer360Busy, setCustomer360Busy] = useState(false);
   const [customer360Error, setCustomer360Error] = useState("");
@@ -203,6 +209,34 @@ export default function FocusedWorkspacePage() {
       window.location.assign(`/workspace/${encodeURIComponent(brandKey)}?tab=growth&focus=social`);
     } catch {
       setPreviewEnding(false);
+    }
+  }
+
+  async function openAltovenaLeadContact(contactId?: string) {
+    if (brandKey !== "altovena") return;
+    setTab("leads");
+    if (!contactId) return;
+    const version = (altovenaLookupVersion.current += 1);
+    setFocusedAltovenaError("");
+    focusedAltovenaContactId.current = "";
+    setFocusedAltovenaContact(null);
+    setSelectedCustomerId("");
+    try {
+      const response = await fetch(
+        `/api/workspaces/altovena/lead-contact?contactId=${encodeURIComponent(contactId)}`,
+        {cache:"no-store",credentials:"same-origin"},
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok || body?.ok !== true || body?.brand !== "altovena" ||
+          body?.contact?.id !== contactId || typeof body.contact.name !== "string")
+        throw new Error("Kundekortet kan ikke åpnes med din nåværende tilgang.");
+      if (version !== altovenaLookupVersion.current) return;
+      focusedAltovenaContactId.current = contactId;
+      setFocusedAltovenaContact(body.contact as Contact);
+      setSelectedCustomerId(contactId);
+    } catch (error) {
+      if (version !== altovenaLookupVersion.current) return;
+      setFocusedAltovenaError(error instanceof Error ? error.message : "Kunne ikke åpne kundekort.");
     }
   }
 
@@ -321,7 +355,8 @@ export default function FocusedWorkspacePage() {
     } finally { setCustomerEditBusy(false); }
   }
   const filtered = contacts;
-  const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
+  const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) ||
+    (brandKey === "altovena" && focusedAltovenaContact?.id === selectedCustomerId ? focusedAltovenaContact : null);
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
   const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
   const showJointTasks = brandKey === "zeneco" && permissions.includes("crm.joint.read") && permissions.includes("tasks.joint.read");
@@ -414,6 +449,9 @@ export default function FocusedWorkspacePage() {
                 Du trenger ikke velge modul først. RealtyFlow prioriterer arbeid ut fra rollen din, merkevaren og tilgjengelige signaler.
               </p>
             </div>
+            {brandKey === "altovena" && owner && !ownerPreview && <AltovenaLaunchReadiness />}
+            {brandKey === "altovena" && permissions.includes("crm.read") &&
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={contactId => void openAltovenaLeadContact(contactId)} />}
             <WorkspaceTodayPriorities
               brandKey={brandKey}
               permissions={permissions}
@@ -499,6 +537,10 @@ export default function FocusedWorkspacePage() {
         )}
         {!loading && !error && showCrm && tab === "leads" && (
           <section className="space-y-5">
+            {brandKey === "altovena" && focusedAltovenaError &&
+              <p role="alert">{focusedAltovenaError}</p>}
+            {brandKey === "altovena" && permissions.includes("crm.read") &&
+              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={contactId => void openAltovenaLeadContact(contactId)} />}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>

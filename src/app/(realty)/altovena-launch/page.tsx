@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { isAdminEmail, verifyAdminSession, verifyWorkspacePreviewSession, WORKSPACE_PREVIEW_COOKIE } from "@/lib/admin-auth";
+import { AltovenaLaunchReadiness } from "@/components/workspaces/altovena-launch-readiness";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -66,6 +67,11 @@ export default async function AltovenaLaunchPage() {
         <section aria-label="Lanseringsstatus" className="rounded-xl border border-amber-700 bg-slate-900 p-5">
           <h2 className="text-xl font-semibold">Ikke klar for offentlig aktivering</h2>
           <p className="mt-2 text-sm text-slate-300">Alle punktene nedenfor vises som uavklarte til de er kontrollert separat. Eksisterende RealtyFlow-funksjoner påvirkes ikke.</p>
+        </section>
+        <section aria-label="Teknisk stagingstatus" className="space-y-3 rounded-xl border border-teal-800 bg-slate-900 p-5">
+          <h2 className="text-xl font-semibold">Teknisk stagingkontroll</h2>
+          <p className="text-sm text-slate-300">Denne separate kontrollen sjekker den gjeldende, avgrensede Altovena-konfigurasjonen. Den erstatter ikke det daterte produktregisteret over. Den godkjenner ikke lansering, oppretter ingen ressurser og gir ingen brukertilgang.</p>
+          <AltovenaLaunchReadiness />
         </section>
         <section aria-labelledby="next-actions" className="space-y-4">
           <h2 id="next-actions" className="text-2xl font-semibold">De tre første oppgavene</h2>

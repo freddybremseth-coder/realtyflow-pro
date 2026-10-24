@@ -1,8 +1,11 @@
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
+import { allowAltovenaProductionWorkspace } from "@/lib/altovena/production-workspace-gate";
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { type AccessRole } from "@/lib/access-control";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
 import { hasVerifiedBrandGrant, isCanonicalBrandKey, type WorkspacePermission } from "./brand-policy";
 
 type Rejection = { value: null; response: NextResponse };
@@ -41,6 +44,12 @@ export async function requireBrandWorkspace(
   permission: WorkspacePermission,
 ): Promise<Access | Rejection> {
   if (!isCanonicalBrandKey(brandKey)) return reject(404, "WORKSPACE_NOT_FOUND");
+  if (brandKey === "altovena" && !allowAltovenaProductionWorkspace())
+    return reject(503, "ALTOVENA_PRODUCTION_WORKSPACE_DISABLED");
+  // This restriction is Altovena-only: never read production CRM/Auth in a
+  // shared-database Vercel preview. Other brands remain unchanged.
+  if (brandKey === "altovena" && !assessAltovenaDatabaseIsolation().allowed)
+    return reject(503, "ALTOVENA_PREVIEW_DATABASE_NOT_ISOLATED");
   const context = await getRequestAccessContext(request);
   if (!context) return reject(401, "AUTH_REQUIRED");
   // Owner preview mirrors the selected employee's current scope but is deliberately
@@ -59,7 +68,9 @@ export async function requireBrandWorkspace(
     (permission === "crm.read" || permission === "crm.write")) {
     return reject(403, "ZEN_NEW_LEADS_COHORT_REQUIRED");
   }
-  const supabase = getPlatformSupabase();
+  const supabase = brandKey === "altovena"
+    ? getAltovenaSupabase()
+    : getPlatformSupabase();
   if (!supabase) return reject(503, "WORKSPACE_UNAVAILABLE");
 
   // The public-schema RPC is service-role-only; core is NOT exposed to PostgREST clients.
@@ -80,7 +91,7 @@ export async function requireBrandWorkspace(
       verifiedUserId: authResult.user.id, verifiedUserEmail: authResult.user.email || "",
       permission,
     })) return reject(403, "ACCESS_DENIED");
-    // Brand Operations uses Meta for paid ads; direct workspace API calls are denied too.
+    // Preserve the latest main restriction: Brand Operations manages paid ads in Meta.
     if (grant.operational_role === "BRAND_OPERATIONS" &&
       ["zeneco", "pinosoecolife"].includes(brandKey) &&
       (permission === "ads.read" || permission === "ads.draft")) {

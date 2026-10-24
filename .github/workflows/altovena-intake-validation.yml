@@ -1,0 +1,146 @@
+name: Altovena intake validation
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/public/altovena-leads/**"
+      - "src/lib/altovena/preview-database-isolation.ts"
+      - "src/lib/altovena/supabase.ts"
+      - "src/lib/altovena/staging-readiness.ts"
+      - "src/lib/altovena/staging-session.ts"
+      - "src/lib/altovena/staging-admission.ts"
+      - "src/app/api/altovena/staging-auth/**"
+      - "src/lib/altovena/staging-login-limit.ts"
+      - "supabase/migrations/*altovena_staging_login_limiter.sql"
+      - "tests/altovena/staging-login-limit.test.ts"
+      - "tests/altovena/staging-login-route.test.ts"
+      - "tests/altovena/staging-admission.test.ts"
+      - "tests/altovena/staging-session-boundary.test.ts"
+      - "src/components/workspaces/altovena-launch-readiness.tsx"
+      - "tests/altovena/staging-readiness.test.ts"
+      - "src/lib/platform/supabase.ts"
+      - "src/lib/workspaces/require-brand-workspace.ts"
+      - "src/app/api/workspaces/[brandKey]/capabilities/route.ts"
+      - "src/app/api/workspaces/available/route.ts"
+      - "tests/altovena/staging-available-workspaces.test.ts"
+      - "tests/altovena/staging-capabilities-isolation.test.ts"
+      - "src/lib/workspaces/require-brand-workspace.ts"
+      - "src/app/api/workspaces/altovena/launch-readiness/**"
+      - "src/app/api/workspaces/altovena/**"
+      - "src/app/api/workspaces/[brandKey]/lead-tasks/**"
+      - "src/app/api/cron/altovena-lead-alerts/**"
+      - "src/app/api/cron/altovena-delivery-preflight/**"
+      - "src/app/api/cron/altovena-smtp-staging/**"
+      - "src/lib/altovena/dispatch-staging-operator-email.ts"
+      - "scripts/test-altovena-smtp-boundary.mjs"
+      - "supabase/migrations/*altovena_smtp_attempt_boundary.sql"
+      - "src/lib/altovena/dispatch-staging-operator-email.ts"
+      - "scripts/test-altovena-smtp-boundary.mjs"
+      - "src/lib/altovena/verified-delivery-recipients.ts"
+      - "src/lib/cron/safe-mode.ts"
+      - "scripts/test-altovena-delivery-preflight.mjs"
+      - "tests/altovena/**"
+      - "supabase/migrations/*altovena_lead_alert_queue.sql"
+      - "scripts/test-altovena-alert-queue.mjs"
+      - "vercel.json"
+      - "src/components/workspaces/altovena-*.tsx"
+      - "src/app/(realty)/altovena-launch/**"
+      - "supabase/migrations/*altovena*"
+      - "src/lib/marketing/brand-registry.ts"
+      - "docs/altovena-realtyflow-intake.md"
+      - "package.json"
+      - "scripts/test-altovena-postgres.mjs"
+      - "scripts/test-altovena-http-postgres.ts"
+      - "scripts/test-altovena-cross-repo-bridge.ts"
+      - "scripts/fixtures/altovena-ci-schema.sql"
+      - ".github/workflows/altovena-intake-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit
+      - run: npm run test:altovena-intake
+
+  database-integration:
+    name: Isolated PostgreSQL Altovena migration + RPC
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: altovena_ci_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d altovena_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      ALTOVENA_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/altovena_ci_test
+      SUPABASE_DB_URL: ""
+      POSTGRES_URL: ""
+      DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit
+      - name: Synthetic HTTP handler → real SQL CRM + task in isolated PostgreSQL
+        run: NODE_OPTIONS=--conditions=react-server node --import tsx scripts/test-altovena-http-postgres.ts
+      - name: Checkout pinned Altovena website source for contract test
+        uses: actions/checkout@v4
+        with:
+          repository: freddybremseth-coder/Altovena
+          ref: ded27cde669e8740e98bfb372de47fba21181133
+          path: altovena-website
+          persist-credentials: false
+      - name: Checkout current Altovena website contact candidate
+        uses: actions/checkout@v4
+        with:
+          repository: freddybremseth-coder/Altovena
+          ref: feature/v1-3-contact-gate-hardening
+          path: altovena-candidate
+          persist-credentials: false
+      - name: Fail if the tested Altovena contact handler differs from candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in api/contact.js public/contact-form.js; do
+            if ! cmp -s "altovena-website/$file" "altovena-candidate/$file"; then
+              echo "::error file=$file::Altovena source changed; pin the new website PR commit and rerun offline cross-repo CRM validation."
+              exit 1
+            fi
+          done
+          echo "PASS: pinned Altovena site contact handler and browser script match the active candidate"
+      - name: Synthetic Altovena website → RealtyFlow → real local PostgreSQL E2E
+        run: NODE_OPTIONS=--conditions=react-server node --import tsx scripts/test-altovena-cross-repo-bridge.ts
+      - name: Verify idempotent Altovena operator alert ledger in isolated PostgreSQL
+        run: node scripts/test-altovena-alert-queue.mjs
+      - name: Verify Altovena delivery candidates without SMTP in isolated PostgreSQL
+        run: node scripts/test-altovena-delivery-preflight.mjs
+      - name: Verify irreversible Altovena SMTP attempts in isolated PostgreSQL
+        run: node scripts/test-altovena-smtp-boundary.mjs
+      - name: Verify staging login limit ACL and concurrent claims in isolated PostgreSQL
+        run: node scripts/test-altovena-login-limit-postgres.mjs
+      - name: Verify no-retry SMTP attempt ledger against real isolated PostgreSQL
+        run: node scripts/test-altovena-smtp-boundary.mjs
+      - name: Verify real Altovena SQL + RPC in isolated PostgreSQL
+        run: node scripts/test-altovena-postgres.mjs

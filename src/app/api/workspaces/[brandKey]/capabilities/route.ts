@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
 import { getPlatformSupabase } from "@/lib/platform/supabase";
+import { getAltovenaSupabase } from "@/lib/altovena/supabase";
+import { assessAltovenaDatabaseIsolation } from "@/lib/altovena/preview-database-isolation";
+import { allowAltovenaProductionWorkspace } from "@/lib/altovena/production-workspace-gate";
 import {
   hasVerifiedBrandGrant, isCanonicalBrandKey, WORKSPACE_PERMISSIONS, type WorkspacePermission,
 } from "@/lib/workspaces/brand-policy";
@@ -21,10 +24,18 @@ export async function GET(
 ) {
   const { brandKey } = params;
   if (!isCanonicalBrandKey(brandKey)) return fail(404, "WORKSPACE_NOT_FOUND");
+  if (brandKey === "altovena" && !allowAltovenaProductionWorkspace())
+    return fail(503, "ALTOVENA_PRODUCTION_WORKSPACE_DISABLED");
+  // Capabilities is the first API requested by the workspace UI. Prevent
+  // reading live brand grants/Auth when Altovena Preview is not isolated.
+  if (brandKey === "altovena" && !assessAltovenaDatabaseIsolation().allowed)
+    return fail(503, "ALTOVENA_PREVIEW_DATABASE_NOT_ISOLATED");
   const context = await getRequestAccessContext(request);
   if (!context) return fail(401, "AUTH_REQUIRED");
   if (context.source === "remaster-proxy") return fail(403, "ACCESS_DENIED");
-  const supabase = getPlatformSupabase();
+  const supabase = brandKey === "altovena"
+    ? getAltovenaSupabase()
+    : getPlatformSupabase();
   if (!supabase) return fail(503, "WORKSPACE_UNAVAILABLE");
   const { data: scope, error: scopeError } = await supabase.rpc("workspace_brand_grant", {
     p_brand_key: brandKey, p_email: context.email,
@@ -44,7 +55,7 @@ export async function GET(
     if (grant.operational_role === "BRAND_OPERATIONS" &&
         ["zeneco", "pinosoecolife"].includes(brandKey)) operationalRole = "BRAND_OPERATIONS";
     permissions = WORKSPACE_PERMISSIONS.filter(permission =>
-      // Paid advertising is handled in Meta, outside the Brand Operations workspace.
+      // Preserve main's restricted paid ads; employees use Meta instead.
       !(operationalRole === "BRAND_OPERATIONS" &&
         (permission === "ads.read" || permission === "ads.draft")) &&
       (brandKey === "zeneco"
