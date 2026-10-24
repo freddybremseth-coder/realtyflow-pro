@@ -852,6 +852,7 @@ export default function FocusedWorkspacePage() {
             brandKey={brandKey}
             canCreateMarketing={permissions.includes("marketing.draft")}
             canCreateReel={permissions.includes("reels.create")}
+            canEditDeveloperInfo={permissions.includes("content.edit")}
             onCreateSocial={(property: WorkspacePropertyCard) => {
               setSocialPropertySeed({
                 id: property.id, ref: property.ref, title: property.title,

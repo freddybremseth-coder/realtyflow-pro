@@ -67,12 +67,14 @@ export function WorkspacePropertyCatalogue({
   brandKey,
   canCreateMarketing = false,
   canCreateReel = false,
+  canEditDeveloperInfo = false,
   onCreateSocial,
   onCreateReel,
 }: {
   brandKey: string;
   canCreateMarketing?: boolean;
   canCreateReel?: boolean;
+  canEditDeveloperInfo?: boolean;
   onCreateSocial?: (property: WorkspacePropertyCard) => void;
   onCreateReel?: (property: WorkspacePropertyCard) => void;
 }) {
@@ -86,8 +88,43 @@ export function WorkspacePropertyCatalogue({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
   const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
+  const [developerNote, setDeveloperNote] = useState<{ propertyId: string; text: string; loading: boolean; saving: boolean; error: string; saved: boolean } | null>(null);
 
   const activeCount = useMemo(() => activeFilterCount(filters), [filters]);
+
+  useEffect(() => {
+    if (!canEditDeveloperInfo || !expandedPropertyId) return;
+    const item = items.find((entry) => entry.id === expandedPropertyId);
+    if (!item) return;
+    const controller = new AbortController();
+    const propertyId = expandedPropertyId;
+    setDeveloperNote({ propertyId, text: "", loading: true, saving: false, error: "", saved: false });
+    fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/properties/${encodeURIComponent(propertyId)}/developer-information`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !body?.ok) throw new Error("Kunne ikke hente mer informasjon om boligen.");
+        return typeof body.additional_information === "string" ? body.additional_information : "";
+      })
+      .then((text) => { if (!controller.signal.aborted) setDeveloperNote({ propertyId, text, loading: false, saving: false, error: "", saved: false }); })
+      .catch(() => { if (!controller.signal.aborted) setDeveloperNote({ propertyId, text: "", loading: false, saving: false, error: "Kunne ikke hente teksten. Prøv igjen senere.", saved: false }); });
+    return () => controller.abort();
+  }, [brandKey, canEditDeveloperInfo, expandedPropertyId, items]);
+
+  async function saveDeveloperInformation(propertyId: string) {
+    if (!developerNote || developerNote.propertyId !== propertyId || developerNote.loading || developerNote.saving) return;
+    const text = developerNote.text;
+    setDeveloperNote(current => current?.propertyId === propertyId ? { ...current, saving: true, error: "", saved: false } : current);
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/properties/${encodeURIComponent(propertyId)}/developer-information`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ additional_information: text }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.ok) throw new Error("Kunne ikke lagre informasjonen.");
+      setDeveloperNote(current => current?.propertyId === propertyId ? { ...current, text: body.additional_information || "", saving: false, error: "", saved: true } : current);
+    } catch {
+      setDeveloperNote(current => current?.propertyId === propertyId ? { ...current, saving: false, error: "Kunne ikke lagre. Teksten er fortsatt i feltet – prøv igjen.", saved: false } : current);
+    }
+  }
 
   useEffect(() => {
     const abort = new AbortController();
@@ -322,6 +359,29 @@ export function WorkspacePropertyCatalogue({
                   <p className="text-xs text-slate-400">
                     Dette er offentlig kataloginformasjon. Interne prisnotater, provisjoner og importdata vises ikke.
                   </p>
+                  {canEditDeveloperInfo && <section className="space-y-2 border-t border-slate-800 pt-4">
+                    <h5 className="text-sm font-semibold text-cyan-200">Mer informasjon fra utbygger</h5>
+                    <p className="text-xs text-slate-400">Valgfri ren tekst om leveranse, tomtevalg, byggestatus, ferdigstillelse og tilvalg. Publiseres ikke automatisk.</p>
+                    <textarea
+                      aria-label="Mer informasjon fra utbygger"
+                      className="min-h-36 w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-sm text-slate-100"
+                      maxLength={12000}
+                      disabled={developerNote?.propertyId !== item.id || developerNote.loading || developerNote.saving || Boolean(developerNote.error && developerNote.loading)}
+                      value={developerNote?.propertyId === item.id ? developerNote.text : ""}
+                      onChange={event => setDeveloperNote(current => current?.propertyId === item.id ? { ...current, text: event.target.value, saved: false } : current)}
+                      placeholder="Skriv eller lim inn bekreftet informasjon fra utbygger…"
+                    />
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => void saveDeveloperInformation(item.id)}
+                        disabled={developerNote?.propertyId !== item.id || developerNote.loading || developerNote.saving}
+                        className="rounded-lg bg-cyan-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                        {developerNote?.saving ? "Lagrer…" : "Lagre informasjon"}
+                      </button>
+                      {developerNote?.propertyId === item.id && developerNote.saved && <span role="status" className="text-xs text-emerald-300">Lagret</span>}
+                      {developerNote?.propertyId === item.id && developerNote.loading && <span className="text-xs text-slate-400">Laster tekst…</span>}
+                    </div>
+                    {developerNote?.propertyId === item.id && developerNote.error && <p role="alert" className="text-xs text-amber-300">{developerNote.error}</p>}
+                  </section>}
                   {!canMarketHere && <p role="status" className="text-sm text-amber-300">
                     Boligen kan brukes til matching, men er foreløpig ikke godkjent for SoMe i denne merkevaren.
                   </p>}
