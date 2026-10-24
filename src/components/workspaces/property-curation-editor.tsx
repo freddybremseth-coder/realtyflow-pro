@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { PropertySourceFactReview } from "@/components/properties/property-source-fact-review";
 
 type Curation = { recommended: boolean; editor_description: string; expected_completion_manual: string };
 export function PropertyCurationEditor({ brandKey, propertyId, canMarket }: { brandKey: string; propertyId: string; canMarket: boolean }) {
@@ -51,6 +52,7 @@ export function PropertyCurationEditor({ brandKey, propertyId, canMarket }: { br
       <p className="mt-2 text-xs text-slate-400">Kontroller datoer, antall enheter og fasiliteter mot leverandørens kilde før du bruker opplysningene. Kilden kan ikke redigeres her.</p>
       <div className="mt-3 max-h-80 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate-200">{sourceDescription}</div>
     </details>}
+    {sourceDescription && canMarket && <PropertySourceFactReview source={sourceDescription} onUse={note => setDescription(current => [current, note].filter(Boolean).join("\\n"))} />}
     <label className="block text-sm">Tilleggsinformasjon og salgstekst
       <textarea className="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-white" disabled={busy || !canMarket} maxLength={8000} rows={4} value={description} onChange={e => setDescription(e.target.value)} placeholder="Beskrivelse, tilvalg og kvalitetssikrede detaljer …"/>
     </label>
