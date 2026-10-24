@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
@@ -266,7 +267,7 @@ export function buildCriteriaConfirmationEmail(input: {
   customerName?: string | null;
   analysis: unknown;
 }) {
-  const firstName = String(input.customerName || "").trim().split(/\s+/)[0] || "";
+  const firstName = emailFirstName(input.customerName);
   const greeting = firstName ? `Hei ${firstName},` : "Hei,";
   const criteriaLines = buildBuyerCriteriaLines(input.analysis);
   const missingQuestions = buildBuyerFollowUpQuestions(input.analysis);
