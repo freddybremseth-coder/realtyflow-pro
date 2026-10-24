@@ -38,6 +38,8 @@ interface Property {
   imageUrl?: string;
   gallery?: string[];
   floorplans?: string[];
+  expectedCompletionSource?: string;
+  expectedCompletionManual?: string;
   externalUrl?: string;
   source: "manual" | "csv" | "xml" | "redsp";
   yearBuilt?: number;
@@ -397,6 +399,8 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     imageUrl: (row.primary_image || row.imageUrl || undefined) as string | undefined,
     gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : undefined,
     floorplans: Array.isArray(row.floorplans) ? (row.floorplans as string[]) : undefined,
+    expectedCompletionSource: typeof row.expected_completion_source === "string" ? row.expected_completion_source : undefined,
+    expectedCompletionManual: typeof row.expected_completion_manual === "string" ? row.expected_completion_manual : undefined,
     externalUrl: (row.external_url || row.externalUrl || undefined) as string | undefined,
     source: (row.source as Property["source"]) || "manual",
     yearBuilt: row.year_built != null ? Number(row.year_built) : (row.yearBuilt != null ? Number(row.yearBuilt) : undefined),
@@ -428,6 +432,7 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.imageUrl !== undefined) row.primary_image = p.imageUrl;
   if (p.gallery !== undefined) row.gallery = p.gallery;
   if (p.floorplans !== undefined) row.floorplans = p.floorplans;
+  if (p.expectedCompletionManual !== undefined) row.expected_completion_manual = p.expectedCompletionManual;
   if (p.externalUrl !== undefined) row.external_url = p.externalUrl;
   if (p.source !== undefined) row.source = p.source;
   if (p.yearBuilt !== undefined) row.year_built = p.yearBuilt;
@@ -1561,6 +1566,7 @@ export default function InventoryPage() {
                 <Badge variant="outline">{showDetailModal.type}</Badge>
                 {showDetailModal.ref && <Badge variant="outline">Ref: {showDetailModal.ref}</Badge>}
                 {showDetailModal.yearBuilt && <Badge variant="outline">Bygget {showDetailModal.yearBuilt}</Badge>}
+                <Badge variant="outline">Forventes ferdig: {showDetailModal.expectedCompletionManual?.trim() || showDetailModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</Badge>
                 {showDetailModal.energyRating && <Badge variant="outline">Energi: {showDetailModal.energyRating}</Badge>}
                 {showDetailModal.pool && <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">Basseng</Badge>}
                 {showDetailModal.garage && <Badge className="bg-slate-500/20 text-slate-300 border-slate-500/30">Garasje</Badge>}
@@ -1796,6 +1802,10 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* Dedicated floorplans are kept separate from the photo gallery */}
+      {showDetailModal?.floorplans && showDetailModal.floorplans.length > 0 && (
+        <div className="hidden" data-property-floorplan-count={showDetailModal.floorplans.length} />
+      )}
       {/* ========== EDIT MODAL ========== */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowEditModal(null)}>
@@ -1821,6 +1831,12 @@ export default function InventoryPage() {
                   placeholder="Lim inn eller skriv informasjon fra utbyggeren her..."
                   value={showEditModal.additional_information || ""}
                   onChange={e => setShowEditModal({...showEditModal, additional_information: e.target.value})} />
+              </div>
+              <div className="rounded-lg border border-slate-600 p-3 space-y-2">
+                <label className="block text-sm font-medium text-white">Forventes ferdig</label>
+                <p className="text-xs text-slate-400">Fra import: {showEditModal.expectedCompletionSource || "Ikke oppgitt"}. Manuell verdi brukes foran import og beholdes ved ny import.</p>
+                <Input placeholder="F.eks. 4. kvartal 2027" value={showEditModal.expectedCompletionManual || ""} onChange={e => setShowEditModal({...showEditModal, expectedCompletionManual: e.target.value})} />
+                <p className="text-xs text-cyan-300">Vises til kunde: {showEditModal.expectedCompletionManual?.trim() || showEditModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1963,6 +1979,17 @@ export default function InventoryPage() {
                   <div>
                     <label className="text-xs text-slate-400 mb-1 block">Bilder & plantegninger</label>
                     <p className="text-[11px] text-slate-500 mb-2">Dra eller klikk for å flytte bilder mellom galleri og plantegninger. Plantegninger får egen seksjon i PDF-prospektet.</p>
+                    <label className="block text-xs text-cyan-300 mb-2">
+                      Legg til plantegning via direkte bildelenke
+                      <Input className="mt-1" placeholder="https://…/plantegning.jpg" onKeyDown={e => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        const url = e.currentTarget.value.trim();
+                        if (!/^https:\/\//i.test(url)) { window.alert("Bruk en sikker https-bildelenke."); return; }
+                        setShowEditModal({...m, floorplans: [...new Set([...(m.floorplans || []), url])]});
+                        e.currentTarget.value = "";
+                      }} />
+                    </label>
                     <div className="grid grid-cols-2 gap-3">
                       <Column title="Galleri" items={galleryAll} accept="gallery" hint="Slipp bilder her" />
                       <Column title="Plantegninger" items={floorplansAll} accept="floorplans" hint="Dra plantegninger hit" />
