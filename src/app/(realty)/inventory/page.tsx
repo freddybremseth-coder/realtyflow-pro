@@ -39,6 +39,7 @@ interface Property {
   imageUrl?: string;
   gallery?: string[];
   floorplans?: string[];
+  sourceDescription?: string;
   expectedCompletionSource?: string;
   expectedCompletionManual?: string;
   externalUrl?: string;
@@ -318,7 +319,7 @@ function parseRedSPPropertyNode(node: Element): Property | null {
   return {
     id: `REDSP-${ref || Math.random().toString(36).substr(2, 8)}`,
     title,
-    description: description.length > 300 ? description.substring(0, 300) + "..." : description,
+    description,
     location,
     price,
     type,
@@ -393,6 +394,7 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     id: String(row.id || ""),
     title: String(row.title || row.title_no || ""),
     description: String(row.description || row.description_no || "").replace(/&#13;/g, '\n').replace(/&#10;/g, '\n').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'),
+    sourceDescription: typeof row.source_description === "string" ? row.source_description : undefined,
     location: String(row.location || ""),
     price: Number(row.price) || 0,
     type: String(row.property_type || row.type || "Villa"),
@@ -1857,6 +1859,13 @@ export default function InventoryPage() {
                 <label className="text-xs text-slate-400 mb-1 block">Tittel</label>
                 <Input value={showEditModal.title} onChange={e => setShowEditModal({...showEditModal, title: e.target.value})} />
               </div>
+              {showEditModal.sourceDescription && (
+                <details className="rounded-lg border border-cyan-700/40 bg-slate-900 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-cyan-200">Hele originalbeskrivelsen fra importen</summary>
+                  <p className="mt-2 text-xs text-slate-400">Kildeteksten er skrivebeskyttet. Bruk den til å kontrollere antall enheter, byggestatus, fasiliteter og tidsangivelser før du legger detaljer i egen boligpresentasjon.</p>
+                  <div className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-sm leading-6 text-slate-200">{showEditModal.sourceDescription}</div>
+                </details>
+              )}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Beskrivelse</label>
                 <textarea className="w-full h-20 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
