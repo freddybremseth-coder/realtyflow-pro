@@ -24,19 +24,22 @@ async function authorizedProperty(
   const scope = await requireBrandWorkspace(request, brandKey, "content.edit");
   if (!scope.value) return { access: null, response: scope.response };
 
+  // Match the same published, available catalogue used by the workspace.
+  // All properties in that catalogue are eligible for manual developer notes.
   const { data, error } = await scope.value.supabase
-    .from("property_brand_visibility")
-    .select("property_id")
-    .eq("property_id", propertyId)
-    .eq("brand_id", brandKey)
-    .eq("visible", true)
+    .from("properties")
+    .select("id")
+    .eq("id", propertyId)
+    .eq("show_on_website", true)
+    .eq("website_visible", true)
+    .eq("status", "TILGJENGELIG")
     .maybeSingle();
 
   if (error) {
     return { access: null, response: NextResponse.json({ ok: false, error: { code: "PROPERTY_UNAVAILABLE" } }, { status: 503, headers: noStore }) };
   }
   if (!data) {
-    return { access: null, response: NextResponse.json({ ok: false, error: { code: "PROPERTY_NOT_IN_BRAND" } }, { status: 404, headers: noStore }) };
+    return { access: null, response: NextResponse.json({ ok: false, error: { code: "PROPERTY_NOT_IN_CATALOGUE" } }, { status: 404, headers: noStore }) };
   }
   return { access: scope.value, response: null };
 }
