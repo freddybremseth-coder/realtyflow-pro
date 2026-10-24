@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { PropertySourceFactReview } from "@/components/properties/property-source-fact-review";
 
 type Curation = { recommended: boolean; editor_description: string; expected_completion_manual: string };
 export function PropertyCurationEditor({ brandKey, propertyId, canMarket }: { brandKey: string; propertyId: string; canMarket: boolean }) {
   const [recommended, setRecommended] = useState(false);
   const [description, setDescription] = useState("");
   const [completion, setCompletion] = useState("");
+  const [sourceDescription, setSourceDescription] = useState("");
   const [busy, setBusy] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -17,6 +19,7 @@ export function PropertyCurationEditor({ brandKey, propertyId, canMarket }: { br
       .then(body => {
         if (cancelled) return;
         const data: Curation = body.curation;
+        setSourceDescription(typeof body.sourceDescription === "string" ? body.sourceDescription : "");
         setRecommended(data.recommended === true);
         setDescription(data.editor_description || "");
         setCompletion(data.expected_completion_manual || "");
@@ -44,6 +47,12 @@ export function PropertyCurationEditor({ brandKey, propertyId, canMarket }: { br
     <label className="block text-sm">Forventes ferdig
       <input className="mt-1 block min-h-11 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-white" disabled={busy || !canMarket} maxLength={200} value={completion} placeholder="Ta kontakt for informasjon om planlagt ferdigstillelse" onChange={e => setCompletion(e.target.value)} />
     </label>
+    {sourceDescription && <details className="rounded-lg border border-slate-700 p-3">
+      <summary className="cursor-pointer font-medium text-cyan-200">Les hele originalbeskrivelsen fra importen</summary>
+      <p className="mt-2 text-xs text-slate-400">Kontroller datoer, antall enheter og fasiliteter mot leverandørens kilde før du bruker opplysningene. Kilden kan ikke redigeres her.</p>
+      <div className="mt-3 max-h-80 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate-200">{sourceDescription}</div>
+    </details>}
+    {sourceDescription && canMarket && <PropertySourceFactReview source={sourceDescription} onUse={note => setDescription(current => [current, note].filter(Boolean).join("\n"))} />}
     <label className="block text-sm">Tilleggsinformasjon og salgstekst
       <textarea className="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-white" disabled={busy || !canMarket} maxLength={8000} rows={4} value={description} onChange={e => setDescription(e.target.value)} placeholder="Beskrivelse, tilvalg og kvalitetssikrede detaljer …"/>
     </label>

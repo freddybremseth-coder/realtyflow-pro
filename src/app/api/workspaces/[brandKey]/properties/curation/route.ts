@@ -37,7 +37,21 @@ export async function GET(req: NextRequest, { params }: { params: { brandKey: st
     .select("recommended,editor_description,expected_completion_manual,updated_at")
     .eq("brand_key", params.brandKey).eq("property_id", propertyId).maybeSingle();
   if (error) return NextResponse.json({ error: "Could not load notes" }, { status: 503, headers });
-  return NextResponse.json({ ok: true, curation: data || { recommended: false, editor_description: "", expected_completion_manual: "" } }, { headers });
+  // Full source text is available only to a verified editor of this brand and only
+  // when the property is explicitly visible for that brand.
+  let sourceDescription = "";
+  const editorialScope = await requireBrandWorkspace(req, params.brandKey, "content.edit");
+  if (editorialScope.value) {
+    const { data: visibility } = await editorialScope.value.supabase.from("property_brand_visibility")
+      .select("visible").eq("brand_id", editorialScope.value.brandId).eq("property_id", propertyId).eq("visible", true).maybeSingle();
+    if (visibility) {
+      const { data: property } = await editorialScope.value.supabase.from("properties")
+        .select("source_description").eq("id", propertyId)
+        .eq("show_on_website", true).eq("website_visible", true).maybeSingle();
+      sourceDescription = typeof property?.source_description === "string" ? property.source_description : "";
+    }
+  }
+  return NextResponse.json({ ok: true, curation: data || { recommended: false, editor_description: "", expected_completion_manual: "" }, sourceDescription }, { headers });
 }
 export async function PATCH(req: NextRequest, { params }: { params: { brandKey: string } }) {
   const scope = await requireBrandWorkspace(req, params.brandKey, "content.edit");
