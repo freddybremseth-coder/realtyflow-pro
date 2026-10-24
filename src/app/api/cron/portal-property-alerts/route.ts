@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
@@ -99,7 +100,7 @@ async function handle(request: NextRequest) {
     matchedProperties += matches.length;
 
     if (matches.length) {
-      const firstName = String(contact.name || "").trim().split(/\s+/)[0] || "Hei";
+      const firstName = emailFirstName(contact.name, "der");
       const lines = matches.map((property: any) => {
         const title = property.title_no || property.title || property.ref || "Bolig";
         const price = property.price

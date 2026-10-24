@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 /**
  * Nurture-sekvenser pr. merkevare.
  *
@@ -451,7 +452,7 @@ export function renderTemplate(
   template: string,
   ctx: { name?: string; area?: string; advisor?: string; brand?: string; booking_url?: string }
 ): string {
-  const firstName = (ctx.name || "").trim().split(/\s+/)[0] || "der";
+  const firstName = emailFirstName(ctx.name, "der");
   return template
     .replace(/\{name\}/g, firstName)
     .replace(/\{area\}/g, ctx.area?.trim() || "Costa Blanca")

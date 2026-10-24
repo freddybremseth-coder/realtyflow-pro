@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildBuyerCriteriaLines } from "@/services/email/buyer-profile-confirmation";
 
@@ -181,7 +182,7 @@ export function buildNoMatchClarificationEmail(input: {
   customerName?: string | null;
   plan: NoMatchClarificationPlan;
 }) {
-  const firstName = String(input.customerName || "").trim().split(/\s+/)[0] || "";
+  const firstName = emailFirstName(input.customerName);
   const greeting = firstName ? `Hei ${firstName},` : "Hei,";
   const currentBlock = input.plan.currentCriteriaLines.length
     ? input.plan.currentCriteriaLines.map((line) => `– ${line}`).join("\n")

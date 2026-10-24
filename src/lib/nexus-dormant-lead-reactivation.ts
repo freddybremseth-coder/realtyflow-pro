@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 import {
   buildBuyerLifestyleProfile,
   buyerLifestyleDiscoveryGaps,
@@ -157,7 +158,7 @@ export function assessDormantLead(
 }
 
 function firstName(name: string | null | undefined) {
-  return String(name || "").trim().split(/\s+/)[0] || "hei";
+  return emailFirstName(name, "hei");
 }
 
 function humanizeDimension(namespace: string, dimension: string) {

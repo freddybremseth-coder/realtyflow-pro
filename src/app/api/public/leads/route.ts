@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 import { createHmac, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -69,7 +70,7 @@ function leadReceiptCopy(input: {
   isBuyerMatch?: boolean;
 }) {
   const rawFirstName = input.name.trim().split(/\s+/)[0] || "";
-  const firstName = /^(boligmatch|ukjent|kunde)$/i.test(rawFirstName) ? "" : rawFirstName;
+  const firstName = /^(boligmatch|ukjent|kunde)$/i.test(rawFirstName) ? "" : emailFirstName(rawFirstName);
   const greeting = firstName ? `Hei ${firstName},` : "Hei,";
   const acknowledgement = input.isBuyerMatch
     ? "Takk for at du fylte ut Boligmatch. Vi har mottatt boligønskene dine. En rådgiver går gjennom svarene og vurderer hvilke boliger som passer ønskene dine før vi sender deg et personlig utvalg. Du kan også se aktuelle boliger på nettsiden mens du venter."

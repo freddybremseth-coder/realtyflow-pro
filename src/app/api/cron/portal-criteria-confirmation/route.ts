@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
@@ -62,7 +63,7 @@ async function handle(request: NextRequest) {
     }
 
     const lines = formatCriteria((search.criteria || {}) as Record<string, any>);
-    const firstName = String(contact.name || "").trim().split(/\s+/)[0] || "Hei";
+    const firstName = emailFirstName(contact.name, "der");
     const portalUrl = "https://www.zenecohomes.com/min-side?confirm=criteria";
     const summary = lines.length ? lines.join("\n") : "Kriteriene dine ligger lagret på Min side.";
 
