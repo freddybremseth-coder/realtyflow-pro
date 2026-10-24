@@ -17,6 +17,9 @@ type Publication = {
   status: string;
   scheduledPlatforms: string[];
   updatedAt: string | null;
+  createdAt?: string | null;
+  tags?: string[];
+  lastPublishError?: string | null;
   scheduledAt?: string | null;
   publishedAt?: string | null;
   views?: number;
@@ -50,6 +53,8 @@ export default function ScopedContentHubPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [analyticsSort, setAnalyticsSort] = useState<"views" | "likes" | "comments" | "shares">("views");
   const [selectedPublication, setSelectedPublication] = useState<string | null>(null);
+  const [repairingId, setRepairingId] = useState<string | null>(null);
+  const [repairMessage, setRepairMessage] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [calendarView, setCalendarView] = useState<"week" | "month" | "year">("month");
   const [weekAnchor, setWeekAnchor] = useState(() => new Date().toISOString().slice(0, 10));
@@ -123,6 +128,62 @@ export default function ScopedContentHubPage() {
   }, [brandKey, canReadMarketing]);
 
   const filteredPublications = publications.filter(item => statusFilter === "all" || item.status === statusFilter);
+  function showStatus(status: string) {
+    setStatusFilter(status);
+    setSelectedPublication(null);
+    setRepairMessage("");
+    setSection("drafts");
+  }
+  function formatTime(value?: string | null) {
+    if (!value || Number.isNaN(new Date(value).getTime())) return null;
+    return new Date(value).toLocaleString("nb-NO", {
+      timeZone: "Europe/Madrid", dateStyle: "medium", timeStyle: "short",
+    });
+  }
+  function dateSummary(item: Publication) {
+    if (item.status === "published") return item.publishedAt
+      ? "Publisert: " + (formatTime(item.publishedAt) || "Dato ugyldig")
+      : "Publiseringsdato ikke registrert";
+    if (item.status === "scheduled") {
+      if (!item.scheduledAt) return "Planlagt – tidspunkt mangler";
+      const overdue = new Date(item.scheduledAt).getTime() < Date.now();
+      return (overdue ? "Forfalt · planlagt: " : "Planlagt: ") +
+        (formatTime(item.scheduledAt) || "Dato ugyldig");
+    }
+    if (item.status === "failed") return "Feilet · sist oppdatert: " +
+      (formatTime(item.updatedAt) || "Tidspunkt ikke registrert");
+    return "Sist endret: " + (formatTime(item.updatedAt) || formatTime(item.createdAt) || "Tidspunkt ikke registrert");
+  }
+  async function makeRecoveryDraft(item: Publication) {
+    if (repairingId) return;
+    setRepairingId(item.id);
+    setRepairMessage("");
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(brandKey) + "/marketing", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: item.title || "Gjenopprettet innlegg",
+          description: item.description || "",
+          imageUrl: item.thumbnailUrl || "",
+          platforms: item.scheduledPlatforms || [],
+          tags: item.tags || [],
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = result?.error?.message || result?.error?.code || "Kunne ikke opprette utkast.";
+        throw new Error(String(detail));
+      }
+      setRepairMessage("Et nytt utkast er opprettet. Kontroller tekst, bilde og kanal i SoMe Studio før publisering.");
+      setStatusFilter("draft");
+      await loadPublications();
+    } catch (cause) {
+      setRepairMessage((cause instanceof Error ? cause.message : "Ukjent feil") +
+        " Åpne SoMe Studio for å rette innlegget manuelt.");
+    } finally {
+      setRepairingId(null);
+    }
+  }
   const calendarItems = publications.filter(item => {
     const date = item.scheduledAt || item.publishedAt;
     return date && !Number.isNaN(new Date(date).getTime()) && date.slice(0, 7) === calendarMonth;
@@ -180,18 +241,23 @@ export default function ScopedContentHubPage() {
     {!loading && !error && available.length === 0 && <p role="alert">Ingen innholdstilgang registrert.</p>}
 
     {!loading && !error && available.length > 0 && <>
-      {canReadMarketing && publicationsLoaded && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {canReadMarketing && publicationsLoaded && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {([
           ["Registrerte innlegg", publications.length, "Hele merkevarens innholdshistorikk"],
           ["Publisert", statusCounts.published, "Bekreftet publiserte"],
           ["Utkast", statusCounts.draft, "Ikke publisert ennå"],
           ["Planlagt", statusCounts.scheduled, "Venter på publisering"],
-        ] as const).map(([label, value, note]) => <div key={label}
-          className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+          ["Feilet", statusCounts.failed, "Krever kontroll"],
+        ] as const).map(([label, value, note], index) => <button type="button" key={label}
+          onClick={() => showStatus(["all", "published", "draft", "scheduled", "failed"][index])}
+          aria-label={"Vis " + label.toLowerCase() + " i innleggshistorikken"}
+          className={"rounded-xl border bg-slate-900 p-4 text-left transition hover:border-cyan-500 hover:bg-slate-800 " +
+            (section === "drafts" && statusFilter === ["all", "published", "draft", "scheduled", "failed"][index]
+              ? "border-cyan-500" : "border-slate-700")}>
           <p className="text-sm text-slate-400">{label}</p>
           <p className="mt-1 text-2xl font-bold">{value.toLocaleString("nb-NO")}</p>
           <p className="text-xs text-slate-500">{note}</p>
-        </div>)}
+        </button>)}
       </div>}
       <nav aria-label="Content Hub-verktøy" className="flex flex-wrap gap-2">
         {available.map(entry => {
@@ -240,16 +306,18 @@ export default function ScopedContentHubPage() {
         {!itemsLoading && !itemsError && publications.length === 0 &&
           <p className="rounded-xl border border-slate-700 p-5">Ingen SoMe-utkast eller publikasjoner ennå.</p>}
         <div className="flex flex-wrap gap-2 text-xs text-slate-300">
-          <span className="rounded-full border border-slate-700 px-3 py-1">Publisert: {statusCounts.published}</span>
-          <span className="rounded-full border border-slate-700 px-3 py-1">Utkast: {statusCounts.draft}</span>
-          <span className="rounded-full border border-slate-700 px-3 py-1">Planlagt: {statusCounts.scheduled}</span>
-          <span className="rounded-full border border-slate-700 px-3 py-1">Feilet: {statusCounts.failed}</span>
+          {(["published", "draft", "scheduled", "failed"] as const).map(status => <button
+            type="button" key={status} onClick={() => showStatus(status)} aria-pressed={statusFilter === status}
+            className={"rounded-full border px-3 py-1 hover:border-cyan-500 " + (statusFilter === status ? "border-cyan-500 bg-cyan-950 text-cyan-100" : "border-slate-700")}>
+            {{ published: "Publisert", draft: "Utkast", scheduled: "Planlagt", failed: "Feilet" }[status]}: {statusCounts[status]}
+          </button>)}
         </div>
         <label className="flex items-center gap-2 text-sm">Vis
           <select aria-label="Filtrer innlegg etter status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-900 p-2">
             <option value="all">Alle</option><option value="draft">Utkast</option><option value="scheduled">Planlagt</option><option value="processing">Behandles</option><option value="published">Publisert</option><option value="failed">Feilet</option>
           </select>
         </label>
+        {repairMessage && <p role="status" className="rounded-lg border border-cyan-700 p-3 text-sm text-cyan-100">{repairMessage}</p>}
         {!itemsLoading && !itemsError && <div className="grid gap-4 md:grid-cols-2">
           {filteredPublications.map(item => <article key={item.id} className="rounded-xl border border-slate-700 bg-slate-900 p-4">
             <button type="button" onClick={() => setSelectedPublication(current => current === item.id ? null : item.id)} aria-expanded={selectedPublication === item.id} className="mb-3 text-sm font-semibold text-cyan-300 underline">{selectedPublication === item.id ? "Lukk detaljer" : "Åpne innlegg"}</button>
@@ -260,14 +328,28 @@ export default function ScopedContentHubPage() {
             {item.thumbnailUrl && <img src={item.thumbnailUrl} alt="" loading="lazy" className="mt-3 h-44 w-full rounded object-cover"/>}
             <p className={"mt-3 whitespace-pre-wrap text-sm text-slate-300 " + (selectedPublication === item.id ? "" : "line-clamp-3")}>{item.description || "Ingen tekst registrert."}</p>
             {selectedPublication === item.id && <div className="mt-3 rounded-lg border border-slate-700 p-3 text-xs text-slate-300">
-              <p>Planlagt: {item.scheduledAt ? new Date(item.scheduledAt).toLocaleString("nb-NO") : "Ikke planlagt"}</p>
-              <p>Publisert: {item.publishedAt ? new Date(item.publishedAt).toLocaleString("nb-NO") : "Ikke publisert"}</p>
+              <p>Opprettet: {formatTime(item.createdAt) || "Ikke registrert"}</p>
+              <p>Planlagt: {formatTime(item.scheduledAt) || "Ikke planlagt"}</p>
+              <p>Publisert: {formatTime(item.publishedAt) || "Ikke publisert"}</p>
+              <p>Sist endret: {formatTime(item.updatedAt) || "Ikke registrert"}</p>
               <p>Visninger: {item.views || 0} · Liker: {item.likes || 0} · Kommentarer: {item.comments || 0} · Delinger: {item.shares || 0}</p>
+              {item.status === "failed" && <div className="mt-3 rounded-lg border border-rose-800 bg-rose-950/30 p-3">
+                <p className="font-semibold text-rose-200">Publisering feilet</p>
+                <p className="mt-1 whitespace-pre-wrap break-words">{item.lastPublishError || "Ingen konkret feilmelding er registrert for dette innlegget. Kontroller kanaltilkobling og publiseringsloggen."}</p>
+                {permissions.includes("marketing.draft") && <button type="button"
+                  disabled={repairingId !== null} onClick={() => void makeRecoveryDraft(item)}
+                  className="mt-3 rounded bg-cyan-700 px-3 py-2 font-semibold text-white disabled:opacity-50">
+                  {repairingId === item.id ? "Oppretter utkast…" : "Fiks problemet · nytt utkast"}
+                </button>}
+                <button type="button" onClick={() => setSection("studio")}
+                  className="ml-2 mt-3 rounded border border-slate-600 px-3 py-2 font-semibold">Åpne SoMe Studio</button>
+                <p className="mt-2 text-slate-400">Ingen automatisk ny publisering. Et nytt utkast må godkjennes før sending.</p>
+              </div>}
               {item.status === "draft" && permissions.includes("marketing.publish") && <button type="button" onClick={() => setSection("studio")} className="mt-3 rounded bg-cyan-700 px-3 py-2 font-semibold text-white">Åpne SoMe Studio</button>}
             </div>}
             <p className="mt-3 text-xs text-slate-400">
               {(item.scheduledPlatforms || []).join(" · ") || "Kanal ikke valgt"}
-              {item.updatedAt ? " · " + new Date(item.updatedAt).toLocaleDateString("nb-NO") : ""}
+              {" · " + dateSummary(item)}
             </p>
           </article>)}
         </div>}
