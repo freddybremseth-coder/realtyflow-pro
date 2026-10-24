@@ -1291,13 +1291,6 @@ export default function InventoryPage() {
                 <label className="text-xs text-slate-400 mb-1 block">Tittel *</label>
                 <Input placeholder="F.eks. Moderne villa med havutsikt" value={addForm.title} onChange={e => setAddForm({...addForm, title: e.target.value})} />
               </div>
-              {showEditModal.sourceDescription && (
-                <details className="rounded-lg border border-cyan-700/40 bg-slate-900 p-3">
-                  <summary className="cursor-pointer text-sm font-semibold text-cyan-200">Hele originalbeskrivelsen fra importen</summary>
-                  <p className="mt-2 text-xs text-slate-400">Kildeteksten er skrivebeskyttet. Bruk den til å kontrollere antall enheter, byggestatus, fasiliteter og tidsangivelser før du legger detaljer i egen boligpresentasjon.</p>
-                  <div className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-sm leading-6 text-slate-200">{showEditModal.sourceDescription}</div>
-                </details>
-              )}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Beskrivelse</label>
                 <textarea className="w-full h-20 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
@@ -1866,6 +1859,13 @@ export default function InventoryPage() {
                 <label className="text-xs text-slate-400 mb-1 block">Tittel</label>
                 <Input value={showEditModal.title} onChange={e => setShowEditModal({...showEditModal, title: e.target.value})} />
               </div>
+              {showEditModal.sourceDescription && (
+                <details className="rounded-lg border border-cyan-700/40 bg-slate-900 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-cyan-200">Hele originalbeskrivelsen fra importen</summary>
+                  <p className="mt-2 text-xs text-slate-400">Kildeteksten er skrivebeskyttet. Bruk den til å kontrollere antall enheter, byggestatus, fasiliteter og tidsangivelser før du legger detaljer i egen boligpresentasjon.</p>
+                  <div className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-sm leading-6 text-slate-200">{showEditModal.sourceDescription}</div>
+                </details>
+              )}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Beskrivelse</label>
                 <textarea className="w-full h-20 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
