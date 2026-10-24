@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PropertyCurationEditor } from "@/components/workspaces/property-curation-editor";
 import {
   Building2, ChevronLeft, ChevronRight, Clapperboard,
   Filter, RotateCcw, Search, SlidersHorizontal, Sparkles,
@@ -380,6 +381,7 @@ export function WorkspacePropertyCatalogue({
               {canCreateReel && onCreateReel && <button type="button" onClick={() => { onCreateReel(openProperty); setOpenProperty(null); }}
                 className="inline-flex items-center gap-2 rounded-xl border border-cyan-700 px-4 py-3 text-sm font-semibold text-cyan-200"><Clapperboard size={17}/> Lag Reel fra boligen</button>}
             </div> : <p className="rounded-lg border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">Denne boligen er tilgjengelig for kundematching, men ikke godkjent for markedsføring i {brandKey === "zeneco" ? "Zen Eco Homes" : "PinosoEcolife"}.</p>}
+            <PropertyCurationEditor key={`${brandKey}:${openProperty.id}`} brandKey={brandKey} propertyId={openProperty.id} canMarket={openProperty.can_market_on_workspace_brand} />
             <p className="text-xs text-slate-500">Visningen bruker kun godkjente katalogfelt. Flere boligbilder og eksport krever en separat kontrollert utvidelse av eiendoms-API-et.</p>
           </div>
         </div>
