@@ -492,7 +492,7 @@ export function Sidebar() {
                 className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-100 hover:bg-violet-900/40">
                 <Bot size={15} className="text-violet-300"/> Command · Mitt arbeidsområde
               </Link>
-              <Link href="/workspace/zeneco/altovena" onClick={closeMobile}
+              <Link href="/altovena/collaboration" onClick={closeMobile}
                 className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-100 hover:bg-violet-900/40">
                 <Users size={15} className="text-violet-300"/> Samarbeid med Andrea
               </Link>
