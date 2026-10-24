@@ -73,6 +73,7 @@ export function CrmCommandMenu({
   onShowClosed,
   onShowNoEmail,
   onRefresh,
+  onSelectBrand,
 }: {
   brands: Array<{ id: string; label: string }>;
   onShowReady: () => void;
@@ -83,6 +84,7 @@ export function CrmCommandMenu({
   onShowClosed: () => void;
   onShowNoEmail: () => void;
   onRefresh: () => void;
+  onSelectBrand: (brandId: string) => void;
 }) {
   const [selected, setSelected] = useState<CommandId>("show_ready");
   const [brandId, setBrandId] = useState("");
@@ -103,7 +105,10 @@ export function CrmCommandMenu({
       show_closed: onShowClosed,
       show_no_email: onShowNoEmail,
     };
-    if (selected !== "send_first_email_safe") actions[selected]();
+    if (selected !== "send_first_email_safe") {
+      onSelectBrand(brandId);
+      actions[selected]();
+    }
   }
 
   async function callSendCommand(mode: "preview" | "execute") {
@@ -170,8 +175,7 @@ export function CrmCommandMenu({
           <select
             value={brandId}
             onChange={(event) => { setBrandId(event.target.value); setPreview(null); setExecuted(null); }}
-            disabled={selected !== "send_first_email_safe"}
-            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-white disabled:opacity-50"
+            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-white"
           >
             <option value="">Alle merkevarer</option>
             {brands.map((brand) => <option key={brand.id} value={brand.id}>{brand.label}</option>)}
