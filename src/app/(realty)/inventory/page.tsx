@@ -1573,7 +1573,7 @@ export default function InventoryPage() {
                       <img src={url} alt={`Plantegning ${index + 1}`} className="max-h-44 w-full object-contain bg-white" />
                     </a>
                   ))}</div>
-                </div>
+                </div>}
                 <Badge variant="outline">Forventes ferdig: {showDetailModal.expectedCompletionManual?.trim() || showDetailModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</Badge>
                 {showDetailModal.energyRating && <Badge variant="outline">Energi: {showDetailModal.energyRating}</Badge>}
                 {showDetailModal.pool && <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">Basseng</Badge>}
