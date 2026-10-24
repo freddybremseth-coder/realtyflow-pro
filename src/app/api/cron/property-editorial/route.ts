@@ -8,6 +8,7 @@ import {
   existingEditorialHasSameSource,
   propertyEditorialSource,
 } from "@/lib/realty/property-editorial-no";
+import { editorialReviewSimilarity } from "@/lib/realty/property-editorial-similarity";
 import { generatePropertyEditorialNoDiagnosed } from "@/lib/realty/property-editorial-ai-diagnostics";
 import {
   evaluatePropertyEditorialApproval,
@@ -143,6 +144,28 @@ export async function GET(request: NextRequest) {
         const { editorial, usedFallback, fallbackReason, outputDiagnostics } =
           await generatePropertyEditorialNoDiagnosed(editorialProperty);
         const approval = evaluatePropertyEditorialApproval(property, editorial);
+        // Similarity is a review signal, never automatic rewriting or deletion.
+        if (approval.approved) {
+          const { data: comparisons, error: comparisonError } = await supabase
+            .from("properties")
+            .select("id,editorial_no")
+            .eq("editorial_no_approved", true)
+            .neq("id", property.id)
+            .order("updated_at", { ascending: false })
+            .limit(250);
+          if (comparisonError) {
+            approval.approved = false;
+            approval.status = "needs_review";
+            approval.reasons.push("similarity_check_unavailable");
+          } else {
+            const similar = editorialReviewSimilarity(String(property.id), editorial, comparisons || []);
+            if (similar) {
+              approval.approved = false;
+              approval.status = "needs_review";
+              approval.reasons.push(`similar_editorial:${similar.similarTo}`);
+            }
+          }
+        }
         const editorialWithProvenance = {
           ...editorial,
           generation_mode: usedFallback ? "template" : "ai",
