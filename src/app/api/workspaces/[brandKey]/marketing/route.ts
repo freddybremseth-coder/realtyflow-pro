@@ -165,6 +165,65 @@ export async function GET(
   const access = await requireBrandWorkspace(request, params.brandKey, "marketing.read");
   if (!access.value) return access.response;
 
+  // Full history is loaded in bounded pages. Every page repeats the existing
+  // workspace authorization and the database RPC checks the same membership.
+  if (request.nextUrl.searchParams.get("history") === "1") {
+    const rawPage = request.nextUrl.searchParams.get("page") || "0";
+    if (!/^(0|[1-9][0-9]{0,2})$/.test(rawPage) || Number(rawPage) > 100) {
+      return fail(400, "INVALID_HISTORY_PAGE");
+    }
+    const page = Number(rawPage);
+    let rows: unknown[] = [];
+    if (!access.value.verifiedUserId) {
+      const { data, error } = await access.value.supabase.from("content_publications")
+        .select("id,brand_id,content_type,title,description,tags,thumbnail_url,scheduled_platforms,status,scheduled_at,published_at,created_at,updated_at,total_views,total_likes,total_comments,total_shares")
+        .eq("brand_id", params.brandKey)
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: true })
+        .range(page * 100, page * 100 + 99);
+      if (error) return fail(503, "MARKETING_HISTORY_UNAVAILABLE");
+      rows = data || [];
+    } else {
+      const { data, error } = await access.value.supabase.rpc("workspace_brand_marketing_history", {
+        p_brand_key: params.brandKey,
+        p_user_id: access.value.verifiedUserId,
+        p_email: access.value.verifiedEmail,
+        p_page: page,
+      });
+      if (error || !data || !Array.isArray(data.publications)) {
+        return fail(503, "MARKETING_HISTORY_UNAVAILABLE");
+      }
+      rows = data.publications;
+    }
+    // Add failure details only for IDs on this authorized brand history page.
+    const ids = rows.flatMap(row => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+      const candidate = row as Record<string, unknown>;
+      return typeof candidate.id === "string" && candidate.brand_id === params.brandKey
+        ? [candidate.id] : [];
+    });
+    const errorById = new Map<string, string>();
+    if (ids.length > 0) {
+      const { data: failureRows, error: failureError } = await access.value.supabase
+        .from("content_publications")
+        .select("id,last_publish_error")
+        .eq("brand_id", params.brandKey)
+        .in("id", ids);
+      if (failureError) return fail(503, "MARKETING_FAILURE_DETAILS_UNAVAILABLE");
+      for (const row of failureRows || []) {
+        if (typeof row.id === "string" && typeof row.last_publish_error === "string") {
+          errorById.set(row.id, row.last_publish_error.slice(0, 1200));
+        }
+      }
+    }
+    const publications = rows.flatMap(row => {
+      const publication = safePublication(row, params.brandKey);
+      return publication ? [{ ...publication, lastPublishError: errorById.get(publication.id) || null }] : [];
+    });
+    return NextResponse.json({ ok: true, brand: params.brandKey, page,
+      hasMore: publications.length === 100, publications }, { headers: noStore });
+  }
+
   let snapshot: any = null;
   if (!access.value.verifiedUserId) {
     snapshot = await ownerMarketingSnapshot(access.value.supabase, params.brandKey);

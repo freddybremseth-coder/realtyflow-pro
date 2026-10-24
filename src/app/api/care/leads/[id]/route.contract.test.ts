@@ -27,3 +27,22 @@ test("Care lead follow-up cannot override an activated contract", () => {
   assert.match(route, /allerede aktivert/);
   assert.match(route, /status = stage === "not_relevant" \? "CANCELLED"/);
 });
+
+test("Care offer fields require explicit package, weather choice and date for acceptance", () => {
+  assert.match(route, /care_offer_reference/);
+  assert.match(route, /care_offer_package/);
+  assert.match(route, /care_offer_weather/);
+  assert.match(route, /care_offer_acceptance_status/);
+  assert.match(route, /offerAcceptance === "accepted"/);
+  assert.match(route, /Registrer valgt pakke/);
+});
+
+test("Care offer PDFs use private storage and require admin authorization", () => {
+  const pdfRoute = readFileSync("src/app/api/care/leads/[id]/offer/route.ts", "utf8");
+  assert.match(pdfRoute, /requireAdminApi\(request\)/);
+  assert.match(pdfRoute, /property-documents/);
+  assert.match(pdfRoute, /care-offers/);
+  assert.match(pdfRoute, /createSignedUrl\(path, 60\)/);
+  assert.match(pdfRoute, /MAX_BYTES/);
+  assert.match(pdfRoute, /%PDF-/);
+});

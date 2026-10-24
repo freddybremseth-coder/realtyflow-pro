@@ -549,7 +549,7 @@ export async function POST(request: NextRequest) {
       visitor_id: visitorId || null,
       session_id: sessionId || null,
       page_url: pageUrl || null,
-      buyer_preferences: brandId === "zeneco" && !isCorporateHome && !isCorporatePartner && !isCorporateEventRegistration ? definedEntries({
+      buyer_preferences: brandId === "zeneco" && !isCare && !isCorporateHome && !isCorporatePartner && !isCorporateEventRegistration ? definedEntries({
         budgetMax: budget ? Number(budget.replace(/[^0-9]/g, "")) || null : null,
         region: preferredArea || null,
         propertyType: propertyType || null,
@@ -603,7 +603,7 @@ export async function POST(request: NextRequest) {
       ? existing?.next_followup || null
       : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     interactions: [incomingInteraction, ...existingInteractions],
-    ...(isCorporateHome || isCorporatePartner
+    ...(isCare || isCorporateHome || isCorporatePartner
       ? { nurture_status: "paused", nurture_sequence: null }
       : {}),
     updated_at: now,

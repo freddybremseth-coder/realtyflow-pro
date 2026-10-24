@@ -10,6 +10,9 @@ import {
 import { buildLinkedEmailTimelineEvents, buildNurtureTimelineEvents } from "@/lib/customer-communication-timeline";
 import { buildCustomerSalesAdvice } from "@/lib/nexus/customer-sales-advisor";
 import { extractLatestReplyText } from "@/services/email/latest-reply-text";
+import { checkCrmEmailSuppression } from "@/services/email/email-suppression";
+import { evaluateManualCustomerOutreach } from "@/lib/customers/outreach-policy";
+import { sendBrandEmail } from "@/services/email/send-brand-email";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -225,26 +228,75 @@ export async function GET(request: NextRequest, { params }: { params: { brandKey
     now: new Date(),
   });
 
-  return NextResponse.json({
-    ok: true,
-    generatedAt: new Date().toISOString(),
-    brand: params.brandKey,
-    assignment: access.value.boundary,
-    contact,
-    completeness,
-    buyerProfiles: profiles,
-    activeBuyerProfile: activeProfile,
-    criteria: activeCriteria,
-    shortlists: shortlistsWithItems,
-    workItems,
-    revenueEvents,
-    nurtureEvents,
-    portalMessages,
-    communicationDialogue,
-    salesIntelligence,
-    timeline,
-    warnings,
-  }, { headers: noStore });
+  // Expanded collaborator workspace: same customer dialogue data within the
+  // verified brand/customer boundary. Finance and cross-brand work are excluded.
+  if (new URL(request.url).searchParams.get("view") === "collaborator") {
+    return NextResponse.json({
+      ok: true,
+      brand: params.brandKey,
+      contactId: contact.id,
+      contact: {
+        id: contact.id, name: contact.name, email: contact.email, phone: contact.phone,
+        company: contact.company, pipeline_status: contact.pipeline_status,
+        property_interest: contact.property_interest, preferred_location: contact.preferred_location,
+        notes: contact.notes, source: contact.source, last_contact: contact.last_contact,
+        next_followup: contact.next_followup, created_at: contact.created_at,
+        updated_at: contact.updated_at, do_not_contact: contact.do_not_contact,
+      },
+      profileCount: profiles.length,
+      criteriaCount: activeCriteria.length,
+      shortlistCount: shortlists.length,
+      buyerProfiles: profiles.filter((row: any) => row.brand === params.brandKey),
+      criteria: activeCriteria,
+      shortlists: shortlistsWithItems.filter((row: any) => row.brand === params.brandKey),
+      dialogue: {
+        sentCount: communicationDialogue.sentCount,
+        replyCount: communicationDialogue.replyCount,
+        lastSentAt: communicationDialogue.lastSentAt,
+        lastReplyAt: communicationDialogue.lastReplyAt,
+        awaitingReply: communicationDialogue.awaitingReply,
+        emailBlocked: communicationDialogue.emailBlocked,
+        messages: messages.map(row => ({
+          id: row.id, direction: row.direction, from_address: row.from_address,
+          to_addresses: row.to_addresses, subject: row.subject,
+          body_text: row.body_text, received_at: row.received_at, created_at: row.created_at,
+        })),
+      },
+      activityCount: timeline.length,
+      activity: timeline.filter(event => event.kind !== "task").slice(0, 30).map(event => ({
+        id: event.id, kind: event.kind, occurredAt: event.occurredAt,
+        title: event.title, detail: event.detail,
+      })),
+    }, { headers: noStore });
+  }
+
+  // Staff summary is intentionally allowlisted: never return notes, email bodies,
+  // revenue, price/budget, raw work items or unreviewed AI excerpts.
+  if (new URL(request.url).searchParams.get("view") === "staff") {
+    return NextResponse.json({
+      ok: true,
+      brand: params.brandKey,
+      contactId: contact.id,
+      profileCount: profiles.length,
+      criteriaCount: activeCriteria.length,
+      shortlistCount: shortlists.length,
+      activityCount: timeline.length,
+      dialogue: {
+        sentCount: communicationDialogue.sentCount,
+        replyCount: communicationDialogue.replyCount,
+        lastSentAt: communicationDialogue.lastSentAt,
+        lastReplyAt: communicationDialogue.lastReplyAt,
+        awaitingReply: communicationDialogue.awaitingReply,
+        emailBlocked: communicationDialogue.emailBlocked,
+      },
+      activity: timeline.slice(0, 8).map(event => ({
+        id: event.id, kind: event.kind, occurredAt: event.occurredAt,
+      })),
+    }, { headers: noStore });
+  }
+
+  // Require an explicitly allowlisted response view for every caller.
+  return fail(400, "VIEW_REQUIRED");
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { brandKey: string } }) {
@@ -299,7 +351,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
     return fail(400, "INVALID_UPDATE");
   }
 
-  if (!changed.length) return NextResponse.json({ ok: true, unchanged: true, contact: current }, { headers: noStore });
+  if (!changed.length) return NextResponse.json({ ok: true, unchanged: true, changed: [] }, { headers: noStore });
 
   const at = new Date().toISOString();
   const interaction = {
@@ -324,5 +376,47 @@ export async function PATCH(request: NextRequest, { params }: { params: { brandK
   if (error || !data || data.brand_id !== params.brandKey || data.brand !== params.brandKey) {
     return fail(409, "CUSTOMER360_UPDATE_FAILED");
   }
-  return NextResponse.json({ ok: true, contact: data, changed }, { headers: noStore });
+  return NextResponse.json({ ok: true, contactId: data.id, changed }, { headers: noStore });
+}
+/** Manual, explicitly confirmed email from an approved brand customer card. */
+export async function POST(request: NextRequest, { params }: { params: { brandKey: string } }) {
+  if (!["zeneco", "pinosoecolife"].includes(params.brandKey)) return fail(404, "WORKSPACE_NOT_FOUND");
+  if (!safeWrite(request)) return fail(403, "INVALID_REQUEST_ORIGIN");
+  const body: unknown = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "INVALID_EMAIL");
+  const input = body as Record<string, unknown>;
+  if (Object.keys(input).sort().join(",") !== "bodyText,confirmReviewed,contactId,subject" ||
+    input.confirmReviewed !== true || typeof input.contactId !== "string" ||
+    typeof input.subject !== "string" || typeof input.bodyText !== "string" ||
+    input.subject.trim().length < 1 || input.subject.trim().length > 240 ||
+    input.bodyText.trim().length < 1 || input.bodyText.trim().length > 16000)
+    return fail(400, "INVALID_EMAIL");
+
+  const scoped = await accessContact(request, params.brandKey, input.contactId, false);
+  if (!scoped.value) return scoped.response;
+  const senderPermission = await requireBrandWorkspace(request, params.brandKey, "email.send");
+  if (!senderPermission.value ||
+      senderPermission.value.verifiedUserId !== scoped.value.verifiedUserId)
+    return fail(403, "EMAIL_SEND_ACCESS_DENIED");
+
+  const { supabase, contact } = scoped.value;
+  const email = normalizeEmail(contact.email);
+  if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return fail(409, "INVALID_RECIPIENT");
+  const suppression = await checkCrmEmailSuppression(supabase, [email]);
+  if (suppression.error || (suppression.hardBlockedEmails || []).length > 0)
+    return fail(409, "EMAIL_SUPPRESSED");
+  const eligibility = evaluateManualCustomerOutreach(contact, { awaitingReply: false });
+  if (!eligibility.allowed) return fail(409, "CUSTOMER_OUTREACH_BLOCKED", eligibility.blockedReason || undefined);
+
+  const { data: senders, error: senderError } = await supabase.from("brand_email_configs")
+    .select("id").eq("brand_id", params.brandKey).eq("is_active", true).limit(1);
+  if (senderError || !senders?.length) return fail(409, "BRAND_SENDER_UNAVAILABLE");
+
+  const sent = await sendBrandEmail(supabase, {
+    brandId: params.brandKey,
+    to: [email], subject: input.subject.trim(), bodyText: input.bodyText.trim(),
+    manualAdvisorAction: true, crmContactId: contact.id,
+  });
+  if (!sent.success) return fail(sent.skipped ? 409 : 503, "EMAIL_SEND_FAILED", sent.error || undefined);
+  return NextResponse.json({ ok: true, sent: true, messageId: sent.messageId || null }, { headers: noStore });
 }

@@ -255,6 +255,13 @@ export interface CareLead {
   followUpOn: string | null;
   lastFollowUpAt: string | null;
   salesNote: string | null;
+  offerReference: string | null;
+  offerPackage: string | null;
+  offerWeather: string | null;
+  offerAcceptance: string | null;
+  offerStartsOn: string | null;
+  offerAcceptedOn: string | null;
+  offerPdfName: string | null;
   isExistingContact: boolean;
   createdAt: string | null;
   customerHref: string;
@@ -733,6 +740,13 @@ export function buildCareDashboard(input: CareDashboardInput = {}): CareDashboar
       followUpOn: optionalText(metadata, "care_follow_up_on"),
       lastFollowUpAt: dateText(metadata, "care_last_followup_at"),
       salesNote: optionalText(metadata, "care_sales_note"),
+      offerReference: optionalText(metadata, "care_offer_reference"),
+      offerPackage: optionalText(metadata, "care_offer_package"),
+      offerWeather: optionalText(metadata, "care_offer_weather"),
+      offerAcceptance: optionalText(metadata, "care_offer_acceptance_status"),
+      offerStartsOn: optionalText(metadata, "care_offer_start_on"),
+      offerAcceptedOn: optionalText(metadata, "care_offer_accepted_on"),
+      offerPdfName: optionalText(metadata, "care_offer_pdf_name"),
       isExistingContact: metadata.is_existing_contact === true,
       createdAt: dateText(row, "created_at") || dateText(row, "updated_at"),
       customerHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",

@@ -65,6 +65,8 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
         { label: "I dag", href: `${root}?tab=today`, icon: Home },
         { label: "Leads og kunder", href: `${root}?tab=leads`, icon: Users,
           permissions: ["crm.read", "crm.joint.read"] },
+        { label: "Closing Workspace", href: `${root}?tab=leads&closing=1`, icon: BriefcaseBusiness,
+          permissions: ["crm.read", "crm.joint.read"] },
         { label: "Eiendommer", href: `${root}?tab=properties`, icon: Building2,
           permissions: ["properties.catalog.read"] },
         { label: "Bedrifter / Corporate", href: `${root}?tab=growth&area=corporate&focus=corporate`, icon: BriefcaseBusiness,

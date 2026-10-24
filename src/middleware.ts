@@ -223,8 +223,10 @@ function workspaceMemberProtectedApiAllowed(pathname: string, method: string) {
       ["zeneco", "pinosoecolife"].includes(brand) && verb === "POST";
   }
   if (["capabilities", "properties"].includes(resource)) return verb === "GET";
-  if (resource === "customer360") return ["GET", "PATCH"].includes(verb);
+  if (resource === "customer360") return ["GET", "PATCH"].includes(verb) || (["zeneco", "pinosoecolife"].includes(brand) && verb === "POST");
   if (resource === "marketing") return ["GET", "POST"].includes(verb);
+  // Media Library and uploads remain scoped by requireBrandWorkspace on each request.
+  if (resource === "media") return ["zeneco", "pinosoecolife"].includes(brand) && ["GET", "POST"].includes(verb);
   // SoMe Studio is separately scoped by requireBrandWorkspace("marketing.draft").
   if (resource === "social-studio") return ["zeneco", "pinosoecolife"].includes(brand) && verb === "POST";
   if (resource === "growth") return ["GET", "POST"].includes(verb);

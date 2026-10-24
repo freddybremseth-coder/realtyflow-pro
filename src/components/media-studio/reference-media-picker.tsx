@@ -19,6 +19,7 @@ interface ReferenceMediaPickerProps {
   value: string;
   onChange: (url: string) => void;
   brandId?: string;
+  workspaceBrandKey?: string;
   purpose?: "media_reference" | "advisor_portrait";
   usage?: "reference" | "social_post";
   title?: string;
@@ -46,6 +47,7 @@ export function ReferenceMediaPicker({
   value,
   onChange,
   brandId,
+  workspaceBrandKey,
   purpose = "media_reference",
   usage = "reference",
   title = "Referansebilde",
@@ -61,9 +63,11 @@ export function ReferenceMediaPicker({
     setLoading(true);
     try {
       const result = await readJson<{ assets: ReferenceAsset[] }>(
-        "/api/media/assets?limit=120&mediaType=image" +
-        (brandId ? "&brandId=" + encodeURIComponent(brandId) : "") +
-        (purpose === "advisor_portrait" ? "&referencePurpose=advisor_portrait" : ""),
+        workspaceBrandKey
+          ? `/api/workspaces/${encodeURIComponent(workspaceBrandKey)}/media`
+          : "/api/media/assets?limit=120&mediaType=image" +
+            (brandId ? "&brandId=" + encodeURIComponent(brandId) : "") +
+            (purpose === "advisor_portrait" ? "&referencePurpose=advisor_portrait" : ""),
       );
       setAssets((result.assets || []).filter((asset) => Boolean(asset.public_url) &&
         (purpose !== "advisor_portrait" || asset.metadata_json?.purpose === "advisor_portrait")));
@@ -72,7 +76,7 @@ export function ReferenceMediaPicker({
     } finally {
       setLoading(false);
     }
-  }, [brandId, purpose]);
+  }, [brandId, purpose, workspaceBrandKey]);
 
   useEffect(() => {
     void loadImages();
@@ -93,7 +97,9 @@ export function ReferenceMediaPicker({
       if (brandId) form.set("brandId", brandId);
       if (purpose === "advisor_portrait") form.set("referencePurpose", "advisor_portrait");
       form.set("title", file.name.replace(/\.[^.]+$/, ""));
-      const result = await readJson<{ asset: ReferenceAsset }>("/api/media/assets/upload", {
+      const result = await readJson<{ asset: ReferenceAsset }>(workspaceBrandKey
+        ? `/api/workspaces/${encodeURIComponent(workspaceBrandKey)}/media`
+        : "/api/media/assets/upload", {
         method: "POST",
         body: form,
       });

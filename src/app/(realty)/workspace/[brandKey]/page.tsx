@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, BrainCircuit, Building2, Clapperboard, LockKeyhole, Megaphone, RefreshCw, Search, TrendingUp, Users, Youtube } from "lucide-react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -15,8 +15,6 @@ import { WorkspaceReelsPanel, type WorkspaceReelPropertySeed } from "@/component
 import { WorkspaceYoutubePanel } from "@/components/workspaces/youtube-panel";
 import { WorkspaceNexusInsightsPanel } from "@/components/workspaces/nexus-insights-panel";
 import { WorkspaceTodayPriorities } from "@/components/workspaces/today-priorities";
-import { AltovenaLeadAttention } from "@/components/workspaces/altovena-lead-attention";
-import { AltovenaLaunchReadiness } from "@/components/workspaces/altovena-launch-readiness";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 import type { WorkspaceResponsibilityId } from "@/lib/workspaces/responsibilities";
 
@@ -30,6 +28,19 @@ type Contact = {
   created_at?: string | null;
   updated_at?: string | null;
 };
+type StaffCustomer360 = {
+  contactId: string;
+  contact?: { notes?: string | null; property_interest?: string | null; preferred_location?: string | null; next_followup?: string | null; pipeline_status?: string | null };
+  buyerProfiles?: Array<{ id: string; status?: string; summary?: string | null }>;
+  criteria?: Array<Record<string, unknown>>;
+  shortlists?: Array<{ id: string; title?: string; status?: string }>;
+  profileCount: number;
+  criteriaCount: number;
+  shortlistCount: number;
+  activityCount: number;
+  dialogue: { sentCount: number; replyCount: number; lastSentAt: string | null; lastReplyAt: string | null; awaitingReply: boolean; emailBlocked: boolean; messages?: Array<{ id: string; direction: string; from_address?: string; to_addresses?: string[]; subject?: string; body_text?: string; received_at?: string | null; created_at?: string | null }> };
+  activity: Array<{ id: string; kind: string; occurredAt: string }>;
+};
 type CrmSummary = {
   matchedCount: number;
   staleCount: number;
@@ -37,10 +48,10 @@ type CrmSummary = {
 };
 type Tab = "today" | "leads" | "growth" | "properties";
 
-const crmStatuses = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "WON", "ON_HOLD", "LOST"] as const;
+const crmStatuses = ["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "WON", "ON_HOLD", "LOST"] as const;
 const crmStatusLabels: Record<string, string> = {
-  NEW: "Ny", CONTACT: "Kontakt", QUALIFIED: "Kvalifisert", VIEWING: "Visning",
-  NEGOTIATION: "Forhandling", WON: "Vunnet", ON_HOLD: "På vent", LOST: "Tapt", UNSET: "Uten status",
+  NEW: "Ny", CONTACT: "Kontakt", QUALIFIED: "Kvalifisert", MATCHING: "Boligmatch", VIEWING: "Visning",
+  NEGOTIATION: "Forhandling", RESERVED: "Reservert", WON: "Vunnet", ON_HOLD: "På vent", LOST: "Tapt", UNSET: "Uten status",
 };
 function crmDate(value?: string | null) {
   if (!value) return "Ukjent";
@@ -107,10 +118,23 @@ export default function FocusedWorkspacePage() {
   const [contactError, setContactError] = useState("");
   const [showTraining, setShowTraining] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
-  const [focusedAltovenaContact, setFocusedAltovenaContact] = useState<Contact | null>(null);
-  const [focusedAltovenaError, setFocusedAltovenaError] = useState("");
-  const focusedAltovenaContactId = useRef("");
-  const altovenaLookupVersion = useRef(0);
+  const [customer360, setCustomer360] = useState<StaffCustomer360 | null>(null);
+  const [customer360Busy, setCustomer360Busy] = useState(false);
+  const [customer360Error, setCustomer360Error] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailNotice, setEmailNotice] = useState("");
+  const [emailRevision, setEmailRevision] = useState(0);
+  const [customerEditOpen, setCustomerEditOpen] = useState(false);
+  const [customerEditStatus, setCustomerEditStatus] = useState("NEW");
+  const [customerEditInterest, setCustomerEditInterest] = useState("");
+  const [customerEditLocation, setCustomerEditLocation] = useState("");
+  const [customerEditNotes, setCustomerEditNotes] = useState("");
+  const [customerEditFollowup, setCustomerEditFollowup] = useState("");
+  const [customerEditBusy, setCustomerEditBusy] = useState(false);
+  const [customerEditNotice, setCustomerEditNotice] = useState("");
+  const [closingMode, setClosingMode] = useState(false);
   const [reelPropertySeed, setReelPropertySeed] = useState<WorkspaceReelPropertySeed | null>(null);
   const [socialPropertySeed, setSocialPropertySeed] = useState<WorkspaceSocialPropertySeed | null>(null);
 
@@ -120,17 +144,9 @@ export default function FocusedWorkspacePage() {
     setRequestedArea(query.get("area"));
     setRequestedFocus(query.get("focus"));
     setRequestedTraining(query.get("training"));
+    setClosingMode(query.get("closing") === "1");
+    if (query.get("closing") === "1") { setCrmStatus("NEGOTIATION"); setCrmPage(1); }
   }, [brandKey, routeSearchParams]);
-
-  // Never retain a focused Altovena contact when the operator changes brand.
-  // Also invalidate any outstanding scoped customer lookup from the old brand.
-  useEffect(() => {
-    altovenaLookupVersion.current += 1;
-    focusedAltovenaContactId.current = "";
-    setFocusedAltovenaContact(null);
-    setFocusedAltovenaError("");
-    setSelectedCustomerId("");
-  }, [brandKey]);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" }).then(async res => res.ok ? res.json() : null)
@@ -211,8 +227,7 @@ export default function FocusedWorkspacePage() {
       const nextContacts = Array.isArray(body.contacts) ? body.contacts : [];
       setContacts(nextContacts);
       setSelectedCustomerId(current =>
-        current && (nextContacts.some((contact: Contact) => contact.id === current) ||
-          focusedAltovenaContactId.current === current) ? current : "");
+        current && nextContacts.some((contact: Contact) => contact.id === current) ? current : "");
       setCrmHasMore(Boolean(body.hasMore));
       const summary = body.summary && typeof body.summary === "object" ? body.summary : null;
       setCrmSummary(summary ? {
@@ -227,9 +242,86 @@ export default function FocusedWorkspacePage() {
     finally { setCrmBusy(false); }
   }
   useEffect(() => { if (permissions.includes("crm.read") || permissions.includes("crm.joint.read")) void loadCrm(); }, [brandKey, permissions, crmPage, crmQuery, crmStatus, crmSource, crmSort]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setCustomer360(null); setCustomer360Error("");
+    if (!selectedCustomerId || !permissions.some(permission => permission === "crm.read" || permission === "crm.joint.read")) {
+      setCustomer360Busy(false);
+      return () => controller.abort();
+    }
+    setCustomer360Busy(true);
+    fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360?contactId=${encodeURIComponent(selectedCustomerId)}&view=collaborator`, {
+      cache: "no-store", signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error(response.status === 403
+        ? "Denne kundens utvidede oversikt er ikke tilgjengelig med din tilgang."
+        : "Kunne ikke hente utvidet kundeoversikt.");
+      return response.json();
+    }).then((data: StaffCustomer360) => {
+      if (!controller.signal.aborted && data.contactId === selectedCustomerId) {
+        setCustomer360(data);
+        if (!customerEditOpen) {
+          setCustomerEditStatus(data.contact?.pipeline_status || "NEW");
+          setCustomerEditInterest(data.contact?.property_interest || "");
+          setCustomerEditLocation(data.contact?.preferred_location || "");
+          setCustomerEditNotes(data.contact?.notes || "");
+          setCustomerEditFollowup(data.contact?.next_followup?.slice(0, 10) || "");
+        }
+      }
+    }).catch(cause => {
+      if (!controller.signal.aborted) setCustomer360Error(cause instanceof Error ? cause.message : "Kunne ikke hente kundeoversikt.");
+    }).finally(() => { if (!controller.signal.aborted) setCustomer360Busy(false); });
+    return () => controller.abort();
+  }, [brandKey, selectedCustomerId, permissions, emailRevision]);
+  useEffect(() => { setEmailSubject(""); setEmailBody(""); setEmailNotice(""); setCustomerEditOpen(false); setCustomerEditNotice(""); }, [selectedCustomerId]);
+
+  async function sendCustomerEmail() {
+    if (!selectedCustomerId || !customer360 || emailSending ||
+        !permissions.includes("email.send") || customer360.dialogue.emailBlocked ||
+        !emailSubject.trim() || !emailBody.trim()) return;
+    const recipient = selectedCustomerId === customer360.contactId
+      ? contacts.find(contact => contact.id === selectedCustomerId)?.email : null;
+    if (!recipient || !window.confirm(`Send e-post til ${recipient}?\\n\\nEmne: ${emailSubject}\\n\\nE-posten sendes umiddelbart fra merkevarens e-postkonto.`)) return;
+    setEmailSending(true); setEmailNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId: selectedCustomerId, subject: emailSubject.trim(),
+          bodyText: emailBody.trim(), confirmReviewed: true }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error?.message ||
+        (response.status === 409 ? "E-posten kan ikke sendes på grunn av kundens kontaktstatus eller avsenderoppsett."
+          : "Kunne ikke sende e-post."));
+      setEmailSubject(""); setEmailBody(""); setEmailNotice("E-posten er sendt.");
+      setEmailRevision(value => value + 1);
+    } catch (cause) { setEmailNotice(cause instanceof Error ? cause.message : "Kunne ikke sende e-post."); }
+    finally { setEmailSending(false); }
+  }
+  async function saveCustomerFollowup() {
+    if (!selectedCustomerId || !customer360 || !canEditCrm || customerEditBusy) return;
+    setCustomerEditBusy(true); setCustomerEditNotice("");
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(brandKey)}/customer360`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactId: selectedCustomerId, pipeline_status: customerEditStatus,
+          property_interest: customerEditInterest, preferred_location: customerEditLocation,
+          notes: customerEditNotes, next_followup: customerEditFollowup || null,
+        }),
+      });
+      if (!response.ok) throw new Error(response.status === 403
+        ? "Du har ikke tilgang til å endre denne kunden."
+        : "Kunne ikke lagre kundeoppfølging. Kontroller feltene og prøv igjen.");
+      setCustomerEditOpen(false); setCustomerEditNotice("Kundeoppfølgingen er lagret.");
+      setEmailRevision(value => value + 1);
+      await loadCrm();
+    } catch (cause) {
+      setCustomerEditNotice(cause instanceof Error ? cause.message : "Kunne ikke lagre kundeoppfølging.");
+    } finally { setCustomerEditBusy(false); }
+  }
   const filtered = contacts;
-  const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) ||
-    (focusedAltovenaContact?.id === selectedCustomerId ? focusedAltovenaContact : null);
+  const selectedCustomer = contacts.find(contact => contact.id === selectedCustomerId) || null;
   const title = brandKey === "pinosoecolife" ? "Pinoso EcoLife" : brandKey === "zeneco" ? "Zen Eco Homes" : brandKey;
   const showCrm = permissions.includes("crm.read") || permissions.includes("crm.joint.read");
   const showJointTasks = brandKey === "zeneco" && permissions.includes("crm.joint.read") && permissions.includes("tasks.joint.read");
@@ -249,36 +341,6 @@ export default function FocusedWorkspacePage() {
     "email.read", "email.draft", "email.send",
   ].includes(p));
   const showGrowth = showReels || showYoutube || showNexus || showGrowthTools;
-
-  async function openAltovenaLeadContact(contactId?: string) {
-    if (brandKey !== "altovena") return;
-    setTab("leads");
-    if (!contactId) return;
-    const requestVersion = ++altovenaLookupVersion.current;
-    setFocusedAltovenaError("");
-    focusedAltovenaContactId.current = "";
-    setFocusedAltovenaContact(null);
-    setSelectedCustomerId("");
-    try {
-      // The server re-verifies current crm.read and exact Altovena membership;
-      // never trust an ID supplied by the browser as proof of authorization.
-      const response = await fetch(
-        `/api/workspaces/altovena/lead-contact?contactId=${encodeURIComponent(contactId)}`,
-        {cache:"no-store",credentials:"same-origin"},
-      );
-      const body = await response.json().catch(() => null);
-      if (!response.ok || body?.ok !== true || body?.brand !== "altovena" ||
-          body?.contact?.id !== contactId || typeof body.contact.name !== "string")
-        throw new Error("Kundekortet kan ikke åpnes med din nåværende tilgang.");
-      if (altovenaLookupVersion.current !== requestVersion) return;
-      focusedAltovenaContactId.current = contactId;
-      setFocusedAltovenaContact(body.contact as Contact);
-      setSelectedCustomerId(contactId);
-    } catch (error) {
-      if (altovenaLookupVersion.current !== requestVersion) return;
-      setFocusedAltovenaError(error instanceof Error ? error.message : "Kunne ikke åpne kundekort.");
-    }
-  }
 
   function resetContactForm() {
     setEditingId(null); setFormName(""); setFormEmail(""); setFormPhone("");
@@ -352,9 +414,6 @@ export default function FocusedWorkspacePage() {
                 Du trenger ikke velge modul først. RealtyFlow prioriterer arbeid ut fra rollen din, merkevaren og tilgjengelige signaler.
               </p>
             </div>
-            {brandKey === "altovena" && owner && !ownerPreview && <AltovenaLaunchReadiness />}
-            {brandKey === "altovena" && permissions.includes("crm.read") &&
-              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={contactId => void openAltovenaLeadContact(contactId)} />}
             <WorkspaceTodayPriorities
               brandKey={brandKey}
               permissions={permissions}
@@ -398,17 +457,17 @@ export default function FocusedWorkspacePage() {
                     : "E-post, SEO/GEO/AEO, innhold, annonser, video og informasjonsmøter."}
                 </p>
               </button>}
-              {showReels && <button onClick={() => setTab("growth")} className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5 text-left hover:border-cyan-500">
+              {showReels && <button onClick={() => { setRequestedFocus("reels"); setTab("growth"); }} className="rounded-2xl border border-cyan-900/60 bg-cyan-950/10 p-5 text-left hover:border-cyan-500">
                 <Clapperboard size={25} className="text-cyan-400"/>
                 <h3 className="mt-3 text-lg font-semibold">Lag en Reel</h3>
                 <p className="mt-1 text-sm text-slate-400">Velg musikk og boligtype. Re-Master lager videoen, og du forhåndsviser før publisering.</p>
               </button>}
-              {showYoutube && <button onClick={() => setTab("growth")} className="rounded-2xl border border-red-900/60 bg-red-950/10 p-5 text-left hover:border-red-500">
+              {showYoutube && <button onClick={() => { setRequestedFocus("youtube"); setTab("growth"); }} className="rounded-2xl border border-red-900/60 bg-red-950/10 p-5 text-left hover:border-red-500">
                 <Youtube size={25} className="text-red-400"/>
                 <h3 className="mt-3 text-lg font-semibold">Publiser til YouTube</h3>
                 <p className="mt-1 text-sm text-slate-400">Velg en ferdig Zen Reel, forhåndsvis den og publiser som YouTube Short til verifisert Zen-kanal.</p>
               </button>}
-              {showNexus && <button onClick={() => setTab("growth")} className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5 text-left hover:border-violet-500">
+              {showNexus && <button onClick={() => { setRequestedFocus("nexus"); setTab("growth"); }} className="rounded-2xl border border-violet-900/60 bg-violet-950/10 p-5 text-left hover:border-violet-500">
                 <BrainCircuit size={25} className="text-violet-300"/>
                 <h3 className="mt-3 text-lg font-semibold">Se hva Nexus lærer</h3>
                 <p className="mt-1 text-sm text-slate-400">Brand-avgrenset innsikt om kilder, læring, vekstplan og hva som faktisk trenger oppmerksomhet.</p>
@@ -440,15 +499,11 @@ export default function FocusedWorkspacePage() {
         )}
         {!loading && !error && showCrm && tab === "leads" && (
           <section className="space-y-5">
-            {brandKey === "altovena" && permissions.includes("crm.read") &&
-              <AltovenaLeadAttention canManage={permissions.includes("crm.write")} onOpenLeads={contactId => void openAltovenaLeadContact(contactId)} />}
-            {brandKey === "altovena" && focusedAltovenaError &&
-              <p role="alert" className="rounded-lg border border-amber-800 p-3 text-sm text-amber-300">{focusedAltovenaError}</p>}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">CRM-arbeidsflate</p>
-                  <h2 className="mt-1 text-xl font-semibold">Kunder & leads · {title}</h2>
+                  <h2 className="mt-1 text-xl font-semibold">{closingMode ? "Closing Workspace" : "Kunder & leads"} · {title}</h2>
                   <p className="mt-1 max-w-3xl text-sm text-slate-400">
                     Søk, filtrer og prioriter kundene du faktisk har tilgang til. RealtyFlow viser oppfølgingsbehov og status uten å åpne økonomi eller private CRM-data.
                   </p>
@@ -458,6 +513,16 @@ export default function FocusedWorkspacePage() {
                 </button>
               </div>
 
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setClosingMode(false); setCrmStatus(""); setCrmPage(1); }}
+                  className={`rounded-lg border px-3 py-2 text-sm ${!closingMode ? "border-cyan-600 text-cyan-200" : "border-slate-700"}`}>Alle kunder / Customer 360</button>
+                <button type="button" onClick={() => { setClosingMode(true); setCrmStatus("NEGOTIATION"); setCrmPage(1); }}
+                  className={`rounded-lg border px-3 py-2 text-sm ${closingMode ? "border-cyan-600 text-cyan-200" : "border-slate-700"}`}>Closing Workspace</button>
+              </div>
+              {closingMode && <div className="mt-3 rounded-xl border border-cyan-900 bg-cyan-950/15 p-4 text-sm text-slate-300">
+                <p className="font-medium text-cyan-200">Følg kunden frem til overtakelse</p>
+                <p className="mt-1">Velg Forhandling, Reservert eller Vunnet i statusfilteret. Åpne kundekortet for kontakt, aktivitet og oppgaver. Denne arbeidsflaten viser ikke kontraktsdokumenter eller økonomi.</p>
+              </div>}
               {crmSummary && <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Matcher filter</p>
@@ -581,24 +646,144 @@ export default function FocusedWorkspacePage() {
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Ring</a>}
                 {showProperties && <button type="button" onClick={() => setTab("properties")}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Finn bolig</button>}
-                {permissions.includes("email.read") && <button type="button" onClick={() => setTab("growth")}
+                {permissions.includes("email.read") && <button type="button" onClick={() => { setRequestedFocus("email"); setRequestedArea("email"); setTab("growth"); }}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm">E-post / Reach</button>}
               </div>
 
               <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/35 p-3 text-xs text-slate-400">
                 Kontaktdata: {selectedCustomer.email ? "e-post ✓" : "e-post mangler"} · {selectedCustomer.phone ? "telefon ✓" : "telefon mangler"}.
-                RealtyFlow holder arbeidet innenfor {title}; økonomi, private notater og andre merkevarer er ikke eksponert.
+                RealtyFlow holder arbeidet innenfor {title}. Økonomi og andre merkevarer er ikke eksponert.
               </div>
+
+              <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="font-semibold text-cyan-200">Customer 360 · komplett kundedialog</h4>
+                  {canEditCrm && customer360 && <button type="button" onClick={() => { setCustomerEditOpen(value => !value); setCustomerEditNotice(""); }}
+                    className="rounded-lg border border-cyan-700 px-3 py-2 text-xs text-cyan-200">
+                    {customerEditOpen ? "Lukk redigering" : "Rediger kundeoppfølging"}
+                  </button>}
+                </div>
+                {customerEditNotice && <p role="status" className="mt-2 text-sm text-cyan-200">{customerEditNotice}</p>}
+                {customerEditOpen && canEditCrm && customer360 && <form onSubmit={event => { event.preventDefault(); void saveCustomerFollowup(); }}
+                  className="mt-3 space-y-3 rounded-lg border border-cyan-900/60 bg-slate-900 p-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs text-slate-300">Salgsstatus
+                      <select value={customerEditStatus} onChange={event => setCustomerEditStatus(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                        {crmStatuses.map(status => <option key={status} value={status}>{crmStatusLabels[status]}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-300">Neste oppfølging
+                      <input type="date" value={customerEditFollowup} onChange={event => setCustomerEditFollowup(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                    </label>
+                    <label className="text-xs text-slate-300">Boliginteresse
+                      <input maxLength={300} value={customerEditInterest} onChange={event => setCustomerEditInterest(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                    </label>
+                    <label className="text-xs text-slate-300">Foretrukket område
+                      <input maxLength={300} value={customerEditLocation} onChange={event => setCustomerEditLocation(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                    </label>
+                  </div>
+                  <label className="block text-xs text-slate-300">Kundenotater
+                    <textarea rows={5} maxLength={12000} value={customerEditNotes}
+                      onChange={event => setCustomerEditNotes(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"/>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="submit" disabled={customerEditBusy}
+                      className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold disabled:opacity-40">
+                      {customerEditBusy ? "Lagrer…" : "Lagre oppfølging"}
+                    </button>
+                    <button type="button" disabled={customerEditBusy} onClick={() => setCustomerEditOpen(false)}
+                      className="rounded-lg border border-slate-700 px-4 py-2 text-sm">Avbryt</button>
+                  </div>
+                </form>}
+                {customer360Busy && <p className="mt-2 text-sm text-slate-400">Henter oversikt…</p>}
+                {customer360Error && <p className="mt-2 text-sm text-amber-300" role="status">{customer360Error}</p>}
+                {customer360 && <>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Kjøperprofiler</p><p className="text-xl font-semibold">{customer360.profileCount}</p></div>
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Boligkriterier</p><p className="text-xl font-semibold">{customer360.criteriaCount}</p></div>
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Boliglister</p><p className="text-xl font-semibold">{customer360.shortlistCount}</p></div>
+                    <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-400">Nylig aktivitet</p><p className="text-xl font-semibold">{customer360.activityCount}</p></div>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-300">E-post: {customer360.dialogue.sentCount} sendt · {customer360.dialogue.replyCount} mottatt
+                    {customer360.dialogue.awaitingReply ? " · Venter på svar" : ""}
+                    {customer360.dialogue.emailBlocked ? " · E-postkontakt sperret" : ""}</p>
+                  <p className="mt-1 text-xs text-slate-400">Siste sendte: {crmDate(customer360.dialogue.lastSentAt)} · siste svar: {crmDate(customer360.dialogue.lastReplyAt)}</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-800 p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-400">Kjøperprofil og behov</p>
+                      <p className="mt-2 text-sm">Interessert i: {customer360.contact?.property_interest || "Ikke registrert"}</p>
+                      <p className="mt-1 text-sm">Område: {customer360.contact?.preferred_location || "Ikke registrert"}</p>
+                      <p className="mt-1 text-sm">Neste oppfølging: {crmDate(customer360.contact?.next_followup)}</p>
+                      {(customer360.buyerProfiles || []).map(profile => <p key={profile.id} className="mt-2 text-sm text-slate-300">{profile.status || "Profil"}: {profile.summary || "Ingen oppsummering"}</p>)}
+                      {(customer360.shortlists || []).map(list => <p key={list.id} className="mt-1 text-xs text-cyan-200">Boligliste: {list.title || "Uten navn"} · {list.status || "Utkast"}</p>)}
+                    </div>
+                    <div className="rounded-lg border border-slate-800 p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-400">Kundenotater</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-300">{customer360.contact?.notes || "Ingen notater registrert."}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 border-t border-slate-800 pt-4">
+                    <h5 className="font-semibold text-cyan-200">E-posthistorikk med innhold</h5>
+                    {(customer360.dialogue.messages || []).length === 0 ? <p className="mt-2 text-sm text-slate-400">Ingen tilknyttede e-poster.</p>
+                      : <div className="mt-3 max-h-[600px] space-y-3 overflow-y-auto">
+                          {(customer360.dialogue.messages || []).map(message => <article key={message.id} className="rounded-lg border border-slate-700 bg-slate-900 p-3">
+                            <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-400">
+                              <span>{message.direction === "outbound" ? "Sendt" : "Mottatt"} · {message.from_address || "Ukjent avsender"}</span>
+                              <span>{crmDate(message.received_at || message.created_at)}</span>
+                            </div>
+                            <p className="mt-2 font-semibold">{message.subject || "(Uten emne)"}</p>
+                            <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-300">{message.body_text || "Ingen tekst tilgjengelig."}</p>
+                          </article>)}
+                        </div>}
+                  </div>
+                  {permissions.includes("email.send") && <form className="mt-4 space-y-3 rounded-xl border border-cyan-900/50 bg-cyan-950/10 p-4"
+                    onSubmit={event => { event.preventDefault(); void sendCustomerEmail(); }}>
+                    <h5 className="font-semibold text-cyan-200">Ny e-post til kunden</h5>
+                    <p className="text-xs text-slate-400">Sendes manuelt etter bekreftelse fra merkevarens aktive e-postkonto. Ingen automatisk sending.</p>
+                    <input aria-label="Emne" placeholder="Emne" value={emailSubject} maxLength={240}
+                      onChange={event => setEmailSubject(event.target.value)} required disabled={emailSending || customer360.dialogue.emailBlocked}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" />
+                    <textarea aria-label="E-posttekst" placeholder="Skriv e-posten…" value={emailBody} maxLength={16000} rows={7}
+                      onChange={event => setEmailBody(event.target.value)} required disabled={emailSending || customer360.dialogue.emailBlocked}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" />
+                    <button type="submit" disabled={emailSending || customer360.dialogue.emailBlocked || !emailSubject.trim() || !emailBody.trim()}
+                      className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{emailSending ? "Sender…" : "Send e-post"}</button>
+                    {emailNotice && <p role="status" className="text-sm text-slate-300">{emailNotice}</p>}
+                  </form>}
+                  <div className="mt-3 border-t border-slate-800 pt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Aktivitetshistorikk</p>
+                    {customer360.activity.length ? <ul className="mt-2 space-y-1 text-sm text-slate-300">
+                      {customer360.activity.map(item => <li key={item.id}>{crmDate(item.occurredAt)} · {item.kind === "mail" ? "E-post" : item.kind === "task" ? "Oppgave" : item.kind === "portal" ? "Kundeportal" : "Kontaktaktivitet"}</li>)}
+                    </ul> : <p className="mt-2 text-sm text-slate-500">Ingen registrert aktivitet.</p>}
+                  </div>
+                </>}
+              </div>
+
+              {closingMode && <div className="mt-5 rounded-xl border border-cyan-900/60 p-4">
+                <h4 className="font-semibold text-cyan-200">Neste steg i salgsprosessen</h4>
+                <ol className="mt-2 list-inside list-decimal space-y-1 text-sm text-slate-300">
+                  <li>Bekreft kundens valg og avklar åpne spørsmål.</li>
+                  <li>Følg opp reservasjon, dokumentasjon og ansvarlig rådgiver.</li>
+                  <li>Avtal neste kontakt og kontroller status før overtakelse.</li>
+                </ol>
+                {showJointTasks ? <p className="mt-2 text-xs text-slate-400">Velg et forslag nedenfor for å lage en lagret oppgave med frist. Oppgavens fullføring vises i fremdriftsoversikten.</p>
+                  : <p className="mt-2 text-xs text-slate-500">Denne sjekklisten er foreløpig veiledende. Oppgaveadministrasjon er ennå ikke åpnet for denne merkevaren.</p>}
+              </div>}
 
               {showJointTasks && <div className="mt-5 border-t border-slate-800 pt-5">
                 <ZenJointTasks contacts={[selectedCustomer]} canWrite={canWriteJointTasks}
-                  selectedContactId={selectedCustomer.id} hideContactSelector />
+                  selectedContactId={selectedCustomer.id} hideContactSelector closingMode={closingMode} />
               </div>}
             </div>}
 
             {canEditCrm && (canCreateCrm || editingId) && <form className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4" onSubmit={event => { event.preventDefault(); void saveContact(); }}>
               <h3 className="font-semibold">{editingId ? "Rediger kunde" : "Legg til kunde"}</h3>
-              <p className="text-xs text-slate-400">Kontaktfeltene kan redigeres her. Pipeline-status, private notater og økonomi endres ikke fra medarbeiderflaten.</p>
+              <p className="text-xs text-slate-400">Kontaktfeltene kan redigeres her. Pipeline-status og kundenotater oppdateres i Customer 360. Økonomi er ikke tilgjengelig fra medarbeiderflaten.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-xs text-slate-300">Navn *<input required maxLength={140} value={formName} onChange={e => setFormName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"/></label>
                 <label className="text-xs text-slate-300">E-post<input type="email" maxLength={254} value={formEmail} onChange={e => setFormEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"/></label>
@@ -672,6 +857,7 @@ export default function FocusedWorkspacePage() {
                 id: property.id, ref: property.ref, title: property.title,
                 town: property.town, location: property.location, primary_image: property.primary_image,
               });
+               setRequestedFocus("social");
               setTab("growth");
             }}
             onCreateReel={(property: WorkspacePropertyCard) => {
@@ -679,6 +865,7 @@ export default function FocusedWorkspacePage() {
                 id: property.id, ref: property.ref, title: property.title,
                 town: property.town, location: property.location,
               });
+               setRequestedFocus("reels");
               setTab("growth");
             }}
           />}

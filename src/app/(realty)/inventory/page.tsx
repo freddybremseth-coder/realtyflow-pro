@@ -47,6 +47,7 @@ interface Property {
   ref?: string;
   /** AI-generated long-form selling copy. Picked up by PDF generator. */
   marketing_description?: string;
+  additional_information?: string;
 }
 
 const INITIAL_PROPERTIES: Property[] = [
@@ -404,6 +405,7 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     energyRating: (row.energy_rating || row.energyRating || undefined) as string | undefined,
     ref: (row.ref || undefined) as string | undefined,
     marketing_description: (row.marketing_description || undefined) as string | undefined,
+    additional_information: (row.additional_information || "") as string,
   };
 }
 
@@ -433,6 +435,7 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.garage !== undefined) row.garage = p.garage;
   if (p.energyRating !== undefined) row.energy_rating = p.energyRating;
   if (p.ref !== undefined) row.ref = p.ref;
+  if (p.additional_information !== undefined) row.additional_information = p.additional_information;
   return row;
 }
 
@@ -1524,6 +1527,12 @@ export default function InventoryPage() {
               {showDetailModal.description && (
                 <p className="text-sm text-slate-300 mb-4 whitespace-pre-line">{showDetailModal.description}</p>
               )}
+              {showDetailModal.additional_information?.trim() && (
+                <section className="mb-4 rounded-lg border border-cyan-500/20 bg-slate-900/60 p-4">
+                  <h3 className="mb-2 text-sm font-semibold text-cyan-200">Mer informasjon fra utbygger</h3>
+                  <p className="whitespace-pre-wrap break-words text-sm text-slate-200">{showDetailModal.additional_information}</p>
+                </section>
+              )}
 
               <div className="grid grid-cols-4 gap-4 mb-4">
                 <div className="bg-slate-900/50 rounded-lg p-3 text-center">
@@ -1804,6 +1813,14 @@ export default function InventoryPage() {
                 <label className="text-xs text-slate-400 mb-1 block">Beskrivelse</label>
                 <textarea className="w-full h-20 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
                   value={showEditModal.description} onChange={e => setShowEditModal({...showEditModal, description: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-300 mb-1 block">Mer informasjon fra utbygger</label>
+                <p className="mb-2 text-xs text-slate-400">Valgfri fritekst om hva som er inkludert, byggestatus, tomtevalg, ferdigstillelse, tilvalg og andre bekreftede detaljer. Lagres internt og publiseres ikke automatisk.</p>
+                <textarea className="w-full min-h-36 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
+                  placeholder="Lim inn eller skriv informasjon fra utbyggeren her..."
+                  value={showEditModal.additional_information || ""}
+                  onChange={e => setShowEditModal({...showEditModal, additional_information: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
