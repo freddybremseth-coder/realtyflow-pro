@@ -123,6 +123,7 @@ export default function FocusedWorkspacePage() {
   const [focusedAltovenaContact, setFocusedAltovenaContact] = useState<Contact | null>(null);
   const [focusedAltovenaError, setFocusedAltovenaError] = useState("");
   const altovenaLookupVersion = useRef(0);
+  const focusedAltovenaContactId = useRef("");
   const [customer360, setCustomer360] = useState<StaffCustomer360 | null>(null);
   const [customer360Busy, setCustomer360Busy] = useState(false);
   const [customer360Error, setCustomer360Error] = useState("");
@@ -217,6 +218,7 @@ export default function FocusedWorkspacePage() {
     if (!contactId) return;
     const version = (altovenaLookupVersion.current += 1);
     setFocusedAltovenaError("");
+    focusedAltovenaContactId.current = "";
     setFocusedAltovenaContact(null);
     setSelectedCustomerId("");
     try {
@@ -229,6 +231,7 @@ export default function FocusedWorkspacePage() {
           body?.contact?.id !== contactId || typeof body.contact.name !== "string")
         throw new Error("Kundekortet kan ikke åpnes med din nåværende tilgang.");
       if (version !== altovenaLookupVersion.current) return;
+      focusedAltovenaContactId.current = contactId;
       setFocusedAltovenaContact(body.contact as Contact);
       setSelectedCustomerId(contactId);
     } catch (error) {
