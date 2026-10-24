@@ -195,9 +195,30 @@ export async function GET(
       }
       rows = data.publications;
     }
+    // Add failure details only for IDs on this authorized brand history page.
+    const ids = rows.flatMap(row => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+      const candidate = row as Record<string, unknown>;
+      return typeof candidate.id === "string" && candidate.brand_id === params.brandKey
+        ? [candidate.id] : [];
+    });
+    const errorById = new Map<string, string>();
+    if (ids.length > 0) {
+      const { data: failureRows, error: failureError } = await access.value.supabase
+        .from("content_publications")
+        .select("id,last_publish_error")
+        .eq("brand_id", params.brandKey)
+        .in("id", ids);
+      if (failureError) return fail(503, "MARKETING_FAILURE_DETAILS_UNAVAILABLE");
+      for (const row of failureRows || []) {
+        if (typeof row.id === "string" && typeof row.last_publish_error === "string") {
+          errorById.set(row.id, row.last_publish_error.slice(0, 1200));
+        }
+      }
+    }
     const publications = rows.flatMap(row => {
       const publication = safePublication(row, params.brandKey);
-      return publication ? [publication] : [];
+      return publication ? [{ ...publication, lastPublishError: errorById.get(publication.id) || null }] : [];
     });
     return NextResponse.json({ ok: true, brand: params.brandKey, page,
       hasMore: publications.length === 100, publications }, { headers: noStore });
