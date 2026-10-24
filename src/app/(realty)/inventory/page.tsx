@@ -1595,7 +1595,13 @@ export default function InventoryPage() {
                     </a>
                   ))}</div>
                 </div>}
-                <Badge variant="outline">Forventes ferdig: {showDetailModal.expectedCompletionManual?.trim() || showDetailModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</Badge>
+                <div className="w-full rounded-lg border border-slate-600 bg-slate-900/60 p-3">
+                  <p className="text-xs text-slate-400">Forventes ferdig</p>
+                  <p className="mt-1 text-sm text-white">{showDetailModal.expectedCompletionManual?.trim() || showDetailModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
+                  <button type="button" className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg border border-cyan-500/40 px-3 text-sm font-medium text-cyan-200" onClick={() => { setShowEditModal({ ...showDetailModal }); setShowDetailModal(null); }}>
+                    <Pencil size={15} /> Legg til eller endre ferdigstillelse
+                  </button>
+                </div>
                 {showDetailModal.energyRating && <Badge variant="outline">Energi: {showDetailModal.energyRating}</Badge>}
                 {showDetailModal.pool && <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">Basseng</Badge>}
                 {showDetailModal.garage && <Badge className="bg-slate-500/20 text-slate-300 border-slate-500/30">Garasje</Badge>}
@@ -1834,12 +1840,18 @@ export default function InventoryPage() {
       {/* ========== EDIT MODAL ========== */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowEditModal(null)}>
-          <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b border-slate-700">
+          <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-center justify-between p-4 sm:p-5 border-b border-slate-700 bg-slate-800">
               <h2 className="text-lg font-semibold text-white">Rediger eiendom</h2>
               <button onClick={() => setShowEditModal(null)} className="text-slate-400 hover:text-white"><X size={20} /></button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
+              <div className="rounded-lg border border-slate-600 p-3 space-y-2">
+                <label className="block text-sm font-medium text-white">Forventes ferdig</label>
+                <p className="text-xs text-slate-400">Fra import: {showEditModal.expectedCompletionSource || "Ikke oppgitt"}. Manuell verdi brukes foran import og beholdes ved ny import.</p>
+                <Input placeholder="F.eks. 4. kvartal 2027" value={showEditModal.expectedCompletionManual || ""} onChange={e => setShowEditModal({...showEditModal, expectedCompletionManual: e.target.value})} />
+                <p className="text-xs text-cyan-300">Vises til kunde: {showEditModal.expectedCompletionManual?.trim() || showEditModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
+              </div>
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Tittel</label>
                 <Input value={showEditModal.title} onChange={e => setShowEditModal({...showEditModal, title: e.target.value})} />
@@ -1856,12 +1868,6 @@ export default function InventoryPage() {
                   placeholder="Lim inn eller skriv informasjon fra utbyggeren her..."
                   value={showEditModal.additional_information || ""}
                   onChange={e => setShowEditModal({...showEditModal, additional_information: e.target.value})} />
-              </div>
-              <div className="rounded-lg border border-slate-600 p-3 space-y-2">
-                <label className="block text-sm font-medium text-white">Forventes ferdig</label>
-                <p className="text-xs text-slate-400">Fra import: {showEditModal.expectedCompletionSource || "Ikke oppgitt"}. Manuell verdi brukes foran import og beholdes ved ny import.</p>
-                <Input placeholder="F.eks. 4. kvartal 2027" value={showEditModal.expectedCompletionManual || ""} onChange={e => setShowEditModal({...showEditModal, expectedCompletionManual: e.target.value})} />
-                <p className="text-xs text-cyan-300">Vises til kunde: {showEditModal.expectedCompletionManual?.trim() || showEditModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2042,7 +2048,7 @@ export default function InventoryPage() {
                 );
               })()}
             </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-slate-700">
+            <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 p-3 sm:p-5 border-t border-slate-700 bg-slate-800">
               <Button
                 variant="outline"
                 onClick={() => {
