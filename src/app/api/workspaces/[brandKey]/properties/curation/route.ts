@@ -7,6 +7,30 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(req: NextRequest, { params }: { params: { brandKey: string } }) {
   const scope = await requireBrandWorkspace(req, params.brandKey, "properties.catalog.read");
   if (!scope.value) return scope.response;
+  const search = new URL(req.url).searchParams;
+  if (search.get("list") === "recommended") {
+    const { data: rows, error: notesError } = await scope.value.supabase.from("property_brand_curations")
+      .select("property_id,updated_at").eq("brand_key", params.brandKey).eq("recommended", true)
+      .order("updated_at", { ascending: false }).limit(100);
+    if (notesError) return NextResponse.json({ error: "Could not load recommendations" }, { status: 503, headers });
+    const ids = (rows || []).map(row => row.property_id as string);
+    if (!ids.length) return NextResponse.json({ ok: true, properties: [] }, { headers });
+    const { data: visible, error: visibilityError } = await scope.value.supabase.from("property_brand_visibility")
+      .select("property_id").eq("brand_id", scope.value.brandId).eq("visible", true).in("property_id", ids);
+    if (visibilityError) return NextResponse.json({ error: "Could not verify brand visibility" }, { status: 503, headers });
+    const allowed = new Set((visible || []).map(row => row.property_id));
+    const selected = ids.filter(id => allowed.has(id));
+    if (!selected.length) return NextResponse.json({ ok: true, properties: [] }, { headers });
+    const { data: properties, error: propertyError } = await scope.value.supabase.from("properties")
+      .select("id,ref,title,town,location,price,bedrooms,bathrooms,area_m2,plot_size,property_type,primary_image,source,pool")
+      .in("id", selected).eq("show_on_website", true).eq("website_visible", true);
+    if (propertyError) return NextResponse.json({ error: "Could not load properties" }, { status: 503, headers });
+    const byId = new Map((properties || []).map(row => [row.id, row]));
+    return NextResponse.json({ ok: true, properties: selected.flatMap(id => {
+      const property = byId.get(id);
+      return property ? [{ ...property, can_market_on_workspace_brand: true, marketable_by_brands: [params.brandKey] }] : [];
+    }) }, { headers });
+  }
   const propertyId = new URL(req.url).searchParams.get("propertyId");
   if (!propertyId || !UUID.test(propertyId)) return NextResponse.json({ error: "Invalid propertyId" }, { status: 400, headers });
   const { data, error } = await scope.value.supabase.from("property_brand_curations")
