@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BarChart3, BookOpen, CalendarDays, FileText, Images, Megaphone, RefreshCw } from "lucide-react";
 import { WorkspaceWebsiteContentStudio } from "@/components/workspaces/website-content-studio";
 import { WorkspaceMarketingPanel } from "@/components/workspaces/marketing-panel";
+import { WorkspacePublicationEditor } from "@/components/workspaces/workspace-publication-editor";
 import type { WorkspacePermission } from "@/lib/workspaces/brand-policy";
 
 type Section = "articles" | "studio" | "drafts" | "calendar" | "analytics" | "images";
@@ -345,7 +346,11 @@ export default function ScopedContentHubPage() {
                   className="ml-2 mt-3 rounded border border-slate-600 px-3 py-2 font-semibold">Åpne SoMe Studio</button>
                 <p className="mt-2 text-slate-400">Ingen automatisk ny publisering. Et nytt utkast må godkjennes før sending.</p>
               </div>}
-              {item.status === "draft" && permissions.includes("marketing.publish") && <button type="button" onClick={() => setSection("studio")} className="mt-3 rounded bg-cyan-700 px-3 py-2 font-semibold text-white">Åpne SoMe Studio</button>}
+              {(item.status === "draft" || item.status === "failed") && permissions.includes("marketing.draft") &&
+                <WorkspacePublicationEditor key={item.id} brandKey={brandKey} publication={item}
+                  canDraft={permissions.includes("marketing.draft")}
+                  canPublish={permissions.includes("marketing.publish")}
+                  onSaved={() => loadPublications()}/>}
             </div>}
             <p className="mt-3 text-xs text-slate-400">
               {(item.scheduledPlatforms || []).join(" · ") || "Kanal ikke valgt"}
