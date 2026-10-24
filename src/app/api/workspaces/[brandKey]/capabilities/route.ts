@@ -55,6 +55,9 @@ export async function GET(
     if (grant.operational_role === "BRAND_OPERATIONS" &&
         ["zeneco", "pinosoecolife"].includes(brandKey)) operationalRole = "BRAND_OPERATIONS";
     permissions = WORKSPACE_PERMISSIONS.filter(permission =>
+      // Preserve main's restricted paid ads; employees use Meta instead.
+      !(operationalRole === "BRAND_OPERATIONS" &&
+        (permission === "ads.read" || permission === "ads.draft")) &&
       (brandKey === "zeneco"
         ? permission !== "crm.read" && permission !== "crm.write"
         : !["crm.joint.read", "crm.joint.write", "tasks.joint.read", "tasks.joint.write",
