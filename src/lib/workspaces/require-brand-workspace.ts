@@ -91,6 +91,12 @@ export async function requireBrandWorkspace(
       verifiedUserId: authResult.user.id, verifiedUserEmail: authResult.user.email || "",
       permission,
     })) return reject(403, "ACCESS_DENIED");
+    // Preserve the latest main restriction: Brand Operations manages paid ads in Meta.
+    if (grant.operational_role === "BRAND_OPERATIONS" &&
+      ["zeneco", "pinosoecolife"].includes(brandKey) &&
+      (permission === "ads.read" || permission === "ads.draft")) {
+      return reject(403, "ACCESS_DENIED");
+    }
     verifiedUserId = authResult.user.id;
   }
   return { value: { brandKey, brandId, role: context.role, verifiedUserId, verifiedEmail: context.email, supabase }, response: null };
