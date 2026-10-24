@@ -1,3 +1,4 @@
+import { emailFirstName } from "@/lib/email-first-name";
 import type { AgentRun, AgentTraceStep } from "@/lib/agentic/schemas";
 import { sha256 } from "@/lib/agentic/ids";
 import type { NexusGrowthMission } from "@/lib/nexus-growth-mission";
@@ -30,7 +31,7 @@ export function canPrepareRealEstateMission(
 
 function firstName(value?: string | null) {
   const name = String(value || "").trim();
-  return name ? name.split(/\s+/)[0] : "der";
+  return emailFirstName(name, "der");
 }
 
 export function composeRealEstateMissionDraft(
