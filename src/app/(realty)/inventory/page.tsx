@@ -1867,7 +1867,7 @@ export default function InventoryPage() {
                   <div className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-sm leading-6 text-slate-200">{showEditModal.sourceDescription}</div>
                 </details>
               )}
-              {showEditModal.sourceDescription && <PropertySourceFactReview source={showEditModal.sourceDescription} onUse={note => setShowEditModal(current => current ? { ...current, additional_information: [current.additional_information, note].filter(Boolean).join("\\n") } : current)} />}
+              {showEditModal.sourceDescription && <PropertySourceFactReview source={showEditModal.sourceDescription} onUse={note => setShowEditModal(current => current ? { ...current, additional_information: [current.additional_information, note].filter(Boolean).join("\n") } : current)} />}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Beskrivelse</label>
                 <textarea className="w-full h-20 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
