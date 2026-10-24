@@ -273,6 +273,12 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     });
   }
 
+  // Read only dedicated completion tags. Never infer a delivery promise from marketing prose.
+  const expectedCompletionSource = [
+    "expected_completion", "completion_date", "delivery_date", "estimated_completion",
+    "handover_date", "completion", "delivery",
+  ].map(tag => getDirectChild(node, tag) || getMultilangText(node, tag, "no")).find(Boolean) || "";
+
   // URL: <url><no>https://...</no></url> or <url>https://...</url>
   let externalUrl = getMultilangText(node, "url", "no") || getDirectChild(node, "url") || "";
 
@@ -326,6 +332,7 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     imageUrl: imageUrl || undefined,
     gallery: galleryUrls.length > 0 ? galleryUrls : undefined,
     floorplans: floorplanUrls.length > 0 ? floorplanUrls : undefined,
+    expectedCompletionSource: expectedCompletionSource || undefined,
     externalUrl: externalUrl || undefined,
     source: "redsp",
     ref: ref || undefined,
@@ -433,6 +440,7 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.gallery !== undefined) row.gallery = p.gallery;
   if (p.floorplans !== undefined) row.floorplans = p.floorplans;
   if (p.expectedCompletionManual !== undefined) row.expected_completion_manual = p.expectedCompletionManual;
+  if (p.expectedCompletionSource !== undefined) row.expected_completion_source = p.expectedCompletionSource;
   if (p.externalUrl !== undefined) row.external_url = p.externalUrl;
   if (p.source !== undefined) row.source = p.source;
   if (p.yearBuilt !== undefined) row.year_built = p.yearBuilt;
