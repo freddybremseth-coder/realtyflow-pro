@@ -1845,7 +1845,13 @@ export default function InventoryPage() {
               <h2 className="text-lg font-semibold text-white">Rediger eiendom</h2>
               <button onClick={() => setShowEditModal(null)} className="text-slate-400 hover:text-white"><X size={20} /></button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
+              <div className="rounded-lg border border-slate-600 p-3 space-y-2">
+                <label className="block text-sm font-medium text-white">Forventes ferdig</label>
+                <p className="text-xs text-slate-400">Fra import: {showEditModal.expectedCompletionSource || "Ikke oppgitt"}. Manuell verdi brukes foran import og beholdes ved ny import.</p>
+                <Input placeholder="F.eks. 4. kvartal 2027" value={showEditModal.expectedCompletionManual || ""} onChange={e => setShowEditModal({...showEditModal, expectedCompletionManual: e.target.value})} />
+                <p className="text-xs text-cyan-300">Vises til kunde: {showEditModal.expectedCompletionManual?.trim() || showEditModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
+              </div>
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Tittel</label>
                 <Input value={showEditModal.title} onChange={e => setShowEditModal({...showEditModal, title: e.target.value})} />
@@ -1862,12 +1868,6 @@ export default function InventoryPage() {
                   placeholder="Lim inn eller skriv informasjon fra utbyggeren her..."
                   value={showEditModal.additional_information || ""}
                   onChange={e => setShowEditModal({...showEditModal, additional_information: e.target.value})} />
-              </div>
-              <div className="rounded-lg border border-slate-600 p-3 space-y-2">
-                <label className="block text-sm font-medium text-white">Forventes ferdig</label>
-                <p className="text-xs text-slate-400">Fra import: {showEditModal.expectedCompletionSource || "Ikke oppgitt"}. Manuell verdi brukes foran import og beholdes ved ny import.</p>
-                <Input placeholder="F.eks. 4. kvartal 2027" value={showEditModal.expectedCompletionManual || ""} onChange={e => setShowEditModal({...showEditModal, expectedCompletionManual: e.target.value})} />
-                <p className="text-xs text-cyan-300">Vises til kunde: {showEditModal.expectedCompletionManual?.trim() || showEditModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
