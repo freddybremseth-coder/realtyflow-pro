@@ -95,7 +95,7 @@ export function WorkspacePropertyCatalogue({
   useEffect(() => {
     if (!canEditDeveloperInfo || !expandedPropertyId) return;
     const item = items.find((entry) => entry.id === expandedPropertyId);
-    if (!item?.can_market_on_workspace_brand) return;
+    if (!item) return;
     const controller = new AbortController();
     const propertyId = expandedPropertyId;
     setDeveloperNote({ propertyId, text: "", loading: true, saving: false, error: "", saved: false });
@@ -359,7 +359,7 @@ export function WorkspacePropertyCatalogue({
                   <p className="text-xs text-slate-400">
                     Dette er offentlig kataloginformasjon. Interne prisnotater, provisjoner og importdata vises ikke.
                   </p>
-                  {canEditDeveloperInfo && canMarketHere && <section className="space-y-2 border-t border-slate-800 pt-4">
+                  {canEditDeveloperInfo && <section className="space-y-2 border-t border-slate-800 pt-4">
                     <h5 className="text-sm font-semibold text-cyan-200">Mer informasjon fra utbygger</h5>
                     <p className="text-xs text-slate-400">Valgfri ren tekst om leveranse, tomtevalg, byggestatus, ferdigstillelse og tilvalg. Publiseres ikke automatisk.</p>
                     <textarea
