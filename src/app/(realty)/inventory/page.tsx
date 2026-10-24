@@ -38,6 +38,8 @@ interface Property {
   imageUrl?: string;
   gallery?: string[];
   floorplans?: string[];
+  expectedCompletionSource?: string;
+  expectedCompletionManual?: string;
   externalUrl?: string;
   source: "manual" | "csv" | "xml" | "redsp";
   yearBuilt?: number;
@@ -271,6 +273,12 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     });
   }
 
+  // Read only dedicated completion tags. Never infer a delivery promise from marketing prose.
+  const expectedCompletionSource = [
+    "expected_completion", "completion_date", "delivery_date", "estimated_completion",
+    "handover_date", "completion", "delivery",
+  ].map(tag => getDirectChild(node, tag) || getMultilangText(node, tag, "no")).find(Boolean) || "";
+
   // URL: <url><no>https://...</no></url> or <url>https://...</url>
   let externalUrl = getMultilangText(node, "url", "no") || getDirectChild(node, "url") || "";
 
@@ -324,6 +332,7 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     imageUrl: imageUrl || undefined,
     gallery: galleryUrls.length > 0 ? galleryUrls : undefined,
     floorplans: floorplanUrls.length > 0 ? floorplanUrls : undefined,
+    expectedCompletionSource: expectedCompletionSource || undefined,
     externalUrl: externalUrl || undefined,
     source: "redsp",
     ref: ref || undefined,
@@ -397,6 +406,8 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     imageUrl: (row.primary_image || row.imageUrl || undefined) as string | undefined,
     gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : undefined,
     floorplans: Array.isArray(row.floorplans) ? (row.floorplans as string[]) : undefined,
+    expectedCompletionSource: typeof row.expected_completion_source === "string" ? row.expected_completion_source : undefined,
+    expectedCompletionManual: typeof row.expected_completion_manual === "string" ? row.expected_completion_manual : undefined,
     externalUrl: (row.external_url || row.externalUrl || undefined) as string | undefined,
     source: (row.source as Property["source"]) || "manual",
     yearBuilt: row.year_built != null ? Number(row.year_built) : (row.yearBuilt != null ? Number(row.yearBuilt) : undefined),
@@ -428,6 +439,8 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.imageUrl !== undefined) row.primary_image = p.imageUrl;
   if (p.gallery !== undefined) row.gallery = p.gallery;
   if (p.floorplans !== undefined) row.floorplans = p.floorplans;
+  if (p.expectedCompletionManual !== undefined) row.expected_completion_manual = p.expectedCompletionManual;
+  if (p.expectedCompletionSource !== undefined) row.expected_completion_source = p.expectedCompletionSource;
   if (p.externalUrl !== undefined) row.external_url = p.externalUrl;
   if (p.source !== undefined) row.source = p.source;
   if (p.yearBuilt !== undefined) row.year_built = p.yearBuilt;
@@ -918,11 +931,24 @@ export default function InventoryPage() {
     e.target.value = "";
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!showEditModal) return;
-    setProperties(prev => prev.map(p => p.id === showEditModal.id ? showEditModal : p));
-    apiUpdateProperty(showEditModal);
-    setShowEditModal(null);
+    const property = showEditModal;
+    try {
+      const response = await fetch(`/api/properties?id=${encodeURIComponent(property.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(propertyToDbRow(property)),
+      });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.error || "Kunne ikke lagre endringene");
+      }
+      setProperties(prev => prev.map(p => p.id === property.id ? property : p));
+      setShowEditModal(null);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Kunne ikke lagre endringene");
+    }
   };
 
   const togglePropertyPublication = async (propertyId: string, brandId: string) => {
@@ -1561,6 +1587,21 @@ export default function InventoryPage() {
                 <Badge variant="outline">{showDetailModal.type}</Badge>
                 {showDetailModal.ref && <Badge variant="outline">Ref: {showDetailModal.ref}</Badge>}
                 {showDetailModal.yearBuilt && <Badge variant="outline">Bygget {showDetailModal.yearBuilt}</Badge>}
+                {showDetailModal.floorplans && showDetailModal.floorplans.length > 0 && <div className="w-full mt-4">
+                  <h3 className="text-sm font-semibold mb-2">Plantegninger</h3>
+                  <div className="grid grid-cols-2 gap-2">{showDetailModal.floorplans.map((url, index) => (
+                    <a key={url} href={url} target="_blank" rel="noopener noreferrer" aria-label={`Åpne plantegning ${index + 1}`} className="block rounded border border-slate-600 overflow-hidden">
+                      <img src={url} alt={`Plantegning ${index + 1}`} className="max-h-44 w-full object-contain bg-white" />
+                    </a>
+                  ))}</div>
+                </div>}
+                <div className="w-full rounded-lg border border-slate-600 bg-slate-900/60 p-3">
+                  <p className="text-xs text-slate-400">Forventes ferdig</p>
+                  <p className="mt-1 text-sm text-white">{showDetailModal.expectedCompletionManual?.trim() || showDetailModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
+                  <button type="button" className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg border border-cyan-500/40 px-3 text-sm font-medium text-cyan-200" onClick={() => { setShowEditModal({ ...showDetailModal }); setShowDetailModal(null); }}>
+                    <Pencil size={15} /> Legg til eller endre ferdigstillelse
+                  </button>
+                </div>
                 {showDetailModal.energyRating && <Badge variant="outline">Energi: {showDetailModal.energyRating}</Badge>}
                 {showDetailModal.pool && <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">Basseng</Badge>}
                 {showDetailModal.garage && <Badge className="bg-slate-500/20 text-slate-300 border-slate-500/30">Garasje</Badge>}
@@ -1799,12 +1840,18 @@ export default function InventoryPage() {
       {/* ========== EDIT MODAL ========== */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowEditModal(null)}>
-          <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b border-slate-700">
+          <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-center justify-between p-4 sm:p-5 border-b border-slate-700 bg-slate-800">
               <h2 className="text-lg font-semibold text-white">Rediger eiendom</h2>
               <button onClick={() => setShowEditModal(null)} className="text-slate-400 hover:text-white"><X size={20} /></button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
+              <div className="rounded-lg border border-slate-600 p-3 space-y-2">
+                <label className="block text-sm font-medium text-white">Forventes ferdig</label>
+                <p className="text-xs text-slate-400">Fra import: {showEditModal.expectedCompletionSource || "Ikke oppgitt"}. Manuell verdi brukes foran import og beholdes ved ny import.</p>
+                <Input placeholder="F.eks. 4. kvartal 2027" value={showEditModal.expectedCompletionManual || ""} onChange={e => setShowEditModal({...showEditModal, expectedCompletionManual: e.target.value})} />
+                <p className="text-xs text-cyan-300">Vises til kunde: {showEditModal.expectedCompletionManual?.trim() || showEditModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</p>
+              </div>
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Tittel</label>
                 <Input value={showEditModal.title} onChange={e => setShowEditModal({...showEditModal, title: e.target.value})} />
@@ -1963,6 +2010,36 @@ export default function InventoryPage() {
                   <div>
                     <label className="text-xs text-slate-400 mb-1 block">Bilder & plantegninger</label>
                     <p className="text-[11px] text-slate-500 mb-2">Dra eller klikk for å flytte bilder mellom galleri og plantegninger. Plantegninger får egen seksjon i PDF-prospektet.</p>
+                    <label className="block text-xs text-cyan-300 mb-2">
+                      Legg til plantegning via direkte bildelenke
+                      <Input className="mt-1" placeholder="https://…/plantegning.jpg" onKeyDown={e => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        const url = e.currentTarget.value.trim();
+                        if (!/^https:\/\//i.test(url)) { window.alert("Bruk en sikker https-bildelenke."); return; }
+                        setShowEditModal({...m, floorplans: [...new Set([...(m.floorplans || []), url])]});
+                        e.currentTarget.value = "";
+                      }} />
+                    </label>
+                    <label className="block text-xs text-cyan-300 mb-2">
+                      Last opp plantegning (JPG, PNG, WebP – maks 8 MB)
+                      <input type="file" className="block mt-1 text-xs" accept="image/jpeg,image/png,image/webp" onChange={async e => {
+                        const input = e.currentTarget;
+                        const file = input.files?.[0];
+                        if (!file) return;
+                        const form = new FormData();
+                        form.set("file", file);
+                        form.set("propertyId", m.id);
+                        try {
+                          const response = await fetch("/api/properties/floorplans/upload", { method: "POST", body: form });
+                          const data = await response.json();
+                          if (!response.ok || !data.url) throw new Error(data.error || "Opplasting feilet");
+                          setShowEditModal(current => current?.id === m.id ? { ...current, floorplans: [...new Set([...(current.floorplans || []), data.url])] } : current);
+                        } catch (error) {
+                          window.alert(error instanceof Error ? error.message : "Opplasting feilet");
+                        } finally { input.value = ""; }
+                      }} />
+                    </label>
                     <div className="grid grid-cols-2 gap-3">
                       <Column title="Galleri" items={galleryAll} accept="gallery" hint="Slipp bilder her" />
                       <Column title="Plantegninger" items={floorplansAll} accept="floorplans" hint="Dra plantegninger hit" />
@@ -1971,7 +2048,7 @@ export default function InventoryPage() {
                 );
               })()}
             </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-slate-700">
+            <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 p-3 sm:p-5 border-t border-slate-700 bg-slate-800">
               <Button
                 variant="outline"
                 onClick={() => {
