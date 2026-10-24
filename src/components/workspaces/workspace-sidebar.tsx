@@ -90,6 +90,8 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
           permissions: ["youtube.read"] },
         { label: "SEO og synlighet", href: `${root}?tab=growth&area=visibility&focus=visibility`, icon: Search,
           permissions: ["visibility.read"] },
+        { label: "SEO SAM", href: `${root}/seo-sam`, icon: Search,
+          permissions: ["visibility.read"] },
         { label: "Annonser", href: `${root}?tab=growth&area=ads&focus=ads`, icon: BarChart3,
           permissions: ["ads.read"] },
       ],
