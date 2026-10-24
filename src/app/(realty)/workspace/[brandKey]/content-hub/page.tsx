@@ -175,8 +175,9 @@ export default function ScopedContentHubPage() {
         const detail = result?.error?.message || result?.error?.code || "Kunne ikke opprette utkast.";
         throw new Error(String(detail));
       }
-      setRepairMessage("Et nytt utkast er opprettet. Kontroller tekst, bilde og kanal i SoMe Studio før publisering.");
+      setRepairMessage("Et nytt utkast er opprettet. Åpne det nedenfor, rett innholdet og velg Publiser eller Planlegg.");
       setStatusFilter("draft");
+      setSelectedPublication(typeof result?.publication?.id === "string" ? result.publication.id : null);
       await loadPublications();
     } catch (cause) {
       setRepairMessage((cause instanceof Error ? cause.message : "Ukjent feil") +
