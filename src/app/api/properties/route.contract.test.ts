@@ -30,7 +30,7 @@ test("property POST attaches cached full source facts before upsert", () => {
 test("anonymous property reads use an explicit public projection and website visibility", () => {
   assert.match(route, /getRequestAccessContext\(req\)/);
   assert.match(route, /const summaryView = !authenticated && searchParams\.get\("view"\) === "summary"/);
-  assert.match(route, /const selectColumns = authenticated \? "\*" : summaryView \? PUBLIC_PROPERTY_SUMMARY_SELECT : PUBLIC_PROPERTY_SELECT/);
+  assert.match(route, /const selectColumns = authenticated \? "\*" : summaryView \? PUBLIC_PROPERTY_SUMMARY_SELECT : singleProperty \? PUBLIC_PROPERTY_DETAIL_SELECT : PUBLIC_PROPERTY_SELECT/);
   assert.match(route, /const scopedData = authenticated \? allData : allData\.filter\(isWebsiteVisible\)/);
   assert.match(route, /if \(!authenticated\) \{/);
   assert.match(route, /!isWebsiteVisible\(property\)/);
