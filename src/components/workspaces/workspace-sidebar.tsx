@@ -101,7 +101,7 @@ export function WorkspaceSidebar({ brandKey }: { brandKey: string }) {
       items: [
         { label: "Nexus-innsikt", href: `${root}?tab=growth&focus=nexus`, icon: Settings2,
           permissions: ["nexus.read"] },
-        { label: "Altovena · Samarbeid", href: `${root}/altovena`, icon: BriefcaseBusiness,
+        { label: "Altovena · Samarbeid", href: "/altovena/collaboration", icon: BriefcaseBusiness,
           permissions: ["nexus.read"] },
         { label: "Opplæring", href: `${root}?tab=today&training=1`, icon: BookOpen },
       ],
