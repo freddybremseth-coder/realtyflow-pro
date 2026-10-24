@@ -1566,6 +1566,14 @@ export default function InventoryPage() {
                 <Badge variant="outline">{showDetailModal.type}</Badge>
                 {showDetailModal.ref && <Badge variant="outline">Ref: {showDetailModal.ref}</Badge>}
                 {showDetailModal.yearBuilt && <Badge variant="outline">Bygget {showDetailModal.yearBuilt}</Badge>}
+                {showDetailModal.floorplans && showDetailModal.floorplans.length > 0 && <div className="w-full mt-4">
+                  <h3 className="text-sm font-semibold mb-2">Plantegninger</h3>
+                  <div className="grid grid-cols-2 gap-2">{showDetailModal.floorplans.map((url, index) => (
+                    <a key={url} href={url} target="_blank" rel="noopener noreferrer" aria-label={`Åpne plantegning ${index + 1}`} className="block rounded border border-slate-600 overflow-hidden">
+                      <img src={url} alt={`Plantegning ${index + 1}`} className="max-h-44 w-full object-contain bg-white" />
+                    </a>
+                  ))}</div>
+                </div>
                 <Badge variant="outline">Forventes ferdig: {showDetailModal.expectedCompletionManual?.trim() || showDetailModal.expectedCompletionSource?.trim() || "Ta kontakt for informasjon om planlagt ferdigstillelse"}</Badge>
                 {showDetailModal.energyRating && <Badge variant="outline">Energi: {showDetailModal.energyRating}</Badge>}
                 {showDetailModal.pool && <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">Basseng</Badge>}
@@ -1802,10 +1810,6 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Dedicated floorplans are kept separate from the photo gallery */}
-      {showDetailModal?.floorplans && showDetailModal.floorplans.length > 0 && (
-        <div className="hidden" data-property-floorplan-count={showDetailModal.floorplans.length} />
-      )}
       {/* ========== EDIT MODAL ========== */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowEditModal(null)}>
