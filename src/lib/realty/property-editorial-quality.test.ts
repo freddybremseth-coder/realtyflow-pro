@@ -71,3 +71,20 @@ test("rejects weak source, promotional copy and unsupported numbers", () => {
   assert.ok(weak.reasons.includes("promotional_language"));
   assert.ok(weak.reasons.some((reason) => reason.startsWith("unsupported_numbers:")));
 });
+
+test("requires non-generic source-based copy without repeated heading or bullets", () => {
+  const property = {
+    ref: "N2", property_type: "Villa", location: "Polop", bedrooms: 3,
+    source_description: "Villa med tre soverom i Polop, privat svømmebasseng og parkering ved inngangen.",
+  };
+  const result = evaluatePropertyEditorialApproval(property, {
+    headline_no: "Villa med privat svømmebasseng i Polop",
+    intro_no: "Villa med privat svømmebasseng i Polop",
+    bullets_no: ["Parkering ved inngangen", "Parkering ved inngangen", "Fantastisk utsikt"],
+    orientation_no: "Ikke angitt",
+  });
+  assert.equal(result.approved, false);
+  assert.ok(result.reasons.includes("repeated_heading_intro"));
+  assert.ok(result.reasons.includes("duplicate_property_bullets"));
+  assert.ok(result.reasons.includes("promotional_language"));
+});

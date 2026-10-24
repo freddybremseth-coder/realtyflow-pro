@@ -3,6 +3,13 @@ import { propertyEditorialSource, type PropertyEditorialNo } from "./property-ed
 const UNKNOWN = /^(?:ukjent|unknown|ikke angitt|n\/a|na|-)?$/i;
 const PROMOTIONAL = /\b(?:drømmebolig|fantastisk|unik|eksklusiv|spektakulær|perfekt|førsteklasses|attraktiv(?:t|e)?|mest populære|svært populær|fredelig)\b/i;
 
+// Editorial copy must be specific to the listing, not interchangeable sales prose.
+const GENERIC_SALES = /\b(?:drømmehjem|drømmehus|drømmebolig|fantastisk|luksuriøs|luksusbolig|eksklusivt|eksklusiv|unik mulighet|perfekt beliggenhet|ideell beliggenhet|fantastisk utsikt|nydelig utsikt|modern(?:e)? bolig(?:er)?|attraktiv bolig|innbydende bolig)\b/i;
+
+function normalizedSentence(value: string): string {
+  return value.toLocaleLowerCase("nb").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
 function clean(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 }
@@ -75,7 +82,12 @@ export function evaluatePropertyEditorialApproval(
   if (source.area === "Ikke angitt") reasons.push("unknown_location");
   if (!publicText) reasons.push("empty_editorial");
   if (/\b(?:ukjent|ikke angitt)\b/i.test(publicText)) reasons.push("public_unknown_placeholder");
-  if (PROMOTIONAL.test(publicText)) reasons.push("promotional_language");
+  if (PROMOTIONAL.test(publicText) || GENERIC_SALES.test(publicText)) reasons.push("promotional_language");
+  const intro = normalizedSentence(clean(editorial.intro_no));
+  const heading = normalizedSentence(clean(editorial.headline_no));
+  if (intro && heading && intro === heading) reasons.push("repeated_heading_intro");
+  const uniqueBullets = new Set(editorial.bullets_no.map((x) => normalizedSentence(x)).filter(Boolean));
+  if (uniqueBullets.size !== editorial.bullets_no.filter((x) => clean(x)).length) reasons.push("duplicate_property_bullets");
   if (editorial.orientation_no !== "Ikke angitt" && !source.usage) reasons.push("unsupported_usage_orientation");
 
   const sourceNumberText = [
